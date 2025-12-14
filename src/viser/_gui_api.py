@@ -65,6 +65,7 @@ from ._gui_handles import (
     GuiSliderHandle,
     GuiTabGroupHandle,
     GuiTabHandle,
+    GuiTableDataHandle,
     GuiTextHandle,
     GuiUploadButtonHandle,
     GuiUplotHandle,
@@ -1995,6 +1996,111 @@ class GuiApi:
                     ),
                 ),
                 is_button=True,
+            ),
+        )
+
+    @deprecated_positional_shim
+    def add_table_data(
+        self,
+        label: str,
+        columns: Sequence[str]
+        | Sequence[tuple[str, Literal["string", "number"], bool]],
+        *,
+        initial_rows: Sequence[Sequence[str | float | int]] | None = None,
+        selection_mode: Literal["none", "single"] = "none",
+        disabled: bool = False,
+        visible: bool = True,
+        hint: str | None = None,
+        order: float | None = None,
+    ) -> GuiTableDataHandle:
+        """Add an editable data table to the GUI.
+
+        Args:
+            label: Label to display above the table.
+            columns: Column definitions. Can be either:
+                - List of strings (column titles, all editable string columns)
+                - List of tuples (title, cell_type, editable) for full control
+            initial_rows: Initial table data as list of rows. Defaults to empty table.
+            selection_mode: Row selection behavior. 'none' or 'single'.
+            disabled: Whether the entire table is disabled.
+            visible: Whether the table is visible.
+            hint: Optional hint to display on hover.
+            order: Optional ordering, smallest values will be displayed first.
+
+        Returns:
+            A handle that can be used to interact with the table.
+
+        Example:
+            >>> # Simple string table
+            >>> table = server.gui.add_table_data(
+            ...     "Data",
+            ...     columns=["Name", "Value"],
+            ... )
+            >>> table.append_row(("Item 1", "100"))
+            >>>
+            >>> # Typed columns with editability
+            >>> table = server.gui.add_table_data(
+            ...     "Measurements",
+            ...     columns=[
+            ...         ("ID", "number", False),  # Read-only ID
+            ...         ("Name", "string", True),  # Editable name
+            ...         ("Value", "number", True), # Editable numeric value
+            ...     ],
+            ...     initial_rows=[(1, "Sample A", 42.5)],
+            ... )
+        """
+        # Parse columns parameter
+        parsed_columns: list[_messages.GuiTableColumn] = []
+        for col in columns:
+            if isinstance(col, str):
+                parsed_columns.append(
+                    _messages.GuiTableColumn(
+                        title=col, cell_type="string", editable=True
+                    )
+                )
+            else:
+                title, cell_type, editable = col
+                parsed_columns.append(
+                    _messages.GuiTableColumn(
+                        title=title, cell_type=cell_type, editable=editable
+                    )
+                )
+
+        # Initialize data
+        value = tuple(tuple(row) for row in initial_rows) if initial_rows else ()
+
+        # Validate initial data
+        for row_idx, row in enumerate(value):
+            if len(row) != len(parsed_columns):
+                raise ValueError(
+                    f"Row {row_idx} has {len(row)} cells but table has {len(parsed_columns)} columns"
+                )
+            for col_idx, (cell, col_def) in enumerate(zip(row, parsed_columns)):
+                if col_def.cell_type == "number" and not isinstance(cell, (int, float)):
+                    raise ValueError(
+                        f"Cell at row {row_idx}, column {col_idx} must be numeric, got {type(cell).__name__}"
+                    )
+
+        uuid = _make_uuid()
+        order = _apply_default_order(order)
+
+        return GuiTableDataHandle(
+            self._create_gui_input(
+                value,
+                message=_messages.GuiTableDataMessage(
+                    value=value,
+                    uuid=uuid,
+                    container_uuid=self._get_container_uuid(),
+                    props=_messages.GuiTableDataProps(
+                        order=order,
+                        label=label,
+                        hint=hint,
+                        columns=tuple(parsed_columns),
+                        selection_mode=selection_mode,
+                        disabled=disabled,
+                        visible=visible,
+                    ),
+                ),
             ),
         )
 
