@@ -724,6 +724,8 @@ class IcosphereProps:
     """Number of subdivisions to use when creating the icosphere."""
     color: Tuple[int, int, int]
     """Color of the icosphere as RGB integers. """
+    scale: Tuple[float, float, float]
+    """Tuple of (x, y, z) scaling values for the icosphere."""
     wireframe: bool
     """Boolean indicating if the icosphere should be rendered as a wireframe.
     """

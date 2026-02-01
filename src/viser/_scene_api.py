@@ -2012,6 +2012,7 @@ class SceneApi:
         color: RgbTupleOrArray = (255, 0, 0),
         *,
         subdivisions: int = 3,
+        scale: tuple[float, float, float] = (1.0, 1.0, 1.0),
         wireframe: bool = False,
         opacity: float | None = None,
         material: Literal["standard", "toon3", "toon5"] = "standard",
@@ -2032,6 +2033,7 @@ class SceneApi:
             color: Color of the icosphere as an RGB tuple.
             subdivisions: Number of subdivisions to use when creating the icosphere.
             wireframe: Boolean indicating if the icosphere should be rendered as a wireframe.
+            scale: Tuple of (x, y, z) scaling values for the icosphere.
             opacity: Opacity of the icosphere. None means opaque.
             material: Material type of the icosphere ('standard', 'toon3', 'toon5').
             flat_shading: Whether to do flat shading.
@@ -2054,6 +2056,7 @@ class SceneApi:
                 radius=radius,
                 subdivisions=subdivisions,
                 color=_encode_rgb(color),
+                scale=scale,
                 wireframe=wireframe,
                 opacity=opacity,
                 flat_shading=flat_shading,

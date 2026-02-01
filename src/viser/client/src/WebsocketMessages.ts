@@ -281,6 +281,7 @@ export interface IcosphereMessage {
     radius: number;
     subdivisions: number;
     color: [number, number, number];
+    scale: [number, number, number];
     wireframe: boolean;
     opacity: number | null;
     flat_shading: boolean;
