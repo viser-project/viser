@@ -647,15 +647,13 @@ class WebsockServer(WebsockMessageHandler):
                         ),
                         # Accept connections with version-based protocol and extract version in handler.
                         subprotocols=None,
-                        select_subprotocol=lambda _, subprotocols: (
-                            next(
-                                (
-                                    Subprotocol(p)
-                                    for p in subprotocols
-                                    if p.startswith("viser-v")
-                                ),
-                                None,
-                            )
+                        select_subprotocol=lambda _, subprotocols: next(
+                            (
+                                Subprotocol(p)
+                                for p in subprotocols
+                                if p.startswith("viser-v")
+                            ),
+                            None,
                         ),
                     ) as serve_future:
                         assert serve_future.server is not None
