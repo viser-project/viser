@@ -211,11 +211,11 @@ export const CoordinateFrame = React.forwardRef<
             geometry={originGeom}
             scale={new THREE.Vector3(originRadius, originRadius, originRadius)}
           >
-            <meshBasicMaterial color={originColor} />
+            <meshBasicMaterial color={originColor} toneMapped={false} />
             <OutlinesIfHovered />
           </mesh>
           <Instances limit={6}>
-            <meshBasicMaterial />
+            <meshBasicMaterial toneMapped={false} />
             <cylinderGeometry args={[axesRadius, axesRadius, axesLength, 16]} />
             <Instance
               rotation={new THREE.Euler(0.0, 0.0, (3.0 * Math.PI) / 2.0)}

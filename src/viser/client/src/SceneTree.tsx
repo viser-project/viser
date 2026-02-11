@@ -192,9 +192,60 @@ function createObjectFactory(
         .setFromEuler(new THREE.Euler(-Math.PI / 2, 0.0, 0.0))
         .premultiply(gridQuaternion);
 
+      // Plane normal in group-local space. planeGeometry default normal
+      // is +Z; planeQuaternion rotates it to match the grid orientation.
+      const planeNormal = new THREE.Vector3(0, 0, 1)
+        .applyQuaternion(planeQuaternion);
+
+      // Render ordering for the grid's coplanar layers:
+      //
+      //   1. Color plane  (renderOrder=-1000, offset=-0.002 along normal)
+      //   2. Shadow plane  (offset=-0.001 along normal)
+      //   3. Grid lines   (renderOrder=1, at origin)
+      //
+      // The color plane is functionally opaque (depthWrite=true), so we
+      // give it a very negative renderOrder to ensure it renders first
+      // and writes depth before other transparent objects. The shadow
+      // plane and color plane are sorted relative to each other via
+      // z-offsets (Three.js back-to-front transparent sorting). The grid
+      // gets renderOrder=1 so it always renders last, on top of both
+      // planes. polygonOffset on both planes biases their depth behind
+      // the grid to prevent z-fighting between coplanar surfaces.
+
+      let colorPlane;
+      if (message.props.plane_opacity > 0.0) {
+        const colorPlaneWidth = message.props.infinite_grid
+          ? 10000
+          : message.props.width;
+        const colorPlaneHeight = message.props.infinite_grid
+          ? 10000
+          : message.props.height;
+        colorPlane = (
+          <mesh
+            renderOrder={-1000}
+            position={planeNormal.clone().multiplyScalar(-0.002).toArray()}
+            quaternion={planeQuaternion}
+          >
+            <planeGeometry args={[colorPlaneWidth, colorPlaneHeight]} />
+            <meshBasicMaterial
+              color={rgbToInt(message.props.plane_color)}
+              transparent
+              opacity={message.props.plane_opacity}
+              depthWrite
+              side={THREE.DoubleSide}
+              toneMapped={false}
+              polygonOffset
+              polygonOffsetFactor={2}
+              polygonOffsetUnits={2}
+            />
+          </mesh>
+        );
+      } else {
+        colorPlane = null;
+      }
+
       let shadowPlane;
       if (message.props.shadow_opacity > 0.0) {
-        // Use very large dimensions for infinite grids to ensure shadows are visible.
         const shadowWidth = message.props.infinite_grid
           ? 10000
           : message.props.width;
@@ -204,7 +255,7 @@ function createObjectFactory(
         shadowPlane = (
           <mesh
             receiveShadow
-            position={[0.0, 0.0, -0.01]}
+            position={planeNormal.clone().multiplyScalar(-0.001).toArray()}
             quaternion={planeQuaternion}
           >
             <planeGeometry args={[shadowWidth, shadowHeight]} />
@@ -212,11 +263,13 @@ function createObjectFactory(
               opacity={message.props.shadow_opacity}
               color={0x000000}
               depthWrite={false}
+              polygonOffset
+              polygonOffsetFactor={1}
+              polygonOffsetUnits={1}
             />
           </mesh>
         );
       } else {
-        // when opacity = 0.0, no shadowPlane for performance
         shadowPlane = null;
       }
       return {
@@ -236,7 +289,9 @@ function createObjectFactory(
               fadeStrength={message.props.fade_strength}
               fadeFrom={message.props.fade_from === "camera" ? 1 : 0}
               quaternion={gridQuaternion}
+              renderOrder={1}
             />
+            {colorPlane}
             {shadowPlane}
             {children}
           </group>

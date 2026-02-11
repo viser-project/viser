@@ -389,6 +389,11 @@ class GridProps:
     """If true, shadows are casted onto the grid plane. Synchronized
     """
 
+    plane_color: Tuple[int, int, int]
+    """Color of the ground plane as RGB integers."""
+    plane_opacity: float
+    """Opacity of the ground plane, 0: invisible, 1: fully opaque."""
+
 
 @dataclasses.dataclass
 class LabelMessage(_CreateSceneNodeMessage):

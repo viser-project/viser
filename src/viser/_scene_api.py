@@ -1183,6 +1183,8 @@ class SceneApi:
         fade_strength: float = 1.0,
         fade_from: Literal["camera", "origin"] = "camera",
         shadow_opacity: float = 0.125,
+        plane_color: RgbTupleOrArray = (255, 255, 255),
+        plane_opacity: float = 0.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -1203,6 +1205,8 @@ class SceneApi:
             section_thickness: Thickness of the section lines.
             section_size: Size of each section in the grid.
             shadow_opacity: Opacity of shadows casted onto grid plane, 0: no shadows, 1: black shadows
+            plane_color: Color of the ground plane as an RGB tuple.
+            plane_opacity: Opacity of the ground plane, 0: invisible, 1: fully opaque.
             infinite_grid: Whether the grid should appear infinite. If `True`, the width and height are ignored.
             fade_distance: Distance at which the grid fades out.
             fade_strength: Strength of the fade effect.
@@ -1231,6 +1235,8 @@ class SceneApi:
                 fade_strength=fade_strength,
                 fade_from=fade_from,
                 shadow_opacity=shadow_opacity,
+                plane_color=_encode_rgb(plane_color),
+                plane_opacity=plane_opacity,
             ),
         )
         return GridHandle._make(self, message, name, wxyz, position, visible)

@@ -43,7 +43,7 @@ function CrosshairVisual({
     <group ref={groupRef} visible={visible}>
       <Instances limit={6}>
         <boxGeometry args={[0.4, 0.02, 0.02]} />
-        <meshBasicMaterial opacity={0.625} transparent />
+        <meshBasicMaterial opacity={0.625} transparent toneMapped={false} />
         {/* Horizontal line segments */}
         <Instance position={[0.5, 0.0, 0.0]} color="#777777" />
         <Instance position={[-0.5, 0.0, 0.0]} color="#777777" />
@@ -71,7 +71,7 @@ function CrosshairVisual({
       </Instances>
       <mesh>
         <sphereGeometry args={[0.04, 8, 8]} />
-        <meshBasicMaterial color="#999999" opacity={0.625} transparent />
+        <meshBasicMaterial color="#999999" opacity={0.625} transparent toneMapped={false} />
       </mesh>
       {children}
     </group>
