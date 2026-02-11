@@ -9,6 +9,16 @@ client_dir = Path(__file__).absolute().parent / "client"
 build_dir = client_dir / "build"
 
 
+def _is_editable_install() -> bool:
+    """Check if viser is installed in editable mode.
+
+    In editable installs, __file__ is in src/viser/ within the source tree.
+    In regular installs, __file__ is in site-packages/viser/.
+    """
+    viser_dir = Path(__file__).parent
+    return viser_dir.name == "viser" and viser_dir.parent.name == "src"
+
+
 def _check_viser_dev_running() -> bool:
     """Returns True if the viewer client has been launched via `npm run dev`."""
     try:
@@ -42,6 +52,11 @@ def _check_viser_dev_running() -> bool:
 
 def ensure_client_is_built() -> None:
     """Ensure that the client is built or already running."""
+
+    # For non-editable installs, just verify the build exists.
+    # Skip timestamp checks and dev server detection.
+    if not _is_editable_install() and (build_dir / "index.html").exists():
+        return
 
     if not (client_dir / "src").exists():
         # Can't build client.

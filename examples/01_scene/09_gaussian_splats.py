@@ -13,7 +13,7 @@ Viser includes a WebGL-based Gaussian splat renderer.
 
     .. code-block:: bash
 
-        git clone https://github.com/nerfstudio-project/viser.git
+        git clone https://github.com/viser-project/viser.git
         cd viser/examples
         ./assets/download_assets.sh
         python 01_scene/09_gaussian_splats.py  # With viser installed.

@@ -45,7 +45,6 @@ dependencies = [
     "trimesh>=3.21.7,<5.0.0",
     "yourdfpy>=0.0.53,<1.0.0",
     "typing_extensions>=4.0.0",
-    "nodeenv>=1.9.1,<2.0.0",
     # TODO: migrate to backports.zstd when we drop Python 3.8 support.
     # https://pypi.org/project/backports.zstd/
     # Then migrate to stdlib compression.zstd in Python 3.14+.
@@ -62,6 +61,7 @@ dev = [
     "hypothesis[numpy]",
     "opencv-python>=4.0.0.21,<5.0.0",
     "psutil>=5.9.5,<8.0.0",
+    "nodeenv>=1.9.1,<2.0.0",
 ]
 examples = [
     "torch>=1.13.1",
@@ -72,12 +72,12 @@ examples = [
     "plyfile",
     "opencv-python",
     "pyliblzfse>=0.4.1; platform_system!='Windows'",
-    "pandas",  # https://github.com/nerfstudio-project/viser/issues/457
+    "pandas",  # https://github.com/viser-project/viser/issues/457
     "tyro>=0.2.0,<1.0.0",
 ]
 
 [project.urls]
-"GitHub" = "https://github.com/nerfstudio-project/viser"
+"GitHub" = "https://github.com/viser-project/viser"
 
 [project.scripts]
 viser-build-client = "viser._client_autobuild:build_client_entrypoint"
