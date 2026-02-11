@@ -18,7 +18,7 @@ See here for download instructions:
 
     .. code-block:: bash
 
-        git clone https://github.com/nerfstudio-project/viser.git
+        git clone https://github.com/viser-project/viser.git
         cd viser/examples
         ./assets/download_assets.sh
         python 04_demos/04_smpl_skinned.py  # With viser installed.

@@ -43,7 +43,7 @@ Code
    Viser has full support for the GFM markdown spec, including **bold**, _italics_,
    ~~strikethrough~~, and many other features.
    
-   Here's a [masked link](https://github.com/nerfstudio-project/viser), and a
+   Here's a [masked link](https://github.com/viser-project/viser), and a
    normal one: https://pypi.org/project/viser/
    
    In inline code blocks, you can show off colors with color chips: `#FED363`

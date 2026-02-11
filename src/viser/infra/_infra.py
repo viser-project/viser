@@ -342,7 +342,7 @@ class WebsockServer(WebsockMessageHandler):
         # Exit the server thread when the main process exits. This would happen
         # automatically, but is nice to do explicitly to avoid some nanobind
         # reference leak warnings:
-        # https://github.com/nerfstudio-project/viser/issues/518
+        # https://github.com/viser-project/viser/issues/518
         atexit.register(self.stop)
 
         # Broadcast buffer should be populated by the background worker.
@@ -580,7 +580,7 @@ class WebsockServer(WebsockMessageHandler):
             # problems for Javascript on some Windows machines.
             #
             # Some references:
-            #     https://github.com/nerfstudio-project/viser/issues/256#issuecomment-2369684252
+            #     https://github.com/viser-project/viser/issues/256#issuecomment-2369684252
             #     https://bugs.python.org/issue43975
             #     https://github.com/golang/go/issues/32350#issuecomment-525111557
             #

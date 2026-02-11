@@ -28,7 +28,7 @@ function useMessageHandler() {
   const viewerMutable = viewer.mutable.current;
 
   // We could reduce the redundancy here if we wanted to.
-  // https://github.com/nerfstudio-project/viser/issues/39
+  // https://github.com/viser-project/viser/issues/39
   const updateSceneNode = viewer.sceneTreeActions.updateSceneNodeProps;
   const removeSceneNode = viewer.sceneTreeActions.removeSceneNode;
   const addSceneNode = viewer.sceneTreeActions.addSceneNode;

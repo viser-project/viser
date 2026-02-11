@@ -72,12 +72,12 @@ examples = [
     "plyfile",
     "opencv-python",
     "pyliblzfse>=0.4.1; platform_system!='Windows'",
-    "pandas",  # https://github.com/nerfstudio-project/viser/issues/457
+    "pandas",  # https://github.com/viser-project/viser/issues/457
     "tyro>=0.2.0,<1.0.0",
 ]
 
 [project.urls]
-"GitHub" = "https://github.com/nerfstudio-project/viser"
+"GitHub" = "https://github.com/viser-project/viser"
 
 [project.scripts]
 viser-build-client = "viser._client_autobuild:build_client_entrypoint"
