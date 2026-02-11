@@ -331,10 +331,7 @@ def process_git_clone_commands():
                 continue
             try:
                 content = rst_file.read_text(encoding="utf-8")
-                if (
-                    "git clone https://github.com/viser-project/viser.git"
-                    in content
-                ):
+                if "git clone https://github.com/viser-project/viser.git" in content:
                     updated_content = content.replace(
                         "git clone https://github.com/viser-project/viser.git",
                         versioned_git_clone,
