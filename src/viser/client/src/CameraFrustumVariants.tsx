@@ -150,7 +150,6 @@ export const CameraFrustumComponent = React.forwardRef<
             opacity={0.3}
             side={THREE.DoubleSide}
             depthWrite={false}
-            toneMapped={false}
           />
         </mesh>
       )}

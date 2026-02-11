@@ -191,27 +191,6 @@ function createObjectFactory(
       const planeQuaternion = new THREE.Quaternion()
         .setFromEuler(new THREE.Euler(-Math.PI / 2, 0.0, 0.0))
         .premultiply(gridQuaternion);
-
-      // Plane normal in group-local space. planeGeometry default normal
-      // is +Z; planeQuaternion rotates it to match the grid orientation.
-      const planeNormal = new THREE.Vector3(0, 0, 1)
-        .applyQuaternion(planeQuaternion);
-
-      // Render ordering for the grid's coplanar layers:
-      //
-      //   1. Color plane  (renderOrder=-1000, offset=-0.002 along normal)
-      //   2. Shadow plane  (offset=-0.001 along normal)
-      //   3. Grid lines   (renderOrder=1, at origin)
-      //
-      // The color plane is functionally opaque (depthWrite=true), so we
-      // give it a very negative renderOrder to ensure it renders first
-      // and writes depth before other transparent objects. The shadow
-      // plane and color plane are sorted relative to each other via
-      // z-offsets (Three.js back-to-front transparent sorting). The grid
-      // gets renderOrder=1 so it always renders last, on top of both
-      // planes. polygonOffset on both planes biases their depth behind
-      // the grid to prevent z-fighting between coplanar surfaces.
-
       let colorPlane;
       if (message.props.plane_opacity > 0.0) {
         const colorPlaneWidth = message.props.infinite_grid
@@ -221,11 +200,7 @@ function createObjectFactory(
           ? 10000
           : message.props.height;
         colorPlane = (
-          <mesh
-            renderOrder={-1000}
-            position={planeNormal.clone().multiplyScalar(-0.002).toArray()}
-            quaternion={planeQuaternion}
-          >
+          <mesh quaternion={planeQuaternion}>
             <planeGeometry args={[colorPlaneWidth, colorPlaneHeight]} />
             <meshBasicMaterial
               color={rgbToInt(message.props.plane_color)}
@@ -253,11 +228,7 @@ function createObjectFactory(
           ? 10000
           : message.props.height;
         shadowPlane = (
-          <mesh
-            receiveShadow
-            position={planeNormal.clone().multiplyScalar(-0.001).toArray()}
-            quaternion={planeQuaternion}
-          >
+          <mesh receiveShadow quaternion={planeQuaternion}>
             <planeGeometry args={[shadowWidth, shadowHeight]} />
             <shadowMaterial
               opacity={message.props.shadow_opacity}
@@ -793,9 +764,10 @@ export function SceneNodeThreeObject(props: { name: string }) {
   });
 
   // Track last pointer position for re-raycasting when mesh changes.
-  const lastPointerPos = React.useRef<{ clientX: number; clientY: number } | null>(
-    null,
-  );
+  const lastPointerPos = React.useRef<{
+    clientX: number;
+    clientY: number;
+  } | null>(null);
 
   // Frame counter for delayed hover recheck after objNode changes.
   // We wait a few frames to ensure the new mesh geometry is fully rendered.
@@ -842,7 +814,10 @@ export function SceneNodeThreeObject(props: { name: string }) {
                 1,
             );
             raycaster.setFromCamera(pointerNDC, camera);
-            const intersects = raycaster.intersectObject(groupRef.current, true);
+            const intersects = raycaster.intersectObject(
+              groupRef.current,
+              true,
+            );
             if (intersects.length === 0) {
               // Pointer is no longer over this mesh, reset hover state.
               hoveredRef.current.isHovered = false;
