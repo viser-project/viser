@@ -2649,6 +2649,17 @@ class SceneApi:
         )
         return Gui3dContainerHandle(node_handle._impl, gui_api, container_id)
 
+    def handle_by_name(self, name: str) -> SceneNodeHandle | None:
+        """Get the scene node handle for the given `name`, if it exists.
+
+        Args:
+            name: Name of the scene node.
+
+        Returns:
+            Scene node handle, or None if no such node exists.
+        """
+        return self._handle_from_node_name.get(name, None)
+
     def remove_by_name(self, name: str) -> None:
         """Helper to call `.remove()` on the scene node handles of the `name`
         element or any of its children."""
