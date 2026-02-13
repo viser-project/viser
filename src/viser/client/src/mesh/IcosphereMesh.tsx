@@ -65,11 +65,14 @@ export const IcosphereMesh = React.forwardRef<
     });
   }, [shadowOpacity]);
 
+  // Calculate scaling values.
+  const scale = message.props.scale.map((s: number) => s * message.props.radius) as [number, number, number];
+
   return (
     <group ref={ref}>
       <mesh
         geometry={geometry}
-        scale={message.props.radius}
+        scale={scale}
         material={material}
         castShadow={message.props.cast_shadow}
         receiveShadow={message.props.receive_shadow === true}
