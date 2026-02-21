@@ -209,6 +209,12 @@ function useMessageHandler() {
         return;
       }
 
+      // Configure fog.
+      case "FogMessage": {
+        viewer.useEnvironment.setState({ fog: message });
+        return;
+      }
+
       // Disable/enable default lighting.
       case "EnableLightsMessage": {
         viewer.useEnvironment.setState({

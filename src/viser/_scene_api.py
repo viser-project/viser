@@ -580,6 +580,37 @@ class SceneApi:
             )
         )
 
+    def configure_fog(
+        self,
+        near: float,
+        far: float,
+        *,
+        color: RgbTupleOrArray = (255, 255, 255),
+        enabled: bool = True,
+    ) -> None:
+        """Configure distance-based fog for the scene.
+
+        When enabled, objects further from the camera will fade into the fog
+        color, providing a depth cue. Uses linear fog, where ``near`` and
+        ``far`` define the range over which the fog transitions from
+        transparent to fully opaque.
+
+        Args:
+            near: Distance from the camera at which fog begins.
+            far: Distance from the camera at which fog is fully opaque.
+            color: Fog color as an RGB tuple (0-255 per channel) or
+                a float tuple (0.0-1.0 per channel).
+            enabled: Whether fog is enabled.
+        """
+        self._websock_interface.queue_message(
+            _messages.FogMessage(
+                near=near,
+                far=far,
+                color=_encode_rgb(color),
+                enabled=enabled,
+            )
+        )
+
     def configure_default_lights(
         self,
         enabled: bool = True,

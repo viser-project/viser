@@ -578,6 +578,7 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
           </BatchedLabelManager>
         </SplatRenderContext>
         <DefaultLights />
+        <SceneFog />
       </>
     ),
     [children, memoizedCameraControls],
@@ -749,6 +750,36 @@ function DefaultLights() {
       {envMapNode}
     </>
   );
+}
+
+/**
+ * SceneFog component - applies THREE.Fog to the scene based on fog state.
+ */
+function SceneFog() {
+  const viewer = React.useContext(ViewerContext)!;
+  const fog = viewer.useEnvironment((state) => state.fog);
+  const scene = useThree((state) => state.scene);
+
+  React.useEffect(() => {
+    if (fog.enabled) {
+      scene.fog = new THREE.Fog(
+        new THREE.Color(
+          fog.color[0] / 255,
+          fog.color[1] / 255,
+          fog.color[2] / 255,
+        ),
+        fog.near,
+        fog.far,
+      );
+    } else {
+      scene.fog = null;
+    }
+    return () => {
+      scene.fog = null;
+    };
+  }, [fog, scene]);
+
+  return null;
 }
 
 /**

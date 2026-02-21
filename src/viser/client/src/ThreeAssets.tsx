@@ -23,6 +23,9 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
     scale: 1.0,
     point_ball_norm: 0.0,
     uniformColor: new THREE.Color(1, 1, 1),
+    fogColor: new THREE.Color(1, 1, 1),
+    fogNear: 0.0,
+    fogFar: 1000.0,
   },
   `
   precision mediump float;
@@ -31,6 +34,8 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
   varying vec3 vColor; // in the vertex shader
   uniform float scale;
   uniform vec3 uniformColor;
+
+  #include <fog_pars_vertex>
 
   void main() {
       vPosition = position;
@@ -42,11 +47,16 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
       vec4 world_pos = modelViewMatrix * vec4(position, 1.0);
       gl_Position = projectionMatrix * world_pos;
       gl_PointSize = (scale / -world_pos.z);
+      #ifdef USE_FOG
+        vFogDepth = -world_pos.z;
+      #endif
   }
    `,
   `varying vec3 vPosition;
   varying vec3 vColor;
   uniform float point_ball_norm;
+
+  #include <fog_pars_fragment>
 
   void main() {
       if (point_ball_norm < 1000.0) {
@@ -57,6 +67,7 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
           if (r > 0.5) discard;
       }
       gl_FragColor = vec4(vColor, 1.0);
+      #include <fog_fragment>
   }
    `,
 );
@@ -117,6 +128,7 @@ export const PointCloud = React.forwardRef<
   // Create material using useMemo for better performance.
   const material = React.useMemo(() => {
     const material = new PointCloudMaterial();
+    material.fog = true;
 
     if (props.colors.length > 3) {
       material.vertexColors = true;

@@ -18,6 +18,9 @@ const GaussianSplatMaterial = /* @__PURE__ */ shaderMaterial(
     textureT_camera_groups: null as THREE.DataTexture | null,
     transitionInState: 0.0,
     projectionMatrixCustom: new THREE.Matrix4(),
+    fogColor: new THREE.Color(1, 1, 1),
+    fogNear: 0.0,
+    fogFar: 1000.0,
   },
   `precision highp usampler2D; // Most important: ints must be 32-bit.
   precision mediump float;
@@ -45,6 +48,8 @@ const GaussianSplatMaterial = /* @__PURE__ */ shaderMaterial(
 
   out vec4 vRgba;
   out vec2 vPosition;
+
+  #include <fog_pars_vertex>
 
   // Function to fetch and construct the i-th transform matrix using texelFetch
   mat4 getGroupTransform(uint i) {
@@ -153,6 +158,10 @@ const GaussianSplatMaterial = /* @__PURE__ */ shaderMaterial(
         vec2(pos2d) / pos2d.w
             + position.x * v1 / viewport * 2.0
             + position.y * v2 / viewport * 2.0, pos2d.z / pos2d.w, 1.);
+
+    #ifdef USE_FOG
+      vFogDepth = -c_cam.z;
+    #endif
   }
 `,
   `precision mediump float;
@@ -162,12 +171,15 @@ const GaussianSplatMaterial = /* @__PURE__ */ shaderMaterial(
   in vec4 vRgba;
   in vec2 vPosition;
 
+  #include <fog_pars_fragment>
+
   void main () {
     float A = -dot(vPosition, vPosition);
     if (A < -4.0) discard;
     float B = exp(A) * vRgba.a;
     if (B < 0.01) discard;  // alphaTest.
     gl_FragColor = vec4(vRgba.rgb, B);
+    #include <fog_fragment>
   }`,
 );
 
@@ -231,6 +243,7 @@ export function createGaussianMeshProps(
   textureT_camera_groups.needsUpdate = true;
 
   const material = new GaussianSplatMaterial();
+  material.fog = true;
   material.textureBuffer = textureBuffer;
   material.textureT_camera_groups = textureT_camera_groups;
   material.numGaussians = numGaussians;

@@ -25,6 +25,7 @@ export const OutlinesMaterial = /* @__PURE__ */ shaderMaterial(
   `#include <common>
    #include <morphtarget_pars_vertex>
    #include <skinning_pars_vertex>
+   #include <fog_pars_vertex>
    uniform float thickness;
    uniform float screenspace;
    uniform vec2 size;
@@ -56,13 +57,16 @@ export const OutlinesMaterial = /* @__PURE__ */ shaderMaterial(
        clipPosition.xy += offset;
        gl_Position = clipPosition;
      }
+     #include <fog_vertex>
    }`,
   `uniform vec3 color;
    uniform float opacity;
+   #include <fog_pars_fragment>
    void main(){
      gl_FragColor = vec4(color, opacity);
      #include <tonemapping_fragment>
      #include <${version >= 154 ? "colorspace_fragment" : "encodings_fragment"}>
+     #include <fog_fragment>
    }`,
 );
 
@@ -105,7 +109,7 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
     const localRef = React.useRef<THREE.Group | null>(null);
 
     const [material] = React.useState(
-      () => new OutlinesMaterial({ side: THREE.BackSide }),
+      () => new OutlinesMaterial({ side: THREE.BackSide, fog: true }),
     );
     const gl = useThree((state) => state.gl);
     const contextSize = gl.getDrawingBufferSize(new THREE.Vector2());

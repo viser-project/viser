@@ -48,6 +48,7 @@ export const SingleGlbAsset = React.forwardRef<
   const outlineMaterial = React.useMemo(() => {
     const material = new OutlinesMaterial({
       side: THREE.BackSide,
+      fog: true,
     });
     material.thickness = 10;
     material.color = new THREE.Color(0xfbff00); // Yellow highlight color

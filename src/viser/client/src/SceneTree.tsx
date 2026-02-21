@@ -1,9 +1,9 @@
 import {
   CatmullRomLine,
   CubicBezierLine,
-  Grid,
   PivotControls,
 } from "@react-three/drei";
+import { Grid } from "./Grid";
 import { ContextBridge, useContextBridge } from "its-fine";
 import { useFrame, useThree } from "@react-three/fiber";
 import React, { useEffect } from "react";

@@ -74,6 +74,7 @@ export const BatchedMeshHoverOutlines: React.FC<
   const outlineMaterial = React.useMemo(() => {
     const material = new OutlinesMaterial({
       side: THREE.BackSide,
+      fog: true,
     });
 
     // Set fixed properties to match OutlinesIfHovered.
