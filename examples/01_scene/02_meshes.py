@@ -18,7 +18,7 @@ The example shows two ways to display the same mesh: using raw vertices/faces ar
 
     .. code-block:: bash
 
-        git clone https://github.com/nerfstudio-project/viser.git
+        git clone https://github.com/viser-project/viser.git
         cd viser/examples
         ./assets/download_assets.sh
         python 01_scene/02_meshes.py  # With viser installed.
@@ -44,8 +44,9 @@ def main():
     print(f"Loaded mesh with {vertices.shape} vertices, {faces.shape} faces")
 
     server = viser.ViserServer()
+    server.scene.add_transform_controls("/handle")
     server.scene.add_mesh_simple(
-        "/simple",
+        "/handle/simple",
         vertices=vertices,
         faces=faces,
         wxyz=tf.SO3.from_x_radians(np.pi / 2).wxyz,

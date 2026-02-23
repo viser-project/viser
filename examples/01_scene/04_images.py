@@ -16,7 +16,7 @@ Display background images and 3D image textures positioned in world space.
 
     .. code-block:: bash
 
-        git clone https://github.com/nerfstudio-project/viser.git
+        git clone https://github.com/viser-project/viser.git
         cd viser/examples
         ./assets/download_assets.sh
         python 01_scene/04_images.py  # With viser installed.

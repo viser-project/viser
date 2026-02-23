@@ -980,7 +980,7 @@ function ViserLogo() {
           </Anchor>
           &nbsp;&nbsp;&bull;&nbsp;&nbsp;
           <Anchor
-            href="https://github.com/nerfstudio-project/viser"
+            href="https://github.com/viser-project/viser"
             target="_blank"
             style={{ fontWeight: "600" }}
           >

@@ -84,12 +84,12 @@ Install with: ``pip install viser[examples]``
    ./embedded_visualizations.rst
    ./citation.rst
 
-.. |pyright| image:: https://github.com/nerfstudio-project/viser/actions/workflows/pyright.yml/badge.svg
+.. |pyright| image:: https://github.com/viser-project/viser/actions/workflows/pyright.yml/badge.svg
    :alt: Pyright status icon
-   :target: https://github.com/nerfstudio-project/viser
-.. |typescript| image:: https://github.com/nerfstudio-project/viser/actions/workflows/typescript-compile.yml/badge.svg
+   :target: https://github.com/viser-project/viser
+.. |typescript| image:: https://github.com/viser-project/viser/actions/workflows/typescript-compile.yml/badge.svg
    :alt: TypeScript status icon
-   :target: https://github.com/nerfstudio-project/viser
+   :target: https://github.com/viser-project/viser
 .. |versions| image:: https://img.shields.io/pypi/pyversions/viser
    :alt: Version icon
    :target: https://pypi.org/project/viser/

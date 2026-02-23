@@ -191,10 +191,36 @@ function createObjectFactory(
       const planeQuaternion = new THREE.Quaternion()
         .setFromEuler(new THREE.Euler(-Math.PI / 2, 0.0, 0.0))
         .premultiply(gridQuaternion);
+      let colorPlane;
+      if (message.props.plane_opacity > 0.0) {
+        const colorPlaneWidth = message.props.infinite_grid
+          ? 10000
+          : message.props.width;
+        const colorPlaneHeight = message.props.infinite_grid
+          ? 10000
+          : message.props.height;
+        colorPlane = (
+          <mesh quaternion={planeQuaternion}>
+            <planeGeometry args={[colorPlaneWidth, colorPlaneHeight]} />
+            <meshBasicMaterial
+              color={rgbToInt(message.props.plane_color)}
+              transparent
+              opacity={message.props.plane_opacity}
+              depthWrite
+              side={THREE.DoubleSide}
+              toneMapped={false}
+              polygonOffset
+              polygonOffsetFactor={2}
+              polygonOffsetUnits={2}
+            />
+          </mesh>
+        );
+      } else {
+        colorPlane = null;
+      }
 
       let shadowPlane;
       if (message.props.shadow_opacity > 0.0) {
-        // Use very large dimensions for infinite grids to ensure shadows are visible.
         const shadowWidth = message.props.infinite_grid
           ? 10000
           : message.props.width;
@@ -202,21 +228,19 @@ function createObjectFactory(
           ? 10000
           : message.props.height;
         shadowPlane = (
-          <mesh
-            receiveShadow
-            position={[0.0, 0.0, -0.01]}
-            quaternion={planeQuaternion}
-          >
+          <mesh receiveShadow quaternion={planeQuaternion}>
             <planeGeometry args={[shadowWidth, shadowHeight]} />
             <shadowMaterial
               opacity={message.props.shadow_opacity}
               color={0x000000}
               depthWrite={false}
+              polygonOffset
+              polygonOffsetFactor={1}
+              polygonOffsetUnits={1}
             />
           </mesh>
         );
       } else {
-        // when opacity = 0.0, no shadowPlane for performance
         shadowPlane = null;
       }
       return {
@@ -236,7 +260,9 @@ function createObjectFactory(
               fadeStrength={message.props.fade_strength}
               fadeFrom={message.props.fade_from === "camera" ? 1 : 0}
               quaternion={gridQuaternion}
+              renderOrder={1}
             />
+            {colorPlane}
             {shadowPlane}
             {children}
           </group>
@@ -738,9 +764,10 @@ export function SceneNodeThreeObject(props: { name: string }) {
   });
 
   // Track last pointer position for re-raycasting when mesh changes.
-  const lastPointerPos = React.useRef<{ clientX: number; clientY: number } | null>(
-    null,
-  );
+  const lastPointerPos = React.useRef<{
+    clientX: number;
+    clientY: number;
+  } | null>(null);
 
   // Frame counter for delayed hover recheck after objNode changes.
   // We wait a few frames to ensure the new mesh geometry is fully rendered.
@@ -787,7 +814,10 @@ export function SceneNodeThreeObject(props: { name: string }) {
                 1,
             );
             raycaster.setFromCamera(pointerNDC, camera);
-            const intersects = raycaster.intersectObject(groupRef.current, true);
+            const intersects = raycaster.intersectObject(
+              groupRef.current,
+              true,
+            );
             if (intersects.length === 0) {
               // Pointer is no longer over this mesh, reset hover state.
               hoveredRef.current.isHovered = false;

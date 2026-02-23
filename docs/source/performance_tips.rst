@@ -153,4 +153,4 @@ calls to :meth:`viser.SceneApi.set_background_image`, we recommend:
   ``format=`` keyword argument.
 * Ensuring that ``opencv-python`` is installed. This isn't a strict dependency
   of Viser, but Viser will use it to accelerate image encoding if installed.
-  See discussion and benchmarks on `GitHub <https://github.com/nerfstudio-project/viser/pull/494>`_.
+  See discussion and benchmarks on `GitHub <https://github.com/viser-project/viser/pull/494>`_.

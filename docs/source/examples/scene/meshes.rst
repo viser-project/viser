@@ -19,7 +19,7 @@ The example shows two ways to display the same mesh: using raw vertices/faces ar
 
     .. code-block:: bash
 
-        git clone https://github.com/nerfstudio-project/viser.git
+        git clone https://github.com/viser-project/viser.git
         cd viser/examples
         ./assets/download_assets.sh
         python 01_scene/02_meshes.py  # With viser installed.

@@ -91,6 +91,8 @@ export interface GridMessage {
     fade_strength: number;
     fade_from: "camera" | "origin";
     shadow_opacity: number;
+    plane_color: [number, number, number];
+    plane_opacity: number;
   };
 }
 /** Add a 2D label to the scene.

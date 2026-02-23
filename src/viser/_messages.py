@@ -252,8 +252,7 @@ class CameraFrustumProps:
     fov: float
     """Field of view of the camera (in radians). """
     aspect: float
-    """Aspect ratio of the camera (width over height). Synchronized
-    """
+    """Aspect ratio of the camera (width over height)."""
     scale: float
     """Scale factor for the size of the frustum. """
     line_width: float
@@ -261,11 +260,9 @@ class CameraFrustumProps:
     color: Tuple[int, int, int]
     """Color of the frustum as RGB integers. """
     _format: Literal["jpeg", "png"]
-    """Format of the provided image ('jpeg' or 'png'). Synchronized
-    """
+    """Format of the provided image ('jpeg' or 'png')."""
     _image_data: Optional[bytes]
-    """Optional image to be displayed on the frustum. Synchronized
-    """
+    """Optional image to be displayed on the frustum."""
     cast_shadow: bool
     """Whether or not to cast shadows. """
     receive_shadow: Union[bool, float]
@@ -337,8 +334,7 @@ class BatchedAxesProps:
     """Float array of shape (N,4) representing quaternion rotations.
     """
     batched_positions: npt.NDArray[np.float32]
-    """Float array of shape (N,3) representing positions. Synchronized
-    """
+    """Float array of shape (N,3) representing positions."""
     batched_scales: Optional[npt.NDArray[np.float32]]
     """Float array of shape (N,) or (N,3) representing uniform or per-axis
     (XYZ) scales."""
@@ -386,8 +382,12 @@ class GridProps:
     """Whether the grid should fade based on distance from the camera or the origin."""
 
     shadow_opacity: float
-    """If true, shadows are casted onto the grid plane. Synchronized
-    """
+    """If true, shadows are casted onto the grid plane."""
+
+    plane_color: Tuple[int, int, int]
+    """Color of the ground plane as RGB integers."""
+    plane_opacity: float
+    """Opacity of the ground plane, 0: invisible, 1: fully opaque."""
 
 
 @dataclasses.dataclass
@@ -443,11 +443,9 @@ class PointCloudMessage(_CreateSceneNodeMessage):
 @dataclasses.dataclass
 class PointCloudProps:
     points: Union[npt.NDArray[np.float16], npt.NDArray[np.float32]]
-    """Location of points. Should have shape (N, 3). Synchronized
-    """
+    """Location of points. Should have shape (N, 3)."""
     colors: npt.NDArray[np.uint8]
-    """Colors of points. Should have shape (N, 3) or (3,). Synchronized
-    """
+    """Colors of points. Should have shape (N, 3) or (3,)."""
     point_size: float
     """Size of each point."""
     point_shape: Literal["square", "diamond", "circle", "rounded", "sparkle"]
@@ -787,17 +785,13 @@ class SkinnedMeshProps(MeshProps):
     Vertices are internally canonicalized to float32, faces to uint32."""
 
     bone_wxyzs: npt.NDArray[np.float32]
-    """Array of quaternions representing bone orientations (B, 4). Synchronized
-    """
+    """Array of quaternions representing bone orientations (B, 4)."""
     bone_positions: npt.NDArray[np.float32]
-    """Array of positions representing bone positions (B, 3). Synchronized
-    """
+    """Array of positions representing bone positions (B, 3)."""
     skin_indices: npt.NDArray[np.uint16]
-    """Array of skin indices. Should have shape (V, 4). Synchronized
-    """
+    """Array of skin indices. Should have shape (V, 4)."""
     skin_weights: npt.NDArray[np.float32]
-    """Array of skin weights. Should have shape (V, 4). Synchronized
-    """
+    """Array of skin weights. Should have shape (V, 4)."""
     cast_shadow: bool
     """Whether or not to cast shadows."""
     receive_shadow: Union[bool, float]
@@ -1089,8 +1083,7 @@ class ImageMessage(_CreateSceneNodeMessage):
 @dataclasses.dataclass
 class ImageProps:
     _format: Literal["jpeg", "png"]
-    """Format of the provided image ('jpeg' or 'png'). Synchronized
-    """
+    """Format of the provided image ('jpeg' or 'png')."""
     _data: bytes
     """Binary data of the image."""
     render_width: float
@@ -1298,8 +1291,7 @@ class GuiImageProps:
     _data: Optional[bytes]
     """Binary data of the image."""
     _format: Literal["jpeg", "png"]
-    """Format of the provided image ('jpeg' or 'png'). Synchronized
-    """
+    """Format of the provided image ('jpeg' or 'png')."""
     visible: bool
     """Visibility state of the image."""
 
@@ -1652,8 +1644,7 @@ class CatmullRomSplineMessage(_CreateSceneNodeMessage):
 @dataclasses.dataclass
 class CatmullRomSplineProps:
     points: npt.NDArray[np.float32]
-    """Array with shape (N, 3) defining the spline's path. Synchronized
-    """
+    """Array with shape (N, 3) defining the spline's path."""
     curve_type: Literal["centripetal", "chordal", "catmullrom"]
     """Type of the curve ('centripetal', 'chordal', 'catmullrom')."""
     tension: float
@@ -1678,8 +1669,7 @@ class CubicBezierSplineMessage(_CreateSceneNodeMessage):
 @dataclasses.dataclass
 class CubicBezierSplineProps:
     points: npt.NDArray[np.float32]
-    """Array of shape (N, 3) defining the spline's key points. Synchronized
-    """
+    """Array of shape (N, 3) defining the spline's key points."""
     control_points: npt.NDArray[np.float32]
     """Array of shape (2*N-2, 3) defining control points for Bezier curve shaping."""
     line_width: float

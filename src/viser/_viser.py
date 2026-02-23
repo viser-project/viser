@@ -1188,7 +1188,7 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
     def _start_scene_recording(self) -> Any:
         """**Old API.**"""
         warnings.warn(
-            "_start_scene_recording() has been renamed. See notes in https://github.com/nerfstudio-project/viser/pull/357 for the new API.",
+            "_start_scene_recording() has been renamed. See notes in https://github.com/viser-project/viser/pull/357 for the new API.",
             stacklevel=2,
         )
 
@@ -1198,20 +1198,20 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         class _SceneRecordCompatibilityShim:
             def set_loop_start(self):
                 warnings.warn(
-                    "_start_scene_recording() has been renamed. See notes in https://github.com/nerfstudio-project/viser/pull/357 for the new API.",
+                    "_start_scene_recording() has been renamed. See notes in https://github.com/viser-project/viser/pull/357 for the new API.",
                     stacklevel=2,
                 )
 
             def insert_sleep(self, duration: float):
                 warnings.warn(
-                    "_start_scene_recording() has been renamed. See notes in https://github.com/nerfstudio-project/viser/pull/357 for the new API.",
+                    "_start_scene_recording() has been renamed. See notes in https://github.com/viser-project/viser/pull/357 for the new API.",
                     stacklevel=2,
                 )
                 serializer.insert_sleep(duration)
 
             def end_and_serialize(self) -> bytes:
                 warnings.warn(
-                    "_start_scene_recording() has been renamed. See notes in https://github.com/nerfstudio-project/viser/pull/357 for the new API.",
+                    "_start_scene_recording() has been renamed. See notes in https://github.com/viser-project/viser/pull/357 for the new API.",
                     stacklevel=2,
                 )
                 return serializer.serialize()

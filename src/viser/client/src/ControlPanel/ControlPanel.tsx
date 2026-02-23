@@ -384,7 +384,7 @@ function ShareButton() {
         )}
         <Text size="xs">
           Share links are experimental and bandwidth-limited. Problems? Consider{" "}
-          <Anchor href="https://github.com/nerfstudio-project/viser/issues">
+          <Anchor href="https://github.com/viser-project/viser/issues">
             reporting on GitHub
           </Anchor>
           .
