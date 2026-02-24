@@ -168,10 +168,7 @@ function ConnectionStatus() {
   return (
     <>
       <div style={{ width: "1.1em" }} /> {/* Spacer. */}
-      <Transition
-        transition="fade"
-        mounted={websocketState === "connected"}
-      >
+      <Transition transition="fade" mounted={websocketState === "connected"}>
         {(styles) => (
           <IconCloudCheck
             color={"#0b0"}

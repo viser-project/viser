@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { createStandardMaterial } from "./MeshUtils";
 import { CylinderMessage } from "../WebsocketMessages";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
+import { normalizeScale } from "../utils/normalizeScale";
 
 // Cache cylinder geometries based on # of radial segments.
 const cylinderGeometryCache = new Map<number, THREE.CylinderGeometry>();
@@ -68,15 +69,19 @@ export const CylinderMesh = React.forwardRef<
     });
   }, [shadowOpacity]);
 
+  // The cylinder geometry has height along Y, but the PI/2 rotation around X
+  // remaps axes: local Y→Z, local Z→-Y. To make the user-facing scale axes
+  // match the visual axes (sx→X, sy→Y, sz→Z/height), we reorder:
+  //   local X = sx * radius, local Y = sz * height, local Z = sy * radius.
+  const s = normalizeScale(message.props.scale);
+  const r = message.props.radius;
+  const h = message.props.height;
+
   return (
     <group ref={ref}>
       <mesh
         geometry={geometry}
-        scale={[
-          message.props.radius,
-          message.props.height,
-          message.props.radius,
-        ]}
+        scale={[s[0] * r, s[2] * h, s[1] * r]}
         rotation={new THREE.Euler(Math.PI / 2.0, 0.0, 0.0)}
         material={material}
         castShadow={message.props.cast_shadow}

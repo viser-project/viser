@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { createStandardMaterial } from "./MeshUtils";
 import { BoxMessage } from "../WebsocketMessages";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
+import { normalizeScale } from "../utils/normalizeScale";
 
 let boxGeometry: THREE.BoxGeometry | null = null;
 
@@ -56,11 +57,19 @@ export const BoxMesh = React.forwardRef<
     });
   }, [shadowOpacity]);
 
+  const s = normalizeScale(message.props.scale);
+  const d = message.props.dimensions;
+  const scaledDimensions: [number, number, number] = [
+    s[0] * d[0],
+    s[1] * d[1],
+    s[2] * d[2],
+  ];
+
   return (
     <group ref={ref}>
       <mesh
         geometry={boxGeometry}
-        scale={message.props.dimensions}
+        scale={scaledDimensions}
         material={material}
         castShadow={message.props.cast_shadow}
         receiveShadow={message.props.receive_shadow === true}

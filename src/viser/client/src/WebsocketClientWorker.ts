@@ -8,7 +8,6 @@ import { ZSTDDecoder } from "zstddec";
 const zstdDecoder = new ZSTDDecoder();
 const zstdReady = zstdDecoder.init();
 
-
 export type WsWorkerIncoming =
   | { type: "send"; message: Message }
   | { type: "set_server"; server: string }
@@ -125,7 +124,10 @@ function collectArrayBuffers(obj: any, buffers: Set<ArrayBufferLike>) {
 
         // Decompress and decode.
         await zstdReady;
-        const decompressed = zstdDecoder.decode(compressedData, decompressedSize);
+        const decompressed = zstdDecoder.decode(
+          compressedData,
+          decompressedSize,
+        );
         return msgpack.decode(decompressed) as SerializedStruct;
       })();
 

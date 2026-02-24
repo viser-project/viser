@@ -5,6 +5,7 @@ import { useGlbLoader } from "./GlbLoaderUtils";
 import { useFrame, useThree } from "@react-three/fiber";
 import { HoverableContext } from "../HoverContext";
 import { OutlinesMaterial } from "../Outlines";
+import { normalizeScale } from "../utils/normalizeScale";
 
 /**
  * Component for rendering a single GLB model
@@ -85,9 +86,12 @@ export const SingleGlbAsset = React.forwardRef<
 
   return (
     <group ref={ref}>
-      <primitive object={gltf.scene} scale={message.props.scale} />
+      <primitive
+        object={gltf.scene}
+        scale={normalizeScale(message.props.scale)}
+      />
       {shadowMaterial && shadowOpacity > 0 ? (
-        <group scale={message.props.scale}>
+        <group scale={normalizeScale(message.props.scale)}>
           {meshes.map((mesh, i) => (
             <mesh
               key={`shadow-${i}`}

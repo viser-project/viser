@@ -5,6 +5,7 @@ import { useGlbLoader } from "./GlbLoaderUtils";
 import { ViewerContext } from "../ViewerContext";
 import { mergeBufferGeometries } from "three-stdlib";
 import { BatchedMeshBase } from "./BatchedMeshBase";
+import { normalizeScale } from "../utils/normalizeScale";
 
 /**
  * Component for rendering batched/instanced GLB models
@@ -60,20 +61,22 @@ export const BatchedGlbAsset = React.forwardRef<
 
   return (
     <group ref={ref}>
-      <BatchedMeshBase
-        geometry={geometry}
-        material={material}
-        batched_positions={message.props.batched_positions}
-        batched_wxyzs={message.props.batched_wxyzs}
-        batched_scales={message.props.batched_scales}
-        batched_colors={null}
-        opacity={null}
-        batched_opacities={null}
-        lod={message.props.lod}
-        cast_shadow={message.props.cast_shadow}
-        receive_shadow={message.props.receive_shadow}
-        clickable={clickable}
-      />
+      <group scale={normalizeScale(message.props.scale)}>
+        <BatchedMeshBase
+          geometry={geometry}
+          material={material}
+          batched_positions={message.props.batched_positions}
+          batched_wxyzs={message.props.batched_wxyzs}
+          batched_scales={message.props.batched_scales}
+          batched_colors={null}
+          opacity={null}
+          batched_opacities={null}
+          lod={message.props.lod}
+          cast_shadow={message.props.cast_shadow}
+          receive_shadow={message.props.receive_shadow}
+          clickable={clickable}
+        />
+      </group>
       {children}
     </group>
   );

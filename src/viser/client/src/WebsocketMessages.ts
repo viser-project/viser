@@ -12,7 +12,6 @@ export interface CameraFrustumMessage {
   props: {
     fov: number;
     aspect: number;
-    scale: number;
     line_width: number;
     color: [number, number, number];
     _format: "jpeg" | "png";
@@ -20,6 +19,7 @@ export interface CameraFrustumMessage {
     cast_shadow: boolean;
     receive_shadow: boolean | number;
     variant: "wireframe" | "filled";
+    scale: number | [number, number, number];
   };
 }
 /** GlTF message.
@@ -31,9 +31,9 @@ export interface GlbMessage {
   name: string;
   props: {
     glb_data: Uint8Array<ArrayBuffer>;
-    scale: number | [number, number, number];
     cast_shadow: boolean;
     receive_shadow: boolean | number;
+    scale: number | [number, number, number];
   };
 }
 /** Coordinate frame message.
@@ -49,6 +49,7 @@ export interface FrameMessage {
     axes_radius: number;
     origin_radius: number;
     origin_color: [number, number, number];
+    scale: number | [number, number, number];
   };
 }
 /** Batched axes message.
@@ -67,6 +68,7 @@ export interface BatchedAxesMessage {
     batched_scales: Uint8Array<ArrayBuffer> | null;
     axes_length: number;
     axes_radius: number;
+    scale: number | [number, number, number];
   };
 }
 /** Grid message. Helpful for visualizing things like ground planes.
@@ -93,6 +95,7 @@ export interface GridMessage {
     shadow_opacity: number;
     plane_color: [number, number, number];
     plane_opacity: number;
+    scale: number | [number, number, number];
   };
 }
 /** Add a 2D label to the scene.
@@ -147,6 +150,7 @@ export interface PointCloudMessage {
     point_size: number;
     point_shape: "square" | "diamond" | "circle" | "rounded" | "sparkle";
     precision: "float16" | "float32";
+    scale: number | [number, number, number];
   };
 }
 /** Directional light message.
@@ -270,6 +274,7 @@ export interface BoxMessage {
     material: "standard" | "toon3" | "toon5";
     cast_shadow: boolean;
     receive_shadow: boolean | number;
+    scale: number | [number, number, number];
   };
 }
 /** Icosphere message.
@@ -283,7 +288,6 @@ export interface IcosphereMessage {
     radius: number;
     subdivisions: number;
     color: [number, number, number];
-    scale: [number, number, number];
     wireframe: boolean;
     opacity: number | null;
     flat_shading: boolean;
@@ -291,6 +295,7 @@ export interface IcosphereMessage {
     material: "standard" | "toon3" | "toon5";
     cast_shadow: boolean;
     receive_shadow: boolean | number;
+    scale: number | [number, number, number];
   };
 }
 /** Cylinder message.
@@ -312,6 +317,7 @@ export interface CylinderMessage {
     material: "standard" | "toon3" | "toon5";
     cast_shadow: boolean;
     receive_shadow: boolean | number;
+    scale: number | [number, number, number];
   };
 }
 /** Skinned mesh message.
@@ -362,6 +368,7 @@ export interface BatchedMeshesMessage {
     cast_shadow: boolean;
     receive_shadow: boolean;
     batched_opacities: Uint8Array<ArrayBuffer> | null;
+    scale: number | [number, number, number];
   };
 }
 /** Message from server->client carrying batched GLB information.
@@ -379,6 +386,7 @@ export interface BatchedGlbMessage {
     glb_data: Uint8Array<ArrayBuffer>;
     cast_shadow: boolean;
     receive_shadow: boolean;
+    scale: number | [number, number, number];
   };
 }
 /** Message for transform gizmos.
@@ -416,6 +424,7 @@ export interface ImageMessage {
     render_height: number;
     cast_shadow: boolean;
     receive_shadow: boolean | number;
+    scale: number | [number, number, number];
   };
 }
 /** Message from server->client carrying line segments information.
@@ -429,6 +438,7 @@ export interface LineSegmentsMessage {
     points: Uint8Array<ArrayBuffer>;
     line_width: number;
     colors: Uint8Array<ArrayBuffer>;
+    scale: number | [number, number, number];
   };
 }
 /** Message from server->client carrying Catmull-Rom spline information.
@@ -446,6 +456,7 @@ export interface CatmullRomSplineMessage {
     line_width: number;
     color: [number, number, number];
     segments: number | null;
+    scale: number | [number, number, number];
   };
 }
 /** Message from server->client carrying Cubic Bezier spline information.
@@ -461,6 +472,7 @@ export interface CubicBezierSplineMessage {
     line_width: number;
     color: [number, number, number];
     segments: number | null;
+    scale: number | [number, number, number];
   };
 }
 /** Message from server->client carrying splattable Gaussians.
@@ -470,7 +482,10 @@ export interface CubicBezierSplineMessage {
 export interface GaussianSplatsMessage {
   type: "GaussianSplatsMessage";
   name: string;
-  props: { buffer: Uint8Array<ArrayBuffer> };
+  props: {
+    buffer: Uint8Array<ArrayBuffer>;
+    scale: number | [number, number, number];
+  };
 }
 /** Remove a particular node from the scene.
  *

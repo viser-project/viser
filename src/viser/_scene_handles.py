@@ -371,10 +371,11 @@ class CameraFrustumHandle(
             frustum.scale = 1.0 / frustum.compute_canonical_frustum_size()[2]
 
 
-        `.scale` is a unitless value that scales the X/Y/Z dimensions linearly.
-        It aims to preserve the visual volume of the frustum regardless of the
-        aspect ratio or FOV. This method allows more precise computation and
-        control of the frustum's dimensions.
+        `.scale` can be a float for uniform scaling or a 3-tuple for per-axis
+        scaling of the X, Y, and Z dimensions. It aims to preserve the visual
+        volume of the frustum regardless of the aspect ratio or FOV. This
+        method allows more precise computation and control of the frustum's
+        dimensions.
         """
         # Math used in the client implementation.
         y = np.tan(self.fov / 2.0)

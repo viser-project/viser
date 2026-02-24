@@ -654,7 +654,13 @@ class SceneApi:
             Handle for manipulating scene node.
         """
         message = _messages.GlbMessage(
-            name, _messages.GlbProps(glb_data, scale, cast_shadow, receive_shadow)
+            name,
+            _messages.GlbProps(
+                glb_data=glb_data,
+                cast_shadow=cast_shadow,
+                receive_shadow=receive_shadow,
+                scale=scale,
+            ),
         )
         return GlbHandle._make(self, message, name, wxyz, position, visible)
 
@@ -666,6 +672,7 @@ class SceneApi:
         colors: np.ndarray | RgbTupleOrArray,
         *,
         line_width: float = 1,
+        scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -681,6 +688,8 @@ class SceneApi:
                 np.ndarray of shape (3,) to apply to all segments, or an np.ndarray of
                 shape (N, 2, 3) to specify colors for each point of each segment.
             line_width: Width of the lines.
+            scale: Scale of the line segments. A single float for uniform
+                scaling or a tuple of (x, y, z) for per-axis scaling.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
             position: Translation to parent frame from local frame (t_pl).
             visible: Whether or not these line segments are initially visible.
@@ -708,6 +717,7 @@ class SceneApi:
                 points=points_array,
                 colors=colors_array,
                 line_width=line_width,
+                scale=scale,
             ),
         )
         return LineSegmentsHandle._make(self, message, name, wxyz, position, visible)
@@ -724,6 +734,7 @@ class SceneApi:
         line_width: float = 1,
         color: RgbTupleOrArray = (20, 20, 20),
         segments: int | None = None,
+        scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -742,6 +753,7 @@ class SceneApi:
         line_width: float = 1,
         color: RgbTupleOrArray = (20, 20, 20),
         segments: int | None = None,
+        scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -759,6 +771,7 @@ class SceneApi:
         line_width: float = 1,
         color: RgbTupleOrArray = (20, 20, 20),
         segments: int | None = None,
+        scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -788,6 +801,8 @@ class SceneApi:
             line_width: Width of the spline line.
             color: Color of the spline as an RGB tuple.
             segments: Number of segments to divide the spline into.
+            scale: Scale of the spline. A single float for uniform scaling or a
+                tuple of (x, y, z) for per-axis scaling.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
             position: Translation to parent frame from local frame (t_pl).
             visible: Whether or not this scene node is initially visible.
@@ -825,6 +840,7 @@ class SceneApi:
                 line_width=line_width,
                 color=_encode_rgb(color),
                 segments=segments,
+                scale=scale,
             ),
         )
         return SplineCatmullRomHandle._make(
@@ -847,6 +863,7 @@ class SceneApi:
         line_width: float = 1.0,
         color: RgbTupleOrArray = (20, 20, 20),
         segments: int | None = None,
+        scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -865,6 +882,7 @@ class SceneApi:
         line_width: float = 1.0,
         color: RgbTupleOrArray = (20, 20, 20),
         segments: int | None = None,
+        scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -886,6 +904,7 @@ class SceneApi:
         line_width: float = 1.0,
         color: RgbTupleOrArray = (20, 20, 20),
         segments: int | None = None,
+        scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -917,6 +936,8 @@ class SceneApi:
             line_width: Width of the spline line.
             color: Color of the spline as an RGB tuple.
             segments: Number of segments to divide the spline into.
+            scale: Scale of the spline. A single float for uniform scaling or a
+                tuple of (x, y, z) for per-axis scaling.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
             position: Translation to parent frame from local frame (t_pl).
             visible: Whether or not this scene node is initially visible.
@@ -953,6 +974,7 @@ class SceneApi:
                 line_width=line_width,
                 color=_encode_rgb(color),
                 segments=segments,
+                scale=scale,
             ),
         )
         return SplineCubicBezierHandle._make(
@@ -966,7 +988,7 @@ class SceneApi:
         fov: float,
         aspect: float,
         *,
-        scale: float = 0.3,
+        scale: float | tuple[float, float, float] = 0.3,
         line_width: float = 2.0,
         color: RgbTupleOrArray = (20, 20, 20),
         image: np.ndarray | None = None,
@@ -993,7 +1015,8 @@ class SceneApi:
                 define a kinematic tree.
             fov: Field of view of the camera (in radians).
             aspect: Aspect ratio of the camera (width over height).
-            scale: Scale factor for the size of the frustum.
+            scale: Scale factor for the size of the frustum. A single float
+                for uniform scaling or a tuple of (x, y, z) for per-axis scaling.
             line_width: Width of the frustum lines, in screen space. Defaults to `2.0`.
             color: Color of the frustum as an RGB tuple.
             image: Optional image to be displayed on the frustum.
@@ -1051,6 +1074,7 @@ class SceneApi:
         axes_radius: float = 0.025,
         origin_radius: float | None = None,
         origin_color: RgbTupleOrArray = (236, 236, 0),
+        scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -1073,6 +1097,8 @@ class SceneApi:
             axes_length: Length of each axis.
             axes_radius: Radius of each axis.
             origin_radius: Radius of the origin sphere. If not set, defaults to `2 * axes_radius`.
+            scale: Scale of the coordinate frame. A single float for uniform
+                scaling or a tuple of (x, y, z) for per-axis scaling.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
             position: Translation to parent frame from local frame (t_pl).
             visible: Whether or not this scene node is initially visible.
@@ -1090,6 +1116,7 @@ class SceneApi:
                 axes_radius=axes_radius,
                 origin_radius=origin_radius,
                 origin_color=_encode_rgb(origin_color),
+                scale=scale,
             ),
         )
         return FrameHandle._make(self, message, name, wxyz, position, visible)
@@ -1104,6 +1131,7 @@ class SceneApi:
         *,
         axes_length: float = 0.5,
         axes_radius: float = 0.025,
+        scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -1128,6 +1156,8 @@ class SceneApi:
             batched_scales: Float array of shape (N,) for uniform scales or (N,3) for per-axis (XYZ) scales. None means scale of 1.0.
             axes_length: Length of each axis.
             axes_radius: Radius of each axis.
+            scale: Scale of the batched axes. A single float for uniform
+                scaling or a tuple of (x, y, z) for per-axis scaling.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
                 This will be applied to all axes.
             position: Translation to parent frame from local frame (t_pl).
@@ -1154,6 +1184,7 @@ class SceneApi:
             batched_scales=batched_scales,
             axes_length=axes_length,
             axes_radius=axes_radius,
+            scale=scale,
         )
         message = _messages.BatchedAxesMessage(
             name=name,
@@ -1185,6 +1216,7 @@ class SceneApi:
         shadow_opacity: float = 0.125,
         plane_color: RgbTupleOrArray = (255, 255, 255),
         plane_opacity: float = 0.0,
+        scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -1211,6 +1243,8 @@ class SceneApi:
             fade_distance: Distance at which the grid fades out.
             fade_strength: Strength of the fade effect.
             fade_from: Whether the grid should fade based on distance from the camera or the origin.
+            scale: Scale of the grid. A single float for uniform scaling or a
+                tuple of (x, y, z) for per-axis scaling.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
             position: Translation to parent frame from local frame (t_pl).
             visible: Whether or not this scene node is initially visible.
@@ -1237,6 +1271,7 @@ class SceneApi:
                 shadow_opacity=shadow_opacity,
                 plane_color=_encode_rgb(plane_color),
                 plane_opacity=plane_opacity,
+                scale=scale,
             ),
         )
         return GridHandle._make(self, message, name, wxyz, position, visible)
@@ -1311,6 +1346,7 @@ class SceneApi:
             "square", "diamond", "circle", "rounded", "sparkle"
         ] = "square",
         precision: Literal["float16", "float32"] = "float16",
+        scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -1327,6 +1363,8 @@ class SceneApi:
             point_shape: Shape to draw each point.
             precision: Precision of the point cloud data. The input points array
                 will be cast to this precision.
+            scale: Scale of the point cloud. A single float for uniform scaling
+                or a tuple of (x, y, z) for per-axis scaling.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
             position: Translation to parent frame from local frame (t_pl).
             visible: Whether or not this scene node is initially visible.
@@ -1355,6 +1393,7 @@ class SceneApi:
                 point_size=point_size,
                 point_shape=point_shape,
                 precision=precision,
+                scale=scale,
             ),
         )
         return PointCloudHandle._make(self, message, name, wxyz, position, visible)
@@ -1629,6 +1668,7 @@ class SceneApi:
         side: Literal["front", "back", "double"] = "front",
         cast_shadow: bool = True,
         receive_shadow: bool = True,
+        scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -1664,6 +1704,8 @@ class SceneApi:
             side: Side of the surface to render ('front', 'back', 'double').
             cast_shadow: Whether these meshes should cast shadows.
             receive_shadow: Whether these meshes should receive shadows.
+            scale: Scale of the batched meshes. A single float for uniform
+                scaling or a tuple of (x, y, z) for per-axis scaling.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
             position: Translation from parent frame to local frame (t_pl).
             visible: Whether or not these meshes are initially visible.
@@ -1721,6 +1763,7 @@ class SceneApi:
                 cast_shadow=cast_shadow,
                 receive_shadow=receive_shadow,
                 batched_opacities=batched_opacities,
+                scale=scale,
             ),
         )
         return BatchedMeshHandle._make(self, message, name, wxyz, position, visible)
@@ -1737,6 +1780,7 @@ class SceneApi:
         lod: Literal["auto", "off"] | tuple[tuple[float, float], ...] = "auto",
         cast_shadow: bool = True,
         receive_shadow: bool = True,
+        scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -1791,6 +1835,7 @@ class SceneApi:
                     lod=lod,
                     cast_shadow=cast_shadow,
                     receive_shadow=receive_shadow,
+                    scale=scale,
                 ),
             )
             return BatchedGlbHandle._make(self, message, name, wxyz, position, visible)
@@ -1807,6 +1852,7 @@ class SceneApi:
         lod: Literal["auto", "off"] | tuple[tuple[float, float], ...] = "auto",
         cast_shadow: bool = True,
         receive_shadow: bool = True,
+        scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -1830,6 +1876,8 @@ class SceneApi:
             lod: LOD settings, either "off", "auto", or a tuple of (distance, ratio) pairs.
             cast_shadow: Whether these GLB assets should cast shadows.
             receive_shadow: Whether these GLB assets should receive shadows.
+            scale: Scale of the batched GLB. A single float for uniform
+                scaling or a tuple of (x, y, z) for per-axis scaling.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
             position: Translation to parent frame from local frame (t_pl).
             visible: Whether or not this scene node is initially visible.
@@ -1858,6 +1906,7 @@ class SceneApi:
                 lod=lod,
                 cast_shadow=cast_shadow,
                 receive_shadow=receive_shadow,
+                scale=scale,
             ),
         )
         return BatchedGlbHandle._make(self, message, name, wxyz, position, visible)
@@ -1875,6 +1924,7 @@ class SceneApi:
         rgbs: np.ndarray,
         opacities: np.ndarray,
         *,
+        scale: float | tuple[float, float, float] = 1.0,
         wxyz: Tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: Tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -1890,6 +1940,8 @@ class SceneApi:
             covariances: Second moment for each Gaussian. (N, 3, 3).
             rgbs: Color for each Gaussian. (N, 3).
             opacities: Opacity for each Gaussian. (N, 1).
+            scale: Scale of the Gaussian splats. A single float for uniform
+                scaling or a tuple of (x, y, z) for per-axis scaling.
             wxyz: R_parent_local transformation.
             position: t_parent_local transformation.
             visible: Initial visibility of scene node.
@@ -1927,6 +1979,7 @@ class SceneApi:
             name=name,
             props=_messages.GaussianSplatsProps(
                 buffer=buffer,
+                scale=scale,
             ),
         )
         node_handle = GaussianSplatHandle._make(
@@ -1948,6 +2001,7 @@ class SceneApi:
         side: Literal["front", "back", "double"] = "front",
         cast_shadow: bool = True,
         receive_shadow: bool | float = True,
+        scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -1969,6 +2023,8 @@ class SceneApi:
                 receives shadows normally. If False, no shadows. If a float
                 (0-1), shadows are rendered with a fixed opacity regardless of
                 lighting conditions.
+            scale: Scale of the box. A single float for uniform scaling or a
+                tuple of (x, y, z) for per-axis scaling.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
             position: Translation from parent frame to local frame (t_pl).
             visible: Whether or not this box is initially visible.
@@ -2006,6 +2062,7 @@ class SceneApi:
                 material=material,
                 cast_shadow=cast_shadow,
                 receive_shadow=receive_shadow,
+                scale=scale,
             ),
         )
         return BoxHandle._make(self, message, name, wxyz, position, visible)
@@ -2018,7 +2075,7 @@ class SceneApi:
         color: RgbTupleOrArray = (255, 0, 0),
         *,
         subdivisions: int = 3,
-        scale: tuple[float, float, float] = (1.0, 1.0, 1.0),
+        scale: float | tuple[float, float, float] = 1.0,
         wireframe: bool = False,
         opacity: float | None = None,
         material: Literal["standard", "toon3", "toon5"] = "standard",
@@ -2039,7 +2096,8 @@ class SceneApi:
             color: Color of the icosphere as an RGB tuple.
             subdivisions: Number of subdivisions to use when creating the icosphere.
             wireframe: Boolean indicating if the icosphere should be rendered as a wireframe.
-            scale: Tuple of (x, y, z) scaling values for the icosphere.
+            scale: Scale of the icosphere. A single float for uniform scaling
+                or a tuple of (x, y, z) for per-axis scaling.
             opacity: Opacity of the icosphere. None means opaque.
             material: Material type of the icosphere ('standard', 'toon3', 'toon5').
             flat_shading: Whether to do flat shading.
@@ -2090,6 +2148,7 @@ class SceneApi:
         side: Literal["front", "back", "double"] = "front",
         cast_shadow: bool = True,
         receive_shadow: bool | float = True,
+        scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -2113,6 +2172,8 @@ class SceneApi:
                 receives shadows normally. If False, no shadows. If a float
                 (0-1), shadows are rendered with a fixed opacity regardless of
                 lighting conditions.
+            scale: Scale of the cylinder. A single float for uniform scaling or a
+                tuple of (x, y, z) for per-axis scaling.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
             position: Translation from parent frame to local frame (t_pl).
             visible: Whether or not this cylinder is initially visible.
@@ -2134,6 +2195,7 @@ class SceneApi:
                 material=material,
                 cast_shadow=cast_shadow,
                 receive_shadow=receive_shadow,
+                scale=scale,
             ),
         )
         return CylinderHandle._make(self, message, name, wxyz, position, visible)
@@ -2206,6 +2268,7 @@ class SceneApi:
         jpeg_quality: int | None = None,
         cast_shadow: bool = True,
         receive_shadow: bool | float = True,
+        scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -2225,6 +2288,8 @@ class SceneApi:
                 receives shadows normally. If False, no shadows. If a float
                 (0-1), shadows are rendered with a fixed opacity regardless of
                 lighting conditions.
+            scale: Scale of the image. A single float for uniform scaling or a
+                tuple of (x, y, z) for per-axis scaling.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
             position: Translation from parent frame to local frame (t_pl).
             visible: Whether or not this image is initially visible.
@@ -2244,6 +2309,7 @@ class SceneApi:
                 render_height=render_height,
                 cast_shadow=cast_shadow,
                 receive_shadow=receive_shadow,
+                scale=scale,
             ),
         )
         handle = ImageHandle._make(self, message, name, wxyz, position, visible)
