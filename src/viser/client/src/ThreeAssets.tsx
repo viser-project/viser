@@ -153,6 +153,11 @@ export const PointCloud = React.forwardRef<
     }[props.point_shape];
   }, [props.point_shape, material]);
 
+  // Compute a scalar scale factor for point size. For non-uniform scale,
+  // use geometric mean since points are rendered as circles.
+  const s = normalizeScale(props.scale);
+  const pointScaleFactor = Math.cbrt(s[0] * s[1] * s[2]);
+
   const rendererSize = new THREE.Vector2();
   useFrame(() => {
     // Match point scale to behavior of THREE.PointsMaterial().
@@ -160,7 +165,7 @@ export const PointCloud = React.forwardRef<
     // frustum meters height = math.tan(fov / 2.0) * z
     // point px height = (point meters height / math.tan(fov / 2.0) * actual height)  / z
     material.uniforms.scale.value =
-      (props.point_size /
+      ((props.point_size * pointScaleFactor) /
         Math.tan(
           (((getThreeState().camera as THREE.PerspectiveCamera).fov / 180.0) *
             Math.PI) /
