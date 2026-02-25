@@ -811,10 +811,11 @@
 <span class="sd">            frustum.scale = 1.0 / frustum.compute_canonical_frustum_size()[2]</span>
 
 
-<span class="sd">        `.scale` is a unitless value that scales the X/Y/Z dimensions linearly.</span>
-<span class="sd">        It aims to preserve the visual volume of the frustum regardless of the</span>
-<span class="sd">        aspect ratio or FOV. This method allows more precise computation and</span>
-<span class="sd">        control of the frustum&#39;s dimensions.</span>
+<span class="sd">        `.scale` can be a float for uniform scaling or a 3-tuple for per-axis</span>
+<span class="sd">        scaling of the X, Y, and Z dimensions. It aims to preserve the visual</span>
+<span class="sd">        volume of the frustum regardless of the aspect ratio or FOV. This</span>
+<span class="sd">        method allows more precise computation and control of the frustum&#39;s</span>
+<span class="sd">        dimensions.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># Math used in the client implementation.</span>
         <span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">tan</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fov</span> <span class="o">/</span> <span class="mf">2.0</span><span class="p">)</span>
