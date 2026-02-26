@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { createStandardMaterial } from "./MeshUtils";
 import { IcosphereMessage } from "../WebsocketMessages";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
+import { normalizeScale } from "../utils/normalizeScale";
 
 // Cache icosphere geometries based on # of subdivisions. In theory this cache
 // can grow indefinitely, but this doesn't seem worth the complexity of
@@ -65,11 +66,19 @@ export const IcosphereMesh = React.forwardRef<
     });
   }, [shadowOpacity]);
 
+  // Calculate scaling values.
+  const normalizedScale = normalizeScale(message.props.scale);
+  const scale: [number, number, number] = [
+    normalizedScale[0] * message.props.radius,
+    normalizedScale[1] * message.props.radius,
+    normalizedScale[2] * message.props.radius,
+  ];
+
   return (
     <group ref={ref}>
       <mesh
         geometry={geometry}
-        scale={message.props.radius}
+        scale={scale}
         material={material}
         castShadow={message.props.cast_shadow}
         receiveShadow={message.props.receive_shadow === true}

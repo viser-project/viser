@@ -5,8 +5,8 @@
 </h1>
 
 <p align="left">
-    <img alt="pyright" src="https://github.com/nerfstudio-project/viser/actions/workflows/pyright.yml/badge.svg" />
-    <img alt="typescript-compile" src="https://github.com/nerfstudio-project/viser/actions/workflows/typescript-compile.yml/badge.svg" />
+    <img alt="pyright" src="https://github.com/viser-project/viser/actions/workflows/pyright.yml/badge.svg" />
+    <img alt="typescript-compile" src="https://github.com/viser-project/viser/actions/workflows/typescript-compile.yml/badge.svg" />
     <a href="https://pypi.org/project/viser/">
         <img alt="codecov" src="https://img.shields.io/pypi/pyversions/viser" />
     </a>

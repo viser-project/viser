@@ -15,7 +15,7 @@ Parse and stream Record3D captures. To get demo data, see `../assets/download_as
 
     .. code-block:: bash
 
-        git clone https://github.com/nerfstudio-project/viser.git
+        git clone https://github.com/viser-project/viser.git
         cd viser/examples
         ./assets/download_assets.sh
         python 04_demos/00_record3d_visualizer.py  # With viser installed.

@@ -168,10 +168,7 @@ function ConnectionStatus() {
   return (
     <>
       <div style={{ width: "1.1em" }} /> {/* Spacer. */}
-      <Transition
-        transition="fade"
-        mounted={websocketState === "connected"}
-      >
+      <Transition transition="fade" mounted={websocketState === "connected"}>
         {(styles) => (
           <IconCloudCheck
             color={"#0b0"}
@@ -384,7 +381,7 @@ function ShareButton() {
         )}
         <Text size="xs">
           Share links are experimental and bandwidth-limited. Problems? Consider{" "}
-          <Anchor href="https://github.com/nerfstudio-project/viser/issues">
+          <Anchor href="https://github.com/viser-project/viser/issues">
             reporting on GitHub
           </Anchor>
           .

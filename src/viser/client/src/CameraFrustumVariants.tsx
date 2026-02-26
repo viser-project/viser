@@ -5,6 +5,7 @@ import { HoverableContext } from "./HoverContext";
 import * as THREE from "three";
 import { CameraFrustumMessage } from "./WebsocketMessages";
 import { rgbToInt } from "./mesh/MeshUtils";
+import { normalizeScale } from "./utils/normalizeScale";
 
 /** Helper for visualizing camera frustums. */
 export const CameraFrustumComponent = React.forwardRef<
@@ -39,9 +40,10 @@ export const CameraFrustumComponent = React.forwardRef<
   x /= volumeScale;
   y /= volumeScale;
   z /= volumeScale;
-  x *= message.props.scale;
-  y *= message.props.scale;
-  z *= message.props.scale;
+  const scaleTuple = normalizeScale(message.props.scale);
+  x *= scaleTuple[0];
+  y *= scaleTuple[1];
+  z *= scaleTuple[2];
 
   const hoverContext = React.useContext(HoverableContext);
   const [isHovered, setIsHovered] = React.useState(false);

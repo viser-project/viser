@@ -1,9 +1,9 @@
 import {
   CatmullRomLine,
   CubicBezierLine,
-  Grid,
   PivotControls,
 } from "@react-three/drei";
+import { Grid } from "./Grid";
 import { ContextBridge, useContextBridge } from "its-fine";
 import { useFrame, useThree } from "@react-three/fiber";
 import React, { useEffect } from "react";
@@ -57,6 +57,7 @@ import { SkinnedMesh } from "./mesh/SkinnedMesh";
 import { BatchedMesh } from "./mesh/BatchedMesh";
 import { SingleGlbAsset } from "./mesh/SingleGlbAsset";
 import { BatchedGlbAsset } from "./mesh/BatchedGlbAsset";
+import { normalizeScale } from "./utils/normalizeScale";
 
 function rgbToInt(rgb: [number, number, number]): number {
   return (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
@@ -131,6 +132,7 @@ function createObjectFactory(
             axesRadius={message.props.axes_radius}
             originRadius={message.props.origin_radius}
             originColor={rgbToInt(message.props.origin_color)}
+            scale={message.props.scale}
           >
             {children}
           </CoordinateFrame>
@@ -149,6 +151,7 @@ function createObjectFactory(
             batched_scales={message.props.batched_scales}
             axes_length={message.props.axes_length}
             axes_radius={message.props.axes_radius}
+            scale={message.props.scale}
           >
             {children}
           </InstancedAxes>
@@ -187,57 +190,29 @@ function createObjectFactory(
                     new THREE.Euler(-Math.PI / 2.0, 0.0, -Math.PI / 2.0),
       );
 
-      // When rotations are identity: plane is XY, while grid is XZ.
-      const planeQuaternion = new THREE.Quaternion()
-        .setFromEuler(new THREE.Euler(-Math.PI / 2, 0.0, 0.0))
-        .premultiply(gridQuaternion);
-
-      let shadowPlane;
-      if (message.props.shadow_opacity > 0.0) {
-        // Use very large dimensions for infinite grids to ensure shadows are visible.
-        const shadowWidth = message.props.infinite_grid
-          ? 10000
-          : message.props.width;
-        const shadowHeight = message.props.infinite_grid
-          ? 10000
-          : message.props.height;
-        shadowPlane = (
-          <mesh
-            receiveShadow
-            position={[0.0, 0.0, -0.01]}
-            quaternion={planeQuaternion}
-          >
-            <planeGeometry args={[shadowWidth, shadowHeight]} />
-            <shadowMaterial
-              opacity={message.props.shadow_opacity}
-              color={0x000000}
-              depthWrite={false}
-            />
-          </mesh>
-        );
-      } else {
-        // when opacity = 0.0, no shadowPlane for performance
-        shadowPlane = null;
-      }
       return {
         makeObject: (ref, children) => (
           <group ref={ref}>
-            <Grid
-              args={[message.props.width, message.props.height]}
-              side={THREE.DoubleSide}
-              cellColor={rgbToInt(message.props.cell_color)}
-              cellThickness={message.props.cell_thickness}
-              cellSize={message.props.cell_size}
-              sectionColor={rgbToInt(message.props.section_color)}
-              sectionThickness={message.props.section_thickness}
-              sectionSize={message.props.section_size}
-              infiniteGrid={message.props.infinite_grid}
-              fadeDistance={message.props.fade_distance}
-              fadeStrength={message.props.fade_strength}
-              fadeFrom={message.props.fade_from === "camera" ? 1 : 0}
-              quaternion={gridQuaternion}
-            />
-            {shadowPlane}
+            <group scale={normalizeScale(message.props.scale)}>
+              <Grid
+                args={[message.props.width, message.props.height]}
+                side={THREE.DoubleSide}
+                cellColor={rgbToInt(message.props.cell_color)}
+                cellThickness={message.props.cell_thickness}
+                cellSize={message.props.cell_size}
+                sectionColor={rgbToInt(message.props.section_color)}
+                sectionThickness={message.props.section_thickness}
+                sectionSize={message.props.section_size}
+                infiniteGrid={message.props.infinite_grid}
+                fadeDistance={message.props.fade_distance}
+                fadeStrength={message.props.fade_strength}
+                fadeFrom={message.props.fade_from === "camera" ? 1 : 0}
+                planeColor={rgbToInt(message.props.plane_color)}
+                planeOpacity={message.props.plane_opacity}
+                shadowOpacity={message.props.shadow_opacity}
+                quaternion={gridQuaternion}
+              />
+            </group>
             {children}
           </group>
         ),
@@ -493,16 +468,18 @@ function createObjectFactory(
         makeObject: (ref, children) => {
           return (
             <group ref={ref}>
-              <CatmullRomLine
-                points={tripletListFromFloat32Buffer(message.props.points)}
-                closed={message.props.closed}
-                curveType={message.props.curve_type}
-                tension={message.props.tension}
-                lineWidth={message.props.line_width}
-                color={rgbToInt(message.props.color)}
-                // Sketchy cast needed due to https://github.com/pmndrs/drei/issues/1476.
-                segments={(message.props.segments ?? undefined) as undefined}
-              />
+              <group scale={normalizeScale(message.props.scale)}>
+                <CatmullRomLine
+                  points={tripletListFromFloat32Buffer(message.props.points)}
+                  closed={message.props.closed}
+                  curveType={message.props.curve_type}
+                  tension={message.props.tension}
+                  lineWidth={message.props.line_width}
+                  color={rgbToInt(message.props.color)}
+                  // Sketchy cast needed due to https://github.com/pmndrs/drei/issues/1476.
+                  segments={(message.props.segments ?? undefined) as undefined}
+                />
+              </group>
               {children}
             </group>
           );
@@ -518,19 +495,23 @@ function createObjectFactory(
           );
           return (
             <group ref={ref}>
-              {[...Array(points.length - 1).keys()].map((i) => (
-                <CubicBezierLine
-                  key={i}
-                  start={points[i]}
-                  end={points[i + 1]}
-                  midA={controlPoints[2 * i]}
-                  midB={controlPoints[2 * i + 1]}
-                  lineWidth={message.props.line_width}
-                  color={rgbToInt(message.props.color)}
-                  // Sketchy cast needed due to https://github.com/pmndrs/drei/issues/1476.
-                  segments={(message.props.segments ?? undefined) as undefined}
-                ></CubicBezierLine>
-              ))}
+              <group scale={normalizeScale(message.props.scale)}>
+                {[...Array(points.length - 1).keys()].map((i) => (
+                  <CubicBezierLine
+                    key={i}
+                    start={points[i]}
+                    end={points[i + 1]}
+                    midA={controlPoints[2 * i]}
+                    midB={controlPoints[2 * i + 1]}
+                    lineWidth={message.props.line_width}
+                    color={rgbToInt(message.props.color)}
+                    // Sketchy cast needed due to https://github.com/pmndrs/drei/issues/1476.
+                    segments={
+                      (message.props.segments ?? undefined) as undefined
+                    }
+                  ></CubicBezierLine>
+                ))}
+              </group>
               {children}
             </group>
           );
@@ -540,20 +521,22 @@ function createObjectFactory(
     case "GaussianSplatsMessage": {
       return {
         makeObject: (ref, children) => (
-          <SplatObject
-            ref={ref}
-            buffer={
-              new Uint32Array(
-                message.props.buffer.buffer.slice(
-                  message.props.buffer.byteOffset,
-                  message.props.buffer.byteOffset +
-                    message.props.buffer.byteLength,
-                ),
-              )
-            }
-          >
+          <group ref={ref}>
+            <group scale={normalizeScale(message.props.scale)}>
+              <SplatObject
+                buffer={
+                  new Uint32Array(
+                    message.props.buffer.buffer.slice(
+                      message.props.buffer.byteOffset,
+                      message.props.buffer.byteOffset +
+                        message.props.buffer.byteLength,
+                    ),
+                  )
+                }
+              />
+            </group>
             {children}
-          </SplatObject>
+          </group>
         ),
       };
     }
@@ -738,9 +721,10 @@ export function SceneNodeThreeObject(props: { name: string }) {
   });
 
   // Track last pointer position for re-raycasting when mesh changes.
-  const lastPointerPos = React.useRef<{ clientX: number; clientY: number } | null>(
-    null,
-  );
+  const lastPointerPos = React.useRef<{
+    clientX: number;
+    clientY: number;
+  } | null>(null);
 
   // Frame counter for delayed hover recheck after objNode changes.
   // We wait a few frames to ensure the new mesh geometry is fully rendered.
@@ -787,7 +771,10 @@ export function SceneNodeThreeObject(props: { name: string }) {
                 1,
             );
             raycaster.setFromCamera(pointerNDC, camera);
-            const intersects = raycaster.intersectObject(groupRef.current, true);
+            const intersects = raycaster.intersectObject(
+              groupRef.current,
+              true,
+            );
             if (intersects.length === 0) {
               // Pointer is no longer over this mesh, reset hover state.
               hoveredRef.current.isHovered = false;

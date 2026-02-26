@@ -5,16 +5,17 @@ import { SkinnedMeshMessage } from "../WebsocketMessages";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
 import { ViewerContext } from "../ViewerContext";
 import { useFrame } from "@react-three/fiber";
+import { normalizeScale } from "../utils/normalizeScale";
 
 /**
  * Component for rendering skinned meshes with animations
  */
 export const SkinnedMesh = React.forwardRef<
-  THREE.SkinnedMesh,
+  THREE.Group,
   SkinnedMeshMessage & { children?: React.ReactNode }
 >(function SkinnedMesh(
   { children, ...message },
-  ref: React.ForwardedRef<THREE.SkinnedMesh>,
+  ref: React.ForwardedRef<THREE.Group>,
 ) {
   const viewer = React.useContext(ViewerContext)!;
 
@@ -217,29 +218,30 @@ export const SkinnedMesh = React.forwardRef<
   });
 
   return (
-    <skinnedMesh
-      ref={ref}
-      geometry={geometry}
-      material={material}
-      skeleton={skeleton}
-      scale={message.props.scale}
-      castShadow={message.props.cast_shadow}
-      receiveShadow={message.props.receive_shadow === true}
-      frustumCulled={false}
-    >
-      <OutlinesIfHovered
-        enableCreaseAngle={geometry.attributes.position.count < 1024}
-      />
-      {shadowMaterial && shadowOpacity > 0 ? (
-        <skinnedMesh
-          geometry={geometry}
-          material={shadowMaterial}
-          skeleton={skeleton}
-          receiveShadow
-          frustumCulled={false}
+    <group ref={ref}>
+      <skinnedMesh
+        geometry={geometry}
+        material={material}
+        skeleton={skeleton}
+        scale={normalizeScale(message.props.scale)}
+        castShadow={message.props.cast_shadow}
+        receiveShadow={message.props.receive_shadow === true}
+        frustumCulled={false}
+      >
+        <OutlinesIfHovered
+          enableCreaseAngle={geometry.attributes.position.count < 1024}
         />
-      ) : null}
+        {shadowMaterial && shadowOpacity > 0 ? (
+          <skinnedMesh
+            geometry={geometry}
+            material={shadowMaterial}
+            skeleton={skeleton}
+            receiveShadow
+            frustumCulled={false}
+          />
+        ) : null}
+      </skinnedMesh>
       {children}
-    </skinnedMesh>
+    </group>
   );
 });
