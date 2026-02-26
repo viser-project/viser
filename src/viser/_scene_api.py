@@ -161,6 +161,7 @@ class SceneApi:
             str, TransformControlsHandle
         ] = {}
         self._handle_from_node_name: dict[str, SceneNodeHandle] = {}
+        self._children_from_node_name: dict[str, set[str]] = {}
 
         self._scene_pointer_cb: (
             Callable[[ScenePointerEvent], None | Coroutine] | None
@@ -197,6 +198,14 @@ class SceneApi:
             _messages.ScenePointerMessage,
             self._handle_scene_pointer_updates,
         )
+
+    def _ensure_ancestors_exist(self, name: str) -> None:
+        """Create intermediate frame nodes for any missing ancestors of `name`."""
+        parts = name.split("/")
+        for i in range(2, len(parts)):  # skip root ("") and the node itself
+            ancestor = "/".join(parts[:i])
+            if ancestor not in self._handle_from_node_name:
+                self.add_frame(ancestor, show_axes=False)
 
     def set_up_direction(
         self,
@@ -2350,6 +2359,9 @@ class SceneApi:
         for handle in handles:
             if handle.name == "/WorldAxes":
                 continue
+            # Skip handles already removed by cascading.
+            if handle._impl.removed:
+                continue
             handle.remove()
 
         # Clear the background image.
@@ -2643,8 +2655,14 @@ class SceneApi:
         )
         return Gui3dContainerHandle(node_handle._impl, gui_api, container_id)
 
-    def handle_by_name(self, name: str) -> SceneNodeHandle | None:
+    def get_handle_by_name(self, name: str) -> SceneNodeHandle | None:
         """Get the scene node handle for the given `name`, if it exists.
+
+        .. warning::
+            We recommend holding onto the handle returned by the original
+            ``add_*()`` call instead of using this method. This method returns
+            a generic :class:`SceneNodeHandle`, so subclass-specific properties
+            and methods won't be type-checked.
 
         Args:
             name: Name of the scene node.
@@ -2652,16 +2670,24 @@ class SceneApi:
         Returns:
             Scene node handle, or None if no such node exists.
         """
+        if not name.startswith("/"):
+            name = "/" + name
         return self._handle_from_node_name.get(name, None)
 
     def remove_by_name(self, name: str) -> None:
-        """Helper to call `.remove()` on the scene node handles of the `name`
-        element or any of its children."""
-        handle_from_node_name = self._handle_from_node_name.copy()
+        """Remove the scene node with the given `name` and any of its children.
+
+        .. warning::
+            We recommend holding onto the handle returned by the original
+            ``add_*()`` call and calling :meth:`SceneNodeHandle.remove()`
+            directly instead of using this method.
+        """
         name = name.rstrip("/")  # '/parent/' => '/parent'
-        for node_name, handle in handle_from_node_name.items():
-            if node_name == name or node_name.startswith(name + "/"):
-                handle.remove()
+        if not name.startswith("/"):
+            name = "/" + name
+        handle = self._handle_from_node_name.get(name)
+        assert handle is not None, f"Scene node '{name}' does not exist."
+        handle.remove()
 
     def show(self, height: int = 400, dark_mode: bool = False) -> None:
         """Display the scene in a Jupyter notebook or web browser.

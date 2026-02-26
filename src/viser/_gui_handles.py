@@ -654,8 +654,10 @@ class GuiTabGroupHandle(_GuiHandle[None], GuiTabGroupProps):
         gui_api = self._impl.gui_api
         gui_api._websock_interface.get_message_buffer().remove_from_buffer(
             # Don't send outdated GUI updates to new clients.
-            lambda message: isinstance(message, GuiUpdateMessage)
-            and message.uuid == self._impl.uuid
+            lambda message: (
+                isinstance(message, GuiUpdateMessage)
+                and message.uuid == self._impl.uuid
+            )
         )
         gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
         parent = gui_api._container_handle_from_uuid[self._impl.parent_container_id]
@@ -782,8 +784,10 @@ class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):
         gui_api = self._impl.gui_api
         gui_api._websock_interface.get_message_buffer().remove_from_buffer(
             # Don't send outdated GUI updates to new clients.
-            lambda message: isinstance(message, GuiUpdateMessage)
-            and message.uuid == self._impl.uuid
+            lambda message: (
+                isinstance(message, GuiUpdateMessage)
+                and message.uuid == self._impl.uuid
+            )
         )
         gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
         for child in tuple(self._children.values()):
