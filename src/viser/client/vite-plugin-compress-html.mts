@@ -21,7 +21,10 @@ function toBase64(buffer: Buffer): string {
 function getGzippedWasmBase64(): string {
   // Find zstddec in node_modules relative to this file or cwd.
   const paths = [
-    join(dirname(import.meta.url.replace("file://", "")), "node_modules/zstddec/dist/zstddec.esm.js"),
+    join(
+      dirname(import.meta.url.replace("file://", "")),
+      "node_modules/zstddec/dist/zstddec.esm.js",
+    ),
     join(process.cwd(), "node_modules/zstddec/dist/zstddec.esm.js"),
   ];
 

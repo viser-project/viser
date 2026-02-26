@@ -17,6 +17,7 @@ import {
 } from "three-stdlib";
 import { ForwardRefComponent } from "@react-three/drei/helpers/ts-utils";
 import type { LineSegmentsMessage } from "./WebsocketMessages";
+import { normalizeScale } from "./utils/normalizeScale";
 
 export type LineProps = {
   points: Float32Array; // length must be n * 3
@@ -156,13 +157,15 @@ export const LineSegments = React.forwardRef<
 
   return (
     <group ref={ref}>
-      <Line
-        points={pointsArray}
-        lineWidth={props.line_width}
-        color={color}
-        vertexColors={vertexColors}
-        segments={true}
-      />
+      <group scale={normalizeScale(props.scale)}>
+        <Line
+          points={pointsArray}
+          lineWidth={props.line_width}
+          color={color}
+          vertexColors={vertexColors}
+          segments={true}
+        />
+      </group>
       {children}
     </group>
   );

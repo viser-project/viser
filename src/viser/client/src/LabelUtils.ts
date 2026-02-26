@@ -108,7 +108,9 @@ export function calculateScreenSpaceScale(
     );
     // Reference depth is 10 units (baseFontSize is calibrated for this).
     // Scale by reference/actual viewport height to maintain constant pixel size.
-    return (depth / 10.0) * fovScale * (REFERENCE_VIEWPORT_HEIGHT / viewportHeight);
+    return (
+      (depth / 10.0) * fovScale * (REFERENCE_VIEWPORT_HEIGHT / viewportHeight)
+    );
   } else {
     // OrthographicCamera: scale based on viewport height only.
     return REFERENCE_VIEWPORT_HEIGHT / viewportHeight;

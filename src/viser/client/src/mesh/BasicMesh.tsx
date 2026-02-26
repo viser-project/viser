@@ -3,16 +3,17 @@ import * as THREE from "three";
 import { createStandardMaterial } from "./MeshUtils";
 import { MeshMessage } from "../WebsocketMessages";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
+import { normalizeScale } from "../utils/normalizeScale";
 
 /**
  * Component for rendering basic THREE.js meshes
  */
 export const BasicMesh = React.forwardRef<
-  THREE.Mesh,
+  THREE.Group,
   MeshMessage & { children?: React.ReactNode }
 >(function BasicMesh(
   { children, ...message },
-  ref: React.ForwardedRef<THREE.Mesh>,
+  ref: React.ForwardedRef<THREE.Group>,
 ) {
   // Create material based on props.
   const material = React.useMemo(() => {
@@ -89,24 +90,25 @@ export const BasicMesh = React.forwardRef<
   }, [shadowOpacity]);
 
   return (
-    <mesh
-      ref={ref}
-      geometry={geometry}
-      material={material}
-      scale={message.props.scale}
-      castShadow={message.props.cast_shadow}
-      receiveShadow={message.props.receive_shadow === true}
-    >
-      <OutlinesIfHovered
-        enableCreaseAngle={
-          geometry.attributes.position.count < 1024 &&
-          geometry.boundingSphere!.radius > 0.1
-        }
-      />
-      {shadowMaterial && shadowOpacity > 0 ? (
-        <mesh geometry={geometry} material={shadowMaterial} receiveShadow />
-      ) : null}
+    <group ref={ref}>
+      <mesh
+        geometry={geometry}
+        material={material}
+        scale={normalizeScale(message.props.scale)}
+        castShadow={message.props.cast_shadow}
+        receiveShadow={message.props.receive_shadow === true}
+      >
+        <OutlinesIfHovered
+          enableCreaseAngle={
+            geometry.attributes.position.count < 1024 &&
+            geometry.boundingSphere!.radius > 0.1
+          }
+        />
+        {shadowMaterial && shadowOpacity > 0 ? (
+          <mesh geometry={geometry} material={shadowMaterial} receiveShadow />
+        ) : null}
+      </mesh>
       {children}
-    </mesh>
+    </group>
   );
 });

@@ -578,6 +578,7 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
           </BatchedLabelManager>
         </SplatRenderContext>
         <DefaultLights />
+        <SceneFog />
       </>
     ),
     [children, memoizedCameraControls],
@@ -588,7 +589,7 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
       style={{ position: "relative", zIndex: 0, width: "100%", height: "100%" }}
     >
       <Canvas
-        gl={{ preserveDrawingBuffer: true }}
+        gl={{ preserveDrawingBuffer: true, logarithmicDepthBuffer: true }}
         style={{ width: "100%", height: "100%" }}
         ref={(el) => (viewer.mutable.current.canvas = el)}
         onPointerDown={handlePointerDown}
@@ -752,6 +753,36 @@ function DefaultLights() {
 }
 
 /**
+ * SceneFog component - applies THREE.Fog to the scene based on fog state.
+ */
+function SceneFog() {
+  const viewer = React.useContext(ViewerContext)!;
+  const fog = viewer.useEnvironment((state) => state.fog);
+  const scene = useThree((state) => state.scene);
+
+  React.useEffect(() => {
+    if (fog.enabled) {
+      scene.fog = new THREE.Fog(
+        new THREE.Color(
+          fog.color[0] / 255,
+          fog.color[1] / 255,
+          fog.color[2] / 255,
+        ),
+        fog.near,
+        fog.far,
+      );
+    } else {
+      scene.fog = null;
+    }
+    return () => {
+      scene.fog = null;
+    };
+  }, [fog, scene]);
+
+  return null;
+}
+
+/**
  * Adaptive DPR component for performance optimization.
  */
 function AdaptiveDpr() {
@@ -762,14 +793,14 @@ function AdaptiveDpr() {
   return fixedDpr !== null ? null : (
     <PerformanceMonitor
       factor={1.0}
-      step={0.2}
+      step={0.5}
       bounds={(refreshrate) => {
         const max = Math.min(refreshrate * 0.75, 85);
-        const min = Math.max(max * 0.5, 38);
+        const min = Math.max(max * 0.3, 38);
         return [min, max];
       }}
       onChange={({ factor, fps, refreshrate }) => {
-        const dpr = window.devicePixelRatio * (0.2 + 0.8 * factor);
+        const dpr = window.devicePixelRatio * (0.5 + 0.5 * factor);
         console.log(
           `[Performance] Setting DPR to ${dpr}; FPS=${fps}/${refreshrate}`,
         );
@@ -821,14 +852,20 @@ function BackgroundImage() {
   const shaders = useMemo(
     () => ({
       vert: `
+    #include <logdepthbuf_pars_vertex>
+    #ifdef USE_LOGDEPTHBUF
+    bool isPerspectiveMatrix( mat4 m ) { return m[ 2 ][ 3 ] == -1.0; }
+    #endif
     varying vec2 vUv;
     void main() {
       vUv = uv;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      #include <logdepthbuf_vertex>
     }
     `,
       frag: `
     #include <packing>
+    #include <logdepthbuf_pars_fragment>
     precision highp float;
     precision highp int;
 
@@ -857,7 +894,11 @@ function BackgroundImage() {
       float bufDepth;
       if(hasDepth){
         float depth = readDepth(depthMap, vUv);
-        bufDepth = viewZToPerspectiveDepth(-depth, cameraNear, cameraFar);
+        #ifdef USE_LOGDEPTHBUF
+          bufDepth = log2(1.0 + depth) * logDepthBufFC * 0.5;
+        #else
+          bufDepth = viewZToPerspectiveDepth(-depth, cameraNear, cameraFar);
+        #endif
       } else {
         bufDepth = 1.0;
       }
@@ -980,7 +1021,7 @@ function ViserLogo() {
           </Anchor>
           &nbsp;&nbsp;&bull;&nbsp;&nbsp;
           <Anchor
-            href="https://github.com/nerfstudio-project/viser"
+            href="https://github.com/viser-project/viser"
             target="_blank"
             style={{ fontWeight: "600" }}
           >

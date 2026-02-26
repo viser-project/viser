@@ -252,20 +252,15 @@ class CameraFrustumProps:
     fov: float
     """Field of view of the camera (in radians). """
     aspect: float
-    """Aspect ratio of the camera (width over height). Synchronized
-    """
-    scale: float
-    """Scale factor for the size of the frustum. """
+    """Aspect ratio of the camera (width over height)."""
     line_width: float
     """Width of the frustum lines."""
     color: Tuple[int, int, int]
     """Color of the frustum as RGB integers. """
     _format: Literal["jpeg", "png"]
-    """Format of the provided image ('jpeg' or 'png'). Synchronized
-    """
+    """Format of the provided image ('jpeg' or 'png')."""
     _image_data: Optional[bytes]
-    """Optional image to be displayed on the frustum. Synchronized
-    """
+    """Optional image to be displayed on the frustum."""
     cast_shadow: bool
     """Whether or not to cast shadows. """
     receive_shadow: Union[bool, float]
@@ -275,6 +270,9 @@ class CameraFrustumProps:
     variant: Literal["wireframe", "filled"] = "wireframe"
     """Variant of the frustum visualization. 'wireframe' shows lines only,
     'filled' adds semi-transparent faces. """
+    scale: Union[float, Tuple[float, float, float]] = 0.3
+    """Scale factor for the size of the frustum. A single float for uniform
+    scaling or a tuple of (x, y, z) for per-axis scaling."""
 
 
 @dataclasses.dataclass
@@ -288,15 +286,15 @@ class GlbMessage(_CreateSceneNodeMessage):
 class GlbProps:
     glb_data: bytes
     """A binary payload containing the GLB data. """
-    scale: Union[float, Tuple[float, float, float]]
-    """A scale for resizing the GLB asset. A single float for uniform scaling
-    or a tuple of (x, y, z) for per-axis scaling."""
     cast_shadow: bool
     """Whether or not to cast shadows."""
     receive_shadow: Union[bool, float]
     """Whether to receive shadows. If True, receives shadows normally. If
     False, no shadows. If a float (0-1), shadows are rendered with a fixed
     opacity regardless of lighting conditions. """
+    scale: Union[float, Tuple[float, float, float]] = 1.0
+    """A scale for resizing the GLB asset. A single float for uniform scaling
+    or a tuple of (x, y, z) for per-axis scaling."""
 
 
 @dataclasses.dataclass
@@ -319,6 +317,9 @@ class FrameProps:
     """Radius of the origin sphere."""
     origin_color: Tuple[int, int, int]
     """Color of the origin sphere as RGB integers. """
+    scale: Union[float, Tuple[float, float, float]] = 1.0
+    """Scale of the coordinate frame. A single float for uniform scaling or a
+    tuple of (x, y, z) for per-axis scaling."""
 
 
 @dataclasses.dataclass
@@ -337,8 +338,7 @@ class BatchedAxesProps:
     """Float array of shape (N,4) representing quaternion rotations.
     """
     batched_positions: npt.NDArray[np.float32]
-    """Float array of shape (N,3) representing positions. Synchronized
-    """
+    """Float array of shape (N,3) representing positions."""
     batched_scales: Optional[npt.NDArray[np.float32]]
     """Float array of shape (N,) or (N,3) representing uniform or per-axis
     (XYZ) scales."""
@@ -346,6 +346,9 @@ class BatchedAxesProps:
     """Length of each axis."""
     axes_radius: float
     """Radius of each axis."""
+    scale: Union[float, Tuple[float, float, float]] = 1.0
+    """Scale of the batched axes. A single float for uniform scaling or a
+    tuple of (x, y, z) for per-axis scaling."""
 
 
 @dataclasses.dataclass
@@ -386,8 +389,15 @@ class GridProps:
     """Whether the grid should fade based on distance from the camera or the origin."""
 
     shadow_opacity: float
-    """If true, shadows are casted onto the grid plane. Synchronized
-    """
+    """If true, shadows are casted onto the grid plane."""
+
+    plane_color: Tuple[int, int, int]
+    """Color of the ground plane as RGB integers."""
+    plane_opacity: float
+    """Opacity of the ground plane, 0: invisible, 1: fully opaque."""
+    scale: Union[float, Tuple[float, float, float]] = 1.0
+    """Scale of the grid. A single float for uniform scaling or a
+    tuple of (x, y, z) for per-axis scaling."""
 
 
 @dataclasses.dataclass
@@ -443,11 +453,9 @@ class PointCloudMessage(_CreateSceneNodeMessage):
 @dataclasses.dataclass
 class PointCloudProps:
     points: Union[npt.NDArray[np.float16], npt.NDArray[np.float32]]
-    """Location of points. Should have shape (N, 3). Synchronized
-    """
+    """Location of points. Should have shape (N, 3)."""
     colors: npt.NDArray[np.uint8]
-    """Colors of points. Should have shape (N, 3) or (3,). Synchronized
-    """
+    """Colors of points. Should have shape (N, 3) or (3,)."""
     point_size: float
     """Size of each point."""
     point_shape: Literal["square", "diamond", "circle", "rounded", "sparkle"]
@@ -456,6 +464,9 @@ class PointCloudProps:
     """Precision of the point cloud. Assignments to `points` are automatically casted
     based on the current precision value. Updates to `points` should therefore happen
     *after* updates to `precision`."""
+    scale: Union[float, Tuple[float, float, float]] = 1.0
+    """Scale of the point cloud. A single float for uniform scaling or a
+    tuple of (x, y, z) for per-axis scaling."""
 
     def __post_init__(self):
         # Check shapes.
@@ -590,6 +601,16 @@ class SpotLightProps:
 
 
 @dataclasses.dataclass
+class FogMessage(Message):
+    """Fog message."""
+
+    near: float
+    far: float
+    color: Tuple[int, int, int]
+    enabled: bool
+
+
+@dataclasses.dataclass
 class EnvironmentMapMessage(Message):
     """Environment Map message."""
 
@@ -714,6 +735,9 @@ class BoxProps:
     """Whether to receive shadows. If True, receives shadows normally. If
     False, no shadows. If a float (0-1), shadows are rendered with a fixed
     opacity regardless of lighting conditions. """
+    scale: Union[float, Tuple[float, float, float]] = 1.0
+    """Scale of the box. A single float for uniform scaling or a
+    tuple of (x, y, z) for per-axis scaling."""
 
 
 @dataclasses.dataclass
@@ -741,6 +765,9 @@ class IcosphereProps:
     """Whether to receive shadows. If True, receives shadows normally. If
     False, no shadows. If a float (0-1), shadows are rendered with a fixed
     opacity regardless of lighting conditions. """
+    scale: Union[float, Tuple[float, float, float]] = 1.0
+    """Scale of the icosphere. A single float for uniform scaling or a
+    tuple of (x, y, z) for per-axis scaling."""
 
 
 @dataclasses.dataclass
@@ -769,6 +796,9 @@ class CylinderProps:
     """Whether to receive shadows. If True, receives shadows normally. If
     False, no shadows. If a float (0-1), shadows are rendered with a fixed
     opacity regardless of lighting conditions."""
+    scale: Union[float, Tuple[float, float, float]] = 1.0
+    """Scale of the cylinder. A single float for uniform scaling or a
+    tuple of (x, y, z) for per-axis scaling."""
 
 
 @dataclasses.dataclass
@@ -785,17 +815,13 @@ class SkinnedMeshProps(MeshProps):
     Vertices are internally canonicalized to float32, faces to uint32."""
 
     bone_wxyzs: npt.NDArray[np.float32]
-    """Array of quaternions representing bone orientations (B, 4). Synchronized
-    """
+    """Array of quaternions representing bone orientations (B, 4)."""
     bone_positions: npt.NDArray[np.float32]
-    """Array of positions representing bone positions (B, 3). Synchronized
-    """
+    """Array of positions representing bone positions (B, 3)."""
     skin_indices: npt.NDArray[np.uint16]
-    """Array of skin indices. Should have shape (V, 4). Synchronized
-    """
+    """Array of skin indices. Should have shape (V, 4)."""
     skin_weights: npt.NDArray[np.float32]
-    """Array of skin weights. Should have shape (V, 4). Synchronized
-    """
+    """Array of skin weights. Should have shape (V, 4)."""
     cast_shadow: bool
     """Whether or not to cast shadows."""
     receive_shadow: Union[bool, float]
@@ -876,6 +902,9 @@ class BatchedMeshesProps(_BatchedMeshExtraProps):
     """Whether or not to receive shadows."""
     batched_opacities: Optional[npt.NDArray[np.float32]] = None
     """Per-instance opacity multipliers, shape (N,). Multiplied with global opacity."""
+    scale: Union[float, Tuple[float, float, float]] = 1.0
+    """Scale of the batched meshes. A single float for uniform scaling or a
+    tuple of (x, y, z) for per-axis scaling."""
 
 
 @dataclasses.dataclass
@@ -895,6 +924,9 @@ class BatchedGlbProps(_BatchedMeshExtraProps):
     """Whether or not to cast shadows."""
     receive_shadow: bool
     """Whether or not to receive shadows."""
+    scale: Union[float, Tuple[float, float, float]] = 1.0
+    """Scale of the batched GLB. A single float for uniform scaling or a
+    tuple of (x, y, z) for per-axis scaling."""
 
 
 @dataclasses.dataclass
@@ -1087,8 +1119,7 @@ class ImageMessage(_CreateSceneNodeMessage):
 @dataclasses.dataclass
 class ImageProps:
     _format: Literal["jpeg", "png"]
-    """Format of the provided image ('jpeg' or 'png'). Synchronized
-    """
+    """Format of the provided image ('jpeg' or 'png')."""
     _data: bytes
     """Binary data of the image."""
     render_width: float
@@ -1101,6 +1132,9 @@ class ImageProps:
     """Whether to receive shadows. If True, receives shadows normally. If
     False, no shadows. If a float (0-1), shadows are rendered with a fixed
     opacity regardless of lighting conditions. """
+    scale: Union[float, Tuple[float, float, float]] = 1.0
+    """Scale of the image. A single float for uniform scaling or a
+    tuple of (x, y, z) for per-axis scaling."""
 
 
 @dataclasses.dataclass
@@ -1296,8 +1330,7 @@ class GuiImageProps:
     _data: Optional[bytes]
     """Binary data of the image."""
     _format: Literal["jpeg", "png"]
-    """Format of the provided image ('jpeg' or 'png'). Synchronized
-    """
+    """Format of the provided image ('jpeg' or 'png')."""
     visible: bool
     """Visibility state of the image."""
 
@@ -1638,6 +1671,9 @@ class LineSegmentsProps:
     colors: npt.NDArray[np.uint8]
     """Numpy array of shape (N, 2, 3) containing a color for each point.
     """
+    scale: Union[float, Tuple[float, float, float]] = 1.0
+    """Scale of the line segments. A single float for uniform scaling or a
+    tuple of (x, y, z) for per-axis scaling."""
 
 
 @dataclasses.dataclass
@@ -1650,8 +1686,7 @@ class CatmullRomSplineMessage(_CreateSceneNodeMessage):
 @dataclasses.dataclass
 class CatmullRomSplineProps:
     points: npt.NDArray[np.float32]
-    """Array with shape (N, 3) defining the spline's path. Synchronized
-    """
+    """Array with shape (N, 3) defining the spline's path."""
     curve_type: Literal["centripetal", "chordal", "catmullrom"]
     """Type of the curve ('centripetal', 'chordal', 'catmullrom')."""
     tension: float
@@ -1664,6 +1699,9 @@ class CatmullRomSplineProps:
     """Color of the spline as RGB integers."""
     segments: Optional[int]
     """Number of segments to divide the spline into."""
+    scale: Union[float, Tuple[float, float, float]] = 1.0
+    """Scale of the spline. A single float for uniform scaling or a
+    tuple of (x, y, z) for per-axis scaling."""
 
 
 @dataclasses.dataclass
@@ -1676,8 +1714,7 @@ class CubicBezierSplineMessage(_CreateSceneNodeMessage):
 @dataclasses.dataclass
 class CubicBezierSplineProps:
     points: npt.NDArray[np.float32]
-    """Array of shape (N, 3) defining the spline's key points. Synchronized
-    """
+    """Array of shape (N, 3) defining the spline's key points."""
     control_points: npt.NDArray[np.float32]
     """Array of shape (2*N-2, 3) defining control points for Bezier curve shaping."""
     line_width: float
@@ -1686,6 +1723,9 @@ class CubicBezierSplineProps:
     """Color of the spline as RGB integers."""
     segments: Optional[int]
     """Number of segments to divide the spline into."""
+    scale: Union[float, Tuple[float, float, float]] = 1.0
+    """Scale of the spline. A single float for uniform scaling or a
+    tuple of (x, y, z) for per-axis scaling."""
 
 
 @dataclasses.dataclass
@@ -1711,6 +1751,9 @@ class GaussianSplatsProps:
     - rgba (int32)
 
     Where cov1-6 are the upper-triangular terms of covariance matrices."""
+    scale: Union[float, Tuple[float, float, float]] = 1.0
+    """Scale of the Gaussian splats. A single float for uniform scaling or a
+    tuple of (x, y, z) for per-axis scaling."""
 
 
 @dataclasses.dataclass
