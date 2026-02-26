@@ -1673,10 +1673,39 @@ elements inside of the container.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="viser.SceneApi.get_handle_by_name">
+<span class="sig-name descname"><span class="pre">get_handle_by_name</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="../../handles/scene_handles/#viser.SceneNodeHandle" title="viser._scene_handles.SceneNodeHandle"><span class="pre">SceneNodeHandle</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../../../_modules/viser/_scene_api/#SceneApi.get_handle_by_name"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.SceneApi.get_handle_by_name" title="Link to this definition">¶</a></dt>
+<dd><p>Get the scene node handle for the given <cite>name</cite>, if it exists.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>We recommend holding onto the handle returned by the original
+<code class="docutils literal notranslate"><span class="pre">add_*()</span></code> call instead of using this method. This method returns
+a generic <a class="reference internal" href="../../handles/scene_handles/#viser.SceneNodeHandle" title="viser.SceneNodeHandle"><code class="xref py py-class docutils literal notranslate"><span class="pre">SceneNodeHandle</span></code></a>, so subclass-specific properties
+and methods won’t be type-checked.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Name of the scene node.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Scene node handle, or None if no such node exists.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="../../handles/scene_handles/#viser.SceneNodeHandle" title="viser._scene_handles.SceneNodeHandle"><em>SceneNodeHandle</em></a> | None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="viser.SceneApi.remove_by_name">
 <span class="sig-name descname"><span class="pre">remove_by_name</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../../../_modules/viser/_scene_api/#SceneApi.remove_by_name"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.SceneApi.remove_by_name" title="Link to this definition">¶</a></dt>
-<dd><p>Helper to call <cite>.remove()</cite> on the scene node handles of the <cite>name</cite>
-element or any of its children.</p>
+<dd><p>Remove the scene node with the given <cite>name</cite> and any of its children.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>We recommend holding onto the handle returned by the original
+<code class="docutils literal notranslate"><span class="pre">add_*()</span></code> call and calling <a class="reference internal" href="../../handles/scene_handles/#viser.SceneNodeHandle.remove" title="viser.SceneNodeHandle.remove"><code class="xref py py-meth docutils literal notranslate"><span class="pre">SceneNodeHandle.remove()</span></code></a>
+directly instead of using this method.</p>
+</div>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p>
@@ -1821,6 +1850,7 @@ used for dynamic scenes.</p>
 <li><a class="reference internal" href="#viser.SceneApi.on_pointer_callback_removed"><code class="docutils literal notranslate"><span class="pre">SceneApi.on_pointer_callback_removed()</span></code></a></li>
 <li><a class="reference internal" href="#viser.SceneApi.remove_pointer_callback"><code class="docutils literal notranslate"><span class="pre">SceneApi.remove_pointer_callback()</span></code></a></li>
 <li><a class="reference internal" href="#viser.SceneApi.add_3d_gui_container"><code class="docutils literal notranslate"><span class="pre">SceneApi.add_3d_gui_container()</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneApi.get_handle_by_name"><code class="docutils literal notranslate"><span class="pre">SceneApi.get_handle_by_name()</span></code></a></li>
 <li><a class="reference internal" href="#viser.SceneApi.remove_by_name"><code class="docutils literal notranslate"><span class="pre">SceneApi.remove_by_name()</span></code></a></li>
 <li><a class="reference internal" href="#viser.SceneApi.show"><code class="docutils literal notranslate"><span class="pre">SceneApi.show()</span></code></a></li>
 </ul>

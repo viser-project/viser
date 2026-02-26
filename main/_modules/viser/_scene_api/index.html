@@ -585,6 +585,7 @@
             <span class="nb">str</span><span class="p">,</span> <span class="n">TransformControlsHandle</span>
         <span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">SceneNodeHandle</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_children_from_node_name</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span><span class="p">:</span> <span class="p">(</span>
             <span class="n">Callable</span><span class="p">[[</span><span class="n">ScenePointerEvent</span><span class="p">],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span>
@@ -621,6 +622,14 @@
             <span class="n">_messages</span><span class="o">.</span><span class="n">ScenePointerMessage</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_handle_scene_pointer_updates</span><span class="p">,</span>
         <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_ensure_ancestors_exist</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Create intermediate frame nodes for any missing ancestors of `name`.&quot;&quot;&quot;</span>
+        <span class="n">parts</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)):</span>  <span class="c1"># skip root (&quot;&quot;) and the node itself</span>
+            <span class="n">ancestor</span> <span class="o">=</span> <span class="s2">&quot;/&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">[:</span><span class="n">i</span><span class="p">])</span>
+            <span class="k">if</span> <span class="n">ancestor</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">add_frame</span><span class="p">(</span><span class="n">ancestor</span><span class="p">,</span> <span class="n">show_axes</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
 <div class="viewcode-block" id="SceneApi.set_up_direction">
 <a class="viewcode-back" href="../../../api/core/scene_api/#viser.SceneApi.set_up_direction">[docs]</a>
@@ -2990,6 +2999,9 @@
         <span class="k">for</span> <span class="n">handle</span> <span class="ow">in</span> <span class="n">handles</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">handle</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;/WorldAxes&quot;</span><span class="p">:</span>
                 <span class="k">continue</span>
+            <span class="c1"># Skip handles already removed by cascading.</span>
+            <span class="k">if</span> <span class="n">handle</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
+                <span class="k">continue</span>
             <span class="n">handle</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
 
         <span class="c1"># Clear the background image.</span>
@@ -3296,16 +3308,44 @@
         <span class="k">return</span> <span class="n">Gui3dContainerHandle</span><span class="p">(</span><span class="n">node_handle</span><span class="o">.</span><span class="n">_impl</span><span class="p">,</span> <span class="n">gui_api</span><span class="p">,</span> <span class="n">container_id</span><span class="p">)</span></div>
 
 
+<div class="viewcode-block" id="SceneApi.get_handle_by_name">
+<a class="viewcode-back" href="../../../api/core/scene_api/#viser.SceneApi.get_handle_by_name">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_handle_by_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SceneNodeHandle</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the scene node handle for the given `name`, if it exists.</span>
+
+<span class="sd">        .. warning::</span>
+<span class="sd">            We recommend holding onto the handle returned by the original</span>
+<span class="sd">            ``add_*()`` call instead of using this method. This method returns</span>
+<span class="sd">            a generic :class:`SceneNodeHandle`, so subclass-specific properties</span>
+<span class="sd">            and methods won&#39;t be type-checked.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            name: Name of the scene node.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Scene node handle, or None if no such node exists.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">):</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;/&quot;</span> <span class="o">+</span> <span class="n">name</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span></div>
+
+
 <div class="viewcode-block" id="SceneApi.remove_by_name">
 <a class="viewcode-back" href="../../../api/core/scene_api/#viser.SceneApi.remove_by_name">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">remove_by_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Helper to call `.remove()` on the scene node handles of the `name`</span>
-<span class="sd">        element or any of its children.&quot;&quot;&quot;</span>
-        <span class="n">handle_from_node_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove the scene node with the given `name` and any of its children.</span>
+
+<span class="sd">        .. warning::</span>
+<span class="sd">            We recommend holding onto the handle returned by the original</span>
+<span class="sd">            ``add_*()`` call and calling :meth:`SceneNodeHandle.remove()`</span>
+<span class="sd">            directly instead of using this method.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">name</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span>  <span class="c1"># &#39;/parent/&#39; =&gt; &#39;/parent&#39;</span>
-        <span class="k">for</span> <span class="n">node_name</span><span class="p">,</span> <span class="n">handle</span> <span class="ow">in</span> <span class="n">handle_from_node_name</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="k">if</span> <span class="n">node_name</span> <span class="o">==</span> <span class="n">name</span> <span class="ow">or</span> <span class="n">node_name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">name</span> <span class="o">+</span> <span class="s2">&quot;/&quot;</span><span class="p">):</span>
-                <span class="n">handle</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span></div>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">):</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;/&quot;</span> <span class="o">+</span> <span class="n">name</span>
+        <span class="n">handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">handle</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="SceneApi.show">
