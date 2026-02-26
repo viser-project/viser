@@ -793,14 +793,14 @@ function AdaptiveDpr() {
   return fixedDpr !== null ? null : (
     <PerformanceMonitor
       factor={1.0}
-      step={0.2}
+      step={0.5}
       bounds={(refreshrate) => {
         const max = Math.min(refreshrate * 0.75, 85);
-        const min = Math.max(max * 0.5, 38);
+        const min = Math.max(max * 0.3, 38);
         return [min, max];
       }}
       onChange={({ factor, fps, refreshrate }) => {
-        const dpr = window.devicePixelRatio * (0.2 + 0.8 * factor);
+        const dpr = window.devicePixelRatio * (0.5 + 0.5 * factor);
         console.log(
           `[Performance] Setting DPR to ${dpr}; FPS=${fps}/${refreshrate}`,
         );
