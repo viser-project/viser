@@ -1,0 +1,1663 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../../../">
+  <head><meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-RRGY51J5ZH"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-RRGY51J5ZH');
+    </script>
+    <link rel="index" title="Index" href="../../../genindex/" /><link rel="search" title="Search" href="../../../search/" /><link rel="next" title="State Serializer" href="../state_serializer/" /><link rel="prev" title="Theme Configuration" href="../theme/" />
+
+    <!-- Generated with Sphinx 8.0.2 and Furo 2024.08.06 -->
+        <title>uPlot Types - viser</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=354aac6f" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/mystnb.8ecb98da25f57f5357bf6f572d296f466b2cfe2517ffebfabe82451661e28f02.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/css/custom.css?v=5976cbfc" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/ansi.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo-extensions.css?v=302659d7" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f8f8f8;
+  --color-code-foreground: black;
+  --color-code-background: #f4f4f4;
+  --color-code-foreground: #000;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc">
+<label class="overlay sidebar-overlay" for="__navigation">
+  <div class="visually-hidden">Hide navigation sidebar</div>
+</label>
+<label class="overlay toc-overlay" for="__toc">
+  <div class="visually-hidden">Hide table of contents sidebar</div>
+</label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <div class="visually-hidden">Toggle site navigation sidebar</div>
+        <i class="icon"><svg><use href="#svg-menu"></use></svg></i>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../../../"><div class="brand">viser</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle">
+          <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <div class="visually-hidden">Toggle table of contents sidebar</div>
+        <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a
+  class="sidebar-brand"
+  href="../../../"
+>
+  
+  <div class="sidebar-logo-container" style="margin: 0.5rem 1em 0.5rem 0">
+    <img
+      class="sidebar-logo only-light"
+      src="../../../_static/logo.svg"
+      alt="logo"
+    />
+    <img
+      class="sidebar-logo only-dark"
+      src="../../../_static/logo.svg"
+      alt="logo"
+    />
+  </div>
+  <!-- <span class="sidebar-brand-text">Viser</span> -->
+
+  
+</a>
+
+<!-- Dropdown for different versions of the viser docs. Slightly hacky. -->
+<div style="padding: 0 1em">
+  <script>
+    var viserDocsVersionsPopulated = false;
+
+    async function getViserVersionList() {
+      // This index.txt file is written by the docs.yml GitHub action.
+      // https://github.com/viser-project/viser/blob/main/.github/workflows/docs.yml
+      const response = await fetch("https://viser.studio/versions/index.txt", {
+        cache: "no-cache",
+      });
+      return await response.text();
+    }
+    async function viserDocsPopulateVersionDropDown() {
+      // Load the version list lazily...
+      if (viserDocsVersionsPopulated) {
+        return;
+      }
+      viserDocsVersionsPopulated = true;
+
+      console.log("Populating docs version list!");
+      const versions = (await getViserVersionList())
+        .trim()
+        .split("\n")
+        .reverse();
+      console.log(versions);
+      let htmlString = "<ul style='margin: 0.5rem 0 0 0'>";
+      htmlString += `<li><a href="https://viser.studio/main">main</a></li>`;
+      for (let version of versions) {
+        htmlString += `<li><a href="https://viser.studio/versions/${version}">${version}</a></li>`;
+      }
+
+      htmlString += "</ul>";
+      document.getElementById("viser-version-dropdown").innerHTML = htmlString;
+    }
+  </script>
+  <details
+    style="
+      padding: 0.5rem;
+      background: var(--color-background-primary);
+      border-radius: 0.5rem;
+      border: 1px solid var(--color-sidebar-background-border);
+    "
+    ontoggle="viserDocsPopulateVersionDropDown()"
+  >
+    <summary style="cursor: pointer">
+      <strong>Version:</strong> <em>v1.0.23</em>
+    </summary>
+    <div id="viser-version-dropdown"></div>
+  </details>
+  <!-- End dropdown -->
+</div>
+
+<div style="text-align: left; padding: 1em">
+  <script async defer src="https://buttons.github.io/buttons.js"></script>
+  <a
+    class="github-button"
+    href="https://github.com/viser-project/viser"
+    data-color-scheme="no-preference: light; light: light; dark: light;"
+    data-size="large"
+    data-show-count="true"
+    aria-label="Download buttons/github-buttons on GitHub"
+  >
+    Github
+  </a>
+</div><form class="sidebar-search-container" method="get" action="../../../search/" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../examples/getting_started/">Getting Started</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of Getting Started</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/getting_started/hello_world/">Hello world</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/getting_started/core_concepts/">Core concepts</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../examples/scene/">Scene Visualization</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of Scene Visualization</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/scene/coordinate_frames/">Coordinate frames</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/scene/point_clouds/">Point cloud visualization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/scene/meshes/">3D mesh visualization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/scene/lines/">Line visualization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/scene/images/">Images</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/scene/meshes_batched/">Batched mesh rendering</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/scene/lighting/">Lighting and shadows</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/scene/background_composite/">Depth compositing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/scene/set_up_direction/">Set up direction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/scene/gaussian_splats/">Gaussian splats</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/scene/fog/">Distance fog</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../examples/gui/">GUI Controls</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><div class="visually-hidden">Toggle navigation of GUI Controls</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/gui/basic_controls/">Basic GUI controls</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/gui/callbacks/">GUI callbacks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/gui/layouts/">GUI layouts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/gui/markdown/">Markdown support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/gui/modals/">Modal dialogs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/gui/theming/">Theming</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/gui/notifications/">Notifications</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/gui/plotly_integration/">Plotly integration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/gui/uplot/">uPlot integration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/gui/plots_as_images/">Plots as images</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../examples/interaction/">User Interaction</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of User Interaction</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/interaction/click_meshes/">Mesh click events</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/interaction/scene_pointer/">Scene pointer events</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/interaction/get_renders/">Get renders</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/interaction/camera_poses/">Camera pose tracking</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/interaction/camera_commands/">Programmatic camera control</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/interaction/gui_in_scene/">3D GUI elements</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../examples/demos/">Demos</a><input class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><div class="visually-hidden">Toggle navigation of Demos</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/demos/record3d_visualizer/">Record3D</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/demos/colmap_visualizer/">COLMAP</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/demos/urdf_visualizer/">URDF robot visualizer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/demos/smpl_visualizer/">SMPL human model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/demos/smpl_skinned/">SMPL skinned mesh</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/demos/games/">Games</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul class="current">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../core/">Core API</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><div class="visually-hidden">Toggle navigation of Core API</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../core/server/">Viser Server</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../core/scene_api/">Scene API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../core/gui_api/">GUI API</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../handles/">Handles API</a><input class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of Handles API</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../handles/client_handles/">Client Handles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../handles/camera_handles/">Camera Handles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../handles/gui_handles/">GUI Handles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../handles/scene_handles/">Scene Handles</a></li>
+</ul>
+</li>
+<li class="toctree-l1 current has-children"><a class="reference internal" href="../">Advanced API</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><div class="visually-hidden">Toggle navigation of Advanced API</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../events/">Events</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../icons/">Icons</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../theme/">Theme Configuration</a></li>
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">uPlot Types</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../state_serializer/">State Serializer</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../auxiliary/">Auxiliary API</a><input class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><div class="visually-hidden">Toggle navigation of Auxiliary API</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../auxiliary/transforms/">Transforms</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../auxiliary/infrastructure/">Communication</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../auxiliary/extras/">Record3D + URDF Helpers</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Notes</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../interactive_notebooks/">Interactive Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../conventions/">Frame Conventions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../performance_tips/">Performance Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../development/">Development</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../embedded_visualizations/">Embedded Visualizations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../citation/">Citation</a></li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="../../../_sources/api/advanced/uplot.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle">
+              <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <div class="visually-hidden">Toggle table of contents sidebar</div>
+            <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="module-viser.uplot">
+<span id="uplot-types"></span><h1>uPlot Types<a class="headerlink" href="#module-viser.uplot" title="Link to this heading">¶</a></h1>
+<p>Configuration types for uPlot charts in viser.</p>
+<p>For comprehensive documentation about uPlot options, see:
+<a class="reference external" href="https://github.com/leeoniya/uPlot/tree/1.6.32/docs">https://github.com/leeoniya/uPlot/tree/1.6.32/docs</a></p>
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Axis">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Axis</span></span><a class="headerlink" href="#viser.uplot.Axis" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.show">
+<span class="sig-name descname"><span class="pre">show</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Axis.show" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.scale">
+<span class="sig-name descname"><span class="pre">scale</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Axis.scale" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.side">
+<span class="sig-name descname"><span class="pre">side</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">0</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">2</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">3</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Axis.side" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.size">
+<span class="sig-name descname"><span class="pre">size</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Axis.size" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.gap">
+<span class="sig-name descname"><span class="pre">gap</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Axis.gap" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.font">
+<span class="sig-name descname"><span class="pre">font</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Axis.font" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.lineGap">
+<span class="sig-name descname"><span class="pre">lineGap</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Axis.lineGap" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.stroke">
+<span class="sig-name descname"><span class="pre">stroke</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Axis.stroke" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.label">
+<span class="sig-name descname"><span class="pre">label</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Axis.label" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.labelSize">
+<span class="sig-name descname"><span class="pre">labelSize</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Axis.labelSize" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.labelGap">
+<span class="sig-name descname"><span class="pre">labelGap</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Axis.labelGap" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.labelFont">
+<span class="sig-name descname"><span class="pre">labelFont</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Axis.labelFont" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.space">
+<span class="sig-name descname"><span class="pre">space</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Axis.space" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.incrs">
+<span class="sig-name descname"><span class="pre">incrs</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.14)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Axis.incrs" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.splits">
+<span class="sig-name descname"><span class="pre">splits</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.14)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Axis.splits" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.filter">
+<span class="sig-name descname"><span class="pre">filter</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Axis.filter" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.rotate">
+<span class="sig-name descname"><span class="pre">rotate</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Axis.rotate" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.align">
+<span class="sig-name descname"><span class="pre">align</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">2</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Axis.align" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.alignTo">
+<span class="sig-name descname"><span class="pre">alignTo</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">2</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Axis.alignTo" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.grid">
+<span class="sig-name descname"><span class="pre">grid</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#viser.uplot.Axis_Grid" title="viser.uplot._uplot_types.Axis_Grid"><span class="pre">Axis_Grid</span></a></em><a class="headerlink" href="#viser.uplot.Axis.grid" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.ticks">
+<span class="sig-name descname"><span class="pre">ticks</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#viser.uplot.Axis_Ticks" title="viser.uplot._uplot_types.Axis_Ticks"><span class="pre">Axis_Ticks</span></a></em><a class="headerlink" href="#viser.uplot.Axis.ticks" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis.border">
+<span class="sig-name descname"><span class="pre">border</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#viser.uplot.Axis_Border" title="viser.uplot._uplot_types.Axis_Border"><span class="pre">Axis_Border</span></a></em><a class="headerlink" href="#viser.uplot.Axis.border" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Border">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Axis_Border</span></span><a class="headerlink" href="#viser.uplot.Axis_Border" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Border.show">
+<span class="sig-name descname"><span class="pre">show</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Axis_Border.show" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Border.stroke">
+<span class="sig-name descname"><span class="pre">stroke</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Axis_Border.stroke" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Border.width">
+<span class="sig-name descname"><span class="pre">width</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Axis_Border.width" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Border.dash">
+<span class="sig-name descname"><span class="pre">dash</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.14)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Axis_Border.dash" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Border.cap">
+<span class="sig-name descname"><span class="pre">cap</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Axis_Border.cap" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Grid">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Axis_Grid</span></span><a class="headerlink" href="#viser.uplot.Axis_Grid" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Grid.show">
+<span class="sig-name descname"><span class="pre">show</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Axis_Grid.show" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Grid.stroke">
+<span class="sig-name descname"><span class="pre">stroke</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Axis_Grid.stroke" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Grid.width">
+<span class="sig-name descname"><span class="pre">width</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Axis_Grid.width" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Grid.dash">
+<span class="sig-name descname"><span class="pre">dash</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.14)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Axis_Grid.dash" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Grid.cap">
+<span class="sig-name descname"><span class="pre">cap</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Axis_Grid.cap" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Grid.filter">
+<span class="sig-name descname"><span class="pre">filter</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Axis_Grid.filter" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Ticks">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Axis_Ticks</span></span><a class="headerlink" href="#viser.uplot.Axis_Ticks" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Ticks.show">
+<span class="sig-name descname"><span class="pre">show</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Axis_Ticks.show" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Ticks.stroke">
+<span class="sig-name descname"><span class="pre">stroke</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Axis_Ticks.stroke" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Ticks.width">
+<span class="sig-name descname"><span class="pre">width</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Axis_Ticks.width" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Ticks.dash">
+<span class="sig-name descname"><span class="pre">dash</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.14)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Axis_Ticks.dash" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Ticks.cap">
+<span class="sig-name descname"><span class="pre">cap</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Axis_Ticks.cap" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Ticks.filter">
+<span class="sig-name descname"><span class="pre">filter</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Axis_Ticks.filter" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Axis_Ticks.size">
+<span class="sig-name descname"><span class="pre">size</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Axis_Ticks.size" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Band">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Band</span></span><a class="headerlink" href="#viser.uplot.Band" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Band.series">
+<span class="sig-name descname"><span class="pre">series</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Required" title="(in Python v3.14)"><span class="pre">Required</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.14)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Band.series" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Band.fill">
+<span class="sig-name descname"><span class="pre">fill</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Band.fill" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Band.dir">
+<span class="sig-name descname"><span class="pre">dir</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">-</span></span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Band.dir" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Cursor">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Cursor</span></span><a class="headerlink" href="#viser.uplot.Cursor" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor.show">
+<span class="sig-name descname"><span class="pre">show</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Cursor.show" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor.x">
+<span class="sig-name descname"><span class="pre">x</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Cursor.x" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor.y">
+<span class="sig-name descname"><span class="pre">y</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Cursor.y" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor.left">
+<span class="sig-name descname"><span class="pre">left</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Cursor.left" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor.top">
+<span class="sig-name descname"><span class="pre">top</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Cursor.top" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor.idx">
+<span class="sig-name descname"><span class="pre">idx</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.uplot.Cursor.idx" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor.dataIdx">
+<span class="sig-name descname"><span class="pre">dataIdx</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Cursor.dataIdx" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor.idxs">
+<span class="sig-name descname"><span class="pre">idxs</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.14)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Cursor.idxs" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor.move">
+<span class="sig-name descname"><span class="pre">move</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Cursor.move" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor.points">
+<span class="sig-name descname"><span class="pre">points</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#viser.uplot.Cursor_Points" title="viser.uplot._uplot_types.Cursor_Points"><span class="pre">Cursor_Points</span></a></em><a class="headerlink" href="#viser.uplot.Cursor.points" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor.bind">
+<span class="sig-name descname"><span class="pre">bind</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#viser.uplot.Cursor_Bind" title="viser.uplot._uplot_types.Cursor_Bind"><span class="pre">Cursor_Bind</span></a></em><a class="headerlink" href="#viser.uplot.Cursor.bind" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor.drag">
+<span class="sig-name descname"><span class="pre">drag</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#viser.uplot.Cursor_Drag" title="viser.uplot._uplot_types.Cursor_Drag"><span class="pre">Cursor_Drag</span></a></em><a class="headerlink" href="#viser.uplot.Cursor.drag" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor.sync">
+<span class="sig-name descname"><span class="pre">sync</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#viser.uplot.Cursor_Sync" title="viser.uplot._uplot_types.Cursor_Sync"><span class="pre">Cursor_Sync</span></a></em><a class="headerlink" href="#viser.uplot.Cursor.sync" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor.focus">
+<span class="sig-name descname"><span class="pre">focus</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#viser.uplot.Cursor_Focus" title="viser.uplot._uplot_types.Cursor_Focus"><span class="pre">Cursor_Focus</span></a></em><a class="headerlink" href="#viser.uplot.Cursor.focus" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor.hover">
+<span class="sig-name descname"><span class="pre">hover</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#viser.uplot.Cursor_Hover" title="viser.uplot._uplot_types.Cursor_Hover"><span class="pre">Cursor_Hover</span></a></em><a class="headerlink" href="#viser.uplot.Cursor.hover" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor.lock">
+<span class="sig-name descname"><span class="pre">lock</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Cursor.lock" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor.event">
+<span class="sig-name descname"><span class="pre">event</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Cursor.event" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Bind">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Cursor_Bind</span></span><a class="headerlink" href="#viser.uplot.Cursor_Bind" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Bind.mousedown">
+<span class="sig-name descname"><span class="pre">mousedown</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Bind.mousedown" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Bind.mouseup">
+<span class="sig-name descname"><span class="pre">mouseup</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Bind.mouseup" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Bind.click">
+<span class="sig-name descname"><span class="pre">click</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Bind.click" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Bind.dblclick">
+<span class="sig-name descname"><span class="pre">dblclick</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Bind.dblclick" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Bind.mousemove">
+<span class="sig-name descname"><span class="pre">mousemove</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Bind.mousemove" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Bind.mouseleave">
+<span class="sig-name descname"><span class="pre">mouseleave</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Bind.mouseleave" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Bind.mouseenter">
+<span class="sig-name descname"><span class="pre">mouseenter</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Bind.mouseenter" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Drag">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Cursor_Drag</span></span><a class="headerlink" href="#viser.uplot.Cursor_Drag" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Drag.setScale">
+<span class="sig-name descname"><span class="pre">setScale</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Drag.setScale" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Drag.x">
+<span class="sig-name descname"><span class="pre">x</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Drag.x" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Drag.y">
+<span class="sig-name descname"><span class="pre">y</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Drag.y" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Drag.dist">
+<span class="sig-name descname"><span class="pre">dist</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Drag.dist" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Drag.uni">
+<span class="sig-name descname"><span class="pre">uni</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Drag.uni" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Drag.click">
+<span class="sig-name descname"><span class="pre">click</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Drag.click" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Focus">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Cursor_Focus</span></span><a class="headerlink" href="#viser.uplot.Cursor_Focus" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Focus.prox">
+<span class="sig-name descname"><span class="pre">prox</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Required" title="(in Python v3.14)"><span class="pre">Required</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Cursor_Focus.prox" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Focus.bias">
+<span class="sig-name descname"><span class="pre">bias</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">0</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">-</span></span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Cursor_Focus.bias" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Focus.dist">
+<span class="sig-name descname"><span class="pre">dist</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Focus.dist" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Hover">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Cursor_Hover</span></span><a class="headerlink" href="#viser.uplot.Cursor_Hover" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Hover.prox">
+<span class="sig-name descname"><span class="pre">prox</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Hover.prox" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Hover.bias">
+<span class="sig-name descname"><span class="pre">bias</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">0</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">-</span></span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Cursor_Hover.bias" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Hover.skip">
+<span class="sig-name descname"><span class="pre">skip</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.14)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Cursor_Hover.skip" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Points">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Cursor_Points</span></span><a class="headerlink" href="#viser.uplot.Cursor_Points" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Points.show">
+<span class="sig-name descname"><span class="pre">show</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Points.show" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Points.one">
+<span class="sig-name descname"><span class="pre">one</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Points.one" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Points.size">
+<span class="sig-name descname"><span class="pre">size</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Points.size" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Points.bbox">
+<span class="sig-name descname"><span class="pre">bbox</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Points.bbox" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Points.width">
+<span class="sig-name descname"><span class="pre">width</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Points.width" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Points.stroke">
+<span class="sig-name descname"><span class="pre">stroke</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Points.stroke" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Points.fill">
+<span class="sig-name descname"><span class="pre">fill</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Points.fill" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Sync">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Cursor_Sync</span></span><a class="headerlink" href="#viser.uplot.Cursor_Sync" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Sync.key">
+<span class="sig-name descname"><span class="pre">key</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Required" title="(in Python v3.14)"><span class="pre">Required</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Cursor_Sync.key" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Sync.setSeries">
+<span class="sig-name descname"><span class="pre">setSeries</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Sync.setSeries" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Sync.scales">
+<span class="sig-name descname"><span class="pre">scales</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.14)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Cursor_Sync.scales" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Sync.match">
+<span class="sig-name descname"><span class="pre">match</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.14)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Cursor_Sync.match" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Cursor_Sync.filters">
+<span class="sig-name descname"><span class="pre">filters</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></em><a class="headerlink" href="#viser.uplot.Cursor_Sync.filters" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Focus">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Focus</span></span><a class="headerlink" href="#viser.uplot.Focus" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Focus.alpha">
+<span class="sig-name descname"><span class="pre">alpha</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Focus.alpha" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Legend">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Legend</span></span><a class="headerlink" href="#viser.uplot.Legend" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Legend.show">
+<span class="sig-name descname"><span class="pre">show</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Legend.show" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Legend.live">
+<span class="sig-name descname"><span class="pre">live</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Legend.live" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Legend.isolate">
+<span class="sig-name descname"><span class="pre">isolate</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Legend.isolate" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Legend.markers">
+<span class="sig-name descname"><span class="pre">markers</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#viser.uplot.Legend_Markers" title="viser.uplot._uplot_types.Legend_Markers"><span class="pre">Legend_Markers</span></a></em><a class="headerlink" href="#viser.uplot.Legend.markers" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Legend.mount">
+<span class="sig-name descname"><span class="pre">mount</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></em><a class="headerlink" href="#viser.uplot.Legend.mount" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Legend.idx">
+<span class="sig-name descname"><span class="pre">idx</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.uplot.Legend.idx" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Legend.idxs">
+<span class="sig-name descname"><span class="pre">idxs</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.14)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Legend.idxs" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Legend_Markers">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Legend_Markers</span></span><a class="headerlink" href="#viser.uplot.Legend_Markers" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Legend_Markers.show">
+<span class="sig-name descname"><span class="pre">show</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Legend_Markers.show" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Legend_Markers.width">
+<span class="sig-name descname"><span class="pre">width</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Legend_Markers.width" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Legend_Markers.stroke">
+<span class="sig-name descname"><span class="pre">stroke</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Legend_Markers.stroke" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Legend_Markers.fill">
+<span class="sig-name descname"><span class="pre">fill</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Legend_Markers.fill" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Legend_Markers.dash">
+<span class="sig-name descname"><span class="pre">dash</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Legend_Markers.dash" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Scale">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Scale</span></span><a class="headerlink" href="#viser.uplot.Scale" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Scale.time">
+<span class="sig-name descname"><span class="pre">time</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Scale.time" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Scale.auto">
+<span class="sig-name descname"><span class="pre">auto</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Scale.auto" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Scale.range">
+<span class="sig-name descname"><span class="pre">range</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.14)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></em><a class="headerlink" href="#viser.uplot.Scale.range" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Scale.from">
+<span class="sig-name descname"><span class="pre">from</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Scale.from" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Scale.distr">
+<span class="sig-name descname"><span class="pre">distr</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">2</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">3</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">4</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">100</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Scale.distr" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Scale.log">
+<span class="sig-name descname"><span class="pre">log</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">10</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">2</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Scale.log" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Scale.clamp">
+<span class="sig-name descname"><span class="pre">clamp</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Scale.clamp" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Scale.asinh">
+<span class="sig-name descname"><span class="pre">asinh</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Scale.asinh" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Scale.fwd">
+<span class="sig-name descname"><span class="pre">fwd</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Scale.fwd" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Scale.bwd">
+<span class="sig-name descname"><span class="pre">bwd</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Scale.bwd" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Scale.min">
+<span class="sig-name descname"><span class="pre">min</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Scale.min" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Scale.max">
+<span class="sig-name descname"><span class="pre">max</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Scale.max" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Scale.dir">
+<span class="sig-name descname"><span class="pre">dir</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">-</span></span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Scale.dir" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Scale.ori">
+<span class="sig-name descname"><span class="pre">ori</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">0</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Scale.ori" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Scale.key">
+<span class="sig-name descname"><span class="pre">key</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Scale.key" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Select">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Select</span></span><a class="headerlink" href="#viser.uplot.Select" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Select.left">
+<span class="sig-name descname"><span class="pre">left</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Required" title="(in Python v3.14)"><span class="pre">Required</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Select.left" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Select.top">
+<span class="sig-name descname"><span class="pre">top</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Required" title="(in Python v3.14)"><span class="pre">Required</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Select.top" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Select.width">
+<span class="sig-name descname"><span class="pre">width</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Required" title="(in Python v3.14)"><span class="pre">Required</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Select.width" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Select.height">
+<span class="sig-name descname"><span class="pre">height</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Required" title="(in Python v3.14)"><span class="pre">Required</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Select.height" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Select.show">
+<span class="sig-name descname"><span class="pre">show</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Select.show" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Select.over">
+<span class="sig-name descname"><span class="pre">over</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Select.over" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Series">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Series</span></span><a class="headerlink" href="#viser.uplot.Series" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.show">
+<span class="sig-name descname"><span class="pre">show</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Series.show" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.class">
+<span class="sig-name descname"><span class="pre">class</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Series.class" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.scale">
+<span class="sig-name descname"><span class="pre">scale</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Series.scale" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.auto">
+<span class="sig-name descname"><span class="pre">auto</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Series.auto" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.sorted">
+<span class="sig-name descname"><span class="pre">sorted</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">0</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">-</span></span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Series.sorted" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.spanGaps">
+<span class="sig-name descname"><span class="pre">spanGaps</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Series.spanGaps" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.gaps">
+<span class="sig-name descname"><span class="pre">gaps</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.14)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.14)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Series.gaps" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.pxAlign">
+<span class="sig-name descname"><span class="pre">pxAlign</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Series.pxAlign" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.label">
+<span class="sig-name descname"><span class="pre">label</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Series.label" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.value">
+<span class="sig-name descname"><span class="pre">value</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Series.value" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.paths">
+<span class="sig-name descname"><span class="pre">paths</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Series.paths" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.points">
+<span class="sig-name descname"><span class="pre">points</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#viser.uplot.Series_Points" title="viser.uplot._uplot_types.Series_Points"><span class="pre">Series_Points</span></a></em><a class="headerlink" href="#viser.uplot.Series.points" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.facets">
+<span class="sig-name descname"><span class="pre">facets</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.14)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#viser.uplot.Series_Facet" title="viser.uplot._uplot_types.Series_Facet"><span class="pre">Series_Facet</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Series.facets" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.width">
+<span class="sig-name descname"><span class="pre">width</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Series.width" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.stroke">
+<span class="sig-name descname"><span class="pre">stroke</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Series.stroke" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.fill">
+<span class="sig-name descname"><span class="pre">fill</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Series.fill" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.fillTo">
+<span class="sig-name descname"><span class="pre">fillTo</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Series.fillTo" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.dash">
+<span class="sig-name descname"><span class="pre">dash</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.14)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Series.dash" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.cap">
+<span class="sig-name descname"><span class="pre">cap</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Series.cap" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.alpha">
+<span class="sig-name descname"><span class="pre">alpha</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Series.alpha" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.idxs">
+<span class="sig-name descname"><span class="pre">idxs</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.14)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Series.idxs" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.min">
+<span class="sig-name descname"><span class="pre">min</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Series.min" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series.max">
+<span class="sig-name descname"><span class="pre">max</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Series.max" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Series_Facet">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Series_Facet</span></span><a class="headerlink" href="#viser.uplot.Series_Facet" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series_Facet.scale">
+<span class="sig-name descname"><span class="pre">scale</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Required" title="(in Python v3.14)"><span class="pre">Required</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Series_Facet.scale" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series_Facet.auto">
+<span class="sig-name descname"><span class="pre">auto</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.uplot.Series_Facet.auto" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series_Facet.sorted">
+<span class="sig-name descname"><span class="pre">sorted</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">0</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">-</span></span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Series_Facet.sorted" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.uplot.Series_Points">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.uplot.</span></span><span class="sig-name descname"><span class="pre">Series_Points</span></span><a class="headerlink" href="#viser.uplot.Series_Points" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.TypedDict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">TypedDict</span></code></a> type for uPlot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series_Points.show">
+<span class="sig-name descname"><span class="pre">show</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Series_Points.show" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series_Points.paths">
+<span class="sig-name descname"><span class="pre">paths</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Series_Points.paths" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series_Points.filter">
+<span class="sig-name descname"><span class="pre">filter</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.14)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Never" title="(in Python v3.14)"><span class="pre">Never</span></a></em><a class="headerlink" href="#viser.uplot.Series_Points.filter" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series_Points.size">
+<span class="sig-name descname"><span class="pre">size</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Series_Points.size" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series_Points.space">
+<span class="sig-name descname"><span class="pre">space</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Series_Points.space" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series_Points.width">
+<span class="sig-name descname"><span class="pre">width</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.uplot.Series_Points.width" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series_Points.stroke">
+<span class="sig-name descname"><span class="pre">stroke</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Series_Points.stroke" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series_Points.dash">
+<span class="sig-name descname"><span class="pre">dash</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.14)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.uplot.Series_Points.dash" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series_Points.cap">
+<span class="sig-name descname"><span class="pre">cap</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Series_Points.cap" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.uplot.Series_Points.fill">
+<span class="sig-name descname"><span class="pre">fill</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.uplot.Series_Points.fill" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="../state_serializer/">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">State Serializer</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="../theme/">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">Theme Configuration</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2025
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            <div class="icons">
+              <a class="muted-link " href="https://github.com/viser-project/viser" aria-label="GitHub">
+            <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 16 16">
+                <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path>
+            </svg>
+        </a>
+              
+            </div>
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">uPlot Types</a><ul>
+<li><a class="reference internal" href="#viser.uplot.Axis"><code class="docutils literal notranslate"><span class="pre">Axis</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Axis.show"><code class="docutils literal notranslate"><span class="pre">Axis.show</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.scale"><code class="docutils literal notranslate"><span class="pre">Axis.scale</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.side"><code class="docutils literal notranslate"><span class="pre">Axis.side</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.size"><code class="docutils literal notranslate"><span class="pre">Axis.size</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.gap"><code class="docutils literal notranslate"><span class="pre">Axis.gap</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.font"><code class="docutils literal notranslate"><span class="pre">Axis.font</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.lineGap"><code class="docutils literal notranslate"><span class="pre">Axis.lineGap</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.stroke"><code class="docutils literal notranslate"><span class="pre">Axis.stroke</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.label"><code class="docutils literal notranslate"><span class="pre">Axis.label</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.labelSize"><code class="docutils literal notranslate"><span class="pre">Axis.labelSize</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.labelGap"><code class="docutils literal notranslate"><span class="pre">Axis.labelGap</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.labelFont"><code class="docutils literal notranslate"><span class="pre">Axis.labelFont</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.space"><code class="docutils literal notranslate"><span class="pre">Axis.space</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.incrs"><code class="docutils literal notranslate"><span class="pre">Axis.incrs</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.splits"><code class="docutils literal notranslate"><span class="pre">Axis.splits</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.filter"><code class="docutils literal notranslate"><span class="pre">Axis.filter</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.rotate"><code class="docutils literal notranslate"><span class="pre">Axis.rotate</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.align"><code class="docutils literal notranslate"><span class="pre">Axis.align</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.alignTo"><code class="docutils literal notranslate"><span class="pre">Axis.alignTo</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.grid"><code class="docutils literal notranslate"><span class="pre">Axis.grid</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.ticks"><code class="docutils literal notranslate"><span class="pre">Axis.ticks</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis.border"><code class="docutils literal notranslate"><span class="pre">Axis.border</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.uplot.Axis_Border"><code class="docutils literal notranslate"><span class="pre">Axis_Border</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Axis_Border.show"><code class="docutils literal notranslate"><span class="pre">Axis_Border.show</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis_Border.stroke"><code class="docutils literal notranslate"><span class="pre">Axis_Border.stroke</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis_Border.width"><code class="docutils literal notranslate"><span class="pre">Axis_Border.width</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis_Border.dash"><code class="docutils literal notranslate"><span class="pre">Axis_Border.dash</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis_Border.cap"><code class="docutils literal notranslate"><span class="pre">Axis_Border.cap</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.uplot.Axis_Grid"><code class="docutils literal notranslate"><span class="pre">Axis_Grid</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Axis_Grid.show"><code class="docutils literal notranslate"><span class="pre">Axis_Grid.show</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis_Grid.stroke"><code class="docutils literal notranslate"><span class="pre">Axis_Grid.stroke</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis_Grid.width"><code class="docutils literal notranslate"><span class="pre">Axis_Grid.width</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis_Grid.dash"><code class="docutils literal notranslate"><span class="pre">Axis_Grid.dash</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis_Grid.cap"><code class="docutils literal notranslate"><span class="pre">Axis_Grid.cap</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis_Grid.filter"><code class="docutils literal notranslate"><span class="pre">Axis_Grid.filter</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.uplot.Axis_Ticks"><code class="docutils literal notranslate"><span class="pre">Axis_Ticks</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Axis_Ticks.show"><code class="docutils literal notranslate"><span class="pre">Axis_Ticks.show</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis_Ticks.stroke"><code class="docutils literal notranslate"><span class="pre">Axis_Ticks.stroke</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis_Ticks.width"><code class="docutils literal notranslate"><span class="pre">Axis_Ticks.width</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis_Ticks.dash"><code class="docutils literal notranslate"><span class="pre">Axis_Ticks.dash</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis_Ticks.cap"><code class="docutils literal notranslate"><span class="pre">Axis_Ticks.cap</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis_Ticks.filter"><code class="docutils literal notranslate"><span class="pre">Axis_Ticks.filter</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Axis_Ticks.size"><code class="docutils literal notranslate"><span class="pre">Axis_Ticks.size</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.uplot.Band"><code class="docutils literal notranslate"><span class="pre">Band</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Band.series"><code class="docutils literal notranslate"><span class="pre">Band.series</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Band.fill"><code class="docutils literal notranslate"><span class="pre">Band.fill</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Band.dir"><code class="docutils literal notranslate"><span class="pre">Band.dir</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.uplot.Cursor"><code class="docutils literal notranslate"><span class="pre">Cursor</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Cursor.show"><code class="docutils literal notranslate"><span class="pre">Cursor.show</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor.x"><code class="docutils literal notranslate"><span class="pre">Cursor.x</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor.y"><code class="docutils literal notranslate"><span class="pre">Cursor.y</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor.left"><code class="docutils literal notranslate"><span class="pre">Cursor.left</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor.top"><code class="docutils literal notranslate"><span class="pre">Cursor.top</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor.idx"><code class="docutils literal notranslate"><span class="pre">Cursor.idx</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor.dataIdx"><code class="docutils literal notranslate"><span class="pre">Cursor.dataIdx</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor.idxs"><code class="docutils literal notranslate"><span class="pre">Cursor.idxs</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor.move"><code class="docutils literal notranslate"><span class="pre">Cursor.move</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor.points"><code class="docutils literal notranslate"><span class="pre">Cursor.points</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor.bind"><code class="docutils literal notranslate"><span class="pre">Cursor.bind</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor.drag"><code class="docutils literal notranslate"><span class="pre">Cursor.drag</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor.sync"><code class="docutils literal notranslate"><span class="pre">Cursor.sync</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor.focus"><code class="docutils literal notranslate"><span class="pre">Cursor.focus</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor.hover"><code class="docutils literal notranslate"><span class="pre">Cursor.hover</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor.lock"><code class="docutils literal notranslate"><span class="pre">Cursor.lock</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor.event"><code class="docutils literal notranslate"><span class="pre">Cursor.event</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Bind"><code class="docutils literal notranslate"><span class="pre">Cursor_Bind</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Bind.mousedown"><code class="docutils literal notranslate"><span class="pre">Cursor_Bind.mousedown</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Bind.mouseup"><code class="docutils literal notranslate"><span class="pre">Cursor_Bind.mouseup</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Bind.click"><code class="docutils literal notranslate"><span class="pre">Cursor_Bind.click</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Bind.dblclick"><code class="docutils literal notranslate"><span class="pre">Cursor_Bind.dblclick</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Bind.mousemove"><code class="docutils literal notranslate"><span class="pre">Cursor_Bind.mousemove</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Bind.mouseleave"><code class="docutils literal notranslate"><span class="pre">Cursor_Bind.mouseleave</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Bind.mouseenter"><code class="docutils literal notranslate"><span class="pre">Cursor_Bind.mouseenter</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Drag"><code class="docutils literal notranslate"><span class="pre">Cursor_Drag</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Drag.setScale"><code class="docutils literal notranslate"><span class="pre">Cursor_Drag.setScale</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Drag.x"><code class="docutils literal notranslate"><span class="pre">Cursor_Drag.x</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Drag.y"><code class="docutils literal notranslate"><span class="pre">Cursor_Drag.y</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Drag.dist"><code class="docutils literal notranslate"><span class="pre">Cursor_Drag.dist</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Drag.uni"><code class="docutils literal notranslate"><span class="pre">Cursor_Drag.uni</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Drag.click"><code class="docutils literal notranslate"><span class="pre">Cursor_Drag.click</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Focus"><code class="docutils literal notranslate"><span class="pre">Cursor_Focus</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Focus.prox"><code class="docutils literal notranslate"><span class="pre">Cursor_Focus.prox</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Focus.bias"><code class="docutils literal notranslate"><span class="pre">Cursor_Focus.bias</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Focus.dist"><code class="docutils literal notranslate"><span class="pre">Cursor_Focus.dist</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Hover"><code class="docutils literal notranslate"><span class="pre">Cursor_Hover</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Hover.prox"><code class="docutils literal notranslate"><span class="pre">Cursor_Hover.prox</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Hover.bias"><code class="docutils literal notranslate"><span class="pre">Cursor_Hover.bias</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Hover.skip"><code class="docutils literal notranslate"><span class="pre">Cursor_Hover.skip</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Points"><code class="docutils literal notranslate"><span class="pre">Cursor_Points</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Points.show"><code class="docutils literal notranslate"><span class="pre">Cursor_Points.show</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Points.one"><code class="docutils literal notranslate"><span class="pre">Cursor_Points.one</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Points.size"><code class="docutils literal notranslate"><span class="pre">Cursor_Points.size</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Points.bbox"><code class="docutils literal notranslate"><span class="pre">Cursor_Points.bbox</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Points.width"><code class="docutils literal notranslate"><span class="pre">Cursor_Points.width</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Points.stroke"><code class="docutils literal notranslate"><span class="pre">Cursor_Points.stroke</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Points.fill"><code class="docutils literal notranslate"><span class="pre">Cursor_Points.fill</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Sync"><code class="docutils literal notranslate"><span class="pre">Cursor_Sync</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Sync.key"><code class="docutils literal notranslate"><span class="pre">Cursor_Sync.key</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Sync.setSeries"><code class="docutils literal notranslate"><span class="pre">Cursor_Sync.setSeries</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Sync.scales"><code class="docutils literal notranslate"><span class="pre">Cursor_Sync.scales</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Sync.match"><code class="docutils literal notranslate"><span class="pre">Cursor_Sync.match</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Cursor_Sync.filters"><code class="docutils literal notranslate"><span class="pre">Cursor_Sync.filters</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.uplot.Focus"><code class="docutils literal notranslate"><span class="pre">Focus</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Focus.alpha"><code class="docutils literal notranslate"><span class="pre">Focus.alpha</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.uplot.Legend"><code class="docutils literal notranslate"><span class="pre">Legend</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Legend.show"><code class="docutils literal notranslate"><span class="pre">Legend.show</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Legend.live"><code class="docutils literal notranslate"><span class="pre">Legend.live</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Legend.isolate"><code class="docutils literal notranslate"><span class="pre">Legend.isolate</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Legend.markers"><code class="docutils literal notranslate"><span class="pre">Legend.markers</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Legend.mount"><code class="docutils literal notranslate"><span class="pre">Legend.mount</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Legend.idx"><code class="docutils literal notranslate"><span class="pre">Legend.idx</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Legend.idxs"><code class="docutils literal notranslate"><span class="pre">Legend.idxs</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.uplot.Legend_Markers"><code class="docutils literal notranslate"><span class="pre">Legend_Markers</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Legend_Markers.show"><code class="docutils literal notranslate"><span class="pre">Legend_Markers.show</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Legend_Markers.width"><code class="docutils literal notranslate"><span class="pre">Legend_Markers.width</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Legend_Markers.stroke"><code class="docutils literal notranslate"><span class="pre">Legend_Markers.stroke</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Legend_Markers.fill"><code class="docutils literal notranslate"><span class="pre">Legend_Markers.fill</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Legend_Markers.dash"><code class="docutils literal notranslate"><span class="pre">Legend_Markers.dash</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.uplot.Scale"><code class="docutils literal notranslate"><span class="pre">Scale</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Scale.time"><code class="docutils literal notranslate"><span class="pre">Scale.time</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Scale.auto"><code class="docutils literal notranslate"><span class="pre">Scale.auto</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Scale.range"><code class="docutils literal notranslate"><span class="pre">Scale.range</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Scale.from"><code class="docutils literal notranslate"><span class="pre">Scale.from</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Scale.distr"><code class="docutils literal notranslate"><span class="pre">Scale.distr</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Scale.log"><code class="docutils literal notranslate"><span class="pre">Scale.log</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Scale.clamp"><code class="docutils literal notranslate"><span class="pre">Scale.clamp</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Scale.asinh"><code class="docutils literal notranslate"><span class="pre">Scale.asinh</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Scale.fwd"><code class="docutils literal notranslate"><span class="pre">Scale.fwd</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Scale.bwd"><code class="docutils literal notranslate"><span class="pre">Scale.bwd</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Scale.min"><code class="docutils literal notranslate"><span class="pre">Scale.min</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Scale.max"><code class="docutils literal notranslate"><span class="pre">Scale.max</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Scale.dir"><code class="docutils literal notranslate"><span class="pre">Scale.dir</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Scale.ori"><code class="docutils literal notranslate"><span class="pre">Scale.ori</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Scale.key"><code class="docutils literal notranslate"><span class="pre">Scale.key</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.uplot.Select"><code class="docutils literal notranslate"><span class="pre">Select</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Select.left"><code class="docutils literal notranslate"><span class="pre">Select.left</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Select.top"><code class="docutils literal notranslate"><span class="pre">Select.top</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Select.width"><code class="docutils literal notranslate"><span class="pre">Select.width</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Select.height"><code class="docutils literal notranslate"><span class="pre">Select.height</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Select.show"><code class="docutils literal notranslate"><span class="pre">Select.show</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Select.over"><code class="docutils literal notranslate"><span class="pre">Select.over</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.uplot.Series"><code class="docutils literal notranslate"><span class="pre">Series</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Series.show"><code class="docutils literal notranslate"><span class="pre">Series.show</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.class"><code class="docutils literal notranslate"><span class="pre">Series.class</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.scale"><code class="docutils literal notranslate"><span class="pre">Series.scale</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.auto"><code class="docutils literal notranslate"><span class="pre">Series.auto</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.sorted"><code class="docutils literal notranslate"><span class="pre">Series.sorted</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.spanGaps"><code class="docutils literal notranslate"><span class="pre">Series.spanGaps</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.gaps"><code class="docutils literal notranslate"><span class="pre">Series.gaps</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.pxAlign"><code class="docutils literal notranslate"><span class="pre">Series.pxAlign</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.label"><code class="docutils literal notranslate"><span class="pre">Series.label</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.value"><code class="docutils literal notranslate"><span class="pre">Series.value</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.paths"><code class="docutils literal notranslate"><span class="pre">Series.paths</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.points"><code class="docutils literal notranslate"><span class="pre">Series.points</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.facets"><code class="docutils literal notranslate"><span class="pre">Series.facets</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.width"><code class="docutils literal notranslate"><span class="pre">Series.width</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.stroke"><code class="docutils literal notranslate"><span class="pre">Series.stroke</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.fill"><code class="docutils literal notranslate"><span class="pre">Series.fill</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.fillTo"><code class="docutils literal notranslate"><span class="pre">Series.fillTo</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.dash"><code class="docutils literal notranslate"><span class="pre">Series.dash</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.cap"><code class="docutils literal notranslate"><span class="pre">Series.cap</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.alpha"><code class="docutils literal notranslate"><span class="pre">Series.alpha</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.idxs"><code class="docutils literal notranslate"><span class="pre">Series.idxs</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.min"><code class="docutils literal notranslate"><span class="pre">Series.min</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series.max"><code class="docutils literal notranslate"><span class="pre">Series.max</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.uplot.Series_Facet"><code class="docutils literal notranslate"><span class="pre">Series_Facet</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Series_Facet.scale"><code class="docutils literal notranslate"><span class="pre">Series_Facet.scale</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series_Facet.auto"><code class="docutils literal notranslate"><span class="pre">Series_Facet.auto</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series_Facet.sorted"><code class="docutils literal notranslate"><span class="pre">Series_Facet.sorted</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.uplot.Series_Points"><code class="docutils literal notranslate"><span class="pre">Series_Points</span></code></a><ul>
+<li><a class="reference internal" href="#viser.uplot.Series_Points.show"><code class="docutils literal notranslate"><span class="pre">Series_Points.show</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series_Points.paths"><code class="docutils literal notranslate"><span class="pre">Series_Points.paths</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series_Points.filter"><code class="docutils literal notranslate"><span class="pre">Series_Points.filter</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series_Points.size"><code class="docutils literal notranslate"><span class="pre">Series_Points.size</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series_Points.space"><code class="docutils literal notranslate"><span class="pre">Series_Points.space</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series_Points.width"><code class="docutils literal notranslate"><span class="pre">Series_Points.width</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series_Points.stroke"><code class="docutils literal notranslate"><span class="pre">Series_Points.stroke</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series_Points.dash"><code class="docutils literal notranslate"><span class="pre">Series_Points.dash</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series_Points.cap"><code class="docutils literal notranslate"><span class="pre">Series_Points.cap</span></code></a></li>
+<li><a class="reference internal" href="#viser.uplot.Series_Points.fill"><code class="docutils literal notranslate"><span class="pre">Series_Points.fill</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="../../../_static/documentation_options.js?v=187304be"></script>
+    <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/scripts/furo.js?v=5fa4622c"></script>
+    <script src="../../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../../_static/copybutton.js?v=0729d509"></script>
+    </body>
+</html>
