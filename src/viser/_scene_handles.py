@@ -116,12 +116,25 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
     ) -> TSceneNodeHandle:
         """Create scene node: send state to client(s) and set up
         server-side state."""
+        # Normalize name to always start with "/".
+        if not name.startswith("/"):
+            name = "/" + name
+            message.name = name
+
+        # Ensure all ancestor nodes exist (creates intermediate frames as needed).
+        api._ensure_ancestors_exist(name)
+
         # Send message.
         assert isinstance(message, _messages.Message)
         api._websock_interface.queue_message(message)
 
         out = cls(_SceneNodeHandleState(name, copy.deepcopy(message.props), api))
         api._handle_from_node_name[name] = out
+
+        # Track parent -> child relationship.
+        parent = name.rsplit("/", 1)[0]
+        api._children_from_node_name.setdefault(parent, set()).add(name)
+        api._children_from_node_name.setdefault(name, set())
 
         out.wxyz = wxyz
         out.position = position
@@ -193,8 +206,28 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             warnings.warn(f"Attempted to remove already removed node: {self.name}")
             return
 
-        self._impl.removed = True
-        self._impl.api._handle_from_node_name.pop(self._impl.name)
+        # Collect all descendants via BFS.
+        to_remove = [self._impl.name]
+        i = 0
+        while i < len(to_remove):
+            children = self._impl.api._children_from_node_name.get(to_remove[i], ())
+            to_remove.extend(children)
+            i += 1
+
+        # Clean up all descendants from both dicts.
+        for node_name in to_remove:
+            handle = self._impl.api._handle_from_node_name.pop(node_name, None)
+            if handle is not None:
+                handle._impl.removed = True
+            self._impl.api._children_from_node_name.pop(node_name, None)
+
+        # Remove from parent's children set.
+        parent = self._impl.name.rsplit("/", 1)[0]
+        parent_children = self._impl.api._children_from_node_name.get(parent)
+        if parent_children is not None:
+            parent_children.discard(self._impl.name)
+
+        # Single message — client cascades removal to children.
         self._impl.api._websock_interface.queue_message(
             _messages.RemoveSceneNodeMessage(self._impl.name)
         )
