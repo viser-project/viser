@@ -130,6 +130,15 @@ Scene Visualization
                </div>
            </a>
        </div>
+       <div class="example-card" style="border-radius: 3px; overflow: hidden; background: white; transition: transform 0.2s;">
+           <a href="examples/scene/fog/" style="text-decoration: none; color: inherit; display: block;">
+               <img src="_static/examples/thumbs/01_scene_10_fog.png" alt="Distance fog" style="width: 100%; height: auto; aspect-ratio: 16/9; object-fit: cover; display: block;">
+               <div style="padding: 15px;">
+                   <h4 style="margin: 0; padding: 0; font-size: 16px; font-weight: 600; color: #333; margin-bottom: 8px;">Distance fog</h4>
+                   <p style="margin: 0; padding: 0; color: #666; font-size: 13px; line-height: 1.4;">Add distance-based fog to fade objects into a background color.</p>
+               </div>
+           </a>
+       </div>
    </div>
 
 GUI Controls

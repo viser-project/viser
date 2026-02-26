@@ -312,6 +312,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../../examples/scene/background_composite/">Depth compositing</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../examples/scene/set_up_direction/">Set up direction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../examples/scene/gaussian_splats/">Gaussian splats</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/scene/fog/">Distance fog</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../examples/gui/">GUI Controls</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><div class="visually-hidden">Toggle navigation of GUI Controls</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
@@ -1026,6 +1027,40 @@
                 <span class="n">background_wxyz</span><span class="o">=</span><span class="n">cast_vector</span><span class="p">(</span><span class="n">background_wxyz</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
                 <span class="n">environment_intensity</span><span class="o">=</span><span class="n">environment_intensity</span><span class="p">,</span>
                 <span class="n">environment_wxyz</span><span class="o">=</span><span class="n">cast_vector</span><span class="p">(</span><span class="n">environment_wxyz</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
+            <span class="p">)</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="SceneApi.configure_fog">
+<a class="viewcode-back" href="../../../api/core/scene_api/#viser.SceneApi.configure_fog">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">configure_fog</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">near</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">far</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">color</span><span class="p">:</span> <span class="n">RgbTupleOrArray</span> <span class="o">=</span> <span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span>
+        <span class="n">enabled</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Configure distance-based fog for the scene.</span>
+
+<span class="sd">        When enabled, objects further from the camera will fade into the fog</span>
+<span class="sd">        color, providing a depth cue. Uses linear fog, where ``near`` and</span>
+<span class="sd">        ``far`` define the range over which the fog transitions from</span>
+<span class="sd">        transparent to fully opaque.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            near: Distance from the camera at which fog begins.</span>
+<span class="sd">            far: Distance from the camera at which fog is fully opaque.</span>
+<span class="sd">            color: Fog color as an RGB tuple (0-255 per channel) or</span>
+<span class="sd">                a float tuple (0.0-1.0 per channel).</span>
+<span class="sd">            enabled: Whether fog is enabled.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+            <span class="n">_messages</span><span class="o">.</span><span class="n">FogMessage</span><span class="p">(</span>
+                <span class="n">near</span><span class="o">=</span><span class="n">near</span><span class="p">,</span>
+                <span class="n">far</span><span class="o">=</span><span class="n">far</span><span class="p">,</span>
+                <span class="n">color</span><span class="o">=</span><span class="n">_encode_rgb</span><span class="p">(</span><span class="n">color</span><span class="p">),</span>
+                <span class="n">enabled</span><span class="o">=</span><span class="n">enabled</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="p">)</span></div>
 
