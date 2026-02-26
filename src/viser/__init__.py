@@ -64,4 +64,4 @@ from ._viser import ClientHandle as ClientHandle
 from ._viser import InitialCameraConfig as InitialCameraConfig
 from ._viser import ViserServer as ViserServer
 
-__version__ = "1.0.23"
+__version__ = "1.0.24"

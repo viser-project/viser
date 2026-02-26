@@ -1,6 +1,6 @@
 // Automatically generated file - do not edit manually.
 // This is synchronized with the Python package version in viser/__init__.py.
-export const VISER_VERSION = "1.0.23";
+export const VISER_VERSION = "1.0.24";
 
 // GitHub contributors for the viser project.
 export interface Contributor {
