@@ -37,6 +37,10 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
   uniform vec3 uniformColor;
 
   #include <fog_pars_vertex>
+  #include <logdepthbuf_pars_vertex>
+  #ifdef USE_LOGDEPTHBUF
+  bool isPerspectiveMatrix( mat4 m ) { return m[ 2 ][ 3 ] == -1.0; }
+  #endif
 
   void main() {
       vPosition = position;
@@ -48,6 +52,7 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
       vec4 world_pos = modelViewMatrix * vec4(position, 1.0);
       gl_Position = projectionMatrix * world_pos;
       gl_PointSize = (scale / -world_pos.z);
+      #include <logdepthbuf_vertex>
       #ifdef USE_FOG
         vFogDepth = -world_pos.z;
       #endif
@@ -58,6 +63,7 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
   uniform float point_ball_norm;
 
   #include <fog_pars_fragment>
+  #include <logdepthbuf_pars_fragment>
 
   void main() {
       if (point_ball_norm < 1000.0) {
@@ -68,6 +74,7 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
           if (r > 0.5) discard;
       }
       gl_FragColor = vec4(vColor, 1.0);
+      #include <logdepthbuf_fragment>
       #include <fog_fragment>
   }
    `,

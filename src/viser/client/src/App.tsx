@@ -589,7 +589,7 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
       style={{ position: "relative", zIndex: 0, width: "100%", height: "100%" }}
     >
       <Canvas
-        gl={{ preserveDrawingBuffer: true }}
+        gl={{ preserveDrawingBuffer: true, logarithmicDepthBuffer: true }}
         style={{ width: "100%", height: "100%" }}
         ref={(el) => (viewer.mutable.current.canvas = el)}
         onPointerDown={handlePointerDown}
@@ -852,14 +852,20 @@ function BackgroundImage() {
   const shaders = useMemo(
     () => ({
       vert: `
+    #include <logdepthbuf_pars_vertex>
+    #ifdef USE_LOGDEPTHBUF
+    bool isPerspectiveMatrix( mat4 m ) { return m[ 2 ][ 3 ] == -1.0; }
+    #endif
     varying vec2 vUv;
     void main() {
       vUv = uv;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      #include <logdepthbuf_vertex>
     }
     `,
       frag: `
     #include <packing>
+    #include <logdepthbuf_pars_fragment>
     precision highp float;
     precision highp int;
 
@@ -888,7 +894,11 @@ function BackgroundImage() {
       float bufDepth;
       if(hasDepth){
         float depth = readDepth(depthMap, vUv);
-        bufDepth = viewZToPerspectiveDepth(-depth, cameraNear, cameraFar);
+        #ifdef USE_LOGDEPTHBUF
+          bufDepth = log2(1.0 + depth) * logDepthBufFC * 0.5;
+        #else
+          bufDepth = viewZToPerspectiveDepth(-depth, cameraNear, cameraFar);
+        #endif
       } else {
         bufDepth = 1.0;
       }

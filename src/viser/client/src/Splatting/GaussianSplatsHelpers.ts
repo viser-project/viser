@@ -50,6 +50,10 @@ const GaussianSplatMaterial = /* @__PURE__ */ shaderMaterial(
   out vec2 vPosition;
 
   #include <fog_pars_vertex>
+  #include <logdepthbuf_pars_vertex>
+  #ifdef USE_LOGDEPTHBUF
+  bool isPerspectiveMatrix( mat4 m ) { return m[ 2 ][ 3 ] == -1.0; }
+  #endif
 
   // Function to fetch and construct the i-th transform matrix using texelFetch
   mat4 getGroupTransform(uint i) {
@@ -159,6 +163,8 @@ const GaussianSplatMaterial = /* @__PURE__ */ shaderMaterial(
             + position.x * v1 / viewport * 2.0
             + position.y * v2 / viewport * 2.0, pos2d.z / pos2d.w, 1.);
 
+    #include <logdepthbuf_vertex>
+
     #ifdef USE_FOG
       vFogDepth = -c_cam.z;
     #endif
@@ -172,6 +178,7 @@ const GaussianSplatMaterial = /* @__PURE__ */ shaderMaterial(
   in vec2 vPosition;
 
   #include <fog_pars_fragment>
+  #include <logdepthbuf_pars_fragment>
 
   void main () {
     float A = -dot(vPosition, vPosition);
@@ -179,6 +186,7 @@ const GaussianSplatMaterial = /* @__PURE__ */ shaderMaterial(
     float B = exp(A) * vRgba.a;
     if (B < 0.01) discard;  // alphaTest.
     gl_FragColor = vec4(vRgba.rgb, B);
+    #include <logdepthbuf_fragment>
     #include <fog_fragment>
   }`,
 );

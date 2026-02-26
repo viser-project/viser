@@ -26,6 +26,7 @@ export const OutlinesMaterial = /* @__PURE__ */ shaderMaterial(
    #include <morphtarget_pars_vertex>
    #include <skinning_pars_vertex>
    #include <fog_pars_vertex>
+   #include <logdepthbuf_pars_vertex>
    uniform float thickness;
    uniform float screenspace;
    uniform vec2 size;
@@ -57,13 +58,16 @@ export const OutlinesMaterial = /* @__PURE__ */ shaderMaterial(
        clipPosition.xy += offset;
        gl_Position = clipPosition;
      }
+     #include <logdepthbuf_vertex>
      #include <fog_vertex>
    }`,
   `uniform vec3 color;
    uniform float opacity;
    #include <fog_pars_fragment>
+   #include <logdepthbuf_pars_fragment>
    void main(){
      gl_FragColor = vec4(color, opacity);
+     #include <logdepthbuf_fragment>
      #include <tonemapping_fragment>
      #include <${version >= 154 ? "colorspace_fragment" : "encodings_fragment"}>
      #include <fog_fragment>

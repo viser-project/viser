@@ -190,62 +190,6 @@ function createObjectFactory(
                     new THREE.Euler(-Math.PI / 2.0, 0.0, -Math.PI / 2.0),
       );
 
-      // When rotations are identity: plane is XY, while grid is XZ.
-      const planeQuaternion = new THREE.Quaternion()
-        .setFromEuler(new THREE.Euler(-Math.PI / 2, 0.0, 0.0))
-        .premultiply(gridQuaternion);
-      let colorPlane;
-      if (message.props.plane_opacity > 0.0) {
-        const colorPlaneWidth = message.props.infinite_grid
-          ? 10000
-          : message.props.width;
-        const colorPlaneHeight = message.props.infinite_grid
-          ? 10000
-          : message.props.height;
-        colorPlane = (
-          <mesh quaternion={planeQuaternion}>
-            <planeGeometry args={[colorPlaneWidth, colorPlaneHeight]} />
-            <meshBasicMaterial
-              color={rgbToInt(message.props.plane_color)}
-              transparent
-              opacity={message.props.plane_opacity}
-              depthWrite
-              side={THREE.DoubleSide}
-              toneMapped={false}
-              polygonOffset
-              polygonOffsetFactor={2}
-              polygonOffsetUnits={2}
-            />
-          </mesh>
-        );
-      } else {
-        colorPlane = null;
-      }
-
-      let shadowPlane;
-      if (message.props.shadow_opacity > 0.0) {
-        const shadowWidth = message.props.infinite_grid
-          ? 10000
-          : message.props.width;
-        const shadowHeight = message.props.infinite_grid
-          ? 10000
-          : message.props.height;
-        shadowPlane = (
-          <mesh receiveShadow quaternion={planeQuaternion}>
-            <planeGeometry args={[shadowWidth, shadowHeight]} />
-            <shadowMaterial
-              opacity={message.props.shadow_opacity}
-              color={0x000000}
-              depthWrite={false}
-              polygonOffset
-              polygonOffsetFactor={1}
-              polygonOffsetUnits={1}
-            />
-          </mesh>
-        );
-      } else {
-        shadowPlane = null;
-      }
       return {
         makeObject: (ref, children) => (
           <group ref={ref}>
@@ -263,11 +207,11 @@ function createObjectFactory(
                 fadeDistance={message.props.fade_distance}
                 fadeStrength={message.props.fade_strength}
                 fadeFrom={message.props.fade_from === "camera" ? 1 : 0}
+                planeColor={rgbToInt(message.props.plane_color)}
+                planeOpacity={message.props.plane_opacity}
+                shadowOpacity={message.props.shadow_opacity}
                 quaternion={gridQuaternion}
-                renderOrder={1}
               />
-              {colorPlane}
-              {shadowPlane}
             </group>
             {children}
           </group>
