@@ -159,9 +159,9 @@ const GaussianSplatMaterial = /* @__PURE__ */ shaderMaterial(
     vPosition = position.xy;
 
     gl_Position = vec4(
-        vec2(pos2d) / pos2d.w
+        (vec2(pos2d) / pos2d.w
             + position.x * v1 / viewport * 2.0
-            + position.y * v2 / viewport * 2.0, pos2d.z / pos2d.w, 1.);
+            + position.y * v2 / viewport * 2.0) * pos2d.w, pos2d.z, pos2d.w);
 
     #include <logdepthbuf_vertex>
 
