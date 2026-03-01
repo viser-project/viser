@@ -57,6 +57,13 @@ export const BoxMesh = React.forwardRef<
     });
   }, [shadowOpacity]);
 
+  // Clean up shadow material when it changes.
+  React.useEffect(() => {
+    return () => {
+      if (shadowMaterial) shadowMaterial.dispose();
+    };
+  }, [shadowMaterial]);
+
   const s = normalizeScale(message.props.scale);
   const d = message.props.dimensions;
   const scaledDimensions: [number, number, number] = [

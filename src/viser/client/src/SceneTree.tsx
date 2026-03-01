@@ -821,6 +821,17 @@ export function SceneNodeThreeObject(props: { name: string }) {
       objRef.current.visible =
         node.overrideVisibility ?? node.visibility ?? true;
 
+      // If a clickable node becomes invisible while hovered, clean up hover
+      // state so the cursor doesn't stay stuck as "pointer".
+      if (!node.effectiveVisibility && hoveredRef.current.isHovered && clickable) {
+        hoveredRef.current.isHovered = false;
+        hoveredRef.current.instanceId = null;
+        viewerMutable.hoveredElementsCount--;
+        if (viewerMutable.hoveredElementsCount === 0) {
+          document.body.style.cursor = "auto";
+        }
+      }
+
       if (node.poseUpdateState == "needsUpdate") {
         // Update pose state through zustand action.
         updateNodeAttributes(props.name, {

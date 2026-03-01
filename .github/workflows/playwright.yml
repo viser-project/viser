@@ -1,0 +1,46 @@
+name: playwright-e2e
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: playwright-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: ./.github/actions/setup-e2e
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Fetch reference images
+        run: |
+          git fetch origin ci/reference_images --depth=1 || true
+          if git rev-parse origin/ci/reference_images >/dev/null 2>&1; then
+            git worktree add .reference_images origin/ci/reference_images
+          else
+            echo "No reference images branch found — screenshot comparison tests will be skipped."
+            mkdir -p .reference_images
+          fi
+
+      - name: Run E2E tests
+        run: uv run pytest tests/e2e/ -n auto
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-py${{ matrix.python-version }}
+          path: test-results/
+          retention-days: 30

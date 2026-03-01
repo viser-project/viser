@@ -1,0 +1,52 @@
+name: update-baselines
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-baselines:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-e2e
+
+      - name: Record commit SHA
+        id: sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Generate reference screenshots
+        run: uv run pytest tests/e2e/ --update-baselines
+
+      - name: Generate README for reference branch
+        run: uv run python -m tests.e2e.generate_readme .reference_images --commit-sha "${{ steps.sha.outputs.sha }}"
+
+      - name: Push to ci/reference_images branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git rev-parse --verify origin/ci/reference_images >/dev/null 2>&1; then
+            git checkout ci/reference_images
+          else
+            git checkout --orphan ci/reference_images
+            git rm -rf . 2>/dev/null || true
+          fi
+
+          # Replace contents with newly generated images + README.
+          find . -maxdepth 1 \
+            ! -name '.git' \
+            ! -name '.reference_images' \
+            -mindepth 1 \
+            -exec rm -rf {} +
+          cp .reference_images/* . 2>/dev/null || true
+
+          git add -A
+          git commit -m "Update reference images from main@${{ steps.sha.outputs.sha }}" \
+            --allow-empty
+          git push origin ci/reference_images

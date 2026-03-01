@@ -83,6 +83,14 @@ export const SingleGlbAsset = React.forwardRef<
       depthWrite: false,
     });
   }, [shadowOpacity]);
+
+  // Clean up shadow material when it changes.
+  React.useEffect(() => {
+    return () => {
+      if (shadowMaterial) shadowMaterial.dispose();
+    };
+  }, [shadowMaterial]);
+
   if (!gltf) return null;
 
   return (

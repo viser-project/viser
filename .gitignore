@@ -21,3 +21,9 @@ examples/assets
 
 **/.claude/settings.local.json
 uv.lock
+
+# Reference images (live on ci/reference_images branch, shallow-cloned in CI)
+.reference_images/
+
+# E2E test failure artifacts (screenshots, HTML, video, traces)
+test-results/

@@ -69,6 +69,13 @@ export const CylinderMesh = React.forwardRef<
     });
   }, [shadowOpacity]);
 
+  // Clean up shadow material when it changes.
+  React.useEffect(() => {
+    return () => {
+      if (shadowMaterial) shadowMaterial.dispose();
+    };
+  }, [shadowMaterial]);
+
   // The cylinder geometry has height along Y, but the PI/2 rotation around X
   // remaps axes: local Y→Z, local Z→-Y. To make the user-facing scale axes
   // match the visual axes (sx→X, sy→Y, sz→Z/height), we reorder:

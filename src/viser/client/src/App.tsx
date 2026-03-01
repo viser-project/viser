@@ -968,11 +968,25 @@ function BackgroundImage() {
  * Helper component to sync scene and camera state.
  */
 function SceneContextSetter() {
-  const { mutable } = React.useContext(ViewerContext)!;
+  const viewer = React.useContext(ViewerContext)!;
+  const { mutable } = viewer;
   mutable.current.scene = useThree((state) => state.scene);
   mutable.current.camera = useThree(
     (state) => state.camera as THREE.PerspectiveCamera,
   );
+
+  // Expose scene internals on window for E2E testing (Playwright).
+  useEffect(() => {
+    const w = window as any;
+    w.__viserMutable = mutable.current;
+    w.__viserSceneTree = viewer.useSceneTree;
+
+    return () => {
+      delete w.__viserMutable;
+      delete w.__viserSceneTree;
+    };
+  }, [mutable, viewer.useSceneTree]);
+
   return null;
 }
 
