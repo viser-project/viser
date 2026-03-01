@@ -66,6 +66,13 @@ export const IcosphereMesh = React.forwardRef<
     });
   }, [shadowOpacity]);
 
+  // Clean up shadow material when it changes.
+  React.useEffect(() => {
+    return () => {
+      if (shadowMaterial) shadowMaterial.dispose();
+    };
+  }, [shadowMaterial]);
+
   // Calculate scaling values.
   const normalizedScale = normalizeScale(message.props.scale);
   const scale: [number, number, number] = [

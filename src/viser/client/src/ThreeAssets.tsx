@@ -537,8 +537,10 @@ export const ViserImage = React.forwardRef<
   // We can't use useMemo here because TextureLoader.load is asynchronous.
   // And we need to use setState to update the texture after loading.
   const [imageTexture, setImageTexture] = React.useState<THREE.Texture>();
+  const textureRef = React.useRef<THREE.Texture | undefined>();
 
   React.useEffect(() => {
+    let cancelled = false;
     if (message.props._format !== null && message.props._data !== null) {
       const image_url = URL.createObjectURL(
         new Blob([message.props._data], {
@@ -546,11 +548,31 @@ export const ViserImage = React.forwardRef<
         }),
       );
       new THREE.TextureLoader().load(image_url, (texture) => {
-        setImageTexture(texture);
+        if (!cancelled) {
+          if (textureRef.current) {
+            textureRef.current.dispose();
+          }
+          textureRef.current = texture;
+          setImageTexture(texture);
+        } else {
+          texture.dispose();
+        }
         URL.revokeObjectURL(image_url);
       });
     }
+    return () => {
+      cancelled = true;
+    };
   }, [message.props._format, message.props._data]);
+
+  React.useEffect(() => {
+    return () => {
+      if (textureRef.current) {
+        textureRef.current.dispose();
+        textureRef.current = undefined;
+      }
+    };
+  }, []);
   return (
     <group ref={ref}>
       <group scale={normalizeScale(message.props.scale)}>

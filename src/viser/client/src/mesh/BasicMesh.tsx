@@ -89,6 +89,13 @@ export const BasicMesh = React.forwardRef<
     });
   }, [shadowOpacity]);
 
+  // Clean up shadow material when it changes.
+  React.useEffect(() => {
+    return () => {
+      if (shadowMaterial) shadowMaterial.dispose();
+    };
+  }, [shadowMaterial]);
+
   return (
     <group ref={ref}>
       <mesh
