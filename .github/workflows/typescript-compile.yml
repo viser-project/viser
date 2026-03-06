@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: typescript-compile-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   typescript-compile:
     runs-on: ubuntu-latest
