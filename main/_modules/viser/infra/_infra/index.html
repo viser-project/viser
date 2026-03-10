@@ -826,7 +826,11 @@
         <span class="n">atexit</span><span class="o">.</span><span class="n">unregister</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stop</span><span class="p">)</span>
 
         <span class="c1"># Signal the background thread to stop.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_background_event_loop</span><span class="o">.</span><span class="n">call_soon_threadsafe</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_stop_event</span><span class="o">.</span><span class="n">set</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_background_event_loop</span><span class="o">.</span><span class="n">call_soon_threadsafe</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_stop_event</span><span class="o">.</span><span class="n">set</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">RuntimeError</span><span class="p">:</span>
+            <span class="c1"># Event loop may already be closed during teardown.</span>
+            <span class="k">pass</span>
 
         <span class="c1"># Clean up the message buffers. This isn&#39;t really necessary, but helps</span>
         <span class="c1"># avoid &quot;task destroyed&quot; errors.</span>
