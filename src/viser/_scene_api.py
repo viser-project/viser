@@ -498,6 +498,7 @@ class SceneApi:
         decay: float = 2.0,
         intensity: float = 1.0,
         cast_shadow: bool = False,
+        direction: tuple[float, float, float] = (0.0, 0.0, -1.0),
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -517,6 +518,7 @@ class SceneApi:
             decay: The amount the light dims along the distance of the light.
             intensity: Light's strength/intensity.
             cast_shadow: If set to true light will cast dynamic shadows
+            direction: Direction that the spotlight points in its local frame.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
             position: Translation to parent frame from local frame (t_pl).
             visible: Whether or not this scene node is initially visible.
@@ -528,7 +530,14 @@ class SceneApi:
         message = _messages.SpotLightMessage(
             name,
             _messages.SpotLightProps(
-                color, intensity, distance, angle, penumbra, decay, cast_shadow
+                color,
+                intensity,
+                distance,
+                angle,
+                penumbra,
+                decay,
+                cast_shadow,
+                direction,
             ),
         )
         return SpotLightHandle._make(self, message, name, wxyz, position, visible)

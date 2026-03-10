@@ -7,7 +7,7 @@ from playwright.sync_api import Page
 
 import viser
 
-from .utils import find_free_port, wait_for_connection, wait_for_scene_node
+from .utils import wait_for_scene_node
 
 # JS: check if the image node has a texture loaded on its material.
 JS_HAS_TEXTURE = """
@@ -190,7 +190,7 @@ def test_texture_memory_leak_when_updating_image(
         }
     """)
 
-    print(f"\nFinal texture analysis:")
+    print("\nFinal texture analysis:")
     print(f"  Total textures created: {final_texture_analysis['totalCreated']}")
     print(f"  Active (not disposed): {len(final_texture_analysis['activeTextures'])}")
     print(f"  Disposed: {len(final_texture_analysis['disposedTextures'])}")
@@ -198,8 +198,8 @@ def test_texture_memory_leak_when_updating_image(
     # If textures are properly disposed, we should have:
     # - Only 1 active texture (the current one).
     # - All others should be disposed.
-    active_count = len(final_texture_analysis['activeTextures'])
-    total_created = final_texture_analysis['totalCreated']
+    active_count = len(final_texture_analysis["activeTextures"])
+    total_created = final_texture_analysis["totalCreated"]
 
     # Assert that only the current texture is active, all others are disposed.
     assert active_count <= 2, (

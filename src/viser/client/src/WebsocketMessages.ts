@@ -232,6 +232,7 @@ export interface SpotLightMessage {
     penumbra: number;
     decay: number;
     cast_shadow: boolean;
+    direction: [number, number, number];
   };
 }
 /** Mesh message.
@@ -1659,8 +1660,8 @@ export type Message =
   | ViewerCameraMessage
   | ScenePointerMessage
   | ScenePointerEnableMessage
-  | EnvironmentMapMessage
   | FogMessage
+  | EnvironmentMapMessage
   | EnableLightsMessage
   | SetBoneOrientationMessage
   | SetBonePositionMessage

@@ -594,6 +594,8 @@ class SpotLightProps:
     """Decay of the spot light."""
     cast_shadow: bool
     """If set to true mesh will cast a shadow. """
+    direction: Tuple[float, float, float]
+    """Direction that the spotlight points in its local frame."""
 
     def __post_init__(self):
         assert self.angle <= np.pi / 2

@@ -42,7 +42,7 @@ import {
   ViserLabel,
 } from "./ThreeAssets";
 import { CameraFrustumComponent } from "./CameraFrustumVariants";
-import { SceneNodeMessage } from "./WebsocketMessages";
+import { SceneNodeMessage, SpotLightMessage } from "./WebsocketMessages";
 import { SplatObject } from "./Splatting/GaussianSplats";
 import { Paper } from "@mantine/core";
 import GeneratedGuiContainer from "./ControlPanel/Generated";
@@ -106,6 +106,50 @@ export type MakeObject = (
   ref: React.Ref<any>,
   children: React.ReactNode,
 ) => React.ReactNode;
+
+/** SpotLight wrapper that sets up a target object so the light points in the
+ *  correct direction rather than always toward the world origin. */
+const ViserSpotLight = React.forwardRef<
+  THREE.Group,
+  {
+    message: SpotLightMessage;
+    shadowArgs: Record<string, any>;
+    children?: React.ReactNode;
+  }
+>(function ViserSpotLight({ message, shadowArgs: sa, children }, ref) {
+  const spotlightRef = React.useRef<THREE.SpotLight>(null);
+  const targetRef = React.useRef<THREE.Object3D>(null);
+  const p = message.props;
+
+  useEffect(() => {
+    const light = spotlightRef.current;
+    const target = targetRef.current;
+    if (light && target) {
+      light.target = target;
+    }
+  }, []);
+
+  return (
+    <group ref={ref}>
+      <spotLight
+        ref={spotlightRef}
+        intensity={p.intensity}
+        color={rgbToInt(p.color)}
+        distance={p.distance}
+        angle={p.angle}
+        penumbra={p.penumbra}
+        decay={p.decay}
+        castShadow={p.cast_shadow}
+        {...sa}
+      />
+      <object3D
+        ref={targetRef}
+        position={[p.direction[0], p.direction[1], p.direction[2]]}
+      />
+      {children}
+    </group>
+  );
+});
 
 function createObjectFactory(
   message: SceneNodeMessage | undefined,
@@ -633,19 +677,9 @@ function createObjectFactory(
     case "SpotLightMessage": {
       return {
         makeObject: (ref, children) => (
-          <spotLight
-            ref={ref}
-            intensity={message.props.intensity}
-            color={rgbToInt(message.props.color)}
-            distance={message.props.distance}
-            angle={message.props.angle}
-            penumbra={message.props.penumbra}
-            decay={message.props.decay}
-            castShadow={message.props.cast_shadow}
-            {...shadowArgs}
-          >
+          <ViserSpotLight ref={ref} message={message} shadowArgs={shadowArgs}>
             {children}
-          </spotLight>
+          </ViserSpotLight>
         ),
       };
     }
