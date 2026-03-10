@@ -9,6 +9,7 @@ Add directional lights and ambient lighting to illuminate 3D meshes with realist
 * :meth:`viser.SceneApi.add_directional_light` for sun-like directional lighting
 * :meth:`viser.SceneApi.configure_default_lights` for quick setup
 * :attr:`viser.SceneNodeHandle.cast_shadow` to enable shadow casting
+* :meth:`viser.SceneApi.add_light_spot` for focused cone lighting with direction control
 * Dynamic light control with GUI sliders
 
 .. note::
@@ -85,6 +86,10 @@ Code
            "/control1", position=(0.0, -5.0, 5.0), scale=2.0
        )
        server.scene.add_label("/control1/label", "Point")
+       server.scene.add_transform_controls(
+           "/control2", position=(5.0, 0.0, 5.0), scale=2.0
+       )
+       server.scene.add_label("/control2/label", "Spot")
    
        directional_light = server.scene.add_light_directional(
            name="/control0/directional_light",
@@ -96,6 +101,18 @@ Code
            color=(192, 255, 238),
            intensity=30.0,
            cast_shadow=True,
+       )
+       spot_light = server.scene.add_light_spot(
+           name="/control2/spot_light",
+           color=(255, 200, 150),
+           intensity=80.0,
+           distance=15.0,
+           angle=np.pi / 6,
+           penumbra=0.4,
+           cast_shadow=True,
+           # direction is in the light's local frame; rotating the
+           # transform control will rotate the cone accordingly.
+           direction=(0.0, 0.0, -1.0),
        )
    
        with server.gui.add_folder("Grid Shadows"):
@@ -177,6 +194,51 @@ Code
            @gui_point_shadows.on_update
            def _(_) -> None:
                point_light.cast_shadow = gui_point_shadows.value
+   
+       with server.gui.add_folder("Spot light"):
+           gui_spot_color = server.gui.add_rgb("Color", initial_value=spot_light.color)
+           gui_spot_intensity = server.gui.add_slider(
+               "Intensity",
+               min=0.0,
+               max=200.0,
+               step=1.0,
+               initial_value=spot_light.intensity,
+           )
+           gui_spot_angle = server.gui.add_slider(
+               "Cone angle (deg)",
+               min=5.0,
+               max=89.0,
+               step=1.0,
+               initial_value=np.rad2deg(spot_light.angle),
+           )
+           gui_spot_penumbra = server.gui.add_slider(
+               "Penumbra",
+               min=0.0,
+               max=1.0,
+               step=0.01,
+               initial_value=spot_light.penumbra,
+           )
+           gui_spot_shadows = server.gui.add_checkbox("Shadows", True)
+   
+           @gui_spot_color.on_update
+           def _(_) -> None:
+               spot_light.color = gui_spot_color.value
+   
+           @gui_spot_intensity.on_update
+           def _(_) -> None:
+               spot_light.intensity = gui_spot_intensity.value
+   
+           @gui_spot_angle.on_update
+           def _(_) -> None:
+               spot_light.angle = np.deg2rad(gui_spot_angle.value)
+   
+           @gui_spot_penumbra.on_update
+           def _(_) -> None:
+               spot_light.penumbra = gui_spot_penumbra.value
+   
+           @gui_spot_shadows.on_update
+           def _(_) -> None:
+               spot_light.cast_shadow = gui_spot_shadows.value
    
        # Create GUI elements for controlling environment map.
        with server.gui.add_folder("Environment map"):
