@@ -50,11 +50,7 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
         () => (segments ? new LineSegments2() : new Line2()),
         [segments],
       );
-      const [lineMaterial] = React.useState(() => {
-        const material = new LineMaterial();
-        material.fog = true;
-        return material;
-      });
+      const [lineMaterial] = React.useState(() => new LineMaterial());
       const itemSize = 3; // We're now always using RGB colors (3 components)
       const lineGeom = React.useMemo(() => {
         const geom = segments ? new LineSegmentsGeometry() : new LineGeometry();
@@ -107,6 +103,7 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
             linewidth={linewidth ?? lineWidth ?? 1}
             dashed={dashed}
             transparent={false} /*need to set to true if itemSize === 4*/
+            fog={true}
             {...rest}
           />
         </primitive>
