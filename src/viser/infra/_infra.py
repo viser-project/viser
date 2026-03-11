@@ -358,7 +358,11 @@ class WebsockServer(WebsockMessageHandler):
         atexit.unregister(self.stop)
 
         # Signal the background thread to stop.
-        self._background_event_loop.call_soon_threadsafe(self._stop_event.set)
+        try:
+            self._background_event_loop.call_soon_threadsafe(self._stop_event.set)
+        except RuntimeError:
+            # Event loop may already be closed during teardown.
+            pass
 
         # Clean up the message buffers. This isn't really necessary, but helps
         # avoid "task destroyed" errors.

@@ -190,6 +190,13 @@ export const SkinnedMesh = React.forwardRef<
     });
   }, [shadowOpacity]);
 
+  // Clean up shadow material when it changes.
+  React.useEffect(() => {
+    return () => {
+      if (shadowMaterial) shadowMaterial.dispose();
+    };
+  }, [shadowMaterial]);
+
   // Update bone transforms for animation.
   useFrame(() => {
     const state = viewerMutable.skinnedMeshState[message.name];

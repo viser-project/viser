@@ -21,3 +21,6 @@ examples/assets
 
 **/.claude/settings.local.json
 uv.lock
+
+# E2E test failure artifacts (screenshots, HTML, video, traces)
+test-results/

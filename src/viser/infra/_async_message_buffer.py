@@ -100,11 +100,15 @@ class AsyncMessageBuffer:
         """Set the done flag. Kills the generator."""
         self.done = True
 
-        # Pulse message event to make sure we aren't waiting for a new message.
-        self.event_loop.call_soon_threadsafe(self.message_event.set)
+        try:
+            # Pulse message event to make sure we aren't waiting for a new message.
+            self.event_loop.call_soon_threadsafe(self.message_event.set)
 
-        # Pulse flush event to skip any windowing delay.
-        self.event_loop.call_soon_threadsafe(self.flush_event.set)
+            # Pulse flush event to skip any windowing delay.
+            self.event_loop.call_soon_threadsafe(self.flush_event.set)
+        except RuntimeError:
+            # Event loop may already be closed during teardown.
+            pass
 
     async def window_generator(
         self, client_id: int
