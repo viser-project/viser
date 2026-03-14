@@ -75,10 +75,18 @@ function LabeledInput(props: {
             letterSpacing: "-0.75px",
             width: "100%",
             boxSizing: "content-box",
+            overflowWrap: "anywhere",
           }}
           unselectable="off"
         >
-          <label htmlFor={props.uuid}>{props.label}</label>
+          <label htmlFor={props.uuid}>
+            {props.label.split(/(?<=[_\-/.])/).map((part, i) => (
+              <React.Fragment key={i}>
+                {i > 0 && <wbr />}
+                {part}
+              </React.Fragment>
+            ))}
+          </label>
         </Text>
       </Box>
       <Box style={{ flexGrow: 1 }}>{props.input}</Box>

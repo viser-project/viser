@@ -103,6 +103,7 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
             linewidth={linewidth ?? lineWidth ?? 1}
             dashed={dashed}
             transparent={false} /*need to set to true if itemSize === 4*/
+            fog={true}
             {...rest}
           />
         </primitive>
