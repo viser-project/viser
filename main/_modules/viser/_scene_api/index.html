@@ -945,6 +945,7 @@
         <span class="n">decay</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">2.0</span><span class="p">,</span>
         <span class="n">intensity</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
         <span class="n">cast_shadow</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">direction</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">),</span>
         <span class="n">wxyz</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
         <span class="n">position</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
         <span class="n">visible</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
@@ -964,6 +965,7 @@
 <span class="sd">            decay: The amount the light dims along the distance of the light.</span>
 <span class="sd">            intensity: Light&#39;s strength/intensity.</span>
 <span class="sd">            cast_shadow: If set to true light will cast dynamic shadows</span>
+<span class="sd">            direction: Direction that the spotlight points in its local frame.</span>
 <span class="sd">            wxyz: Quaternion rotation to parent frame from local frame (R_pl).</span>
 <span class="sd">            position: Translation to parent frame from local frame (t_pl).</span>
 <span class="sd">            visible: Whether or not this scene node is initially visible.</span>
@@ -975,7 +977,14 @@
         <span class="n">message</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">SpotLightMessage</span><span class="p">(</span>
             <span class="n">name</span><span class="p">,</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">SpotLightProps</span><span class="p">(</span>
-                <span class="n">color</span><span class="p">,</span> <span class="n">intensity</span><span class="p">,</span> <span class="n">distance</span><span class="p">,</span> <span class="n">angle</span><span class="p">,</span> <span class="n">penumbra</span><span class="p">,</span> <span class="n">decay</span><span class="p">,</span> <span class="n">cast_shadow</span>
+                <span class="n">color</span><span class="p">,</span>
+                <span class="n">intensity</span><span class="p">,</span>
+                <span class="n">distance</span><span class="p">,</span>
+                <span class="n">angle</span><span class="p">,</span>
+                <span class="n">penumbra</span><span class="p">,</span>
+                <span class="n">decay</span><span class="p">,</span>
+                <span class="n">cast_shadow</span><span class="p">,</span>
+                <span class="n">direction</span><span class="p">,</span>
             <span class="p">),</span>
         <span class="p">)</span>
         <span class="k">return</span> <span class="n">SpotLightHandle</span><span class="o">.</span><span class="n">_make</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">wxyz</span><span class="p">,</span> <span class="n">position</span><span class="p">,</span> <span class="n">visible</span><span class="p">)</span></div>
