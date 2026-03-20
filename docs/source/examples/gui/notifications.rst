@@ -26,19 +26,32 @@ Code
    import time
    
    import viser
+   from viser.theme import TitlebarConfig
+   from viser.theme._titlebar import TitlebarButton
    
    
    def main() -> None:
        server = viser.ViserServer()
    
+       titlebar_checkbox = server.gui.add_checkbox("Show titlebar", initial_value=False)
        persistent_notif_button = server.gui.add_button(
            "Show persistent notification (default)"
        )
        timed_notif_button = server.gui.add_button("Show timed notification")
        controlled_notif_button = server.gui.add_button("Show controlled notification")
        loading_notif_button = server.gui.add_button("Show loading notification")
-   
        remove_controlled_notif = server.gui.add_button("Remove controlled notification")
+   
+       @titlebar_checkbox.on_update
+       def _(_) -> None:
+           server.gui.configure_theme(
+               titlebar_content=TitlebarConfig(
+                   buttons=(TitlebarButton(text="Button", icon=None, href=None),),
+                   image=None,
+               )
+               if titlebar_checkbox.value
+               else None
+           )
    
        @persistent_notif_button.on_click
        def _(event: viser.GuiEvent) -> None:

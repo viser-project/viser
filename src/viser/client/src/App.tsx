@@ -381,7 +381,6 @@ function ViewerContents({ children }: { children: React.ReactNode }) {
       >
         {children}
         <ColorSchemeSetter darkMode={darkMode} />
-        <NotificationsPanel />
         <BrowserWarning />
         <ViserModal />
         {/* App layout */}
@@ -404,6 +403,7 @@ function ViewerContents({ children }: { children: React.ReactNode }) {
               display: "flex",
             }}
           >
+            <NotificationsPanel />
             <Box
               style={(theme) => ({
                 backgroundColor: darkMode ? theme.colors.dark[9] : "#fff",
