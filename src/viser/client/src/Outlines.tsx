@@ -193,7 +193,9 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
 
     React.useEffect(() => {
       return () => {
-        // Dispose everything on unmount
+        // Dispose everything on unmount.
+        material.dispose();
+
         const group = localRef.current;
         if (!group) return;
 
@@ -202,6 +204,7 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
           THREE.Material
         >;
         if (mesh) {
+          // Dispose the geometry if it was cloned via toCreasedNormals.
           if (angle) mesh.geometry.dispose();
           group.remove(mesh);
         }

@@ -88,12 +88,14 @@ export const PointCloud = React.forwardRef<
 
   const props = message.props;
 
-  // Create geometry using useMemo for better performance.
-  const geometry = React.useMemo(() => {
-    const geometry = new THREE.BufferGeometry();
+  // Geometry populated via ref — R3F auto-disposes on unmount.
+  const geomRef = React.useRef<THREE.BufferGeometry>(null);
+  React.useLayoutEffect(() => {
+    const geom = geomRef.current;
+    if (!geom) return;
 
     if (message.props.precision === "float16") {
-      geometry.setAttribute(
+      geom.setAttribute(
         "position",
         new THREE.Float16BufferAttribute(
           new Uint16Array(
@@ -106,7 +108,7 @@ export const PointCloud = React.forwardRef<
         ),
       );
     } else {
-      geometry.setAttribute(
+      geom.setAttribute(
         "position",
         new THREE.Float32BufferAttribute(
           new Float32Array(
@@ -122,18 +124,16 @@ export const PointCloud = React.forwardRef<
 
     // Add color attribute if needed.
     if (props.colors.length > 3) {
-      geometry.setAttribute(
+      geom.setAttribute(
         "color",
         new THREE.BufferAttribute(new Uint8Array(props.colors), 3, true),
       );
     } else if (props.colors.length < 3) {
       console.error(`Invalid color buffer length, got ${props.colors.length}`);
     }
-
-    return geometry;
   }, [props.points, props.colors]);
 
-  // Create material using useMemo for better performance.
+  // Material needs heavy per-frame uniform updates, so kept imperative.
   const material = React.useMemo(() => {
     const material = new PointCloudMaterial();
     material.fog = true;
@@ -152,13 +152,9 @@ export const PointCloud = React.forwardRef<
     return material;
   }, [props.colors]);
 
-  // Clean up resources when component unmounts.
   React.useEffect(() => {
-    return () => {
-      geometry.dispose();
-      material.dispose();
-    };
-  }, [geometry, material]);
+    return () => material.dispose();
+  }, [material]);
 
   // Update material properties with point_ball_norm
   React.useEffect(() => {
@@ -196,7 +192,9 @@ export const PointCloud = React.forwardRef<
   return (
     <group ref={ref}>
       <group scale={normalizeScale(message.props.scale)}>
-        <points frustumCulled={false} geometry={geometry} material={material} />
+        <points frustumCulled={false} material={material}>
+          <bufferGeometry ref={geomRef} />
+        </points>
       </group>
       {children}
     </group>

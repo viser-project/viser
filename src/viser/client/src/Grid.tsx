@@ -220,6 +220,13 @@ export const Grid = React.forwardRef<THREE.Mesh, GridProps>(function Grid(
     });
   }, []);
 
+  // Clean up material when component unmounts.
+  React.useEffect(() => {
+    return () => {
+      material.dispose();
+    };
+  }, [material]);
+
   // Update material uniforms when props change.
   React.useEffect(() => {
     material.uniforms.cellSize.value = cellSize;

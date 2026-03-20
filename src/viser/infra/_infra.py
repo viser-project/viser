@@ -367,7 +367,7 @@ class WebsockServer(WebsockMessageHandler):
         # Clean up the message buffers. This isn't really necessary, but helps
         # avoid "task destroyed" errors.
         self._broadcast_buffer.set_done()
-        for client in self._client_state_from_id.values():
+        for client in list(self._client_state_from_id.values()):
             client.message_buffer.set_done()
 
         # Wait for the server thread to finish.

@@ -3,6 +3,7 @@
  * But takes typed arrays as input instead of vanilla arrays.
  */
 
+import "./r3f-extend";
 import * as React from "react";
 import * as THREE from "three";
 import { ColorRepresentation } from "three";
@@ -46,68 +47,83 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
       ref,
     ) {
       const size = useThree((state) => state.size);
-      const line2 = React.useMemo(
-        () => (segments ? new LineSegments2() : new Line2()),
-        [segments],
-      );
-      const [lineMaterial] = React.useState(() => new LineMaterial());
-      const itemSize = 3; // We're now always using RGB colors (3 components)
-      const lineGeom = React.useMemo(() => {
-        const geom = segments ? new LineSegmentsGeometry() : new LineGeometry();
+      const lineRef = React.useRef<Line2 | LineSegments2>(null);
+      const geomRef = React.useRef<LineGeometry | LineSegmentsGeometry>(null);
+      const matRef = React.useRef<LineMaterial>(null);
 
-        // points is already a Float32Array of [x,y,z] values
+      // Populate geometry data via ref.
+      React.useLayoutEffect(() => {
+        const geom = geomRef.current;
+        if (!geom) return;
         geom.setPositions(points);
-
         if (vertexColors) {
-          // Convert Uint8Array (0-255) to Float32Array (0-1)
           const normalizedColors = new Float32Array(vertexColors).map(
             (c) => c / 255,
           );
-          color = 0xffffff;
-          geom.setColors(normalizedColors, itemSize);
+          geom.setColors(normalizedColors, 3);
         }
-
-        return geom;
-      }, [points, segments, vertexColors, itemSize]);
+      }, [points, vertexColors]);
 
       React.useLayoutEffect(() => {
-        line2.computeLineDistances();
-      }, [points, line2]);
+        lineRef.current?.computeLineDistances();
+      }, [points]);
 
+      // Handle dashed defines via ref (can't be expressed as a prop).
       React.useLayoutEffect(() => {
+        const mat = matRef.current;
+        if (!mat) return;
         if (dashed) {
-          lineMaterial.defines.USE_DASH = "";
+          mat.defines.USE_DASH = "";
         } else {
           // Setting lineMaterial.defines.USE_DASH to undefined is apparently not sufficient.
-          delete lineMaterial.defines.USE_DASH;
+          delete mat.defines.USE_DASH;
         }
-        lineMaterial.needsUpdate = true;
-      }, [dashed, lineMaterial]);
+        mat.needsUpdate = true;
+      }, [dashed]);
 
-      React.useEffect(() => {
-        return () => {
-          lineGeom.dispose();
-          lineMaterial.dispose();
-        };
-      }, [lineGeom]);
+      const effectiveColor = vertexColors ? 0xffffff : color;
 
-      return (
-        <primitive object={line2} ref={ref} {...rest}>
-          <primitive object={lineGeom} attach="geometry" />
-          <primitive
-            object={lineMaterial}
-            attach="material"
-            color={color}
-            vertexColors={Boolean(vertexColors)}
-            resolution={[size.width, size.height]}
-            linewidth={linewidth ?? lineWidth ?? 1}
-            dashed={dashed}
-            transparent={false} /*need to set to true if itemSize === 4*/
-            fog={true}
-            {...rest}
-          />
-        </primitive>
+      // Merge forwarded ref with internal ref.
+      const setLineRef = React.useCallback(
+        (instance: Line2 | LineSegments2 | null) => {
+          (lineRef as React.MutableRefObject<Line2 | LineSegments2 | null>).current = instance;
+          if (typeof ref === "function") ref(instance);
+          else if (ref)
+            (ref as { current: Line2 | LineSegments2 | null }).current =
+              instance;
+        },
+        [ref],
       );
+
+      // R3F manages lifecycle for all declarative children — no manual disposal.
+      const materialJsx = (
+        <lineMaterial
+          ref={matRef}
+          color={effectiveColor}
+          vertexColors={Boolean(vertexColors)}
+          resolution={[size.width, size.height]}
+          linewidth={linewidth ?? lineWidth ?? 1}
+          dashed={dashed ?? false}
+          transparent={false}
+          fog={true}
+        />
+      );
+
+      if (segments) {
+        return (
+          <lineSegments2 ref={setLineRef} {...rest}>
+            <lineSegmentsGeometry ref={geomRef} />
+            {materialJsx}
+          </lineSegments2>
+        );
+      } else {
+        return (
+          <line2 ref={setLineRef} {...rest}>
+            <lineGeometry ref={geomRef} />
+            {materialJsx}
+          </line2>
+        );
+      }
     },
   );
 

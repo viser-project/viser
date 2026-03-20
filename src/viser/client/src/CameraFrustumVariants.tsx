@@ -7,6 +7,14 @@ import { CameraFrustumMessage } from "./WebsocketMessages";
 import { rgbToInt } from "./mesh/MeshUtils";
 import { normalizeScale } from "./utils/normalizeScale";
 
+// Static index buffer shared across all filled frustum geometries.
+const FRUSTUM_INDICES = new Uint16Array([
+  // Side faces
+  0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 1,
+  // Far plane
+  1, 4, 3, 1, 3, 2,
+]);
+
 /** Helper for visualizing camera frustums. */
 export const CameraFrustumComponent = React.forwardRef<
   THREE.Group,
@@ -31,6 +39,13 @@ export const CameraFrustumComponent = React.forwardRef<
       setImageTexture(undefined);
     }
   }, [message.props._format, message.props._image_data]);
+
+  // Clean up texture when it changes or component unmounts.
+  React.useEffect(() => {
+    return () => {
+      if (imageTexture) imageTexture.dispose();
+    };
+  }, [imageTexture]);
 
   let y = Math.tan(message.props.fov / 2.0);
   let x = y * message.props.aspect;
@@ -83,46 +98,18 @@ export const CameraFrustumComponent = React.forwardRef<
     imageTexture === undefined ? [0.0, -0.9, 1.0] : [0.0, -1.0, 1.0],
   ].map((xyz) => [xyz[0] * x, xyz[1] * y, xyz[2] * z]);
 
-  // Create geometry for filled variant
-  const geometry = React.useMemo(() => {
-    if (message.props.variant !== "filled") return null;
+  // Populate filled-variant geometry via ref. R3F auto-disposes.
+  const filledGeomRef = React.useRef<THREE.BufferGeometry>(null);
+  React.useLayoutEffect(() => {
+    const geom = filledGeomRef.current;
+    if (!geom || message.props.variant !== "filled") return;
 
-    const geom = new THREE.BufferGeometry();
-
-    // Define vertices
     const vertices = new Float32Array([
-      // Near plane (origin)
-      0,
-      0,
-      0,
-      // Far plane corners
-      -x,
-      -y,
-      z,
-      x,
-      -y,
-      z,
-      x,
-      y,
-      z,
-      -x,
-      y,
-      z,
+      0, 0, 0, -x, -y, z, x, -y, z, x, y, z, -x, y, z,
     ]);
-
-    // Define faces
-    const indices = new Uint16Array([
-      // Side faces
-      0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 1,
-      // Far plane
-      1, 4, 3, 1, 3, 2,
-    ]);
-
     geom.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
-    geom.setIndex(new THREE.BufferAttribute(indices, 1));
+    geom.setIndex(new THREE.BufferAttribute(FRUSTUM_INDICES, 1));
     geom.computeVertexNormals();
-
-    return geom;
   }, [x, y, z, message.props.variant]);
 
   const color = new THREE.Color().setRGB(
@@ -144,8 +131,9 @@ export const CameraFrustumComponent = React.forwardRef<
       />
 
       {/* Filled faces - only for "filled" variant */}
-      {message.props.variant === "filled" && geometry && (
-        <mesh geometry={geometry}>
+      {message.props.variant === "filled" && (
+        <mesh>
+          <bufferGeometry ref={filledGeomRef} />
           <meshBasicMaterial
             color={isHovered ? 0xfbff00 : color}
             transparent
@@ -159,18 +147,13 @@ export const CameraFrustumComponent = React.forwardRef<
       {/* Image plane */}
       {imageTexture && (
         <mesh
-          // 0.999999 is to avoid z-fighting with the frustum lines.
           position={[0.0, 0.0, z * 0.999999]}
           rotation={new THREE.Euler(Math.PI, 0.0, 0.0)}
           castShadow={message.props.cast_shadow}
           receiveShadow={message.props.receive_shadow === true}
         >
-          <planeGeometry
-            attach="geometry"
-            args={[message.props.aspect * y * 2, y * 2]}
-          />
+          <planeGeometry args={[message.props.aspect * y * 2, y * 2]} />
           <meshBasicMaterial
-            attach="material"
             transparent={true}
             side={THREE.DoubleSide}
             map={imageTexture}
