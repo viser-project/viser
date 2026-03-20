@@ -48,6 +48,13 @@ export const BatchedMesh = React.forwardRef<
     message.props.side,
   ]);
 
+  // Clean up material when it changes.
+  React.useEffect(() => {
+    return () => {
+      material.dispose();
+    };
+  }, [material]);
+
   // Setup geometry using memoization.
   const geometry = useMemo(() => {
     const geometry = new THREE.BufferGeometry();
@@ -79,6 +86,13 @@ export const BatchedMesh = React.forwardRef<
     geometry.computeBoundingSphere();
     return geometry;
   }, [message.props.vertices.buffer, message.props.faces.buffer]);
+
+  // Clean up geometry when it changes.
+  React.useEffect(() => {
+    return () => {
+      geometry.dispose();
+    };
+  }, [geometry]);
 
   return (
     <group ref={ref}>

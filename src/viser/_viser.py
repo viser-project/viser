@@ -1229,6 +1229,9 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             filter=lambda message: "Gui" not in type(message).__name__
         )
         # Insert current scene state.
-        for message in self._websock_server._broadcast_buffer.message_from_id.values():
+        buffer = self._websock_server._broadcast_buffer
+        with buffer.buffer_lock:
+            messages = list(buffer.message_from_id.values())
+        for message in messages:
             serializer._insert_message(message)
         return serializer

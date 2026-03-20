@@ -96,11 +96,31 @@ def test_shadow_material_disposed_on_remove(
     viser_page.wait_for_function(JS_TRACKED_MATERIAL_WAS_DISPOSED, timeout=10_000)
 
 
-def test_shadow_material_disposed_on_opacity_change(
+JS_SHADOW_MATERIAL_OPACITY = """
+(args) => {
+    const [nodeName, expectedOpacity] = args;
+    const m = window.__viserMutable;
+    if (!m || !m.nodeRefFromName) return false;
+    const obj = m.nodeRefFromName[nodeName];
+    if (!obj) return false;
+    let found = false;
+    obj.traverse((child) => {
+        if (child.isMesh && child.material &&
+            child.material.type === 'ShadowMaterial' &&
+            Math.abs(child.material.opacity - expectedOpacity) < 0.01) {
+            found = true;
+        }
+    });
+    return found;
+}
+"""
+
+
+def test_shadow_material_opacity_update(
     viser_server: viser.ViserServer,
     viser_page: Page,
 ) -> None:
-    """Changing shadow opacity should dispose the old ShadowMaterial."""
+    """Changing shadow opacity should update the existing ShadowMaterial in-place."""
     viser_server.scene.add_box(
         "/opacity_box",
         color=(0, 255, 0),
@@ -109,17 +129,13 @@ def test_shadow_material_disposed_on_opacity_change(
         position=(0.0, 0.0, 0.0),
     )
 
-    # Wait for the node and its ShadowMaterial to appear.
+    # Wait for the node and its ShadowMaterial to appear with opacity 0.3.
     wait_for_scene_node(viser_page, "/opacity_box")
     viser_page.wait_for_function(
-        JS_NODE_HAS_SHADOW_MATERIAL, arg="/opacity_box", timeout=10_000
+        JS_SHADOW_MATERIAL_OPACITY, arg=["/opacity_box", 0.3], timeout=10_000
     )
 
-    # Monkey-patch the current ShadowMaterial's dispose().
-    patched = viser_page.evaluate(JS_PATCH_SHADOW_MATERIAL_DISPOSE, "/opacity_box")
-    assert patched, "Failed to find and patch ShadowMaterial on the box."
-
-    # Change the opacity, which should create a new ShadowMaterial and dispose the old one.
+    # Change the opacity.
     viser_server.scene.add_box(
         "/opacity_box",
         color=(0, 255, 0),
@@ -128,5 +144,7 @@ def test_shadow_material_disposed_on_opacity_change(
         position=(0.0, 0.0, 0.0),
     )
 
-    # The old ShadowMaterial should have been disposed.
-    viser_page.wait_for_function(JS_TRACKED_MATERIAL_WAS_DISPOSED, timeout=10_000)
+    # The ShadowMaterial should now have opacity 0.7.
+    viser_page.wait_for_function(
+        JS_SHADOW_MATERIAL_OPACITY, arg=["/opacity_box", 0.7], timeout=10_000
+    )

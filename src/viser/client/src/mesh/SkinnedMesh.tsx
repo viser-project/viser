@@ -1,6 +1,6 @@
 import React from "react";
 import * as THREE from "three";
-import { createStandardMaterial } from "./MeshUtils";
+import { ViserStandardMeshMaterial, ShadowSkinnedMesh } from "./MeshUtils";
 import { SkinnedMeshMessage } from "../WebsocketMessages";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
 import { ViewerContext } from "../ViewerContext";
@@ -18,18 +18,6 @@ export const SkinnedMesh = React.forwardRef<
   ref: React.ForwardedRef<THREE.Group>,
 ) {
   const viewer = React.useContext(ViewerContext)!;
-
-  // Create material based on props.
-  const material = React.useMemo(() => {
-    return createStandardMaterial(message.props);
-  }, [
-    message.props.material,
-    message.props.color,
-    message.props.wireframe,
-    message.props.opacity,
-    message.props.flat_shading,
-    message.props.side,
-  ]);
 
   // Reference to bones for animation updates.
   const bonesRef = React.useRef<THREE.Bone[]>();
@@ -167,35 +155,11 @@ export const SkinnedMesh = React.forwardRef<
     };
   }, [skeleton, geometry, message.name, viewerMutable.skinnedMeshState]);
 
-  // Clean up material when it changes.
-  React.useEffect(() => {
-    return () => {
-      if (material) material.dispose();
-    };
-  }, [material]);
-
   // Check if we should render a shadow mesh.
   const shadowOpacity =
     typeof message.props.receive_shadow === "number"
       ? message.props.receive_shadow
       : 0.0;
-
-  // Create shadow material for shadow mesh.
-  const shadowMaterial = React.useMemo(() => {
-    if (shadowOpacity === 0.0) return null;
-    return new THREE.ShadowMaterial({
-      opacity: shadowOpacity,
-      color: 0x000000,
-      depthWrite: false,
-    });
-  }, [shadowOpacity]);
-
-  // Clean up shadow material when it changes.
-  React.useEffect(() => {
-    return () => {
-      if (shadowMaterial) shadowMaterial.dispose();
-    };
-  }, [shadowMaterial]);
 
   // Update bone transforms for animation.
   useFrame(() => {
@@ -228,26 +192,23 @@ export const SkinnedMesh = React.forwardRef<
     <group ref={ref}>
       <skinnedMesh
         geometry={geometry}
-        material={material}
         skeleton={skeleton}
         scale={normalizeScale(message.props.scale)}
         castShadow={message.props.cast_shadow}
         receiveShadow={message.props.receive_shadow === true}
         frustumCulled={false}
       >
+        <ViserStandardMeshMaterial {...message.props} />
         <OutlinesIfHovered
           enableCreaseAngle={geometry.attributes.position.count < 1024}
         />
-        {shadowMaterial && shadowOpacity > 0 ? (
-          <skinnedMesh
-            geometry={geometry}
-            material={shadowMaterial}
-            skeleton={skeleton}
-            receiveShadow
-            frustumCulled={false}
-          />
-        ) : null}
       </skinnedMesh>
+      <ShadowSkinnedMesh
+        opacity={shadowOpacity}
+        geometry={geometry}
+        skeleton={skeleton}
+        scale={normalizeScale(message.props.scale)}
+      />
       {children}
     </group>
   );

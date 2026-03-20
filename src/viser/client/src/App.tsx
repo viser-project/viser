@@ -975,17 +975,23 @@ function SceneContextSetter() {
     (state) => state.camera as THREE.PerspectiveCamera,
   );
 
+  const gl = useThree((state) => state.gl);
+
   // Expose scene internals on window for E2E testing (Playwright).
   useEffect(() => {
     const w = window as any;
     w.__viserMutable = mutable.current;
     w.__viserSceneTree = viewer.useSceneTree;
+    w.__viserTestpoints = {
+      rendererInfo: gl.info,
+    };
 
     return () => {
       delete w.__viserMutable;
       delete w.__viserSceneTree;
+      delete w.__viserTestpoints;
     };
-  }, [mutable, viewer.useSceneTree]);
+  }, [mutable, viewer.useSceneTree, gl]);
 
   return null;
 }

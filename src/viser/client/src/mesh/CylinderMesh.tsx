@@ -1,6 +1,6 @@
 import React from "react";
 import * as THREE from "three";
-import { createStandardMaterial } from "./MeshUtils";
+import { ViserStandardMeshMaterial, ShadowMesh } from "./MeshUtils";
 import { CylinderMessage } from "../WebsocketMessages";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
 import { normalizeScale } from "../utils/normalizeScale";
@@ -18,18 +18,6 @@ export const CylinderMesh = React.forwardRef<
   { children, ...message },
   ref: React.ForwardedRef<THREE.Group>,
 ) {
-  // Create material based on props.
-  const material = React.useMemo(() => {
-    return createStandardMaterial(message.props);
-  }, [
-    message.props.material,
-    message.props.color,
-    message.props.wireframe,
-    message.props.opacity,
-    message.props.flat_shading,
-    message.props.side,
-  ]);
-
   // Setup geometry using memoization.
   const geometry = React.useMemo(() => {
     if (!cylinderGeometryCache.has(message.props.radial_segments)) {
@@ -46,35 +34,11 @@ export const CylinderMesh = React.forwardRef<
     return cylinderGeometryCache.get(message.props.radial_segments)!;
   }, [message.props.radial_segments]);
 
-  // Clean up material when it changes.
-  React.useEffect(() => {
-    return () => {
-      if (material) material.dispose();
-    };
-  }, [material]);
-
   // Check if we should render a shadow mesh.
   const shadowOpacity =
     typeof message.props.receive_shadow === "number"
       ? message.props.receive_shadow
       : 0.0;
-
-  // Create shadow material for shadow mesh.
-  const shadowMaterial = React.useMemo(() => {
-    if (shadowOpacity === 0.0) return null;
-    return new THREE.ShadowMaterial({
-      opacity: shadowOpacity,
-      color: 0x000000,
-      depthWrite: false,
-    });
-  }, [shadowOpacity]);
-
-  // Clean up shadow material when it changes.
-  React.useEffect(() => {
-    return () => {
-      if (shadowMaterial) shadowMaterial.dispose();
-    };
-  }, [shadowMaterial]);
 
   // The cylinder geometry has height along Y, but the PI/2 rotation around X
   // remaps axes: local Y→Z, local Z→-Y. To make the user-facing scale axes
@@ -90,15 +54,18 @@ export const CylinderMesh = React.forwardRef<
         geometry={geometry}
         scale={[s[0] * r, s[2] * h, s[1] * r]}
         rotation={new THREE.Euler(Math.PI / 2.0, 0.0, 0.0)}
-        material={material}
         castShadow={message.props.cast_shadow}
         receiveShadow={message.props.receive_shadow === true}
       >
+        <ViserStandardMeshMaterial {...message.props} />
         <OutlinesIfHovered enableCreaseAngle />
-        {shadowMaterial && shadowOpacity > 0 ? (
-          <mesh geometry={geometry} material={shadowMaterial} receiveShadow />
-        ) : null}
       </mesh>
+      <ShadowMesh
+        opacity={shadowOpacity}
+        geometry={geometry}
+        scale={[s[0] * r, s[2] * h, s[1] * r]}
+        rotation={new THREE.Euler(Math.PI / 2.0, 0.0, 0.0)}
+      />
       {children}
     </group>
   );

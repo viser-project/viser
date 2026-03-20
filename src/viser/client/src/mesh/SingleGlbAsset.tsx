@@ -74,23 +74,6 @@ export const SingleGlbAsset = React.forwardRef<
       ? message.props.receive_shadow
       : 0.0;
 
-  // Create shadow material for shadow meshes.
-  const shadowMaterial = React.useMemo(() => {
-    if (shadowOpacity === 0.0) return null;
-    return new THREE.ShadowMaterial({
-      opacity: shadowOpacity,
-      color: 0x000000,
-      depthWrite: false,
-    });
-  }, [shadowOpacity]);
-
-  // Clean up shadow material when it changes.
-  React.useEffect(() => {
-    return () => {
-      if (shadowMaterial) shadowMaterial.dispose();
-    };
-  }, [shadowMaterial]);
-
   if (!gltf) return null;
 
   return (
@@ -99,18 +82,23 @@ export const SingleGlbAsset = React.forwardRef<
         object={gltf.scene}
         scale={normalizeScale(message.props.scale)}
       />
-      {shadowMaterial && shadowOpacity > 0 ? (
+      {shadowOpacity > 0 ? (
         <group scale={normalizeScale(message.props.scale)}>
           {meshes.map((mesh, i) => (
             <mesh
               key={`shadow-${i}`}
               geometry={mesh.geometry}
-              material={shadowMaterial}
               receiveShadow
               position={mesh.position}
               rotation={mesh.rotation}
               scale={mesh.scale}
-            />
+            >
+              <shadowMaterial
+                opacity={shadowOpacity}
+                color={0x000000}
+                depthWrite={false}
+              />
+            </mesh>
           ))}
         </group>
       ) : null}

@@ -24,3 +24,6 @@ uv.lock
 
 # E2E test failure artifacts (screenshots, HTML, video, traces)
 test-results/
+
+# Scene verification outputs
+scene_verification_outputs/
