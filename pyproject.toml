@@ -128,4 +128,3 @@ lint.ignore = [
     "PLW0642",  # Reassigned self in instance method.
 ]
 exclude = [ ".nodeenv" ]
-
