@@ -30,16 +30,9 @@ function PlotComponent({
   const theme = useMantineTheme();
   const { colorScheme } = useMantineColorScheme();
 
-  // Convert inputs to Float64Array once per update.
+  // Data arrives as Float64Array views. Use directly, zero copy.
   const [data, xMin, xMax] = useMemo(() => {
-    const convertedData = props.data.map((array: Uint8Array) => {
-      return new Float64Array(
-        array.buffer.slice(
-          array.byteOffset,
-          array.byteOffset + array.byteLength,
-        ),
-      );
-    });
+    const convertedData = props.data;
     let xMin = Infinity;
     let xMax = -Infinity;
     for (const val of convertedData[0]) {

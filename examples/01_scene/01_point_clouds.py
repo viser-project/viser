@@ -64,6 +64,7 @@ def main():
     print("- Spiral point cloud with height-based colors")
     print("- Random noise point cloud with random colors")
     print("Visit: http://localhost:8080")
+    server.scene.show()
 
     while True:
         pass

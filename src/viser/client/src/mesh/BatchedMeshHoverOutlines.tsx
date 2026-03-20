@@ -9,12 +9,12 @@ import { OutlinesMaterial } from "../Outlines";
  */
 interface BatchedMeshHoverOutlinesProps {
   geometry: THREE.BufferGeometry;
-  /** Raw bytes containing float32 position values (xyz) */
-  batched_positions: Uint8Array;
-  /** Raw bytes containing float32 quaternion values (wxyz) */
-  batched_wxyzs: Uint8Array;
-  /** Raw bytes containing float32 scale values (uniform or per-axis XYZ) */
-  batched_scales: Uint8Array | null;
+  /** Float32 position values (xyz) */
+  batched_positions: Float32Array | Uint8Array;
+  /** Float32 quaternion values (wxyz) */
+  batched_wxyzs: Float32Array | Uint8Array;
+  /** Float32 scale values (uniform or per-axis XYZ) */
+  batched_scales: Float32Array | Uint8Array | null;
   meshTransform?: {
     position: THREE.Vector3;
     rotation: THREE.Quaternion;

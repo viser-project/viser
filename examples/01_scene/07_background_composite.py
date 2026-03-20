@@ -35,6 +35,7 @@ server.scene.add_mesh_trimesh(
     position=(0, 0, 0.0),
 )
 server.scene.set_background_image(img, depth=depth)
+server.scene.show()
 
 
 while True:

@@ -132,28 +132,9 @@ export const LineSegments = React.forwardRef<
   THREE.Group,
   LineSegmentsMessage & { children?: React.ReactNode }
 >(function LineSegments({ props, children }, ref) {
-  // Convert buffer views to typed arrays.
-  const pointsArray = React.useMemo(
-    () =>
-      new Float32Array(
-        props.points.buffer.slice(
-          props.points.byteOffset,
-          props.points.byteOffset + props.points.byteLength,
-        ),
-      ),
-    [props.points],
-  );
-
-  const colorArray = React.useMemo(
-    () =>
-      new Uint8Array(
-        props.colors.buffer.slice(
-          props.colors.byteOffset,
-          props.colors.byteOffset + props.colors.byteLength,
-        ),
-      ),
-    [props.colors],
-  );
+  // Binary arrays arrive as typed views. Use directly, zero copy.
+  const pointsArray = props.points;
+  const colorArray = props.colors;
 
   // Handle uniform color vs per-vertex colors.
   const { color, vertexColors } = React.useMemo(() => {

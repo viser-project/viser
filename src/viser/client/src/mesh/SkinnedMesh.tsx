@@ -26,48 +26,20 @@ export const SkinnedMesh = React.forwardRef<
   const { geometry, skeleton } = React.useMemo(() => {
     // Setup geometry.
     const geometry = new THREE.BufferGeometry();
+    // Vertices and faces arrive as Float32Array / Uint32Array views.
     geometry.setAttribute(
       "position",
-      new THREE.BufferAttribute(
-        new Float32Array(
-          message.props.vertices.buffer.slice(
-            message.props.vertices.byteOffset,
-            message.props.vertices.byteOffset +
-              message.props.vertices.byteLength,
-          ),
-        ),
-        3,
-      ),
+      new THREE.BufferAttribute(message.props.vertices, 3),
     );
     geometry.setIndex(
-      new THREE.BufferAttribute(
-        new Uint32Array(
-          message.props.faces.buffer.slice(
-            message.props.faces.byteOffset,
-            message.props.faces.byteOffset + message.props.faces.byteLength,
-          ),
-        ),
-        1,
-      ),
+      new THREE.BufferAttribute(message.props.faces, 1),
     );
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
 
-    // Setup skinned mesh bones.
-    const bone_wxyzs = new Float32Array(
-      message.props.bone_wxyzs.buffer.slice(
-        message.props.bone_wxyzs.byteOffset,
-        message.props.bone_wxyzs.byteOffset +
-          message.props.bone_wxyzs.byteLength,
-      ),
-    );
-    const bone_positions = new Float32Array(
-      message.props.bone_positions.buffer.slice(
-        message.props.bone_positions.byteOffset,
-        message.props.bone_positions.byteOffset +
-          message.props.bone_positions.byteLength,
-      ),
-    );
+    // Bone data arrives as Float32Array views. Use directly.
+    const bone_wxyzs = message.props.bone_wxyzs;
+    const bone_positions = message.props.bone_positions;
 
     const bones: THREE.Bone[] = [];
     bonesRef.current = bones;
@@ -103,31 +75,14 @@ export const SkinnedMesh = React.forwardRef<
     });
     const skeleton = new THREE.Skeleton(bones, boneInverses);
 
+    // skin_indices (Uint16Array) and skin_weights (Float32Array). Zero copy.
     geometry.setAttribute(
       "skinIndex",
-      new THREE.BufferAttribute(
-        new Uint16Array(
-          message.props.skin_indices.buffer.slice(
-            message.props.skin_indices.byteOffset,
-            message.props.skin_indices.byteOffset +
-              message.props.skin_indices.byteLength,
-          ),
-        ),
-        4,
-      ),
+      new THREE.BufferAttribute(message.props.skin_indices, 4),
     );
     geometry.setAttribute(
       "skinWeight",
-      new THREE.BufferAttribute(
-        new Float32Array(
-          message.props.skin_weights!.buffer.slice(
-            message.props.skin_weights!.byteOffset,
-            message.props.skin_weights!.byteOffset +
-              message.props.skin_weights!.byteLength,
-          ),
-        ),
-        4,
-      ),
+      new THREE.BufferAttribute(message.props.skin_weights!, 4),
     );
 
     skeleton.init();

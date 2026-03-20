@@ -63,9 +63,9 @@ export interface BatchedAxesMessage {
   type: "BatchedAxesMessage";
   name: string;
   props: {
-    batched_wxyzs: Uint8Array<ArrayBuffer>;
-    batched_positions: Uint8Array<ArrayBuffer>;
-    batched_scales: Uint8Array<ArrayBuffer> | null;
+    batched_wxyzs: Float32Array;
+    batched_positions: Float32Array;
+    batched_scales: Float32Array | null;
     axes_length: number;
     axes_radius: number;
     scale: number | [number, number, number];
@@ -145,7 +145,7 @@ export interface PointCloudMessage {
   type: "PointCloudMessage";
   name: string;
   props: {
-    points: Uint8Array<ArrayBuffer>;
+    points: Uint16Array | Float32Array;
     colors: Uint8Array<ArrayBuffer>;
     point_size: number;
     point_shape: "square" | "diamond" | "circle" | "rounded" | "sparkle";
@@ -245,8 +245,8 @@ export interface MeshMessage {
   type: "MeshMessage";
   name: string;
   props: {
-    vertices: Uint8Array<ArrayBuffer>;
-    faces: Uint8Array<ArrayBuffer>;
+    vertices: Float32Array;
+    faces: Uint32Array;
     color: [number, number, number];
     wireframe: boolean;
     opacity: number | null;
@@ -329,8 +329,8 @@ export interface SkinnedMeshMessage {
   type: "SkinnedMeshMessage";
   name: string;
   props: {
-    vertices: Uint8Array<ArrayBuffer>;
-    faces: Uint8Array<ArrayBuffer>;
+    vertices: Float32Array;
+    faces: Uint32Array;
     color: [number, number, number];
     wireframe: boolean;
     opacity: number | null;
@@ -340,10 +340,10 @@ export interface SkinnedMeshMessage {
     scale: number | [number, number, number];
     cast_shadow: boolean;
     receive_shadow: boolean | number;
-    bone_wxyzs: Uint8Array<ArrayBuffer>;
-    bone_positions: Uint8Array<ArrayBuffer>;
-    skin_indices: Uint8Array<ArrayBuffer>;
-    skin_weights: Uint8Array<ArrayBuffer>;
+    bone_wxyzs: Float32Array;
+    bone_positions: Float32Array;
+    skin_indices: Uint16Array;
+    skin_weights: Float32Array;
   };
 }
 /** Message from server->client carrying batched meshes information.
@@ -354,12 +354,12 @@ export interface BatchedMeshesMessage {
   type: "BatchedMeshesMessage";
   name: string;
   props: {
-    batched_wxyzs: Uint8Array<ArrayBuffer>;
-    batched_positions: Uint8Array<ArrayBuffer>;
-    batched_scales: Uint8Array<ArrayBuffer> | null;
+    batched_wxyzs: Float32Array;
+    batched_positions: Float32Array;
+    batched_scales: Float32Array | null;
     lod: "auto" | "off" | [number, number][];
-    vertices: Uint8Array<ArrayBuffer>;
-    faces: Uint8Array<ArrayBuffer>;
+    vertices: Float32Array;
+    faces: Uint32Array;
     batched_colors: Uint8Array<ArrayBuffer>;
     wireframe: boolean;
     opacity: number | null;
@@ -368,7 +368,7 @@ export interface BatchedMeshesMessage {
     material: "standard" | "toon3" | "toon5";
     cast_shadow: boolean;
     receive_shadow: boolean;
-    batched_opacities: Uint8Array<ArrayBuffer> | null;
+    batched_opacities: Float32Array | null;
     scale: number | [number, number, number];
   };
 }
@@ -380,9 +380,9 @@ export interface BatchedGlbMessage {
   type: "BatchedGlbMessage";
   name: string;
   props: {
-    batched_wxyzs: Uint8Array<ArrayBuffer>;
-    batched_positions: Uint8Array<ArrayBuffer>;
-    batched_scales: Uint8Array<ArrayBuffer> | null;
+    batched_wxyzs: Float32Array;
+    batched_positions: Float32Array;
+    batched_scales: Float32Array | null;
     lod: "auto" | "off" | [number, number][];
     glb_data: Uint8Array<ArrayBuffer>;
     cast_shadow: boolean;
@@ -436,7 +436,7 @@ export interface LineSegmentsMessage {
   type: "LineSegmentsMessage";
   name: string;
   props: {
-    points: Uint8Array<ArrayBuffer>;
+    points: Float32Array;
     line_width: number;
     colors: Uint8Array<ArrayBuffer>;
     scale: number | [number, number, number];
@@ -450,7 +450,7 @@ export interface CatmullRomSplineMessage {
   type: "CatmullRomSplineMessage";
   name: string;
   props: {
-    points: Uint8Array<ArrayBuffer>;
+    points: Float32Array;
     curve_type: "centripetal" | "chordal" | "catmullrom";
     tension: number;
     closed: boolean;
@@ -468,8 +468,8 @@ export interface CubicBezierSplineMessage {
   type: "CubicBezierSplineMessage";
   name: string;
   props: {
-    points: Uint8Array<ArrayBuffer>;
-    control_points: Uint8Array<ArrayBuffer>;
+    points: Float32Array;
+    control_points: Float32Array;
     line_width: number;
     color: [number, number, number];
     segments: number | null;
@@ -483,10 +483,7 @@ export interface CubicBezierSplineMessage {
 export interface GaussianSplatsMessage {
   type: "GaussianSplatsMessage";
   name: string;
-  props: {
-    buffer: Uint8Array<ArrayBuffer>;
-    scale: number | [number, number, number];
-  };
+  props: { buffer: Uint32Array; scale: number | [number, number, number] };
 }
 /** Remove a particular node from the scene.
  *
@@ -588,7 +585,7 @@ export interface GuiUplotMessage {
   container_uuid: string;
   props: {
     order: number;
-    data: Uint8Array<ArrayBuffer>[];
+    data: Float64Array[];
     mode: 1 | 2 | null;
     title: string | null;
     series: {

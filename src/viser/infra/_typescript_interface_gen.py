@@ -28,12 +28,26 @@ _raw_type_mapping = {
     int: "number",
     str: "string",
     # For numpy arrays, we directly serialize the underlying data buffer.
+    # The hybrid wire format delivers these as typed array views.
     np.ndarray: "Uint8Array<ArrayBuffer>",
     bytes: "Uint8Array<ArrayBuffer>",
     Any: "any",
     None: "null",
     Never: "never",
     type(None): "null",
+}
+
+# Mapping from numpy dtype to TypeScript typed array type.
+_numpy_dtype_to_ts_typed_array = {
+    np.float16: "Uint16Array",  # No Float16Array in JS; stored as Uint16
+    np.float32: "Float32Array",
+    np.float64: "Float64Array",
+    np.uint8: "Uint8Array<ArrayBuffer>",
+    np.uint16: "Uint16Array",
+    np.uint32: "Uint32Array",
+    np.int8: "Int8Array",
+    np.int16: "Int16Array",
+    np.int32: "Int32Array",
 }
 
 
@@ -107,10 +121,21 @@ def _get_ts_type(typ: Type[Any]) -> str:
         return ret
     else:
         # Like get_origin(), but also supports numpy.typing.NDArray[dtype].
-        typ = cast(Any, getattr(typ, "__origin__", typ))
+        raw_typ = cast(Any, getattr(typ, "__origin__", typ))
 
-        assert typ in _raw_type_mapping, f"Unsupported type {typ}"
-        return _raw_type_mapping[typ]
+        # For NDArray[dtype], resolve to the specific TypeScript typed array.
+        if raw_typ is np.ndarray:
+            # Extract the dtype from NDArray[dtype] annotation.
+            args = get_args(typ)
+            if args:
+                # NDArray[np.float32] has args like (Any, np.dtype[np.float32]).
+                dtype_arg = args[-1]
+                dtype_args = get_args(dtype_arg)
+                if dtype_args and dtype_args[0] in _numpy_dtype_to_ts_typed_array:
+                    return _numpy_dtype_to_ts_typed_array[dtype_args[0]]
+
+        assert raw_typ in _raw_type_mapping, f"Unsupported type {raw_typ}"
+        return _raw_type_mapping[raw_typ]
 
 
 @dataclasses.dataclass(frozen=True)

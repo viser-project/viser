@@ -90,6 +90,48 @@ Always run this script after:
 - Changing message definitions in ``_messages.py``
 - Updating the version in ``__init__.py``
 
+Wire Format
+^^^^^^^^^^^
+
+Messages are sent over WebSocket using a hybrid format that separates lightweight
+metadata from binary array data.
+
+**Encoding (Python server):**
+
+1. Binary arrays (numpy) are extracted from messages and replaced with tagged
+   placeholder dicts: ``{"__binary_index": i, "dtype": "<f4"}``.
+2. The remaining metadata is encoded with msgpack, then compressed with zstd.
+3. The raw binary arrays are appended uncompressed after the compressed metadata,
+   with 8-byte alignment padding between buffers.
+
+The wire layout is::
+
+    [8 bytes] decompressed size of msgpack (little-endian uint64)
+    [8 bytes] compressed size of msgpack (little-endian uint64)
+    [N bytes] zstd-compressed msgpack payload
+    [P bytes] padding to 8-byte alignment
+    [B bytes] concatenated binary buffers (each 8-byte aligned)
+
+**Decoding (TypeScript client):**
+
+1. The zstd-compressed msgpack metadata is decompressed and decoded.
+2. Placeholder dicts are replaced with typed array views (``Float32Array``,
+   ``Uint32Array``, etc.) pointing directly into the WebSocket's receive buffer.
+
+Because the binary data is uncompressed and 8-byte aligned, the client can create
+typed array views without copying. This is important for high-frequency streaming
+(e.g., point clouds at 30-60fps), where eliminating copies avoids GC pressure that
+would otherwise cause frame drops.
+
+Binary data is left uncompressed because float/int arrays compress poorly, and at
+high frame rates the zstd round-trip cost outweighs the modest bandwidth savings.
+
+**Recordings** (the ``.viser`` file format) use the same placeholder format, but
+the entire payload (msgpack + binary) is compressed together with zstd since
+recordings aren't latency-sensitive. An 8-byte msgpack length header precedes the
+msgpack data inside the decompressed payload so the decoder knows where the binary
+section begins.
+
 Client development
 ------------------
 

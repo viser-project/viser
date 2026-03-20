@@ -89,15 +89,10 @@ function SceneNodeLabel(props: { name: string }) {
   ) : null;
 }
 
-function tripletListFromFloat32Buffer(data: Uint8Array<ArrayBufferLike>) {
-  const arrayView = new DataView(data.buffer, data.byteOffset, data.byteLength);
+function tripletListFromFloat32Array(data: Float32Array) {
   const triplets: [number, number, number][] = [];
-  for (let i = 0; i < arrayView.byteLength; i += 12) {
-    triplets.push([
-      arrayView.getFloat32(i, true), // little-endian
-      arrayView.getFloat32(i + 4, true),
-      arrayView.getFloat32(i + 8, true),
-    ]);
+  for (let i = 0; i < data.length; i += 3) {
+    triplets.push([data[i], data[i + 1], data[i + 2]]);
   }
   return triplets;
 }
@@ -514,7 +509,7 @@ function createObjectFactory(
             <group ref={ref}>
               <group scale={normalizeScale(message.props.scale)}>
                 <CatmullRomLine
-                  points={tripletListFromFloat32Buffer(message.props.points)}
+                  points={tripletListFromFloat32Array(message.props.points)}
                   closed={message.props.closed}
                   curveType={message.props.curve_type}
                   tension={message.props.tension}
@@ -533,8 +528,8 @@ function createObjectFactory(
     case "CubicBezierSplineMessage": {
       return {
         makeObject: (ref, children) => {
-          const points = tripletListFromFloat32Buffer(message.props.points);
-          const controlPoints = tripletListFromFloat32Buffer(
+          const points = tripletListFromFloat32Array(message.props.points);
+          const controlPoints = tripletListFromFloat32Array(
             message.props.control_points,
           );
           return (
@@ -568,15 +563,7 @@ function createObjectFactory(
           <group ref={ref}>
             <group scale={normalizeScale(message.props.scale)}>
               <SplatObject
-                buffer={
-                  new Uint32Array(
-                    message.props.buffer.buffer.slice(
-                      message.props.buffer.byteOffset,
-                      message.props.buffer.byteOffset +
-                        message.props.buffer.byteLength,
-                    ),
-                  )
-                }
+                buffer={message.props.buffer}
               />
             </group>
             {children}

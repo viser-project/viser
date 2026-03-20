@@ -93,21 +93,11 @@ function useMessageHandler() {
           poses: [],
         };
 
-        const bone_wxyzs = new Float32Array(
-          message.props.bone_wxyzs.buffer.slice(
-            message.props.bone_wxyzs.byteOffset,
-            message.props.bone_wxyzs.byteOffset +
-              message.props.bone_wxyzs.byteLength,
-          ),
-        );
-        const bone_positions = new Float32Array(
-          message.props.bone_positions.buffer.slice(
-            message.props.bone_positions.byteOffset,
-            message.props.bone_positions.byteOffset +
-              message.props.bone_positions.byteLength,
-          ),
-        );
-        for (let i = 0; i < message.props.bone_wxyzs!.length; i++) {
+        // Bone data arrives as Float32Array views. Use directly.
+        const bone_wxyzs = message.props.bone_wxyzs;
+        const bone_positions = message.props.bone_positions;
+        const numBones = bone_positions.length / 3;
+        for (let i = 0; i < numBones; i++) {
           viewerMutable.skinnedMeshState[message.name].poses.push({
             wxyz: [
               bone_wxyzs[4 * i],

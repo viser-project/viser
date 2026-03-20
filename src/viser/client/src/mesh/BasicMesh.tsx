@@ -21,29 +21,13 @@ export const BasicMesh = React.forwardRef<
   // the shadow mesh and accessed for OutlinesIfHovered heuristics.
   const geometry = React.useMemo(() => {
     const geometry = new THREE.BufferGeometry();
+    // Vertices and faces arrive as Float32Array / Uint32Array views.
     geometry.setAttribute(
       "position",
-      new THREE.BufferAttribute(
-        new Float32Array(
-          message.props.vertices.buffer.slice(
-            message.props.vertices.byteOffset,
-            message.props.vertices.byteOffset +
-              message.props.vertices.byteLength,
-          ),
-        ),
-        3,
-      ),
+      new THREE.BufferAttribute(message.props.vertices, 3),
     );
     geometry.setIndex(
-      new THREE.BufferAttribute(
-        new Uint32Array(
-          message.props.faces.buffer.slice(
-            message.props.faces.byteOffset,
-            message.props.faces.byteOffset + message.props.faces.byteLength,
-          ),
-        ),
-        1,
-      ),
+      new THREE.BufferAttribute(message.props.faces, 1),
     );
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();

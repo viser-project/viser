@@ -45,8 +45,19 @@ def _prepare_for_deserialization(value: Any, annotation: Type) -> Any:
     return value
 
 
-def _prepare_for_serialization(value: Any, annotation: object) -> Any:
-    """Prepare any special types for serialization."""
+def _prepare_for_serialization(
+    value: Any,
+    annotation: object,
+    binary_buffers: Optional[List[memoryview]] = None,
+) -> Any:
+    """Prepare any special types for serialization.
+
+    If ``binary_buffers`` is provided, numpy arrays are extracted into it and
+    replaced with tagged placeholder dicts (``{"__binary_index": i, "dtype": "<f4"}``).
+    This pairs with the hybrid wire format where binary data is appended raw
+    after the msgpack payload, enabling zero-copy typed array views on the client.
+
+    If ``binary_buffers`` is None, numpy arrays are inlined as memoryviews."""
     if annotation is Any:
         annotation = type(value)
 
@@ -58,7 +69,7 @@ def _prepare_for_serialization(value: Any, annotation: object) -> Any:
         return int(value)
 
     if dataclasses.is_dataclass(annotation):
-        return _prepare_for_serialization(vars(value), dict)
+        return _prepare_for_serialization(vars(value), dict, binary_buffers)
 
     # Recursively handle tuples.
     if isinstance(value, tuple):
@@ -77,17 +88,29 @@ def _prepare_for_serialization(value: Any, annotation: object) -> Any:
             out.append(
                 # Hack to be OK with wrong type annotations.
                 # https://github.com/nerfstudio-project/nerfstudio/pull/1805
-                _prepare_for_serialization(v, args[i]) if i < len(args) else v
+                _prepare_for_serialization(v, args[i], binary_buffers)
+                if i < len(args)
+                else v
             )
         return tuple(out)
 
-    # For arrays, we serialize underlying data directly. The client is responsible for
-    # reading using the correct dtype.
+    # Handle numpy arrays: extract or inline depending on mode.
     if isinstance(value, np.ndarray):
-        return value.data if value.data.c_contiguous else value.copy().data
+        data = value.data if value.data.c_contiguous else value.copy().data
+        if binary_buffers is not None:
+            # Extract into separate buffer with tagged placeholder.
+            idx = len(binary_buffers)
+            binary_buffers.append(data)
+            return {"__binary_index": idx, "dtype": value.dtype.str}
+        else:
+            # Inline as memoryview (used by API v0).
+            return data
 
     if isinstance(value, dict):
-        return {k: _prepare_for_serialization(v, Any) for k, v in value.items()}  # type: ignore
+        return {
+            k: _prepare_for_serialization(v, Any, binary_buffers)
+            for k, v in value.items()
+        }  # type: ignore
 
     return value
 
@@ -107,12 +130,19 @@ class Message(abc.ABC):
     """Don't send this message to a particular client. Useful when a client wants to
     send synchronization information to other clients."""
 
-    def as_serializable_dict(self) -> Dict[str, Any]:
-        """Convert a Python Message object into bytes."""
+    def as_serializable_dict(
+        self, binary_buffers: Optional[List[memoryview]] = None
+    ) -> Dict[str, Any]:
+        """Convert a Python Message object into a serializable dict.
+
+        If ``binary_buffers`` is provided, numpy arrays are extracted into it
+        and replaced with tagged placeholder dicts for the hybrid wire format.
+        Otherwise, arrays are inlined as memoryviews (used by API v0)."""
         message_type = type(self)
         hints = get_type_hints_cached(message_type)
         out = {
-            k: _prepare_for_serialization(v, hints[k]) for k, v in vars(self).items()
+            k: _prepare_for_serialization(v, hints[k], binary_buffers)
+            for k, v in vars(self).items()
         }
         out["type"] = message_type.__name__
         return out

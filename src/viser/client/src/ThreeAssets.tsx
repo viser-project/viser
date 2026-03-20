@@ -94,39 +94,23 @@ export const PointCloud = React.forwardRef<
     const geom = geomRef.current;
     if (!geom) return;
 
-    if (message.props.precision === "float16") {
+    if (props.points instanceof Float32Array) {
       geom.setAttribute(
         "position",
-        new THREE.Float16BufferAttribute(
-          new Uint16Array(
-            props.points.buffer.slice(
-              props.points.byteOffset,
-              props.points.byteOffset + props.points.byteLength,
-            ),
-          ),
-          3,
-        ),
+        new THREE.Float32BufferAttribute(props.points, 3),
       );
     } else {
       geom.setAttribute(
         "position",
-        new THREE.Float32BufferAttribute(
-          new Float32Array(
-            props.points.buffer.slice(
-              props.points.byteOffset,
-              props.points.byteOffset + props.points.byteLength,
-            ),
-          ),
-          3,
-        ),
+        new THREE.Float16BufferAttribute(props.points, 3),
       );
     }
 
-    // Add color attribute if needed.
+    // Add color attribute if needed. Colors arrive as Uint8Array.
     if (props.colors.length > 3) {
       geom.setAttribute(
         "color",
-        new THREE.BufferAttribute(new Uint8Array(props.colors), 3, true),
+        new THREE.BufferAttribute(props.colors, 3, true),
       );
     } else if (props.colors.length < 3) {
       console.error(`Invalid color buffer length, got ${props.colors.length}`);
@@ -279,12 +263,12 @@ export const CoordinateFrame = React.forwardRef<
 export const InstancedAxes = React.forwardRef<
   THREE.Group,
   {
-    /** Raw bytes containing float32 quaternion values (wxyz) */
-    batched_wxyzs: Uint8Array;
-    /** Raw bytes containing float32 position values (xyz) */
-    batched_positions: Uint8Array;
-    /** Raw bytes containing float32 scale values (uniform or per-axis XYZ) */
-    batched_scales: Uint8Array | null;
+    /** Float32 quaternion values (wxyz) */
+    batched_wxyzs: Float32Array | Uint8Array;
+    /** Float32 position values (xyz) */
+    batched_positions: Float32Array | Uint8Array;
+    /** Float32 scale values (uniform or per-axis XYZ) */
+    batched_scales: Float32Array | Uint8Array | null;
     axes_length?: number;
     axes_radius?: number;
     scale?: number | [number, number, number];

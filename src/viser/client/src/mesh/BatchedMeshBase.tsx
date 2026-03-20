@@ -117,12 +117,12 @@ export const BatchedMeshBase = React.forwardRef<
   InstancedMesh2,
   {
     // Data for instance positions and orientations.
-    batched_positions: Uint8Array;
-    batched_wxyzs: Uint8Array;
-    batched_scales: Uint8Array | null;
-    batched_colors: Uint8Array | null;
+    batched_positions: Float32Array | Uint8Array;
+    batched_wxyzs: Float32Array | Uint8Array;
+    batched_scales: Float32Array | Uint8Array | null;
+    batched_colors: Uint8Array<ArrayBuffer> | null;
     opacity: number | null;
-    batched_opacities: Uint8Array | null;
+    batched_opacities: Float32Array | Uint8Array | null;
 
     // Geometry info.
     geometry: THREE.BufferGeometry;

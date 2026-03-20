@@ -237,7 +237,7 @@ function createSceneTreeActions(
       // Recursively update children.
       function updateChildren(nodeName: string, parentEffective: boolean) {
         const n = state[nodeName];
-        if (!n) return;
+        if (!n?.children) return;
 
         n.children.forEach((childName) => {
           const child = state[childName];
