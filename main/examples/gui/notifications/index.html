@@ -443,95 +443,108 @@
 </figure>
 <section id="code">
 <h2>Code<a class="headerlink" href="#code" title="Link to this heading">¶</a></h2>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
-<span class="linenos"> 2</span>
-<span class="linenos"> 3</span><span class="kn">import</span><span class="w"> </span><span class="nn">viser</span>
-<span class="linenos"> 4</span>
-<span class="linenos"> 5</span>
-<span class="linenos"> 6</span><span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos"> 7</span>    <span class="n">server</span> <span class="o">=</span> <span class="n">viser</span><span class="o">.</span><span class="n">ViserServer</span><span class="p">()</span>
-<span class="linenos"> 8</span>
-<span class="linenos"> 9</span>    <span class="n">persistent_notif_button</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span>
-<span class="linenos">10</span>        <span class="s2">&quot;Show persistent notification (default)&quot;</span>
-<span class="linenos">11</span>    <span class="p">)</span>
-<span class="linenos">12</span>    <span class="n">timed_notif_button</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Show timed notification&quot;</span><span class="p">)</span>
-<span class="linenos">13</span>    <span class="n">controlled_notif_button</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Show controlled notification&quot;</span><span class="p">)</span>
-<span class="linenos">14</span>    <span class="n">loading_notif_button</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Show loading notification&quot;</span><span class="p">)</span>
-<span class="linenos">15</span>
-<span class="linenos">16</span>    <span class="n">remove_controlled_notif</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Remove controlled notification&quot;</span><span class="p">)</span>
-<span class="linenos">17</span>
-<span class="linenos">18</span>    <span class="nd">@persistent_notif_button</span><span class="o">.</span><span class="n">on_click</span>
-<span class="linenos">19</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">GuiEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">20</span>        <span class="n">client</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">client</span>
-<span class="linenos">21</span>        <span class="k">assert</span> <span class="n">client</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-<span class="linenos">22</span>
-<span class="linenos">23</span>        <span class="n">client</span><span class="o">.</span><span class="n">add_notification</span><span class="p">(</span>
-<span class="linenos">24</span>            <span class="n">title</span><span class="o">=</span><span class="s2">&quot;Persistent notification&quot;</span><span class="p">,</span>
-<span class="linenos">25</span>            <span class="n">body</span><span class="o">=</span><span class="s2">&quot;This can be closed manually and does not disappear on its own!&quot;</span><span class="p">,</span>
-<span class="linenos">26</span>            <span class="n">with_close_button</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<span class="linenos">27</span>        <span class="p">)</span>
-<span class="linenos">28</span>
-<span class="linenos">29</span>    <span class="nd">@timed_notif_button</span><span class="o">.</span><span class="n">on_click</span>
-<span class="linenos">30</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">GuiEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">31</span>        <span class="n">client</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">client</span>
-<span class="linenos">32</span>        <span class="k">assert</span> <span class="n">client</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-<span class="linenos">33</span>
-<span class="linenos">34</span>        <span class="n">client</span><span class="o">.</span><span class="n">add_notification</span><span class="p">(</span>
-<span class="linenos">35</span>            <span class="n">title</span><span class="o">=</span><span class="s2">&quot;Timed notification&quot;</span><span class="p">,</span>
-<span class="linenos">36</span>            <span class="n">body</span><span class="o">=</span><span class="s2">&quot;This disappears automatically after 5 seconds!&quot;</span><span class="p">,</span>
-<span class="linenos">37</span>            <span class="n">auto_close_seconds</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span>
-<span class="linenos">38</span>        <span class="p">)</span>
-<span class="linenos">39</span>
-<span class="linenos">40</span>    <span class="nd">@controlled_notif_button</span><span class="o">.</span><span class="n">on_click</span>
-<span class="linenos">41</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">GuiEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">42</span>        <span class="n">client</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">client</span>
-<span class="linenos">43</span>        <span class="k">assert</span> <span class="n">client</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-<span class="linenos">44</span>
-<span class="linenos">45</span>        <span class="n">controlled_notif</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">add_notification</span><span class="p">(</span>
-<span class="linenos">46</span>            <span class="n">title</span><span class="o">=</span><span class="s2">&quot;Controlled notification&quot;</span><span class="p">,</span>
-<span class="linenos">47</span>            <span class="n">body</span><span class="o">=</span><span class="s2">&quot;This cannot be closed by the user and is controlled in code only!&quot;</span><span class="p">,</span>
-<span class="linenos">48</span>            <span class="n">with_close_button</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-<span class="linenos">49</span>            <span class="n">auto_close_seconds</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-<span class="linenos">50</span>        <span class="p">)</span>
-<span class="linenos">51</span>
-<span class="linenos">52</span>        <span class="nd">@remove_controlled_notif</span><span class="o">.</span><span class="n">on_click</span>
-<span class="linenos">53</span>        <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">54</span>            <span class="n">controlled_notif</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
-<span class="linenos">55</span>
-<span class="linenos">56</span>    <span class="nd">@loading_notif_button</span><span class="o">.</span><span class="n">on_click</span>
-<span class="linenos">57</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">GuiEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">58</span>        <span class="n">client</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">client</span>
-<span class="linenos">59</span>        <span class="k">assert</span> <span class="n">client</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-<span class="linenos">60</span>
-<span class="linenos">61</span>        <span class="n">loading_notif</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">add_notification</span><span class="p">(</span>
-<span class="linenos">62</span>            <span class="n">title</span><span class="o">=</span><span class="s2">&quot;Loading notification&quot;</span><span class="p">,</span>
-<span class="linenos">63</span>            <span class="n">body</span><span class="o">=</span><span class="s2">&quot;This indicates that some action is in progress! It will be updated in 3 seconds.&quot;</span><span class="p">,</span>
-<span class="linenos">64</span>            <span class="n">loading</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<span class="linenos">65</span>            <span class="n">with_close_button</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-<span class="linenos">66</span>        <span class="p">)</span>
-<span class="linenos">67</span>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">3.0</span><span class="p">)</span>
-<span class="linenos">68</span>
-<span class="linenos">69</span>        <span class="n">loading_notif</span><span class="o">.</span><span class="n">title</span> <span class="o">=</span> <span class="s2">&quot;Updated notification&quot;</span>
-<span class="linenos">70</span>        <span class="n">loading_notif</span><span class="o">.</span><span class="n">body</span> <span class="o">=</span> <span class="s2">&quot;This notification has been updated!&quot;</span>
-<span class="linenos">71</span>        <span class="n">loading_notif</span><span class="o">.</span><span class="n">loading</span> <span class="o">=</span> <span class="kc">False</span>
-<span class="linenos">72</span>        <span class="n">loading_notif</span><span class="o">.</span><span class="n">with_close_button</span> <span class="o">=</span> <span class="kc">True</span>
-<span class="linenos">73</span>        <span class="n">loading_notif</span><span class="o">.</span><span class="n">auto_close_seconds</span> <span class="o">=</span> <span class="mf">5.0</span>
-<span class="linenos">74</span>        <span class="n">loading_notif</span><span class="o">.</span><span class="n">color</span> <span class="o">=</span> <span class="s2">&quot;green&quot;</span>
-<span class="linenos">75</span>
-<span class="linenos">76</span>    <span class="nd">@server</span><span class="o">.</span><span class="n">on_client_connect</span>
-<span class="linenos">77</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">client</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">ClientHandle</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">78</span>        <span class="n">client</span><span class="o">.</span><span class="n">add_notification</span><span class="p">(</span>
-<span class="linenos">79</span>            <span class="s2">&quot;Connected&quot;</span><span class="p">,</span>
-<span class="linenos">80</span>            <span class="s2">&quot;You are now connected to the server!&quot;</span><span class="p">,</span>
-<span class="linenos">81</span>            <span class="n">auto_close_seconds</span><span class="o">=</span><span class="mf">30.0</span><span class="p">,</span>
-<span class="linenos">82</span>        <span class="p">)</span>
-<span class="linenos">83</span>
-<span class="linenos">84</span>    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
-<span class="linenos">85</span>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
-<span class="linenos">86</span>
-<span class="linenos">87</span>
-<span class="linenos">88</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
-<span class="linenos">89</span>    <span class="n">main</span><span class="p">()</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">  1</span><span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="linenos">  2</span>
+<span class="linenos">  3</span><span class="kn">import</span><span class="w"> </span><span class="nn">viser</span>
+<span class="linenos">  4</span><span class="kn">from</span><span class="w"> </span><span class="nn">viser.theme</span><span class="w"> </span><span class="kn">import</span> <span class="n">TitlebarConfig</span>
+<span class="linenos">  5</span><span class="kn">from</span><span class="w"> </span><span class="nn">viser.theme._titlebar</span><span class="w"> </span><span class="kn">import</span> <span class="n">TitlebarButton</span>
+<span class="linenos">  6</span>
+<span class="linenos">  7</span>
+<span class="linenos">  8</span><span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos">  9</span>    <span class="n">server</span> <span class="o">=</span> <span class="n">viser</span><span class="o">.</span><span class="n">ViserServer</span><span class="p">()</span>
+<span class="linenos"> 10</span>
+<span class="linenos"> 11</span>    <span class="n">titlebar_checkbox</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_checkbox</span><span class="p">(</span><span class="s2">&quot;Show titlebar&quot;</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="linenos"> 12</span>    <span class="n">persistent_notif_button</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span>
+<span class="linenos"> 13</span>        <span class="s2">&quot;Show persistent notification (default)&quot;</span>
+<span class="linenos"> 14</span>    <span class="p">)</span>
+<span class="linenos"> 15</span>    <span class="n">timed_notif_button</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Show timed notification&quot;</span><span class="p">)</span>
+<span class="linenos"> 16</span>    <span class="n">controlled_notif_button</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Show controlled notification&quot;</span><span class="p">)</span>
+<span class="linenos"> 17</span>    <span class="n">loading_notif_button</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Show loading notification&quot;</span><span class="p">)</span>
+<span class="linenos"> 18</span>    <span class="n">remove_controlled_notif</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Remove controlled notification&quot;</span><span class="p">)</span>
+<span class="linenos"> 19</span>
+<span class="linenos"> 20</span>    <span class="nd">@titlebar_checkbox</span><span class="o">.</span><span class="n">on_update</span>
+<span class="linenos"> 21</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos"> 22</span>        <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">configure_theme</span><span class="p">(</span>
+<span class="linenos"> 23</span>            <span class="n">titlebar_content</span><span class="o">=</span><span class="n">TitlebarConfig</span><span class="p">(</span>
+<span class="linenos"> 24</span>                <span class="n">buttons</span><span class="o">=</span><span class="p">(</span><span class="n">TitlebarButton</span><span class="p">(</span><span class="n">text</span><span class="o">=</span><span class="s2">&quot;Button&quot;</span><span class="p">,</span> <span class="n">icon</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">href</span><span class="o">=</span><span class="kc">None</span><span class="p">),),</span>
+<span class="linenos"> 25</span>                <span class="n">image</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<span class="linenos"> 26</span>            <span class="p">)</span>
+<span class="linenos"> 27</span>            <span class="k">if</span> <span class="n">titlebar_checkbox</span><span class="o">.</span><span class="n">value</span>
+<span class="linenos"> 28</span>            <span class="k">else</span> <span class="kc">None</span>
+<span class="linenos"> 29</span>        <span class="p">)</span>
+<span class="linenos"> 30</span>
+<span class="linenos"> 31</span>    <span class="nd">@persistent_notif_button</span><span class="o">.</span><span class="n">on_click</span>
+<span class="linenos"> 32</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">GuiEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos"> 33</span>        <span class="n">client</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">client</span>
+<span class="linenos"> 34</span>        <span class="k">assert</span> <span class="n">client</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<span class="linenos"> 35</span>
+<span class="linenos"> 36</span>        <span class="n">client</span><span class="o">.</span><span class="n">add_notification</span><span class="p">(</span>
+<span class="linenos"> 37</span>            <span class="n">title</span><span class="o">=</span><span class="s2">&quot;Persistent notification&quot;</span><span class="p">,</span>
+<span class="linenos"> 38</span>            <span class="n">body</span><span class="o">=</span><span class="s2">&quot;This can be closed manually and does not disappear on its own!&quot;</span><span class="p">,</span>
+<span class="linenos"> 39</span>            <span class="n">with_close_button</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="linenos"> 40</span>        <span class="p">)</span>
+<span class="linenos"> 41</span>
+<span class="linenos"> 42</span>    <span class="nd">@timed_notif_button</span><span class="o">.</span><span class="n">on_click</span>
+<span class="linenos"> 43</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">GuiEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos"> 44</span>        <span class="n">client</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">client</span>
+<span class="linenos"> 45</span>        <span class="k">assert</span> <span class="n">client</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<span class="linenos"> 46</span>
+<span class="linenos"> 47</span>        <span class="n">client</span><span class="o">.</span><span class="n">add_notification</span><span class="p">(</span>
+<span class="linenos"> 48</span>            <span class="n">title</span><span class="o">=</span><span class="s2">&quot;Timed notification&quot;</span><span class="p">,</span>
+<span class="linenos"> 49</span>            <span class="n">body</span><span class="o">=</span><span class="s2">&quot;This disappears automatically after 5 seconds!&quot;</span><span class="p">,</span>
+<span class="linenos"> 50</span>            <span class="n">auto_close_seconds</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span>
+<span class="linenos"> 51</span>        <span class="p">)</span>
+<span class="linenos"> 52</span>
+<span class="linenos"> 53</span>    <span class="nd">@controlled_notif_button</span><span class="o">.</span><span class="n">on_click</span>
+<span class="linenos"> 54</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">GuiEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos"> 55</span>        <span class="n">client</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">client</span>
+<span class="linenos"> 56</span>        <span class="k">assert</span> <span class="n">client</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<span class="linenos"> 57</span>
+<span class="linenos"> 58</span>        <span class="n">controlled_notif</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">add_notification</span><span class="p">(</span>
+<span class="linenos"> 59</span>            <span class="n">title</span><span class="o">=</span><span class="s2">&quot;Controlled notification&quot;</span><span class="p">,</span>
+<span class="linenos"> 60</span>            <span class="n">body</span><span class="o">=</span><span class="s2">&quot;This cannot be closed by the user and is controlled in code only!&quot;</span><span class="p">,</span>
+<span class="linenos"> 61</span>            <span class="n">with_close_button</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="linenos"> 62</span>            <span class="n">auto_close_seconds</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<span class="linenos"> 63</span>        <span class="p">)</span>
+<span class="linenos"> 64</span>
+<span class="linenos"> 65</span>        <span class="nd">@remove_controlled_notif</span><span class="o">.</span><span class="n">on_click</span>
+<span class="linenos"> 66</span>        <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos"> 67</span>            <span class="n">controlled_notif</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+<span class="linenos"> 68</span>
+<span class="linenos"> 69</span>    <span class="nd">@loading_notif_button</span><span class="o">.</span><span class="n">on_click</span>
+<span class="linenos"> 70</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">GuiEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos"> 71</span>        <span class="n">client</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">client</span>
+<span class="linenos"> 72</span>        <span class="k">assert</span> <span class="n">client</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<span class="linenos"> 73</span>
+<span class="linenos"> 74</span>        <span class="n">loading_notif</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">add_notification</span><span class="p">(</span>
+<span class="linenos"> 75</span>            <span class="n">title</span><span class="o">=</span><span class="s2">&quot;Loading notification&quot;</span><span class="p">,</span>
+<span class="linenos"> 76</span>            <span class="n">body</span><span class="o">=</span><span class="s2">&quot;This indicates that some action is in progress! It will be updated in 3 seconds.&quot;</span><span class="p">,</span>
+<span class="linenos"> 77</span>            <span class="n">loading</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="linenos"> 78</span>            <span class="n">with_close_button</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="linenos"> 79</span>        <span class="p">)</span>
+<span class="linenos"> 80</span>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">3.0</span><span class="p">)</span>
+<span class="linenos"> 81</span>
+<span class="linenos"> 82</span>        <span class="n">loading_notif</span><span class="o">.</span><span class="n">title</span> <span class="o">=</span> <span class="s2">&quot;Updated notification&quot;</span>
+<span class="linenos"> 83</span>        <span class="n">loading_notif</span><span class="o">.</span><span class="n">body</span> <span class="o">=</span> <span class="s2">&quot;This notification has been updated!&quot;</span>
+<span class="linenos"> 84</span>        <span class="n">loading_notif</span><span class="o">.</span><span class="n">loading</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="linenos"> 85</span>        <span class="n">loading_notif</span><span class="o">.</span><span class="n">with_close_button</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="linenos"> 86</span>        <span class="n">loading_notif</span><span class="o">.</span><span class="n">auto_close_seconds</span> <span class="o">=</span> <span class="mf">5.0</span>
+<span class="linenos"> 87</span>        <span class="n">loading_notif</span><span class="o">.</span><span class="n">color</span> <span class="o">=</span> <span class="s2">&quot;green&quot;</span>
+<span class="linenos"> 88</span>
+<span class="linenos"> 89</span>    <span class="nd">@server</span><span class="o">.</span><span class="n">on_client_connect</span>
+<span class="linenos"> 90</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">client</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">ClientHandle</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos"> 91</span>        <span class="n">client</span><span class="o">.</span><span class="n">add_notification</span><span class="p">(</span>
+<span class="linenos"> 92</span>            <span class="s2">&quot;Connected&quot;</span><span class="p">,</span>
+<span class="linenos"> 93</span>            <span class="s2">&quot;You are now connected to the server!&quot;</span><span class="p">,</span>
+<span class="linenos"> 94</span>            <span class="n">auto_close_seconds</span><span class="o">=</span><span class="mf">30.0</span><span class="p">,</span>
+<span class="linenos"> 95</span>        <span class="p">)</span>
+<span class="linenos"> 96</span>
+<span class="linenos"> 97</span>    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+<span class="linenos"> 98</span>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+<span class="linenos"> 99</span>
+<span class="linenos">100</span>
+<span class="linenos">101</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="linenos">102</span>    <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>
 </section>

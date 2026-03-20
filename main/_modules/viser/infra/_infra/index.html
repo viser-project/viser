@@ -835,7 +835,7 @@
         <span class="c1"># Clean up the message buffers. This isn&#39;t really necessary, but helps</span>
         <span class="c1"># avoid &quot;task destroyed&quot; errors.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_broadcast_buffer</span><span class="o">.</span><span class="n">set_done</span><span class="p">()</span>
-        <span class="k">for</span> <span class="n">client</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_client_state_from_id</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+        <span class="k">for</span> <span class="n">client</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_client_state_from_id</span><span class="o">.</span><span class="n">values</span><span class="p">()):</span>
             <span class="n">client</span><span class="o">.</span><span class="n">message_buffer</span><span class="o">.</span><span class="n">set_done</span><span class="p">()</span>
 
         <span class="c1"># Wait for the server thread to finish.</span>
