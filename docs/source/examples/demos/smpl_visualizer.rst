@@ -44,7 +44,6 @@ Code
    import numpy as np
    import trimesh
    import tyro
-   
    import viser
    import viser.transforms as tf
    
@@ -141,7 +140,7 @@ Code
            event.client.add_notification(
                f"Clicked on vertex {event.instance_index}",
                body="",
-               auto_close=3000,
+               auto_close_seconds=3.0,
            )
    
        while True:
