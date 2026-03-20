@@ -304,7 +304,6 @@ function useMessageHandler() {
         return;
       }
       case "SetCameraPositionMessage": {
-        console.log("set camera position");
         // Setting initial camera parameters.
         const wasDefault =
           initialCamera.getState().position.source === "default";
@@ -314,7 +313,6 @@ function useMessageHandler() {
 
           // If this is the first initial camera: we'll also move the actual
           // camera. If not, we return immediately.
-          console.log(message.initial, wasDefault);
           if (!wasDefault) return;
         }
 
@@ -819,7 +817,6 @@ export function FrameSynchronizedMessageHandler() {
           (acc, cur) => {
             if (cur === undefined) return acc;
             else {
-              // console.log(cur.targetNode);
               return {
                 ...acc,
                 [cur.targetNode]: { ...acc[cur.targetNode], ...cur.updates },
