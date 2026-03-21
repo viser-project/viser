@@ -106,6 +106,9 @@ def _prepare_for_serialization(
             # Inline as memoryview (used by API v0).
             return data
 
+    if isinstance(value, list):
+        return [_prepare_for_serialization(v, Any, binary_buffers) for v in value]
+
     if isinstance(value, dict):
         return {
             k: _prepare_for_serialization(v, Any, binary_buffers)

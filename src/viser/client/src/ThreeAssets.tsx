@@ -541,6 +541,12 @@ export const ViserImage = React.forwardRef<
         }
         URL.revokeObjectURL(image_url);
       });
+    } else {
+      if (textureRef.current) {
+        textureRef.current.dispose();
+        textureRef.current = undefined;
+      }
+      setImageTexture(undefined);
     }
     return () => {
       cancelled = true;

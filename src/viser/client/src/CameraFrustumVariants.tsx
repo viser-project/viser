@@ -23,8 +23,10 @@ export const CameraFrustumComponent = React.forwardRef<
   // We can't use useMemo here because TextureLoader.load is asynchronous.
   // And we need to use setState to update the texture after loading.
   const [imageTexture, setImageTexture] = React.useState<THREE.Texture>();
+  const textureRef = React.useRef<THREE.Texture | undefined>();
 
   React.useEffect(() => {
+    let cancelled = false;
     if (message.props._format !== null && message.props._image_data !== null) {
       const image_url = URL.createObjectURL(
         new Blob([message.props._image_data], {
@@ -32,20 +34,38 @@ export const CameraFrustumComponent = React.forwardRef<
         }),
       );
       new THREE.TextureLoader().load(image_url, (texture) => {
-        setImageTexture(texture);
+        if (!cancelled) {
+          if (textureRef.current) {
+            textureRef.current.dispose();
+          }
+          textureRef.current = texture;
+          setImageTexture(texture);
+        } else {
+          texture.dispose();
+        }
         URL.revokeObjectURL(image_url);
       });
     } else {
+      if (textureRef.current) {
+        textureRef.current.dispose();
+        textureRef.current = undefined;
+      }
       setImageTexture(undefined);
     }
+    return () => {
+      cancelled = true;
+    };
   }, [message.props._format, message.props._image_data]);
 
-  // Clean up texture when it changes or component unmounts.
+  // Clean up texture on unmount.
   React.useEffect(() => {
     return () => {
-      if (imageTexture) imageTexture.dispose();
+      if (textureRef.current) {
+        textureRef.current.dispose();
+        textureRef.current = undefined;
+      }
     };
-  }, [imageTexture]);
+  }, []);
 
   let y = Math.tan(message.props.fov / 2.0);
   let x = y * message.props.aspect;
