@@ -3,6 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { OutlinesIfHovered } from "./OutlinesIfHovered";
 import React from "react";
 import * as THREE from "three";
+import { useAsyncTexture } from "./utils/useAsyncTexture";
 import {
   ImageMessage,
   LabelMessage,
@@ -516,51 +517,7 @@ export const ViserImage = React.forwardRef<
   THREE.Group,
   ImageMessage & { children?: React.ReactNode }
 >(function ViserImage({ children, ...message }, ref) {
-  // We can't use useMemo here because TextureLoader.load is asynchronous.
-  // And we need to use setState to update the texture after loading.
-  const [imageTexture, setImageTexture] = React.useState<THREE.Texture>();
-  const textureRef = React.useRef<THREE.Texture | undefined>();
-
-  React.useEffect(() => {
-    let cancelled = false;
-    if (message.props._format !== null && message.props._data !== null) {
-      const image_url = URL.createObjectURL(
-        new Blob([message.props._data], {
-          type: "image/" + message.props._format,
-        }),
-      );
-      new THREE.TextureLoader().load(image_url, (texture) => {
-        if (!cancelled) {
-          if (textureRef.current) {
-            textureRef.current.dispose();
-          }
-          textureRef.current = texture;
-          setImageTexture(texture);
-        } else {
-          texture.dispose();
-        }
-        URL.revokeObjectURL(image_url);
-      });
-    } else {
-      if (textureRef.current) {
-        textureRef.current.dispose();
-        textureRef.current = undefined;
-      }
-      setImageTexture(undefined);
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [message.props._format, message.props._data]);
-
-  React.useEffect(() => {
-    return () => {
-      if (textureRef.current) {
-        textureRef.current.dispose();
-        textureRef.current = undefined;
-      }
-    };
-  }, []);
+  const imageTexture = useAsyncTexture(message.props._format, message.props._data);
   return (
     <group ref={ref}>
       <group scale={normalizeScale(message.props.scale)}>
