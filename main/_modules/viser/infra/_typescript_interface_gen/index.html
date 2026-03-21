@@ -450,12 +450,26 @@
     <span class="nb">int</span><span class="p">:</span> <span class="s2">&quot;number&quot;</span><span class="p">,</span>
     <span class="nb">str</span><span class="p">:</span> <span class="s2">&quot;string&quot;</span><span class="p">,</span>
     <span class="c1"># For numpy arrays, we directly serialize the underlying data buffer.</span>
+    <span class="c1"># The hybrid wire format delivers these as typed array views.</span>
     <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span> <span class="s2">&quot;Uint8Array&lt;ArrayBuffer&gt;&quot;</span><span class="p">,</span>
     <span class="nb">bytes</span><span class="p">:</span> <span class="s2">&quot;Uint8Array&lt;ArrayBuffer&gt;&quot;</span><span class="p">,</span>
     <span class="n">Any</span><span class="p">:</span> <span class="s2">&quot;any&quot;</span><span class="p">,</span>
     <span class="kc">None</span><span class="p">:</span> <span class="s2">&quot;null&quot;</span><span class="p">,</span>
     <span class="n">Never</span><span class="p">:</span> <span class="s2">&quot;never&quot;</span><span class="p">,</span>
     <span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">):</span> <span class="s2">&quot;null&quot;</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="c1"># Mapping from numpy dtype to TypeScript typed array type.</span>
+<span class="n">_numpy_dtype_to_ts_typed_array</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">float16</span><span class="p">:</span> <span class="s2">&quot;Uint16Array&quot;</span><span class="p">,</span>  <span class="c1"># No Float16Array in JS; stored as Uint16</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">:</span> <span class="s2">&quot;Float32Array&quot;</span><span class="p">,</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">:</span> <span class="s2">&quot;Float64Array&quot;</span><span class="p">,</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">:</span> <span class="s2">&quot;Uint8Array&lt;ArrayBuffer&gt;&quot;</span><span class="p">,</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">uint16</span><span class="p">:</span> <span class="s2">&quot;Uint16Array&quot;</span><span class="p">,</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">uint32</span><span class="p">:</span> <span class="s2">&quot;Uint32Array&quot;</span><span class="p">,</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">int8</span><span class="p">:</span> <span class="s2">&quot;Int8Array&quot;</span><span class="p">,</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">int16</span><span class="p">:</span> <span class="s2">&quot;Int16Array&quot;</span><span class="p">,</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">:</span> <span class="s2">&quot;Int32Array&quot;</span><span class="p">,</span>
 <span class="p">}</span>
 
 
@@ -529,10 +543,21 @@
         <span class="k">return</span> <span class="n">ret</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="c1"># Like get_origin(), but also supports numpy.typing.NDArray[dtype].</span>
-        <span class="n">typ</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Any</span><span class="p">,</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">typ</span><span class="p">,</span> <span class="s2">&quot;__origin__&quot;</span><span class="p">,</span> <span class="n">typ</span><span class="p">))</span>
+        <span class="n">raw_typ</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Any</span><span class="p">,</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">typ</span><span class="p">,</span> <span class="s2">&quot;__origin__&quot;</span><span class="p">,</span> <span class="n">typ</span><span class="p">))</span>
 
-        <span class="k">assert</span> <span class="n">typ</span> <span class="ow">in</span> <span class="n">_raw_type_mapping</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Unsupported type </span><span class="si">{</span><span class="n">typ</span><span class="si">}</span><span class="s2">&quot;</span>
-        <span class="k">return</span> <span class="n">_raw_type_mapping</span><span class="p">[</span><span class="n">typ</span><span class="p">]</span>
+        <span class="c1"># For NDArray[dtype], resolve to the specific TypeScript typed array.</span>
+        <span class="k">if</span> <span class="n">raw_typ</span> <span class="ow">is</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+            <span class="c1"># Extract the dtype from NDArray[dtype] annotation.</span>
+            <span class="n">args</span> <span class="o">=</span> <span class="n">get_args</span><span class="p">(</span><span class="n">typ</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">args</span><span class="p">:</span>
+                <span class="c1"># NDArray[np.float32] has args like (Any, np.dtype[np.float32]).</span>
+                <span class="n">dtype_arg</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+                <span class="n">dtype_args</span> <span class="o">=</span> <span class="n">get_args</span><span class="p">(</span><span class="n">dtype_arg</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">dtype_args</span> <span class="ow">and</span> <span class="n">dtype_args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">in</span> <span class="n">_numpy_dtype_to_ts_typed_array</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">_numpy_dtype_to_ts_typed_array</span><span class="p">[</span><span class="n">dtype_args</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span>
+
+        <span class="k">assert</span> <span class="n">raw_typ</span> <span class="ow">in</span> <span class="n">_raw_type_mapping</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Unsupported type </span><span class="si">{</span><span class="n">raw_typ</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">return</span> <span class="n">_raw_type_mapping</span><span class="p">[</span><span class="n">raw_typ</span><span class="p">]</span>
 
 
 <div class="viewcode-block" id="TypeScriptAnnotationOverride">

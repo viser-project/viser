@@ -467,8 +467,19 @@
     <span class="k">return</span> <span class="n">value</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_prepare_for_serialization</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">annotation</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Prepare any special types for serialization.&quot;&quot;&quot;</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_prepare_for_serialization</span><span class="p">(</span>
+    <span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">annotation</span><span class="p">:</span> <span class="nb">object</span><span class="p">,</span>
+    <span class="n">binary_buffers</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">memoryview</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Prepare any special types for serialization.</span>
+
+<span class="sd">    If ``binary_buffers`` is provided, numpy arrays are extracted into it and</span>
+<span class="sd">    replaced with tagged placeholder dicts (``{&quot;__binary_index&quot;: i, &quot;dtype&quot;: &quot;&lt;f4&quot;}``).</span>
+<span class="sd">    This pairs with the hybrid wire format where binary data is appended raw</span>
+<span class="sd">    after the msgpack payload, enabling zero-copy typed array views on the client.</span>
+
+<span class="sd">    If ``binary_buffers`` is None, numpy arrays are inlined as memoryviews.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">annotation</span> <span class="ow">is</span> <span class="n">Any</span><span class="p">:</span>
         <span class="n">annotation</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
 
@@ -480,7 +491,7 @@
         <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">is_dataclass</span><span class="p">(</span><span class="n">annotation</span><span class="p">):</span>
-        <span class="k">return</span> <span class="n">_prepare_for_serialization</span><span class="p">(</span><span class="nb">vars</span><span class="p">(</span><span class="n">value</span><span class="p">),</span> <span class="nb">dict</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_prepare_for_serialization</span><span class="p">(</span><span class="nb">vars</span><span class="p">(</span><span class="n">value</span><span class="p">),</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">binary_buffers</span><span class="p">)</span>
 
     <span class="c1"># Recursively handle tuples.</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
@@ -499,17 +510,29 @@
             <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                 <span class="c1"># Hack to be OK with wrong type annotations.</span>
                 <span class="c1"># https://github.com/nerfstudio-project/nerfstudio/pull/1805</span>
-                <span class="n">_prepare_for_serialization</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">args</span><span class="p">[</span><span class="n">i</span><span class="p">])</span> <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="k">else</span> <span class="n">v</span>
+                <span class="n">_prepare_for_serialization</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">args</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">binary_buffers</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+                <span class="k">else</span> <span class="n">v</span>
             <span class="p">)</span>
         <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
 
-    <span class="c1"># For arrays, we serialize underlying data directly. The client is responsible for</span>
-    <span class="c1"># reading using the correct dtype.</span>
+    <span class="c1"># Handle numpy arrays: extract or inline depending on mode.</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
-        <span class="k">return</span> <span class="n">value</span><span class="o">.</span><span class="n">data</span> <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">c_contiguous</span> <span class="k">else</span> <span class="n">value</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span><span class="o">.</span><span class="n">data</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">data</span> <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">c_contiguous</span> <span class="k">else</span> <span class="n">value</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span><span class="o">.</span><span class="n">data</span>
+        <span class="k">if</span> <span class="n">binary_buffers</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Extract into separate buffer with tagged placeholder.</span>
+            <span class="n">idx</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">binary_buffers</span><span class="p">)</span>
+            <span class="n">binary_buffers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;__binary_index&quot;</span><span class="p">:</span> <span class="n">idx</span><span class="p">,</span> <span class="s2">&quot;dtype&quot;</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">dtype</span><span class="o">.</span><span class="n">str</span><span class="p">}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Inline as memoryview (used by API v0).</span>
+            <span class="k">return</span> <span class="n">data</span>
 
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-        <span class="k">return</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">_prepare_for_serialization</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">Any</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">value</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>  <span class="c1"># type: ignore</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="n">k</span><span class="p">:</span> <span class="n">_prepare_for_serialization</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">binary_buffers</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">value</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="p">}</span>  <span class="c1"># type: ignore</span>
 
     <span class="k">return</span> <span class="n">value</span>
 
@@ -533,12 +556,19 @@
 
 <div class="viewcode-block" id="Message.as_serializable_dict">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.Message.as_serializable_dict">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">as_serializable_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Convert a Python Message object into bytes.&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">as_serializable_dict</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">binary_buffers</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">memoryview</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Convert a Python Message object into a serializable dict.</span>
+
+<span class="sd">        If ``binary_buffers`` is provided, numpy arrays are extracted into it</span>
+<span class="sd">        and replaced with tagged placeholder dicts for the hybrid wire format.</span>
+<span class="sd">        Otherwise, arrays are inlined as memoryviews (used by API v0).&quot;&quot;&quot;</span>
         <span class="n">message_type</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
         <span class="n">hints</span> <span class="o">=</span> <span class="n">get_type_hints_cached</span><span class="p">(</span><span class="n">message_type</span><span class="p">)</span>
         <span class="n">out</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="n">k</span><span class="p">:</span> <span class="n">_prepare_for_serialization</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">hints</span><span class="p">[</span><span class="n">k</span><span class="p">])</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">vars</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="n">k</span><span class="p">:</span> <span class="n">_prepare_for_serialization</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">hints</span><span class="p">[</span><span class="n">k</span><span class="p">],</span> <span class="n">binary_buffers</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">vars</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
         <span class="p">}</span>
         <span class="n">out</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">message_type</span><span class="o">.</span><span class="vm">__name__</span>
         <span class="k">return</span> <span class="n">out</span></div>
