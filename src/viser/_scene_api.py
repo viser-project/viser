@@ -1432,11 +1432,12 @@ class SceneApi:
         message = _messages.PointCloudMessage(
             name=name,
             props=_messages.PointCloudProps(
-                points=points.astype(
-                    {
+                points=np.asarray(
+                    points,
+                    dtype={
                         "float16": np.float16,
                         "float32": np.float32,
-                    }[precision]
+                    }[precision],
                 ),
                 colors=colors_cast,
                 point_size=point_size,

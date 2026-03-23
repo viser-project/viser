@@ -53,7 +53,7 @@ type SerializedStruct = {
 function decodeHybridMessage(
   buffer: ArrayBuffer,
   zstdDecoder: { decode: (data: Uint8Array, size: number) => Uint8Array },
-): SerializedStruct {
+): SerializedStruct & { buffer: ArrayBuffer } {
   const headerView = new DataView(buffer);
   const decompressedSize = Number(headerView.getBigUint64(0, true));
   const compressedSize = Number(headerView.getBigUint64(8, true));
@@ -63,10 +63,16 @@ function decodeHybridMessage(
   const decompressed = zstdDecoder.decode(compressedData, decompressedSize);
   const data = msgpack.decode(decompressed) as SerializedStruct;
 
+  // Attach the raw buffer for postMessage transfer semantics.
+  // Mutate instead of spreading ({ ...data, buffer }) to avoid an extra
+  // object allocation on every incoming message.
+  const result = data as SerializedStruct & { buffer: ArrayBuffer };
+  result.buffer = buffer;
+
   // If no binary buffers, return as-is. Message had no arrays.
   const bufferLengths = data.binaryBufferLengths;
   if (!bufferLengths || bufferLengths.length === 0) {
-    return data;
+    return result;
   }
 
   // Compute binary section offsets and replace placeholders with typed array views.
@@ -75,25 +81,9 @@ function decodeHybridMessage(
     replaceBinaryPlaceholders(message, buffer, binaryOffsets, bufferLengths);
   }
 
-  return data;
+  return result;
 }
 
-// Helper function to collect all ArrayBuffer objects. This is used for postMessage() move semantics.
-function collectArrayBuffers(obj: any, buffers: Set<ArrayBufferLike>) {
-  if (obj instanceof ArrayBuffer) {
-    buffers.add(obj);
-  } else if (ArrayBuffer.isView(obj)) {
-    // Handles Uint8Array, Float32Array, Uint32Array, Float64Array, etc.
-    buffers.add(obj.buffer);
-  } else if (obj && typeof obj === "object") {
-    for (const key in obj) {
-      if (Object.prototype.hasOwnProperty.call(obj, key)) {
-        collectArrayBuffers(obj[key], buffers);
-      }
-    }
-  }
-  return buffers;
-}
 
 {
   let server: string | null = null;
@@ -115,6 +105,7 @@ function collectArrayBuffers(obj: any, buffers: Set<ArrayBufferLike>) {
     const protocol = `viser-v${VISER_VERSION}`;
     console.log(`Connecting to: ${server!} with protocol: ${protocol}`);
     ws = new WebSocket(server!, [protocol]);
+    ws.binaryType = "arraybuffer";
 
     // Timeout is necessary when we're connecting to an SSH/tunneled port.
     const retryTimeout = setTimeout(() => {
@@ -164,7 +155,9 @@ function collectArrayBuffers(obj: any, buffers: Set<ArrayBufferLike>) {
     } = { jsTimeMinusPythonTime: Infinity };
     ws.onmessage = async (event) => {
       const dataPromise = (async () => {
-        const buffer = await (event.data.arrayBuffer() as Promise<ArrayBuffer>);
+        // binaryType="arraybuffer" ensures event.data is an ArrayBuffer directly
+        // (skips the default Blob→ArrayBuffer async conversion).
+        const buffer = event.data as ArrayBuffer;
         await zstdReady;
         return decodeHybridMessage(buffer, zstdDecoder);
       })();
@@ -185,11 +178,12 @@ function collectArrayBuffers(obj: any, buffers: Set<ArrayBufferLike>) {
 
       // Function to send the message and release the order lock.
       const messages = data.messages;
-      const arrayBuffers = collectArrayBuffers(messages, new Set());
+      // All typed array views point into the original WebSocket ArrayBuffer.
+      // Transfer just that buffer instead of walking the entire message tree.
       const sendFn = () => {
         postOutgoing(
           { type: "message_batch", messages: messages },
-          Array.from(arrayBuffers),
+          [data.buffer],
         );
         orderLock.release();
       };

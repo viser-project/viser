@@ -64,6 +64,12 @@ class Message(infra.Message):
         For example: if we send 1000 GUI value updates for the same GUI
         element, we should only keep the latest message.
         """
+        # Cache the key since it's called multiple times per message (push +
+        # window_generator) and the result never changes.
+        cached = getattr(self, "_cached_redundancy_key", None)
+        if cached is not None:
+            return cached
+
         parts = [type(self).__name__]
 
         # Scene node manipulation messages all have a "name" field.
@@ -76,7 +82,9 @@ class Message(infra.Message):
         if node_name is not None:
             parts.append(node_name)
 
-        return "_".join(parts)
+        key = "_".join(parts)
+        object.__setattr__(self, "_cached_redundancy_key", key)
+        return key
 
     @classmethod
     def __init_subclass__(cls, tag: TagLiteral | None = None):
