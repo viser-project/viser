@@ -156,7 +156,7 @@ function decodeHybridMessage(
     ws.onmessage = async (event) => {
       const dataPromise = (async () => {
         // binaryType="arraybuffer" ensures event.data is an ArrayBuffer directly
-        // (skips the default Blob→ArrayBuffer async conversion).
+        // (skips the default Blob->ArrayBuffer async conversion).
         const buffer = event.data as ArrayBuffer;
         await zstdReady;
         return decodeHybridMessage(buffer, zstdDecoder);

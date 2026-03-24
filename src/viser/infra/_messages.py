@@ -38,10 +38,6 @@ def _prepare_for_deserialization(value: Any, annotation: Type) -> Any:
                 continue
             if get_origin(arg) is tuple and isinstance(value, (list, tuple)):
                 return _prepare_for_deserialization(value, arg)
-        # Fall through to scalar coercion for non-tuple union members.
-        for arg in args:
-            if arg is type(None):
-                continue
             if arg is float and isinstance(value, (int, float)):
                 return float(value)
             if arg is int and isinstance(value, int):
@@ -180,11 +176,9 @@ class Message(abc.ABC):
 
         hints = get_type_hints_cached(cls)
 
-        # Filter to known fields — gracefully ignores keys from newer protocol versions.
         mapping = {
             k: _prepare_for_deserialization(v, hints[k])
             for k, v in mapping.items()
-            if k in hints
         }
         return mapping
 

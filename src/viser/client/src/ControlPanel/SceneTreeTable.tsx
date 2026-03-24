@@ -166,13 +166,16 @@ function EditNodeProps({
               return null;
             }
 
+            const label =
+              key.charAt(0).toUpperCase() +
+              key.slice(1).split("_").join(" ");
+
             // Show typed arrays as read-only type + length.
             if (ArrayBuffer.isView(value)) {
               return (
                 <Flex key={key} align="center">
                   <Box style={{ flexGrow: "1" }} fz="xs">
-                    {key.charAt(0).toUpperCase() +
-                      key.slice(1).split("_").join(" ")}
+                    {label}
                   </Box>
                   <Flex gap="xs" style={{ width: "9em", flexShrink: 0 }}>
                     <TextInput
@@ -197,8 +200,7 @@ function EditNodeProps({
             return (
               <Flex key={key} align="center">
                 <Box style={{ flexGrow: "1" }} fz="xs">
-                  {key.charAt(0).toUpperCase() +
-                    key.slice(1).split("_").join(" ")}
+                  {label}
                 </Box>
                 <Flex gap="xs" style={{ width: "9em", flexShrink: 0 }}>
                   {(() => {

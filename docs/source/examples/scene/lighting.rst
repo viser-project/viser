@@ -107,8 +107,8 @@ Code
            color=(255, 200, 150),
            intensity=80.0,
            distance=15.0,
-           angle=np.pi / 6,
-           penumbra=0.4,
+           angle=0.3,
+           penumbra=0.0,
            cast_shadow=True,
            # direction is in the light's local frame; rotating the
            # transform control will rotate the cone accordingly.
