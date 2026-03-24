@@ -592,6 +592,7 @@ class WebsockServer(WebsockMessageHandler):
             if relpath == ".":
                 relpath = "index.html"
             assert http_server_root is not None
+            assert http_server_root_resolved is not None
 
             source_path = (http_server_root / relpath).resolve()
             if not source_path.is_relative_to(http_server_root_resolved):
