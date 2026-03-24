@@ -30,7 +30,7 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
     fogFar: 1000.0,
   },
   `
-  precision mediump float;
+  precision highp float;
 
   varying vec3 vPosition;
   varying vec3 vColor; // in the vertex shader
@@ -40,6 +40,7 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
   #include <fog_pars_vertex>
   #include <logdepthbuf_pars_vertex>
   #ifdef USE_LOGDEPTHBUF
+  uniform float logDepthBufFC;
   bool isPerspectiveMatrix( mat4 m ) { return m[ 2 ][ 3 ] == -1.0; }
   #endif
 
@@ -54,6 +55,15 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
       gl_Position = projectionMatrix * world_pos;
       gl_PointSize = (scale / -world_pos.z);
       #include <logdepthbuf_vertex>
+      // Bake log depth into gl_Position.z for point sprites. Since all
+      // fragments of a point sprite share the same depth, this produces
+      // identical depth buffer values without per-fragment gl_FragDepth
+      // writes, re-enabling GPU early-Z testing.
+      #ifdef USE_LOGDEPTHBUF
+        if (isPerspectiveMatrix(projectionMatrix)) {
+          gl_Position.z = (log2(max(1e-6, gl_Position.w + 1.0)) * logDepthBufFC - 1.0) * gl_Position.w;
+        }
+      #endif
       #ifdef USE_FOG
         vFogDepth = -world_pos.z;
       #endif
@@ -75,7 +85,8 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
           if (r > 0.5) discard;
       }
       gl_FragColor = vec4(vColor, 1.0);
-      #include <logdepthbuf_fragment>
+      // Skip #include <logdepthbuf_fragment> — log depth is baked into
+      // gl_Position.z in the vertex shader (exact for point sprites).
       #include <fog_fragment>
   }
    `,

@@ -52,6 +52,7 @@ const GaussianSplatMaterial = /* @__PURE__ */ shaderMaterial(
   #include <fog_pars_vertex>
   #include <logdepthbuf_pars_vertex>
   #ifdef USE_LOGDEPTHBUF
+  uniform float logDepthBufFC;
   bool isPerspectiveMatrix( mat4 m ) { return m[ 2 ][ 3 ] == -1.0; }
   #endif
 
@@ -164,6 +165,14 @@ const GaussianSplatMaterial = /* @__PURE__ */ shaderMaterial(
             + position.y * v2 / viewport * 2.0) * pos2d.w, pos2d.z, pos2d.w);
 
     #include <logdepthbuf_vertex>
+    // Bake log depth into gl_Position.z for splat quads. All fragments
+    // share the same depth (from pos2d.z/w), so this is exact and avoids
+    // per-fragment gl_FragDepth writes, re-enabling GPU early-Z testing.
+    #ifdef USE_LOGDEPTHBUF
+      if (isPerspectiveMatrix(projectionMatrixCustom)) {
+        gl_Position.z = (log2(max(1e-6, gl_Position.w + 1.0)) * logDepthBufFC - 1.0) * gl_Position.w;
+      }
+    #endif
 
     #ifdef USE_FOG
       vFogDepth = -c_cam.z;
@@ -186,7 +195,8 @@ const GaussianSplatMaterial = /* @__PURE__ */ shaderMaterial(
     float B = exp(A) * vRgba.a;
     if (B < 0.01) discard;  // alphaTest.
     gl_FragColor = vec4(vRgba.rgb, B);
-    #include <logdepthbuf_fragment>
+    // Skip #include <logdepthbuf_fragment> — log depth is baked into
+    // gl_Position.z in the vertex shader (exact for splat quads).
     #include <fog_fragment>
   }`,
 );
