@@ -14,6 +14,7 @@ export interface CSMParameters {
   lightFar?: number;
   lightMargin?: number;
   customSplitsCallback?: (cascades: number, near: number, far: number, breaks: number[]) => void;
+  reversedDepth?: boolean;
 }
 
 export class CSM {

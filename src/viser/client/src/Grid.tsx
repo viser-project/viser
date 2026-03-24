@@ -17,7 +17,6 @@ const vertexShader = /* glsl */ `
   #include <common>
   #include <fog_pars_vertex>
   #include <shadowmap_pars_vertex>
-  #include <logdepthbuf_pars_vertex>
 
   varying vec3 localPosition;
   varying vec4 worldPosition;
@@ -40,8 +39,6 @@ const vertexShader = /* glsl */ `
 
     gl_Position = projectionMatrix * viewMatrix * worldPosition;
 
-    #include <logdepthbuf_vertex>
-
     // Required by shadowmap_vertex for shadow normal bias.
     vec3 transformedNormal = normalMatrix * vec3(0.0, 0.0, 1.0);
     #include <shadowmap_vertex>
@@ -61,7 +58,6 @@ const fragmentShader = /* glsl */ `
   #include <lights_pars_begin>
   #include <shadowmap_pars_fragment>
   #include <shadowmask_pars_fragment>
-  #include <logdepthbuf_pars_fragment>
 
   varying vec3 localPosition;
   varying vec4 worldPosition;
@@ -131,7 +127,6 @@ const fragmentShader = /* glsl */ `
     // Convert from premultiplied to straight alpha.
     gl_FragColor = vec4(premulRgb / alpha, alpha);
 
-    #include <logdepthbuf_fragment>
     #include <colorspace_fragment>
     #include <fog_fragment>
   }

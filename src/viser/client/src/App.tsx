@@ -589,13 +589,13 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
       style={{ position: "relative", zIndex: 0, width: "100%", height: "100%" }}
     >
       <Canvas
-        gl={{ preserveDrawingBuffer: true, logarithmicDepthBuffer: true }}
+        gl={{ preserveDrawingBuffer: true, reversedDepthBuffer: true }}
         style={{ width: "100%", height: "100%" }}
         ref={(el) => (viewer.mutable.current.canvas = el)}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        shadows
+        shadows="percentage"
         dpr={fixedDpr ?? undefined}
       >
         {!inView && <DisableRender />}
@@ -852,20 +852,14 @@ function BackgroundImage() {
   const shaders = useMemo(
     () => ({
       vert: `
-    #include <logdepthbuf_pars_vertex>
-    #ifdef USE_LOGDEPTHBUF
-    bool isPerspectiveMatrix( mat4 m ) { return m[ 2 ][ 3 ] == -1.0; }
-    #endif
     varying vec2 vUv;
     void main() {
       vUv = uv;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      #include <logdepthbuf_vertex>
     }
     `,
       frag: `
     #include <packing>
-    #include <logdepthbuf_pars_fragment>
     precision highp float;
     precision highp int;
 
@@ -894,13 +888,14 @@ function BackgroundImage() {
       float bufDepth;
       if(hasDepth){
         float depth = readDepth(depthMap, vUv);
-        #ifdef USE_LOGDEPTHBUF
-          bufDepth = log2(1.0 + depth) * logDepthBufFC * 0.5;
-        #else
-          bufDepth = viewZToPerspectiveDepth(-depth, cameraNear, cameraFar);
-        #endif
+        bufDepth = viewZToPerspectiveDepth(-depth, cameraNear, cameraFar);
       } else {
-        bufDepth = 1.0;
+        // Far plane: 1.0 for standard depth, 0.0 for reversed depth.
+        #ifdef USE_REVERSED_DEPTH_BUFFER
+          bufDepth = 0.0;
+        #else
+          bufDepth = 1.0;
+        #endif
       }
       gl_FragDepth = bufDepth;
     }

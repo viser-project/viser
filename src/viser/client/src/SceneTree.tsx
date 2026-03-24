@@ -128,6 +128,7 @@ const ViserSpotLight = React.forwardRef<
     <group ref={ref}>
       <spotLight
         ref={spotlightRef}
+        position={[0, 0, 0]}
         intensity={p.intensity}
         color={rgbToInt(p.color)}
         distance={p.distance}
@@ -614,6 +615,7 @@ function createObjectFactory(
         makeObject: (ref, children) => (
           <hemisphereLight
             ref={ref}
+            position={[0, 0, 0]}
             intensity={message.props.intensity}
             color={rgbToInt(message.props.sky_color)}
             groundColor={rgbToInt(message.props.ground_color)}

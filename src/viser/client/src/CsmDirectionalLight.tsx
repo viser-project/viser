@@ -152,6 +152,8 @@ function ShadowCsmLight({
   debug = false,
 }: Omit<CsmDirectionalLightProps, "castShadow">) {
   const camera = useThree((three) => three.camera);
+  const gl = useThree((three) => three.gl);
+  const reversedDepth = gl.capabilities.reversedDepthBuffer;
 
   // Get the scene object from the three fiber context.
   // This is a hack, see: https://github.com/pmndrs/react-three-fiber/issues/2725
@@ -193,6 +195,7 @@ function ShadowCsmLight({
       parent: scene,
       shadowBias,
       shadowMapSize,
+      reversedDepth,
     });
   }, [
     camera,

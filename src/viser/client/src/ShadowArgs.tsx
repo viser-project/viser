@@ -4,5 +4,5 @@ export const shadowArgs = {
   "shadow-bias": -0.00001,
   "shadow-mapSize-width": 1024,
   "shadow-mapSize-height": 1024,
-  "shadow-radius": 4.0,
+  "shadow-radius": 8.0,
 };
