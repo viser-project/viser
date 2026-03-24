@@ -1001,11 +1001,7 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         """
         return self._websock_server._port
 
-    def request_share_url(
-        self,
-        verbose: bool = True,
-        share_domain: str = "share.viser.studio",
-    ) -> str | None:
+    def request_share_url(self, verbose: bool = True) -> str | None:
         """Request a share URL for the Viser server, which allows for public access.
         On the first call, will block until a connecting with the share URL server is
         established. Afterwards, the URL will be returned directly.
@@ -1015,7 +1011,6 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
 
         Args:
             verbose: Whether to print status messages.
-            share_domain: Domain of the share server. Defaults to "share.viser.studio".
 
         Returns:
             Share URL as string, or None if connection fails or is closed.
@@ -1035,7 +1030,7 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             connect_event = threading.Event()
 
             self._share_tunnel = ViserTunnel(
-                share_domain, self._websock_server._port
+                "share.viser.studio", self._websock_server._port
             )
 
             @self._share_tunnel.on_disconnect

@@ -177,8 +177,7 @@ class Message(abc.ABC):
         hints = get_type_hints_cached(cls)
 
         mapping = {
-            k: _prepare_for_deserialization(v, hints[k])
-            for k, v in mapping.items()
+            k: _prepare_for_deserialization(v, hints[k]) for k, v in mapping.items()
         }
         return mapping
 
