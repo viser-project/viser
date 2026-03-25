@@ -2805,6 +2805,34 @@ class SceneApi:
         if handle is not None:
             handle.remove()
 
+    def as_html(self, dark_mode: bool = False) -> str:
+        """Get a standalone HTML string for the current scene.
+
+        Returns a self-contained HTML document that can be saved to a file
+        or embedded in other contexts.
+
+        This method is only available when called on ``server.scene``, not on
+        individual client scene APIs.
+
+        See also :meth:`viser.infra.StateSerializer.as_html()`.
+
+        Args:
+            dark_mode: Use dark color scheme.
+
+        Returns:
+            A complete HTML document as a string.
+        """
+        from ._viser import ViserServer
+
+        assert isinstance(self._owner, ViserServer), (
+            "as_html() is only available on server.scene, not on client scene APIs."
+        )
+
+        # Clear any previous recording state to allow multiple calls.
+        self._owner._websock_server._record_handles.clear()
+
+        return self._owner.get_scene_serializer().as_html(dark_mode)
+
     def show(self, height: int = 400, dark_mode: bool = False) -> None:
         """Display the scene in a Jupyter notebook or web browser.
 

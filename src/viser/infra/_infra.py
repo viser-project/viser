@@ -115,20 +115,18 @@ class StateSerializer:
         compressed = zstandard.ZstdCompressor(level=12).compress(inner)
         return len(inner).to_bytes(8, "little") + compressed
 
-    def show(self, height: int = 400, dark_mode: bool = False) -> None:
-        """Display the serialized scene in a Jupyter notebook or web browser.
+    def as_html(self, dark_mode: bool = False) -> str:
+        """Get a standalone HTML string for the serialized scene.
 
-        In Jupyter notebooks/labs, displays an inline IFrame. When running as a
-        script, opens the visualization in the default web browser.
-
-        See also :meth:`viser.ViserServer.show`.
+        Returns a self-contained HTML document that can be saved to a file
+        or embedded in other contexts.
 
         Args:
-            height: Height of the embedded viewer in pixels.
             dark_mode: Use dark color scheme.
-        """
-        import html as html_module
 
+        Returns:
+            A complete HTML document as a string.
+        """
         scene_bytes = self.serialize()
         scene_b64 = base64.b64encode(scene_bytes).decode("ascii")
 
@@ -145,7 +143,24 @@ class StateSerializer:
             f"window.__VISER_EMBED_CONFIG__={{darkMode:{dark_mode_str}}};"
             f"</script>"
         )
-        modified_html = client_html.replace("</head>", f"{inject_script}</head>")
+        head_end = client_html.index("</head>")
+        return client_html[:head_end] + inject_script + client_html[head_end:]
+
+    def show(self, height: int = 400, dark_mode: bool = False) -> None:
+        """Display the serialized scene in a Jupyter notebook or web browser.
+
+        In Jupyter notebooks/labs, displays an inline IFrame. When running as a
+        script, opens the visualization in the default web browser.
+
+        See also :meth:`viser.ViserServer.show`.
+
+        Args:
+            height: Height of the embedded viewer in pixels.
+            dark_mode: Use dark color scheme.
+        """
+        import html as html_module
+
+        modified_html = self.as_html(dark_mode=dark_mode)
 
         # Display in IPython (Jupyter, Colab, myst-nb, etc.) using srcdoc.
         # This embeds the entire HTML inline, avoiding file serving issues.
