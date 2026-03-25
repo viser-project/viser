@@ -3358,6 +3358,37 @@
             <span class="n">handle</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span></div>
 
 
+<div class="viewcode-block" id="SceneApi.as_html">
+<a class="viewcode-back" href="../../../api/core/scene_api/#viser.SceneApi.as_html">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">as_html</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dark_mode</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get a standalone HTML string for the current scene.</span>
+
+<span class="sd">        Returns a self-contained HTML document that can be saved to a file</span>
+<span class="sd">        or embedded in other contexts.</span>
+
+<span class="sd">        This method is only available when called on ``server.scene``, not on</span>
+<span class="sd">        individual client scene APIs.</span>
+
+<span class="sd">        See also :meth:`viser.infra.StateSerializer.as_html()`.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            dark_mode: Use dark color scheme.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            A complete HTML document as a string.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">._viser</span><span class="w"> </span><span class="kn">import</span> <span class="n">ViserServer</span>
+
+        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="p">,</span> <span class="n">ViserServer</span><span class="p">),</span> <span class="p">(</span>
+            <span class="s2">&quot;as_html() is only available on server.scene, not on client scene APIs.&quot;</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Clear any previous recording state to allow multiple calls.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">_record_handles</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="o">.</span><span class="n">get_scene_serializer</span><span class="p">()</span><span class="o">.</span><span class="n">as_html</span><span class="p">(</span><span class="n">dark_mode</span><span class="p">)</span></div>
+
+
 <div class="viewcode-block" id="SceneApi.show">
 <a class="viewcode-back" href="../../../api/core/scene_api/#viser.SceneApi.show">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">show</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">height</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">400</span><span class="p">,</span> <span class="n">dark_mode</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>

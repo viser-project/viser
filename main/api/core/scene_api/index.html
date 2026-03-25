@@ -1718,6 +1718,28 @@ directly instead of using this method.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="viser.SceneApi.as_html">
+<span class="sig-name descname"><span class="pre">as_html</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dark_mode</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></span><a class="reference internal" href="../../../_modules/viser/_scene_api/#SceneApi.as_html"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.SceneApi.as_html" title="Link to this definition">¶</a></dt>
+<dd><p>Get a standalone HTML string for the current scene.</p>
+<p>Returns a self-contained HTML document that can be saved to a file
+or embedded in other contexts.</p>
+<p>This method is only available when called on <code class="docutils literal notranslate"><span class="pre">server.scene</span></code>, not on
+individual client scene APIs.</p>
+<p>See also <a class="reference internal" href="../../auxiliary/infrastructure/#viser.infra.StateSerializer.as_html" title="viser.infra.StateSerializer.as_html"><code class="xref py py-meth docutils literal notranslate"><span class="pre">viser.infra.StateSerializer.as_html()</span></code></a>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>dark_mode</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – Use dark color scheme.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A complete HTML document as a string.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)">str</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="viser.SceneApi.show">
 <span class="sig-name descname"><span class="pre">show</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">height</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">400</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dark_mode</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../../../_modules/viser/_scene_api/#SceneApi.show"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.SceneApi.show" title="Link to this definition">¶</a></dt>
 <dd><p>Display the scene in a Jupyter notebook or web browser.</p>
@@ -1853,6 +1875,7 @@ used for dynamic scenes.</p>
 <li><a class="reference internal" href="#viser.SceneApi.add_3d_gui_container"><code class="docutils literal notranslate"><span class="pre">SceneApi.add_3d_gui_container()</span></code></a></li>
 <li><a class="reference internal" href="#viser.SceneApi.get_handle_by_name"><code class="docutils literal notranslate"><span class="pre">SceneApi.get_handle_by_name()</span></code></a></li>
 <li><a class="reference internal" href="#viser.SceneApi.remove_by_name"><code class="docutils literal notranslate"><span class="pre">SceneApi.remove_by_name()</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneApi.as_html"><code class="docutils literal notranslate"><span class="pre">SceneApi.as_html()</span></code></a></li>
 <li><a class="reference internal" href="#viser.SceneApi.show"><code class="docutils literal notranslate"><span class="pre">SceneApi.show()</span></code></a></li>
 </ul>
 </li>

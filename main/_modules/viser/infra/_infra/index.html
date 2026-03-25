@@ -545,22 +545,20 @@
         <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">inner</span><span class="p">)</span><span class="o">.</span><span class="n">to_bytes</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="s2">&quot;little&quot;</span><span class="p">)</span> <span class="o">+</span> <span class="n">compressed</span></div>
 
 
-<div class="viewcode-block" id="StateSerializer.show">
-<a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.StateSerializer.show">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">show</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">height</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">400</span><span class="p">,</span> <span class="n">dark_mode</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Display the serialized scene in a Jupyter notebook or web browser.</span>
+<div class="viewcode-block" id="StateSerializer.as_html">
+<a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.StateSerializer.as_html">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">as_html</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dark_mode</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get a standalone HTML string for the serialized scene.</span>
 
-<span class="sd">        In Jupyter notebooks/labs, displays an inline IFrame. When running as a</span>
-<span class="sd">        script, opens the visualization in the default web browser.</span>
-
-<span class="sd">        See also :meth:`viser.ViserServer.show`.</span>
+<span class="sd">        Returns a self-contained HTML document that can be saved to a file</span>
+<span class="sd">        or embedded in other contexts.</span>
 
 <span class="sd">        Args:</span>
-<span class="sd">            height: Height of the embedded viewer in pixels.</span>
 <span class="sd">            dark_mode: Use dark color scheme.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="kn">import</span><span class="w"> </span><span class="nn">html</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">html_module</span>
 
+<span class="sd">        Returns:</span>
+<span class="sd">            A complete HTML document as a string.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">scene_bytes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">serialize</span><span class="p">()</span>
         <span class="n">scene_b64</span> <span class="o">=</span> <span class="n">base64</span><span class="o">.</span><span class="n">b64encode</span><span class="p">(</span><span class="n">scene_bytes</span><span class="p">)</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s2">&quot;ascii&quot;</span><span class="p">)</span>
 
@@ -577,7 +575,27 @@
             <span class="sa">f</span><span class="s2">&quot;window.__VISER_EMBED_CONFIG__=</span><span class="se">{{</span><span class="s2">darkMode:</span><span class="si">{</span><span class="n">dark_mode_str</span><span class="si">}</span><span class="se">}}</span><span class="s2">;&quot;</span>
             <span class="sa">f</span><span class="s2">&quot;&lt;/script&gt;&quot;</span>
         <span class="p">)</span>
-        <span class="n">modified_html</span> <span class="o">=</span> <span class="n">client_html</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;&lt;/head&gt;&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">inject_script</span><span class="si">}</span><span class="s2">&lt;/head&gt;&quot;</span><span class="p">)</span>
+        <span class="n">head_end</span> <span class="o">=</span> <span class="n">client_html</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">&quot;&lt;/head&gt;&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">client_html</span><span class="p">[:</span><span class="n">head_end</span><span class="p">]</span> <span class="o">+</span> <span class="n">inject_script</span> <span class="o">+</span> <span class="n">client_html</span><span class="p">[</span><span class="n">head_end</span><span class="p">:]</span></div>
+
+
+<div class="viewcode-block" id="StateSerializer.show">
+<a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.StateSerializer.show">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">show</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">height</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">400</span><span class="p">,</span> <span class="n">dark_mode</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Display the serialized scene in a Jupyter notebook or web browser.</span>
+
+<span class="sd">        In Jupyter notebooks/labs, displays an inline IFrame. When running as a</span>
+<span class="sd">        script, opens the visualization in the default web browser.</span>
+
+<span class="sd">        See also :meth:`viser.ViserServer.show`.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            height: Height of the embedded viewer in pixels.</span>
+<span class="sd">            dark_mode: Use dark color scheme.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">html</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">html_module</span>
+
+        <span class="n">modified_html</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">as_html</span><span class="p">(</span><span class="n">dark_mode</span><span class="o">=</span><span class="n">dark_mode</span><span class="p">)</span>
 
         <span class="c1"># Display in IPython (Jupyter, Colab, myst-nb, etc.) using srcdoc.</span>
         <span class="c1"># This embeds the entire HTML inline, avoiding file serving issues.</span>

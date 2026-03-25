@@ -475,6 +475,25 @@ for example via <code class="docutils literal notranslate"><span class="pre">pat
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="viser.infra.StateSerializer.as_html">
+<span class="sig-name descname"><span class="pre">as_html</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dark_mode</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></span><a class="reference internal" href="../../../_modules/viser/infra/_infra/#StateSerializer.as_html"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.infra.StateSerializer.as_html" title="Link to this definition">¶</a></dt>
+<dd><p>Get a standalone HTML string for the serialized scene.</p>
+<p>Returns a self-contained HTML document that can be saved to a file
+or embedded in other contexts.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>dark_mode</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – Use dark color scheme.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A complete HTML document as a string.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)">str</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="viser.infra.StateSerializer.show">
 <span class="sig-name descname"><span class="pre">show</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">height</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">400</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dark_mode</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../../../_modules/viser/infra/_infra/#StateSerializer.show"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.infra.StateSerializer.show" title="Link to this definition">¶</a></dt>
 <dd><p>Display the serialized scene in a Jupyter notebook or web browser.</p>
@@ -1045,6 +1064,7 @@ TypeScript annotation corresponding to a dataclass field.</p>
 <li><a class="reference internal" href="#viser.infra.StateSerializer"><code class="docutils literal notranslate"><span class="pre">StateSerializer</span></code></a><ul>
 <li><a class="reference internal" href="#viser.infra.StateSerializer.insert_sleep"><code class="docutils literal notranslate"><span class="pre">StateSerializer.insert_sleep()</span></code></a></li>
 <li><a class="reference internal" href="#viser.infra.StateSerializer.serialize"><code class="docutils literal notranslate"><span class="pre">StateSerializer.serialize()</span></code></a></li>
+<li><a class="reference internal" href="#viser.infra.StateSerializer.as_html"><code class="docutils literal notranslate"><span class="pre">StateSerializer.as_html()</span></code></a></li>
 <li><a class="reference internal" href="#viser.infra.StateSerializer.show"><code class="docutils literal notranslate"><span class="pre">StateSerializer.show()</span></code></a></li>
 </ul>
 </li>
