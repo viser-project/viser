@@ -4,7 +4,7 @@ import React from "react";
 import { HoverableContext } from "./HoverContext";
 import * as THREE from "three";
 import { CameraFrustumMessage } from "./WebsocketMessages";
-import { rgbToInt } from "./mesh/MeshUtils";
+import { rgbToInt } from "./mesh/meshMaterialUtils";
 import { useAsyncTexture } from "./utils/useAsyncTexture";
 import { normalizeScale } from "./utils/normalizeScale";
 

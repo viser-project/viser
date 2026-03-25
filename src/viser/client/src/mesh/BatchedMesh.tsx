@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import * as THREE from "three";
-import { createStandardMaterial } from "./MeshUtils";
+import { createStandardMaterial } from "./meshMaterialUtils";
 import { BatchedMeshesMessage } from "../WebsocketMessages";
 import { InstancedMesh2 } from "../vendor/instanced-mesh/index.js";
 import { ViewerContext } from "../ViewerContext";

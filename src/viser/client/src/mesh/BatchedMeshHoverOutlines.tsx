@@ -2,7 +2,7 @@ import React from "react";
 import * as THREE from "three";
 import { useFrame, useThree } from "@react-three/fiber";
 import { HoverableContext } from "../HoverContext";
-import { OutlinesMaterial } from "../Outlines";
+import { OutlinesMaterial } from "../OutlinesMaterial";
 
 /**
  * Props for BatchedMeshHoverOutlines component

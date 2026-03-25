@@ -37,7 +37,7 @@ classifiers = [
 ]
 dependencies = [
     "requests>=2.0.0,<3.0.0",
-    "websockets>=13.1,<16.0.0",
+    "websockets>=13.1,<17.0.0",
     "numpy>=1.0.0,<3.0.0",
     "msgspec>=0.18.6,<1.0.0",
     "imageio>=2.0.0,<3.0.0",

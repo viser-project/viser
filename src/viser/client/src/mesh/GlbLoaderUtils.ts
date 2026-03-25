@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import React from "react";
-import { disposeMaterial } from "./MeshUtils";
+import { disposeMaterial } from "./meshMaterialUtils";
 import { GLTF, GLTFLoader, DRACOLoader } from "three-stdlib";
 
 // We use a CDN for Draco. We could move this locally if we want to use Viser offline.
