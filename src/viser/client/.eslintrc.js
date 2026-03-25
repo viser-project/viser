@@ -22,7 +22,7 @@ module.exports = {
     sourceType: "module",
   },
   plugins: ["react", "@typescript-eslint", "react-refresh"],
-  ignorePatterns: ["build/", ".eslintrc.js", "src/csm"],
+  ignorePatterns: ["build/", ".eslintrc.js", "src/csm", "src/vendor"],
   rules: {
     // https://github.com/jsx-eslint/eslint-plugin-react/issues/3423
     "react/no-unknown-property": "off",
