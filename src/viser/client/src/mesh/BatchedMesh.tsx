@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import * as THREE from "three";
 import { createStandardMaterial } from "./MeshUtils";
 import { BatchedMeshesMessage } from "../WebsocketMessages";
-import { InstancedMesh2 } from "@three.ez/instanced-mesh";
+import { InstancedMesh2 } from "../vendor/instanced-mesh/index.js";
 import { ViewerContext } from "../ViewerContext";
 import { BatchedMeshBase } from "./BatchedMeshBase";
 import { normalizeScale } from "../utils/normalizeScale";

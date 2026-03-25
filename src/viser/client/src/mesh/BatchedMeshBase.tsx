@@ -1,6 +1,6 @@
 import React, { useMemo, useEffect } from "react";
 import * as THREE from "three";
-import { InstancedMesh2 } from "@three.ez/instanced-mesh";
+import { InstancedMesh2 } from "../vendor/instanced-mesh/index.js";
 import { MeshoptSimplifier } from "meshoptimizer";
 import { BatchedMeshHoverOutlines } from "./BatchedMeshHoverOutlines";
 import { useThree } from "@react-three/fiber";

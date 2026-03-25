@@ -159,9 +159,16 @@ export function ViserStandardMeshMaterial(props: StandardMaterialProps) {
   const opacity = props.opacity ?? 1.0;
   const side = sideMap[props.side];
 
+  // Force material recreation when shader-affecting properties change.
+  // R3F's applyProps sets properties but doesn't set needsUpdate, so
+  // Three.js won't recompile shaders for flatShading/side changes or
+  // re-sort render passes for transparent changes.
+  const materialKey = `${transparent}-${props.flat_shading}-${side}-${props.wireframe}`;
+
   if (props.material === "standard" || props.wireframe) {
     return (
       <meshStandardMaterial
+        key={materialKey}
         color={color}
         wireframe={props.wireframe}
         transparent={transparent}
@@ -173,6 +180,7 @@ export function ViserStandardMeshMaterial(props: StandardMaterialProps) {
   } else if (props.material === "toon3") {
     return (
       <meshToonMaterial
+        key={materialKey}
         gradientMap={GRADIENT_MAP_3}
         color={color}
         wireframe={props.wireframe}
@@ -184,6 +192,7 @@ export function ViserStandardMeshMaterial(props: StandardMaterialProps) {
   } else if (props.material === "toon5") {
     return (
       <meshToonMaterial
+        key={materialKey}
         gradientMap={GRADIENT_MAP_5}
         color={color}
         wireframe={props.wireframe}
