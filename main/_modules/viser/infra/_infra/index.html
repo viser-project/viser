@@ -1074,7 +1074,9 @@
                 <span class="n">relpath</span> <span class="o">=</span> <span class="s2">&quot;index.html&quot;</span>
             <span class="k">assert</span> <span class="n">http_server_root</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
 
-            <span class="n">source_path</span> <span class="o">=</span> <span class="n">http_server_root</span> <span class="o">/</span> <span class="n">relpath</span>
+            <span class="n">source_path</span> <span class="o">=</span> <span class="p">(</span><span class="n">http_server_root</span> <span class="o">/</span> <span class="n">relpath</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">source_path</span><span class="o">.</span><span class="n">is_relative_to</span><span class="p">(</span><span class="n">http_server_root</span><span class="o">.</span><span class="n">resolve</span><span class="p">()):</span>
+                <span class="k">return</span> <span class="n">Response</span><span class="p">(</span><span class="n">http</span><span class="o">.</span><span class="n">HTTPStatus</span><span class="o">.</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="s2">&quot;NOT FOUND&quot;</span><span class="p">,</span> <span class="n">Headers</span><span class="p">())</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">source_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
                 <span class="k">return</span> <span class="n">Response</span><span class="p">(</span><span class="n">http</span><span class="o">.</span><span class="n">HTTPStatus</span><span class="o">.</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="s2">&quot;NOT FOUND&quot;</span><span class="p">,</span> <span class="n">Headers</span><span class="p">())</span>
 

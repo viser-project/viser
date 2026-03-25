@@ -1924,11 +1924,12 @@
         <span class="n">message</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">PointCloudMessage</span><span class="p">(</span>
             <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
             <span class="n">props</span><span class="o">=</span><span class="n">_messages</span><span class="o">.</span><span class="n">PointCloudProps</span><span class="p">(</span>
-                <span class="n">points</span><span class="o">=</span><span class="n">points</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span>
-                    <span class="p">{</span>
+                <span class="n">points</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
+                    <span class="n">points</span><span class="p">,</span>
+                    <span class="n">dtype</span><span class="o">=</span><span class="p">{</span>
                         <span class="s2">&quot;float16&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">float16</span><span class="p">,</span>
                         <span class="s2">&quot;float32&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
-                    <span class="p">}[</span><span class="n">precision</span><span class="p">]</span>
+                    <span class="p">}[</span><span class="n">precision</span><span class="p">],</span>
                 <span class="p">),</span>
                 <span class="n">colors</span><span class="o">=</span><span class="n">colors_cast</span><span class="p">,</span>
                 <span class="n">point_size</span><span class="o">=</span><span class="n">point_size</span><span class="p">,</span>

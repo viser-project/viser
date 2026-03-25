@@ -429,7 +429,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Type</span><span class="p">,</span> <span class="n">TypeVar</span><span class="p">,</span> <span class="n">cast</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Type</span><span class="p">,</span> <span class="n">TypeVar</span><span class="p">,</span> <span class="n">Union</span><span class="p">,</span> <span class="n">cast</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">msgspec.msgpack</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
@@ -448,6 +448,23 @@
         <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
     <span class="k">elif</span> <span class="n">annotation</span> <span class="ow">is</span> <span class="nb">int</span><span class="p">:</span>
         <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">get_origin</span><span class="p">(</span><span class="n">annotation</span><span class="p">)</span> <span class="ow">is</span> <span class="n">Union</span><span class="p">:</span>
+        <span class="c1"># Handle Optional[T] and Union[T1, T2, ...] by finding the best</span>
+        <span class="c1"># matching inner type. This avoids needing a blanket lists_to_tuple()</span>
+        <span class="c1"># pass over the entire deserialized message.</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">args</span> <span class="o">=</span> <span class="n">get_args</span><span class="p">(</span><span class="n">annotation</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">arg</span> <span class="ow">in</span> <span class="n">args</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">arg</span> <span class="ow">is</span> <span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">get_origin</span><span class="p">(</span><span class="n">arg</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">tuple</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+                <span class="k">return</span> <span class="n">_prepare_for_deserialization</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">arg</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">arg</span> <span class="ow">is</span> <span class="nb">float</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">)):</span>
+                <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">arg</span> <span class="ow">is</span> <span class="nb">int</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">value</span>
     <span class="k">elif</span> <span class="n">get_origin</span><span class="p">(</span><span class="n">annotation</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">tuple</span><span class="p">:</span>
         <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="n">args</span> <span class="o">=</span> <span class="n">get_args</span><span class="p">(</span><span class="n">annotation</span><span class="p">)</span>
@@ -569,9 +586,12 @@
 <span class="sd">        Otherwise, arrays are inlined as memoryviews (used by API v0).&quot;&quot;&quot;</span>
         <span class="n">message_type</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
         <span class="n">hints</span> <span class="o">=</span> <span class="n">get_type_hints_cached</span><span class="p">(</span><span class="n">message_type</span><span class="p">)</span>
+        <span class="c1"># Filter to type-hinted fields only — excludes dynamic attributes</span>
+        <span class="c1"># like cached values that shouldn&#39;t be serialized.</span>
         <span class="n">out</span> <span class="o">=</span> <span class="p">{</span>
             <span class="n">k</span><span class="p">:</span> <span class="n">_prepare_for_serialization</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">hints</span><span class="p">[</span><span class="n">k</span><span class="p">],</span> <span class="n">binary_buffers</span><span class="p">)</span>
             <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">vars</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">hints</span>
         <span class="p">}</span>
         <span class="n">out</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">message_type</span><span class="o">.</span><span class="vm">__name__</span>
         <span class="k">return</span> <span class="n">out</span></div>
@@ -595,17 +615,10 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Convert bytes into a Python Message object.&quot;&quot;&quot;</span>
         <span class="n">mapping</span> <span class="o">=</span> <span class="n">msgspec</span><span class="o">.</span><span class="n">msgpack</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
 
-        <span class="c1"># msgpack deserializes to lists by default, but all of our annotations use</span>
-        <span class="c1"># tuples.</span>
-        <span class="k">def</span><span class="w"> </span><span class="nf">lists_to_tuple</span><span class="p">(</span><span class="n">obj</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
-                <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">lists_to_tuple</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">obj</span><span class="p">)</span>
-            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-                <span class="k">return</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">lists_to_tuple</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">obj</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="k">return</span> <span class="n">obj</span>
-
-        <span class="n">mapping</span> <span class="o">=</span> <span class="n">lists_to_tuple</span><span class="p">(</span><span class="n">mapping</span><span class="p">)</span>
+        <span class="c1"># List-to-tuple conversion is handled per-field in</span>
+        <span class="c1"># _prepare_for_deserialization (called from _from_serializable_dict),</span>
+        <span class="c1"># which uses type annotations to convert only where needed. This avoids</span>
+        <span class="c1"># a blanket recursive traversal of the entire message tree.</span>
         <span class="n">message_type</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">_subclass_from_type_string</span><span class="p">()[</span><span class="n">cast</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">mapping</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;type&quot;</span><span class="p">))]</span>
         <span class="n">message_kwargs</span> <span class="o">=</span> <span class="n">message_type</span><span class="o">.</span><span class="n">_from_serializable_dict</span><span class="p">(</span><span class="n">mapping</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">message_type</span><span class="p">(</span><span class="o">**</span><span class="n">message_kwargs</span><span class="p">)</span></div>
