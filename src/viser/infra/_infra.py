@@ -143,7 +143,8 @@ class StateSerializer:
             f"window.__VISER_EMBED_CONFIG__={{darkMode:{dark_mode_str}}};"
             f"</script>"
         )
-        return client_html.replace("</head>", f"{inject_script}</head>")
+        head_end = client_html.index("</head>")
+        return client_html[:head_end] + inject_script + client_html[head_end:]
 
     def show(self, height: int = 400, dark_mode: bool = False) -> None:
         """Display the serialized scene in a Jupyter notebook or web browser.
