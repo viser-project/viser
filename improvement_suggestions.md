@@ -11,6 +11,24 @@ bottleneck is React re-rendering overhead.
 - `glb` mode (imperative `wxyz`/`position`): ~25 FPS mean, ~30 FPS median
 - `batched_glb` mode (declarative `batched_wxyzs`/`batched_positions`): ~11 FPS mean, ~20 FPS median, P99 = 2117ms
 
+**Profiling results** (67 batched_glb meshes, instrumented zustand store):
+
+| Metric | Value |
+|--------|-------|
+| Frame duration (mean) | ~58 ms (17 FPS) |
+| `setState` calls per frame | ~537-646 (67 meshes × 2 props × ~4 server batches) |
+| `setState` time per frame | ~35 ms (**60% of frame budget**) |
+| Time per `setState` call | ~54 μs |
+| Zustand subscriber count | 550 |
+| Total listener invocations per frame | **~355,000** |
+| Scene nodes with changed `message` ref | 67 per frame (all meshes) |
+
+The profiling reveals the precise bottleneck: each `store.setState()` call
+synchronously notifies **all 550 zustand subscribers** to check their selectors.
+With ~537+ setState calls per frame, this produces **355,000 selector evaluations
+per frame** — an O(N_subscribers × N_setState_calls) cost that consumes 60% of
+the frame budget before any React rendering even begins.
+
 ## Root Cause Analysis
 
 When `handle.batched_wxyzs = new_array` is called on the Python side:
@@ -20,12 +38,14 @@ When `handle.batched_wxyzs = new_array` is called on the Python side:
    ```typescript
    { ...node, message: { ...node.message, props: { ...node.message.props, ...updates } } }
    ```
-3. This creates a new `message` reference, triggering the zustand selector in
+3. Each call does a separate `store.setState()`, which synchronously notifies all
+   550 zustand subscribers to re-evaluate their selectors
+4. This creates a new `message` reference, triggering the zustand selector in
    `SceneNodeThreeObject`: `state[name]?.message`
-4. **Full re-render cascade**: `SceneNodeThreeObject` → `createObjectFactory` (useMemo)
+5. **Full re-render cascade**: `SceneNodeThreeObject` → `createObjectFactory` (useMemo)
    → `makeObject` (useMemo) → `BatchedMesh`/`BatchedGlbAsset` → `BatchedMeshBase`
-5. `BatchedMeshBase` has **7 useEffect hooks** whose dependency arrays are all checked
-6. Only 1-2 effects actually fire (the transform update), but the overhead of
+6. `BatchedMeshBase` has **7 useEffect hooks** whose dependency arrays are all checked
+7. Only 1-2 effects actually fire (the transform update), but the overhead of
    re-rendering all components + checking all deps is significant
 
 In contrast, `wxyz` updates:
@@ -64,15 +84,17 @@ case "SceneNodeUpdateMessage": {
 // Merge both attribute updates AND props updates, then apply in one setState
 ```
 
-**Impact:** Reduces 134 `setState` calls to 1. This eliminates the per-call
-subscriber notification overhead (N subscribers checked per call). However, it
-does NOT solve the re-render cascade — each node whose props changed will still
-re-render.
+**Impact:** Reduces ~537-646 `setState` calls to 1 per frame. Profiling shows
+this would reduce selector evaluations from **355,000 to 550 per frame** and
+recover **~35 ms per frame** (60% of current frame budget). This is a massive
+win on its own. However, it does NOT solve the React re-render cascade — each
+node whose props changed will still re-render (~67 components × full cascade).
 
 **Effort:** Low. ~50 lines changed in `MessageHandler.tsx`.
 
-**Verdict:** Worth doing regardless of which other option is chosen. It's a pure
-win with no architectural cost. But it's not sufficient on its own.
+**Verdict:** **Highest-impact, lowest-effort change.** Should be done first
+regardless of which other option is chosen. The profiling data shows this single
+change would likely more than double the FPS for the batched_glb benchmark.
 
 ### 1B: Split `message` from mutable props in the zustand selector
 
@@ -550,29 +572,51 @@ right long-term architecture (steps 2-4).
 
 ---
 
-## Appendix: Detailed Cost Breakdown
+## Appendix: Detailed Cost Breakdown (Measured)
+
+The following data was collected via Playwright instrumentation of the zustand
+store with 67 batched GLB meshes at 60 Hz server update rate.
 
 ### Per-frame cost with 67 batched meshes, current code:
 
-| Step | Count | Est. Cost |
+| Step | Measured | Impact |
 |---|---|---|
-| `SceneNodeUpdateMessage` handling | 134 | 134 × setState + subscriber notification |
-| Zustand subscriber checks | 134 × N_subscribers | O(134 × 67) = O(8,978) comparisons |
-| `SceneNodeThreeObject` re-renders | 67 | 67 × (2 useMemo + useFrame setup) |
+| `store.setState()` calls per frame | **537-646** | 67 meshes × 2 props × ~4 server batches |
+| Zustand subscribers | **550** | One per `useSceneTree(selector)` call |
+| Selector evaluations per frame | **~355,000** | 550 subscribers × ~646 setState calls |
+| Time spent in setState per frame | **~35 ms** | **60% of frame budget** at ~54 μs/call |
+| Scene nodes re-rendered | **67** | All batched meshes (message ref changed) |
 | `createObjectFactory` runs | 67 | 67 × switch + closure allocation |
-| `makeObject` runs | 67 | 67 × JSX creation |
-| `BatchedGlbAsset` re-renders | 67 | 67 × useMemo checks |
-| `BatchedMeshBase` re-renders | 67 | 67 × (7 useEffect dep checks) = 469 checks |
-| useEffect executions | 67 | 67 × updateInstances (actual work) |
-| React reconciliation | 67 | VDOM diffing for all affected subtrees |
-| GC pressure | - | ~600+ new closures/objects per frame |
+| `BatchedMeshBase` useEffect checks | 469 | 67 × 7 useEffect dependency arrays |
+| useEffect executions | ~134 | 67 × ~2 effects fire (transforms) |
+| Total frame time | **~58 ms** | ~17 FPS |
 
-### Per-frame cost with Option 3:
+**Key insight from profiling:** The zustand subscriber notification alone (355K
+selector evaluations at 60% of frame time) is a bigger bottleneck than the React
+component re-rendering. Even if we perfectly optimize the React rendering, the
+O(N_subscribers × N_setState_calls) zustand overhead would remain.
 
-| Step | Count | Est. Cost |
+### Per-frame cost with Option 1A only (batched setState):
+
+| Step | Estimated | Impact |
 |---|---|---|
-| Mutable props store update | 134 | 134 × Object.assign + version++ |
-| useFrame version checks | 67 | 67 × integer comparison |
-| Transform updates | 67 | 67 × updateInstances (actual work) |
-| React re-renders | 0 | None |
-| GC pressure | - | Minimal |
+| `store.setState()` calls per frame | **1** (down from 537+) | All updates merged |
+| Selector evaluations per frame | **550** (down from 355K) | 550 subscribers × 1 call |
+| Time spent in setState per frame | **~54 μs** (down from 35 ms) | **99.8% reduction** |
+| Scene nodes re-rendered | **67** | Still re-render (message ref changed) |
+| React rendering overhead | ~same | Component cascade still happens |
+
+This shows Option 1A alone would recover most of the setState overhead but not
+the React rendering overhead.
+
+### Per-frame cost with Option 3 (hot/cold props):
+
+| Step | Estimated | Impact |
+|---|---|---|
+| Mutable props store update | 134 × Object.assign + version++ | ~0.1 ms |
+| useFrame version checks | 67 × integer comparison | ~0.01 ms |
+| Transform updates (actual work) | 67 × updateInstances | Same as current |
+| `store.setState()` calls | **0** | No zustand involvement |
+| Selector evaluations | **0** | No subscriber notifications |
+| React re-renders | **0** | No message ref changes |
+| Total overhead vs current | **~35 ms saved** | Would bring FPS from ~17 to near GPU limit |
