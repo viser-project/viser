@@ -889,6 +889,9 @@ function BackgroundImage() {
       if(hasDepth){
         float depth = readDepth(depthMap, vUv);
         bufDepth = viewZToPerspectiveDepth(-depth, cameraNear, cameraFar);
+        #ifdef USE_REVERSED_DEPTH_BUFFER
+          bufDepth = 1.0 - bufDepth;
+        #endif
       } else {
         // Far plane: 1.0 for standard depth, 0.0 for reversed depth.
         #ifdef USE_REVERSED_DEPTH_BUFFER
