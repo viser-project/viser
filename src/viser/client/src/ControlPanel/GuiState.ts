@@ -88,6 +88,42 @@ export function computeRelativeLuminance(color: string) {
   );
 }
 
+/**
+ * Apply property updates to a GUI component in the given state draft.
+ * Shared by both the per-component updateGuiProps action and the batched
+ * GUI update path in MessageHandler.
+ */
+export function applyGuiPropsUpdate(
+  state: GuiState,
+  id: string,
+  updates: { [key: string]: any },
+): void {
+  const config = state.guiConfigFromUuid[id];
+  if (config === undefined) {
+    console.error(
+      `Tried to update non-existent component '${id}' with`,
+      updates,
+    );
+    return;
+  }
+
+  // Iterate over key/value pairs.
+  for (const [key, value] of Object.entries(updates)) {
+    // We don't put `value` in the props object to make types
+    // stronger in the user-facing Python API. This results in some
+    // nastiness here, we should revisit...
+    if (key === "value") {
+      (state.guiConfigFromUuid[id] as any).value = value;
+    } else if (!(key in config.props)) {
+      console.error(
+        `Tried to update nonexistent property '${key}' of GUI element ${id}!`,
+      );
+    } else {
+      (config.props as any)[key] = value;
+    }
+  }
+}
+
 export function useGuiState(initialServer: string) {
   return React.useState(() =>
     create(
@@ -172,30 +208,7 @@ export function useGuiState(initialServer: string) {
           }),
         updateGuiProps: (id, updates) => {
           set((state) => {
-            const config = state.guiConfigFromUuid[id];
-            if (config === undefined) {
-              console.error(
-                `Tried to update non-existent component '${id}' with`,
-                updates,
-              );
-              return;
-            }
-
-            // Iterate over key/value pairs.
-            for (const [key, value] of Object.entries(updates)) {
-              // We don't put `value` in the props object to make types
-              // stronger in the user-facing Python API. This results in some
-              // nastiness here, we should revisit...
-              if (key === "value") {
-                (state.guiConfigFromUuid[id] as any).value = value;
-              } else if (!(key in config.props)) {
-                console.error(
-                  `Tried to update nonexistent property '${key}' of GUI element ${id}!`,
-                );
-              } else {
-                (config.props as any)[key] = value;
-              }
-            }
+            applyGuiPropsUpdate(state, id, updates);
           });
         },
       })),
