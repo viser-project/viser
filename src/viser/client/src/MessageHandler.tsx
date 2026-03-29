@@ -27,9 +27,6 @@ function useMessageHandler() {
   const viewer = useContext(ViewerContext)!;
   const viewerMutable = viewer.mutable.current;
 
-  // We could reduce the redundancy here if we wanted to.
-  // https://github.com/viser-project/viser/issues/39
-  const updateSceneNode = viewer.sceneTreeActions.updateSceneNodeProps;
   const removeSceneNode = viewer.sceneTreeActions.removeSceneNode;
   const addSceneNode = viewer.sceneTreeActions.addSceneNode;
   const setTheme = viewer.useGui((state) => state.setTheme);
@@ -121,8 +118,10 @@ function useMessageHandler() {
 
     switch (message.type) {
       case "SceneNodeUpdateMessage": {
-        updateSceneNode(message.name, message.updates);
-        return;
+        return {
+          targetNode: message.name,
+          propsUpdates: message.updates,
+        };
       }
       // Set the share URL.
       case "ShareUrlUpdated": {
@@ -803,7 +802,7 @@ export function FrameSynchronizedMessageHandler() {
             viewer.useSceneTree.setState({
               "": {
                 ...rootNode,
-                wxyz: rootNodeUpdate.updates.wxyz!,
+                wxyz: rootNodeUpdate.updates!.wxyz!,
               },
             });
 
@@ -813,34 +812,67 @@ export function FrameSynchronizedMessageHandler() {
         }
 
         // Handle messages and accumulate updates.
-        const updates = processBatch.map(handleMessage).reduce(
-          (acc, cur) => {
-            if (cur === undefined) return acc;
-            else {
-              return {
-                ...acc,
-                [cur.targetNode]: { ...acc[cur.targetNode], ...cur.updates },
-              };
-            }
-          },
-          {} as { [name: string]: any },
-        );
+        // We accumulate two kinds of updates:
+        // - attrUpdates: top-level SceneNode attributes (wxyz, position, visibility, etc.)
+        // - propsUpdates: message.props fields (batched_wxyzs, colors, etc.)
+        // Both are batched and applied in a single store.setState() call.
+        const attrUpdates: { [name: string]: any } = {};
+        const propsUpdates: { [name: string]: any } = {};
 
-        // Apply accumulated prop updates to the zustand state.
+        for (const msg of processBatch) {
+          const result = handleMessage(msg);
+          if (result === undefined) continue;
+          if (result.updates) {
+            attrUpdates[result.targetNode] = {
+              ...attrUpdates[result.targetNode],
+              ...result.updates,
+            };
+          }
+          if (result.propsUpdates) {
+            propsUpdates[result.targetNode] = {
+              ...propsUpdates[result.targetNode],
+              ...result.propsUpdates,
+            };
+          }
+        }
+
+        // Apply all accumulated updates to the zustand state in a single setState.
         const currentState = viewer.useSceneTree.getState();
-        const mergedUpdates: typeof updates = {};
-        for (const [k, v] of Object.entries(updates)) {
+        const mergedUpdates: { [name: string]: any } = {};
+
+        // Merge attribute-level updates (wxyz, position, visibility, etc.).
+        for (const [k, v] of Object.entries(attrUpdates)) {
           if (!(k in currentState)) {
             console.log(`(OK) Tried to update non-existent scene node ${k}`);
             continue;
           }
           mergedUpdates[k] = { ...currentState[k], ...v };
         }
+
+        // Merge props-level updates (batched_wxyzs, colors, etc.).
+        for (const [k, v] of Object.entries(propsUpdates)) {
+          if (!(k in currentState)) {
+            console.log(`(OK) Tried to update non-existent scene node ${k}`);
+            continue;
+          }
+          const node = mergedUpdates[k] || currentState[k];
+          mergedUpdates[k] = {
+            ...node,
+            message: {
+              ...node.message,
+              props: {
+                ...node.message.props,
+                ...v,
+              },
+            },
+          };
+        }
+
         viewer.useSceneTree.setState(mergedUpdates);
 
         // Recompute effective visibility for nodes whose visibility changed.
         // This needs to be done after updates are applied.
-        for (const [nodeName, nodeState] of Object.entries(updates)) {
+        for (const [nodeName, nodeState] of Object.entries(attrUpdates)) {
           if ("visibility" in nodeState) {
             viewer.sceneTreeActions.computeEffectiveVisibility(nodeName);
           }
