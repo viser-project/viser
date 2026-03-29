@@ -34,7 +34,7 @@ async def capture_screenshot_playwright(
             "Warning: playwright not installed. Install with: pip install playwright && playwright install chromium"
         )
     async with async_playwright() as p:
-        browser = await p.chromium.launch()
+        browser = await p.chromium.launch(args=["--use-gl=angle"])
         # Set viewport to 16:9 aspect ratio with higher resolution for better quality
         # Using 2x resolution for retina-quality screenshots
         page = await browser.new_page(
@@ -49,17 +49,12 @@ async def capture_screenshot_playwright(
             # Wait for the scene to load
             await asyncio.sleep(wait_time)
 
-            # Take full-size screenshot - it will be 3840x2160 due to device_scale_factor
             await page.screenshot(path=str(output_path), type="png")
 
-            # Generate thumbnail path
             thumb_path = output_path.parent / "thumbs" / output_path.name
             thumb_path.parent.mkdir(exist_ok=True)
 
-            # Capture smaller thumbnail for gallery grid
-            await page.set_viewport_size(
-                {"width": 960, "height": 540}
-            )  # Half size for thumbnail
+            await page.set_viewport_size({"width": 960, "height": 540})
             await page.screenshot(path=str(thumb_path), type="png")
 
             print(f"  ✓ Screenshots saved: {output_path.name} (full + thumbnail)")
@@ -210,10 +205,6 @@ async def run_example_and_capture(
 
         # Capture screenshot
         url = f"http://localhost:{port}/?dummyWindowDimensions=fill&hideViserLogo=&dummyWindowTitle=localhost:8080"
-        if "04_demos" in safe_name:
-            # Move the camera closer for the demos, which are often smaller
-            # scenes.
-            url = url + "&initialCameraPosition=1.2,1.2,1.2"
         success = await capture_screenshot_playwright(url, output_path)
 
         if success:
@@ -261,11 +252,11 @@ async def capture_all_screenshots(name_filter: str | None, batch_size: int = 8):
     all_examples = find_examples()
 
     # Filter examples based on name_filter
-    if name_filter:
+    if name_filter is not None:
         examples = [
             ex
             for ex in all_examples
-            if name_filter is not None and name_filter.lower() in ex[0].lower()
+            if name_filter.lower() in ex[0].lower()
         ]
     else:
         examples = []

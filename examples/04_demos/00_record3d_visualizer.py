@@ -39,6 +39,7 @@ def main(
     share: bool = False,
 ) -> None:
     server = viser.ViserServer()
+    server.initial_camera.position = (1.2, 1.2, 1.2)
     if share:
         server.request_share_url()
 

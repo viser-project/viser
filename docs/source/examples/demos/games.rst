@@ -35,6 +35,8 @@ Code
    
    def main() -> None:
        server = viser.ViserServer()
+       server.initial_camera.position = (5.0, 3.0, 5.0)
+       server.initial_camera.look_at = (0.0, 3.0, 2.5)
        play_connect_4(server)
    
        server.gui.add_button("Tic-Tac-Toe").on_click(lambda _: play_tic_tac_toe(server))

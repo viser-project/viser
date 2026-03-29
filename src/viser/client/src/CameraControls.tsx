@@ -292,16 +292,35 @@ export function SynchronizedCameraControls() {
     pivotRef.current.updateMatrixWorld(true);
   };
 
+  // Capture the T_threeworld_world used for the initial camera setup, so
+  // "Reset View" returns to the same position even if set_up_direction()
+  // later changes the root orientation. Updated when InitialCameraSetter
+  // re-applies the camera for non-default sources.
+  const initialT = React.useRef<THREE.Matrix4>(
+    computeT_threeworld_world(viewer),
+  );
+
   viewerMutable.resetCameraPose = (animate: boolean) => {
     // Read initial camera state from the Zustand store.
     const initialCameraState = viewer.useInitialCamera.getState();
-    const T_threeworld_world = computeT_threeworld_world(viewer);
+    const hasNonDefault =
+      initialCameraState.position.source !== "default" ||
+      initialCameraState.lookAt.source !== "default" ||
+      initialCameraState.up.source !== "default";
+
+    // For default sources, use the captured T from mount time so that
+    // "Reset View" matches the initial camera position. For non-default
+    // sources (server initial_camera), use the current T so that
+    // set_up_direction changes are reflected.
+    const T_threeworld_world = hasNonDefault
+      ? computeT_threeworld_world(viewer)
+      : initialT.current;
 
     // Skip the up direction transform for the default up direction. This makes
     // it so the initial camera up always matches the initial scene up, except
     // in the case where the up direction was explicitly set.
     const initialUp = new THREE.Vector3(...initialCameraState.up.value);
-    if (initialCameraState.position.source !== "default") {
+    if (initialCameraState.up.source !== "default") {
       initialUp.applyMatrix4(T_threeworld_world);
     }
     initialUp.normalize();
@@ -583,6 +602,38 @@ export function SynchronizedCameraControls() {
         update={updatePivotControlFromCameraLookAtAndup}
         crosshairVisible={crosshairVisible}
       />
+      <InitialCameraSetter />
     </>
   );
+}
+
+/**
+ * Reactively applies the initial camera pose when the server sets
+ * initial_camera properties (non-default sources). Also watches rootWxyz
+ * so that if set_up_direction() and initial_camera messages arrive in
+ * separate batches, the camera converges to the correct pose.
+ *
+ * For default-only sources, this is a no-op -- the camera stays at the
+ * position set on mount, and set_up_direction() only rotates the scene.
+ */
+function InitialCameraSetter() {
+  const viewer = React.useContext(ViewerContext)!;
+  const viewerMutable = viewer.mutable.current;
+
+  const posSource = viewer.useInitialCamera((s) => s.position.source);
+  const lookAtSource = viewer.useInitialCamera((s) => s.lookAt.source);
+  const upSource = viewer.useInitialCamera((s) => s.up.source);
+  const rootWxyz = viewer.useSceneTree((s) => s[""]!.wxyz);
+
+  const hasNonDefault =
+    posSource !== "default" ||
+    lookAtSource !== "default" ||
+    upSource !== "default";
+
+  React.useEffect(() => {
+    if (!hasNonDefault) return;
+    viewerMutable.resetCameraPose?.(false);
+  }, [hasNonDefault, rootWxyz]);
+
+  return null;
 }

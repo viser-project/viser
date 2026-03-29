@@ -39,6 +39,7 @@ def main() -> None:
     server = viser.ViserServer()
     server.gui.configure_theme(brand_color=(130, 0, 150))
     server.scene.set_up_direction("+y")
+    server.initial_camera.position = (0.0, 0.0, -10.0)
 
     mesh = cast(
         trimesh.Trimesh,
@@ -57,9 +58,6 @@ def main() -> None:
     # Buttons + callbacks will operate on a per-client basis, but will modify the global scene! :)
     @server.on_client_connect
     def _(client: viser.ClientHandle) -> None:
-        # Set up the camera -- this gives a nice view of the full mesh.
-        client.camera.position = np.array([0.0, 0.0, -10.0])
-        client.camera.wxyz = np.array([0.0, 0.0, 0.0, 1.0])
 
         # Tests "click" scenepointerevent.
         click_button_handle = client.gui.add_button(

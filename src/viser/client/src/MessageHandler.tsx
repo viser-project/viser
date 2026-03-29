@@ -239,15 +239,11 @@ function useMessageHandler() {
         break;
       }
       case "SetCameraLookAtMessage": {
-        // Setting initial camera parameters.
-        const wasDefault = initialCamera.getState().lookAt.source === "default";
         if (message.initial) {
-          // URL params take priority, ignore server's initial value.
+          // Update store only; camera will be positioned by
+          // resetCameraPose after the batch is processed.
           initialCamera.getState().setLookAt(message.look_at, "message");
-
-          // If this is the first initial camera: we'll also move the actual
-          // camera. If not, we return immediately.
-          if (!wasDefault) return;
+          return;
         }
 
         const cameraControls = viewerMutable.cameraControl!;
@@ -263,15 +259,11 @@ function useMessageHandler() {
         return;
       }
       case "SetCameraUpDirectionMessage": {
-        // Setting initial camera parameters.
-        const wasDefault = initialCamera.getState().up.source === "default";
         if (message.initial) {
-          // URL params take priority, ignore server's initial value.
+          // Update store only; camera will be positioned by
+          // resetCameraPose after the batch is processed.
           initialCamera.getState().setUp(message.position, "message");
-
-          // If this is the first initial camera: we'll also move the actual
-          // camera. If not, we return immediately.
-          if (!wasDefault) return;
+          return;
         }
 
         const camera = viewerMutable.camera!;
@@ -304,16 +296,11 @@ function useMessageHandler() {
         return;
       }
       case "SetCameraPositionMessage": {
-        // Setting initial camera parameters.
-        const wasDefault =
-          initialCamera.getState().position.source === "default";
         if (message.initial) {
-          // URL params take priority, ignore server's initial value.
+          // Update store only; camera will be positioned by
+          // resetCameraPose after the batch is processed.
           initialCamera.getState().setPosition(message.position, "message");
-
-          // If this is the first initial camera: we'll also move the actual
-          // camera. If not, we return immediately.
-          if (!wasDefault) return;
+          return;
         }
 
         const cameraControls = viewerMutable.cameraControl!;
@@ -662,7 +649,6 @@ export function FrameSynchronizedMessageHandler() {
   const messageQueue = viewerMutable.messageQueue;
   const splatContext = React.useContext(GaussianSplatsContext)!;
   const gl = useThree((state) => state.gl);
-  const isFirstBatchRef = React.useRef(true);
 
   useFrame(
     () => {
@@ -786,31 +772,6 @@ export function FrameSynchronizedMessageHandler() {
             ? requestRenderIndex + 1
             : messageQueue.length;
         const processBatch = messageQueue.splice(0, numMessages);
-
-        // Hack: On the very first batch, handle any root node SetOrientationMessage
-        // (from set_up_direction()) before all other messages. This ensures
-        // T_threeworld_world is up-to-date when initial camera messages are processed.
-        if (isFirstBatchRef.current) {
-          isFirstBatchRef.current = false;
-          const rootOrientationIndex = processBatch.findIndex(
-            (msg) => msg.type === "SetOrientationMessage" && msg.name === "",
-          );
-          if (rootOrientationIndex !== -1) {
-            const rootNodeUpdate = handleMessage(
-              processBatch[rootOrientationIndex],
-            )!;
-            const rootNode = viewer.useSceneTree.getState()[""]!;
-            viewer.useSceneTree.setState({
-              "": {
-                ...rootNode,
-                wxyz: rootNodeUpdate.updates.wxyz!,
-              },
-            });
-
-            // Remove the message from the batch.
-            processBatch.splice(rootOrientationIndex, 1);
-          }
-        }
 
         // Handle messages and accumulate updates.
         const updates = processBatch.map(handleMessage).reduce(

@@ -98,6 +98,7 @@ def main(
 ) -> None:
     server = viser.ViserServer()
     server.scene.set_up_direction("+y")
+    server.initial_camera.position = (2.5, 1.0, 2.5)
 
     # Main loop. We'll read pose/shape from the GUI elements, compute the mesh,
     # and then send the updated mesh in a loop.

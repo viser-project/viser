@@ -67,6 +67,7 @@ export interface InitialCameraActions {
   setFov: (value: number, source: CameraPropertySource) => boolean;
   setNear: (value: number, source: CameraPropertySource) => boolean;
   setFar: (value: number, source: CameraPropertySource) => boolean;
+
 }
 
 export type UseInitialCamera = ReturnType<typeof useInitialCameraState>;
@@ -162,6 +163,7 @@ export function useInitialCameraState(urlParams: InitialCameraConfig) {
         set({ far: { value, source } });
         return true;
       },
+
     })),
   )[0];
 }
