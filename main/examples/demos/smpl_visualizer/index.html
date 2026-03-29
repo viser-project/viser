@@ -527,210 +527,211 @@ python<span class="w"> </span>04_demos/03_smpl_visualizer.py<span class="w">  </
 <span class="linenos"> 69</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="linenos"> 70</span>    <span class="n">server</span> <span class="o">=</span> <span class="n">viser</span><span class="o">.</span><span class="n">ViserServer</span><span class="p">()</span>
 <span class="linenos"> 71</span>    <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">set_up_direction</span><span class="p">(</span><span class="s2">&quot;+y&quot;</span><span class="p">)</span>
-<span class="linenos"> 72</span>    <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_grid</span><span class="p">(</span><span class="s2">&quot;/grid&quot;</span><span class="p">,</span> <span class="n">position</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.3</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">plane</span><span class="o">=</span><span class="s2">&quot;xz&quot;</span><span class="p">)</span>
-<span class="linenos"> 73</span>
-<span class="linenos"> 74</span>    <span class="c1"># Main loop. We&#39;ll read pose/shape from the GUI elements, compute the mesh,</span>
-<span class="linenos"> 75</span>    <span class="c1"># and then send the updated mesh in a loop.</span>
-<span class="linenos"> 76</span>    <span class="n">model</span> <span class="o">=</span> <span class="n">SmplHelper</span><span class="p">(</span><span class="n">model_path</span><span class="p">)</span>
-<span class="linenos"> 77</span>    <span class="n">gui_elements</span> <span class="o">=</span> <span class="n">make_gui_elements</span><span class="p">(</span>
-<span class="linenos"> 78</span>        <span class="n">server</span><span class="p">,</span>
-<span class="linenos"> 79</span>        <span class="n">num_betas</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">num_betas</span><span class="p">,</span>
-<span class="linenos"> 80</span>        <span class="n">num_joints</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">num_joints</span><span class="p">,</span>
-<span class="linenos"> 81</span>        <span class="n">parent_idx</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">parent_idx</span><span class="p">,</span>
-<span class="linenos"> 82</span>    <span class="p">)</span>
-<span class="linenos"> 83</span>    <span class="n">body_handle</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_mesh_simple</span><span class="p">(</span>
-<span class="linenos"> 84</span>        <span class="s2">&quot;/human&quot;</span><span class="p">,</span>
-<span class="linenos"> 85</span>        <span class="n">model</span><span class="o">.</span><span class="n">v_template</span><span class="p">,</span>
-<span class="linenos"> 86</span>        <span class="n">model</span><span class="o">.</span><span class="n">faces</span><span class="p">,</span>
-<span class="linenos"> 87</span>        <span class="n">wireframe</span><span class="o">=</span><span class="n">gui_elements</span><span class="o">.</span><span class="n">gui_wireframe</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
-<span class="linenos"> 88</span>        <span class="n">color</span><span class="o">=</span><span class="n">gui_elements</span><span class="o">.</span><span class="n">gui_rgb</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
-<span class="linenos"> 89</span>    <span class="p">)</span>
-<span class="linenos"> 90</span>
-<span class="linenos"> 91</span>    <span class="c1"># Add a vertex selector to the mesh. This will allow us to click on</span>
-<span class="linenos"> 92</span>    <span class="c1"># vertices to get indices.</span>
-<span class="linenos"> 93</span>    <span class="n">red_sphere</span> <span class="o">=</span> <span class="n">trimesh</span><span class="o">.</span><span class="n">creation</span><span class="o">.</span><span class="n">icosphere</span><span class="p">(</span><span class="n">radius</span><span class="o">=</span><span class="mf">0.001</span><span class="p">,</span> <span class="n">subdivisions</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-<span class="linenos"> 94</span>    <span class="n">red_sphere</span><span class="o">.</span><span class="n">visual</span><span class="o">.</span><span class="n">vertex_colors</span> <span class="o">=</span> <span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
-<span class="linenos"> 95</span>    <span class="n">vertex_selector</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_batched_meshes_trimesh</span><span class="p">(</span>
-<span class="linenos"> 96</span>        <span class="s2">&quot;/selector&quot;</span><span class="p">,</span>
-<span class="linenos"> 97</span>        <span class="n">red_sphere</span><span class="p">,</span>
-<span class="linenos"> 98</span>        <span class="n">batched_positions</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">v_template</span><span class="p">,</span>
-<span class="linenos"> 99</span>        <span class="n">batched_wxyzs</span><span class="o">=</span><span class="p">((</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),)</span> <span class="o">*</span> <span class="n">model</span><span class="o">.</span><span class="n">v_template</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
-<span class="linenos">100</span>    <span class="p">)</span>
-<span class="linenos">101</span>
-<span class="linenos">102</span>    <span class="nd">@vertex_selector</span><span class="o">.</span><span class="n">on_click</span>
-<span class="linenos">103</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneNodePointerEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">104</span>        <span class="n">event</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">add_notification</span><span class="p">(</span>
-<span class="linenos">105</span>            <span class="sa">f</span><span class="s2">&quot;Clicked on vertex </span><span class="si">{</span><span class="n">event</span><span class="o">.</span><span class="n">instance_index</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
-<span class="linenos">106</span>            <span class="n">body</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
-<span class="linenos">107</span>            <span class="n">auto_close_seconds</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span>
-<span class="linenos">108</span>        <span class="p">)</span>
-<span class="linenos">109</span>
-<span class="linenos">110</span>    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
-<span class="linenos">111</span>        <span class="c1"># Do nothing if no change.</span>
-<span class="linenos">112</span>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.02</span><span class="p">)</span>
-<span class="linenos">113</span>        <span class="k">if</span> <span class="ow">not</span> <span class="n">gui_elements</span><span class="o">.</span><span class="n">changed</span><span class="p">:</span>
-<span class="linenos">114</span>            <span class="k">continue</span>
-<span class="linenos">115</span>
-<span class="linenos">116</span>        <span class="n">gui_elements</span><span class="o">.</span><span class="n">changed</span> <span class="o">=</span> <span class="kc">False</span>
-<span class="linenos">117</span>
-<span class="linenos">118</span>        <span class="c1"># If anything has changed, re-compute SMPL outputs.</span>
-<span class="linenos">119</span>        <span class="n">smpl_outputs</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">get_outputs</span><span class="p">(</span>
-<span class="linenos">120</span>            <span class="n">betas</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">x</span><span class="o">.</span><span class="n">value</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">gui_elements</span><span class="o">.</span><span class="n">gui_betas</span><span class="p">]),</span>
-<span class="linenos">121</span>            <span class="n">joint_rotmats</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">SO3</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span>
-<span class="linenos">122</span>                <span class="c1"># (num_joints, 3)</span>
-<span class="linenos">123</span>                <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">x</span><span class="o">.</span><span class="n">value</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">gui_elements</span><span class="o">.</span><span class="n">gui_joints</span><span class="p">])</span>
-<span class="linenos">124</span>            <span class="p">)</span><span class="o">.</span><span class="n">as_matrix</span><span class="p">(),</span>
-<span class="linenos">125</span>        <span class="p">)</span>
-<span class="linenos">126</span>
-<span class="linenos">127</span>        <span class="c1"># Update the mesh properties based on the SMPL model output + GUI</span>
-<span class="linenos">128</span>        <span class="c1"># elements.</span>
-<span class="linenos">129</span>        <span class="n">body_handle</span><span class="o">.</span><span class="n">vertices</span> <span class="o">=</span> <span class="n">smpl_outputs</span><span class="o">.</span><span class="n">vertices</span>
-<span class="linenos">130</span>        <span class="n">body_handle</span><span class="o">.</span><span class="n">wireframe</span> <span class="o">=</span> <span class="n">gui_elements</span><span class="o">.</span><span class="n">gui_wireframe</span><span class="o">.</span><span class="n">value</span>
-<span class="linenos">131</span>        <span class="n">body_handle</span><span class="o">.</span><span class="n">color</span> <span class="o">=</span> <span class="n">gui_elements</span><span class="o">.</span><span class="n">gui_rgb</span><span class="o">.</span><span class="n">value</span>
-<span class="linenos">132</span>        <span class="n">vertex_selector</span><span class="o">.</span><span class="n">batched_positions</span> <span class="o">=</span> <span class="n">smpl_outputs</span><span class="o">.</span><span class="n">vertices</span>
-<span class="linenos">133</span>
-<span class="linenos">134</span>        <span class="c1"># Match transform control gizmos to joint positions.</span>
-<span class="linenos">135</span>        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">control</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">gui_elements</span><span class="o">.</span><span class="n">transform_controls</span><span class="p">):</span>
-<span class="linenos">136</span>            <span class="n">control</span><span class="o">.</span><span class="n">position</span> <span class="o">=</span> <span class="n">smpl_outputs</span><span class="o">.</span><span class="n">T_parent_joint</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="p">:</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span>
-<span class="linenos">137</span>
+<span class="linenos"> 72</span>    <span class="n">server</span><span class="o">.</span><span class="n">initial_camera</span><span class="o">.</span><span class="n">position</span> <span class="o">=</span> <span class="p">(</span><span class="mf">2.5</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.5</span><span class="p">)</span>
+<span class="linenos"> 73</span>    <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_grid</span><span class="p">(</span><span class="s2">&quot;/grid&quot;</span><span class="p">,</span> <span class="n">position</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.3</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">plane</span><span class="o">=</span><span class="s2">&quot;xz&quot;</span><span class="p">)</span>
+<span class="linenos"> 74</span>
+<span class="linenos"> 75</span>    <span class="c1"># Main loop. We&#39;ll read pose/shape from the GUI elements, compute the mesh,</span>
+<span class="linenos"> 76</span>    <span class="c1"># and then send the updated mesh in a loop.</span>
+<span class="linenos"> 77</span>    <span class="n">model</span> <span class="o">=</span> <span class="n">SmplHelper</span><span class="p">(</span><span class="n">model_path</span><span class="p">)</span>
+<span class="linenos"> 78</span>    <span class="n">gui_elements</span> <span class="o">=</span> <span class="n">make_gui_elements</span><span class="p">(</span>
+<span class="linenos"> 79</span>        <span class="n">server</span><span class="p">,</span>
+<span class="linenos"> 80</span>        <span class="n">num_betas</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">num_betas</span><span class="p">,</span>
+<span class="linenos"> 81</span>        <span class="n">num_joints</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">num_joints</span><span class="p">,</span>
+<span class="linenos"> 82</span>        <span class="n">parent_idx</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">parent_idx</span><span class="p">,</span>
+<span class="linenos"> 83</span>    <span class="p">)</span>
+<span class="linenos"> 84</span>    <span class="n">body_handle</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_mesh_simple</span><span class="p">(</span>
+<span class="linenos"> 85</span>        <span class="s2">&quot;/human&quot;</span><span class="p">,</span>
+<span class="linenos"> 86</span>        <span class="n">model</span><span class="o">.</span><span class="n">v_template</span><span class="p">,</span>
+<span class="linenos"> 87</span>        <span class="n">model</span><span class="o">.</span><span class="n">faces</span><span class="p">,</span>
+<span class="linenos"> 88</span>        <span class="n">wireframe</span><span class="o">=</span><span class="n">gui_elements</span><span class="o">.</span><span class="n">gui_wireframe</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+<span class="linenos"> 89</span>        <span class="n">color</span><span class="o">=</span><span class="n">gui_elements</span><span class="o">.</span><span class="n">gui_rgb</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+<span class="linenos"> 90</span>    <span class="p">)</span>
+<span class="linenos"> 91</span>
+<span class="linenos"> 92</span>    <span class="c1"># Add a vertex selector to the mesh. This will allow us to click on</span>
+<span class="linenos"> 93</span>    <span class="c1"># vertices to get indices.</span>
+<span class="linenos"> 94</span>    <span class="n">red_sphere</span> <span class="o">=</span> <span class="n">trimesh</span><span class="o">.</span><span class="n">creation</span><span class="o">.</span><span class="n">icosphere</span><span class="p">(</span><span class="n">radius</span><span class="o">=</span><span class="mf">0.001</span><span class="p">,</span> <span class="n">subdivisions</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="linenos"> 95</span>    <span class="n">red_sphere</span><span class="o">.</span><span class="n">visual</span><span class="o">.</span><span class="n">vertex_colors</span> <span class="o">=</span> <span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+<span class="linenos"> 96</span>    <span class="n">vertex_selector</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_batched_meshes_trimesh</span><span class="p">(</span>
+<span class="linenos"> 97</span>        <span class="s2">&quot;/selector&quot;</span><span class="p">,</span>
+<span class="linenos"> 98</span>        <span class="n">red_sphere</span><span class="p">,</span>
+<span class="linenos"> 99</span>        <span class="n">batched_positions</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">v_template</span><span class="p">,</span>
+<span class="linenos">100</span>        <span class="n">batched_wxyzs</span><span class="o">=</span><span class="p">((</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),)</span> <span class="o">*</span> <span class="n">model</span><span class="o">.</span><span class="n">v_template</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+<span class="linenos">101</span>    <span class="p">)</span>
+<span class="linenos">102</span>
+<span class="linenos">103</span>    <span class="nd">@vertex_selector</span><span class="o">.</span><span class="n">on_click</span>
+<span class="linenos">104</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneNodePointerEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos">105</span>        <span class="n">event</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">add_notification</span><span class="p">(</span>
+<span class="linenos">106</span>            <span class="sa">f</span><span class="s2">&quot;Clicked on vertex </span><span class="si">{</span><span class="n">event</span><span class="o">.</span><span class="n">instance_index</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+<span class="linenos">107</span>            <span class="n">body</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+<span class="linenos">108</span>            <span class="n">auto_close_seconds</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span>
+<span class="linenos">109</span>        <span class="p">)</span>
+<span class="linenos">110</span>
+<span class="linenos">111</span>    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+<span class="linenos">112</span>        <span class="c1"># Do nothing if no change.</span>
+<span class="linenos">113</span>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.02</span><span class="p">)</span>
+<span class="linenos">114</span>        <span class="k">if</span> <span class="ow">not</span> <span class="n">gui_elements</span><span class="o">.</span><span class="n">changed</span><span class="p">:</span>
+<span class="linenos">115</span>            <span class="k">continue</span>
+<span class="linenos">116</span>
+<span class="linenos">117</span>        <span class="n">gui_elements</span><span class="o">.</span><span class="n">changed</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="linenos">118</span>
+<span class="linenos">119</span>        <span class="c1"># If anything has changed, re-compute SMPL outputs.</span>
+<span class="linenos">120</span>        <span class="n">smpl_outputs</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">get_outputs</span><span class="p">(</span>
+<span class="linenos">121</span>            <span class="n">betas</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">x</span><span class="o">.</span><span class="n">value</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">gui_elements</span><span class="o">.</span><span class="n">gui_betas</span><span class="p">]),</span>
+<span class="linenos">122</span>            <span class="n">joint_rotmats</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">SO3</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span>
+<span class="linenos">123</span>                <span class="c1"># (num_joints, 3)</span>
+<span class="linenos">124</span>                <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">x</span><span class="o">.</span><span class="n">value</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">gui_elements</span><span class="o">.</span><span class="n">gui_joints</span><span class="p">])</span>
+<span class="linenos">125</span>            <span class="p">)</span><span class="o">.</span><span class="n">as_matrix</span><span class="p">(),</span>
+<span class="linenos">126</span>        <span class="p">)</span>
+<span class="linenos">127</span>
+<span class="linenos">128</span>        <span class="c1"># Update the mesh properties based on the SMPL model output + GUI</span>
+<span class="linenos">129</span>        <span class="c1"># elements.</span>
+<span class="linenos">130</span>        <span class="n">body_handle</span><span class="o">.</span><span class="n">vertices</span> <span class="o">=</span> <span class="n">smpl_outputs</span><span class="o">.</span><span class="n">vertices</span>
+<span class="linenos">131</span>        <span class="n">body_handle</span><span class="o">.</span><span class="n">wireframe</span> <span class="o">=</span> <span class="n">gui_elements</span><span class="o">.</span><span class="n">gui_wireframe</span><span class="o">.</span><span class="n">value</span>
+<span class="linenos">132</span>        <span class="n">body_handle</span><span class="o">.</span><span class="n">color</span> <span class="o">=</span> <span class="n">gui_elements</span><span class="o">.</span><span class="n">gui_rgb</span><span class="o">.</span><span class="n">value</span>
+<span class="linenos">133</span>        <span class="n">vertex_selector</span><span class="o">.</span><span class="n">batched_positions</span> <span class="o">=</span> <span class="n">smpl_outputs</span><span class="o">.</span><span class="n">vertices</span>
+<span class="linenos">134</span>
+<span class="linenos">135</span>        <span class="c1"># Match transform control gizmos to joint positions.</span>
+<span class="linenos">136</span>        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">control</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">gui_elements</span><span class="o">.</span><span class="n">transform_controls</span><span class="p">):</span>
+<span class="linenos">137</span>            <span class="n">control</span><span class="o">.</span><span class="n">position</span> <span class="o">=</span> <span class="n">smpl_outputs</span><span class="o">.</span><span class="n">T_parent_joint</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="p">:</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span>
 <span class="linenos">138</span>
-<span class="linenos">139</span><span class="nd">@dataclass</span>
-<span class="linenos">140</span><span class="k">class</span><span class="w"> </span><span class="nc">GuiElements</span><span class="p">:</span>
-<span class="linenos">141</span>
-<span class="linenos">142</span>    <span class="n">gui_rgb</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">GuiInputHandle</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span>
-<span class="linenos">143</span>    <span class="n">gui_wireframe</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">GuiInputHandle</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span>
-<span class="linenos">144</span>    <span class="n">gui_betas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">GuiInputHandle</span><span class="p">[</span><span class="nb">float</span><span class="p">]]</span>
-<span class="linenos">145</span>    <span class="n">gui_joints</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">GuiInputHandle</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]]</span>
-<span class="linenos">146</span>    <span class="n">transform_controls</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">TransformControlsHandle</span><span class="p">]</span>
-<span class="linenos">147</span>
-<span class="linenos">148</span>    <span class="n">changed</span><span class="p">:</span> <span class="nb">bool</span>
-<span class="linenos">149</span>
+<span class="linenos">139</span>
+<span class="linenos">140</span><span class="nd">@dataclass</span>
+<span class="linenos">141</span><span class="k">class</span><span class="w"> </span><span class="nc">GuiElements</span><span class="p">:</span>
+<span class="linenos">142</span>
+<span class="linenos">143</span>    <span class="n">gui_rgb</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">GuiInputHandle</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span>
+<span class="linenos">144</span>    <span class="n">gui_wireframe</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">GuiInputHandle</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span>
+<span class="linenos">145</span>    <span class="n">gui_betas</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">GuiInputHandle</span><span class="p">[</span><span class="nb">float</span><span class="p">]]</span>
+<span class="linenos">146</span>    <span class="n">gui_joints</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">GuiInputHandle</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]]</span>
+<span class="linenos">147</span>    <span class="n">transform_controls</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">TransformControlsHandle</span><span class="p">]</span>
+<span class="linenos">148</span>
+<span class="linenos">149</span>    <span class="n">changed</span><span class="p">:</span> <span class="nb">bool</span>
 <span class="linenos">150</span>
-<span class="linenos">151</span><span class="k">def</span><span class="w"> </span><span class="nf">make_gui_elements</span><span class="p">(</span>
-<span class="linenos">152</span>    <span class="n">server</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">ViserServer</span><span class="p">,</span>
-<span class="linenos">153</span>    <span class="n">num_betas</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-<span class="linenos">154</span>    <span class="n">num_joints</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-<span class="linenos">155</span>    <span class="n">parent_idx</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
-<span class="linenos">156</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GuiElements</span><span class="p">:</span>
-<span class="linenos">157</span>
-<span class="linenos">158</span>    <span class="n">tab_group</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_tab_group</span><span class="p">()</span>
-<span class="linenos">159</span>
-<span class="linenos">160</span>    <span class="k">def</span><span class="w"> </span><span class="nf">set_changed</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">161</span>        <span class="n">out</span><span class="o">.</span><span class="n">changed</span> <span class="o">=</span> <span class="kc">True</span>  <span class="c1"># out is define later!</span>
-<span class="linenos">162</span>
-<span class="linenos">163</span>    <span class="c1"># GUI elements: mesh settings + visibility.</span>
-<span class="linenos">164</span>    <span class="k">with</span> <span class="n">tab_group</span><span class="o">.</span><span class="n">add_tab</span><span class="p">(</span><span class="s2">&quot;View&quot;</span><span class="p">,</span> <span class="n">viser</span><span class="o">.</span><span class="n">Icon</span><span class="o">.</span><span class="n">VIEWFINDER</span><span class="p">):</span>
-<span class="linenos">165</span>        <span class="n">gui_rgb</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_rgb</span><span class="p">(</span><span class="s2">&quot;Color&quot;</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="p">(</span><span class="mi">90</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="mi">255</span><span class="p">))</span>
-<span class="linenos">166</span>        <span class="n">gui_wireframe</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_checkbox</span><span class="p">(</span><span class="s2">&quot;Wireframe&quot;</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<span class="linenos">167</span>        <span class="n">gui_show_controls</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_checkbox</span><span class="p">(</span><span class="s2">&quot;Handles&quot;</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="linenos">168</span>
-<span class="linenos">169</span>        <span class="n">gui_rgb</span><span class="o">.</span><span class="n">on_update</span><span class="p">(</span><span class="n">set_changed</span><span class="p">)</span>
-<span class="linenos">170</span>        <span class="n">gui_wireframe</span><span class="o">.</span><span class="n">on_update</span><span class="p">(</span><span class="n">set_changed</span><span class="p">)</span>
-<span class="linenos">171</span>
-<span class="linenos">172</span>        <span class="nd">@gui_show_controls</span><span class="o">.</span><span class="n">on_update</span>
-<span class="linenos">173</span>        <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
-<span class="linenos">174</span>            <span class="k">for</span> <span class="n">control</span> <span class="ow">in</span> <span class="n">transform_controls</span><span class="p">:</span>
-<span class="linenos">175</span>                <span class="n">control</span><span class="o">.</span><span class="n">visible</span> <span class="o">=</span> <span class="n">gui_show_controls</span><span class="o">.</span><span class="n">value</span>
-<span class="linenos">176</span>
-<span class="linenos">177</span>    <span class="c1"># GUI elements: shape parameters.</span>
-<span class="linenos">178</span>    <span class="k">with</span> <span class="n">tab_group</span><span class="o">.</span><span class="n">add_tab</span><span class="p">(</span><span class="s2">&quot;Shape&quot;</span><span class="p">,</span> <span class="n">viser</span><span class="o">.</span><span class="n">Icon</span><span class="o">.</span><span class="n">BOX</span><span class="p">):</span>
-<span class="linenos">179</span>        <span class="n">gui_reset_shape</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Reset Shape&quot;</span><span class="p">)</span>
-<span class="linenos">180</span>        <span class="n">gui_random_shape</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Random Shape&quot;</span><span class="p">)</span>
-<span class="linenos">181</span>
-<span class="linenos">182</span>        <span class="nd">@gui_reset_shape</span><span class="o">.</span><span class="n">on_click</span>
-<span class="linenos">183</span>        <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
-<span class="linenos">184</span>            <span class="k">for</span> <span class="n">beta</span> <span class="ow">in</span> <span class="n">gui_betas</span><span class="p">:</span>
-<span class="linenos">185</span>                <span class="n">beta</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="mf">0.0</span>
-<span class="linenos">186</span>
-<span class="linenos">187</span>        <span class="nd">@gui_random_shape</span><span class="o">.</span><span class="n">on_click</span>
-<span class="linenos">188</span>        <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
-<span class="linenos">189</span>            <span class="k">for</span> <span class="n">beta</span> <span class="ow">in</span> <span class="n">gui_betas</span><span class="p">:</span>
-<span class="linenos">190</span>                <span class="n">beta</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
-<span class="linenos">191</span>
-<span class="linenos">192</span>        <span class="n">gui_betas</span> <span class="o">=</span> <span class="p">[]</span>
-<span class="linenos">193</span>        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_betas</span><span class="p">):</span>
-<span class="linenos">194</span>            <span class="n">beta</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_slider</span><span class="p">(</span>
-<span class="linenos">195</span>                <span class="sa">f</span><span class="s2">&quot;beta</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">min</span><span class="o">=-</span><span class="mf">5.0</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">step</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="mf">0.0</span>
-<span class="linenos">196</span>            <span class="p">)</span>
-<span class="linenos">197</span>            <span class="n">gui_betas</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">beta</span><span class="p">)</span>
-<span class="linenos">198</span>            <span class="n">beta</span><span class="o">.</span><span class="n">on_update</span><span class="p">(</span><span class="n">set_changed</span><span class="p">)</span>
-<span class="linenos">199</span>
-<span class="linenos">200</span>    <span class="c1"># GUI elements: joint angles.</span>
-<span class="linenos">201</span>    <span class="k">with</span> <span class="n">tab_group</span><span class="o">.</span><span class="n">add_tab</span><span class="p">(</span><span class="s2">&quot;Joints&quot;</span><span class="p">,</span> <span class="n">viser</span><span class="o">.</span><span class="n">Icon</span><span class="o">.</span><span class="n">ANGLE</span><span class="p">):</span>
-<span class="linenos">202</span>        <span class="n">gui_reset_joints</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Reset Joints&quot;</span><span class="p">)</span>
-<span class="linenos">203</span>        <span class="n">gui_random_joints</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Random Joints&quot;</span><span class="p">)</span>
-<span class="linenos">204</span>
-<span class="linenos">205</span>        <span class="nd">@gui_reset_joints</span><span class="o">.</span><span class="n">on_click</span>
-<span class="linenos">206</span>        <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
-<span class="linenos">207</span>            <span class="k">for</span> <span class="n">joint</span> <span class="ow">in</span> <span class="n">gui_joints</span><span class="p">:</span>
-<span class="linenos">208</span>                <span class="n">joint</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
-<span class="linenos">209</span>
-<span class="linenos">210</span>        <span class="nd">@gui_random_joints</span><span class="o">.</span><span class="n">on_click</span>
-<span class="linenos">211</span>        <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
-<span class="linenos">212</span>            <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">()</span>
-<span class="linenos">213</span>            <span class="k">for</span> <span class="n">joint</span> <span class="ow">in</span> <span class="n">gui_joints</span><span class="p">:</span>
-<span class="linenos">214</span>                <span class="n">joint</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">SO3</span><span class="o">.</span><span class="n">sample_uniform</span><span class="p">(</span><span class="n">rng</span><span class="p">)</span><span class="o">.</span><span class="n">log</span><span class="p">()</span>
-<span class="linenos">215</span>
-<span class="linenos">216</span>        <span class="n">gui_joints</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">GuiInputHandle</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]]</span> <span class="o">=</span> <span class="p">[]</span>
-<span class="linenos">217</span>        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_joints</span><span class="p">):</span>
-<span class="linenos">218</span>            <span class="n">gui_joint</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_vector3</span><span class="p">(</span>
-<span class="linenos">219</span>                <span class="n">label</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Joint </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
-<span class="linenos">220</span>                <span class="n">initial_value</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
-<span class="linenos">221</span>                <span class="n">step</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span>
-<span class="linenos">222</span>            <span class="p">)</span>
-<span class="linenos">223</span>            <span class="n">gui_joints</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">gui_joint</span><span class="p">)</span>
-<span class="linenos">224</span>
-<span class="linenos">225</span>            <span class="k">def</span><span class="w"> </span><span class="nf">set_callback_in_closure</span><span class="p">(</span><span class="n">i</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">226</span>                <span class="nd">@gui_joint</span><span class="o">.</span><span class="n">on_update</span>
-<span class="linenos">227</span>                <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
-<span class="linenos">228</span>                    <span class="n">transform_controls</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">wxyz</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">SO3</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span>
-<span class="linenos">229</span>                        <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">gui_joints</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
-<span class="linenos">230</span>                    <span class="p">)</span><span class="o">.</span><span class="n">wxyz</span>
-<span class="linenos">231</span>                    <span class="n">out</span><span class="o">.</span><span class="n">changed</span> <span class="o">=</span> <span class="kc">True</span>
-<span class="linenos">232</span>
-<span class="linenos">233</span>            <span class="n">set_callback_in_closure</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
-<span class="linenos">234</span>
-<span class="linenos">235</span>    <span class="c1"># Transform control gizmos on joints.</span>
-<span class="linenos">236</span>    <span class="n">transform_controls</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">TransformControlsHandle</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-<span class="linenos">237</span>    <span class="n">prefixed_joint_names</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># Joint names, but prefixed with parents.</span>
-<span class="linenos">238</span>    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_joints</span><span class="p">):</span>
-<span class="linenos">239</span>        <span class="n">prefixed_joint_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;joint_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span>
-<span class="linenos">240</span>        <span class="k">if</span> <span class="n">i</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-<span class="linenos">241</span>            <span class="n">prefixed_joint_name</span> <span class="o">=</span> <span class="p">(</span>
-<span class="linenos">242</span>                <span class="n">prefixed_joint_names</span><span class="p">[</span><span class="n">parent_idx</span><span class="p">[</span><span class="n">i</span><span class="p">]]</span> <span class="o">+</span> <span class="s2">&quot;/&quot;</span> <span class="o">+</span> <span class="n">prefixed_joint_name</span>
-<span class="linenos">243</span>            <span class="p">)</span>
-<span class="linenos">244</span>        <span class="n">prefixed_joint_names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">prefixed_joint_name</span><span class="p">)</span>
-<span class="linenos">245</span>        <span class="n">controls</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_transform_controls</span><span class="p">(</span>
-<span class="linenos">246</span>            <span class="sa">f</span><span class="s2">&quot;/smpl/</span><span class="si">{</span><span class="n">prefixed_joint_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
-<span class="linenos">247</span>            <span class="n">depth_test</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-<span class="linenos">248</span>            <span class="n">scale</span><span class="o">=</span><span class="mf">0.2</span> <span class="o">*</span> <span class="p">(</span><span class="mf">0.75</span> <span class="o">**</span> <span class="n">prefixed_joint_name</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)),</span>
-<span class="linenos">249</span>            <span class="n">disable_axes</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<span class="linenos">250</span>            <span class="n">disable_sliders</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<span class="linenos">251</span>            <span class="n">visible</span><span class="o">=</span><span class="n">gui_show_controls</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
-<span class="linenos">252</span>        <span class="p">)</span>
-<span class="linenos">253</span>        <span class="n">transform_controls</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">controls</span><span class="p">)</span>
-<span class="linenos">254</span>
-<span class="linenos">255</span>        <span class="k">def</span><span class="w"> </span><span class="nf">set_callback_in_closure</span><span class="p">(</span><span class="n">i</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">256</span>            <span class="nd">@controls</span><span class="o">.</span><span class="n">on_update</span>
-<span class="linenos">257</span>            <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">258</span>                <span class="n">axisangle</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">SO3</span><span class="p">(</span><span class="n">transform_controls</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">wxyz</span><span class="p">)</span><span class="o">.</span><span class="n">log</span><span class="p">()</span>
-<span class="linenos">259</span>                <span class="n">gui_joints</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="p">(</span><span class="n">axisangle</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">axisangle</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">axisangle</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
-<span class="linenos">260</span>
-<span class="linenos">261</span>        <span class="n">set_callback_in_closure</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
-<span class="linenos">262</span>
-<span class="linenos">263</span>    <span class="n">out</span> <span class="o">=</span> <span class="n">GuiElements</span><span class="p">(</span>
-<span class="linenos">264</span>        <span class="n">gui_rgb</span><span class="p">,</span>
-<span class="linenos">265</span>        <span class="n">gui_wireframe</span><span class="p">,</span>
-<span class="linenos">266</span>        <span class="n">gui_betas</span><span class="p">,</span>
-<span class="linenos">267</span>        <span class="n">gui_joints</span><span class="p">,</span>
-<span class="linenos">268</span>        <span class="n">transform_controls</span><span class="o">=</span><span class="n">transform_controls</span><span class="p">,</span>
-<span class="linenos">269</span>        <span class="n">changed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<span class="linenos">270</span>    <span class="p">)</span>
-<span class="linenos">271</span>    <span class="k">return</span> <span class="n">out</span>
-<span class="linenos">272</span>
+<span class="linenos">151</span>
+<span class="linenos">152</span><span class="k">def</span><span class="w"> </span><span class="nf">make_gui_elements</span><span class="p">(</span>
+<span class="linenos">153</span>    <span class="n">server</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">ViserServer</span><span class="p">,</span>
+<span class="linenos">154</span>    <span class="n">num_betas</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+<span class="linenos">155</span>    <span class="n">num_joints</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+<span class="linenos">156</span>    <span class="n">parent_idx</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+<span class="linenos">157</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GuiElements</span><span class="p">:</span>
+<span class="linenos">158</span>
+<span class="linenos">159</span>    <span class="n">tab_group</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_tab_group</span><span class="p">()</span>
+<span class="linenos">160</span>
+<span class="linenos">161</span>    <span class="k">def</span><span class="w"> </span><span class="nf">set_changed</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos">162</span>        <span class="n">out</span><span class="o">.</span><span class="n">changed</span> <span class="o">=</span> <span class="kc">True</span>  <span class="c1"># out is define later!</span>
+<span class="linenos">163</span>
+<span class="linenos">164</span>    <span class="c1"># GUI elements: mesh settings + visibility.</span>
+<span class="linenos">165</span>    <span class="k">with</span> <span class="n">tab_group</span><span class="o">.</span><span class="n">add_tab</span><span class="p">(</span><span class="s2">&quot;View&quot;</span><span class="p">,</span> <span class="n">viser</span><span class="o">.</span><span class="n">Icon</span><span class="o">.</span><span class="n">VIEWFINDER</span><span class="p">):</span>
+<span class="linenos">166</span>        <span class="n">gui_rgb</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_rgb</span><span class="p">(</span><span class="s2">&quot;Color&quot;</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="p">(</span><span class="mi">90</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="mi">255</span><span class="p">))</span>
+<span class="linenos">167</span>        <span class="n">gui_wireframe</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_checkbox</span><span class="p">(</span><span class="s2">&quot;Wireframe&quot;</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="linenos">168</span>        <span class="n">gui_show_controls</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_checkbox</span><span class="p">(</span><span class="s2">&quot;Handles&quot;</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">169</span>
+<span class="linenos">170</span>        <span class="n">gui_rgb</span><span class="o">.</span><span class="n">on_update</span><span class="p">(</span><span class="n">set_changed</span><span class="p">)</span>
+<span class="linenos">171</span>        <span class="n">gui_wireframe</span><span class="o">.</span><span class="n">on_update</span><span class="p">(</span><span class="n">set_changed</span><span class="p">)</span>
+<span class="linenos">172</span>
+<span class="linenos">173</span>        <span class="nd">@gui_show_controls</span><span class="o">.</span><span class="n">on_update</span>
+<span class="linenos">174</span>        <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
+<span class="linenos">175</span>            <span class="k">for</span> <span class="n">control</span> <span class="ow">in</span> <span class="n">transform_controls</span><span class="p">:</span>
+<span class="linenos">176</span>                <span class="n">control</span><span class="o">.</span><span class="n">visible</span> <span class="o">=</span> <span class="n">gui_show_controls</span><span class="o">.</span><span class="n">value</span>
+<span class="linenos">177</span>
+<span class="linenos">178</span>    <span class="c1"># GUI elements: shape parameters.</span>
+<span class="linenos">179</span>    <span class="k">with</span> <span class="n">tab_group</span><span class="o">.</span><span class="n">add_tab</span><span class="p">(</span><span class="s2">&quot;Shape&quot;</span><span class="p">,</span> <span class="n">viser</span><span class="o">.</span><span class="n">Icon</span><span class="o">.</span><span class="n">BOX</span><span class="p">):</span>
+<span class="linenos">180</span>        <span class="n">gui_reset_shape</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Reset Shape&quot;</span><span class="p">)</span>
+<span class="linenos">181</span>        <span class="n">gui_random_shape</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Random Shape&quot;</span><span class="p">)</span>
+<span class="linenos">182</span>
+<span class="linenos">183</span>        <span class="nd">@gui_reset_shape</span><span class="o">.</span><span class="n">on_click</span>
+<span class="linenos">184</span>        <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
+<span class="linenos">185</span>            <span class="k">for</span> <span class="n">beta</span> <span class="ow">in</span> <span class="n">gui_betas</span><span class="p">:</span>
+<span class="linenos">186</span>                <span class="n">beta</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="mf">0.0</span>
+<span class="linenos">187</span>
+<span class="linenos">188</span>        <span class="nd">@gui_random_shape</span><span class="o">.</span><span class="n">on_click</span>
+<span class="linenos">189</span>        <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
+<span class="linenos">190</span>            <span class="k">for</span> <span class="n">beta</span> <span class="ow">in</span> <span class="n">gui_betas</span><span class="p">:</span>
+<span class="linenos">191</span>                <span class="n">beta</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+<span class="linenos">192</span>
+<span class="linenos">193</span>        <span class="n">gui_betas</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="linenos">194</span>        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_betas</span><span class="p">):</span>
+<span class="linenos">195</span>            <span class="n">beta</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_slider</span><span class="p">(</span>
+<span class="linenos">196</span>                <span class="sa">f</span><span class="s2">&quot;beta</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">min</span><span class="o">=-</span><span class="mf">5.0</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">step</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="mf">0.0</span>
+<span class="linenos">197</span>            <span class="p">)</span>
+<span class="linenos">198</span>            <span class="n">gui_betas</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">beta</span><span class="p">)</span>
+<span class="linenos">199</span>            <span class="n">beta</span><span class="o">.</span><span class="n">on_update</span><span class="p">(</span><span class="n">set_changed</span><span class="p">)</span>
+<span class="linenos">200</span>
+<span class="linenos">201</span>    <span class="c1"># GUI elements: joint angles.</span>
+<span class="linenos">202</span>    <span class="k">with</span> <span class="n">tab_group</span><span class="o">.</span><span class="n">add_tab</span><span class="p">(</span><span class="s2">&quot;Joints&quot;</span><span class="p">,</span> <span class="n">viser</span><span class="o">.</span><span class="n">Icon</span><span class="o">.</span><span class="n">ANGLE</span><span class="p">):</span>
+<span class="linenos">203</span>        <span class="n">gui_reset_joints</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Reset Joints&quot;</span><span class="p">)</span>
+<span class="linenos">204</span>        <span class="n">gui_random_joints</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Random Joints&quot;</span><span class="p">)</span>
+<span class="linenos">205</span>
+<span class="linenos">206</span>        <span class="nd">@gui_reset_joints</span><span class="o">.</span><span class="n">on_click</span>
+<span class="linenos">207</span>        <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
+<span class="linenos">208</span>            <span class="k">for</span> <span class="n">joint</span> <span class="ow">in</span> <span class="n">gui_joints</span><span class="p">:</span>
+<span class="linenos">209</span>                <span class="n">joint</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+<span class="linenos">210</span>
+<span class="linenos">211</span>        <span class="nd">@gui_random_joints</span><span class="o">.</span><span class="n">on_click</span>
+<span class="linenos">212</span>        <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
+<span class="linenos">213</span>            <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">()</span>
+<span class="linenos">214</span>            <span class="k">for</span> <span class="n">joint</span> <span class="ow">in</span> <span class="n">gui_joints</span><span class="p">:</span>
+<span class="linenos">215</span>                <span class="n">joint</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">SO3</span><span class="o">.</span><span class="n">sample_uniform</span><span class="p">(</span><span class="n">rng</span><span class="p">)</span><span class="o">.</span><span class="n">log</span><span class="p">()</span>
+<span class="linenos">216</span>
+<span class="linenos">217</span>        <span class="n">gui_joints</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">GuiInputHandle</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]]</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="linenos">218</span>        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_joints</span><span class="p">):</span>
+<span class="linenos">219</span>            <span class="n">gui_joint</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_vector3</span><span class="p">(</span>
+<span class="linenos">220</span>                <span class="n">label</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Joint </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+<span class="linenos">221</span>                <span class="n">initial_value</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+<span class="linenos">222</span>                <span class="n">step</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span>
+<span class="linenos">223</span>            <span class="p">)</span>
+<span class="linenos">224</span>            <span class="n">gui_joints</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">gui_joint</span><span class="p">)</span>
+<span class="linenos">225</span>
+<span class="linenos">226</span>            <span class="k">def</span><span class="w"> </span><span class="nf">set_callback_in_closure</span><span class="p">(</span><span class="n">i</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos">227</span>                <span class="nd">@gui_joint</span><span class="o">.</span><span class="n">on_update</span>
+<span class="linenos">228</span>                <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
+<span class="linenos">229</span>                    <span class="n">transform_controls</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">wxyz</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">SO3</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span>
+<span class="linenos">230</span>                        <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">gui_joints</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+<span class="linenos">231</span>                    <span class="p">)</span><span class="o">.</span><span class="n">wxyz</span>
+<span class="linenos">232</span>                    <span class="n">out</span><span class="o">.</span><span class="n">changed</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="linenos">233</span>
+<span class="linenos">234</span>            <span class="n">set_callback_in_closure</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+<span class="linenos">235</span>
+<span class="linenos">236</span>    <span class="c1"># Transform control gizmos on joints.</span>
+<span class="linenos">237</span>    <span class="n">transform_controls</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">TransformControlsHandle</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="linenos">238</span>    <span class="n">prefixed_joint_names</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># Joint names, but prefixed with parents.</span>
+<span class="linenos">239</span>    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_joints</span><span class="p">):</span>
+<span class="linenos">240</span>        <span class="n">prefixed_joint_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;joint_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="linenos">241</span>        <span class="k">if</span> <span class="n">i</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+<span class="linenos">242</span>            <span class="n">prefixed_joint_name</span> <span class="o">=</span> <span class="p">(</span>
+<span class="linenos">243</span>                <span class="n">prefixed_joint_names</span><span class="p">[</span><span class="n">parent_idx</span><span class="p">[</span><span class="n">i</span><span class="p">]]</span> <span class="o">+</span> <span class="s2">&quot;/&quot;</span> <span class="o">+</span> <span class="n">prefixed_joint_name</span>
+<span class="linenos">244</span>            <span class="p">)</span>
+<span class="linenos">245</span>        <span class="n">prefixed_joint_names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">prefixed_joint_name</span><span class="p">)</span>
+<span class="linenos">246</span>        <span class="n">controls</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_transform_controls</span><span class="p">(</span>
+<span class="linenos">247</span>            <span class="sa">f</span><span class="s2">&quot;/smpl/</span><span class="si">{</span><span class="n">prefixed_joint_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+<span class="linenos">248</span>            <span class="n">depth_test</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="linenos">249</span>            <span class="n">scale</span><span class="o">=</span><span class="mf">0.2</span> <span class="o">*</span> <span class="p">(</span><span class="mf">0.75</span> <span class="o">**</span> <span class="n">prefixed_joint_name</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)),</span>
+<span class="linenos">250</span>            <span class="n">disable_axes</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="linenos">251</span>            <span class="n">disable_sliders</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="linenos">252</span>            <span class="n">visible</span><span class="o">=</span><span class="n">gui_show_controls</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+<span class="linenos">253</span>        <span class="p">)</span>
+<span class="linenos">254</span>        <span class="n">transform_controls</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">controls</span><span class="p">)</span>
+<span class="linenos">255</span>
+<span class="linenos">256</span>        <span class="k">def</span><span class="w"> </span><span class="nf">set_callback_in_closure</span><span class="p">(</span><span class="n">i</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos">257</span>            <span class="nd">@controls</span><span class="o">.</span><span class="n">on_update</span>
+<span class="linenos">258</span>            <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos">259</span>                <span class="n">axisangle</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">SO3</span><span class="p">(</span><span class="n">transform_controls</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">wxyz</span><span class="p">)</span><span class="o">.</span><span class="n">log</span><span class="p">()</span>
+<span class="linenos">260</span>                <span class="n">gui_joints</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="p">(</span><span class="n">axisangle</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">axisangle</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">axisangle</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+<span class="linenos">261</span>
+<span class="linenos">262</span>        <span class="n">set_callback_in_closure</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+<span class="linenos">263</span>
+<span class="linenos">264</span>    <span class="n">out</span> <span class="o">=</span> <span class="n">GuiElements</span><span class="p">(</span>
+<span class="linenos">265</span>        <span class="n">gui_rgb</span><span class="p">,</span>
+<span class="linenos">266</span>        <span class="n">gui_wireframe</span><span class="p">,</span>
+<span class="linenos">267</span>        <span class="n">gui_betas</span><span class="p">,</span>
+<span class="linenos">268</span>        <span class="n">gui_joints</span><span class="p">,</span>
+<span class="linenos">269</span>        <span class="n">transform_controls</span><span class="o">=</span><span class="n">transform_controls</span><span class="p">,</span>
+<span class="linenos">270</span>        <span class="n">changed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="linenos">271</span>    <span class="p">)</span>
+<span class="linenos">272</span>    <span class="k">return</span> <span class="n">out</span>
 <span class="linenos">273</span>
-<span class="linenos">274</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
-<span class="linenos">275</span>    <span class="n">tyro</span><span class="o">.</span><span class="n">cli</span><span class="p">(</span><span class="n">main</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="vm">__doc__</span><span class="p">)</span>
+<span class="linenos">274</span>
+<span class="linenos">275</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="linenos">276</span>    <span class="n">tyro</span><span class="o">.</span><span class="n">cli</span><span class="p">(</span><span class="n">main</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="vm">__doc__</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>

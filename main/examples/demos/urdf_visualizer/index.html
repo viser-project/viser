@@ -508,85 +508,86 @@
 <span class="linenos"> 59</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="linenos"> 60</span>    <span class="c1"># Start viser server.</span>
 <span class="linenos"> 61</span>    <span class="n">server</span> <span class="o">=</span> <span class="n">viser</span><span class="o">.</span><span class="n">ViserServer</span><span class="p">()</span>
-<span class="linenos"> 62</span>
-<span class="linenos"> 63</span>    <span class="c1"># Load URDF.</span>
-<span class="linenos"> 64</span>    <span class="c1">#</span>
-<span class="linenos"> 65</span>    <span class="c1"># This takes either a yourdfpy.URDF object or a path to a .urdf file.</span>
-<span class="linenos"> 66</span>    <span class="n">urdf</span> <span class="o">=</span> <span class="n">load_robot_description</span><span class="p">(</span>
-<span class="linenos"> 67</span>        <span class="n">robot_type</span> <span class="o">+</span> <span class="s2">&quot;_description&quot;</span><span class="p">,</span>
-<span class="linenos"> 68</span>        <span class="n">load_meshes</span><span class="o">=</span><span class="n">load_meshes</span><span class="p">,</span>
-<span class="linenos"> 69</span>        <span class="n">build_scene_graph</span><span class="o">=</span><span class="n">load_meshes</span><span class="p">,</span>
-<span class="linenos"> 70</span>        <span class="n">load_collision_meshes</span><span class="o">=</span><span class="n">load_collision_meshes</span><span class="p">,</span>
-<span class="linenos"> 71</span>        <span class="n">build_collision_scene_graph</span><span class="o">=</span><span class="n">load_collision_meshes</span><span class="p">,</span>
-<span class="linenos"> 72</span>    <span class="p">)</span>
-<span class="linenos"> 73</span>    <span class="n">viser_urdf</span> <span class="o">=</span> <span class="n">ViserUrdf</span><span class="p">(</span>
-<span class="linenos"> 74</span>        <span class="n">server</span><span class="p">,</span>
-<span class="linenos"> 75</span>        <span class="n">urdf_or_path</span><span class="o">=</span><span class="n">urdf</span><span class="p">,</span>
-<span class="linenos"> 76</span>        <span class="n">load_meshes</span><span class="o">=</span><span class="n">load_meshes</span><span class="p">,</span>
-<span class="linenos"> 77</span>        <span class="n">load_collision_meshes</span><span class="o">=</span><span class="n">load_collision_meshes</span><span class="p">,</span>
-<span class="linenos"> 78</span>        <span class="n">collision_mesh_color_override</span><span class="o">=</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">),</span>
-<span class="linenos"> 79</span>    <span class="p">)</span>
-<span class="linenos"> 80</span>
-<span class="linenos"> 81</span>    <span class="c1"># Create sliders in GUI that help us move the robot joints.</span>
-<span class="linenos"> 82</span>    <span class="k">with</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_folder</span><span class="p">(</span><span class="s2">&quot;Joint position control&quot;</span><span class="p">):</span>
-<span class="linenos"> 83</span>        <span class="p">(</span><span class="n">slider_handles</span><span class="p">,</span> <span class="n">initial_config</span><span class="p">)</span> <span class="o">=</span> <span class="n">create_robot_control_sliders</span><span class="p">(</span>
-<span class="linenos"> 84</span>            <span class="n">server</span><span class="p">,</span> <span class="n">viser_urdf</span>
-<span class="linenos"> 85</span>        <span class="p">)</span>
-<span class="linenos"> 86</span>
-<span class="linenos"> 87</span>    <span class="c1"># Add visibility checkboxes.</span>
-<span class="linenos"> 88</span>    <span class="k">with</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_folder</span><span class="p">(</span><span class="s2">&quot;Visibility&quot;</span><span class="p">):</span>
-<span class="linenos"> 89</span>        <span class="n">show_meshes_cb</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_checkbox</span><span class="p">(</span>
-<span class="linenos"> 90</span>            <span class="s2">&quot;Show meshes&quot;</span><span class="p">,</span>
-<span class="linenos"> 91</span>            <span class="n">viser_urdf</span><span class="o">.</span><span class="n">show_visual</span><span class="p">,</span>
-<span class="linenos"> 92</span>        <span class="p">)</span>
-<span class="linenos"> 93</span>        <span class="n">show_collision_meshes_cb</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_checkbox</span><span class="p">(</span>
-<span class="linenos"> 94</span>            <span class="s2">&quot;Show collision meshes&quot;</span><span class="p">,</span> <span class="n">viser_urdf</span><span class="o">.</span><span class="n">show_collision</span>
-<span class="linenos"> 95</span>        <span class="p">)</span>
-<span class="linenos"> 96</span>
-<span class="linenos"> 97</span>    <span class="nd">@show_meshes_cb</span><span class="o">.</span><span class="n">on_update</span>
-<span class="linenos"> 98</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
-<span class="linenos"> 99</span>        <span class="n">viser_urdf</span><span class="o">.</span><span class="n">show_visual</span> <span class="o">=</span> <span class="n">show_meshes_cb</span><span class="o">.</span><span class="n">value</span>
-<span class="linenos">100</span>
-<span class="linenos">101</span>    <span class="nd">@show_collision_meshes_cb</span><span class="o">.</span><span class="n">on_update</span>
-<span class="linenos">102</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
-<span class="linenos">103</span>        <span class="n">viser_urdf</span><span class="o">.</span><span class="n">show_collision</span> <span class="o">=</span> <span class="n">show_collision_meshes_cb</span><span class="o">.</span><span class="n">value</span>
-<span class="linenos">104</span>
-<span class="linenos">105</span>    <span class="c1"># Hide checkboxes if meshes are not loaded.</span>
-<span class="linenos">106</span>    <span class="n">show_meshes_cb</span><span class="o">.</span><span class="n">visible</span> <span class="o">=</span> <span class="n">load_meshes</span>
-<span class="linenos">107</span>    <span class="n">show_collision_meshes_cb</span><span class="o">.</span><span class="n">visible</span> <span class="o">=</span> <span class="n">load_collision_meshes</span>
-<span class="linenos">108</span>
-<span class="linenos">109</span>    <span class="c1"># Set initial robot configuration.</span>
-<span class="linenos">110</span>    <span class="n">viser_urdf</span><span class="o">.</span><span class="n">update_cfg</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">initial_config</span><span class="p">))</span>
-<span class="linenos">111</span>
-<span class="linenos">112</span>    <span class="c1"># Create grid.</span>
-<span class="linenos">113</span>    <span class="n">trimesh_scene</span> <span class="o">=</span> <span class="n">viser_urdf</span><span class="o">.</span><span class="n">_urdf</span><span class="o">.</span><span class="n">scene</span> <span class="ow">or</span> <span class="n">viser_urdf</span><span class="o">.</span><span class="n">_urdf</span><span class="o">.</span><span class="n">collision_scene</span>
-<span class="linenos">114</span>    <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_grid</span><span class="p">(</span>
-<span class="linenos">115</span>        <span class="s2">&quot;/grid&quot;</span><span class="p">,</span>
-<span class="linenos">116</span>        <span class="n">width</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-<span class="linenos">117</span>        <span class="n">height</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-<span class="linenos">118</span>        <span class="n">position</span><span class="o">=</span><span class="p">(</span>
-<span class="linenos">119</span>            <span class="mf">0.0</span><span class="p">,</span>
+<span class="linenos"> 62</span>    <span class="n">server</span><span class="o">.</span><span class="n">initial_camera</span><span class="o">.</span><span class="n">position</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.2</span><span class="p">,</span> <span class="mf">1.2</span><span class="p">,</span> <span class="mf">1.2</span><span class="p">)</span>
+<span class="linenos"> 63</span>
+<span class="linenos"> 64</span>    <span class="c1"># Load URDF.</span>
+<span class="linenos"> 65</span>    <span class="c1">#</span>
+<span class="linenos"> 66</span>    <span class="c1"># This takes either a yourdfpy.URDF object or a path to a .urdf file.</span>
+<span class="linenos"> 67</span>    <span class="n">urdf</span> <span class="o">=</span> <span class="n">load_robot_description</span><span class="p">(</span>
+<span class="linenos"> 68</span>        <span class="n">robot_type</span> <span class="o">+</span> <span class="s2">&quot;_description&quot;</span><span class="p">,</span>
+<span class="linenos"> 69</span>        <span class="n">load_meshes</span><span class="o">=</span><span class="n">load_meshes</span><span class="p">,</span>
+<span class="linenos"> 70</span>        <span class="n">build_scene_graph</span><span class="o">=</span><span class="n">load_meshes</span><span class="p">,</span>
+<span class="linenos"> 71</span>        <span class="n">load_collision_meshes</span><span class="o">=</span><span class="n">load_collision_meshes</span><span class="p">,</span>
+<span class="linenos"> 72</span>        <span class="n">build_collision_scene_graph</span><span class="o">=</span><span class="n">load_collision_meshes</span><span class="p">,</span>
+<span class="linenos"> 73</span>    <span class="p">)</span>
+<span class="linenos"> 74</span>    <span class="n">viser_urdf</span> <span class="o">=</span> <span class="n">ViserUrdf</span><span class="p">(</span>
+<span class="linenos"> 75</span>        <span class="n">server</span><span class="p">,</span>
+<span class="linenos"> 76</span>        <span class="n">urdf_or_path</span><span class="o">=</span><span class="n">urdf</span><span class="p">,</span>
+<span class="linenos"> 77</span>        <span class="n">load_meshes</span><span class="o">=</span><span class="n">load_meshes</span><span class="p">,</span>
+<span class="linenos"> 78</span>        <span class="n">load_collision_meshes</span><span class="o">=</span><span class="n">load_collision_meshes</span><span class="p">,</span>
+<span class="linenos"> 79</span>        <span class="n">collision_mesh_color_override</span><span class="o">=</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">),</span>
+<span class="linenos"> 80</span>    <span class="p">)</span>
+<span class="linenos"> 81</span>
+<span class="linenos"> 82</span>    <span class="c1"># Create sliders in GUI that help us move the robot joints.</span>
+<span class="linenos"> 83</span>    <span class="k">with</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_folder</span><span class="p">(</span><span class="s2">&quot;Joint position control&quot;</span><span class="p">):</span>
+<span class="linenos"> 84</span>        <span class="p">(</span><span class="n">slider_handles</span><span class="p">,</span> <span class="n">initial_config</span><span class="p">)</span> <span class="o">=</span> <span class="n">create_robot_control_sliders</span><span class="p">(</span>
+<span class="linenos"> 85</span>            <span class="n">server</span><span class="p">,</span> <span class="n">viser_urdf</span>
+<span class="linenos"> 86</span>        <span class="p">)</span>
+<span class="linenos"> 87</span>
+<span class="linenos"> 88</span>    <span class="c1"># Add visibility checkboxes.</span>
+<span class="linenos"> 89</span>    <span class="k">with</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_folder</span><span class="p">(</span><span class="s2">&quot;Visibility&quot;</span><span class="p">):</span>
+<span class="linenos"> 90</span>        <span class="n">show_meshes_cb</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_checkbox</span><span class="p">(</span>
+<span class="linenos"> 91</span>            <span class="s2">&quot;Show meshes&quot;</span><span class="p">,</span>
+<span class="linenos"> 92</span>            <span class="n">viser_urdf</span><span class="o">.</span><span class="n">show_visual</span><span class="p">,</span>
+<span class="linenos"> 93</span>        <span class="p">)</span>
+<span class="linenos"> 94</span>        <span class="n">show_collision_meshes_cb</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_checkbox</span><span class="p">(</span>
+<span class="linenos"> 95</span>            <span class="s2">&quot;Show collision meshes&quot;</span><span class="p">,</span> <span class="n">viser_urdf</span><span class="o">.</span><span class="n">show_collision</span>
+<span class="linenos"> 96</span>        <span class="p">)</span>
+<span class="linenos"> 97</span>
+<span class="linenos"> 98</span>    <span class="nd">@show_meshes_cb</span><span class="o">.</span><span class="n">on_update</span>
+<span class="linenos"> 99</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
+<span class="linenos">100</span>        <span class="n">viser_urdf</span><span class="o">.</span><span class="n">show_visual</span> <span class="o">=</span> <span class="n">show_meshes_cb</span><span class="o">.</span><span class="n">value</span>
+<span class="linenos">101</span>
+<span class="linenos">102</span>    <span class="nd">@show_collision_meshes_cb</span><span class="o">.</span><span class="n">on_update</span>
+<span class="linenos">103</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
+<span class="linenos">104</span>        <span class="n">viser_urdf</span><span class="o">.</span><span class="n">show_collision</span> <span class="o">=</span> <span class="n">show_collision_meshes_cb</span><span class="o">.</span><span class="n">value</span>
+<span class="linenos">105</span>
+<span class="linenos">106</span>    <span class="c1"># Hide checkboxes if meshes are not loaded.</span>
+<span class="linenos">107</span>    <span class="n">show_meshes_cb</span><span class="o">.</span><span class="n">visible</span> <span class="o">=</span> <span class="n">load_meshes</span>
+<span class="linenos">108</span>    <span class="n">show_collision_meshes_cb</span><span class="o">.</span><span class="n">visible</span> <span class="o">=</span> <span class="n">load_collision_meshes</span>
+<span class="linenos">109</span>
+<span class="linenos">110</span>    <span class="c1"># Set initial robot configuration.</span>
+<span class="linenos">111</span>    <span class="n">viser_urdf</span><span class="o">.</span><span class="n">update_cfg</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">initial_config</span><span class="p">))</span>
+<span class="linenos">112</span>
+<span class="linenos">113</span>    <span class="c1"># Create grid.</span>
+<span class="linenos">114</span>    <span class="n">trimesh_scene</span> <span class="o">=</span> <span class="n">viser_urdf</span><span class="o">.</span><span class="n">_urdf</span><span class="o">.</span><span class="n">scene</span> <span class="ow">or</span> <span class="n">viser_urdf</span><span class="o">.</span><span class="n">_urdf</span><span class="o">.</span><span class="n">collision_scene</span>
+<span class="linenos">115</span>    <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_grid</span><span class="p">(</span>
+<span class="linenos">116</span>        <span class="s2">&quot;/grid&quot;</span><span class="p">,</span>
+<span class="linenos">117</span>        <span class="n">width</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+<span class="linenos">118</span>        <span class="n">height</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+<span class="linenos">119</span>        <span class="n">position</span><span class="o">=</span><span class="p">(</span>
 <span class="linenos">120</span>            <span class="mf">0.0</span><span class="p">,</span>
-<span class="linenos">121</span>            <span class="c1"># Get the minimum z value of the trimesh scene.</span>
-<span class="linenos">122</span>            <span class="n">trimesh_scene</span><span class="o">.</span><span class="n">bounds</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">]</span> <span class="k">if</span> <span class="n">trimesh_scene</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">,</span>
-<span class="linenos">123</span>        <span class="p">),</span>
-<span class="linenos">124</span>    <span class="p">)</span>
-<span class="linenos">125</span>
-<span class="linenos">126</span>    <span class="c1"># Create joint reset button.</span>
-<span class="linenos">127</span>    <span class="n">reset_button</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Reset&quot;</span><span class="p">)</span>
-<span class="linenos">128</span>
-<span class="linenos">129</span>    <span class="nd">@reset_button</span><span class="o">.</span><span class="n">on_click</span>
-<span class="linenos">130</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
-<span class="linenos">131</span>        <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">init_q</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">slider_handles</span><span class="p">,</span> <span class="n">initial_config</span><span class="p">):</span>
-<span class="linenos">132</span>            <span class="n">s</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">init_q</span>
-<span class="linenos">133</span>
-<span class="linenos">134</span>    <span class="c1"># Sleep forever.</span>
-<span class="linenos">135</span>    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
-<span class="linenos">136</span>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">10.0</span><span class="p">)</span>
-<span class="linenos">137</span>
+<span class="linenos">121</span>            <span class="mf">0.0</span><span class="p">,</span>
+<span class="linenos">122</span>            <span class="c1"># Get the minimum z value of the trimesh scene.</span>
+<span class="linenos">123</span>            <span class="n">trimesh_scene</span><span class="o">.</span><span class="n">bounds</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">]</span> <span class="k">if</span> <span class="n">trimesh_scene</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">,</span>
+<span class="linenos">124</span>        <span class="p">),</span>
+<span class="linenos">125</span>    <span class="p">)</span>
+<span class="linenos">126</span>
+<span class="linenos">127</span>    <span class="c1"># Create joint reset button.</span>
+<span class="linenos">128</span>    <span class="n">reset_button</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Reset&quot;</span><span class="p">)</span>
+<span class="linenos">129</span>
+<span class="linenos">130</span>    <span class="nd">@reset_button</span><span class="o">.</span><span class="n">on_click</span>
+<span class="linenos">131</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
+<span class="linenos">132</span>        <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">init_q</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">slider_handles</span><span class="p">,</span> <span class="n">initial_config</span><span class="p">):</span>
+<span class="linenos">133</span>            <span class="n">s</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">init_q</span>
+<span class="linenos">134</span>
+<span class="linenos">135</span>    <span class="c1"># Sleep forever.</span>
+<span class="linenos">136</span>    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+<span class="linenos">137</span>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">10.0</span><span class="p">)</span>
 <span class="linenos">138</span>
-<span class="linenos">139</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
-<span class="linenos">140</span>    <span class="n">tyro</span><span class="o">.</span><span class="n">cli</span><span class="p">(</span><span class="n">main</span><span class="p">)</span>
+<span class="linenos">139</span>
+<span class="linenos">140</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="linenos">141</span>    <span class="n">tyro</span><span class="o">.</span><span class="n">cli</span><span class="p">(</span><span class="n">main</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>

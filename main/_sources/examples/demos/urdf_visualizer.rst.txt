@@ -88,6 +88,7 @@ Code
    ) -> None:
        # Start viser server.
        server = viser.ViserServer()
+       server.initial_camera.position = (1.2, 1.2, 1.2)
    
        # Load URDF.
        #
