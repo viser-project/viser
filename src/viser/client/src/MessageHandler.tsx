@@ -19,7 +19,8 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { Button, Progress } from "@mantine/core";
 import { IconCheck, IconDownload } from "@tabler/icons-react";
 import { computeT_threeworld_world } from "./WorldTransformUtils";
-import { rootNodeTemplate } from "./SceneTreeState";
+import { rootNodeTemplate, SceneNode } from "./SceneTreeState";
+import { applyGuiPropsUpdate } from "./ControlPanel/GuiState";
 import { GaussianSplatsContext } from "./Splatting/GaussianSplatsHelpers";
 
 /** Returns a handler for all incoming messages. */
@@ -38,7 +39,6 @@ function useMessageHandler() {
   const addModal = viewer.useGui((state) => state.addModal);
   const removeModal = viewer.useGui((state) => state.removeModal);
   const removeGui = viewer.useGui((state) => state.removeGui);
-  const updateGuiProps = viewer.useGui((state) => state.updateGuiProps);
   const updateUploadState = viewer.useGui((state) => state.updateUploadState);
 
   // Same as addSceneNode, but make a parent in the form of a dummy coordinate
@@ -74,8 +74,30 @@ function useMessageHandler() {
 
   const fileDownloadHandler = useFileDownloadHandler();
 
+  // Return type for the message handler. Messages either:
+  // - Return undefined (handled immediately, no batching needed)
+  // - Return a scene node update (attributes and/or props) to be batched
+  // - Return a GUI update to be batched
+  type HandleMessageResult =
+    | undefined
+    | {
+        kind: "sceneNodeAttrUpdate";
+        targetNode: string;
+        updates: Partial<SceneNode>;
+      }
+    | {
+        kind: "sceneNodePropsUpdate";
+        targetNode: string;
+        propsUpdates: { [key: string]: any };
+      }
+    | {
+        kind: "guiUpdate";
+        uuid: string;
+        updates: { [key: string]: any };
+      };
+
   // Return message handler.
-  return (message: Message) => {
+  return (message: Message): HandleMessageResult => {
     if (isGuiComponentMessage(message)) {
       addGui(message);
       return;
@@ -119,6 +141,7 @@ function useMessageHandler() {
     switch (message.type) {
       case "SceneNodeUpdateMessage": {
         return {
+          kind: "sceneNodePropsUpdate",
           targetNode: message.name,
           propsUpdates: message.updates,
         };
@@ -397,6 +420,7 @@ function useMessageHandler() {
             ? "needsUpdate"
             : currentNode?.poseUpdateState || "needsUpdate";
         return {
+          kind: "sceneNodeAttrUpdate",
           targetNode: message.name,
           updates: {
             wxyz: message.wxyz,
@@ -411,6 +435,7 @@ function useMessageHandler() {
             ? "needsUpdate"
             : currentNode?.poseUpdateState || "needsUpdate";
         return {
+          kind: "sceneNodeAttrUpdate",
           targetNode: message.name,
           updates: {
             position: message.position,
@@ -420,6 +445,7 @@ function useMessageHandler() {
       }
       case "SetSceneNodeVisibilityMessage": {
         return {
+          kind: "sceneNodeAttrUpdate",
           targetNode: message.name,
           updates: { visibility: message.visible },
         };
@@ -490,14 +516,18 @@ function useMessageHandler() {
       // Set the clickability of a particular scene node.
       case "SetSceneNodeClickableMessage": {
         return {
+          kind: "sceneNodeAttrUpdate",
           targetNode: message.name,
           updates: { clickable: message.clickable },
         };
       }
-      // Update props of a GUI component
+      // Update props of a GUI component — accumulated and applied in batch.
       case "GuiUpdateMessage": {
-        updateGuiProps(message.uuid, message.updates);
-        return;
+        return {
+          kind: "guiUpdate",
+          uuid: message.uuid,
+          updates: message.updates,
+        };
       }
       // Remove a GUI input.
       case "GuiRemoveMessage": {
@@ -771,7 +801,10 @@ export function FrameSynchronizedMessageHandler() {
       }
 
       // Handle messages, but only if we're not trying to render something.
-      if (viewerMutable.getRenderRequestState === "ready") {
+      if (
+        viewerMutable.getRenderRequestState === "ready" &&
+        messageQueue.length > 0
+      ) {
         // Handle messages before every frame.
         // Place this directly in ws.onmessage can cause race conditions!
         //
@@ -797,12 +830,15 @@ export function FrameSynchronizedMessageHandler() {
           if (rootOrientationIndex !== -1) {
             const rootNodeUpdate = handleMessage(
               processBatch[rootOrientationIndex],
-            )!;
+            );
             const rootNode = viewer.useSceneTree.getState()[""]!;
             viewer.useSceneTree.setState({
               "": {
                 ...rootNode,
-                wxyz: rootNodeUpdate.updates!.wxyz!,
+                wxyz:
+                  rootNodeUpdate?.kind === "sceneNodeAttrUpdate"
+                    ? (rootNodeUpdate.updates.wxyz ?? rootNode.wxyz)
+                    : rootNode.wxyz,
               },
             });
 
@@ -811,34 +847,47 @@ export function FrameSynchronizedMessageHandler() {
           }
         }
 
-        // Handle messages and accumulate updates.
-        // We accumulate two kinds of updates:
+        // Handle all messages and accumulate batched updates.
+        // Three kinds of updates are accumulated and applied as single setState calls:
         // - attrUpdates: top-level SceneNode attributes (wxyz, position, visibility, etc.)
         // - propsUpdates: message.props fields (batched_wxyzs, colors, etc.)
-        // Both are batched and applied in a single store.setState() call.
-        const attrUpdates: { [name: string]: any } = {};
-        const propsUpdates: { [name: string]: any } = {};
+        // - guiUpdates: GUI component property updates
+        const attrUpdates: { [name: string]: Partial<SceneNode> } = {};
+        const propsUpdates: { [name: string]: { [key: string]: any } } = {};
+        const guiUpdates: { uuid: string; updates: { [key: string]: any } }[] =
+          [];
 
         for (const msg of processBatch) {
           const result = handleMessage(msg);
           if (result === undefined) continue;
-          if (result.updates) {
-            attrUpdates[result.targetNode] = {
-              ...attrUpdates[result.targetNode],
-              ...result.updates,
-            };
-          }
-          if (result.propsUpdates) {
-            propsUpdates[result.targetNode] = {
-              ...propsUpdates[result.targetNode],
-              ...result.propsUpdates,
-            };
+          switch (result.kind) {
+            case "sceneNodeAttrUpdate": {
+              const existing = attrUpdates[result.targetNode];
+              if (existing) {
+                Object.assign(existing, result.updates);
+              } else {
+                attrUpdates[result.targetNode] = { ...result.updates };
+              }
+              break;
+            }
+            case "sceneNodePropsUpdate": {
+              const existing = propsUpdates[result.targetNode];
+              if (existing) {
+                Object.assign(existing, result.propsUpdates);
+              } else {
+                propsUpdates[result.targetNode] = { ...result.propsUpdates };
+              }
+              break;
+            }
+            case "guiUpdate":
+              guiUpdates.push(result);
+              break;
           }
         }
 
-        // Apply all accumulated updates to the zustand state in a single setState.
+        // Apply all accumulated scene tree updates in a single setState.
         const currentState = viewer.useSceneTree.getState();
-        const mergedUpdates: { [name: string]: any } = {};
+        const mergedUpdates: { [name: string]: SceneNode } = {};
 
         // Merge attribute-level updates (wxyz, position, visibility, etc.).
         for (const [k, v] of Object.entries(attrUpdates)) {
@@ -846,7 +895,7 @@ export function FrameSynchronizedMessageHandler() {
             console.log(`(OK) Tried to update non-existent scene node ${k}`);
             continue;
           }
-          mergedUpdates[k] = { ...currentState[k], ...v };
+          mergedUpdates[k] = { ...currentState[k]!, ...v };
         }
 
         // Merge props-level updates (batched_wxyzs, colors, etc.).
@@ -855,7 +904,7 @@ export function FrameSynchronizedMessageHandler() {
             console.log(`(OK) Tried to update non-existent scene node ${k}`);
             continue;
           }
-          const node = mergedUpdates[k] || currentState[k];
+          const node = mergedUpdates[k] || currentState[k]!;
           mergedUpdates[k] = {
             ...node,
             message: {
@@ -864,11 +913,22 @@ export function FrameSynchronizedMessageHandler() {
                 ...node.message.props,
                 ...v,
               },
-            },
+            } as SceneNodeMessage,
           };
         }
 
-        viewer.useSceneTree.setState(mergedUpdates);
+        if (Object.keys(mergedUpdates).length > 0) {
+          viewer.useSceneTree.setState(mergedUpdates);
+        }
+
+        // Apply all accumulated GUI updates in a single setState.
+        if (guiUpdates.length > 0) {
+          viewer.useGui.setState((state) => {
+            for (const { uuid, updates } of guiUpdates) {
+              applyGuiPropsUpdate(state, uuid, updates);
+            }
+          });
+        }
 
         // Recompute effective visibility for nodes whose visibility changed.
         // This needs to be done after updates are applied.
