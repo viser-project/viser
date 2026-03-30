@@ -173,36 +173,26 @@ function createSceneTreeActions(
     },
 
     resetScene: () => {
+      // Remove all children of root except /WorldAxes.
+      const root = store.get("");
+      if (root) {
+        for (const child of root.children) {
+          if (child === "/WorldAxes") continue;
+          actions.removeSceneNode(child);
+        }
+      }
+
+      // Reset root and /WorldAxes to default state.
       const defaultState = makeDefaultSceneTreeState();
-      const updates: Record<string, SceneNode | undefined> = {
+      store.set({
         "": defaultState[""],
         "/WorldAxes": defaultState["/WorldAxes"],
-      };
-
-      // Remove all other nodes explicitly so keyed subscriptions see deletions
-      // through the normal `set()` path.
-      for (const key of Object.keys(store.getAll())) {
-        if (key in defaultState) continue;
-        updates[key] = undefined;
-      }
-
-      store.set(updates);
-
-      // Clear mutable caches for removed nodes.
-      for (const key of Object.keys(nodeRefFromName)) {
-        if (key in defaultState) continue;
-        delete nodeRefFromName[key];
-      }
-      for (const key of Object.keys(nodePoseData)) {
-        if (key in defaultState) continue;
-        delete nodePoseData[key];
-      }
+      });
       nodePoseData[""] = {
         wxyz: defaultState[""].wxyz!,
         position: defaultState[""].position!,
         poseUpdateState: "needsUpdate",
       };
-      delete nodePoseData["/WorldAxes"];
     },
 
     updateNodeAttributes: (name: string, attributes: Partial<SceneNode>) => {
