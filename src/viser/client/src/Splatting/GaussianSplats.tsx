@@ -484,6 +484,8 @@ function SplatRendererImpl() {
           bottom,
           near,
           far,
+          THREE.WebGLCoordinateSystem,
+          camera.reversedDepth,
         );
 
         params.fovY = fovY;
