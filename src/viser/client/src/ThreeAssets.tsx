@@ -656,10 +656,10 @@ export const ViserLabel = React.forwardRef<
   React.useImperativeHandle(ref, () => groupRef.current, []);
 
   // Use a selector to subscribe only to this node's children.
-  const hasChildren = viewer.useSceneTree((state) => {
-    const node = state[message.name];
-    return node?.children && node.children.length > 0;
-  });
+  const hasChildren = viewer.useSceneTree(
+    message.name,
+    (node) => (node?.children?.length ?? 0) > 0,
+  );
 
   // Return null when no children - BatchedTextManager handles the text rendering.
   // Return group when there are children - SceneTree needs it to apply transforms to child nodes.

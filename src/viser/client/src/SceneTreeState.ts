@@ -1,7 +1,7 @@
 import React from "react";
 import * as THREE from "three";
 import { SceneNodeMessage } from "./WebsocketMessages";
-import { create, StoreApi, UseBoundStore } from "zustand";
+import { createKeyedStore, KeyedStoreHook } from "./utils/store";
 
 export type SceneNode = {
   message: SceneNodeMessage;
@@ -70,13 +70,13 @@ const worldAxesNodeTemplate: SceneNode = {
 
 /** Helper functions that operate on the scene tree store */
 function createSceneTreeActions(
-  store: UseBoundStore<StoreApi<SceneTreeState>>,
+  store: KeyedStoreHook<SceneNode>,
   nodeRefFromName: { [name: string]: undefined | THREE.Object3D },
 ) {
   // Declare actions object first so functions can reference each other
   const actions = {
     addSceneNode: (message: SceneNodeMessage) => {
-      const state = store.getState();
+      const state = store.getAll();
       const existingNode = state[message.name];
       const parentName = message.name.split("/").slice(0, -1).join("/");
       const parentNode = state[parentName];
@@ -105,11 +105,11 @@ function createSceneTreeActions(
       if (existingNode) {
         delete nodeRefFromName[message.name];
       }
-      store.setState(partial);
+      store.set(partial);
     },
 
     removeSceneNode: (name: string) => {
-      const state = store.getState();
+      const state = store.getAll();
       // Remove this scene node and all children.
       const removeNames: string[] = [];
       function findChildrenRecursive(nodeName: string) {
@@ -138,11 +138,11 @@ function createSceneTreeActions(
           ),
         };
       }
-      store.setState(partial);
+      store.set(partial);
     },
 
     updateSceneNodeProps: (name: string, updates: { [key: string]: any }) => {
-      const node = store.getState()[name];
+      const node = store.get(name);
       if (node === undefined) {
         console.error(
           `Attempted to update props of non-existent node ${name}`,
@@ -150,7 +150,7 @@ function createSceneTreeActions(
         );
         return {};
       }
-      store.setState({
+      store.set({
         [name]: {
           ...node,
           message: {
@@ -165,7 +165,7 @@ function createSceneTreeActions(
     },
 
     resetScene: () => {
-      store.setState(
+      store.setAll(
         {
           "": rootNodeTemplate,
           "/WorldAxes": worldAxesNodeTemplate,
@@ -175,7 +175,7 @@ function createSceneTreeActions(
     },
 
     updateNodeAttributes: (name: string, attributes: Partial<SceneNode>) => {
-      const node = store.getState()[name];
+      const node = store.get(name);
       if (node === undefined) {
         console.log(
           `(OK) Attempted to update attributes of non-existent node ${name}`,
@@ -195,7 +195,7 @@ function createSceneTreeActions(
         }
       }
       if (hasChanged) {
-        store.setState({
+        store.set({
           [name]: {
             ...node,
             ...attributes,
@@ -210,7 +210,7 @@ function createSceneTreeActions(
     },
 
     computeEffectiveVisibility: (name: string) => {
-      const state = store.getState();
+      const state = store.getAll();
       const node = state[name];
       if (!node) return;
 
@@ -256,7 +256,7 @@ function createSceneTreeActions(
         });
       }
       updateChildren(name, effective);
-      store.setState(updates);
+      store.set(updates);
     },
   };
 
@@ -269,10 +269,10 @@ export function useSceneTreeState(nodeRefFromName: {
   [name: string]: undefined | THREE.Object3D;
 }) {
   return React.useState(() => {
-    const store = create<SceneTreeState>(() => ({
+    const store = createKeyedStore<SceneNode>({
       "": rootNodeTemplate,
       "/WorldAxes": worldAxesNodeTemplate,
-    }));
+    });
 
     const actions = createSceneTreeActions(store, nodeRefFromName);
 

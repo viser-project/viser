@@ -1,9 +1,9 @@
 import React from "react";
 import * as THREE from "three";
-import { create } from "zustand";
 import { Object3D } from "three";
 import { useThree } from "@react-three/fiber";
 import { shaderMaterial } from "@react-three/drei";
+import { createStore } from "../utils/store";
 
 const GaussianSplatMaterial = /* @__PURE__ */ shaderMaterial(
   {
@@ -285,24 +285,26 @@ interface SplatState {
 /**Hook for creating global splat state.*/
 export function useGaussianSplatStore() {
   const nodeRefFromId = React.useRef({});
-  return React.useState(() =>
-    create<SplatState>((set) => ({
+  return React.useState(() => {
+    const initialState: SplatState = {
       groupBufferFromId: {},
       nodeRefFromId: nodeRefFromId,
       setBuffer: (id, buffer) => {
-        return set((state) => ({
+        return useSplatStore.set((state) => ({
           groupBufferFromId: { ...state.groupBufferFromId, [id]: buffer },
         }));
       },
       removeBuffer: (id) => {
-        return set((state) => {
+        return useSplatStore.set((state) => {
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { [id]: _, ...buffers } = state.groupBufferFromId;
           return { groupBufferFromId: buffers };
         });
       },
-    })),
-  )[0];
+    };
+    const useSplatStore = createStore(initialState);
+    return useSplatStore;
+  })[0];
 }
 
 export const GaussianSplatsContext = React.createContext<{

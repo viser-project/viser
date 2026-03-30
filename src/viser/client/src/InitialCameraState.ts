@@ -28,7 +28,7 @@
  */
 
 import React from "react";
-import { create } from "zustand";
+import { createStore } from "./utils/store";
 
 /** Source of a camera property value. Priority: default < message < url. */
 export type CameraPropertySource = "default" | "message" | "url";
@@ -101,8 +101,8 @@ export interface InitialCameraConfig {
  * @param urlParams - Camera properties parsed from URL parameters (null if not provided)
  */
 export function useInitialCameraState(urlParams: InitialCameraConfig) {
-  return React.useState(() =>
-    create<InitialCameraState & InitialCameraActions>((set, get) => ({
+  return React.useState(() => {
+    const initialState: InitialCameraState & InitialCameraActions = {
       // Initialize with URL params if available, otherwise defaults.
       position: urlParams.position
         ? { value: urlParams.position, source: "url" as const }
@@ -128,42 +128,43 @@ export function useInitialCameraState(urlParams: InitialCameraConfig) {
         : { value: 1000.0, source: "default" as const },
 
       setPosition: (value, source) => {
-        const current = get().position;
+        const current = useInitialCameraStore.get().position;
         if (!canOverride(current.source, source)) return false;
-        set({ position: { value, source } });
+        useInitialCameraStore.set({ position: { value, source } });
         return true;
       },
       setLookAt: (value, source) => {
-        const current = get().lookAt;
+        const current = useInitialCameraStore.get().lookAt;
         if (!canOverride(current.source, source)) return false;
-        set({ lookAt: { value, source } });
+        useInitialCameraStore.set({ lookAt: { value, source } });
         return true;
       },
       setUp: (value, source) => {
-        const current = get().up;
+        const current = useInitialCameraStore.get().up;
         if (!canOverride(current.source, source)) return false;
-        set({ up: { value, source } });
+        useInitialCameraStore.set({ up: { value, source } });
         return true;
       },
       setFov: (value, source) => {
-        const current = get().fov;
+        const current = useInitialCameraStore.get().fov;
         if (!canOverride(current.source, source)) return false;
-        set({ fov: { value, source } });
+        useInitialCameraStore.set({ fov: { value, source } });
         return true;
       },
       setNear: (value, source) => {
-        const current = get().near;
+        const current = useInitialCameraStore.get().near;
         if (!canOverride(current.source, source)) return false;
-        set({ near: { value, source } });
+        useInitialCameraStore.set({ near: { value, source } });
         return true;
       },
       setFar: (value, source) => {
-        const current = get().far;
+        const current = useInitialCameraStore.get().far;
         if (!canOverride(current.source, source)) return false;
-        set({ far: { value, source } });
+        useInitialCameraStore.set({ far: { value, source } });
         return true;
       },
-
-    })),
-  )[0];
+    };
+    const useInitialCameraStore = createStore(initialState);
+    return useInitialCameraStore;
+  })[0];
 }

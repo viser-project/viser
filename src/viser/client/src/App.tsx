@@ -313,7 +313,11 @@ function ViewerRoot() {
 
   // Apply dark mode setting if provided via URL or embed config.
   const effectiveDarkMode = darkMode || embedConfig?.darkMode;
-  if (effectiveDarkMode) viewer.useGui.getState().theme.dark_mode = true;
+  if (effectiveDarkMode) {
+    viewer.useGui.set({
+      theme: { ...viewer.useGui.get().theme, dark_mode: true },
+    });
+  }
 
   return (
     <ViewerContext.Provider value={viewer}>
@@ -675,7 +679,8 @@ function DefaultLights() {
 
   // Get world rotation directly from scene tree state.
   const worldRotation = viewer.useSceneTree(
-    (state) => state[""]?.wxyz ?? [1, 0, 0, 0],
+    "",
+    (node) => node?.wxyz ?? [1, 0, 0, 0],
     shallowArrayEqual,
   );
 

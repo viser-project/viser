@@ -69,9 +69,7 @@ export type UseSceneTree = ReturnType<typeof useSceneTreeState>;
 /** Component for updating attributes of a scene node. */
 function SceneNodeLabel(props: { name: string }) {
   const viewer = React.useContext(ViewerContext)!;
-  const labelVisible = viewer.useSceneTree(
-    (state) => state[props.name]?.labelVisible,
-  );
+  const labelVisible = viewer.useSceneTree(props.name, (node) => node?.labelVisible);
   return labelVisible ? (
     <Html>
       <span
@@ -681,7 +679,7 @@ function createObjectFactory(
 
 export function SceneNodeThreeObject(props: { name: string }) {
   const viewer = React.useContext(ViewerContext)!;
-  const message = viewer.useSceneTree((state) => state[props.name]?.message);
+  const message = viewer.useSceneTree(props.name, (node) => node?.message);
   const ContextBridge = useContextBridge();
   const updateNodeAttributes = viewer.sceneTreeActions.updateNodeAttributes;
 
@@ -695,8 +693,7 @@ export function SceneNodeThreeObject(props: { name: string }) {
   );
 
   const [unmount, setUnmount] = React.useState(false);
-  const clickable =
-    viewer.useSceneTree((state) => state[props.name]?.clickable) ?? false;
+  const clickable = viewer.useSceneTree(props.name, (node) => node?.clickable) ?? false;
   const objRef = React.useRef<THREE.Object3D | null>(null);
   const groupRef = React.useRef<THREE.Group>();
 
@@ -726,7 +723,7 @@ export function SceneNodeThreeObject(props: { name: string }) {
   // This is used for (1) suppressing click events and (2) unmounting when
   // unmountWhenInvisible is true. The latter is used for <Html /> components.
   function isDisplayed(): boolean {
-    const node = viewer.useSceneTree.getState()[props.name];
+    const node = viewer.useSceneTree.get(props.name);
     return node?.effectiveVisibility ?? false;
   }
 
@@ -812,7 +809,7 @@ export function SceneNodeThreeObject(props: { name: string }) {
       }
 
       // Use getState() for performance in render loops (no re-renders).
-      const node = viewer.useSceneTree.getState()[props.name];
+      const node = viewer.useSceneTree.get(props.name);
 
       // Unmount when invisible.
       // Examples: <Html /> components, PivotControls.
@@ -1064,7 +1061,8 @@ export function SceneNodeThreeObject(props: { name: string }) {
 function SceneNodeChildren(props: { name: string }) {
   const viewer = React.useContext(ViewerContext)!;
   const childrenNames = viewer.useSceneTree(
-    (state) => state[props.name]?.children,
+    props.name,
+    (node) => node?.children,
     shallowArrayEqual,
   );
   return (

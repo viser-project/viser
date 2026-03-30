@@ -29,7 +29,7 @@ export function WebsocketMessageProducer() {
     function updateRetryInterval() {
       const shouldRetry = !isConnected && document.hasFocus();
       if (!isConnected) {
-        viewer.useGui.setState({
+        viewer.useGui.set({
           websocketState: shouldRetry ? "reconnecting" : "inactive",
         });
       }
@@ -56,7 +56,7 @@ export function WebsocketMessageProducer() {
         isConnected = true;
         resetGui();
         resetScene();
-        viewer.useGui.setState({ websocketState: "connected" });
+        viewer.useGui.set({ websocketState: "connected" });
         updateRetryInterval();
         viewerMutable.sendMessage = (message) => {
           postToWorker({ type: "send", message });
@@ -98,7 +98,7 @@ export function WebsocketMessageProducer() {
         console.log(
           `Tried to send ${message.type} but websocket is not connected!`,
         );
-      viewer.useGui.setState({ websocketState: "inactive" });
+      viewer.useGui.set({ websocketState: "inactive" });
     };
   }, [server, resetGui, resetScene]);
 

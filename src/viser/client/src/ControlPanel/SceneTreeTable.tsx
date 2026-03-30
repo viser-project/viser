@@ -40,7 +40,7 @@ function EditNodeProps({
   closePopoverFn: () => void;
 }) {
   const viewer = React.useContext(ViewerContext)!;
-  const nodeMessage = viewer.useSceneTree((state) => state[nodeName]?.message);
+  const nodeMessage = viewer.useSceneTree(nodeName, (node) => node?.message);
   const updateSceneNode = viewer.sceneTreeActions.updateSceneNodeProps;
 
   if (nodeMessage === undefined) {
@@ -320,7 +320,8 @@ function EditNodeProps({
 export default function SceneTreeTable() {
   const viewer = React.useContext(ViewerContext)!;
   const childrenName = viewer.useSceneTree(
-    (state) => state[""]!.children,
+    "",
+    (node) => node!.children,
     shallowArrayEqual,
   );
   return (
@@ -434,7 +435,8 @@ const SceneTreeTableRow = React.memo(function SceneTreeTableRow(props: {
   };
 
   const childrenName = viewer.useSceneTree(
-    (state) => state[props.nodeName]?.children,
+    props.nodeName,
+    (node) => node?.children,
     shallowArrayEqual,
   );
   const expandable = (childrenName?.length ?? 0) > 0;
@@ -450,10 +452,8 @@ const SceneTreeTableRow = React.memo(function SceneTreeTableRow(props: {
   // Get server visibility and override visibility separately
   // These use default equality (===) which is fine for boolean/undefined
   const serverVisibility =
-    viewer.useSceneTree((state) => state[props.nodeName]?.visibility) ?? true;
-  const overrideVisibility = viewer.useSceneTree(
-    (state) => state[props.nodeName]?.overrideVisibility,
-  );
+    viewer.useSceneTree(props.nodeName, (node) => node?.visibility) ?? true;
+  const overrideVisibility = viewer.useSceneTree(props.nodeName, (node) => node?.overrideVisibility);
 
   // Compute final visibility: override takes precedence, fallback to server
   const isVisible =
@@ -461,9 +461,7 @@ const SceneTreeTableRow = React.memo(function SceneTreeTableRow(props: {
 
   // Get effective visibility (includes parent chain visibility)
   const isVisibleEffective =
-    viewer.useSceneTree(
-      (state) => state[props.nodeName]?.effectiveVisibility,
-    ) ?? false;
+    viewer.useSceneTree(props.nodeName, (node) => node?.effectiveVisibility) ?? false;
 
   // Ensure label visibility is cleaned up when component unmounts
   React.useEffect(() => {

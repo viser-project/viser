@@ -20,8 +20,7 @@ export const BatchedGlbAsset = React.forwardRef<
   BatchedGlbMessage & { children?: React.ReactNode }
 >(function BatchedGlbAsset({ children, ...message }, ref) {
   const viewer = React.useContext(ViewerContext)!;
-  const clickable =
-    viewer.useSceneTree((state) => state[message.name]?.clickable) ?? false;
+  const clickable = viewer.useSceneTree(message.name, (node) => node?.clickable) ?? false;
 
   // Note: We don't support animations for batched meshes.
   const { gltf } = useGlbLoader(message.props.glb_data);
