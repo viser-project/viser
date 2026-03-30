@@ -30,10 +30,10 @@ export function createStore<T extends object>(initialState: T): Store<T> {
 
   function set(arg: SetArg<T>): void {
     const partial = typeof arg === "function" ? arg(state) : arg;
-    const next = Object.assign({}, state, partial);
     // Skip notify if nothing changed.
-    if (Object.is(state, next)) return;
-    state = next;
+    const keys = Object.keys(partial) as (keyof T)[];
+    if (keys.every((k) => Object.is(state[k], (partial as T)[k]))) return;
+    state = Object.assign({}, state, partial);
     listeners.forEach((l) => l());
   }
 

@@ -14,6 +14,16 @@ import { useEnvironmentState } from "./EnvironmentState";
 import { useDevSettingsStore } from "./DevSettingsStore";
 import { GetRenderRequestMessage, Message } from "./WebsocketMessages";
 
+export type NodePoseEntry = {
+  wxyz: [number, number, number, number];
+  position: [number, number, number];
+  poseUpdateState: "updated" | "needsUpdate" | "waitForMakeObject";
+};
+
+export type NodePoseDataMap = {
+  [name: string]: NodePoseEntry | undefined;
+};
+
 // Type definitions for all mutable state.
 export type ViewerMutable = {
   // Function references.
@@ -61,15 +71,7 @@ export type ViewerMutable = {
 
   // Per-node pose data. Stored outside the reactive store to avoid
   // triggering React re-renders on every pose update.
-  nodePoseData: {
-    [name: string]:
-      | {
-          wxyz: [number, number, number, number];
-          position: [number, number, number];
-          poseUpdateState: "updated" | "needsUpdate" | "waitForMakeObject";
-        }
-      | undefined;
-  };
+  nodePoseData: NodePoseDataMap;
 
   // Global hover state tracking.
   hoveredElementsCount: number;

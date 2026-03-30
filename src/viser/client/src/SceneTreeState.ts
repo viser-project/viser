@@ -2,6 +2,7 @@ import React from "react";
 import * as THREE from "three";
 import { SceneNodeMessage } from "./WebsocketMessages";
 import { createKeyedStore, KeyedStore } from "./store";
+import { NodePoseDataMap } from "./ViewerContext";
 
 export type SceneNode = {
   message: SceneNodeMessage;
@@ -72,6 +73,7 @@ const worldAxesNodeTemplate: SceneNode = {
 function createSceneTreeActions(
   store: KeyedStore<SceneNode>,
   nodeRefFromName: { [name: string]: undefined | THREE.Object3D },
+  nodePoseData: NodePoseDataMap,
 ) {
   const actions = {
     addSceneNode: (message: SceneNodeMessage) => {
@@ -122,6 +124,7 @@ function createSceneTreeActions(
       removeNames.forEach((removeName) => {
         updates[removeName] = undefined;
         delete nodeRefFromName[removeName];
+        delete nodePoseData[removeName];
       });
 
       // Remove node from parent's children list.
@@ -169,6 +172,10 @@ function createSceneTreeActions(
         },
         true,
       );
+      // Clear all stale pose data.
+      for (const key of Object.keys(nodePoseData)) {
+        delete nodePoseData[key];
+      }
     },
 
     updateNodeAttributes: (name: string, attributes: Partial<SceneNode>) => {
@@ -261,16 +268,17 @@ function createSceneTreeActions(
 
 /** Declare a scene state, and return a hook for accessing it. Note that we put
 effort into avoiding a global state! */
-export function useSceneTreeState(nodeRefFromName: {
-  [name: string]: undefined | THREE.Object3D;
-}) {
+export function useSceneTreeState(
+  nodeRefFromName: { [name: string]: undefined | THREE.Object3D },
+  nodePoseData: NodePoseDataMap,
+) {
   return React.useState(() => {
     const store = createKeyedStore<SceneNode>({
       "": rootNodeTemplate,
       "/WorldAxes": worldAxesNodeTemplate,
     });
 
-    const actions = createSceneTreeActions(store, nodeRefFromName);
+    const actions = createSceneTreeActions(store, nodeRefFromName, nodePoseData);
 
     // Return both store and helpers
     return { store, actions };
