@@ -656,10 +656,12 @@
         <span class="k">if</span> <span class="n">parent_children</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">parent_children</span><span class="o">.</span><span class="n">discard</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
 
-        <span class="c1"># Single message — client cascades removal to children.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
-            <span class="n">_messages</span><span class="o">.</span><span class="n">RemoveSceneNodeMessage</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
-        <span class="p">)</span></div>
+        <span class="c1"># Send a RemoveSceneNodeMessage per descendant so redundancy keys</span>
+        <span class="c1"># clean up their creation messages from the broadcast buffer.</span>
+        <span class="k">for</span> <span class="n">node_name</span> <span class="ow">in</span> <span class="n">to_remove</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+                <span class="n">_messages</span><span class="o">.</span><span class="n">RemoveSceneNodeMessage</span><span class="p">(</span><span class="n">node_name</span><span class="p">)</span>
+            <span class="p">)</span></div>
 </div>
 
 
