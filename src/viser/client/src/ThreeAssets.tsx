@@ -510,7 +510,10 @@ export const ViserImage = React.forwardRef<
   THREE.Group,
   ImageMessage & { children?: React.ReactNode }
 >(function ViserImage({ children, ...message }, ref) {
-  const imageTexture = useAsyncTexture(message.props._format, message.props._data);
+  const imageTexture = useAsyncTexture(
+    message.props._format,
+    message.props._data,
+  );
   return (
     <group ref={ref}>
       <group scale={normalizeScale(message.props.scale)}>

@@ -56,19 +56,16 @@ export function createStore<T extends object>(initialState: T): Store<T> {
   ): T | U {
     if (!selector) {
       // No selector -- subscribe to full state.
-      // eslint-disable-next-line react-hooks/rules-of-hooks
       return useSyncExternalStore(subscribe, get);
     }
 
     // Cache the last selected value to avoid unnecessary re-renders
     // when the selector returns a structurally-equal result.
-    // eslint-disable-next-line react-hooks/rules-of-hooks
     const cache = useRef<{ value: U; initialized: boolean }>({
       value: undefined as U,
       initialized: false,
     });
 
-    // eslint-disable-next-line react-hooks/rules-of-hooks
     const value = useSyncExternalStore(subscribe, () => {
       const next = selector(state);
       if (
@@ -249,7 +246,6 @@ export function createKeyedStore<V>(
 
     // New subscribe identity when key changes, so useSyncExternalStore
     // re-subscribes to the correct key.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     const subscribe = useCallback(
       (listener: Listener) => subscribeToKey(key, listener),
       [key],

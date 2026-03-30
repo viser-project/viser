@@ -264,7 +264,10 @@ function ViewerRoot() {
   });
 
   // Create the scene tree state and extract store and actions.
-  const sceneTreeState = useSceneTreeState(mutable.current.nodeRefFromName, mutable.current.nodePoseData);
+  const sceneTreeState = useSceneTreeState(
+    mutable.current.nodeRefFromName,
+    mutable.current.nodePoseData,
+  );
 
   // Create the environment state and extract store and actions.
   const environmentState = useEnvironmentState();

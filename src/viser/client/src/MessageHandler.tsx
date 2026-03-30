@@ -353,7 +353,8 @@ function useMessageHandler() {
       }
       case "SetCameraFovMessage": {
         // Setting initial camera parameters.
-        const wasDefault = viewer.useInitialCamera.get().fov.source === "default";
+        const wasDefault =
+          viewer.useInitialCamera.get().fov.source === "default";
         if (message.initial) {
           // URL params take priority, ignore server's initial value.
           initialCameraActions.setFov(message.fov, "message");
@@ -374,7 +375,8 @@ function useMessageHandler() {
       }
       case "SetCameraNearMessage": {
         // Setting initial camera parameters.
-        const wasDefault = viewer.useInitialCamera.get().near.source === "default";
+        const wasDefault =
+          viewer.useInitialCamera.get().near.source === "default";
         if (message.initial) {
           // URL params take priority, ignore server's initial value.
           initialCameraActions.setNear(message.near, "message");
@@ -391,7 +393,8 @@ function useMessageHandler() {
       }
       case "SetCameraFarMessage": {
         // Setting initial camera parameters.
-        const wasDefault = viewer.useInitialCamera.get().far.source === "default";
+        const wasDefault =
+          viewer.useInitialCamera.get().far.source === "default";
         if (message.initial) {
           // URL params take priority, ignore server's initial value.
           initialCameraActions.setFar(message.far, "message");
@@ -407,8 +410,24 @@ function useMessageHandler() {
         return;
       }
       case "SetOrientationMessage": {
-        // Root node wxyz is kept in store for reactive world-rotation subscribers.
+        // Root node wxyz is kept in store for reactive world-rotation subscribers
+        // (DefaultLights, InitialCameraSetter, WorldTransformUtils).
+        // We also write to nodePoseData so the three.js object quaternion is
+        // updated in the SceneNodeThreeObject useFrame loop.
         if (message.name === "") {
+          const rootPose = viewerMutable.nodePoseData[""];
+          if (rootPose) {
+            rootPose.wxyz = message.wxyz;
+            if (rootPose.poseUpdateState !== "waitForMakeObject") {
+              rootPose.poseUpdateState = "needsUpdate";
+            }
+          } else {
+            viewerMutable.nodePoseData[""] = {
+              wxyz: message.wxyz,
+              position: [0, 0, 0],
+              poseUpdateState: "needsUpdate",
+            };
+          }
           return {
             kind: "sceneNodeAttrUpdate",
             targetNode: "",

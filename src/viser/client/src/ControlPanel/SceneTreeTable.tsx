@@ -167,8 +167,7 @@ function EditNodeProps({
             }
 
             const label =
-              key.charAt(0).toUpperCase() +
-              key.slice(1).split("_").join(" ");
+              key.charAt(0).toUpperCase() + key.slice(1).split("_").join(" ");
 
             // Show typed arrays as read-only type + length.
             if (ArrayBuffer.isView(value)) {
@@ -464,10 +463,8 @@ const SceneTreeTableRow = React.memo(function SceneTreeTableRow(props: {
 
   // Get effective visibility (includes parent chain visibility)
   const isVisibleEffective =
-    viewer.useSceneTree(
-      props.nodeName,
-      (node) => node?.effectiveVisibility,
-    ) ?? false;
+    viewer.useSceneTree(props.nodeName, (node) => node?.effectiveVisibility) ??
+    false;
 
   // Ensure label visibility is cleaned up when component unmounts
   React.useEffect(() => {

@@ -41,12 +41,7 @@ export const rootNodeTemplate: SceneNode = {
     const quat = new THREE.Quaternion().setFromEuler(
       new THREE.Euler(Math.PI / 2, Math.PI, -Math.PI / 2),
     );
-    return [quat.w, quat.x, quat.y, quat.z] as [
-      number,
-      number,
-      number,
-      number,
-    ];
+    return [quat.w, quat.x, quat.y, quat.z] as [number, number, number, number];
   })(),
   position: [0.0, 0.0, 0.0],
 };
@@ -278,7 +273,11 @@ export function useSceneTreeState(
       "/WorldAxes": worldAxesNodeTemplate,
     });
 
-    const actions = createSceneTreeActions(store, nodeRefFromName, nodePoseData);
+    const actions = createSceneTreeActions(
+      store,
+      nodeRefFromName,
+      nodePoseData,
+    );
 
     // Return both store and helpers
     return { store, actions };

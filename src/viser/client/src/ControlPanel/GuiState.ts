@@ -1,5 +1,5 @@
 import React from "react";
-import { createStore, Store } from "../store";
+import { createStore } from "../store";
 import { ColorTranslator } from "colortranslator";
 
 import {

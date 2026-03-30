@@ -564,9 +564,7 @@ function createObjectFactory(
         makeObject: (ref, children) => (
           <group ref={ref}>
             <group scale={normalizeScale(message.props.scale)}>
-              <SplatObject
-                buffer={message.props.buffer}
-              />
+              <SplatObject buffer={message.props.buffer} />
             </group>
             {children}
           </group>
@@ -684,7 +682,6 @@ export function SceneNodeThreeObject(props: { name: string }) {
   const viewer = React.useContext(ViewerContext)!;
   const message = viewer.useSceneTree(props.name, (node) => node?.message);
   const ContextBridge = useContextBridge();
-  const updateNodeAttributes = viewer.sceneTreeActions.updateNodeAttributes;
 
   const {
     makeObject,
@@ -847,7 +844,11 @@ export function SceneNodeThreeObject(props: { name: string }) {
 
       // If a clickable node becomes invisible while hovered, clean up hover
       // state so the cursor doesn't stay stuck as "pointer".
-      if (!node.effectiveVisibility && hoveredRef.current.isHovered && clickable) {
+      if (
+        !node.effectiveVisibility &&
+        hoveredRef.current.isHovered &&
+        clickable
+      ) {
         hoveredRef.current.isHovered = false;
         hoveredRef.current.instanceId = null;
         viewerMutable.hoveredElementsCount--;

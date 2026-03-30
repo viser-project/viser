@@ -84,7 +84,21 @@ export const CameraFrustumComponent = React.forwardRef<
     if (!geom || message.props.variant !== "filled") return;
 
     const vertices = new Float32Array([
-      0, 0, 0, -x, -y, z, x, -y, z, x, y, z, -x, y, z,
+      0,
+      0,
+      0,
+      -x,
+      -y,
+      z,
+      x,
+      -y,
+      z,
+      x,
+      y,
+      z,
+      -x,
+      y,
+      z,
     ]);
     geom.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
     geom.setIndex(new THREE.BufferAttribute(FRUSTUM_INDICES, 1));

@@ -28,7 +28,7 @@
  */
 
 import React from "react";
-import { createStore, Store } from "./store";
+import { createStore } from "./store";
 
 /** Source of a camera property value. Priority: default < message < url. */
 export type CameraPropertySource = "default" | "message" | "url";

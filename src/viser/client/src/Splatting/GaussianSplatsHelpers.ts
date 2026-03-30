@@ -1,6 +1,6 @@
 import React from "react";
 import * as THREE from "three";
-import { createStore, Store } from "../store";
+import { createStore } from "../store";
 import { Object3D } from "three";
 import { useThree } from "@react-three/fiber";
 import { shaderMaterial } from "@react-three/drei";

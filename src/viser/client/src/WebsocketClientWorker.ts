@@ -76,14 +76,16 @@ function decodeHybridMessage(
   }
 
   // Compute binary section offsets and replace placeholders with typed array views.
-  const binaryOffsets = computeBinaryOffsets(bufferLengths, 16 + compressedSize);
+  const binaryOffsets = computeBinaryOffsets(
+    bufferLengths,
+    16 + compressedSize,
+  );
   for (const message of data.messages) {
     replaceBinaryPlaceholders(message, buffer, binaryOffsets, bufferLengths);
   }
 
   return result;
 }
-
 
 {
   let server: string | null = null;
@@ -181,10 +183,9 @@ function decodeHybridMessage(
       // All typed array views point into the original WebSocket ArrayBuffer.
       // Transfer just that buffer instead of walking the entire message tree.
       const sendFn = () => {
-        postOutgoing(
-          { type: "message_batch", messages: messages },
-          [data.buffer],
-        );
+        postOutgoing({ type: "message_batch", messages: messages }, [
+          data.buffer,
+        ]);
         orderLock.release();
       };
 

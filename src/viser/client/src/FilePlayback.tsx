@@ -55,7 +55,10 @@ function decodeHybridPayload<T>(decompressed: Uint8Array): T {
   // Replace binary placeholders with typed array views.
   const bufferLengths = data.binaryBufferLengths;
   if (bufferLengths && bufferLengths.length > 0) {
-    const binaryOffsets = computeBinaryOffsets(bufferLengths, base + 8 + msgpackLength);
+    const binaryOffsets = computeBinaryOffsets(
+      bufferLengths,
+      base + 8 + msgpackLength,
+    );
     replaceBinaryPlaceholders(data, buf, binaryOffsets, bufferLengths);
   }
 

@@ -7,7 +7,8 @@ import * as THREE from "three";
 export function computeT_threeworld_world(viewer: ViewerContextContents) {
   const rootNode = viewer.useSceneTree.get("");
   const wxyz = rootNode!.wxyz!;
-  const position = rootNode!.position!;
+  const rootPose = viewer.mutable.current.nodePoseData[""];
+  const position = rootPose?.position ?? rootNode!.position ?? [0, 0, 0];
   return new THREE.Matrix4()
     .makeRotationFromQuaternion(
       new THREE.Quaternion(wxyz[1], wxyz[2], wxyz[3], wxyz[0]),

@@ -14,8 +14,10 @@ import { CSM, CSMParameters } from "./csm/CSM";
 // @ts-ignore
 import { CSMHelper } from "./csm/CSMHelper";
 
-interface CsmDirectionalLightProps
-  extends Omit<CSMParameters, "lightDirection" | "camera" | "parent"> {
+interface CsmDirectionalLightProps extends Omit<
+  CSMParameters,
+  "lightDirection" | "camera" | "parent"
+> {
   fade?: boolean;
   position?: Vector3Tuple; // Position of the light
   color?: number;

@@ -86,7 +86,9 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
       // Merge forwarded ref with internal ref.
       const setLineRef = React.useCallback(
         (instance: Line2 | LineSegments2 | null) => {
-          (lineRef as React.MutableRefObject<Line2 | LineSegments2 | null>).current = instance;
+          (
+            lineRef as React.MutableRefObject<Line2 | LineSegments2 | null>
+          ).current = instance;
           if (typeof ref === "function") ref(instance);
           else if (ref)
             (ref as { current: Line2 | LineSegments2 | null }).current =

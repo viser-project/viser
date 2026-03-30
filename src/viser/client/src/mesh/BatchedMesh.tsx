@@ -63,9 +63,7 @@ export const BatchedMesh = React.forwardRef<
       "position",
       new THREE.BufferAttribute(message.props.vertices, 3),
     );
-    geometry.setIndex(
-      new THREE.BufferAttribute(message.props.faces, 1),
-    );
+    geometry.setIndex(new THREE.BufferAttribute(message.props.faces, 1));
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
     return geometry;
