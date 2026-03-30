@@ -129,6 +129,35 @@ def test_scene_node_remove(
     wait_for_scene_node_removed(viser_page, "/removable_sphere")
 
 
+def test_scene_reset_removes_existing_nodes(
+    viser_server: viser.ViserServer,
+    viser_page: Page,
+) -> None:
+    """Resetting the scene should remove existing scene nodes from the client."""
+    viser_server.scene.add_frame("/reset_parent", show_axes=True)
+    viser_server.scene.add_icosphere(
+        "/reset_parent/child_sphere",
+        radius=0.3,
+        position=(0, 0, 0),
+    )
+    viser_server.scene.add_box(
+        "/reset_box",
+        color=(0, 255, 0),
+        dimensions=(0.5, 0.5, 0.5),
+    )
+
+    wait_for_scene_node(viser_page, "/reset_parent")
+    wait_for_scene_node(viser_page, "/reset_parent/child_sphere")
+    wait_for_scene_node(viser_page, "/reset_box")
+
+    viser_server.scene.reset()
+
+    wait_for_scene_node_removed(viser_page, "/reset_parent")
+    wait_for_scene_node_removed(viser_page, "/reset_parent/child_sphere")
+    wait_for_scene_node_removed(viser_page, "/reset_box")
+    wait_for_scene_node(viser_page, "/WorldAxes")
+
+
 def test_scene_node_visibility(
     viser_server: viser.ViserServer,
     viser_page: Page,
