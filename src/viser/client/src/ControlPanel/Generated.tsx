@@ -100,7 +100,7 @@ function GeneratedInput(props: {
   nextGuiUuid: string | null;
 }) {
   const viewer = React.useContext(ViewerContext)!;
-  const conf = viewer.useGui((state) => state.guiConfigFromUuid[props.guiUuid]);
+  const conf = viewer.useGuiConfig(props.guiUuid);
   if (conf === undefined) {
     console.error("Tried to render non-existent component", props.guiUuid);
     return null;

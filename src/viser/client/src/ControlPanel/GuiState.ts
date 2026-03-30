@@ -1,5 +1,5 @@
 import React from "react";
-import { createStore } from "../store";
+import { createStore, createKeyedStore } from "../store";
 import { ColorTranslator } from "colortranslator";
 
 import {
@@ -21,7 +21,6 @@ export interface GuiState {
   };
   modals: GuiModalMessage[];
   guiOrderFromUuid: { [id: string]: number };
-  guiConfigFromUuid: { [id: string]: GuiComponentMessage | undefined };
   uploadsInProgress: {
     [uuid: string]: {
       notificationId: string;
@@ -71,7 +70,6 @@ const cleanGuiState: GuiState = {
   guiUuidSetFromContainerUuid: { root: {} },
   modals: [],
   guiOrderFromUuid: {},
-  guiConfigFromUuid: {},
   uploadsInProgress: {},
 };
 
@@ -88,52 +86,46 @@ export function computeRelativeLuminance(color: string) {
 }
 
 /**
- * Apply property updates to a GUI component in the given state.
- * Returns a new guiConfigFromUuid with the update applied.
- * Shared by both the per-component updateGuiProps action and the batched
- * GUI update path in MessageHandler.
+ * Apply property updates to a GUI component.
+ * Returns a new config with the updates applied, or the same config
+ * reference if nothing actually changed.
  */
-export function applyGuiPropsUpdate(
-  guiConfigFromUuid: { [id: string]: GuiComponentMessage | undefined },
-  id: string,
+export function applyGuiConfigUpdate(
+  config: GuiComponentMessage,
   updates: { [key: string]: any },
-): { [id: string]: GuiComponentMessage | undefined } {
-  const config = guiConfigFromUuid[id];
-  if (config === undefined) {
-    console.error(
-      `Tried to update non-existent component '${id}' with`,
-      updates,
-    );
-    return guiConfigFromUuid;
-  }
-
-  // Build new props with updates applied.
-  const newProps = { ...config.props } as any;
-  let newConfig = config as any;
+): GuiComponentMessage {
+  let propsChanged = false;
+  let valueChanged = false;
 
   for (const [key, value] of Object.entries(updates)) {
-    // We don't put `value` in the props object to make types
-    // stronger in the user-facing Python API. This results in some
-    // nastiness here, we should revisit...
     if (key === "value") {
-      newConfig = { ...newConfig, value };
+      if (!Object.is((config as any).value, value)) valueChanged = true;
     } else if (!(key in config.props)) {
       console.error(
-        `Tried to update nonexistent property '${key}' of GUI element ${id}!`,
+        `Tried to update nonexistent property '${key}' of GUI element!`,
       );
     } else {
-      newProps[key] = value;
+      if (!Object.is((config.props as any)[key], value)) propsChanged = true;
     }
   }
 
-  if (newConfig !== config) {
-    // "value" key was updated -- newConfig is already a new object.
+  if (!propsChanged && !valueChanged) return config;
+
+  let newConfig: any = config;
+  if (valueChanged) {
+    newConfig = { ...newConfig, value: updates.value };
+  }
+  if (propsChanged) {
+    const newProps = { ...config.props } as any;
+    for (const [key, value] of Object.entries(updates)) {
+      if (key !== "value" && key in config.props) {
+        newProps[key] = value;
+      }
+    }
     newConfig = { ...newConfig, props: newProps };
-  } else {
-    newConfig = { ...config, props: newProps };
   }
 
-  return { ...guiConfigFromUuid, [id]: newConfig };
+  return newConfig;
 }
 
 export function useGuiState(initialServer: string) {
@@ -142,6 +134,9 @@ export function useGuiState(initialServer: string) {
       ...cleanGuiState,
       server: initialServer,
     });
+
+    // Per-component config store, keyed by UUID.
+    const configStore = createKeyedStore<GuiComponentMessage>();
 
     const actions: GuiActions = {
       setTheme: (theme) => store.set({ theme }),
@@ -155,10 +150,6 @@ export function useGuiState(initialServer: string) {
             ...state.guiOrderFromUuid,
             [guiConfig.uuid]: guiConfig.props.order,
           },
-          guiConfigFromUuid: {
-            ...state.guiConfigFromUuid,
-            [guiConfig.uuid]: guiConfig,
-          },
           guiUuidSetFromContainerUuid: {
             ...state.guiUuidSetFromContainerUuid,
             [guiConfig.container_uuid]: {
@@ -167,6 +158,7 @@ export function useGuiState(initialServer: string) {
             },
           },
         });
+        configStore.set({ [guiConfig.uuid]: guiConfig });
       },
       addModal: (modalConfig) => {
         store.set((state) => ({
@@ -179,8 +171,7 @@ export function useGuiState(initialServer: string) {
         }));
       },
       removeGui: (id) => {
-        const state = store.get();
-        const guiConfig = state.guiConfigFromUuid[id];
+        const guiConfig = configStore.get(id);
         if (guiConfig == undefined) {
           // TODO: this will currently happen when GUI elements are removed
           // and then a new client connects. Needs to be revisited.
@@ -188,16 +179,14 @@ export function useGuiState(initialServer: string) {
           return;
         }
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { [id]: _1, ...remainingConfigs } = state.guiConfigFromUuid;
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { [id]: _2, ...remainingOrders } = state.guiOrderFromUuid;
+        const { [id]: _2, ...remainingOrders } = store.get().guiOrderFromUuid;
         const containerUuid = guiConfig.container_uuid;
         const containerSet = {
-          ...state.guiUuidSetFromContainerUuid[containerUuid],
+          ...store.get().guiUuidSetFromContainerUuid[containerUuid],
         };
         delete containerSet[id];
         const newContainerMap = {
-          ...state.guiUuidSetFromContainerUuid,
+          ...store.get().guiUuidSetFromContainerUuid,
         };
         if (Object.keys(containerSet).length === 0) {
           delete newContainerMap[containerUuid];
@@ -205,10 +194,10 @@ export function useGuiState(initialServer: string) {
           newContainerMap[containerUuid] = containerSet;
         }
         store.set({
-          guiConfigFromUuid: remainingConfigs,
           guiOrderFromUuid: remainingOrders,
           guiUuidSetFromContainerUuid: newContainerMap,
         });
+        configStore.set({ [id]: undefined });
       },
       resetGui: () => {
         // No need to overwrite the theme or label. The former especially
@@ -219,9 +208,9 @@ export function useGuiState(initialServer: string) {
             cleanGuiState.guiUuidSetFromContainerUuid,
           modals: cleanGuiState.modals,
           guiOrderFromUuid: cleanGuiState.guiOrderFromUuid,
-          guiConfigFromUuid: cleanGuiState.guiConfigFromUuid,
           uploadsInProgress: cleanGuiState.uploadsInProgress,
         });
+        configStore.setAll({}, true);
       },
       updateUploadState: (uploadState) => {
         const state = store.get();
@@ -237,18 +226,22 @@ export function useGuiState(initialServer: string) {
         });
       },
       updateGuiProps: (id, updates) => {
-        const state = store.get();
-        store.set({
-          guiConfigFromUuid: applyGuiPropsUpdate(
-            state.guiConfigFromUuid,
-            id,
+        const config = configStore.get(id);
+        if (config === undefined) {
+          console.error(
+            `Tried to update non-existent component '${id}' with`,
             updates,
-          ),
-        });
+          );
+          return;
+        }
+        const newConfig = applyGuiConfigUpdate(config, updates);
+        if (newConfig !== config) {
+          configStore.set({ [id]: newConfig });
+        }
       },
     };
 
-    return { store, actions };
+    return { store, configStore, actions };
   })[0];
 }
 

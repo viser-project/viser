@@ -324,6 +324,7 @@ function ViewerRoot() {
     sceneTreeActions: sceneTreeState.actions,
     useEnvironment: environmentState,
     useGui: guiState.store,
+    useGuiConfig: guiState.configStore,
     guiActions: guiState.actions,
     useDevSettings: devSettingsStore,
     useInitialCamera: initialCameraState.store,

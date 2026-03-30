@@ -86,6 +86,7 @@ export type ViewerContextContents = {
   sceneTreeActions: ReturnType<typeof useSceneTreeState>["actions"];
   useEnvironment: ReturnType<typeof useEnvironmentState>;
   useGui: UseGui["store"];
+  useGuiConfig: UseGui["configStore"];
   guiActions: UseGui["actions"];
   useDevSettings: ReturnType<typeof useDevSettingsStore>;
   useInitialCamera: ReturnType<typeof useInitialCameraState>["store"];

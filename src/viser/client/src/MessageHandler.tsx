@@ -11,6 +11,7 @@ import {
   FileTransferStartDownload,
   Message,
   SceneNodeMessage,
+  GuiComponentMessage,
   isGuiComponentMessage,
   isSceneNodeMessage,
 } from "./WebsocketMessages";
@@ -20,7 +21,7 @@ import { Button, Progress } from "@mantine/core";
 import { IconCheck, IconDownload } from "@tabler/icons-react";
 import { computeT_threeworld_world } from "./WorldTransformUtils";
 import { rootNodeTemplate, SceneNode } from "./SceneTreeState";
-import { applyGuiPropsUpdate } from "./ControlPanel/GuiState";
+import { applyGuiConfigUpdate } from "./ControlPanel/GuiState";
 import { GaussianSplatsContext } from "./Splatting/GaussianSplatsHelpers";
 
 /** Returns a handler for all incoming messages. */
@@ -945,17 +946,28 @@ export function FrameSynchronizedMessageHandler() {
           viewer.useSceneTree.set(mergedUpdates);
         }
 
-        // Apply all accumulated GUI updates in a single set().
+        // Apply all accumulated GUI config updates in a single set().
         if (guiUpdates.length > 0) {
-          let guiConfigFromUuid = viewer.useGui.get().guiConfigFromUuid;
+          const configUpdates: Record<string, GuiComponentMessage | undefined> =
+            {};
           for (const { uuid, updates } of guiUpdates) {
-            guiConfigFromUuid = applyGuiPropsUpdate(
-              guiConfigFromUuid,
-              uuid,
-              updates,
-            );
+            const current =
+              configUpdates[uuid] ?? viewer.useGuiConfig.get(uuid);
+            if (current === undefined) {
+              console.error(
+                `Tried to update non-existent component '${uuid}'`,
+                updates,
+              );
+              continue;
+            }
+            const updated = applyGuiConfigUpdate(current, updates);
+            if (updated !== current) {
+              configUpdates[uuid] = updated;
+            }
           }
-          viewer.useGui.set({ guiConfigFromUuid });
+          if (Object.keys(configUpdates).length > 0) {
+            viewer.useGuiConfig.set(configUpdates);
+          }
         }
 
         // Recompute effective visibility for nodes whose visibility changed.
