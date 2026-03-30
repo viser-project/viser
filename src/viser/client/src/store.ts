@@ -1,4 +1,4 @@
-import { useRef, useSyncExternalStore } from "react";
+import { useCallback, useRef, useSyncExternalStore } from "react";
 
 // ---------------------------------------------------------------------------
 // createStore<T> -- simple reactive store
@@ -247,68 +247,36 @@ export function createKeyedStore<V>(
       key: string;
     }>({ value: undefined, version: -1, key: "" });
 
-    // We need a stable subscribe function per key.
-    // useSyncExternalStore requires the subscribe callback to be stable
-    // or it will re-subscribe every render. We use a ref to handle
-    // key changes efficiently.
-    const keyRef = useRef(key);
-    keyRef.current = key;
-
-    // Subscribe function that always subscribes to the current key.
-    // We use useRef to create a stable wrapper.
-    const subRef = useRef<{
-      currentUnsub: (() => void) | null;
-      stableSubscribe: (onStoreChange: () => void) => () => void;
-    } | null>(null);
-
-    if (subRef.current === null) {
-      subRef.current = {
-        currentUnsub: null,
-        stableSubscribe: (onStoreChange: () => void) => {
-          // Clean up previous subscription if key changed.
-          subRef.current!.currentUnsub?.();
-          const unsub = subscribeToKey(keyRef.current, onStoreChange);
-          subRef.current!.currentUnsub = unsub;
-          return () => {
-            unsub();
-            subRef.current!.currentUnsub = null;
-          };
-        },
-      };
-    }
-
-    const value = useSyncExternalStore(
-      subRef.current.stableSubscribe,
-      () => {
-        const currentKey = keyRef.current;
-        const ver = getVersion(currentKey);
-        // If key or version changed, recompute.
-        if (
-          cache.current.key !== currentKey ||
-          cache.current.version !== ver
-        ) {
-          const raw = map.get(currentKey);
-          const next = selector ? selector(raw) : raw;
-          if (
-            cache.current.key === currentKey &&
-            cache.current.version !== ver
-          ) {
-            // Same key, new version -- check equality.
-            if (
-              equalityFn
-                ? equalityFn(cache.current.value as U, next as U)
-                : Object.is(cache.current.value, next)
-            ) {
-              cache.current.version = ver;
-              return cache.current.value as V | undefined | U;
-            }
-          }
-          cache.current = { value: next, version: ver, key: currentKey };
-          return next;
-        }
-        return cache.current.value as V | undefined | U;
-      },
+    // New subscribe identity when key changes, so useSyncExternalStore
+    // re-subscribes to the correct key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const subscribe = useCallback(
+      (listener: Listener) => subscribeToKey(key, listener),
+      [key],
     );
+
+    const value = useSyncExternalStore(subscribe, () => {
+      const ver = getVersion(key);
+      // If key or version changed, recompute.
+      if (cache.current.key !== key || cache.current.version !== ver) {
+        const raw = map.get(key);
+        const next = selector ? selector(raw) : raw;
+        if (cache.current.key === key && cache.current.version !== ver) {
+          // Same key, new version -- check equality.
+          if (
+            equalityFn
+              ? equalityFn(cache.current.value as U, next as U)
+              : Object.is(cache.current.value, next)
+          ) {
+            cache.current.version = ver;
+            return cache.current.value as V | undefined | U;
+          }
+        }
+        cache.current = { value: next, version: ver, key };
+        return next;
+      }
+      return cache.current.value as V | undefined | U;
+    });
 
     return value;
   }
