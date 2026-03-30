@@ -1,5 +1,5 @@
 import React from "react";
-import { create } from "zustand";
+import { createStore, Store } from "./store";
 import { EnvironmentMapMessage, FogMessage } from "./WebsocketMessages";
 
 type EnvironmentState = {
@@ -13,7 +13,7 @@ type EnvironmentState = {
 effort into avoiding a global state! */
 export function useEnvironmentState() {
   return React.useState(() =>
-    create<EnvironmentState>(() => ({
+    createStore<EnvironmentState>({
       enableDefaultLights: true,
       enableDefaultLightsShadows: true,
       environmentMap: {
@@ -33,6 +33,6 @@ export function useEnvironmentState() {
         color: [255, 255, 255],
         enabled: false,
       },
-    })),
+    }),
   )[0];
 }

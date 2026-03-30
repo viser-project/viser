@@ -1,5 +1,5 @@
 /**
- * Shallow object keys equality function for zustand selectors.
+ * Shallow object keys equality function for store selectors.
  * Prevents re-renders when object keys haven't changed.
  * Compares objects by checking if they have the same set of keys.
  */

@@ -1,6 +1,6 @@
 import React from "react";
 import * as THREE from "three";
-import { create } from "zustand";
+import { createStore, Store } from "../store";
 import { Object3D } from "three";
 import { useThree } from "@react-three/fiber";
 import { shaderMaterial } from "@react-three/drei";
@@ -278,6 +278,9 @@ interface SplatState {
   nodeRefFromId: React.MutableRefObject<{
     [name: string]: undefined | Object3D;
   }>;
+}
+
+interface SplatActions {
   setBuffer: (id: string, buffer: Uint32Array) => void;
   removeBuffer: (id: string) => void;
 }
@@ -285,28 +288,31 @@ interface SplatState {
 /**Hook for creating global splat state.*/
 export function useGaussianSplatStore() {
   const nodeRefFromId = React.useRef({});
-  return React.useState(() =>
-    create<SplatState>((set) => ({
+  return React.useState(() => {
+    const store = createStore<SplatState>({
       groupBufferFromId: {},
       nodeRefFromId: nodeRefFromId,
+    });
+
+    const actions: SplatActions = {
       setBuffer: (id, buffer) => {
-        return set((state) => ({
+        store.set((state) => ({
           groupBufferFromId: { ...state.groupBufferFromId, [id]: buffer },
         }));
       },
       removeBuffer: (id) => {
-        return set((state) => {
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { [id]: _, ...buffers } = state.groupBufferFromId;
-          return { groupBufferFromId: buffers };
-        });
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { [id]: _, ...buffers } = store.get().groupBufferFromId;
+        store.set({ groupBufferFromId: buffers });
       },
-    })),
-  )[0];
+    };
+
+    return { store, actions };
+  })[0];
 }
 
 export const GaussianSplatsContext = React.createContext<{
-  useGaussianSplatStore: ReturnType<typeof useGaussianSplatStore>;
+  gaussianSplatState: ReturnType<typeof useGaussianSplatStore>;
   updateCamera: React.MutableRefObject<
     | null
     | ((

@@ -46,7 +46,7 @@ export default function ServerControls() {
             leftSectionWidth="1.8rem"
             defaultValue={viewer.useGui((state) => state.server)}
             onBlur={(event) =>
-              viewer.useGui.setState({ server: event.currentTarget.value })
+              viewer.useGui.set({ server: event.currentTarget.value })
             }
             onKeyDown={(event) => {
               if (event.key === "Enter") {
@@ -157,7 +157,7 @@ export default function ServerControls() {
               radius="xs"
               label="Orbit Origin Tool"
               onChange={(event) => {
-                viewer.useGui.setState({
+                viewer.useGui.set({
                   showOrbitOriginTool: event.currentTarget.checked,
                 });
               }}

@@ -34,7 +34,7 @@ export default function GeneratedGuiContainer({
   containerUuid: string;
 }) {
   const viewer = React.useContext(ViewerContext)!;
-  const updateGuiProps = viewer.useGui((state) => state.updateGuiProps);
+  const updateGuiProps = viewer.guiActions.updateGuiProps;
   const messageSender = useThrottledMessageSender(50).send;
 
   function setValue(uuid: string, value: NonNullable<unknown>) {

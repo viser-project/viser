@@ -71,7 +71,7 @@ function useFileUpload({
   componentUuid: string;
   viewer: ViewerContextContents;
 }) {
-  const updateUploadState = viewer.useGui((state) => state.updateUploadState);
+  const updateUploadState = viewer.guiActions.updateUploadState;
   const uploadState = viewer.useGui(
     (state) => state.uploadsInProgress[componentUuid],
   );

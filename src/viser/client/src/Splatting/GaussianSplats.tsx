@@ -51,11 +51,11 @@ export function SplatRenderContext({
 }: {
   children: React.ReactNode;
 }) {
-  const store = useGaussianSplatStore();
+  const splatState = useGaussianSplatStore();
   return (
     <GaussianSplatsContext.Provider
       value={{
-        useGaussianSplatStore: store,
+        gaussianSplatState: splatState,
         updateCamera: React.useRef(null),
         meshPropsRef: React.useRef(null),
       }}
@@ -73,13 +73,8 @@ export const SplatObject = React.forwardRef<
   }
 >(function SplatObject({ buffer, children }, ref) {
   const splatContext = React.useContext(GaussianSplatsContext)!;
-  const setBuffer = splatContext.useGaussianSplatStore(
-    (state) => state.setBuffer,
-  );
-  const removeBuffer = splatContext.useGaussianSplatStore(
-    (state) => state.removeBuffer,
-  );
-  const nodeRefFromId = splatContext.useGaussianSplatStore(
+  const { setBuffer, removeBuffer } = splatContext.gaussianSplatState.actions;
+  const nodeRefFromId = splatContext.gaussianSplatState.store(
     (state) => state.nodeRefFromId,
   );
   // Use stable ID per component instance (not dependent on buffer).
@@ -122,7 +117,7 @@ export const SplatObject = React.forwardRef<
 /** External interface. Component should be added to the root of canvas.  */
 function SplatRenderer() {
   const splatContext = React.useContext(GaussianSplatsContext)!;
-  const groupBufferFromId = splatContext.useGaussianSplatStore(
+  const groupBufferFromId = splatContext.gaussianSplatState.store(
     (state) => state.groupBufferFromId,
   );
 
@@ -135,10 +130,10 @@ function SplatRenderer() {
 
 function SplatRendererImpl() {
   const splatContext = React.useContext(GaussianSplatsContext)!;
-  const groupBufferFromId = splatContext.useGaussianSplatStore(
+  const groupBufferFromId = splatContext.gaussianSplatState.store(
     (state) => state.groupBufferFromId,
   );
-  const nodeRefFromId = splatContext.useGaussianSplatStore(
+  const nodeRefFromId = splatContext.gaussianSplatState.store(
     (state) => state.nodeRefFromId,
   );
   const maxTextureSize = useThree((state) => state.gl).capabilities

@@ -256,6 +256,9 @@ function ViewerRoot() {
     // Skinned mesh state.
     skinnedMeshState: {},
 
+    // Per-node pose data (non-reactive, read in useFrame).
+    nodePoseData: {},
+
     // Global hover state tracking.
     hoveredElementsCount: 0,
   });
@@ -299,21 +302,31 @@ function ViewerRoot() {
     }, []),
   );
 
+  // Create GUI state.
+  const guiState = useGuiState(initialServer);
+
+  // Apply dark mode setting if provided via URL or embed config.
+  const effectiveDarkMode = darkMode || embedConfig?.darkMode;
+  if (effectiveDarkMode) {
+    const currentTheme = guiState.store.get().theme;
+    if (!currentTheme.dark_mode) {
+      guiState.store.set({ theme: { ...currentTheme, dark_mode: true } });
+    }
+  }
+
   // Create the context value with hooks and single ref.
   const viewer: ViewerContextContents = {
     messageSource,
     useSceneTree: sceneTreeState.store,
     sceneTreeActions: sceneTreeState.actions,
     useEnvironment: environmentState,
-    useGui: useGuiState(initialServer),
+    useGui: guiState.store,
+    guiActions: guiState.actions,
     useDevSettings: devSettingsStore,
-    useInitialCamera: initialCameraState,
+    useInitialCamera: initialCameraState.store,
+    initialCameraActions: initialCameraState.actions,
     mutable,
   };
-
-  // Apply dark mode setting if provided via URL or embed config.
-  const effectiveDarkMode = darkMode || embedConfig?.darkMode;
-  if (effectiveDarkMode) viewer.useGui.getState().theme.dark_mode = true;
 
   return (
     <ViewerContext.Provider value={viewer}>
@@ -675,7 +688,8 @@ function DefaultLights() {
 
   // Get world rotation directly from scene tree state.
   const worldRotation = viewer.useSceneTree(
-    (state) => state[""]?.wxyz ?? [1, 0, 0, 0],
+    "",
+    (node) => node?.wxyz ?? [1, 0, 0, 0],
     shallowArrayEqual,
   );
 
@@ -979,7 +993,20 @@ function SceneContextSetter() {
   useEffect(() => {
     const w = window as any;
     w.__viserMutable = mutable.current;
-    w.__viserSceneTree = viewer.useSceneTree;
+    // Expose a shim for E2E tests.
+    w.__viserSceneTree = {
+      getState: () => viewer.useSceneTree.getAll(),
+      subscribe: (listener: () => void) => {
+        // Subscribe to all key changes -- for benchmarking purposes.
+        // This uses a polling approach via the store's internal mechanism.
+        const unsubs: (() => void)[] = [];
+        const state = viewer.useSceneTree.getAll();
+        for (const key of Object.keys(state)) {
+          unsubs.push(viewer.useSceneTree.subscribe(key, listener));
+        }
+        return () => unsubs.forEach((u) => u());
+      },
+    };
     w.__viserTestpoints = {
       rendererInfo: gl.info,
     };

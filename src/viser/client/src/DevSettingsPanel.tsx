@@ -21,13 +21,13 @@ export function DevSettingsPanel({ devSettingsStore }: DevSettingsPanelProps) {
 
   const darkMode = viewer.useGui((state) => state.theme.dark_mode);
   const setDarkMode = (dark: boolean) => {
-    viewer.useGui.setState({
-      theme: { ...viewer.useGui.getState().theme, dark_mode: dark },
+    viewer.useGui.set({
+      theme: { ...viewer.useGui.get().theme, dark_mode: dark },
     });
   };
   const setShowLogo = (showLogo: boolean) => {
-    viewer.useGui.setState({
-      theme: { ...viewer.useGui.getState().theme, show_logo: showLogo },
+    viewer.useGui.set({
+      theme: { ...viewer.useGui.get().theme, show_logo: showLogo },
     });
   };
 
@@ -47,7 +47,7 @@ export function DevSettingsPanel({ devSettingsStore }: DevSettingsPanelProps) {
           label="WebGL Stats"
           checked={showStats}
           onChange={(event) =>
-            devSettingsStore.setState({
+            devSettingsStore.set({
               showStats: event.currentTarget.checked,
             })
           }
@@ -77,7 +77,7 @@ export function DevSettingsPanel({ devSettingsStore }: DevSettingsPanelProps) {
             label="Log Camera to Console"
             checked={logCamera}
             onChange={(event) =>
-              devSettingsStore.setState({
+              devSettingsStore.set({
                 logCamera: event.currentTarget.checked,
               })
             }
@@ -100,7 +100,7 @@ export function DevSettingsPanel({ devSettingsStore }: DevSettingsPanelProps) {
             label="Show Orbit Crosshair"
             checked={enableOrbitCrosshair}
             onChange={(event) =>
-              devSettingsStore.setState({
+              devSettingsStore.set({
                 enableOrbitCrosshair: event.currentTarget.checked,
               })
             }
@@ -124,7 +124,7 @@ export function DevSettingsPanel({ devSettingsStore }: DevSettingsPanelProps) {
             placeholder="Adaptive"
             value={fixedDpr?.toString() ?? ""}
             onChange={(value) =>
-              devSettingsStore.setState({
+              devSettingsStore.set({
                 fixedDpr: value ? parseFloat(value) : null,
               })
             }

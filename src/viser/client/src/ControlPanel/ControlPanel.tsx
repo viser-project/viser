@@ -230,7 +230,7 @@ function ShareButton() {
     (state) => state.websocketState === "connected",
   );
   const shareUrl = viewer.useGui((state) => state.shareUrl);
-  const setShareUrl = viewer.useGui((state) => state.setShareUrl);
+  const setShareUrl = viewer.guiActions.setShareUrl;
 
   const [doingSomething, setDoingSomething] = React.useState(false);
 

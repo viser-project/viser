@@ -1,15 +1,14 @@
 import React from "react";
-import { create } from "zustand";
+import { createStore, Store } from "../store";
 import { ColorTranslator } from "colortranslator";
 
-import { immer } from "zustand/middleware/immer";
 import {
   GuiComponentMessage,
   GuiModalMessage,
   ThemeConfigurationMessage,
 } from "../WebsocketMessages";
 
-interface GuiState {
+export interface GuiState {
   theme: ThemeConfigurationMessage;
   label: string;
   server: string;
@@ -33,7 +32,7 @@ interface GuiState {
   };
 }
 
-interface GuiActions {
+export interface GuiActions {
   setTheme: (theme: ThemeConfigurationMessage) => void;
   setShareUrl: (share_url: string | null) => void;
   addGui: (config: GuiComponentMessage) => void;
@@ -89,132 +88,169 @@ export function computeRelativeLuminance(color: string) {
 }
 
 /**
- * Apply property updates to a GUI component in the given state draft.
+ * Apply property updates to a GUI component in the given state.
+ * Returns a new guiConfigFromUuid with the update applied.
  * Shared by both the per-component updateGuiProps action and the batched
  * GUI update path in MessageHandler.
  */
 export function applyGuiPropsUpdate(
-  state: GuiState,
+  guiConfigFromUuid: { [id: string]: GuiComponentMessage | undefined },
   id: string,
   updates: { [key: string]: any },
-): void {
-  const config = state.guiConfigFromUuid[id];
+): { [id: string]: GuiComponentMessage | undefined } {
+  const config = guiConfigFromUuid[id];
   if (config === undefined) {
     console.error(
       `Tried to update non-existent component '${id}' with`,
       updates,
     );
-    return;
+    return guiConfigFromUuid;
   }
 
-  // Iterate over key/value pairs.
+  // Build new props with updates applied.
+  const newProps = { ...config.props } as any;
+  let newConfig = config as any;
+
   for (const [key, value] of Object.entries(updates)) {
     // We don't put `value` in the props object to make types
     // stronger in the user-facing Python API. This results in some
     // nastiness here, we should revisit...
     if (key === "value") {
-      (state.guiConfigFromUuid[id] as any).value = value;
+      newConfig = { ...newConfig, value };
     } else if (!(key in config.props)) {
       console.error(
         `Tried to update nonexistent property '${key}' of GUI element ${id}!`,
       );
     } else {
-      (config.props as any)[key] = value;
+      newProps[key] = value;
     }
   }
+
+  if (newConfig !== config) {
+    // "value" key was updated -- newConfig is already a new object.
+    newConfig = { ...newConfig, props: newProps };
+  } else {
+    newConfig = { ...config, props: newProps };
+  }
+
+  return { ...guiConfigFromUuid, [id]: newConfig };
 }
 
 export function useGuiState(initialServer: string) {
-  return React.useState(() =>
-    create(
-      immer<GuiState & GuiActions>((set) => ({
-        ...cleanGuiState,
-        server: initialServer,
-        setTheme: (theme) =>
-          set((state) => {
-            state.theme = theme;
-          }),
-        setShareUrl: (share_url) =>
-          set((state) => {
-            state.shareUrl = share_url;
-          }),
-        addGui: (guiConfig) =>
-          set((state) => {
-            state.guiOrderFromUuid[guiConfig.uuid] = guiConfig.props.order;
-            state.guiConfigFromUuid[guiConfig.uuid] = guiConfig;
-            if (
-              !(guiConfig.container_uuid in state.guiUuidSetFromContainerUuid)
-            ) {
-              state.guiUuidSetFromContainerUuid[guiConfig.container_uuid] = {};
-            }
-            state.guiUuidSetFromContainerUuid[guiConfig.container_uuid]![
-              guiConfig.uuid
-            ] = true;
-          }),
-        addModal: (modalConfig) =>
-          set((state) => {
-            state.modals.push(modalConfig);
-          }),
-        removeModal: (id) =>
-          set((state) => {
-            state.modals = state.modals.filter((m) => m.uuid !== id);
-          }),
-        removeGui: (id) =>
-          set((state) => {
-            const guiConfig = state.guiConfigFromUuid[id];
-            if (guiConfig == undefined) {
-              // TODO: this will currently happen when GUI elements are removed
-              // and then a new client connects. Needs to be revisited.
-              console.warn("(OK) Tried to remove non-existent component", id);
-              return;
-            }
-            delete state.guiUuidSetFromContainerUuid[guiConfig.container_uuid]![
-              id
-            ];
-            delete state.guiOrderFromUuid[id];
-            delete state.guiConfigFromUuid[id];
-            if (
-              Object.keys(
-                state.guiUuidSetFromContainerUuid[guiConfig.container_uuid]!,
-              ).length == 0
-            )
-              delete state.guiUuidSetFromContainerUuid[
-                guiConfig.container_uuid
-              ];
-          }),
-        resetGui: () =>
-          set((state) => {
-            // No need to overwrite the theme or label. The former especially
-            // can be jarring.
-            // state.theme = cleanGuiState.theme;
-            // state.label = cleanGuiState.label;
+  return React.useState(() => {
+    const store = createStore<GuiState>({
+      ...cleanGuiState,
+      server: initialServer,
+    });
 
-            // This feels brittle, could be cleaned up...
-            state.shareUrl = cleanGuiState.shareUrl;
-            state.guiUuidSetFromContainerUuid =
-              cleanGuiState.guiUuidSetFromContainerUuid;
-            state.modals = cleanGuiState.modals;
-            state.guiOrderFromUuid = cleanGuiState.guiOrderFromUuid;
-            state.guiConfigFromUuid = cleanGuiState.guiConfigFromUuid;
-            state.uploadsInProgress = cleanGuiState.uploadsInProgress;
-          }),
-        updateUploadState: (state) =>
-          set((globalState) => {
-            const { componentId, ...rest } = state;
-            globalState.uploadsInProgress[componentId] = {
-              ...globalState.uploadsInProgress[componentId],
+    const actions: GuiActions = {
+      setTheme: (theme) => store.set({ theme }),
+      setShareUrl: (shareUrl) => store.set({ shareUrl }),
+      addGui: (guiConfig) => {
+        const state = store.get();
+        const containerSet =
+          state.guiUuidSetFromContainerUuid[guiConfig.container_uuid] ?? {};
+        store.set({
+          guiOrderFromUuid: {
+            ...state.guiOrderFromUuid,
+            [guiConfig.uuid]: guiConfig.props.order,
+          },
+          guiConfigFromUuid: {
+            ...state.guiConfigFromUuid,
+            [guiConfig.uuid]: guiConfig,
+          },
+          guiUuidSetFromContainerUuid: {
+            ...state.guiUuidSetFromContainerUuid,
+            [guiConfig.container_uuid]: {
+              ...containerSet,
+              [guiConfig.uuid]: true as const,
+            },
+          },
+        });
+      },
+      addModal: (modalConfig) => {
+        store.set((state) => ({
+          modals: [...state.modals, modalConfig],
+        }));
+      },
+      removeModal: (id) => {
+        store.set((state) => ({
+          modals: state.modals.filter((m) => m.uuid !== id),
+        }));
+      },
+      removeGui: (id) => {
+        const state = store.get();
+        const guiConfig = state.guiConfigFromUuid[id];
+        if (guiConfig == undefined) {
+          // TODO: this will currently happen when GUI elements are removed
+          // and then a new client connects. Needs to be revisited.
+          console.warn("(OK) Tried to remove non-existent component", id);
+          return;
+        }
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { [id]: _1, ...remainingConfigs } = state.guiConfigFromUuid;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { [id]: _2, ...remainingOrders } = state.guiOrderFromUuid;
+        const containerUuid = guiConfig.container_uuid;
+        const containerSet = {
+          ...state.guiUuidSetFromContainerUuid[containerUuid],
+        };
+        delete containerSet[id];
+        const newContainerMap = {
+          ...state.guiUuidSetFromContainerUuid,
+        };
+        if (Object.keys(containerSet).length === 0) {
+          delete newContainerMap[containerUuid];
+        } else {
+          newContainerMap[containerUuid] = containerSet;
+        }
+        store.set({
+          guiConfigFromUuid: remainingConfigs,
+          guiOrderFromUuid: remainingOrders,
+          guiUuidSetFromContainerUuid: newContainerMap,
+        });
+      },
+      resetGui: () => {
+        // No need to overwrite the theme or label. The former especially
+        // can be jarring.
+        store.set({
+          shareUrl: cleanGuiState.shareUrl,
+          guiUuidSetFromContainerUuid:
+            cleanGuiState.guiUuidSetFromContainerUuid,
+          modals: cleanGuiState.modals,
+          guiOrderFromUuid: cleanGuiState.guiOrderFromUuid,
+          guiConfigFromUuid: cleanGuiState.guiConfigFromUuid,
+          uploadsInProgress: cleanGuiState.uploadsInProgress,
+        });
+      },
+      updateUploadState: (uploadState) => {
+        const state = store.get();
+        const { componentId, ...rest } = uploadState;
+        store.set({
+          uploadsInProgress: {
+            ...state.uploadsInProgress,
+            [componentId]: {
+              ...state.uploadsInProgress[componentId],
               ...rest,
-            };
-          }),
-        updateGuiProps: (id, updates) => {
-          set((state) => {
-            applyGuiPropsUpdate(state, id, updates);
-          });
-        },
-      })),
-    ),
-  )[0];
+            },
+          },
+        });
+      },
+      updateGuiProps: (id, updates) => {
+        const state = store.get();
+        store.set({
+          guiConfigFromUuid: applyGuiPropsUpdate(
+            state.guiConfigFromUuid,
+            id,
+            updates,
+          ),
+        });
+      },
+    };
+
+    return { store, actions };
+  })[0];
 }
 
-/** Type corresponding to a zustand-style useGuiState hook. */
+/** Type corresponding to the useGuiState hook return. */
 export type UseGui = ReturnType<typeof useGuiState>;

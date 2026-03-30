@@ -1,5 +1,5 @@
 /**
- * Shallow array equality function for zustand selectors.
+ * Shallow array equality function for store selectors.
  * Prevents re-renders when array contents haven't changed.
  */
 export function shallowArrayEqual<T>(

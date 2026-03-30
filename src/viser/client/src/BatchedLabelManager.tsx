@@ -302,12 +302,13 @@ export const BatchedLabelManager: React.FC<{
         // Compute position from parent node + local position.
         const parentRef =
           viewer.mutable.current.nodeRefFromName[textInfo.parentName];
-        const node = viewer.useSceneTree.getState()[textInfo.nodeName];
+        const node = viewer.useSceneTree.get(textInfo.nodeName);
 
         if (parentRef && node) {
           // Add label's local position offset.
           const textPosition = text.position as THREE.Vector3;
-          textPosition.set(...(node.position ?? [0, 0, 0]));
+          const pose = viewer.mutable.current.nodePoseData[textInfo.nodeName];
+          textPosition.set(...(pose?.position ?? [0, 0, 0]));
           textPosition.applyMatrix4(parentRef.matrixWorld);
 
           // Use effectiveVisibility which includes parent chain.

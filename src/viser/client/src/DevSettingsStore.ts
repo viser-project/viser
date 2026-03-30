@@ -1,5 +1,5 @@
 import React from "react";
-import { create } from "zustand";
+import { createStore } from "./store";
 
 type DevSettingsState = {
   showStats: boolean;
@@ -19,11 +19,11 @@ export function useDevSettingsStore() {
     const fixedDpr = fixedDprParam ? parseFloat(fixedDprParam) : null;
     const logCamera = searchParams.get("logCamera") !== null;
 
-    return create<DevSettingsState>(() => ({
+    return createStore<DevSettingsState>({
       showStats,
       fixedDpr,
       logCamera,
       enableOrbitCrosshair: true,
-    }));
+    });
   })[0];
 }

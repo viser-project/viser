@@ -656,8 +656,7 @@ export const ViserLabel = React.forwardRef<
   React.useImperativeHandle(ref, () => groupRef.current, []);
 
   // Use a selector to subscribe only to this node's children.
-  const hasChildren = viewer.useSceneTree((state) => {
-    const node = state[message.name];
+  const hasChildren = viewer.useSceneTree(message.name, (node) => {
     return node?.children && node.children.length > 0;
   });
 

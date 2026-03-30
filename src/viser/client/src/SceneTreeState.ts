@@ -1,7 +1,7 @@
 import React from "react";
 import * as THREE from "three";
 import { SceneNodeMessage } from "./WebsocketMessages";
-import { create, StoreApi, UseBoundStore } from "zustand";
+import { createKeyedStore, KeyedStore } from "./store";
 
 export type SceneNode = {
   message: SceneNodeMessage;
@@ -14,11 +14,6 @@ export type SceneNode = {
   visibility?: boolean; // Visibility state from the server.
   overrideVisibility?: boolean; // Override from the GUI.
   effectiveVisibility?: boolean; // Computed visibility including parent chain.
-};
-
-export type SceneTreeState = {
-  // Scene graph structure: nodes are stored flat at the root level.
-  [name: string]: SceneNode | undefined;
 };
 
 // Pre-defined scene nodes.
@@ -39,13 +34,18 @@ export const rootNodeTemplate: SceneNode = {
   clickable: false,
   visibility: true,
   effectiveVisibility: true,
-  // Default quaternion: 90° around X, 180° around Y, -90° around Z.
+  // Default quaternion: 90 deg around X, 180 deg around Y, -90 deg around Z.
   // This matches the coordinate system transformation.
   wxyz: (() => {
     const quat = new THREE.Quaternion().setFromEuler(
       new THREE.Euler(Math.PI / 2, Math.PI, -Math.PI / 2),
     );
-    return [quat.w, quat.x, quat.y, quat.z] as [number, number, number, number];
+    return [quat.w, quat.x, quat.y, quat.z] as [
+      number,
+      number,
+      number,
+      number,
+    ];
   })(),
   position: [0.0, 0.0, 0.0],
 };
@@ -70,18 +70,16 @@ const worldAxesNodeTemplate: SceneNode = {
 
 /** Helper functions that operate on the scene tree store */
 function createSceneTreeActions(
-  store: UseBoundStore<StoreApi<SceneTreeState>>,
+  store: KeyedStore<SceneNode>,
   nodeRefFromName: { [name: string]: undefined | THREE.Object3D },
 ) {
-  // Declare actions object first so functions can reference each other
   const actions = {
     addSceneNode: (message: SceneNodeMessage) => {
-      const state = store.getState();
-      const existingNode = state[message.name];
+      const existingNode = store.get(message.name);
       const parentName = message.name.split("/").slice(0, -1).join("/");
-      const parentNode = state[parentName];
+      const parentNode = store.get(parentName);
 
-      const partial: SceneTreeState = {
+      const updates: Record<string, SceneNode | undefined> = {
         [message.name]: {
           ...existingNode,
           message: message,
@@ -95,7 +93,7 @@ function createSceneTreeActions(
 
       // Add to parent's children if this is a new node.
       if (parentNode && !parentNode.children.includes(message.name)) {
-        partial[parentName] = {
+        updates[parentName] = {
           ...parentNode,
           children: [...parentNode.children, message.name],
         };
@@ -105,44 +103,43 @@ function createSceneTreeActions(
       if (existingNode) {
         delete nodeRefFromName[message.name];
       }
-      store.setState(partial);
+      store.set(updates);
     },
 
     removeSceneNode: (name: string) => {
-      const state = store.getState();
       // Remove this scene node and all children.
       const removeNames: string[] = [];
       function findChildrenRecursive(nodeName: string) {
         removeNames.push(nodeName);
-        const node = state[nodeName];
+        const node = store.get(nodeName);
         if (node) {
           node.children.forEach(findChildrenRecursive);
         }
       }
       findChildrenRecursive(name);
 
-      const partial: Partial<SceneTreeState> = {};
+      const updates: Record<string, SceneNode | undefined> = {};
       removeNames.forEach((removeName) => {
-        partial[removeName] = undefined;
+        updates[removeName] = undefined;
         delete nodeRefFromName[removeName];
       });
 
       // Remove node from parent's children list.
       const parentName = name.split("/").slice(0, -1).join("/");
-      const parentNode = state[parentName];
+      const parentNode = store.get(parentName);
       if (parentNode) {
-        partial[parentName] = {
+        updates[parentName] = {
           ...parentNode,
           children: parentNode.children.filter(
             (child_name) => child_name !== name,
           ),
         };
       }
-      store.setState(partial);
+      store.set(updates);
     },
 
     updateSceneNodeProps: (name: string, updates: { [key: string]: any }) => {
-      const node = store.getState()[name];
+      const node = store.get(name);
       if (node === undefined) {
         console.error(
           `Attempted to update props of non-existent node ${name}`,
@@ -150,7 +147,7 @@ function createSceneTreeActions(
         );
         return {};
       }
-      store.setState({
+      store.set({
         [name]: {
           ...node,
           message: {
@@ -165,7 +162,7 @@ function createSceneTreeActions(
     },
 
     resetScene: () => {
-      store.setState(
+      store.setAll(
         {
           "": rootNodeTemplate,
           "/WorldAxes": worldAxesNodeTemplate,
@@ -175,7 +172,7 @@ function createSceneTreeActions(
     },
 
     updateNodeAttributes: (name: string, attributes: Partial<SceneNode>) => {
-      const node = store.getState()[name];
+      const node = store.get(name);
       if (node === undefined) {
         console.log(
           `(OK) Attempted to update attributes of non-existent node ${name}`,
@@ -195,7 +192,7 @@ function createSceneTreeActions(
         }
       }
       if (hasChanged) {
-        store.setState({
+        store.set({
           [name]: {
             ...node,
             ...attributes,
@@ -210,13 +207,12 @@ function createSceneTreeActions(
     },
 
     computeEffectiveVisibility: (name: string) => {
-      const state = store.getState();
-      const node = state[name];
+      const node = store.get(name);
       if (!node) return;
 
       // Compute parent's effective visibility.
       const parentName = name.split("/").slice(0, -1).join("/");
-      const parentNode = state[parentName];
+      const parentNode = store.get(parentName);
       const parentEffective =
         parentName === ""
           ? true // Root is always effectively visible
@@ -227,7 +223,7 @@ function createSceneTreeActions(
       const effective = parentEffective && nodeVisibility;
 
       // Update this node and all descendants.
-      const updates: SceneTreeState = {
+      const updates: Record<string, SceneNode> = {
         [name]: {
           ...node,
           effectiveVisibility: effective,
@@ -236,11 +232,11 @@ function createSceneTreeActions(
 
       // Recursively update children.
       function updateChildren(nodeName: string, parentEffective: boolean) {
-        const n = state[nodeName];
+        const n = store.get(nodeName);
         if (!n?.children) return;
 
         n.children.forEach((childName) => {
-          const child = state[childName];
+          const child = store.get(childName);
           if (!child) return;
 
           const childVisibility =
@@ -256,7 +252,7 @@ function createSceneTreeActions(
         });
       }
       updateChildren(name, effective);
-      store.setState(updates);
+      store.set(updates);
     },
   };
 
@@ -269,10 +265,10 @@ export function useSceneTreeState(nodeRefFromName: {
   [name: string]: undefined | THREE.Object3D;
 }) {
   return React.useState(() => {
-    const store = create<SceneTreeState>(() => ({
+    const store = createKeyedStore<SceneNode>({
       "": rootNodeTemplate,
       "/WorldAxes": worldAxesNodeTemplate,
-    }));
+    });
 
     const actions = createSceneTreeActions(store, nodeRefFromName);
 

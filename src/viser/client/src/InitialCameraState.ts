@@ -28,7 +28,7 @@
  */
 
 import React from "react";
-import { create } from "zustand";
+import { createStore, Store } from "./store";
 
 /** Source of a camera property value. Priority: default < message < url. */
 export type CameraPropertySource = "default" | "message" | "url";
@@ -67,10 +67,7 @@ export interface InitialCameraActions {
   setFov: (value: number, source: CameraPropertySource) => boolean;
   setNear: (value: number, source: CameraPropertySource) => boolean;
   setFar: (value: number, source: CameraPropertySource) => boolean;
-
 }
-
-export type UseInitialCamera = ReturnType<typeof useInitialCameraState>;
 
 /** Priority ordering for camera property sources. */
 const SOURCE_PRIORITY: Record<CameraPropertySource, number> = {
@@ -96,13 +93,15 @@ export interface InitialCameraConfig {
   far: number | null;
 }
 
+export type UseInitialCamera = ReturnType<typeof useInitialCameraState>;
+
 /**
  * Create the initial camera state store.
  * @param urlParams - Camera properties parsed from URL parameters (null if not provided)
  */
 export function useInitialCameraState(urlParams: InitialCameraConfig) {
-  return React.useState(() =>
-    create<InitialCameraState & InitialCameraActions>((set, get) => ({
+  return React.useState(() => {
+    const store = createStore<InitialCameraState>({
       // Initialize with URL params if available, otherwise defaults.
       position: urlParams.position
         ? { value: urlParams.position, source: "url" as const }
@@ -126,44 +125,47 @@ export function useInitialCameraState(urlParams: InitialCameraConfig) {
       far: urlParams.far
         ? { value: urlParams.far, source: "url" as const }
         : { value: 1000.0, source: "default" as const },
+    });
 
+    const actions: InitialCameraActions = {
       setPosition: (value, source) => {
-        const current = get().position;
+        const current = store.get().position;
         if (!canOverride(current.source, source)) return false;
-        set({ position: { value, source } });
+        store.set({ position: { value, source } });
         return true;
       },
       setLookAt: (value, source) => {
-        const current = get().lookAt;
+        const current = store.get().lookAt;
         if (!canOverride(current.source, source)) return false;
-        set({ lookAt: { value, source } });
+        store.set({ lookAt: { value, source } });
         return true;
       },
       setUp: (value, source) => {
-        const current = get().up;
+        const current = store.get().up;
         if (!canOverride(current.source, source)) return false;
-        set({ up: { value, source } });
+        store.set({ up: { value, source } });
         return true;
       },
       setFov: (value, source) => {
-        const current = get().fov;
+        const current = store.get().fov;
         if (!canOverride(current.source, source)) return false;
-        set({ fov: { value, source } });
+        store.set({ fov: { value, source } });
         return true;
       },
       setNear: (value, source) => {
-        const current = get().near;
+        const current = store.get().near;
         if (!canOverride(current.source, source)) return false;
-        set({ near: { value, source } });
+        store.set({ near: { value, source } });
         return true;
       },
       setFar: (value, source) => {
-        const current = get().far;
+        const current = store.get().far;
         if (!canOverride(current.source, source)) return false;
-        set({ far: { value, source } });
+        store.set({ far: { value, source } });
         return true;
       },
+    };
 
-    })),
-  )[0];
+    return { store, actions };
+  })[0];
 }

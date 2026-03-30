@@ -301,8 +301,8 @@ export function SynchronizedCameraControls() {
   );
 
   viewerMutable.resetCameraPose = (animate: boolean) => {
-    // Read initial camera state from the Zustand store.
-    const initialCameraState = viewer.useInitialCamera.getState();
+    // Read initial camera state from the store.
+    const initialCameraState = viewer.useInitialCamera.get();
     const hasNonDefault =
       initialCameraState.position.source !== "default" ||
       initialCameraState.lookAt.source !== "default" ||
@@ -456,9 +456,9 @@ export function SynchronizedCameraControls() {
       // Reset position, orientation, and up direction.
       viewerMutable.resetCameraPose!(false);
 
-      // Read initial camera state from the Zustand store.
+      // Read initial camera state from the store.
       // This contains defaults, URL params, or will be updated by server messages.
-      const initialCameraState = viewer.useInitialCamera.getState();
+      const initialCameraState = viewer.useInitialCamera.get();
 
       // Apply fov/near/far from the store.
       // tan(fov / 2.0) = 0.5 * film height / focal length
@@ -623,7 +623,7 @@ function InitialCameraSetter() {
   const posSource = viewer.useInitialCamera((s) => s.position.source);
   const lookAtSource = viewer.useInitialCamera((s) => s.lookAt.source);
   const upSource = viewer.useInitialCamera((s) => s.up.source);
-  const rootWxyz = viewer.useSceneTree((s) => s[""]!.wxyz);
+  const rootWxyz = viewer.useSceneTree("", (node) => node!.wxyz);
 
   const hasNonDefault =
     posSource !== "default" ||
