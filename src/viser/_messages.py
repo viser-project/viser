@@ -300,6 +300,8 @@ class GlbProps:
     """Whether to receive shadows. If True, receives shadows normally. If
     False, no shadows. If a float (0-1), shadows are rendered with a fixed
     opacity regardless of lighting conditions. """
+    opacity: Optional[float] = None
+    """Opacity of the mesh. None means opaque."""
     scale: Union[float, Tuple[float, float, float]] = 1.0
     """A scale for resizing the GLB asset. A single float for uniform scaling
     or a tuple of (x, y, z) for per-axis scaling."""
@@ -934,6 +936,10 @@ class BatchedGlbProps(_BatchedMeshExtraProps):
     """Whether or not to cast shadows."""
     receive_shadow: bool
     """Whether or not to receive shadows."""
+    opacity: Optional[float] = None
+    """Opacity of the mesh. None means opaque."""
+    batched_opacities: Optional[npt.NDArray[np.float32]] = None
+    """Per-instance opacity multipliers, shape (N,). Multiplied with global opacity."""
     scale: Union[float, Tuple[float, float, float]] = 1.0
     """Scale of the batched GLB. A single float for uniform scaling or a
     tuple of (x, y, z) for per-axis scaling."""

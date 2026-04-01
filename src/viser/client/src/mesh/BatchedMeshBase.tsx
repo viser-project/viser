@@ -107,6 +107,20 @@ function createLODs(
   return { geometries, materials };
 }
 
+/** Collect all materials from a mesh and its LOD levels. */
+function getAllMaterials(mesh: InstancedMesh2): THREE.Material[] {
+  const out: THREE.Material[] = [];
+  const push = (m: THREE.Material | THREE.Material[]) => {
+    if (Array.isArray(m)) out.push(...m);
+    else out.push(m);
+  };
+  push(mesh.material);
+  if (mesh.LODinfo && mesh.LODinfo.objects) {
+    mesh.LODinfo.objects.forEach((obj) => push(obj.material));
+  }
+  return out;
+}
+
 /**
  * Shared base component for batched mesh rendering
  *
@@ -354,9 +368,22 @@ export const BatchedMeshBase = React.forwardRef<
     }
   }, [props.batched_colors, mesh]);
 
+  // Apply global opacity to the material when no per-instance opacities are set.
+  React.useEffect(() => {
+    if (mesh === null || props.batched_opacities !== null) return;
+
+    const opacity = props.opacity ?? 1.0;
+    const transparent = opacity < 1.0;
+
+    for (const mat of getAllMaterials(mesh)) {
+      mat.opacity = opacity;
+      mat.transparent = transparent;
+      mat.depthWrite = !transparent;
+      mat.needsUpdate = true;
+    }
+  }, [props.opacity, props.batched_opacities, mesh]);
+
   // Update per-instance opacity when batched_opacities is provided.
-  // When only global opacity is set (no batched_opacities), it's handled
-  // by the material's opacity property directly - more efficient.
   React.useEffect(() => {
     if (mesh === null || props.batched_opacities === null) return;
 
@@ -368,6 +395,12 @@ export const BatchedMeshBase = React.forwardRef<
         `Invalid batched_opacities length: ${props.batched_opacities.byteLength}, expected ${expectedBytes}`,
       );
       return;
+    }
+
+    for (const mat of getAllMaterials(mesh)) {
+      mat.transparent = true;
+      mat.depthWrite = false;
+      mat.needsUpdate = true;
     }
 
     const opacityView = new DataView(

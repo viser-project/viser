@@ -33,6 +33,7 @@ export interface GlbMessage {
     glb_data: Uint8Array<ArrayBuffer>;
     cast_shadow: boolean;
     receive_shadow: boolean | number;
+    opacity: number | null;
     scale: number | [number, number, number];
   };
 }
@@ -387,6 +388,8 @@ export interface BatchedGlbMessage {
     glb_data: Uint8Array<ArrayBuffer>;
     cast_shadow: boolean;
     receive_shadow: boolean;
+    opacity: number | null;
+    batched_opacities: Float32Array | null;
     scale: number | [number, number, number];
   };
 }

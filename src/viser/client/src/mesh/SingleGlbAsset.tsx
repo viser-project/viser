@@ -33,6 +33,28 @@ export const SingleGlbAsset = React.forwardRef<
     });
   }, [gltf, message.props.cast_shadow, message.props.receive_shadow]);
 
+  // Apply opacity to all materials in the GLB.
+  React.useEffect(() => {
+    if (!gltf) return;
+
+    const opacity = message.props.opacity ?? 1.0;
+    const transparent = opacity < 1.0;
+
+    gltf.scene.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        const materials = Array.isArray(obj.material)
+          ? obj.material
+          : [obj.material];
+        for (const mat of materials) {
+          mat.opacity = opacity;
+          mat.transparent = transparent;
+          mat.depthWrite = !transparent;
+          mat.needsUpdate = true;
+        }
+      }
+    });
+  }, [gltf, message.props.opacity]);
+
   // Update animations on each frame if mixer exists.
   useFrame((_, delta: number) => {
     mixerRef.current?.update(delta);
