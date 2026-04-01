@@ -673,6 +673,7 @@ class SceneApi:
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
+        opacity: float | None = None,
         cast_shadow: bool = True,
         receive_shadow: bool | float = True,
     ) -> GlbHandle:
@@ -693,6 +694,7 @@ class SceneApi:
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
             position: Translation to parent frame from local frame (t_pl).
             visible: Whether or not this scene node is initially visible.
+            opacity: Opacity of the mesh. None means opaque.
             cast_shadow: Whether this node should cast shadows.
             receive_shadow: Whether this node should receive shadows. If True,
                 receives shadows normally. If False, no shadows. If a float
@@ -708,6 +710,7 @@ class SceneApi:
                 glb_data=glb_data,
                 cast_shadow=cast_shadow,
                 receive_shadow=receive_shadow,
+                opacity=opacity,
                 scale=scale,
             ),
         )
@@ -1660,6 +1663,7 @@ class SceneApi:
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
+        opacity: float | None = None,
         cast_shadow: bool = True,
         receive_shadow: bool | float = True,
     ) -> GlbHandle:
@@ -1674,6 +1678,7 @@ class SceneApi:
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
             position: Translation to parent frame from local frame (t_pl).
             visible: Whether or not this scene node is initially visible.
+            opacity: Opacity of the mesh. None means opaque.
             cast_shadow: Whether this mesh should cast shadows.
             receive_shadow: Whether this mesh should receive shadows. If True,
                 receives shadows normally. If False, no shadows. If a float
@@ -1694,6 +1699,7 @@ class SceneApi:
                 wxyz=wxyz,
                 position=position,
                 visible=visible,
+                opacity=opacity,
                 cast_shadow=cast_shadow,
                 receive_shadow=receive_shadow,
             )
@@ -1827,7 +1833,9 @@ class SceneApi:
         batched_positions: tuple[tuple[float, float, float], ...] | np.ndarray,
         *,
         batched_scales: tuple[float, ...] | np.ndarray | None = None,
+        batched_opacities: tuple[float, ...] | np.ndarray | None = None,
         lod: Literal["auto", "off"] | tuple[tuple[float, float], ...] = "auto",
+        opacity: float | None = None,
         cast_shadow: bool = True,
         receive_shadow: bool = True,
         scale: float | tuple[float, float, float] = 1.0,
@@ -1851,7 +1859,11 @@ class SceneApi:
             batched_wxyzs: Float array of shape (N, 4) for orientations.
             batched_positions: Float array of shape (N, 3) for positions.
             batched_scales: Float array of shape (N,) for uniform scales or (N,3) for per-axis (XYZ) scales. None means scale of 1.0.
+            batched_opacities: Per-instance opacity multipliers, shape (N,). Each value is
+                multiplied with the global opacity parameter. None means all instances use
+                the global opacity.
             lod: LOD settings, either "off", "auto", or a tuple of (distance, ratio) pairs.
+            opacity: Opacity of the meshes. None means opaque.
             cast_shadow: Whether these meshes should cast shadows.
             receive_shadow: Whether these meshes should receive shadows.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
@@ -1872,6 +1884,10 @@ class SceneApi:
             batched_scales = np.asarray(batched_scales).astype(np.float32)
             assert batched_scales.shape in ((num_instances,), (num_instances, 3))
 
+        if batched_opacities is not None:
+            batched_opacities = np.asarray(batched_opacities).astype(np.float32)
+            assert batched_opacities.shape == (num_instances,)
+
         with io.BytesIO() as data_buffer:
             mesh.export(data_buffer, file_type="glb")
             glb_data = data_buffer.getvalue()
@@ -1883,6 +1899,8 @@ class SceneApi:
                     batched_positions=batched_positions.astype(np.float32),
                     batched_scales=batched_scales,
                     lod=lod,
+                    opacity=opacity,
+                    batched_opacities=batched_opacities,
                     cast_shadow=cast_shadow,
                     receive_shadow=receive_shadow,
                     scale=scale,
@@ -1899,7 +1917,9 @@ class SceneApi:
         batched_positions: tuple[tuple[float, float, float], ...] | np.ndarray,
         *,
         batched_scales: tuple[float, ...] | np.ndarray | None = None,
+        batched_opacities: tuple[float, ...] | np.ndarray | None = None,
         lod: Literal["auto", "off"] | tuple[tuple[float, float], ...] = "auto",
+        opacity: float | None = None,
         cast_shadow: bool = True,
         receive_shadow: bool = True,
         scale: float | tuple[float, float, float] = 1.0,
@@ -1923,7 +1943,11 @@ class SceneApi:
             batched_wxyzs: Float array of shape (N, 4) for orientations.
             batched_positions: Float array of shape (N, 3) for positions.
             batched_scales: Float array of shape (N,) for uniform scales or (N,3) for per-axis (XYZ) scales. None means scale of 1.0.
+            batched_opacities: Per-instance opacity multipliers, shape (N,). Each value is
+                multiplied with the global opacity parameter. None means all instances use
+                the global opacity.
             lod: LOD settings, either "off", "auto", or a tuple of (distance, ratio) pairs.
+            opacity: Opacity of the meshes. None means opaque.
             cast_shadow: Whether these GLB assets should cast shadows.
             receive_shadow: Whether these GLB assets should receive shadows.
             scale: Scale of the batched GLB. A single float for uniform
@@ -1946,6 +1970,10 @@ class SceneApi:
             batched_scales = np.asarray(batched_scales).astype(np.float32)
             assert batched_scales.shape in ((num_instances,), (num_instances, 3))
 
+        if batched_opacities is not None:
+            batched_opacities = np.asarray(batched_opacities).astype(np.float32)
+            assert batched_opacities.shape == (num_instances,)
+
         message = _messages.BatchedGlbMessage(
             name=name,
             props=_messages.BatchedGlbProps(
@@ -1954,6 +1982,8 @@ class SceneApi:
                 batched_positions=batched_positions.astype(np.float32),
                 batched_scales=batched_scales,
                 lod=lod,
+                opacity=opacity,
+                batched_opacities=batched_opacities,
                 cast_shadow=cast_shadow,
                 receive_shadow=receive_shadow,
                 scale=scale,
