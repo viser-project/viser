@@ -423,19 +423,21 @@ export const BatchedLabelManager: React.FC<{
                 bg.quaternion.copy(billboardQuaternion);
               }
             } else {
-              // Hide background by scaling to 0 (InstancedMesh doesn't respect visible property).
-              bg.scale.set(0, 0, 0);
+              // Hide background by moving far away. We can't use scale=0
+              // because drei's Instances decompose/compose cycle produces NaN
+              // from zero-scale matrices (1/0 in decompose -> NaN quaternion).
+              bg.position.set(1e10, 1e10, 1e10);
             }
           }
         } else {
           text.fillOpacity = 0.0;
 
-          // Hide background when text is hidden (scale to 0 for InstancedMesh).
+          // Hide background by moving far away (see comment above re: scale=0 NaN).
           const backgroundRef = backgroundInstanceRefsRef.current.get(
             textInfo.backgroundInstanceId,
           );
           if (backgroundRef?.current) {
-            backgroundRef.current.scale.set(0, 0, 0);
+            backgroundRef.current.position.set(1e10, 1e10, 1e10);
           }
         }
 
