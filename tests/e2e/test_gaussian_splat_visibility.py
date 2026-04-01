@@ -14,7 +14,11 @@ from playwright.sync_api import Page
 
 import viser
 
-from .utils import wait_for_scene_node, wait_for_scene_node_hidden, wait_for_scene_node_visible
+from .utils import (
+    wait_for_scene_node,
+    wait_for_scene_node_hidden,
+    wait_for_scene_node_visible,
+)
 
 
 def _count_colored_pixels(page: Page, min_r: int = 200, max_gb: int = 100) -> int:
@@ -22,7 +26,9 @@ def _count_colored_pixels(page: Page, min_r: int = 200, max_gb: int = 100) -> in
     canvas = page.locator("canvas").first
     screenshot = canvas.screenshot()
     img = np.array(Image.open(BytesIO(screenshot)).convert("RGB"))
-    red_mask = (img[:, :, 0] > min_r) & (img[:, :, 1] < max_gb) & (img[:, :, 2] < max_gb)
+    red_mask = (
+        (img[:, :, 0] > min_r) & (img[:, :, 1] < max_gb) & (img[:, :, 2] < max_gb)
+    )
     return int(red_mask.sum())
 
 
@@ -38,9 +44,7 @@ def test_gaussian_splat_visibility_pixel_check(
         centers=np.zeros((num_gaussians, 3), dtype=np.float32),
         rgbs=np.tile(np.array([[1.0, 0.0, 0.0]], dtype=np.float32), (num_gaussians, 1)),
         opacities=np.ones((num_gaussians, 1), dtype=np.float32),
-        covariances=np.tile(
-            np.eye(3, dtype=np.float32) * 1.0, (num_gaussians, 1, 1)
-        ),
+        covariances=np.tile(np.eye(3, dtype=np.float32) * 1.0, (num_gaussians, 1, 1)),
     )
 
     # Wait for node and give time for WASM init + sort + rendering.

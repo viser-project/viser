@@ -21,9 +21,8 @@ export default function FolderComponent({
   );
   const guiContext = React.useContext(GuiComponentContext)!;
   const isEmpty = guiIdSet === undefined || Object.keys(guiIdSet).length === 0;
-  const nextGuiType = viewer.useGuiConfig(
-    nextGuiUuid ?? "",
-    (conf) => (nextGuiUuid == null ? null : conf?.type ?? null),
+  const nextGuiType = viewer.useGuiConfig(nextGuiUuid ?? "", (conf) =>
+    nextGuiUuid == null ? null : (conf?.type ?? null),
   );
 
   const ToggleIcon = opened ? IconChevronUp : IconChevronDown;

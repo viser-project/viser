@@ -443,8 +443,7 @@ function SplatRendererImpl() {
           ? viewer.useSceneTree.get(sceneNodeName)
           : undefined;
         const visibleNow =
-          node.parent !== null &&
-          (sceneNode?.effectiveVisibility ?? true);
+          node.parent !== null && (sceneNode?.effectiveVisibility ?? true);
         groupVisibles.push(visibleNow);
         if (prevVisibles[groupIndex] !== visibleNow) {
           prevVisibles[groupIndex] = visibleNow;
@@ -522,7 +521,14 @@ function SplatRendererImpl() {
         params.far = far;
       }
     },
-    [groupBufferFromId, nodeRefFromId, sceneNodeNameFromId, viewer, tmpT_camera_group, postToWorker],
+    [
+      groupBufferFromId,
+      nodeRefFromId,
+      sceneNodeNameFromId,
+      viewer,
+      tmpT_camera_group,
+      postToWorker,
+    ],
   );
   splatContext.updateCamera.current = updateCamera;
 

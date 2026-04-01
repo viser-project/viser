@@ -291,9 +291,9 @@ interface SplatActions {
 /**Hook for creating global splat state.*/
 export function useGaussianSplatStore() {
   const nodeRefFromId = React.useRef({});
-  const sceneNodeNameFromId = React.useRef<{ [id: string]: string | undefined }>(
-    {},
-  );
+  const sceneNodeNameFromId = React.useRef<{
+    [id: string]: string | undefined;
+  }>({});
   return React.useState(() => {
     const store = createStore<SplatState>({
       groupBufferFromId: {},
