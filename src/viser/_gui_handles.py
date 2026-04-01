@@ -20,7 +20,6 @@ from typing import (
     overload,
 )
 
-import imageio.v3 as iio
 import numpy as np
 from typing_extensions import Protocol, override
 
@@ -193,15 +192,25 @@ class _GuiInputHandle(
             assert len(value.shape) <= 1, f"{value.shape} should be at most 1D!"
             value = tuple(map(float, value))  # type: ignore
 
+        # Convert to internal type early so we can compare.
+        value = type(self._impl.value)(value)  # type: ignore
+
+        # Skip if value hasn't changed (but always process buttons).
+        if not self._impl.is_button:
+            try:
+                if self._impl.value == value:
+                    return
+            except (TypeError, ValueError):
+                pass
+
         # Send to client, except for buttons.
         if not self._impl.is_button:
             self._impl.gui_api._websock_interface.queue_message(
                 GuiUpdateMessage(self._impl.uuid, {"value": value})
             )
 
-        # Set internal state. We automatically convert numpy arrays to the expected
-        # internal type. (eg 1D arrays to tuples)
-        self._impl.value = type(self._impl.value)(value)  # type: ignore
+        # Set internal state.
+        self._impl.value = value  # type: ignore
         self._impl.update_timestamp = time.time()
 
         # Call update callbacks.
@@ -848,6 +857,8 @@ def _get_data_url(url: str, image_root: Path | None) -> str:
     if image_root is None:
         image_root = Path(__file__).parent
     try:
+        import imageio.v3 as iio
+
         image = iio.imread(image_root / url)
         _, binary = _encode_image_binary(image, "png")
         url = base64.b64encode(binary).decode("utf-8")

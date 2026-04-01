@@ -44,6 +44,7 @@ import {
   useGaussianSplatStore,
   type GaussianMeshProps,
 } from "./GaussianSplatsHelpers";
+import { ViewerContext } from "../ViewerContext";
 
 /**Provider for creating splat rendering context.*/
 export function SplatRenderContext({
@@ -69,13 +70,17 @@ export const SplatObject = React.forwardRef<
   THREE.Group,
   {
     buffer: Uint32Array;
+    sceneNodeName?: string;
     children?: React.ReactNode;
   }
->(function SplatObject({ buffer, children }, ref) {
+>(function SplatObject({ buffer, sceneNodeName, children }, ref) {
   const splatContext = React.useContext(GaussianSplatsContext)!;
   const { setBuffer, removeBuffer } = splatContext.gaussianSplatState.actions;
   const nodeRefFromId = splatContext.gaussianSplatState.store(
     (state) => state.nodeRefFromId,
+  );
+  const sceneNodeNameFromId = splatContext.gaussianSplatState.store(
+    (state) => state.sceneNodeNameFromId,
   );
   // Use stable ID per component instance (not dependent on buffer).
   const name = React.useMemo(() => uuidv4(), []);
@@ -85,8 +90,9 @@ export const SplatObject = React.forwardRef<
     return () => {
       removeBuffer(name);
       delete nodeRefFromId.current[name];
+      delete sceneNodeNameFromId.current[name];
     };
-  }, [name, removeBuffer, nodeRefFromId]);
+  }, [name, removeBuffer, nodeRefFromId, sceneNodeNameFromId]);
 
   // Update buffer when it changes.
   React.useEffect(() => {
@@ -107,6 +113,9 @@ export const SplatObject = React.forwardRef<
           }
         }
         nodeRefFromId.current[name] = obj;
+        if (sceneNodeName !== undefined) {
+          sceneNodeNameFromId.current[name] = sceneNodeName;
+        }
       }}
     >
       {children}
@@ -130,11 +139,15 @@ function SplatRenderer() {
 
 function SplatRendererImpl() {
   const splatContext = React.useContext(GaussianSplatsContext)!;
+  const viewer = React.useContext(ViewerContext)!;
   const groupBufferFromId = splatContext.gaussianSplatState.store(
     (state) => state.groupBufferFromId,
   );
   const nodeRefFromId = splatContext.gaussianSplatState.store(
     (state) => state.nodeRefFromId,
+  );
+  const sceneNodeNameFromId = splatContext.gaussianSplatState.store(
+    (state) => state.sceneNodeNameFromId,
   );
   const maxTextureSize = useThree((state) => state.gl).capabilities
     .maxTextureSize;
@@ -155,7 +168,12 @@ function SplatRendererImpl() {
   const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
 
   // Consolidate Gaussian groups into a single buffer.
-  const merged = mergeGaussianGroups(groupBufferFromId);
+  // Memoized on groupBufferFromId reference -- zustand returns the same
+  // reference when state hasn't changed, so this avoids re-merging every render.
+  const merged = React.useMemo(
+    () => mergeGaussianGroups(groupBufferFromId),
+    [groupBufferFromId],
+  );
 
   // Helper function to post messages to worker.
   const postToWorker = React.useCallback((message: SorterWorkerIncoming) => {
@@ -164,12 +182,10 @@ function SplatRendererImpl() {
     }
   }, []);
 
-  // Check if buffer content has changed.
+  // Check if buffer content has changed (reference equality, since merged is memoized).
   const bufferChanged =
     !prevMergedRef.current ||
-    merged.gaussianBuffer.length !==
-      prevMergedRef.current.gaussianBuffer.length ||
-    !arraysEqual(merged.gaussianBuffer, prevMergedRef.current.gaussianBuffer);
+    merged.gaussianBuffer !== prevMergedRef.current.gaussianBuffer;
 
   // Check if number of Gaussians or groups changed (requires texture resize).
   const sizeChanged =
@@ -186,6 +202,20 @@ function SplatRendererImpl() {
       maxTextureSize,
     );
 
+    // Show splats immediately with identity sort order. This makes splats
+    // visible before the WASM sorter finishes compiling + first sort, at the
+    // cost of incorrect back-to-front ordering until the sort completes.
+    const numGaussians = meshPropsRef.current.numGaussians;
+    const identityIndices = meshPropsRef.current.sortedIndexAttribute
+      .array as Uint32Array;
+    for (let i = 0; i < numGaussians; i++) {
+      identityIndices[i] = i;
+    }
+    meshPropsRef.current.sortedIndexAttribute.needsUpdate = true;
+    meshPropsRef.current.material.uniforms.numGaussians.value = numGaussians;
+    meshPropsRef.current.textureBuffer.needsUpdate = true;
+    initializedBufferTextureRef.current = true;
+
     // Create sorting worker.
     sortWorkerRef.current = new SplatSortWorker();
     sortWorkerRef.current.onmessage = (e) => {
@@ -195,14 +225,6 @@ function SplatRendererImpl() {
         if (sortedIndices.length === meshPropsRef.current.numGaussians) {
           meshPropsRef.current.sortedIndexAttribute.set(sortedIndices);
           meshPropsRef.current.sortedIndexAttribute.needsUpdate = true;
-        }
-
-        // Trigger initial render.
-        if (!initializedBufferTextureRef.current) {
-          meshPropsRef.current.material.uniforms.numGaussians.value =
-            meshPropsRef.current.numGaussians;
-          meshPropsRef.current.textureBuffer.needsUpdate = true;
-          initializedBufferTextureRef.current = true;
         }
       }
     };
@@ -252,9 +274,8 @@ function SplatRendererImpl() {
       // Same size - update texture data in place.
       const textureData = meshPropsRef.current.textureBuffer.image
         .data as Uint32Array;
-      const bufferPadded = new Uint32Array(textureData.length);
-      bufferPadded.set(merged.gaussianBuffer);
-      textureData.set(bufferPadded);
+      textureData.fill(0);
+      textureData.set(merged.gaussianBuffer);
       meshPropsRef.current.textureBuffer.needsUpdate = true;
 
       // Update worker with new buffer.
@@ -415,9 +436,16 @@ function SplatRendererImpl() {
           groupIndex * 12,
         );
 
-        // Determine visibility.
-        const visibleNow = node.visible && node.parent !== null;
-        groupVisibles.push(visibleNow && prevVisibles[groupIndex] === true);
+        // Determine visibility from the scene tree's precomputed
+        // effectiveVisibility, which accounts for the full parent chain.
+        const sceneNodeName = sceneNodeNameFromId.current[name];
+        const sceneNode = sceneNodeName
+          ? viewer.useSceneTree.get(sceneNodeName)
+          : undefined;
+        const visibleNow =
+          node.parent !== null &&
+          (sceneNode?.effectiveVisibility ?? true);
+        groupVisibles.push(visibleNow);
         if (prevVisibles[groupIndex] !== visibleNow) {
           prevVisibles[groupIndex] = visibleNow;
           visibilitiesChanged = true;
@@ -494,7 +522,7 @@ function SplatRendererImpl() {
         params.far = far;
       }
     },
-    [groupBufferFromId, nodeRefFromId, tmpT_camera_group, postToWorker],
+    [groupBufferFromId, nodeRefFromId, sceneNodeNameFromId, viewer, tmpT_camera_group, postToWorker],
   );
   splatContext.updateCamera.current = updateCamera;
 
@@ -532,15 +560,6 @@ function SplatRendererImpl() {
       renderOrder={10000.0 /*Generally, we want to render last.*/}
     />
   );
-}
-
-/** Fast comparison of two Uint32Arrays. */
-function arraysEqual(a: Uint32Array, b: Uint32Array): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
 }
 
 /**Consolidate groups of Gaussians into a single buffer, to make it possible

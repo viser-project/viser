@@ -17,6 +17,7 @@ will start to sputter on most machines:
 
 .. code-block:: python
 
+    import numpy as np
     import viser
 
     server = viser.ViserServer()

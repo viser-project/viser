@@ -564,7 +564,10 @@ function createObjectFactory(
         makeObject: (ref, children) => (
           <group ref={ref}>
             <group scale={normalizeScale(message.props.scale)}>
-              <SplatObject buffer={message.props.buffer} />
+              <SplatObject
+                buffer={message.props.buffer}
+                sceneNodeName={message.name}
+              />
             </group>
             {children}
           </group>

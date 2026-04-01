@@ -278,6 +278,9 @@ interface SplatState {
   nodeRefFromId: React.MutableRefObject<{
     [name: string]: undefined | Object3D;
   }>;
+  sceneNodeNameFromId: React.MutableRefObject<{
+    [id: string]: string | undefined;
+  }>;
 }
 
 interface SplatActions {
@@ -288,10 +291,14 @@ interface SplatActions {
 /**Hook for creating global splat state.*/
 export function useGaussianSplatStore() {
   const nodeRefFromId = React.useRef({});
+  const sceneNodeNameFromId = React.useRef<{ [id: string]: string | undefined }>(
+    {},
+  );
   return React.useState(() => {
     const store = createStore<SplatState>({
       groupBufferFromId: {},
       nodeRefFromId: nodeRefFromId,
+      sceneNodeNameFromId: sceneNodeNameFromId,
     });
 
     const actions: SplatActions = {

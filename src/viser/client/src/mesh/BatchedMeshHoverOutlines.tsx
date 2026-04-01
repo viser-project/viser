@@ -10,11 +10,11 @@ import { OutlinesMaterial } from "../OutlinesMaterial";
 interface BatchedMeshHoverOutlinesProps {
   geometry: THREE.BufferGeometry;
   /** Float32 position values (xyz) */
-  batched_positions: Float32Array | Uint8Array;
+  batched_positions: Float32Array;
   /** Float32 quaternion values (wxyz) */
-  batched_wxyzs: Float32Array | Uint8Array;
+  batched_wxyzs: Float32Array;
   /** Float32 scale values (uniform or per-axis XYZ) */
-  batched_scales: Float32Array | Uint8Array | null;
+  batched_scales: Float32Array | null;
   meshTransform?: {
     position: THREE.Vector3;
     rotation: THREE.Quaternion;
@@ -128,68 +128,41 @@ export const BatchedMeshHoverOutlines: React.FC<
         ? computeBatchIndexFromInstanceIndex(hoveredInstanceId)
         : hoveredInstanceId; // Default is identity mapping
 
-      // Create DataViews to read float values.
-      const positionsView = new DataView(
-        batched_positions.buffer,
-        batched_positions.byteOffset,
-        batched_positions.byteLength,
-      );
-
-      const wxyzsView = new DataView(
-        batched_wxyzs.buffer,
-        batched_wxyzs.byteOffset,
-        batched_wxyzs.byteLength,
-      );
-
-      const scalesView = batched_scales
-        ? new DataView(
-            batched_scales.buffer,
-            batched_scales.byteOffset,
-            batched_scales.byteLength,
-          )
-        : null;
-
-      // Only show outline if the batch index is valid (check bytes per position = 3 floats * 4 bytes)
-      if (batchIndex >= 0 && batchIndex * 12 < batched_positions.byteLength) {
-        // Calculate byte offsets.
+      // Only show outline if the batch index is valid.
+      if (batchIndex >= 0 && batchIndex * 3 < batched_positions.length) {
         // Use modulo as a defensive check to prevent out-of-bounds reads.
-        const posOffset = (batchIndex * 3 * 4) % batched_positions.byteLength;
-        const wxyzOffset = (batchIndex * 4 * 4) % batched_wxyzs.byteLength;
+        const posIdx = (batchIndex * 3) % batched_positions.length;
+        const wxyzIdx = (batchIndex * 4) % batched_wxyzs.length;
 
         // Position the outline at the hovered instance.
         outlineRef.current.position.set(
-          positionsView.getFloat32(posOffset, true), // x
-          positionsView.getFloat32(posOffset + 4, true), // y
-          positionsView.getFloat32(posOffset + 8, true), // z
+          batched_positions[posIdx], // x
+          batched_positions[posIdx + 1], // y
+          batched_positions[posIdx + 2], // z
         );
 
-        // Set rotation to match the hovered instance.
+        // Set rotation to match the hovered instance (wxyz -> xyzw).
         outlineRef.current.quaternion.set(
-          wxyzsView.getFloat32(wxyzOffset + 4, true), // x
-          wxyzsView.getFloat32(wxyzOffset + 8, true), // y
-          wxyzsView.getFloat32(wxyzOffset + 12, true), // z
-          wxyzsView.getFloat32(wxyzOffset, true), // w
+          batched_wxyzs[wxyzIdx + 1], // x
+          batched_wxyzs[wxyzIdx + 2], // y
+          batched_wxyzs[wxyzIdx + 3], // z
+          batched_wxyzs[wxyzIdx], // w
         );
 
-        // Set scale to match the hovered instance
-        if (scalesView && batched_scales) {
+        // Set scale to match the hovered instance.
+        if (batched_scales !== null) {
           // Check if we have per-axis scaling (N,3) or uniform scaling (N,).
-          if (
-            batched_scales.byteLength ===
-            (batched_wxyzs.byteLength / 4) * 3
-          ) {
-            // Per-axis scaling: read 3 floats.
-            const scaleOffset =
-              (batchIndex * 3 * 4) % batched_scales.byteLength;
+          const perAxisScaling =
+            batched_scales.length === (batched_wxyzs.length / 4) * 3;
+          if (perAxisScaling) {
+            const scaleIdx = (batchIndex * 3) % batched_scales.length;
             outlineRef.current.scale.set(
-              scalesView.getFloat32(scaleOffset, true), // x scale
-              scalesView.getFloat32(scaleOffset + 4, true), // y scale
-              scalesView.getFloat32(scaleOffset + 8, true), // z scale
+              batched_scales[scaleIdx], // x scale
+              batched_scales[scaleIdx + 1], // y scale
+              batched_scales[scaleIdx + 2], // z scale
             );
           } else {
-            // Uniform scaling: read 1 float and apply to all axes.
-            const scaleOffset = (batchIndex * 4) % batched_scales.byteLength;
-            const scale = scalesView.getFloat32(scaleOffset, true);
+            const scale = batched_scales[batchIndex % batched_scales.length];
             outlineRef.current.scale.setScalar(scale);
           }
         } else {

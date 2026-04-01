@@ -258,11 +258,11 @@ export const InstancedAxes = React.forwardRef<
   THREE.Group,
   {
     /** Float32 quaternion values (wxyz) */
-    batched_wxyzs: Float32Array | Uint8Array;
+    batched_wxyzs: Float32Array;
     /** Float32 position values (xyz) */
-    batched_positions: Float32Array | Uint8Array;
+    batched_positions: Float32Array;
     /** Float32 scale values (uniform or per-axis XYZ) */
-    batched_scales: Float32Array | Uint8Array | null;
+    batched_scales: Float32Array | null;
     axes_length?: number;
     axes_radius?: number;
     scale?: number | [number, number, number];
@@ -331,75 +331,51 @@ export const InstancedAxes = React.forwardRef<
     const { T_frame_framex, T_frame_framey, T_frame_framez, red, green, blue } =
       axesTransformations;
 
-    // Create DataViews to read float values directly.
-    const positionsView = new DataView(
-      batched_positions.buffer,
-      batched_positions.byteOffset,
-      batched_positions.byteLength,
-    );
-
-    const wxyzsView = new DataView(
-      batched_wxyzs.buffer,
-      batched_wxyzs.byteOffset,
-      batched_wxyzs.byteLength,
-    );
-
-    const scalesView = batched_scales
-      ? new DataView(
-          batched_scales.buffer,
-          batched_scales.byteOffset,
-          batched_scales.byteLength,
-        )
-      : null;
-
     // Calculate number of instances.
-    const numInstances = batched_wxyzs.byteLength / (4 * 4); // 4 floats, 4 bytes per float
+    const numInstances = batched_wxyzs.length / 4;
+
+    // Determine scaling mode.
+    const perAxisScaling =
+      batched_scales !== null &&
+      batched_scales.length === (batched_wxyzs.length / 4) * 3;
 
     for (let i = 0; i < numInstances; i++) {
-      // Calculate byte offsets for reading float values.
       // Use modulo as a defensive check to prevent out-of-bounds reads when
       // array lengths don't match.
-      const posOffset = (i * 3 * 4) % batched_positions.byteLength;
-      const wxyzOffset = (i * 4 * 4) % batched_wxyzs.byteLength;
-      const scaleOffset =
-        batched_scales &&
-        batched_scales.byteLength === (batched_wxyzs.byteLength / 4) * 3
-          ? (i * 3 * 4) % batched_scales.byteLength // Per-axis scaling: 3 floats, 4 bytes per float
-          : (i * 4) % (batched_scales?.byteLength ?? 4); // Uniform scaling: 1 float, 4 bytes per float
+      const posIdx = (i * 3) % batched_positions.length;
+      const wxyzIdx = (i * 4) % batched_wxyzs.length;
 
       // Read scale value if available.
-      if (scalesView && batched_scales) {
-        // Check if we have per-axis scaling (N,3) or uniform scaling (N,).
-        if (batched_scales.byteLength === (batched_wxyzs.byteLength / 4) * 3) {
-          // Per-axis scaling: read 3 floats.
+      if (batched_scales !== null) {
+        if (perAxisScaling) {
+          const scaleIdx = (i * 3) % batched_scales.length;
           tmpScale.set(
-            scalesView.getFloat32(scaleOffset, true), // x scale
-            scalesView.getFloat32(scaleOffset + 4, true), // y scale
-            scalesView.getFloat32(scaleOffset + 8, true), // z scale
+            batched_scales[scaleIdx], // x scale
+            batched_scales[scaleIdx + 1], // y scale
+            batched_scales[scaleIdx + 2], // z scale
           );
         } else {
-          // Uniform scaling: read 1 float and apply to all axes.
-          const scale = scalesView.getFloat32(scaleOffset, true);
+          const scale = batched_scales[i % batched_scales.length];
           tmpScale.set(scale, scale, scale);
         }
       } else {
         tmpScale.set(1, 1, 1);
       }
 
-      // Set position from DataView.
+      // Set transform from Float32Array values directly.
       T_world_frame.makeRotationFromQuaternion(
         tmpQuat.set(
-          wxyzsView.getFloat32(wxyzOffset + 4, true), // x
-          wxyzsView.getFloat32(wxyzOffset + 8, true), // y
-          wxyzsView.getFloat32(wxyzOffset + 12, true), // z
-          wxyzsView.getFloat32(wxyzOffset, true), // w (first value)
+          batched_wxyzs[wxyzIdx + 1], // x
+          batched_wxyzs[wxyzIdx + 2], // y
+          batched_wxyzs[wxyzIdx + 3], // z
+          batched_wxyzs[wxyzIdx], // w (first value)
         ),
       )
         .scale(tmpScale)
         .setPosition(
-          positionsView.getFloat32(posOffset, true), // x
-          positionsView.getFloat32(posOffset + 4, true), // y
-          positionsView.getFloat32(posOffset + 8, true), // z
+          batched_positions[posIdx], // x
+          batched_positions[posIdx + 1], // y
+          batched_positions[posIdx + 2], // z
         );
 
       T_world_framex.copy(T_world_frame).multiply(T_frame_framex);

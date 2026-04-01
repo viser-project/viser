@@ -13,7 +13,6 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, ContextManager, TypeVar, cast, overload
 
-import imageio.v3 as iio
 import numpy as np
 import numpy.typing as npt
 from typing_extensions import Literal, deprecated
@@ -666,6 +665,8 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 _messages.GetRenderResponseMessage, got_render_cb
             )
             nonlocal out
+            import imageio.v3 as iio
+
             out = iio.imread(
                 io.BytesIO(message.payload),
                 extension=f".{transport_format}",

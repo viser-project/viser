@@ -117,12 +117,12 @@ export const BatchedMeshBase = React.forwardRef<
   InstancedMesh2,
   {
     // Data for instance positions and orientations.
-    batched_positions: Float32Array | Uint8Array;
-    batched_wxyzs: Float32Array | Uint8Array;
-    batched_scales: Float32Array | Uint8Array | null;
+    batched_positions: Float32Array;
+    batched_wxyzs: Float32Array;
+    batched_scales: Float32Array | null;
     batched_colors: Uint8Array<ArrayBuffer> | null;
     opacity: number | null;
-    batched_opacities: Float32Array | Uint8Array | null;
+    batched_opacities: Float32Array | null;
 
     // Geometry info.
     geometry: THREE.BufferGeometry;
@@ -209,67 +209,50 @@ export const BatchedMeshBase = React.forwardRef<
       mesh.addInstances(instanceCount, () => {});
     }
 
-    // Create views to efficiently read float values.
-    const positionsView = new DataView(
-      props.batched_positions.buffer,
-      props.batched_positions.byteOffset,
-      props.batched_positions.byteLength,
-    );
-    const wxyzsView = new DataView(
-      props.batched_wxyzs.buffer,
-      props.batched_wxyzs.byteOffset,
-      props.batched_wxyzs.byteLength,
-    );
-    const scalesView = props.batched_scales
-      ? new DataView(
-          props.batched_scales.buffer,
-          props.batched_scales.byteOffset,
-          props.batched_scales.byteLength,
-        )
-      : null;
+    const positions = props.batched_positions;
+    const wxyzs = props.batched_wxyzs;
+    const scales = props.batched_scales;
+    const posLength = positions.length;
+    const wxyzLength = wxyzs.length;
+    const scalesLength = scales ? scales.length : 0;
+
+    // Determine scaling mode: per-axis (N,3) or uniform (N,).
+    const perAxisScaling =
+      scales !== null && scalesLength === (wxyzLength / 4) * 3;
 
     // Update all instances.
     mesh.updateInstances((obj, index) => {
-      // Calculate byte offsets for reading float values.
       // Use modulo as a defensive check to prevent out-of-bounds reads when
-      // array lengths don't match (e.g., if batched_wxyzs has fewer elements
-      // than batched_positions).
-      const posOffset = (index * 3 * 4) % props.batched_positions.byteLength;
-      const wxyzOffset = (index * 4 * 4) % props.batched_wxyzs.byteLength;
+      // array lengths don't match.
+      const posIdx = (index * 3) % posLength;
+      const wxyzIdx = (index * 4) % wxyzLength;
 
       // Read position values.
       tempPosition.set(
-        positionsView.getFloat32(posOffset, true), // x.
-        positionsView.getFloat32(posOffset + 4, true), // y.
-        positionsView.getFloat32(posOffset + 8, true), // z.
+        positions[posIdx], // x.
+        positions[posIdx + 1], // y.
+        positions[posIdx + 2], // z.
       );
 
-      // Read quaternion values.
+      // Read quaternion values (wxyz layout -> xyzw for Three.js).
       tempQuaternion.set(
-        wxyzsView.getFloat32(wxyzOffset + 4, true), // x.
-        wxyzsView.getFloat32(wxyzOffset + 8, true), // y.
-        wxyzsView.getFloat32(wxyzOffset + 12, true), // z.
-        wxyzsView.getFloat32(wxyzOffset, true), // w (first value).
+        wxyzs[wxyzIdx + 1], // x.
+        wxyzs[wxyzIdx + 2], // y.
+        wxyzs[wxyzIdx + 3], // z.
+        wxyzs[wxyzIdx], // w (first value).
       );
 
       // Read scale value if available.
-      if (scalesView && props.batched_scales) {
-        // Check if we have per-axis scaling (N,3) or uniform scaling (N,).
-        if (
-          props.batched_scales.byteLength ===
-          (props.batched_wxyzs.byteLength / 4) * 3
-        ) {
-          // Per-axis scaling: read 3 floats.
-          const scaleOffset = (index * 3 * 4) % props.batched_scales.byteLength;
+      if (scales !== null) {
+        if (perAxisScaling) {
+          const scaleIdx = (index * 3) % scalesLength;
           tempScale.set(
-            scalesView.getFloat32(scaleOffset, true), // x scale.
-            scalesView.getFloat32(scaleOffset + 4, true), // y scale.
-            scalesView.getFloat32(scaleOffset + 8, true), // z scale.
+            scales[scaleIdx], // x scale.
+            scales[scaleIdx + 1], // y scale.
+            scales[scaleIdx + 2], // z scale.
           );
         } else {
-          // Uniform scaling: read 1 float and apply to all axes.
-          const scaleOffset = (index * 4) % props.batched_scales.byteLength;
-          const scale = scalesView.getFloat32(scaleOffset, true);
+          const scale = scales[index % scalesLength];
           tempScale.setScalar(scale);
         }
       } else {
@@ -370,15 +353,10 @@ export const BatchedMeshBase = React.forwardRef<
       return;
     }
 
-    const opacityView = new DataView(
-      props.batched_opacities.buffer,
-      props.batched_opacities.byteOffset,
-      props.batched_opacities.byteLength,
-    );
+    const opacities = props.batched_opacities;
 
     for (let i = 0; i < mesh.instancesCount; i++) {
-      const instanceOpacity = opacityView.getFloat32(i * 4, true);
-      mesh.setOpacityAt(i, globalOpacity * instanceOpacity);
+      mesh.setOpacityAt(i, globalOpacity * opacities[i]);
     }
   }, [props.opacity, props.batched_opacities, mesh]);
 
