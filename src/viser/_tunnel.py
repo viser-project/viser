@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import multiprocessing as mp
 import ssl
 import threading
@@ -10,6 +11,8 @@ from pathlib import Path
 from typing import Callable, Literal
 
 import rich
+
+logger = logging.getLogger(__name__)
 
 
 @lru_cache
@@ -197,22 +200,26 @@ async def _make_tunnel(
     import requests.exceptions
 
     try:
-        response = requests.request(
-            "GET",
-            url=f"https://{share_domain}/?request_forward",
-            headers={"Content-Type": "application/json"},
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: requests.get(
+                f"https://{share_domain}/?request_forward",
+                headers={"Content-Type": "application/json"},
+            ),
         )
         if response.status_code != 200:
             shared_state["status"] = "failed"
             return
-    except requests.exceptions.ConnectionError:
+        res = response.json()
+    except requests.exceptions.ConnectionError as e:
+        logger.warning("Tunnel connection failed: %s", e)
         shared_state["status"] = "failed"
         return
     except Exception as e:
+        logger.warning("Tunnel connection failed: %s", e)
         shared_state["status"] = "failed"
-        raise e
-
-    res = response.json()
+        raise
 
     # Require TLS for secure tunnel connections.
     tls_port = res.get("tls_port")
@@ -259,6 +266,11 @@ async def _simple_proxy(
     """Establish an encrypted TLS connection to the tunnel server."""
     ssl_context = ssl.create_default_context()
 
+    # Exponential backoff parameters.
+    backoff = 0.1
+    max_backoff = 10.0
+    backoff_factor = 2.0
+
     async def close_writer(writer: asyncio.StreamWriter) -> None:
         """Utility for closing a writer and waiting until done, while suppressing errors
         from broken connections."""
@@ -273,14 +285,14 @@ async def _simple_proxy(
         """Simple data passthrough from one stream to another."""
         try:
             while True:
-                data = await r.read(4096)
+                data = await r.read(65536)
                 if len(data) == 0:
                     # Done!
                     break
                 w.write(data)
                 await w.drain()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Relay connection closed: %s", e)
         finally:
             await close_writer(w)
 
@@ -292,6 +304,8 @@ async def _simple_proxy(
             remote_r, remote_w = await asyncio.open_connection(
                 remote_host, remote_port, ssl=ssl_context
             )
+            # Reset backoff on successful connection.
+            backoff = 0.1
             await asyncio.wait(
                 [
                     asyncio.gather(
@@ -302,8 +316,8 @@ async def _simple_proxy(
                 ],
                 return_when=asyncio.FIRST_COMPLETED,
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Proxy connection error: %s", e)
         finally:
             # Be extra sure that connections are closed.
             if local_w is not None:
@@ -314,5 +328,6 @@ async def _simple_proxy(
         if close_event.is_set():
             break
 
-        # Throttle connection attempts.
-        await asyncio.sleep(0.1)
+        # Exponential backoff on reconnect.
+        await asyncio.sleep(backoff)
+        backoff = min(backoff * backoff_factor, max_backoff)
