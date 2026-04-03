@@ -884,6 +884,8 @@ class GuiApi:
         cursor: uplot.Cursor | None = None,
         focus: uplot.Focus | None = None,
         aspect: float = 1.0,
+        height: int | None = None,
+        padding: tuple[int, int, int, int] | None = None,
         order: float | None = None,
         visible: bool = True,
     ) -> GuiUplotHandle:
@@ -928,6 +930,9 @@ class GuiApi:
                 transparency of non-focused series to emphasize the active one.
             aspect: Width-to-height ratio for the chart display in the control panel.
                 1.0 creates a square chart, values > 1.0 create wider charts.
+                Used when height is None.
+            height: Fixed height in pixels. Overrides aspect ratio when set.
+            padding: Chart padding [top, right, bottom, left] in pixels.
             order: Display ordering relative to other GUI elements (lower values first).
             visible: Whether the chart is visible in the interface.
 
@@ -981,6 +986,8 @@ class GuiApi:
                 cursor=cursor,
                 focus=focus,
                 aspect=aspect,
+                height=height,
+                padding=padding,
                 visible=visible,
             ),
         )

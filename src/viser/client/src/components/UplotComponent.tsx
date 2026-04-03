@@ -96,7 +96,7 @@ function PlotComponent({
 
     return {
       width: containerWidth,
-      height: (containerWidth / props.aspect) as any,
+      height: (props.height ?? containerWidth / props.aspect) as any,
       title: props.title || undefined,
       mode: props.mode || undefined,
       series: (props.series as any) || [],
@@ -107,7 +107,7 @@ function PlotComponent({
       legend: (props.legend as any) || undefined,
       focus: props.focus || undefined,
       // Set tighter default padding [top, right, bottom, left].
-      padding: [0, 24, 0, 0] as [number, number, number, number],
+      padding: (props.padding ?? [0, 24, 0, 0]) as [number, number, number, number],
     };
   }, [
     containerWidth,
