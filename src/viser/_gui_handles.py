@@ -913,13 +913,19 @@ class GuiHtmlHandle(_GuiHandle[None], GuiHtmlProps):
 class GuiPlotlyHandle(_GuiHandle[None], GuiPlotlyProps):
     """Handle for updating and removing Plotly figures."""
 
-    def __init__(self, _impl: _GuiHandleState, _figure: go.Figure):
+    def __init__(
+        self,
+        _impl: _GuiHandleState,
+        _figure: go.Figure,
+        _config: dict | None = None,
+    ):
         super().__init__(impl=_impl)
         self._figure = _figure
+        self._config = _config
 
     @property
     def figure(self) -> go.Figure:
-        """Current content of this markdown element. Synchronized automatically when assigned."""
+        """Current Plotly figure. Synchronized automatically when assigned."""
         assert self._figure is not None
         return self._figure
 
@@ -927,9 +933,12 @@ class GuiPlotlyHandle(_GuiHandle[None], GuiPlotlyProps):
     def figure(self, figure: go.Figure) -> None:
         self._figure = figure
 
-        json_str = figure.to_json()
-        assert isinstance(json_str, str)
-        self._plotly_json_str = json_str
+        import json as json_mod
+
+        plot_dict = json_mod.loads(figure.to_json())
+        if self._config is not None:
+            plot_dict.setdefault("config", {}).update(self._config)
+        self._plotly_json_str = json_mod.dumps(plot_dict)
 
 
 class GuiUplotHandle(_GuiHandle[None], GuiUplotProps):
