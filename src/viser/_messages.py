@@ -1577,6 +1577,8 @@ class GuiVector3Message(_CreateGuiComponentMessage):
 @dataclasses.dataclass
 class GuiTextProps(GuiBaseProps):
     multiline: bool
+    update_on: str
+    """When to fire on_update: 'change' (every keystroke) or 'submit' (Enter/blur)."""
 
 
 @dataclasses.dataclass

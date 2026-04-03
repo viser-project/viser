@@ -1218,6 +1218,7 @@ class GuiApi:
         initial_value: str,
         *,
         multiline: bool = False,
+        update_on: Literal["change", "submit"] = "change",
         disabled: bool = False,
         visible: bool = True,
         hint: str | None = None,
@@ -1230,6 +1231,8 @@ class GuiApi:
             initial_value: Initial value of the text input.
             multiline: Whether the text input supports multiple lines, delimited with
                 the \n character.
+            update_on: When to fire on_update callbacks. ``"change"`` fires on every
+                keystroke (default). ``"submit"`` fires only on Enter key or blur.
             disabled: Whether the text input is disabled.
             visible: Whether the text input is visible.
             hint: Optional hint to display on hover.
@@ -1256,6 +1259,7 @@ class GuiApi:
                         disabled=disabled,
                         visible=visible,
                         multiline=multiline,
+                        update_on=update_on,
                     ),
                 ),
             )
