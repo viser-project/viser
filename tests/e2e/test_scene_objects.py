@@ -228,3 +228,30 @@ def test_grid_in_scene(
     )
 
     wait_for_scene_node(viser_page, "/test_grid")
+
+
+def test_arrows_in_scene(
+    viser_server: viser.ViserServer,
+    viser_page: Page,
+) -> None:
+    """Arrows added on the server should appear in the scene graph."""
+    # Create test arrow points: (N, 2, 3) = 2 arrows
+    points = np.array(
+        [
+            [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]],
+            [[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        ],
+        dtype=np.float32,
+    )
+    colors = (255, 0, 0)  # uniform red color
+
+    viser_server.scene.add_arrows(
+        "/test_arrows",
+        points=points,
+        colors=colors,
+    )
+
+    wait_for_scene_node(viser_page, "/test_arrows")
+
+    mesh_count = viser_page.evaluate(JS_GET_MESH_CHILD_COUNT, "/test_arrows")
+    assert mesh_count > 0, f"Expected mesh children, got {mesh_count}"

@@ -442,6 +442,23 @@ export interface LineSegmentsMessage {
     scale: number | [number, number, number];
   };
 }
+/** Message from server->client carrying arrow information.
+ *
+ * (automatically generated)
+ */
+export interface ArrowMessage {
+  type: "ArrowMessage";
+  name: string;
+  props: {
+    points: Float32Array;
+    colors: Uint8Array<ArrayBuffer>;
+    shaft_radius: number;
+    head_radius: number;
+    head_length: number;
+    line_width: number;
+    scale: number | [number, number, number];
+  };
+}
 /** Message from server->client carrying Catmull-Rom spline information.
  *
  * (automatically generated)
@@ -1625,6 +1642,7 @@ export type Message =
   | TransformControlsMessage
   | ImageMessage
   | LineSegmentsMessage
+  | ArrowMessage
   | CatmullRomSplineMessage
   | CubicBezierSplineMessage
   | GaussianSplatsMessage
@@ -1719,6 +1737,7 @@ export type SceneNodeMessage =
   | TransformControlsMessage
   | ImageMessage
   | LineSegmentsMessage
+  | ArrowMessage
   | CatmullRomSplineMessage
   | CubicBezierSplineMessage
   | GaussianSplatsMessage;
@@ -1769,6 +1788,7 @@ const typeSetSceneNodeMessage = new Set([
   "TransformControlsMessage",
   "ImageMessage",
   "LineSegmentsMessage",
+  "ArrowMessage",
   "CatmullRomSplineMessage",
   "CubicBezierSplineMessage",
   "GaussianSplatsMessage",

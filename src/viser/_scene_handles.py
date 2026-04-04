@@ -755,6 +755,13 @@ class LineSegmentsHandle(
     """Handle for line segments objects."""
 
 
+class ArrowsHandle(
+    SceneNodeHandle,
+    _messages.ArrowProps,
+):
+    """Handle for arrow objects."""
+
+
 class SplineCatmullRomHandle(
     SceneNodeHandle,
     _messages.CatmullRomSplineProps,

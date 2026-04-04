@@ -29,6 +29,7 @@ from ._assignable_props_api import colors_to_uint8
 from ._image_encoding import cv2_imencode_with_fallback
 from ._scene_handles import (
     AmbientLightHandle,
+    ArrowsHandle,
     BatchedAxesHandle,
     BatchedGlbHandle,
     BatchedMeshHandle,
@@ -770,6 +771,73 @@ class SceneApi:
             ),
         )
         return LineSegmentsHandle._make(self, message, name, wxyz, position, visible)
+
+    @deprecated_positional_shim
+    def add_arrows(
+        self,
+        name: str,
+        points: np.ndarray,
+        colors: np.ndarray | RgbTupleOrArray,
+        *,
+        shaft_radius: float = 0.02,
+        head_radius: float = 0.05,
+        head_length: float = 0.1,
+        line_width: float = 1,
+        scale: float | tuple[float, float, float] = 1.0,
+        wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
+        position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
+        visible: bool = True,
+    ) -> ArrowsHandle:
+        """Add arrows to the scene.
+
+        Args:
+            name: A scene tree name. Names in the format of /parent/child can
+                be used to define a kinematic tree.
+            points: A numpy array of shape (N, 2, 3) defining start/end points
+                for each of N arrows.
+            colors: Colors of the arrows. Can be a single color as an RGB tuple or
+                np.ndarray of shape (3,) to apply to all arrows, or an np.ndarray of
+                shape (N, 2, 3) to specify colors for each point of each arrow.
+            shaft_radius: Radius of the arrow shaft.
+            head_radius: Radius of the arrow head cone.
+            head_length: Length of the arrow head.
+            line_width: Width of the lines (fallback rendering).
+            scale: Scale of the arrows. A single float for uniform
+                scaling or a tuple of (x, y, z) for per-axis scaling.
+            wxyz: Quaternion rotation to parent frame from local frame (R_pl).
+            position: Translation to parent frame from local frame (t_pl).
+            visible: Whether or not these arrows are initially visible.
+
+        Returns:
+            Handle for manipulating scene node.
+        """
+        points_array = np.asarray(points, dtype=np.float32)
+        if (
+            points_array.shape[-1] != 3
+            or points_array.ndim != 3
+            or points_array.shape[1] != 2
+        ):
+            raise ValueError("Points should have shape (N, 2, 3) for N arrows.")
+
+        colors_array = colors_to_uint8(np.asarray(colors))
+        assert colors_array.shape in {
+            (points_array.shape[0], 2, 3),
+            (3,),
+        }, "Shape of colors should be (N, 2, 3) or (3,)."
+
+        message = _messages.ArrowMessage(
+            name=name,
+            props=_messages.ArrowProps(
+                points=points_array,
+                colors=colors_array,
+                shaft_radius=shaft_radius,
+                head_radius=head_radius,
+                head_length=head_length,
+                line_width=line_width,
+                scale=scale,
+            ),
+        )
+        return ArrowsHandle._make(self, message, name, wxyz, position, visible)
 
     @overload
     def add_spline_catmull_rom(

@@ -47,6 +47,7 @@ import { SplatObject } from "./Splatting/GaussianSplats";
 import { Paper } from "@mantine/core";
 import GeneratedGuiContainer from "./ControlPanel/Generated";
 import { LineSegments } from "./Line";
+import { Arrows } from "./Arrows";
 import { shadowArgs } from "./ShadowArgs";
 import { CsmDirectionalLight } from "./CsmDirectionalLight";
 import { BasicMesh } from "./mesh/BasicMesh";
@@ -501,6 +502,15 @@ function createObjectFactory(
           <LineSegments ref={ref} {...message}>
             {children}
           </LineSegments>
+        ),
+      };
+    }
+    case "ArrowMessage": {
+      return {
+        makeObject: (ref, children) => (
+          <Arrows ref={ref} {...message}>
+            {children}
+          </Arrows>
         ),
       };
     }
