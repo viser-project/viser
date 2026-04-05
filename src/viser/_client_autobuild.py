@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-client_dir = Path(__file__).absolute().parent / "client"
+client_dir = Path(__file__).resolve().parent / "client"
 build_dir = client_dir / "build"
 
 
