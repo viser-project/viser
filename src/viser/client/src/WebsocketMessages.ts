@@ -151,6 +151,7 @@ export interface PointCloudMessage {
     point_shape: "square" | "diamond" | "circle" | "rounded" | "sparkle";
     precision: "float16" | "float32";
     scale: number | [number, number, number];
+    point_shading: "flat" | "gradient";
   };
 }
 /** Directional light message.

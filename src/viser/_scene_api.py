@@ -1396,6 +1396,7 @@ class SceneApi:
         ] = "square",
         precision: Literal["float16", "float32"] = "float16",
         scale: float | tuple[float, float, float] = 1.0,
+        point_shading: Literal["flat", "gradient"] = "gradient",
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -1414,6 +1415,8 @@ class SceneApi:
                 will be cast to this precision.
             scale: Scale of the point cloud. A single float for uniform scaling
                 or a tuple of (x, y, z) for per-axis scaling.
+            point_shading: Shading mode for points. "flat" renders solid colors.
+                "gradient" adds center-to-edge shading for a sphere-like look.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
             position: Translation to parent frame from local frame (t_pl).
             visible: Whether or not this scene node is initially visible.
@@ -1444,6 +1447,7 @@ class SceneApi:
                 point_shape=point_shape,
                 precision=precision,
                 scale=scale,
+                point_shading=point_shading,
             ),
         )
         return PointCloudHandle._make(self, message, name, wxyz, position, visible)

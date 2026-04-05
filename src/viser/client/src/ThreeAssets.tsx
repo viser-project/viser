@@ -24,6 +24,7 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
   {
     scale: 1.0,
     point_ball_norm: 0.0,
+    point_shading_enabled: 0.0,
     uniformColor: new THREE.Color(1, 1, 1),
     fogColor: new THREE.Color(1, 1, 1),
     fogNear: 0.0,
@@ -57,18 +58,32 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
   `varying vec3 vPosition;
   varying vec3 vColor;
   uniform float point_ball_norm;
+  uniform float point_shading_enabled;
 
   #include <fog_pars_fragment>
 
   void main() {
+      float r = 0.0;
       if (point_ball_norm < 1000.0) {
-          float r = pow(
+          r = pow(
               pow(abs(gl_PointCoord.x - 0.5), point_ball_norm)
               + pow(abs(gl_PointCoord.y - 0.5), point_ball_norm),
               1.0 / point_ball_norm);
           if (r > 0.5) discard;
+      } else {
+          r = max(abs(gl_PointCoord.x - 0.5), abs(gl_PointCoord.y - 0.5));
       }
-      gl_FragColor = vec4(vColor, 1.0);
+      vec3 col = vColor;
+      if (point_shading_enabled > 0.5) {
+          // t: 0 at center, 1 at edge
+          float t = r * 2.0;
+          // Lighter in the center, original at midpoint, darker at edges.
+          // Asymmetric: lighten center more than we darken edges.
+          float s = 1.0 - 2.0 * t;
+          float shift = (0.06 + 0.02 * s) * s;
+          col = clamp(col + shift, 0.0, 1.0);
+      }
+      gl_FragColor = vec4(col, 1.0);
       #include <fog_fragment>
   }
    `,
@@ -144,7 +159,9 @@ export const PointCloud = React.forwardRef<
       rounded: 3.0,
       sparkle: 0.6,
     }[props.point_shape];
-  }, [props.point_shape, material]);
+    material.uniforms.point_shading_enabled.value =
+      props.point_shading === "gradient" ? 1.0 : 0.0;
+  }, [props.point_shape, props.point_shading, material]);
 
   // Compute a scalar scale factor for point size. For non-uniform scale,
   // use geometric mean since points are rendered as circles.

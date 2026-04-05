@@ -475,6 +475,10 @@ class PointCloudProps:
     scale: Union[float, Tuple[float, float, float]] = 1.0
     """Scale of the point cloud. A single float for uniform scaling or a
     tuple of (x, y, z) for per-axis scaling."""
+    point_shading: Literal["flat", "gradient"] = "gradient"
+    """Shading mode for points. "flat" renders each point as a solid color.
+    "gradient" adds a center-to-edge shading effect: lighter in the center,
+    original color at the midpoint, darker at the edges."""
 
     def __post_init__(self):
         # Check shapes.
