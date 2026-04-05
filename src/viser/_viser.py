@@ -742,7 +742,7 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             host=host,
             port=port,
             message_class=_messages.Message,
-            http_server_root=Path(__file__).absolute().parent / "client" / "build",
+            http_server_root=Path(__file__).resolve().parent / "client" / "build",
             verbose=verbose,
             client_api_version=1,
         )
