@@ -63,25 +63,23 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
   #include <fog_pars_fragment>
 
   void main() {
-      float r = 0.0;
       if (point_ball_norm < 1000.0) {
-          r = pow(
+          float r = pow(
               pow(abs(gl_PointCoord.x - 0.5), point_ball_norm)
               + pow(abs(gl_PointCoord.y - 0.5), point_ball_norm),
               1.0 / point_ball_norm);
           if (r > 0.5) discard;
-      } else {
-          r = max(abs(gl_PointCoord.x - 0.5), abs(gl_PointCoord.y - 0.5));
       }
       vec3 col = vColor;
       if (point_shading_enabled > 0.5) {
-          // t: 0 at center, 1 at edge
-          float t = r * 2.0;
-          // Lighter in the center, original at midpoint, darker at edges.
-          // Asymmetric: lighten center more than we darken edges.
-          float s = 1.0 - 2.0 * t;
-          float shift = (0.06 + 0.02 * s) * s;
-          col = clamp(col + shift, 0.0, 1.0);
+          // Interpolation in approximate linear space (gamma 2.0) for
+          // perceptually smoother gradients.
+          // t: 0 at center, 1 at edge.
+          float t = min(length(gl_PointCoord - vec2(0.5)) / 1.414, 0.5) * 2.0;
+          vec3 lin = col * col;
+          vec3 outer_lin = lin * 0.85;
+          vec3 inner_lin = 1.0 - (1.0 - lin) * 0.98;
+          col = sqrt(t * outer_lin + (1.0 - t) * inner_lin);
       }
       gl_FragColor = vec4(col, 1.0);
       #include <fog_fragment>
