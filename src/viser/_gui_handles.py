@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import base64
 import dataclasses
+import json
 import re
 import time
 import uuid
 import warnings
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Mapping
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -917,7 +918,7 @@ class GuiPlotlyHandle(_GuiHandle[None], GuiPlotlyProps):
         self,
         _impl: _GuiHandleState,
         _figure: go.Figure,
-        _config: dict | None = None,
+        _config: Mapping[str, Any] | None = None,
     ):
         super().__init__(impl=_impl)
         self._figure = _figure
@@ -932,13 +933,13 @@ class GuiPlotlyHandle(_GuiHandle[None], GuiPlotlyProps):
     @figure.setter
     def figure(self, figure: go.Figure) -> None:
         self._figure = figure
-
-        import json as json_mod
-
-        plot_dict = json_mod.loads(figure.to_json())
+        json_str = figure.to_json()
+        assert isinstance(json_str, str)
         if self._config is not None:
-            plot_dict.setdefault("config", {}).update(self._config)
-        self._plotly_json_str = json_mod.dumps(plot_dict)
+            plot_dict = json.loads(json_str)
+            plot_dict["config"] = {**plot_dict.get("config", {}), **self._config}
+            json_str = json.dumps(plot_dict)
+        self._plotly_json_str = json_str
 
 
 class GuiUplotHandle(_GuiHandle[None], GuiUplotProps):
