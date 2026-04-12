@@ -790,6 +790,9 @@ class SceneApi:
     ) -> ArrowsHandle:
         """Add arrows to the scene.
 
+        For more complex arrow geometry or material options, consider using
+        :meth:`add_batched_meshes_simple` directly with custom cylinder/cone meshes.
+
         Args:
             name: A scene tree name. Names in the format of /parent/child can
                 be used to define a kinematic tree.
@@ -797,7 +800,7 @@ class SceneApi:
                 for each of N arrows.
             colors: Colors of the arrows. Can be a single color as an RGB tuple or
                 np.ndarray of shape (3,) to apply to all arrows, or an np.ndarray of
-                shape (N, 2, 3) to specify colors for each point of each arrow.
+                shape (N, 2, 3) to specify shaft/head colors per arrow.
             shaft_radius: Radius of the arrow shaft.
             head_radius: Radius of the arrow head cone.
             head_length: Length of the arrow head.
@@ -813,11 +816,11 @@ class SceneApi:
         """
         points_array = np.asarray(points, dtype=np.float32)
         if (
-            points_array.shape[-1] != 3
-            or points_array.ndim != 3
+            points_array.ndim != 3
             or points_array.shape[1] != 2
+            or points_array.shape[2] != 3
         ):
-            raise ValueError("Points should have shape (N, 2, 3) for N arrows.")
+            raise ValueError("points should have shape (N, 2, 3) for N arrows.")
 
         colors_array = colors_to_uint8(np.asarray(colors))
         assert colors_array.shape in {

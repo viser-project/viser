@@ -32,8 +32,7 @@ def main() -> None:
     # Batched arrows.
     #
     # Create multiple arrows in a single call for efficiency.
-    # Points shape: (N, 2, 3) where N is number of arrows,
-    # 2 is start/end, and 3 is x, y, z.
+    # points shape: (N, 2, 3) where points[i, 0] is the start and points[i, 1] is the end.
     N = 200
     points = np.zeros((N, 2, 3), dtype=np.float32)
     colors = np.zeros((N, 2, 3), dtype=np.uint8)
@@ -46,14 +45,13 @@ def main() -> None:
         y = i * 0.05
         z = r * np.sin(theta)
 
-        # Arrow from center to point
         points[i, 0] = [0, y, 0]  # start
         points[i, 1] = [x, y, z]  # end
 
         # Color gradient from blue to red based on height
         color_value = int(255 * (y / (N * 0.05)))
-        colors[i, 0] = [color_value, 0, 255 - color_value]  # start color
-        colors[i, 1] = [color_value, 0, 255 - color_value]  # end color
+        colors[i, 0] = [color_value, 0, 255 - color_value]  # shaft color
+        colors[i, 1] = [color_value, 0, 255 - color_value]  # head color
 
     server.scene.add_arrows(
         "/arrows/spiral",
@@ -70,9 +68,9 @@ def main() -> None:
     origin = [0, 2, 0]
     frame_points = np.array(
         [
-            [origin, [1, 2, 0]],  # X axis (red)
-            [origin, [0, 3, 0]],  # Y axis (green)
-            [origin, [0, 2, 1]],  # Z axis (blue)
+            [origin, [1, 2, 0]],  # X axis
+            [origin, [0, 3, 0]],  # Y axis
+            [origin, [0, 2, 1]],  # Z axis
         ],
         dtype=np.float32,
     )
@@ -98,27 +96,27 @@ def main() -> None:
     # Arrows can represent forces on an object. Here we show
     # contact forces on a simple object at position (0, 4, 0).
     contact_point = [0, 4, 0]
-    force_vectors = np.array(
+    force_points = np.array(
         [
-            [contact_point, [0.5, 4.5, 0.3]],  # Force 1
-            [contact_point, [-0.3, 4.8, -0.2]],  # Force 2
-            [contact_point, [0.1, 5.2, -0.4]],  # Force 3 (largest)
-            [contact_point, [-0.4, 4.3, 0.5]],  # Force 4
+            [contact_point, [0.5, 4.5, 0.3]],
+            [contact_point, [-0.3, 4.8, -0.2]],
+            [contact_point, [0.1, 5.2, -0.4]],
+            [contact_point, [-0.4, 4.3, 0.5]],
         ],
         dtype=np.float32,
     )
     force_colors = np.array(
         [
-            [[255, 200, 0], [255, 200, 0]],  # Yellow
-            [[255, 100, 0], [255, 100, 0]],  # Orange
-            [[255, 50, 0], [255, 50, 0]],  # Red-orange (largest force)
-            [[255, 150, 0], [255, 150, 0]],  # Orange-yellow
+            [[255, 200, 0], [255, 200, 0]],
+            [[255, 100, 0], [255, 100, 0]],
+            [[255, 50, 0], [255, 50, 0]],
+            [[255, 150, 0], [255, 150, 0]],
         ],
         dtype=np.uint8,
     )
     server.scene.add_arrows(
         "/arrows/forces",
-        points=force_vectors,
+        points=force_points,
         colors=force_colors,
         shaft_radius=0.04,
         head_radius=0.1,
@@ -129,14 +127,9 @@ def main() -> None:
     #
     # For simple visualization, a single color can be applied to all arrows.
     N_velocities = 50
-    velocity_points = np.zeros((N_velocities, 2, 3), dtype=np.float32)
-    for i in range(N_velocities):
-        # Random starting positions
-        start = np.random.normal(size=(3,)) * 3
-        # Random velocity direction
-        velocity = np.random.normal(size=(3,)) * 0.5
-        velocity_points[i, 0] = start
-        velocity_points[i, 1] = start + velocity
+    vel_starts = np.random.normal(size=(N_velocities, 3)).astype(np.float32) * 3
+    vel_ends = vel_starts + np.random.normal(size=(N_velocities, 3)).astype(np.float32) * 0.5
+    velocity_points = np.stack([vel_starts, vel_ends], axis=1)
 
     server.scene.add_arrows(
         "/arrows/velocities",

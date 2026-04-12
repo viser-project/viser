@@ -1751,9 +1751,9 @@ class LineSegmentsProps:
 class ArrowProps:
     """Properties for arrow visualization."""
     points: npt.NDArray[np.float32]
-    """A numpy array of shape (N, 2, 3) containing start and end points for each of N arrows."""
+    """Array of shape (N, 2, 3) containing start/end points for each of N arrows."""
     colors: npt.NDArray[np.uint8]
-    """Numpy array of shape (N, 2, 3) containing a color for each point, or (3,) for uniform color."""
+    """Array of shape (N, 2, 3) containing shaft/head colors per arrow, or (3,) for uniform color."""
     shaft_radius: float = 0.02
     """Radius of the arrow shaft."""
     head_radius: float = 0.05

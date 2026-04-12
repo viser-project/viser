@@ -235,7 +235,6 @@ def test_arrows_in_scene(
     viser_page: Page,
 ) -> None:
     """Arrows added on the server should appear in the scene graph."""
-    # Create test arrow points: (N, 2, 3) = 2 arrows
     points = np.array(
         [
             [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]],
