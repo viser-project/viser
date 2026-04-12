@@ -112,7 +112,15 @@ export const Arrows = React.forwardRef<
       }
     }
 
-    return { shaftPositions, shaftScales, headPositions, headScales, wxyzs, shaftColors, headColors };
+    return {
+      shaftPositions,
+      shaftScales,
+      headPositions,
+      headScales,
+      wxyzs,
+      shaftColors,
+      headColors,
+    };
   }, [points, colors, head_length, shaft_radius, head_radius]);
 
   return (
