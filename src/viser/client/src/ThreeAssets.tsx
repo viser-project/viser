@@ -78,7 +78,7 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
           float t = min(length(gl_PointCoord - vec2(0.5)) / 1.414, 0.5) * 2.0;
           vec3 lin = col * col;
           vec3 outer_lin = lin * 0.85;
-          vec3 inner_lin = 1.0 - (1.0 - lin) * 0.98;
+          vec3 inner_lin = 1.0 - (1.0 - lin) * 0.95;
           col = sqrt(t * outer_lin + (1.0 - t) * inner_lin);
       }
       gl_FragColor = vec4(col, 1.0);
