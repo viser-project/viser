@@ -488,6 +488,27 @@
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="viser.extras.Record3dLoader.get_frames">
+<span class="sig-name descname"><span class="pre">get_frames</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">indices</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Sequence" title="(in Python v3.14)"><span class="pre">Sequence</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_workers</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Generator" title="(in Python v3.14)"><span class="pre">Generator</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#viser.extras.Record3dFrame" title="viser.extras._record3d.Record3dFrame"><span class="pre">Record3dFrame</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../../../_modules/viser/extras/_record3d/#Record3dLoader.get_frames"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.extras.Record3dLoader.get_frames" title="Link to this definition">¶</a></dt>
+<dd><p>Load multiple frames in parallel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>indices</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Sequence" title="(in Python v3.14)"><em>Sequence</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>]</em>) – Sequence of frame indices to load.</p></li>
+<li><p><strong>max_workers</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em> | </em><em>None</em>) – Maximum number of worker threads. Defaults to
+None (lets ThreadPoolExecutor choose).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Generator of Record3dFrame objects, in the same order as indices.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Generator" title="(in Python v3.14)"><em>Generator</em></a>[<a class="reference internal" href="#viser.extras.Record3dFrame" title="viser.extras._record3d.Record3dFrame"><em>Record3dFrame</em></a>, None, None]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="viser.extras.Record3dLoader.get_frame">
 <span class="sig-name descname"><span class="pre">get_frame</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#viser.extras.Record3dFrame" title="viser.extras._record3d.Record3dFrame"><span class="pre">Record3dFrame</span></a></span></span><a class="reference internal" href="../../../_modules/viser/extras/_record3d/#Record3dLoader.get_frame"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.extras.Record3dLoader.get_frame" title="Link to this definition">¶</a></dt>
 <dd><dl class="field-list simple">
@@ -700,6 +721,7 @@ collision scene graph configured.</p></li>
 </li>
 <li><a class="reference internal" href="#viser.extras.Record3dLoader"><code class="docutils literal notranslate"><span class="pre">Record3dLoader</span></code></a><ul>
 <li><a class="reference internal" href="#viser.extras.Record3dLoader.num_frames"><code class="docutils literal notranslate"><span class="pre">Record3dLoader.num_frames()</span></code></a></li>
+<li><a class="reference internal" href="#viser.extras.Record3dLoader.get_frames"><code class="docutils literal notranslate"><span class="pre">Record3dLoader.get_frames()</span></code></a></li>
 <li><a class="reference internal" href="#viser.extras.Record3dLoader.get_frame"><code class="docutils literal notranslate"><span class="pre">Record3dLoader.get_frame()</span></code></a></li>
 </ul>
 </li>

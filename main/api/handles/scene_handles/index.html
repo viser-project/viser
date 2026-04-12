@@ -2697,6 +2697,14 @@ vertices. Should have shape (F, 3).</p>
 <dd><p>Read-only name of the scene node.</p>
 </dd></dl>
 
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.PointCloudHandle.point_shading">
+<span class="sig-name descname"><span class="pre">point_shading</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Literal</span><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'flat'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'gradient'</span></span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'gradient'</span></em><a class="headerlink" href="#viser.PointCloudHandle.point_shading" title="Link to this definition">¶</a></dt>
+<dd><p>Shading mode for points. “flat” renders each point as a solid color.
+“gradient” adds a center-to-edge shading effect: lighter in the center,
+original color at the midpoint, darker at the edges.</p>
+</dd></dl>
+
 <dl class="py property">
 <dt class="sig sig-object py" id="viser.PointCloudHandle.position">
 <em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">position</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">dtype</span><span class="p"><span class="pre">[</span></span><span class="pre">float64</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.PointCloudHandle.position" title="Link to this definition">¶</a></dt>
@@ -3854,6 +3862,7 @@ other objects.</p>
 </li>
 <li><a class="reference internal" href="#viser.PointCloudHandle"><code class="docutils literal notranslate"><span class="pre">PointCloudHandle</span></code></a><ul>
 <li><a class="reference internal" href="#viser.PointCloudHandle.name"><code class="docutils literal notranslate"><span class="pre">PointCloudHandle.name</span></code></a></li>
+<li><a class="reference internal" href="#viser.PointCloudHandle.point_shading"><code class="docutils literal notranslate"><span class="pre">PointCloudHandle.point_shading</span></code></a></li>
 <li><a class="reference internal" href="#viser.PointCloudHandle.position"><code class="docutils literal notranslate"><span class="pre">PointCloudHandle.position</span></code></a></li>
 <li><a class="reference internal" href="#viser.PointCloudHandle.remove"><code class="docutils literal notranslate"><span class="pre">PointCloudHandle.remove()</span></code></a></li>
 <li><a class="reference internal" href="#viser.PointCloudHandle.scale"><code class="docutils literal notranslate"><span class="pre">PointCloudHandle.scale</span></code></a></li>
