@@ -181,8 +181,12 @@ async def run_example_and_capture(
     env = os.environ.copy()
     env["_VISER_PORT_OVERRIDE"] = str(port)
 
-    # Build command with special arguments for certain examples
-    cmd = [sys.executable, str(example_path)]
+    # Build command with special arguments for certain examples.
+    # Some examples accept tyro CLI args to limit startup time for screenshots.
+    extra_args: dict[str, list[str]] = {
+        "04_demos/00_record3d_visualizer": ["--max_frames", "10"],
+    }
+    cmd = [sys.executable, str(example_path)] + extra_args.get(example_name, [])
     process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
