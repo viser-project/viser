@@ -430,6 +430,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">asyncio</span><span class="w"> </span><span class="kn">import</span> <span class="n">AbstractEventLoop</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mapping</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">concurrent.futures</span><span class="w"> </span><span class="kn">import</span> <span class="n">ThreadPoolExecutor</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
@@ -1243,6 +1244,7 @@
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">figure</span><span class="p">:</span> <span class="n">go</span><span class="o">.</span><span class="n">Figure</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
+        <span class="n">config</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">aspect</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
         <span class="n">order</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">visible</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
@@ -1256,6 +1258,10 @@
 
 <span class="sd">        Args:</span>
 <span class="sd">            figure: Plotly figure to display.</span>
+<span class="sd">            config: Plotly config dict merged into the figure JSON. Controls</span>
+<span class="sd">                display options like ``{&quot;displayModeBar&quot;: False}``. Values</span>
+<span class="sd">                must be JSON-serializable. See</span>
+<span class="sd">                https://plotly.com/javascript/configuration-options/</span>
 <span class="sd">            aspect: Aspect ratio of the plot in the control panel (width/height).</span>
 <span class="sd">            order: Optional ordering, smallest values will be displayed first.</span>
 <span class="sd">            visible: Whether the component is visible.</span>
@@ -1315,6 +1321,7 @@
                 <span class="n">parent_container_id</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">container_uuid</span><span class="p">,</span>
             <span class="p">),</span>
             <span class="n">_figure</span><span class="o">=</span><span class="n">figure</span><span class="p">,</span>
+            <span class="n">_config</span><span class="o">=</span><span class="n">config</span><span class="p">,</span>
         <span class="p">)</span>
 
         <span class="c1"># Set the plotly handle properties.</span>
@@ -1340,6 +1347,8 @@
         <span class="n">cursor</span><span class="p">:</span> <span class="n">uplot</span><span class="o">.</span><span class="n">Cursor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">focus</span><span class="p">:</span> <span class="n">uplot</span><span class="o">.</span><span class="n">Focus</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">aspect</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">height</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">padding</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">order</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">visible</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GuiUplotHandle</span><span class="p">:</span>
@@ -1384,6 +1393,10 @@
 <span class="sd">                transparency of non-focused series to emphasize the active one.</span>
 <span class="sd">            aspect: Width-to-height ratio for the chart display in the control panel.</span>
 <span class="sd">                1.0 creates a square chart, values &gt; 1.0 create wider charts.</span>
+<span class="sd">                Used when height is None.</span>
+<span class="sd">            height: Fixed height in pixels. Overrides aspect ratio when set.</span>
+<span class="sd">            padding: Chart padding (top, right, bottom, left) in pixels. Defaults</span>
+<span class="sd">                to (0, 24, 0, 0) when omitted.</span>
 <span class="sd">            order: Display ordering relative to other GUI elements (lower values first).</span>
 <span class="sd">            visible: Whether the chart is visible in the interface.</span>
 
@@ -1437,6 +1450,8 @@
                 <span class="n">cursor</span><span class="o">=</span><span class="n">cursor</span><span class="p">,</span>
                 <span class="n">focus</span><span class="o">=</span><span class="n">focus</span><span class="p">,</span>
                 <span class="n">aspect</span><span class="o">=</span><span class="n">aspect</span><span class="p">,</span>
+                <span class="n">height</span><span class="o">=</span><span class="n">height</span><span class="p">,</span>
+                <span class="n">padding</span><span class="o">=</span><span class="n">padding</span><span class="p">,</span>
                 <span class="n">visible</span><span class="o">=</span><span class="n">visible</span><span class="p">,</span>
             <span class="p">),</span>
         <span class="p">)</span>

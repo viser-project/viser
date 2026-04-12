@@ -1372,7 +1372,7 @@ synchronized between all connected clients. When a GUI element is added via
 <dl class="py property">
 <dt class="sig sig-object py" id="viser.GuiPlotlyHandle.figure">
 <em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">figure</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">go.Figure</span></em><a class="headerlink" href="#viser.GuiPlotlyHandle.figure" title="Link to this definition">¶</a></dt>
-<dd><p>Current content of this markdown element. Synchronized automatically when assigned.</p>
+<dd><p>Current Plotly figure. Synchronized automatically when assigned.</p>
 </dd></dl>
 
 </dd></dl>
@@ -2051,7 +2051,20 @@ non-focused series to emphasize the active one.</p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="viser.GuiUplotHandle.aspect">
 <span class="sig-name descname"><span class="pre">aspect</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.GuiUplotHandle.aspect" title="Link to this definition">¶</a></dt>
-<dd><p>Width-to-height ratio for chart display (width/height). 1.0 = square, &gt;1.0 = wider.</p>
+<dd><p>Width-to-height ratio for chart display (width/height). 1.0 = square, &gt;1.0 = wider.
+Used when height is None.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.GuiUplotHandle.height">
+<span class="sig-name descname"><span class="pre">height</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.GuiUplotHandle.height" title="Link to this definition">¶</a></dt>
+<dd><p>Fixed height in pixels. Overrides aspect ratio when set.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.GuiUplotHandle.padding">
+<span class="sig-name descname"><span class="pre">padding</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.GuiUplotHandle.padding" title="Link to this definition">¶</a></dt>
+<dd><p>Padding (top, right, bottom, left) in pixels.</p>
 </dd></dl>
 
 <dl class="py attribute">
@@ -2621,6 +2634,8 @@ non-focused series to emphasize the active one.</p>
 <li><a class="reference internal" href="#viser.GuiUplotHandle.cursor"><code class="docutils literal notranslate"><span class="pre">GuiUplotHandle.cursor</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiUplotHandle.focus"><code class="docutils literal notranslate"><span class="pre">GuiUplotHandle.focus</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiUplotHandle.aspect"><code class="docutils literal notranslate"><span class="pre">GuiUplotHandle.aspect</span></code></a></li>
+<li><a class="reference internal" href="#viser.GuiUplotHandle.height"><code class="docutils literal notranslate"><span class="pre">GuiUplotHandle.height</span></code></a></li>
+<li><a class="reference internal" href="#viser.GuiUplotHandle.padding"><code class="docutils literal notranslate"><span class="pre">GuiUplotHandle.padding</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiUplotHandle.visible"><code class="docutils literal notranslate"><span class="pre">GuiUplotHandle.visible</span></code></a></li>
 </ul>
 </li>
