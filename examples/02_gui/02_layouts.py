@@ -1,10 +1,11 @@
 """GUI layouts
 
-Organize GUI controls using folders, tabs, and nested structures for better user experience.
+Organize GUI controls using folders, forms, tabs, and nested structures for better user experience.
 
 **Features:**
 
 * :meth:`viser.GuiApi.add_folder` for grouping related controls
+* :meth:`viser.GuiApi.add_form` for groups that commit together on submit
 * :meth:`viser.GuiApi.add_tab_group` and :meth:`viser.GuiTabGroupHandle.add_tab` for tabbed interfaces
 * Nested folder hierarchies for complex layouts
 * Context managers for automatic grouping
@@ -65,6 +66,27 @@ def main() -> None:
             server.gui.add_dropdown(
                 "Quality", options=["Low", "Medium", "High"], initial_value="Medium"
             )
+
+    # Example 4: A form, which is a folder whose contents are committed
+    # together. on_update callbacks on child inputs still fire per-keystroke,
+    # but the form's on_submit only fires when the user commits the form,
+    # either via form.submit() (typically from a button) or by pressing Enter
+    # in a single-line input. A dirty indicator is shown next to the form
+    # label whenever any descendant has been edited since the last submit.
+    with server.gui.add_form("Profile") as profile_form:
+        name = server.gui.add_text("Name", initial_value="")
+        age = server.gui.add_number("Age", initial_value=0)
+        role = server.gui.add_dropdown(
+            "Role", options=("guest", "user", "admin"), initial_value="user"
+        )
+        save_button = server.gui.add_button("Save")
+
+    # Buttons inside a form are just normal buttons. Wire one to submit().
+    save_button.on_click(lambda _: profile_form.submit())
+
+    @profile_form.on_submit
+    def _(_) -> None:
+        print(f"Profile saved: name={name.value!r}, age={age.value}, role={role.value}")
 
     # Add some visual objects to demonstrate the controls
     server.scene.add_icosphere(

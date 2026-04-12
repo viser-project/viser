@@ -42,6 +42,7 @@ from ._gui_handles import (
     GuiDropdownHandle,
     GuiEvent,
     GuiFolderHandle,
+    GuiFormHandle,
     GuiHtmlHandle,
     GuiImageHandle,
     GuiMarkdownHandle,
@@ -224,6 +225,9 @@ class GuiApi:
             _messages.GuiButtonHoldMessage, self._handle_gui_button_hold
         )
         self._websock_interface.register_handler(
+            _messages.GuiFormSubmitMessage, self._handle_gui_form_submit
+        )
+        self._websock_interface.register_handler(
             _messages.FileTransferStartUpload, self._handle_file_transfer_start
         )
         self._websock_interface.register_handler(
@@ -337,6 +341,43 @@ class GuiApi:
                 self._thread_executor.submit(
                     cb, GuiEvent(client, client_id, handle)
                 ).add_done_callback(print_threadpool_errors)
+
+    async def _handle_gui_form_submit(
+        self, client_id: ClientId, message: _messages.GuiFormSubmitMessage
+    ) -> None:
+        """Callback for client-initiated form submits (Cmd/Ctrl+Enter).
+
+        Fires the form's on_submit callbacks and broadcasts the message back
+        to all clients so they reset their dirty indicators.
+        """
+        handle = self._container_handle_from_uuid.get(message.uuid, None)
+        if not isinstance(handle, GuiFormHandle):
+            return
+
+        # Resolve the originating client.
+        from ._viser import ClientHandle, ViserServer
+
+        if isinstance(self._owner, ClientHandle):
+            client = self._owner
+        elif isinstance(self._owner, ViserServer):
+            client = self._owner._connected_clients.get(client_id, None)
+            if client is None:
+                return
+        else:
+            assert False
+
+        for cb in handle._submit_cb:
+            if asyncio.iscoroutinefunction(cb):
+                await cb(GuiEvent(client, client_id, handle))
+            else:
+                self._thread_executor.submit(
+                    cb, GuiEvent(client, client_id, handle)
+                ).add_done_callback(print_threadpool_errors)
+
+        # Broadcast to clients so they clear their dirty indicators.
+        self._websock_interface.queue_message(
+            _messages.GuiFormSubmitMessage(uuid=message.uuid)
+        )
 
     def _handle_file_transfer_start(
         self, client_id: ClientId, message: _messages.FileTransferStartUpload
@@ -524,7 +565,7 @@ class GuiApi:
     @deprecated_positional_shim
     def add_folder(
         self,
-        label: str,
+        label: str | None,
         *,
         order: float | None = None,
         expand_by_default: bool = True,
@@ -533,10 +574,12 @@ class GuiApi:
         """Add a folder, and return a handle that can be used to populate it.
 
         Args:
-            label: Label to display on the folder.
+            label: Label to display on the folder. If ``None``, the folder is
+                rendered without a header or border, which is useful for pure
+                layout grouping.
             order: Optional ordering, smallest values will be displayed first.
             expand_by_default: Open the folder by default. Set to False to collapse it by
-                default.
+                default. Ignored when ``label`` is ``None``.
             visible: Whether the component is visible.
 
         Returns:
@@ -560,6 +603,71 @@ class GuiApi:
         return GuiFolderHandle(
             _GuiHandleState(
                 folder_container_id,
+                self,
+                None,
+                props=props,
+                parent_container_id=self._get_container_uuid(),
+            )
+        )
+
+    @deprecated_positional_shim
+    def add_form(
+        self,
+        label: str | None,
+        *,
+        order: float | None = None,
+        expand_by_default: bool = True,
+        visible: bool = True,
+    ) -> GuiFormHandle:
+        """Add a form, and return a handle that can be used to populate it.
+
+        See :class:`GuiFormHandle` for usage and semantics.
+
+        Args:
+            label: Label to display on the form. If ``None``, the form is
+                rendered without a header or border.
+            order: Optional ordering, smallest values will be displayed first.
+            expand_by_default: Open the form by default. Set to False to
+                collapse it by default. Ignored when ``label`` is ``None``.
+            visible: Whether the component is visible.
+
+        Returns:
+            A handle that can be used as a context to populate the form.
+        """
+        # Nested forms would produce invalid HTML on the client (nested
+        # <form> elements are not allowed and the browser flattens them).
+        container = self._get_container_uuid()
+        while container != "root":
+            parent = self._container_handle_from_uuid.get(container)
+            if isinstance(parent, GuiFormHandle):
+                raise ValueError(
+                    "Nested forms are not supported: add_form() was called "
+                    "inside an existing form's context."
+                )
+            # Only folder-like handles have an _impl.parent_container_id we
+            # can walk. For other container types (modals, tabs), stop.
+            if not isinstance(parent, GuiFolderHandle):
+                break
+            container = parent._impl.parent_container_id
+
+        form_container_id = _make_uuid()
+        order = _apply_default_order(order)
+        props = _messages.GuiFolderProps(
+            order=order,
+            label=label,
+            expand_by_default=expand_by_default,
+            visible=visible,
+        )
+        self._websock_interface.queue_message(
+            _messages.GuiFormMessage(
+                uuid=form_container_id,
+                container_uuid=self._get_container_uuid(),
+                props=props,
+            )
+        )
+        return GuiFormHandle(
+            _GuiHandleState(
+                form_container_id,
                 self,
                 None,
                 props=props,
@@ -1218,7 +1326,6 @@ class GuiApi:
         initial_value: str,
         *,
         multiline: bool = False,
-        update_on: Literal["change", "submit"] = "change",
         disabled: bool = False,
         visible: bool = True,
         hint: str | None = None,
@@ -1231,8 +1338,6 @@ class GuiApi:
             initial_value: Initial value of the text input.
             multiline: Whether the text input supports multiple lines, delimited with
                 the \n character.
-            update_on: When to fire on_update callbacks. ``"change"`` fires on every
-                keystroke (default). ``"submit"`` fires only on Enter key or blur.
             disabled: Whether the text input is disabled.
             visible: Whether the text input is visible.
             hint: Optional hint to display on hover.
@@ -1259,7 +1364,6 @@ class GuiApi:
                         disabled=disabled,
                         visible=visible,
                         multiline=multiline,
-                        update_on=update_on,
                     ),
                 ),
             )

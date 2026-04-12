@@ -14,6 +14,8 @@ GUI Handles
 
 .. autoclass:: viser.GuiFolderHandle
 
+.. autoclass:: viser.GuiFormHandle
+
 .. autoclass:: viser.GuiHtmlHandle
 
 .. autoclass:: viser.GuiImageHandle

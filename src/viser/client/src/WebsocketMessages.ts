@@ -503,7 +503,26 @@ export interface GuiFolderMessage {
   container_uuid: string;
   props: {
     order: number;
-    label: string;
+    label: string | null;
+    visible: boolean;
+    expand_by_default: boolean;
+  };
+}
+/** A form is a folder whose children's values can be committed together.
+ *
+ * Reuses ``GuiFolderProps`` because the visual shape is identical to a
+ * folder; the form-specific behavior (``on_submit`` callbacks, dirty
+ * indicator, Cmd/Ctrl+Enter) is keyed off the message type alone.
+ *
+ * (automatically generated)
+ */
+export interface GuiFormMessage {
+  type: "GuiFormMessage";
+  uuid: string;
+  container_uuid: string;
+  props: {
+    order: number;
+    label: string | null;
     visible: boolean;
     expand_by_default: boolean;
   };
@@ -1404,6 +1423,21 @@ export interface SceneNodeClickMessage {
 export interface ResetGuiMessage {
   type: "ResetGuiMessage";
 }
+/** Bidirectional form submit signal.
+ *
+ * - Sent client->server when the user presses Cmd/Ctrl+Enter inside a form.
+ * The server fires the form's ``on_submit`` callbacks and broadcasts this
+ * message to all clients.
+ * - Sent server->client (broadcast) after any submit (client-initiated or
+ * via Python ``form.submit()``). Clients clear their dirty indicator on
+ * receipt.
+ *
+ * (automatically generated)
+ */
+export interface GuiFormSubmitMessage {
+  type: "GuiFormSubmitMessage";
+  uuid: string;
+}
 /** GuiModalMessage(order: 'float', uuid: 'str', title: 'str')
  *
  * (automatically generated)
@@ -1630,6 +1664,7 @@ export type Message =
   | GaussianSplatsMessage
   | RemoveSceneNodeMessage
   | GuiFolderMessage
+  | GuiFormMessage
   | GuiMarkdownMessage
   | GuiHtmlMessage
   | GuiProgressBarMessage
@@ -1678,6 +1713,7 @@ export type Message =
   | SetSceneNodeClickableMessage
   | SceneNodeClickMessage
   | ResetGuiMessage
+  | GuiFormSubmitMessage
   | GuiModalMessage
   | GuiCloseModalMessage
   | GuiButtonHoldMessage
@@ -1724,6 +1760,7 @@ export type SceneNodeMessage =
   | GaussianSplatsMessage;
 export type GuiComponentMessage =
   | GuiFolderMessage
+  | GuiFormMessage
   | GuiMarkdownMessage
   | GuiHtmlMessage
   | GuiProgressBarMessage
@@ -1780,6 +1817,7 @@ export function isSceneNodeMessage(
 }
 const typeSetGuiComponentMessage = new Set([
   "GuiFolderMessage",
+  "GuiFormMessage",
   "GuiMarkdownMessage",
   "GuiHtmlMessage",
   "GuiProgressBarMessage",

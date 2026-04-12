@@ -1200,8 +1200,9 @@ class GuiBaseProps:
 class GuiFolderProps:
     order: float
     """Order value for arranging GUI elements. """
-    label: str
-    """Label text for the GUI folder."""
+    label: Optional[str]
+    """Label text for the GUI folder. If None, the folder is rendered without
+    a header or border (useful for pure layout grouping)."""
     visible: bool
     """Visibility state of the GUI folder."""
     expand_by_default: bool
@@ -1212,6 +1213,32 @@ class GuiFolderProps:
 class GuiFolderMessage(_CreateGuiComponentMessage):
     container_uuid: str
     props: GuiFolderProps
+
+
+@dataclasses.dataclass
+class GuiFormMessage(_CreateGuiComponentMessage):
+    """A form is a folder whose children's values can be committed together.
+
+    Reuses ``GuiFolderProps`` because the visual shape is identical to a
+    folder; the form-specific behavior (``on_submit`` callbacks, dirty
+    indicator, Cmd/Ctrl+Enter) is keyed off the message type alone."""
+
+    container_uuid: str
+    props: GuiFolderProps
+
+
+@dataclasses.dataclass
+class GuiFormSubmitMessage(Message):
+    """Bidirectional form submit signal.
+
+    - Sent client->server when the user presses Cmd/Ctrl+Enter inside a form.
+      The server fires the form's ``on_submit`` callbacks and broadcasts this
+      message to all clients.
+    - Sent server->client (broadcast) after any submit (client-initiated or
+      via Python ``form.submit()``). Clients clear their dirty indicator on
+      receipt."""
+
+    uuid: str
 
 
 @dataclasses.dataclass
@@ -1577,8 +1604,6 @@ class GuiVector3Message(_CreateGuiComponentMessage):
 @dataclasses.dataclass
 class GuiTextProps(GuiBaseProps):
     multiline: bool
-    update_on: str
-    """When to fire on_update: 'change' (every keystroke) or 'submit' (Enter/blur)."""
 
 
 @dataclasses.dataclass

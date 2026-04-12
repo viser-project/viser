@@ -21,6 +21,10 @@ export interface GuiState {
   };
   modals: GuiModalMessage[];
   guiOrderFromUuid: { [id: string]: number };
+  /** Monotonic submit counter per form UUID. Incremented on any incoming
+   * GuiFormSubmitMessage. Form components use this to reset their dirty
+   * indicator. */
+  guiFormSubmitCountFromUuid: { [uuid: string]: number };
   uploadsInProgress: {
     [uuid: string]: {
       notificationId: string;
@@ -46,6 +50,7 @@ export interface GuiActions {
       | GuiState["uploadsInProgress"][string]
     ) & { componentId: string },
   ) => void;
+  bumpFormSubmitCount: (uuid: string) => void;
 }
 
 const searchParams = new URLSearchParams(window.location.search);
@@ -70,6 +75,7 @@ const cleanGuiState: GuiState = {
   guiUuidSetFromContainerUuid: { root: {} },
   modals: [],
   guiOrderFromUuid: {},
+  guiFormSubmitCountFromUuid: {},
   uploadsInProgress: {},
 };
 
@@ -180,6 +186,9 @@ export function useGuiState(initialServer: string) {
         }
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { [id]: _2, ...remainingOrders } = store.get().guiOrderFromUuid;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { [id]: _3, ...remainingSubmitCounts } =
+          store.get().guiFormSubmitCountFromUuid;
         const containerUuid = guiConfig.container_uuid;
         const containerSet = {
           ...store.get().guiUuidSetFromContainerUuid[containerUuid],
@@ -195,6 +204,7 @@ export function useGuiState(initialServer: string) {
         }
         store.set({
           guiOrderFromUuid: remainingOrders,
+          guiFormSubmitCountFromUuid: remainingSubmitCounts,
           guiUuidSetFromContainerUuid: newContainerMap,
         });
         configStore.set({ [id]: undefined });
@@ -208,6 +218,7 @@ export function useGuiState(initialServer: string) {
             cleanGuiState.guiUuidSetFromContainerUuid,
           modals: cleanGuiState.modals,
           guiOrderFromUuid: cleanGuiState.guiOrderFromUuid,
+          guiFormSubmitCountFromUuid: cleanGuiState.guiFormSubmitCountFromUuid,
           uploadsInProgress: cleanGuiState.uploadsInProgress,
         });
         configStore.setAll({}, true);
@@ -224,6 +235,14 @@ export function useGuiState(initialServer: string) {
             },
           },
         });
+      },
+      bumpFormSubmitCount: (uuid) => {
+        store.set((state) => ({
+          guiFormSubmitCountFromUuid: {
+            ...state.guiFormSubmitCountFromUuid,
+            [uuid]: (state.guiFormSubmitCountFromUuid[uuid] ?? 0) + 1,
+          },
+        }));
       },
       updateGuiProps: (id, updates) => {
         const config = configStore.get(id);
