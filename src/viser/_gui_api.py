@@ -228,6 +228,9 @@ class GuiApi:
             _messages.GuiFormSubmitMessage, self._handle_gui_form_submit
         )
         self._websock_interface.register_handler(
+            _messages.GuiFormDirtyMessage, self._handle_gui_form_dirty
+        )
+        self._websock_interface.register_handler(
             _messages.FileTransferStartUpload, self._handle_file_transfer_start
         )
         self._websock_interface.register_handler(
@@ -378,6 +381,13 @@ class GuiApi:
         self._websock_interface.queue_message(
             _messages.GuiFormSubmitMessage(uuid=message.uuid)
         )
+
+    async def _handle_gui_form_dirty(
+        self, client_id: ClientId, message: _messages.GuiFormDirtyMessage
+    ) -> None:
+        """Broadcast form dirty signal to all other clients."""
+        message.excluded_self_client = client_id
+        self._websock_interface.queue_message(message)
 
     def _handle_file_transfer_start(
         self, client_id: ClientId, message: _messages.FileTransferStartUpload

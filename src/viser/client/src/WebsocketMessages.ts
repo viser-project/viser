@@ -1438,6 +1438,17 @@ export interface GuiFormSubmitMessage {
   type: "GuiFormSubmitMessage";
   uuid: string;
 }
+/** Bidirectional form dirty signal.
+ *
+ * - Sent client->server when any input inside the form first changes since
+ *   the last submit. The server broadcasts this to all other clients.
+ * - Sent server->client (broadcast) to propagate dirty state. Clients show
+ *   a dirty indicator on the form header on receipt.
+ */
+export interface GuiFormDirtyMessage {
+  type: "GuiFormDirtyMessage";
+  uuid: string;
+}
 /** GuiModalMessage(order: 'float', uuid: 'str', title: 'str')
  *
  * (automatically generated)
@@ -1714,6 +1725,7 @@ export type Message =
   | SceneNodeClickMessage
   | ResetGuiMessage
   | GuiFormSubmitMessage
+  | GuiFormDirtyMessage
   | GuiModalMessage
   | GuiCloseModalMessage
   | GuiButtonHoldMessage

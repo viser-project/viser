@@ -1242,6 +1242,18 @@ class GuiFormSubmitMessage(Message):
 
 
 @dataclasses.dataclass
+class GuiFormDirtyMessage(Message):
+    """Bidirectional form dirty signal.
+
+    - Sent client->server when any input inside the form first changes since
+      the last submit. The server broadcasts this to all other clients.
+    - Sent server->client (broadcast) to propagate dirty state. Clients show
+      a dirty indicator on the form header on receipt."""
+
+    uuid: str
+
+
+@dataclasses.dataclass
 class GuiMarkdownProps:
     order: float
     """Order value for arranging GUI elements. """

@@ -41,7 +41,8 @@ function useMessageHandler() {
   const removeModal = viewer.guiActions.removeModal;
   const removeGui = viewer.guiActions.removeGui;
   const updateUploadState = viewer.guiActions.updateUploadState;
-  const bumpFormSubmitCount = viewer.guiActions.bumpFormSubmitCount;
+  const setFormDirty = viewer.guiActions.setFormDirty;
+  const clearFormDirty = viewer.guiActions.clearFormDirty;
 
   // Same as addSceneNode, but make a parent in the form of a dummy coordinate
   // frame if it doesn't exist yet.
@@ -561,7 +562,12 @@ function useMessageHandler() {
       }
       // Broadcast to clients that a form was submitted; reset dirty state.
       case "GuiFormSubmitMessage": {
-        bumpFormSubmitCount(message.uuid);
+        clearFormDirty(message.uuid);
+        return;
+      }
+      // Broadcast to clients that a form has unsaved changes.
+      case "GuiFormDirtyMessage": {
+        setFormDirty(message.uuid);
         return;
       }
 

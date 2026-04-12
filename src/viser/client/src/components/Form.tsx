@@ -24,7 +24,7 @@ export default function FormComponent({
   const viewer = React.useContext(ViewerContext)!;
   const guiContext = React.useContext(GuiComponentContext)!;
   const [opened, { toggle }] = useDisclosure(expand_by_default);
-  const [isDirty, setIsDirty] = React.useState(false);
+  const isDirty = viewer.useGui((state) => state.dirtyFormUuids[uuid] === true);
 
   const guiIdSet = viewer.useGui(
     (state) => state.guiUuidSetFromContainerUuid[uuid],
@@ -34,13 +34,7 @@ export default function FormComponent({
     nextGuiUuid == null ? null : (conf?.type ?? null),
   );
 
-  const submitCount = viewer.useGui(
-    (state) => state.guiFormSubmitCountFromUuid[uuid] ?? 0,
-  );
-  React.useEffect(() => {
-    setIsDirty(false);
-  }, [submitCount]);
-
+  const setFormDirty = viewer.guiActions.setFormDirty;
   const messageSender = guiContext.messageSender;
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -48,7 +42,10 @@ export default function FormComponent({
   };
 
   const onChangeAny = () => {
-    if (!isDirty) setIsDirty(true);
+    if (!isDirty) {
+      setFormDirty(uuid);
+      messageSender({ type: "GuiFormDirtyMessage", uuid });
+    }
   };
 
   if (!visible) return null;
