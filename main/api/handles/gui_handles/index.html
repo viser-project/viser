@@ -861,8 +861,9 @@ visualizer.</p>
 
 <dl class="py attribute">
 <dt class="sig sig-object py" id="viser.GuiFolderHandle.label">
-<span class="sig-name descname"><span class="pre">label</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.GuiFolderHandle.label" title="Link to this definition">¶</a></dt>
-<dd><p>Label text for the GUI folder.</p>
+<span class="sig-name descname"><span class="pre">label</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.GuiFolderHandle.label" title="Link to this definition">¶</a></dt>
+<dd><p>Label text for the GUI folder. If None, the folder is rendered without
+a header or border (useful for pure layout grouping).</p>
 </dd></dl>
 
 <dl class="py attribute">
@@ -874,6 +875,124 @@ visualizer.</p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="viser.GuiFolderHandle.expand_by_default">
 <span class="sig-name descname"><span class="pre">expand_by_default</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.GuiFolderHandle.expand_by_default" title="Link to this definition">¶</a></dt>
+<dd><p>Whether the folder should be expanded by default.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.GuiFormHandle">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">GuiFormHandle</span></span><a class="reference internal" href="../../../_modules/viser/_gui_handles/#GuiFormHandle"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.GuiFormHandle" title="Link to this definition">¶</a></dt>
+<dd><p>Use as a context to place GUI elements into a form.</p>
+<p>A form is a folder whose children’s values can be committed together by
+calling <a class="reference internal" href="#viser.GuiFormHandle.submit" title="viser.GuiFormHandle.submit"><code class="xref py py-meth docutils literal notranslate"><span class="pre">submit()</span></code></a> (typically from a button’s <code class="docutils literal notranslate"><span class="pre">on_click</span></code> handler) or
+by pressing Enter in a single-line text input inside the form.</p>
+<p>Children of a form behave exactly like children of a folder. <code class="docutils literal notranslate"><span class="pre">on_update</span></code>
+callbacks on individual inputs continue to fire on every keystroke; the
+form’s <a class="reference internal" href="#viser.GuiFormHandle.on_submit" title="viser.GuiFormHandle.on_submit"><code class="xref py py-meth docutils literal notranslate"><span class="pre">on_submit()</span></code></a> callback fires only when the form is submitted.
+Register one or both depending on whether you want live or commit
+semantics.</p>
+<p>The form’s client-side dirty indicator highlights when any descendant
+input has been edited since the last submit.</p>
+<p>Forms cannot be nested. Calling <a class="reference internal" href="../../core/gui_api/#viser.GuiApi.add_form" title="viser.GuiApi.add_form"><code class="xref py py-meth docutils literal notranslate"><span class="pre">GuiApi.add_form()</span></code></a> inside an
+existing form’s context will raise <a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">ValueError</span></code></a>, because nested
+<code class="docutils literal notranslate"><span class="pre">&lt;form&gt;</span></code> elements are invalid HTML on the client.</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">with</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_form</span><span class="p">(</span><span class="s2">&quot;Profile&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">form</span><span class="p">:</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_text</span><span class="p">(</span><span class="s2">&quot;Name&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+    <span class="n">age</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_number</span><span class="p">(</span><span class="s2">&quot;Age&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">save</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Save&quot;</span><span class="p">)</span>
+
+<span class="n">save</span><span class="o">.</span><span class="n">on_click</span><span class="p">(</span><span class="k">lambda</span> <span class="n">_</span><span class="p">:</span> <span class="n">form</span><span class="o">.</span><span class="n">submit</span><span class="p">())</span>
+
+<span class="nd">@form</span><span class="o">.</span><span class="n">on_submit</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">name</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">age</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+</pre></div>
+</div>
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.GuiFormHandle.on_submit">
+<span class="sig-name descname"><span class="pre">on_submit</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">func</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="../../advanced/events/#viser.GuiEvent" title="viser._gui_handles.GuiEvent"><span class="pre">GuiEvent</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#viser.GuiFormHandle" title="viser._gui_handles.GuiFormHandle"><span class="pre">GuiFormHandle</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">NoneOrCoroutine</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="../../advanced/events/#viser.GuiEvent" title="viser._gui_handles.GuiEvent"><span class="pre">GuiEvent</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#viser.GuiFormHandle" title="viser._gui_handles.GuiFormHandle"><span class="pre">GuiFormHandle</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">NoneOrCoroutine</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../../../_modules/viser/_gui_handles/#GuiFormHandle.on_submit"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.GuiFormHandle.on_submit" title="Link to this definition">¶</a></dt>
+<dd><p>Attach a function to call when the form is submitted.</p>
+<p><code class="docutils literal notranslate"><span class="pre">on_submit</span></code> is independent from <code class="docutils literal notranslate"><span class="pre">on_update</span></code> callbacks on child
+inputs: child <code class="docutils literal notranslate"><span class="pre">on_update</span></code> callbacks fire on every keystroke (as
+normal), and the form’s <code class="docutils literal notranslate"><span class="pre">on_submit</span></code> fires when commit happens (via
+<code class="docutils literal notranslate"><span class="pre">form.submit()</span></code> or Enter in a single-line text input).</p>
+<p>Note:
+- If <cite>func</cite> is a regular function (defined with <cite>def</cite>), it will be executed in a thread pool.
+- If <cite>func</cite> is an async function (defined with <cite>async def</cite>), it will be executed in the event loop.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>func</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><em>Callable</em></a><em>[</em><em>[</em><a class="reference internal" href="../../advanced/events/#viser.GuiEvent" title="viser._gui_handles.GuiEvent"><em>GuiEvent</em></a><em>[</em><a class="reference internal" href="#viser.GuiFormHandle" title="viser._gui_handles.GuiFormHandle"><em>GuiFormHandle</em></a><em>]</em><em>]</em><em>, </em><em>NoneOrCoroutine</em><em>]</em>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><em>Callable</em></a>[[<a class="reference internal" href="../../advanced/events/#viser.GuiEvent" title="viser._gui_handles.GuiEvent"><em>GuiEvent</em></a>[<a class="reference internal" href="#viser.GuiFormHandle" title="viser._gui_handles.GuiFormHandle"><em>GuiFormHandle</em></a>]], <em>NoneOrCoroutine</em>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.GuiFormHandle.remove_submit_callback">
+<span class="sig-name descname"><span class="pre">remove_submit_callback</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">callback</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'all'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'all'</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../../../_modules/viser/_gui_handles/#GuiFormHandle.remove_submit_callback"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.GuiFormHandle.remove_submit_callback" title="Link to this definition">¶</a></dt>
+<dd><p>Remove submit callbacks from the form.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>callback</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'all'</em><em>] </em><em>| </em><em>~typing.Callable</em>) – Either “all” to remove all callbacks, or a specific callback function to remove.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.GuiFormHandle.submit">
+<span class="sig-name descname"><span class="pre">submit</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../../../_modules/viser/_gui_handles/#GuiFormHandle.submit"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.GuiFormHandle.submit" title="Link to this definition">¶</a></dt>
+<dd><p>Programmatically submit this form.</p>
+<p>Fires all registered <code class="docutils literal notranslate"><span class="pre">on_submit</span></code> callbacks and broadcasts a
+<code class="xref py py-class docutils literal notranslate"><span class="pre">GuiFormSubmitMessage</span></code> to all clients so their dirty indicators
+are cleared.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.GuiFormHandle.remove">
+<span class="sig-name descname"><span class="pre">remove</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.GuiFormHandle.remove" title="Link to this definition">¶</a></dt>
+<dd><p>Permanently remove this folder and all contained GUI elements from the
+visualizer.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.GuiFormHandle.order">
+<span class="sig-name descname"><span class="pre">order</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.GuiFormHandle.order" title="Link to this definition">¶</a></dt>
+<dd><p>Order value for arranging GUI elements.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.GuiFormHandle.label">
+<span class="sig-name descname"><span class="pre">label</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.GuiFormHandle.label" title="Link to this definition">¶</a></dt>
+<dd><p>Label text for the GUI folder. If None, the folder is rendered without
+a header or border (useful for pure layout grouping).</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.GuiFormHandle.visible">
+<span class="sig-name descname"><span class="pre">visible</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.GuiFormHandle.visible" title="Link to this definition">¶</a></dt>
+<dd><p>Visibility state of the GUI folder.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.GuiFormHandle.expand_by_default">
+<span class="sig-name descname"><span class="pre">expand_by_default</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.GuiFormHandle.expand_by_default" title="Link to this definition">¶</a></dt>
 <dd><p>Whether the folder should be expanded by default.</p>
 </dd></dl>
 
@@ -2455,6 +2574,17 @@ Used when height is None.</p>
 <li><a class="reference internal" href="#viser.GuiFolderHandle.label"><code class="docutils literal notranslate"><span class="pre">GuiFolderHandle.label</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiFolderHandle.visible"><code class="docutils literal notranslate"><span class="pre">GuiFolderHandle.visible</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiFolderHandle.expand_by_default"><code class="docutils literal notranslate"><span class="pre">GuiFolderHandle.expand_by_default</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.GuiFormHandle"><code class="docutils literal notranslate"><span class="pre">GuiFormHandle</span></code></a><ul>
+<li><a class="reference internal" href="#viser.GuiFormHandle.on_submit"><code class="docutils literal notranslate"><span class="pre">GuiFormHandle.on_submit()</span></code></a></li>
+<li><a class="reference internal" href="#viser.GuiFormHandle.remove_submit_callback"><code class="docutils literal notranslate"><span class="pre">GuiFormHandle.remove_submit_callback()</span></code></a></li>
+<li><a class="reference internal" href="#viser.GuiFormHandle.submit"><code class="docutils literal notranslate"><span class="pre">GuiFormHandle.submit()</span></code></a></li>
+<li><a class="reference internal" href="#viser.GuiFormHandle.remove"><code class="docutils literal notranslate"><span class="pre">GuiFormHandle.remove()</span></code></a></li>
+<li><a class="reference internal" href="#viser.GuiFormHandle.order"><code class="docutils literal notranslate"><span class="pre">GuiFormHandle.order</span></code></a></li>
+<li><a class="reference internal" href="#viser.GuiFormHandle.label"><code class="docutils literal notranslate"><span class="pre">GuiFormHandle.label</span></code></a></li>
+<li><a class="reference internal" href="#viser.GuiFormHandle.visible"><code class="docutils literal notranslate"><span class="pre">GuiFormHandle.visible</span></code></a></li>
+<li><a class="reference internal" href="#viser.GuiFormHandle.expand_by_default"><code class="docutils literal notranslate"><span class="pre">GuiFormHandle.expand_by_default</span></code></a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#viser.GuiHtmlHandle"><code class="docutils literal notranslate"><span class="pre">GuiHtmlHandle</span></code></a><ul>

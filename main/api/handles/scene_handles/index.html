@@ -1222,6 +1222,159 @@ opacity regardless of lighting conditions.</p>
 </dd></dl>
 
 <dl class="py class">
+<dt class="sig sig-object py" id="viser.CylinderHandle">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">CylinderHandle</span></span><a class="reference internal" href="../../../_modules/viser/_scene_handles/#CylinderHandle"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.CylinderHandle" title="Link to this definition">¶</a></dt>
+<dd><p>Handle for cylinder objects.</p>
+<dl class="py property">
+<dt class="sig sig-object py" id="viser.CylinderHandle.name">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.CylinderHandle.name" title="Link to this definition">¶</a></dt>
+<dd><p>Read-only name of the scene node.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.CylinderHandle.on_click">
+<span class="sig-name descname"><span class="pre">on_click</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">func</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="../../advanced/events/#viser.SceneNodePointerEvent" title="viser._scene_handles.SceneNodePointerEvent"><span class="pre">SceneNodePointerEvent</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Self" title="(in Python v3.14)"><span class="pre">Self</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">NoneOrCoroutine</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="../../advanced/events/#viser.SceneNodePointerEvent" title="viser._scene_handles.SceneNodePointerEvent"><span class="pre">SceneNodePointerEvent</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Self" title="(in Python v3.14)"><span class="pre">Self</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">NoneOrCoroutine</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#viser.CylinderHandle.on_click" title="Link to this definition">¶</a></dt>
+<dd><p>Attach a callback for when a scene node is clicked.</p>
+<p>The callback can be either a standard function or an async function:
+- Standard functions (def) will be executed in a threadpool.
+- Async functions (async def) will be executed in the event loop.</p>
+<p>Using async functions can be useful for reducing race conditions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>self</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Self" title="(in Python v3.14)"><em>Self</em></a>)</p></li>
+<li><p><strong>func</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><em>Callable</em></a><em>[</em><em>[</em><a class="reference internal" href="../../advanced/events/#viser.SceneNodePointerEvent" title="viser._scene_handles.SceneNodePointerEvent"><em>SceneNodePointerEvent</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Self" title="(in Python v3.14)"><em>Self</em></a><em>]</em><em>]</em><em>, </em><em>NoneOrCoroutine</em><em>]</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><em>Callable</em></a>[[<a class="reference internal" href="../../advanced/events/#viser.SceneNodePointerEvent" title="viser._scene_handles.SceneNodePointerEvent"><em>SceneNodePointerEvent</em></a>[<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Self" title="(in Python v3.14)"><em>Self</em></a>]], <em>NoneOrCoroutine</em>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="viser.CylinderHandle.position">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">position</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">dtype</span><span class="p"><span class="pre">[</span></span><span class="pre">float64</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.CylinderHandle.position" title="Link to this definition">¶</a></dt>
+<dd><p>Position of the scene node. This is equivalent to the t in
+<cite>p_parent = [R | t] p_local</cite>. Synchronized to clients automatically when assigned.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.CylinderHandle.remove">
+<span class="sig-name descname"><span class="pre">remove</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.CylinderHandle.remove" title="Link to this definition">¶</a></dt>
+<dd><p>Remove the node from the scene.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.CylinderHandle.remove_click_callback">
+<span class="sig-name descname"><span class="pre">remove_click_callback</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">callback</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'all'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'all'</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.CylinderHandle.remove_click_callback" title="Link to this definition">¶</a></dt>
+<dd><p>Remove click callbacks from scene node.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>callback</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'all'</em><em>] </em><em>| </em><em>~typing.Callable</em>) – Either “all” to remove all callbacks, or a specific callback function to remove.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.CylinderHandle.scale">
+<span class="sig-name descname"><span class="pre">scale</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1.0</span></em><a class="headerlink" href="#viser.CylinderHandle.scale" title="Link to this definition">¶</a></dt>
+<dd><p>Scale of the cylinder. A single float for uniform scaling or a
+tuple of (x, y, z) for per-axis scaling.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="viser.CylinderHandle.visible">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">visible</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.CylinderHandle.visible" title="Link to this definition">¶</a></dt>
+<dd><p>Whether the scene node is visible or not. Synchronized to clients automatically when assigned.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="viser.CylinderHandle.wxyz">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">wxyz</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">dtype</span><span class="p"><span class="pre">[</span></span><span class="pre">float64</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.CylinderHandle.wxyz" title="Link to this definition">¶</a></dt>
+<dd><p>Orientation of the scene node. This is the quaternion representation of the R
+in <cite>p_parent = [R | t] p_local</cite>. Synchronized to clients automatically when assigned.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.CylinderHandle.radius">
+<span class="sig-name descname"><span class="pre">radius</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.CylinderHandle.radius" title="Link to this definition">¶</a></dt>
+<dd><p>Radius of the cylinder.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.CylinderHandle.height">
+<span class="sig-name descname"><span class="pre">height</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.CylinderHandle.height" title="Link to this definition">¶</a></dt>
+<dd><p>Height of the cylinder.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.CylinderHandle.color">
+<span class="sig-name descname"><span class="pre">color</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.CylinderHandle.color" title="Link to this definition">¶</a></dt>
+<dd><p>Color of the cylinder as RGB integers.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.CylinderHandle.radial_segments">
+<span class="sig-name descname"><span class="pre">radial_segments</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><a class="headerlink" href="#viser.CylinderHandle.radial_segments" title="Link to this definition">¶</a></dt>
+<dd><p>Number of segmented faces around the circumference of the cylinder.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.CylinderHandle.wireframe">
+<span class="sig-name descname"><span class="pre">wireframe</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.CylinderHandle.wireframe" title="Link to this definition">¶</a></dt>
+<dd><p>Boolean indicating if the cylinder should be rendered as a wireframe.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.CylinderHandle.opacity">
+<span class="sig-name descname"><span class="pre">opacity</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.CylinderHandle.opacity" title="Link to this definition">¶</a></dt>
+<dd><p>Opacity of the cylinder. None means opaque.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.CylinderHandle.flat_shading">
+<span class="sig-name descname"><span class="pre">flat_shading</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.CylinderHandle.flat_shading" title="Link to this definition">¶</a></dt>
+<dd><p>Whether to do flat shading.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.CylinderHandle.side">
+<span class="sig-name descname"><span class="pre">side</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Literal</span><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'front'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'back'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'double'</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.CylinderHandle.side" title="Link to this definition">¶</a></dt>
+<dd><p>Side of the surface to render.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.CylinderHandle.material">
+<span class="sig-name descname"><span class="pre">material</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Literal</span><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'standard'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'toon3'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'toon5'</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.CylinderHandle.material" title="Link to this definition">¶</a></dt>
+<dd><p>Material type of the cylinder.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.CylinderHandle.cast_shadow">
+<span class="sig-name descname"><span class="pre">cast_shadow</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.CylinderHandle.cast_shadow" title="Link to this definition">¶</a></dt>
+<dd><p>Whether or not to cast shadows.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.CylinderHandle.receive_shadow">
+<span class="sig-name descname"><span class="pre">receive_shadow</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.CylinderHandle.receive_shadow" title="Link to this definition">¶</a></dt>
+<dd><p>Whether to receive shadows. If True, receives shadows normally. If
+False, no shadows. If a float (0-1), shadows are rendered with a fixed
+opacity regardless of lighting conditions.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
 <dt class="sig sig-object py" id="viser.DirectionalLightHandle">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">DirectionalLightHandle</span></span><a class="reference internal" href="../../../_modules/viser/_scene_handles/#DirectionalLightHandle"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.DirectionalLightHandle" title="Link to this definition">¶</a></dt>
 <dd><p>Handle for directional lights.</p>
@@ -3640,6 +3793,28 @@ other objects.</p>
 <li><a class="reference internal" href="#viser.CameraFrustumHandle.color"><code class="docutils literal notranslate"><span class="pre">CameraFrustumHandle.color</span></code></a></li>
 <li><a class="reference internal" href="#viser.CameraFrustumHandle.cast_shadow"><code class="docutils literal notranslate"><span class="pre">CameraFrustumHandle.cast_shadow</span></code></a></li>
 <li><a class="reference internal" href="#viser.CameraFrustumHandle.receive_shadow"><code class="docutils literal notranslate"><span class="pre">CameraFrustumHandle.receive_shadow</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.CylinderHandle"><code class="docutils literal notranslate"><span class="pre">CylinderHandle</span></code></a><ul>
+<li><a class="reference internal" href="#viser.CylinderHandle.name"><code class="docutils literal notranslate"><span class="pre">CylinderHandle.name</span></code></a></li>
+<li><a class="reference internal" href="#viser.CylinderHandle.on_click"><code class="docutils literal notranslate"><span class="pre">CylinderHandle.on_click()</span></code></a></li>
+<li><a class="reference internal" href="#viser.CylinderHandle.position"><code class="docutils literal notranslate"><span class="pre">CylinderHandle.position</span></code></a></li>
+<li><a class="reference internal" href="#viser.CylinderHandle.remove"><code class="docutils literal notranslate"><span class="pre">CylinderHandle.remove()</span></code></a></li>
+<li><a class="reference internal" href="#viser.CylinderHandle.remove_click_callback"><code class="docutils literal notranslate"><span class="pre">CylinderHandle.remove_click_callback()</span></code></a></li>
+<li><a class="reference internal" href="#viser.CylinderHandle.scale"><code class="docutils literal notranslate"><span class="pre">CylinderHandle.scale</span></code></a></li>
+<li><a class="reference internal" href="#viser.CylinderHandle.visible"><code class="docutils literal notranslate"><span class="pre">CylinderHandle.visible</span></code></a></li>
+<li><a class="reference internal" href="#viser.CylinderHandle.wxyz"><code class="docutils literal notranslate"><span class="pre">CylinderHandle.wxyz</span></code></a></li>
+<li><a class="reference internal" href="#viser.CylinderHandle.radius"><code class="docutils literal notranslate"><span class="pre">CylinderHandle.radius</span></code></a></li>
+<li><a class="reference internal" href="#viser.CylinderHandle.height"><code class="docutils literal notranslate"><span class="pre">CylinderHandle.height</span></code></a></li>
+<li><a class="reference internal" href="#viser.CylinderHandle.color"><code class="docutils literal notranslate"><span class="pre">CylinderHandle.color</span></code></a></li>
+<li><a class="reference internal" href="#viser.CylinderHandle.radial_segments"><code class="docutils literal notranslate"><span class="pre">CylinderHandle.radial_segments</span></code></a></li>
+<li><a class="reference internal" href="#viser.CylinderHandle.wireframe"><code class="docutils literal notranslate"><span class="pre">CylinderHandle.wireframe</span></code></a></li>
+<li><a class="reference internal" href="#viser.CylinderHandle.opacity"><code class="docutils literal notranslate"><span class="pre">CylinderHandle.opacity</span></code></a></li>
+<li><a class="reference internal" href="#viser.CylinderHandle.flat_shading"><code class="docutils literal notranslate"><span class="pre">CylinderHandle.flat_shading</span></code></a></li>
+<li><a class="reference internal" href="#viser.CylinderHandle.side"><code class="docutils literal notranslate"><span class="pre">CylinderHandle.side</span></code></a></li>
+<li><a class="reference internal" href="#viser.CylinderHandle.material"><code class="docutils literal notranslate"><span class="pre">CylinderHandle.material</span></code></a></li>
+<li><a class="reference internal" href="#viser.CylinderHandle.cast_shadow"><code class="docutils literal notranslate"><span class="pre">CylinderHandle.cast_shadow</span></code></a></li>
+<li><a class="reference internal" href="#viser.CylinderHandle.receive_shadow"><code class="docutils literal notranslate"><span class="pre">CylinderHandle.receive_shadow</span></code></a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#viser.DirectionalLightHandle"><code class="docutils literal notranslate"><span class="pre">DirectionalLightHandle</span></code></a><ul>

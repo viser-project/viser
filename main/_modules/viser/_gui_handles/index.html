@@ -444,7 +444,7 @@
 <span class="p">)</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing_extensions</span><span class="w"> </span><span class="kn">import</span> <span class="n">Protocol</span><span class="p">,</span> <span class="n">override</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing_extensions</span><span class="w"> </span><span class="kn">import</span> <span class="n">Protocol</span><span class="p">,</span> <span class="n">Self</span><span class="p">,</span> <span class="n">override</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">._assignable_props_api</span><span class="w"> </span><span class="kn">import</span> <span class="n">AssignablePropsBase</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">._icons</span><span class="w"> </span><span class="kn">import</span> <span class="n">svg_from_icon</span>
@@ -457,6 +457,7 @@
     <span class="n">GuiCloseModalMessage</span><span class="p">,</span>
     <span class="n">GuiDropdownProps</span><span class="p">,</span>
     <span class="n">GuiFolderProps</span><span class="p">,</span>
+    <span class="n">GuiFormSubmitMessage</span><span class="p">,</span>
     <span class="n">GuiHtmlProps</span><span class="p">,</span>
     <span class="n">GuiImageProps</span><span class="p">,</span>
     <span class="n">GuiMarkdownProps</span><span class="p">,</span>
@@ -487,7 +488,7 @@
 
 
 <span class="n">T</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">&quot;T&quot;</span><span class="p">)</span>
-<span class="n">TGuiHandle</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">&quot;TGuiHandle&quot;</span><span class="p">,</span> <span class="n">bound</span><span class="o">=</span><span class="s2">&quot;_GuiInputHandle&quot;</span><span class="p">)</span>
+<span class="n">TGuiHandle</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">&quot;TGuiHandle&quot;</span><span class="p">,</span> <span class="n">bound</span><span class="o">=</span><span class="s2">&quot;_GuiHandle&quot;</span><span class="p">)</span>
 <span class="n">NoneOrCoroutine</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">&quot;NoneOrCoroutine&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="n">Coroutine</span><span class="p">)</span>
 
 
@@ -1272,7 +1273,7 @@
         <span class="p">]</span>
         <span class="n">parent</span><span class="o">.</span><span class="n">_children</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">uuid</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GuiFolderHandle</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Self</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_container_id_restore</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">gui_api</span><span class="o">.</span><span class="n">_get_container_uuid</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">gui_api</span><span class="o">.</span><span class="n">_set_container_uuid</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span>
@@ -1312,6 +1313,108 @@
         <span class="n">parent</span> <span class="o">=</span> <span class="n">gui_api</span><span class="o">.</span><span class="n">_container_handle_from_uuid</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">parent_container_id</span><span class="p">]</span>
         <span class="n">parent</span><span class="o">.</span><span class="n">_children</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
         <span class="n">gui_api</span><span class="o">.</span><span class="n">_container_handle_from_uuid</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="GuiFormHandle">
+<a class="viewcode-back" href="../../../api/handles/gui_handles/#viser.GuiFormHandle">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">GuiFormHandle</span><span class="p">(</span><span class="n">GuiFolderHandle</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Use as a context to place GUI elements into a form.</span>
+
+<span class="sd">    A form is a folder whose children&#39;s values can be committed together by</span>
+<span class="sd">    calling :meth:`submit` (typically from a button&#39;s ``on_click`` handler) or</span>
+<span class="sd">    by pressing Enter in a single-line text input inside the form.</span>
+
+<span class="sd">    Children of a form behave exactly like children of a folder. ``on_update``</span>
+<span class="sd">    callbacks on individual inputs continue to fire on every keystroke; the</span>
+<span class="sd">    form&#39;s :meth:`on_submit` callback fires only when the form is submitted.</span>
+<span class="sd">    Register one or both depending on whether you want live or commit</span>
+<span class="sd">    semantics.</span>
+
+<span class="sd">    The form&#39;s client-side dirty indicator highlights when any descendant</span>
+<span class="sd">    input has been edited since the last submit.</span>
+
+<span class="sd">    Forms cannot be nested. Calling :meth:`GuiApi.add_form` inside an</span>
+<span class="sd">    existing form&#39;s context will raise :class:`ValueError`, because nested</span>
+<span class="sd">    ``&lt;form&gt;`` elements are invalid HTML on the client.</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        with server.gui.add_form(&quot;Profile&quot;) as form:</span>
+<span class="sd">            name = server.gui.add_text(&quot;Name&quot;, &quot;&quot;)</span>
+<span class="sd">            age = server.gui.add_number(&quot;Age&quot;, 0)</span>
+<span class="sd">            save = server.gui.add_button(&quot;Save&quot;)</span>
+
+<span class="sd">        save.on_click(lambda _: form.submit())</span>
+
+<span class="sd">        @form.on_submit</span>
+<span class="sd">        def _(event):</span>
+<span class="sd">            print(name.value, age.value)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">_impl</span><span class="p">:</span> <span class="n">_GuiHandleState</span><span class="p">[</span><span class="kc">None</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">_impl</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_submit_cb</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span>
+            <span class="n">Callable</span><span class="p">[[</span><span class="n">GuiEvent</span><span class="p">[</span><span class="n">GuiFormHandle</span><span class="p">]],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">]</span>
+        <span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+<div class="viewcode-block" id="GuiFormHandle.on_submit">
+<a class="viewcode-back" href="../../../api/handles/gui_handles/#viser.GuiFormHandle.on_submit">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_submit</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">GuiEvent</span><span class="p">[</span><span class="n">GuiFormHandle</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">GuiEvent</span><span class="p">[</span><span class="n">GuiFormHandle</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a function to call when the form is submitted.</span>
+
+<span class="sd">        ``on_submit`` is independent from ``on_update`` callbacks on child</span>
+<span class="sd">        inputs: child ``on_update`` callbacks fire on every keystroke (as</span>
+<span class="sd">        normal), and the form&#39;s ``on_submit`` fires when commit happens (via</span>
+<span class="sd">        ``form.submit()`` or Enter in a single-line text input).</span>
+
+<span class="sd">        Note:</span>
+<span class="sd">        - If `func` is a regular function (defined with `def`), it will be executed in a thread pool.</span>
+<span class="sd">        - If `func` is an async function (defined with `async def`), it will be executed in the event loop.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_submit_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">func</span></div>
+
+
+<div class="viewcode-block" id="GuiFormHandle.remove_submit_callback">
+<a class="viewcode-back" href="../../../api/handles/gui_handles/#viser.GuiFormHandle.remove_submit_callback">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">remove_submit_callback</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">callback</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;all&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="n">Callable</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove submit callbacks from the form.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            callback: Either &quot;all&quot; to remove all callbacks, or a specific callback function to remove.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">callback</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_submit_cb</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_submit_cb</span> <span class="o">=</span> <span class="p">[</span><span class="n">cb</span> <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_submit_cb</span> <span class="k">if</span> <span class="n">cb</span> <span class="o">!=</span> <span class="n">callback</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="GuiFormHandle.submit">
+<a class="viewcode-back" href="../../../api/handles/gui_handles/#viser.GuiFormHandle.submit">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">submit</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Programmatically submit this form.</span>
+
+<span class="sd">        Fires all registered ``on_submit`` callbacks and broadcasts a</span>
+<span class="sd">        :class:`GuiFormSubmitMessage` to all clients so their dirty indicators</span>
+<span class="sd">        are cleared.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">gui_api</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">gui_api</span>
+        <span class="c1"># Fire on_submit callbacks. Server-initiated submits have no client.</span>
+        <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_submit_cb</span><span class="p">:</span>
+            <span class="n">cb_out</span> <span class="o">=</span> <span class="n">cb</span><span class="p">(</span><span class="n">GuiEvent</span><span class="p">(</span><span class="n">client_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">client</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="bp">self</span><span class="p">))</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cb_out</span><span class="p">,</span> <span class="n">Coroutine</span><span class="p">):</span>
+                <span class="n">gui_api</span><span class="o">.</span><span class="n">_event_loop</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">cb_out</span><span class="p">)</span>
+        <span class="c1"># Broadcast to clients so they reset dirty state.</span>
+        <span class="n">gui_api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+            <span class="n">GuiFormSubmitMessage</span><span class="p">(</span><span class="n">uuid</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+        <span class="p">)</span></div>
 </div>
 
 

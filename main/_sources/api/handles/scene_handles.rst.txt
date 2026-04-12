@@ -31,6 +31,8 @@ methods like :func:`viser.ViserServer.add_frame()` or
 
 .. autoclass:: viser.CameraFrustumHandle
 
+.. autoclass:: viser.CylinderHandle
+
 .. autoclass:: viser.DirectionalLightHandle
 
 .. autoclass:: viser.FrameHandle
