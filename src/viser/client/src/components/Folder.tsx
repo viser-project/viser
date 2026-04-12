@@ -25,13 +25,29 @@ export default function FolderComponent({
     nextGuiUuid == null ? null : (conf?.type ?? null),
   );
 
-  const ToggleIcon = opened ? IconChevronUp : IconChevronDown;
   if (!visible) return null;
+
+  // No label: render children only, no header/border/collapse. Use
+  // `unwrapped` so we don't introduce extra padding above the first child.
+  if (label === null) {
+    return (
+      <GuiComponentContext.Provider
+        value={{
+          ...guiContext,
+          folderDepth: guiContext.folderDepth + 1,
+        }}
+      >
+        <guiContext.GuiContainer containerUuid={uuid} unwrapped />
+      </GuiComponentContext.Provider>
+    );
+  }
+
+  const ToggleIcon = opened ? IconChevronUp : IconChevronDown;
   return (
     <Paper
       withBorder
       className={folderWrapper}
-      mb={nextGuiType === "GuiFolderMessage" ? "md" : undefined}
+      mb={nextGuiType === "GuiFolderMessage" || nextGuiType === "GuiFormMessage" ? "md" : undefined}
     >
       <Paper
         className={folderLabel}

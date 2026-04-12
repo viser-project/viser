@@ -173,7 +173,7 @@ GUI Controls
                <img src="_static/examples/thumbs/02_gui_02_layouts.png" alt="GUI layouts" style="width: 100%; height: auto; aspect-ratio: 16/9; object-fit: cover; display: block;">
                <div style="padding: 15px;">
                    <h4 style="margin: 0; padding: 0; font-size: 16px; font-weight: 600; color: #333; margin-bottom: 8px;">GUI layouts</h4>
-                   <p style="margin: 0; padding: 0; color: #666; font-size: 13px; line-height: 1.4;">Organize GUI controls using folders, tabs, and nested structures for better user experience.</p>
+                   <p style="margin: 0; padding: 0; color: #666; font-size: 13px; line-height: 1.4;">Organize GUI controls using folders, forms, tabs, and nested structures for better user experience.</p>
                </div>
            </a>
        </div>
@@ -322,6 +322,15 @@ Demos
                <div style="padding: 15px;">
                    <h4 style="margin: 0; padding: 0; font-size: 16px; font-weight: 600; color: #333; margin-bottom: 8px;">Record3D</h4>
                    <p style="margin: 0; padding: 0; color: #666; font-size: 13px; line-height: 1.4;">Parse and stream Record3D captures.</p>
+               </div>
+           </a>
+       </div>
+       <div class="example-card" style="border-radius: 3px; overflow: hidden; background: white; transition: transform 0.2s;">
+           <a href="examples/demos/record3d_visualizer_v2/" style="text-decoration: none; color: inherit; display: block;">
+               <img src="_static/examples/thumbs/04_demos_00_record3d_visualizer_v2.png" alt="Record3D (live point cloud update)" style="width: 100%; height: auto; aspect-ratio: 16/9; object-fit: cover; display: block;">
+               <div style="padding: 15px;">
+                   <h4 style="margin: 0; padding: 0; font-size: 16px; font-weight: 600; color: #333; margin-bottom: 8px;">Record3D (live point cloud update)</h4>
+                   <p style="margin: 0; padding: 0; color: #666; font-size: 13px; line-height: 1.4;">Alternate version of the Record3D visualizer that updates a single point cloud in-place rather than toggling visibility across pre-loaded frames.</p>
                </div>
            </a>
        </div>

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from ._icons_enum import IconName
 
-ICONS_DIR = Path(__file__).absolute().parent / "_icons"
+ICONS_DIR = Path(__file__).resolve().parent / "_icons"
 
 
 @lru_cache(maxsize=32)

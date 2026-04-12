@@ -475,6 +475,10 @@ class PointCloudProps:
     scale: Union[float, Tuple[float, float, float]] = 1.0
     """Scale of the point cloud. A single float for uniform scaling or a
     tuple of (x, y, z) for per-axis scaling."""
+    point_shading: Literal["flat", "gradient"] = "gradient"
+    """Shading mode for points. "flat" renders each point as a solid color.
+    "gradient" adds a center-to-edge shading effect: lighter in the center,
+    original color at the midpoint, darker at the edges."""
 
     def __post_init__(self):
         # Check shapes.
@@ -1200,8 +1204,9 @@ class GuiBaseProps:
 class GuiFolderProps:
     order: float
     """Order value for arranging GUI elements. """
-    label: str
-    """Label text for the GUI folder."""
+    label: Optional[str]
+    """Label text for the GUI folder. If None, the folder is rendered without
+    a header or border (useful for pure layout grouping)."""
     visible: bool
     """Visibility state of the GUI folder."""
     expand_by_default: bool
@@ -1212,6 +1217,44 @@ class GuiFolderProps:
 class GuiFolderMessage(_CreateGuiComponentMessage):
     container_uuid: str
     props: GuiFolderProps
+
+
+@dataclasses.dataclass
+class GuiFormMessage(_CreateGuiComponentMessage):
+    """A form is a folder whose children's values can be committed together.
+
+    Reuses ``GuiFolderProps`` because the visual shape is identical to a
+    folder; the form-specific behavior (``on_submit`` callbacks, dirty
+    indicator, Cmd/Ctrl+Enter) is keyed off the message type alone."""
+
+    container_uuid: str
+    props: GuiFolderProps
+
+
+@dataclasses.dataclass
+class GuiFormSubmitMessage(Message):
+    """Bidirectional form submit signal.
+
+    - Sent client->server when the user presses Cmd/Ctrl+Enter inside a form.
+      The server fires the form's ``on_submit`` callbacks and broadcasts this
+      message to all clients.
+    - Sent server->client (broadcast) after any submit (client-initiated or
+      via Python ``form.submit()``). Clients clear their dirty indicator on
+      receipt."""
+
+    uuid: str
+
+
+@dataclasses.dataclass
+class GuiFormDirtyMessage(Message):
+    """Bidirectional form dirty signal.
+
+    - Sent client->server when any input inside the form first changes since
+      the last submit. The server broadcasts this to all other clients.
+    - Sent server->client (broadcast) to propagate dirty state. Clients show
+      a dirty indicator on the form header on receipt."""
+
+    uuid: str
 
 
 @dataclasses.dataclass
@@ -1334,7 +1377,11 @@ class GuiUplotProps:
     non-focused series to emphasize the active one."""
     aspect: float
     """Width-to-height ratio for chart display (width/height). 1.0 = square, >1.0 = wider.
-    """
+    Used when height is None."""
+    height: Union[int, None]
+    """Fixed height in pixels. Overrides aspect ratio when set."""
+    padding: Union[Tuple[int, int, int, int], None]
+    """Padding (top, right, bottom, left) in pixels."""
     visible: bool
     """Whether the chart is visible in the interface."""
 

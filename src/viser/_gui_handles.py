@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import base64
 import dataclasses
+import json
 import re
 import time
 import uuid
 import warnings
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Mapping
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -21,7 +22,7 @@ from typing import (
 )
 
 import numpy as np
-from typing_extensions import Protocol, override
+from typing_extensions import Protocol, Self, override
 
 from ._assignable_props_api import AssignablePropsBase
 from ._icons import svg_from_icon
@@ -35,6 +36,7 @@ from ._messages import (
     GuiDividerProps,
     GuiDropdownProps,
     GuiFolderProps,
+    GuiFormSubmitMessage,
     GuiHtmlProps,
     GuiImageProps,
     GuiMarkdownProps,
@@ -65,7 +67,7 @@ if TYPE_CHECKING:
 
 
 T = TypeVar("T")
-TGuiHandle = TypeVar("TGuiHandle", bound="_GuiInputHandle")
+TGuiHandle = TypeVar("TGuiHandle", bound="_GuiHandle")
 NoneOrCoroutine = TypeVar("NoneOrCoroutine", None, Coroutine)
 
 
@@ -767,7 +769,7 @@ class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):
         ]
         parent._children[self._impl.uuid] = self
 
-    def __enter__(self) -> GuiFolderHandle:
+    def __enter__(self) -> Self:
         self._container_id_restore = self._impl.gui_api._get_container_uuid()
         self._impl.gui_api._set_container_uuid(self._impl.uuid)
         return self
@@ -805,6 +807,96 @@ class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):
         parent = gui_api._container_handle_from_uuid[self._impl.parent_container_id]
         parent._children.pop(self._impl.uuid)
         gui_api._container_handle_from_uuid.pop(self._impl.uuid)
+
+
+class GuiFormHandle(GuiFolderHandle):
+    """Use as a context to place GUI elements into a form.
+
+    A form is a folder whose children's values can be committed together by
+    calling :meth:`submit` (typically from a button's ``on_click`` handler) or
+    by pressing Enter in a single-line text input inside the form.
+
+    Children of a form behave exactly like children of a folder. ``on_update``
+    callbacks on individual inputs continue to fire on every keystroke; the
+    form's :meth:`on_submit` callback fires only when the form is submitted.
+    Register one or both depending on whether you want live or commit
+    semantics.
+
+    The form's client-side dirty indicator highlights when any descendant
+    input has been edited since the last submit.
+
+    Forms cannot be nested. Calling :meth:`GuiApi.add_form` inside an
+    existing form's context will raise :class:`ValueError`, because nested
+    ``<form>`` elements are invalid HTML on the client.
+
+    Example::
+
+        with server.gui.add_form("Profile") as form:
+            name = server.gui.add_text("Name", "")
+            age = server.gui.add_number("Age", 0)
+            save = server.gui.add_button("Save")
+
+        save.on_click(lambda _: form.submit())
+
+        @form.on_submit
+        def _(event):
+            print(name.value, age.value)
+    """
+
+    def __init__(self, _impl: _GuiHandleState[None]) -> None:
+        super().__init__(_impl)
+        self._submit_cb: list[
+            Callable[[GuiEvent[GuiFormHandle]], None | Coroutine]
+        ] = []
+
+    def on_submit(
+        self,
+        func: Callable[[GuiEvent[GuiFormHandle]], NoneOrCoroutine],
+    ) -> Callable[[GuiEvent[GuiFormHandle]], NoneOrCoroutine]:
+        """Attach a function to call when the form is submitted.
+
+        ``on_submit`` is independent from ``on_update`` callbacks on child
+        inputs: child ``on_update`` callbacks fire on every keystroke (as
+        normal), and the form's ``on_submit`` fires when commit happens (via
+        ``form.submit()`` or Enter in a single-line text input).
+
+        Note:
+        - If `func` is a regular function (defined with `def`), it will be executed in a thread pool.
+        - If `func` is an async function (defined with `async def`), it will be executed in the event loop.
+        """
+        self._submit_cb.append(func)
+        return func
+
+    def remove_submit_callback(
+        self, callback: Literal["all"] | Callable = "all"
+    ) -> None:
+        """Remove submit callbacks from the form.
+
+        Args:
+            callback: Either "all" to remove all callbacks, or a specific callback function to remove.
+        """
+        if callback == "all":
+            self._submit_cb.clear()
+        else:
+            self._submit_cb = [cb for cb in self._submit_cb if cb != callback]
+
+    def submit(self) -> None:
+        """Programmatically submit this form.
+
+        Fires all registered ``on_submit`` callbacks and broadcasts a
+        :class:`GuiFormSubmitMessage` to all clients so their dirty indicators
+        are cleared.
+        """
+        gui_api = self._impl.gui_api
+        # Fire on_submit callbacks. Server-initiated submits have no client.
+        for cb in self._submit_cb:
+            cb_out = cb(GuiEvent(client_id=None, client=None, target=self))
+            if isinstance(cb_out, Coroutine):
+                gui_api._event_loop.create_task(cb_out)
+        # Broadcast to clients so they reset dirty state.
+        gui_api._websock_interface.queue_message(
+            GuiFormSubmitMessage(uuid=self._impl.uuid)
+        )
 
 
 @dataclasses.dataclass
@@ -918,22 +1010,31 @@ class GuiDividerHandle(_GuiHandle[None], GuiDividerProps):
 class GuiPlotlyHandle(_GuiHandle[None], GuiPlotlyProps):
     """Handle for updating and removing Plotly figures."""
 
-    def __init__(self, _impl: _GuiHandleState, _figure: go.Figure):
+    def __init__(
+        self,
+        _impl: _GuiHandleState,
+        _figure: go.Figure,
+        _config: Mapping[str, Any] | None = None,
+    ):
         super().__init__(impl=_impl)
         self._figure = _figure
+        self._config = _config
 
     @property
     def figure(self) -> go.Figure:
-        """Current content of this markdown element. Synchronized automatically when assigned."""
+        """Current Plotly figure. Synchronized automatically when assigned."""
         assert self._figure is not None
         return self._figure
 
     @figure.setter
     def figure(self, figure: go.Figure) -> None:
         self._figure = figure
-
         json_str = figure.to_json()
         assert isinstance(json_str, str)
+        if self._config is not None:
+            plot_dict = json.loads(json_str)
+            plot_dict["config"] = {**plot_dict.get("config", {}), **self._config}
+            json_str = json.dumps(plot_dict)
         self._plotly_json_str = json_str
 
 
