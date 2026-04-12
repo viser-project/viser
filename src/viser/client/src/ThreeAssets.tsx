@@ -76,10 +76,10 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
           // perceptually smoother gradients.
           // t: 0 at center, 1 at edge.
           float t = min(length(gl_PointCoord - vec2(0.5)) / 1.414, 0.5) * 2.0;
-          vec3 lin = col * col;
-          vec3 outer_lin = lin * 0.85;
-          vec3 inner_lin = 1.0 - (1.0 - lin) * 0.95;
-          col = sqrt(t * outer_lin + (1.0 - t) * inner_lin);
+
+          // Shading curve: highlight center, darken edge.
+          float shade = 0.075 * (1.0 - 2.0 * t);
+          col = sqrt(clamp(col * col + shade, 0.0, 1.0));
       }
       gl_FragColor = vec4(col, 1.0);
       #include <fog_fragment>
