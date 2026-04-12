@@ -8,6 +8,7 @@ import functools
 import threading
 import time
 from asyncio import AbstractEventLoop
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import (
@@ -790,6 +791,7 @@ class GuiApi:
         self,
         figure: go.Figure,
         *,
+        config: Mapping[str, Any] | None = None,
         aspect: float = 1.0,
         order: float | None = None,
         visible: bool = True,
@@ -803,6 +805,10 @@ class GuiApi:
 
         Args:
             figure: Plotly figure to display.
+            config: Plotly config dict merged into the figure JSON. Controls
+                display options like ``{"displayModeBar": False}``. Values
+                must be JSON-serializable. See
+                https://plotly.com/javascript/configuration-options/
             aspect: Aspect ratio of the plot in the control panel (width/height).
             order: Optional ordering, smallest values will be displayed first.
             visible: Whether the component is visible.
@@ -862,6 +868,7 @@ class GuiApi:
                 parent_container_id=message.container_uuid,
             ),
             _figure=figure,
+            _config=config,
         )
 
         # Set the plotly handle properties.
@@ -884,6 +891,8 @@ class GuiApi:
         cursor: uplot.Cursor | None = None,
         focus: uplot.Focus | None = None,
         aspect: float = 1.0,
+        height: int | None = None,
+        padding: tuple[int, int, int, int] | None = None,
         order: float | None = None,
         visible: bool = True,
     ) -> GuiUplotHandle:
@@ -928,6 +937,10 @@ class GuiApi:
                 transparency of non-focused series to emphasize the active one.
             aspect: Width-to-height ratio for the chart display in the control panel.
                 1.0 creates a square chart, values > 1.0 create wider charts.
+                Used when height is None.
+            height: Fixed height in pixels. Overrides aspect ratio when set.
+            padding: Chart padding (top, right, bottom, left) in pixels. Defaults
+                to (0, 24, 0, 0) when omitted.
             order: Display ordering relative to other GUI elements (lower values first).
             visible: Whether the chart is visible in the interface.
 
@@ -981,6 +994,8 @@ class GuiApi:
                 cursor=cursor,
                 focus=focus,
                 aspect=aspect,
+                height=height,
+                padding=padding,
                 visible=visible,
             ),
         )

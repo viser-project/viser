@@ -765,6 +765,8 @@ export interface GuiUplotMessage {
     } | null;
     focus: { alpha: number } | null;
     aspect: number;
+    height: number | null;
+    padding: [number, number, number, number] | null;
     visible: boolean;
   };
 }

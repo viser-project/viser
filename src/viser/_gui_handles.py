@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import base64
 import dataclasses
+import json
 import re
 import time
 import uuid
 import warnings
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Mapping
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -913,22 +914,31 @@ class GuiHtmlHandle(_GuiHandle[None], GuiHtmlProps):
 class GuiPlotlyHandle(_GuiHandle[None], GuiPlotlyProps):
     """Handle for updating and removing Plotly figures."""
 
-    def __init__(self, _impl: _GuiHandleState, _figure: go.Figure):
+    def __init__(
+        self,
+        _impl: _GuiHandleState,
+        _figure: go.Figure,
+        _config: Mapping[str, Any] | None = None,
+    ):
         super().__init__(impl=_impl)
         self._figure = _figure
+        self._config = _config
 
     @property
     def figure(self) -> go.Figure:
-        """Current content of this markdown element. Synchronized automatically when assigned."""
+        """Current Plotly figure. Synchronized automatically when assigned."""
         assert self._figure is not None
         return self._figure
 
     @figure.setter
     def figure(self, figure: go.Figure) -> None:
         self._figure = figure
-
         json_str = figure.to_json()
         assert isinstance(json_str, str)
+        if self._config is not None:
+            plot_dict = json.loads(json_str)
+            plot_dict["config"] = {**plot_dict.get("config", {}), **self._config}
+            json_str = json.dumps(plot_dict)
         self._plotly_json_str = json_str
 
 
