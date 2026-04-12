@@ -24,6 +24,7 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
   {
     scale: 1.0,
     point_ball_norm: 0.0,
+    point_shading_enabled: 0.0,
     uniformColor: new THREE.Color(1, 1, 1),
     fogColor: new THREE.Color(1, 1, 1),
     fogNear: 0.0,
@@ -34,8 +35,11 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
 
   varying vec3 vPosition;
   varying vec3 vColor; // in the vertex shader
+  varying vec3 vInnerSqCol;
+  varying vec3 vOuterSqCol;
   uniform float scale;
   uniform vec3 uniformColor;
+  uniform float point_shading_enabled;
 
   #include <fog_pars_vertex>
 
@@ -46,6 +50,10 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
       #else
       vColor = uniformColor;
       #endif
+      // Pre-compute per-vertex shading bounds (constant across all fragments of a point).
+      vec3 sq_col = vColor * vColor;
+      vInnerSqCol = max(sq_col - 0.02, 0.0);
+      vOuterSqCol = min(sq_col + 0.01, 1.0);
       vec4 world_pos = modelViewMatrix * vec4(position, 1.0);
       gl_Position = projectionMatrix * world_pos;
       gl_PointSize = (scale / -world_pos.z);
@@ -56,7 +64,10 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
    `,
   `varying vec3 vPosition;
   varying vec3 vColor;
+  varying vec3 vInnerSqCol;
+  varying vec3 vOuterSqCol;
   uniform float point_ball_norm;
+  uniform float point_shading_enabled;
 
   #include <fog_pars_fragment>
 
@@ -68,7 +79,15 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
               1.0 / point_ball_norm);
           if (r > 0.5) discard;
       }
-      gl_FragColor = vec4(vColor, 1.0);
+      vec3 col = vColor;
+      if (point_shading_enabled > 0.5) {
+          // Interpolation in approximate linear space (gamma 2.0) for
+          // perceptually smoother gradients.
+          // t: 0 at center, 1 at edge.
+          float t = min(length(gl_PointCoord - vec2(0.5)), 0.5) * 2.0;
+          col = sqrt(t * vInnerSqCol + (1.0 - t) * vOuterSqCol);
+      }
+      gl_FragColor = vec4(col, 1.0);
       #include <fog_fragment>
   }
    `,
@@ -144,7 +163,9 @@ export const PointCloud = React.forwardRef<
       rounded: 3.0,
       sparkle: 0.6,
     }[props.point_shape];
-  }, [props.point_shape, material]);
+    material.uniforms.point_shading_enabled.value =
+      props.point_shading === "gradient" ? 1.0 : 0.0;
+  }, [props.point_shape, props.point_shading, material]);
 
   // Compute a scalar scale factor for point size. For non-uniform scale,
   // use geometric mean since points are rendered as circles.

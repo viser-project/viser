@@ -5,7 +5,7 @@ interface GuiComponentContext {
   folderDepth: number;
   setValue: (id: string, value: NonNullable<unknown>) => void;
   messageSender: (message: Messages.Message) => void;
-  GuiContainer: React.FC<{ containerUuid: string }>;
+  GuiContainer: React.FC<{ containerUuid: string; unwrapped?: boolean }>;
 }
 
 export const GuiComponentContext = React.createContext<GuiComponentContext>({

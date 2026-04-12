@@ -10,9 +10,13 @@ GUI Handles
 
 .. autoclass:: viser.GuiCheckboxHandle
 
+.. autoclass:: viser.GuiDividerHandle
+
 .. autoclass:: viser.GuiDropdownHandle
 
 .. autoclass:: viser.GuiFolderHandle
+
+.. autoclass:: viser.GuiFormHandle
 
 .. autoclass:: viser.GuiHtmlHandle
 

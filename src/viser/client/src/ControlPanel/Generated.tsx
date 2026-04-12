@@ -21,11 +21,13 @@ import PlotlyComponent from "../components/PlotlyComponent";
 import UplotComponent from "../components/UplotComponent";
 import TabGroupComponent from "../components/TabGroup";
 import FolderComponent from "../components/Folder";
+import FormComponent from "../components/Form";
 import MultiSliderComponent from "../components/MultiSlider";
 import UploadButtonComponent from "../components/UploadButton";
 import ProgressBarComponent from "../components/ProgressBar";
 import ImageComponent from "../components/Image";
 import HtmlComponent from "../components/Html";
+import DividerComponent from "../components/Divider";
 
 /** Root of generated inputs. */
 export default function GeneratedGuiContainer({
@@ -59,7 +61,15 @@ export default function GeneratedGuiContainer({
   );
 }
 
-function GuiContainer({ containerUuid }: { containerUuid: string }) {
+function GuiContainer({
+  containerUuid,
+  unwrapped = false,
+}: {
+  containerUuid: string;
+  /** If true, don't wrap children in a padded Box. Used by label=null
+   * folders and forms, which should be transparent for layout purposes. */
+  unwrapped?: boolean;
+}) {
   const viewer = React.useContext(ViewerContext)!;
 
   // Use a fallback empty object for containers that don't exist yet. Containers
@@ -80,18 +90,17 @@ function GuiContainer({ containerUuid }: { containerUuid: string }) {
   guiUuidOrderPairArray = guiUuidOrderPairArray.sort(
     (a, b) => a.order - b.order,
   );
-  const out = (
-    <Box pt="xs">
-      {guiUuidOrderPairArray.map((pair, index) => (
-        <GeneratedInput
-          key={pair.uuid}
-          guiUuid={pair.uuid}
-          nextGuiUuid={guiUuidOrderPairArray[index + 1]?.uuid ?? null}
-        />
-      ))}
-    </Box>
-  );
-  return out;
+  const children = guiUuidOrderPairArray.map((pair, index) => (
+    <GeneratedInput
+      key={pair.uuid}
+      guiUuid={pair.uuid}
+      nextGuiUuid={guiUuidOrderPairArray[index + 1]?.uuid ?? null}
+    />
+  ));
+  if (unwrapped) {
+    return <>{children}</>;
+  }
+  return <Box pt="xs">{children}</Box>;
 }
 
 /** A single generated GUI element. */
@@ -108,12 +117,16 @@ function GeneratedInput(props: {
   switch (conf.type) {
     case "GuiFolderMessage":
       return <FolderComponent {...conf} nextGuiUuid={props.nextGuiUuid} />;
+    case "GuiFormMessage":
+      return <FormComponent {...conf} nextGuiUuid={props.nextGuiUuid} />;
     case "GuiTabGroupMessage":
       return <TabGroupComponent {...conf} />;
     case "GuiMarkdownMessage":
       return <MarkdownComponent {...conf} />;
     case "GuiHtmlMessage":
       return <HtmlComponent {...conf} />;
+    case "GuiDividerMessage":
+      return <DividerComponent {...conf} />;
     case "GuiPlotlyMessage":
       return <PlotlyComponent {...conf} />;
     case "GuiUplotMessage":
