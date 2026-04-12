@@ -128,7 +128,9 @@ def main() -> None:
     # For simple visualization, a single color can be applied to all arrows.
     N_velocities = 50
     vel_starts = np.random.normal(size=(N_velocities, 3)).astype(np.float32) * 3
-    vel_ends = vel_starts + np.random.normal(size=(N_velocities, 3)).astype(np.float32) * 0.5
+    vel_ends = (
+        vel_starts + np.random.normal(size=(N_velocities, 3)).astype(np.float32) * 0.5
+    )
     velocity_points = np.stack([vel_starts, vel_ends], axis=1)
 
     server.scene.add_arrows(

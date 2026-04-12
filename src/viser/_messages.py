@@ -1750,6 +1750,7 @@ class LineSegmentsProps:
 @dataclasses.dataclass
 class ArrowProps:
     """Properties for arrow visualization."""
+
     points: npt.NDArray[np.float32]
     """Array of shape (N, 2, 3) containing start/end points for each of N arrows."""
     colors: npt.NDArray[np.uint8]
