@@ -112,6 +112,8 @@ function PlotComponent({
   }, [
     containerWidth,
     props.aspect,
+    props.height,
+    props.padding,
     props.title,
     props.mode,
     props.series,

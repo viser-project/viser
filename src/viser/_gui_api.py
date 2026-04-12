@@ -932,7 +932,8 @@ class GuiApi:
                 1.0 creates a square chart, values > 1.0 create wider charts.
                 Used when height is None.
             height: Fixed height in pixels. Overrides aspect ratio when set.
-            padding: Chart padding [top, right, bottom, left] in pixels.
+            padding: Chart padding (top, right, bottom, left) in pixels. Defaults
+                to (0, 24, 0, 0) when omitted.
             order: Display ordering relative to other GUI elements (lower values first).
             visible: Whether the chart is visible in the interface.
 

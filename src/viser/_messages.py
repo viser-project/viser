@@ -1324,7 +1324,7 @@ class GuiUplotProps:
     height: Union[int, None]
     """Fixed height in pixels. Overrides aspect ratio when set."""
     padding: Union[Tuple[int, int, int, int], None]
-    """Padding [top, right, bottom, left] in pixels."""
+    """Padding (top, right, bottom, left) in pixels."""
     visible: bool
     """Whether the chart is visible in the interface."""
 
