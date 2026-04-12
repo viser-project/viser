@@ -47,7 +47,7 @@ export default function FolderComponent({
     <Paper
       withBorder
       className={folderWrapper}
-      mb={nextGuiType === "GuiFolderMessage" ? "md" : undefined}
+      mb={nextGuiType === "GuiFolderMessage" || nextGuiType === "GuiFormMessage" ? "md" : undefined}
     >
       <Paper
         className={folderLabel}

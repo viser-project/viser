@@ -83,7 +83,7 @@ export default function FormComponent({
       component="form"
       withBorder
       className={folderWrapper}
-      mb={nextGuiType === "GuiFormMessage" ? "md" : undefined}
+      mb={nextGuiType === "GuiFolderMessage" || nextGuiType === "GuiFormMessage" ? "md" : undefined}
       onSubmit={handleSubmit}
       onChange={onChangeAny}
     >
