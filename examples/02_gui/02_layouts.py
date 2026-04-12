@@ -6,6 +6,7 @@ Organize GUI controls using folders, tabs, and nested structures for better user
 
 * :meth:`viser.GuiApi.add_folder` for grouping related controls
 * :meth:`viser.GuiApi.add_tab_group` and :meth:`viser.GuiTabGroupHandle.add_tab` for tabbed interfaces
+* :meth:`viser.GuiApi.add_divider` for separating sections with a horizontal line
 * Nested folder hierarchies for complex layouts
 * Context managers for automatic grouping
 """
@@ -18,17 +19,18 @@ import viser
 def main() -> None:
     server = viser.ViserServer()
 
-    # Example 1: Organizing with folders
+    # Example 1: Organizing with folders. Position and rotation sliders are
+    # separated by a divider rather than nested sub-folders.
     with server.gui.add_folder("Camera Controls"):
-        with server.gui.add_folder("Position"):
-            server.gui.add_slider("X", min=-5.0, max=5.0, step=0.1, initial_value=0.0)
-            server.gui.add_slider("Y", min=-5.0, max=5.0, step=0.1, initial_value=2.0)
-            server.gui.add_slider("Z", min=-5.0, max=5.0, step=0.1, initial_value=3.0)
+        server.gui.add_slider("X", min=-5.0, max=5.0, step=0.1, initial_value=0.0)
+        server.gui.add_slider("Y", min=-5.0, max=5.0, step=0.1, initial_value=2.0)
+        server.gui.add_slider("Z", min=-5.0, max=5.0, step=0.1, initial_value=3.0)
 
-        with server.gui.add_folder("Rotation"):
-            server.gui.add_slider("Pitch", min=-180, max=180, step=1, initial_value=0)
-            server.gui.add_slider("Yaw", min=-180, max=180, step=1, initial_value=0)
-            server.gui.add_slider("Roll", min=-180, max=180, step=1, initial_value=0)
+        server.gui.add_divider()
+
+        server.gui.add_slider("Pitch", min=-180, max=180, step=1, initial_value=0)
+        server.gui.add_slider("Yaw", min=-180, max=180, step=1, initial_value=0)
+        server.gui.add_slider("Roll", min=-180, max=180, step=1, initial_value=0)
 
     # Example 2: Scene objects organization
     with server.gui.add_folder("Scene Objects"):

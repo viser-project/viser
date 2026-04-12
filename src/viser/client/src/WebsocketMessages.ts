@@ -528,6 +528,16 @@ export interface GuiHtmlMessage {
   container_uuid: string;
   props: { order: number; content: string; visible: boolean };
 }
+/** GuiDividerMessage(uuid: 'str', container_uuid: 'str', props: 'GuiDividerProps')
+ *
+ * (automatically generated)
+ */
+export interface GuiDividerMessage {
+  type: "GuiDividerMessage";
+  uuid: string;
+  container_uuid: string;
+  props: { order: number; visible: boolean };
+}
 /** GuiProgressBarMessage(uuid: 'str', value: 'float', container_uuid: 'str', props: 'GuiProgressBarProps')
  *
  * (automatically generated)
@@ -1632,6 +1642,7 @@ export type Message =
   | GuiFolderMessage
   | GuiMarkdownMessage
   | GuiHtmlMessage
+  | GuiDividerMessage
   | GuiProgressBarMessage
   | GuiPlotlyMessage
   | GuiUplotMessage
@@ -1726,6 +1737,7 @@ export type GuiComponentMessage =
   | GuiFolderMessage
   | GuiMarkdownMessage
   | GuiHtmlMessage
+  | GuiDividerMessage
   | GuiProgressBarMessage
   | GuiPlotlyMessage
   | GuiUplotMessage
@@ -1782,6 +1794,7 @@ const typeSetGuiComponentMessage = new Set([
   "GuiFolderMessage",
   "GuiMarkdownMessage",
   "GuiHtmlMessage",
+  "GuiDividerMessage",
   "GuiProgressBarMessage",
   "GuiPlotlyMessage",
   "GuiUplotMessage",

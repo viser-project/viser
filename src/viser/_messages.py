@@ -1247,6 +1247,20 @@ class GuiHtmlMessage(_CreateGuiComponentMessage):
 
 
 @dataclasses.dataclass
+class GuiDividerProps:
+    order: float
+    """Order value for arranging GUI elements. """
+    visible: bool
+    """Visibility state of the divider."""
+
+
+@dataclasses.dataclass
+class GuiDividerMessage(_CreateGuiComponentMessage):
+    container_uuid: str
+    props: GuiDividerProps
+
+
+@dataclasses.dataclass
 class GuiProgressBarProps:
     order: float
     """Order value for arranging GUI elements. """

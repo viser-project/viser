@@ -26,6 +26,7 @@ import UploadButtonComponent from "../components/UploadButton";
 import ProgressBarComponent from "../components/ProgressBar";
 import ImageComponent from "../components/Image";
 import HtmlComponent from "../components/Html";
+import DividerComponent from "../components/Divider";
 
 /** Root of generated inputs. */
 export default function GeneratedGuiContainer({
@@ -114,6 +115,8 @@ function GeneratedInput(props: {
       return <MarkdownComponent {...conf} />;
     case "GuiHtmlMessage":
       return <HtmlComponent {...conf} />;
+    case "GuiDividerMessage":
+      return <DividerComponent {...conf} />;
     case "GuiPlotlyMessage":
       return <PlotlyComponent {...conf} />;
     case "GuiUplotMessage":

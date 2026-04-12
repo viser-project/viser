@@ -2,6 +2,7 @@ from ._gui_api import GuiApi as GuiApi
 from ._gui_handles import GuiButtonGroupHandle as GuiButtonGroupHandle
 from ._gui_handles import GuiButtonHandle as GuiButtonHandle
 from ._gui_handles import GuiCheckboxHandle as GuiCheckboxHandle
+from ._gui_handles import GuiDividerHandle as GuiDividerHandle
 from ._gui_handles import GuiDropdownHandle as GuiDropdownHandle
 from ._gui_handles import GuiEvent as GuiEvent
 from ._gui_handles import GuiFolderHandle as GuiFolderHandle

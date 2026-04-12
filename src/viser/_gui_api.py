@@ -42,6 +42,7 @@ from ._gui_handles import (
     GuiDropdownHandle,
     GuiEvent,
     GuiFolderHandle,
+    GuiDividerHandle,
     GuiHtmlHandle,
     GuiImageHandle,
     GuiMarkdownHandle,
@@ -717,6 +718,43 @@ class GuiApi:
         self._websock_interface.queue_message(message)
 
         handle = GuiHtmlHandle(
+            _GuiHandleState(
+                message.uuid,
+                self,
+                None,
+                props=message.props,
+                parent_container_id=message.container_uuid,
+            ),
+        )
+        return handle
+
+    @deprecated_positional_shim
+    def add_divider(
+        self,
+        *,
+        order: float | None = None,
+        visible: bool = True,
+    ) -> GuiDividerHandle:
+        """Add a horizontal divider line to the GUI.
+
+        Args:
+            order: Optional ordering, smallest values will be displayed first.
+            visible: Whether the component is visible.
+
+        Returns:
+            A handle that can be used to interact with the GUI element.
+        """
+        message = _messages.GuiDividerMessage(
+            uuid=_make_uuid(),
+            container_uuid=self._get_container_uuid(),
+            props=_messages.GuiDividerProps(
+                order=_apply_default_order(order),
+                visible=visible,
+            ),
+        )
+        self._websock_interface.queue_message(message)
+
+        handle = GuiDividerHandle(
             _GuiHandleState(
                 message.uuid,
                 self,
