@@ -462,6 +462,7 @@
     <span class="n">GuiButtonHandle</span><span class="p">,</span>
     <span class="n">GuiCheckboxHandle</span><span class="p">,</span>
     <span class="n">GuiContainerProtocol</span><span class="p">,</span>
+    <span class="n">GuiDividerHandle</span><span class="p">,</span>
     <span class="n">GuiDropdownHandle</span><span class="p">,</span>
     <span class="n">GuiEvent</span><span class="p">,</span>
     <span class="n">GuiFolderHandle</span><span class="p">,</span>
@@ -1286,6 +1287,46 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
 
         <span class="n">handle</span> <span class="o">=</span> <span class="n">GuiHtmlHandle</span><span class="p">(</span>
+            <span class="n">_GuiHandleState</span><span class="p">(</span>
+                <span class="n">message</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span>
+                <span class="bp">self</span><span class="p">,</span>
+                <span class="kc">None</span><span class="p">,</span>
+                <span class="n">props</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">props</span><span class="p">,</span>
+                <span class="n">parent_container_id</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">container_uuid</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">handle</span></div>
+
+
+<div class="viewcode-block" id="GuiApi.add_divider">
+<a class="viewcode-back" href="../../../api/core/gui_api/#viser.GuiApi.add_divider">[docs]</a>
+    <span class="nd">@deprecated_positional_shim</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_divider</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">order</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">visible</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GuiDividerHandle</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add a horizontal divider line to the GUI.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            order: Optional ordering, smallest values will be displayed first.</span>
+<span class="sd">            visible: Whether the component is visible.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            A handle that can be used to interact with the GUI element.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">GuiDividerMessage</span><span class="p">(</span>
+            <span class="n">uuid</span><span class="o">=</span><span class="n">_make_uuid</span><span class="p">(),</span>
+            <span class="n">container_uuid</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_container_uuid</span><span class="p">(),</span>
+            <span class="n">props</span><span class="o">=</span><span class="n">_messages</span><span class="o">.</span><span class="n">GuiDividerProps</span><span class="p">(</span>
+                <span class="n">order</span><span class="o">=</span><span class="n">_apply_default_order</span><span class="p">(</span><span class="n">order</span><span class="p">),</span>
+                <span class="n">visible</span><span class="o">=</span><span class="n">visible</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+
+        <span class="n">handle</span> <span class="o">=</span> <span class="n">GuiDividerHandle</span><span class="p">(</span>
             <span class="n">_GuiHandleState</span><span class="p">(</span>
                 <span class="n">message</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span>
                 <span class="bp">self</span><span class="p">,</span>
