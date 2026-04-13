@@ -312,6 +312,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../examples/scene/set_up_direction/">Set up direction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../examples/scene/gaussian_splats/">Gaussian splats</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../examples/scene/fog/">Distance fog</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../examples/scene/arrows/">Arrow visualization</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../examples/gui/">GUI Controls</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><div class="visually-hidden">Toggle navigation of GUI Controls</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
@@ -504,6 +505,8 @@
         <li><a href="../api/advanced/icons/#viser.Icon.AD_OFF">AD_OFF (viser.Icon attribute)</a>
 </li>
         <li><a href="../api/core/scene_api/#viser.SceneApi.add_3d_gui_container">add_3d_gui_container() (viser.SceneApi method)</a>
+</li>
+        <li><a href="../api/core/scene_api/#viser.SceneApi.add_arrows">add_arrows() (viser.SceneApi method)</a>
 </li>
         <li><a href="../api/core/scene_api/#viser.SceneApi.add_batched_axes">add_batched_axes() (viser.SceneApi method)</a>
 </li>
@@ -1292,6 +1295,8 @@
         <li><a href="../api/advanced/icons/#viser.Icon.ARROWS_UP_RIGHT">ARROWS_UP_RIGHT (viser.Icon attribute)</a>
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.ARROWS_VERTICAL">ARROWS_VERTICAL (viser.Icon attribute)</a>
+</li>
+        <li><a href="../api/handles/scene_handles/#viser.ArrowsHandle">ArrowsHandle (class in viser)</a>
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.ARTBOARD">ARTBOARD (viser.Icon attribute)</a>
 </li>
@@ -3797,9 +3802,11 @@
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.COLOR_SWATCH_OFF">COLOR_SWATCH_OFF (viser.Icon attribute)</a>
 </li>
-        <li><a href="../api/handles/scene_handles/#viser.LineSegmentsHandle.colors">colors (viser.LineSegmentsHandle attribute)</a>
+        <li><a href="../api/handles/scene_handles/#viser.ArrowsHandle.colors">colors (viser.ArrowsHandle attribute)</a>
 
         <ul>
+          <li><a href="../api/handles/scene_handles/#viser.LineSegmentsHandle.colors">(viser.LineSegmentsHandle attribute)</a>
+</li>
           <li><a href="../api/handles/scene_handles/#viser.PointCloudHandle.colors">(viser.PointCloudHandle attribute)</a>
 </li>
         </ul></li>
@@ -6035,6 +6042,10 @@
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.HDR">HDR (viser.Icon attribute)</a>
 </li>
+        <li><a href="../api/handles/scene_handles/#viser.ArrowsHandle.head_length">head_length (viser.ArrowsHandle attribute)</a>
+</li>
+        <li><a href="../api/handles/scene_handles/#viser.ArrowsHandle.head_radius">head_radius (viser.ArrowsHandle attribute)</a>
+</li>
         <li><a href="../api/advanced/icons/#viser.Icon.HEADING">HEADING (viser.Icon attribute)</a>
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.HEADING_OFF">HEADING_OFF (viser.Icon attribute)</a>
@@ -6183,10 +6194,10 @@
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.HEXAGON_LETTER_M">HEXAGON_LETTER_M (viser.Icon attribute)</a>
 </li>
-        <li><a href="../api/advanced/icons/#viser.Icon.HEXAGON_LETTER_N">HEXAGON_LETTER_N (viser.Icon attribute)</a>
-</li>
     </ul></td>
     <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="../api/advanced/icons/#viser.Icon.HEXAGON_LETTER_N">HEXAGON_LETTER_N (viser.Icon attribute)</a>
+</li>
         <li><a href="../api/advanced/icons/#viser.Icon.HEXAGON_LETTER_O">HEXAGON_LETTER_O (viser.Icon attribute)</a>
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.HEXAGON_LETTER_P">HEXAGON_LETTER_P (viser.Icon attribute)</a>
@@ -6939,10 +6950,10 @@
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.LETTER_N">LETTER_N (viser.Icon attribute)</a>
 </li>
-    </ul></td>
-    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="../api/advanced/icons/#viser.Icon.LETTER_O">LETTER_O (viser.Icon attribute)</a>
 </li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="../api/advanced/icons/#viser.Icon.LETTER_P">LETTER_P (viser.Icon attribute)</a>
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.LETTER_Q">LETTER_Q (viser.Icon attribute)</a>
@@ -6985,9 +6996,11 @@
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.LINE_HEIGHT">LINE_HEIGHT (viser.Icon attribute)</a>
 </li>
-        <li><a href="../api/handles/scene_handles/#viser.CameraFrustumHandle.line_width">line_width (viser.CameraFrustumHandle attribute)</a>
+        <li><a href="../api/handles/scene_handles/#viser.ArrowsHandle.line_width">line_width (viser.ArrowsHandle attribute)</a>
 
         <ul>
+          <li><a href="../api/handles/scene_handles/#viser.CameraFrustumHandle.line_width">(viser.CameraFrustumHandle attribute)</a>
+</li>
           <li><a href="../api/handles/scene_handles/#viser.LineSegmentsHandle.line_width">(viser.LineSegmentsHandle attribute)</a>
 </li>
           <li><a href="../api/handles/scene_handles/#viser.SplineCatmullRomHandle.line_width">(viser.SplineCatmullRomHandle attribute)</a>
@@ -7921,6 +7934,8 @@
         <li><a href="../api/handles/scene_handles/#viser.AmbientLightHandle.name">name (viser.AmbientLightHandle property)</a>
 
         <ul>
+          <li><a href="../api/handles/scene_handles/#viser.ArrowsHandle.name">(viser.ArrowsHandle property)</a>
+</li>
           <li><a href="../api/handles/scene_handles/#viser.BatchedAxesHandle.name">(viser.BatchedAxesHandle property)</a>
 </li>
           <li><a href="../api/handles/scene_handles/#viser.BatchedGlbHandle.name">(viser.BatchedGlbHandle property)</a>
@@ -7998,10 +8013,10 @@
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.NETWORK">NETWORK (viser.Icon attribute)</a>
 </li>
-        <li><a href="../api/advanced/icons/#viser.Icon.NETWORK_OFF">NETWORK_OFF (viser.Icon attribute)</a>
-</li>
     </ul></td>
     <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="../api/advanced/icons/#viser.Icon.NETWORK_OFF">NETWORK_OFF (viser.Icon attribute)</a>
+</li>
         <li><a href="../api/advanced/icons/#viser.Icon.NEW_SECTION">NEW_SECTION (viser.Icon attribute)</a>
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.NEWS">NEWS (viser.Icon attribute)</a>
@@ -8618,10 +8633,10 @@
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.PLAYER_EJECT_FILLED">PLAYER_EJECT_FILLED (viser.Icon attribute)</a>
 </li>
-    </ul></td>
-    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="../api/advanced/icons/#viser.Icon.PLAYER_PAUSE">PLAYER_PAUSE (viser.Icon attribute)</a>
 </li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="../api/advanced/icons/#viser.Icon.PLAYER_PAUSE_FILLED">PLAYER_PAUSE_FILLED (viser.Icon attribute)</a>
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.PLAYER_PLAY">PLAYER_PLAY (viser.Icon attribute)</a>
@@ -8748,9 +8763,11 @@
 </li>
         <li><a href="../api/handles/scene_handles/#viser.PointLightHandle">PointLightHandle (class in viser)</a>
 </li>
-        <li><a href="../api/handles/scene_handles/#viser.LineSegmentsHandle.points">points (viser.LineSegmentsHandle attribute)</a>
+        <li><a href="../api/handles/scene_handles/#viser.ArrowsHandle.points">points (viser.ArrowsHandle attribute)</a>
 
         <ul>
+          <li><a href="../api/handles/scene_handles/#viser.LineSegmentsHandle.points">(viser.LineSegmentsHandle attribute)</a>
+</li>
           <li><a href="../api/handles/scene_handles/#viser.PointCloudHandle.points">(viser.PointCloudHandle attribute)</a>
 </li>
           <li><a href="../api/handles/scene_handles/#viser.SplineCatmullRomHandle.points">(viser.SplineCatmullRomHandle attribute)</a>
@@ -8785,6 +8802,8 @@
         <li><a href="../api/handles/scene_handles/#viser.AmbientLightHandle.position">position (viser.AmbientLightHandle property)</a>
 
         <ul>
+          <li><a href="../api/handles/scene_handles/#viser.ArrowsHandle.position">(viser.ArrowsHandle property)</a>
+</li>
           <li><a href="../api/handles/scene_handles/#viser.BatchedAxesHandle.position">(viser.BatchedAxesHandle property)</a>
 </li>
           <li><a href="../api/handles/scene_handles/#viser.BatchedGlbHandle.position">(viser.BatchedGlbHandle property)</a>
@@ -9137,6 +9156,8 @@
         <li><a href="../api/handles/scene_handles/#viser.AmbientLightHandle.remove">remove() (viser.AmbientLightHandle method)</a>
 
         <ul>
+          <li><a href="../api/handles/scene_handles/#viser.ArrowsHandle.remove">(viser.ArrowsHandle method)</a>
+</li>
           <li><a href="../api/handles/scene_handles/#viser.BatchedAxesHandle.remove">(viser.BatchedAxesHandle method)</a>
 </li>
           <li><a href="../api/handles/scene_handles/#viser.BatchedGlbHandle.remove">(viser.BatchedGlbHandle method)</a>
@@ -9552,9 +9573,11 @@
 </li>
         <li><a href="../api/advanced/uplot/#viser.uplot.Scale">Scale (class in viser.uplot)</a>
 </li>
-        <li><a href="../api/handles/scene_handles/#viser.BatchedAxesHandle.scale">scale (viser.BatchedAxesHandle attribute)</a>
+        <li><a href="../api/handles/scene_handles/#viser.ArrowsHandle.scale">scale (viser.ArrowsHandle attribute)</a>
 
         <ul>
+          <li><a href="../api/handles/scene_handles/#viser.BatchedAxesHandle.scale">(viser.BatchedAxesHandle attribute)</a>
+</li>
           <li><a href="../api/handles/scene_handles/#viser.BatchedGlbHandle.scale">(viser.BatchedGlbHandle attribute)</a>
 </li>
           <li><a href="../api/handles/scene_handles/#viser.BatchedMeshHandle.scale">(viser.BatchedMeshHandle attribute)</a>
@@ -9831,6 +9854,8 @@
         <li><a href="../api/advanced/icons/#viser.Icon.SHADOW_OFF">SHADOW_OFF (viser.Icon attribute)</a>
 </li>
         <li><a href="../api/handles/scene_handles/#viser.GridHandle.shadow_opacity">shadow_opacity (viser.GridHandle attribute)</a>
+</li>
+        <li><a href="../api/handles/scene_handles/#viser.ArrowsHandle.shaft_radius">shaft_radius (viser.ArrowsHandle attribute)</a>
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.SHAPE">SHAPE (viser.Icon attribute)</a>
 </li>
@@ -10130,14 +10155,14 @@
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.SORT_Z_A">SORT_Z_A (viser.Icon attribute)</a>
 </li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="../api/advanced/uplot/#viser.uplot.Series.sorted">sorted (viser.uplot.Series attribute)</a>
 
         <ul>
           <li><a href="../api/advanced/uplot/#viser.uplot.Series_Facet.sorted">(viser.uplot.Series_Facet attribute)</a>
 </li>
         </ul></li>
-    </ul></td>
-    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="../api/advanced/icons/#viser.Icon.SOS">SOS (viser.Icon attribute)</a>
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.SOUP">SOUP (viser.Icon attribute)</a>
@@ -11477,6 +11502,8 @@
         <li><a href="../api/handles/scene_handles/#viser.AmbientLightHandle.visible">visible (viser.AmbientLightHandle property)</a>
 
         <ul>
+          <li><a href="../api/handles/scene_handles/#viser.ArrowsHandle.visible">(viser.ArrowsHandle property)</a>
+</li>
           <li><a href="../api/handles/scene_handles/#viser.BatchedAxesHandle.visible">(viser.BatchedAxesHandle property)</a>
 </li>
           <li><a href="../api/handles/scene_handles/#viser.BatchedGlbHandle.visible">(viser.BatchedGlbHandle property)</a>
@@ -11849,6 +11876,8 @@
         <li><a href="../api/handles/scene_handles/#viser.AmbientLightHandle.wxyz">wxyz (viser.AmbientLightHandle property)</a>
 
         <ul>
+          <li><a href="../api/handles/scene_handles/#viser.ArrowsHandle.wxyz">(viser.ArrowsHandle property)</a>
+</li>
           <li><a href="../api/handles/scene_handles/#viser.BatchedAxesHandle.wxyz">(viser.BatchedAxesHandle property)</a>
 </li>
           <li><a href="../api/handles/scene_handles/#viser.BatchedGlbHandle.wxyz">(viser.BatchedGlbHandle property)</a>

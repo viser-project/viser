@@ -314,6 +314,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../../examples/scene/set_up_direction/">Set up direction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../examples/scene/gaussian_splats/">Gaussian splats</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../examples/scene/fog/">Distance fog</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/scene/arrows/">Arrow visualization</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../examples/gui/">GUI Controls</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><div class="visually-hidden">Toggle navigation of GUI Controls</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
@@ -491,6 +492,91 @@ in <cite>p_parent = [R | t] p_local</cite>. Synchronized to clients automaticall
 <dt class="sig sig-object py" id="viser.AmbientLightHandle.intensity">
 <span class="sig-name descname"><span class="pre">intensity</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.AmbientLightHandle.intensity" title="Link to this definition">¶</a></dt>
 <dd><p>Intensity of the ambient light.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.ArrowsHandle">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">ArrowsHandle</span></span><a class="reference internal" href="../../../_modules/viser/_scene_handles/#ArrowsHandle"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.ArrowsHandle" title="Link to this definition">¶</a></dt>
+<dd><p>Handle for arrow objects.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.ArrowsHandle.head_length">
+<span class="sig-name descname"><span class="pre">head_length</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.1</span></em><a class="headerlink" href="#viser.ArrowsHandle.head_length" title="Link to this definition">¶</a></dt>
+<dd><p>Length of the arrow head.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.ArrowsHandle.head_radius">
+<span class="sig-name descname"><span class="pre">head_radius</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.05</span></em><a class="headerlink" href="#viser.ArrowsHandle.head_radius" title="Link to this definition">¶</a></dt>
+<dd><p>Radius of the arrow head cone.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.ArrowsHandle.line_width">
+<span class="sig-name descname"><span class="pre">line_width</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1</span></em><a class="headerlink" href="#viser.ArrowsHandle.line_width" title="Link to this definition">¶</a></dt>
+<dd><p>Width of the lines (fallback rendering).</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="viser.ArrowsHandle.name">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.ArrowsHandle.name" title="Link to this definition">¶</a></dt>
+<dd><p>Read-only name of the scene node.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="viser.ArrowsHandle.position">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">position</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">dtype</span><span class="p"><span class="pre">[</span></span><span class="pre">float64</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.ArrowsHandle.position" title="Link to this definition">¶</a></dt>
+<dd><p>Position of the scene node. This is equivalent to the t in
+<cite>p_parent = [R | t] p_local</cite>. Synchronized to clients automatically when assigned.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.ArrowsHandle.remove">
+<span class="sig-name descname"><span class="pre">remove</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.ArrowsHandle.remove" title="Link to this definition">¶</a></dt>
+<dd><p>Remove the node from the scene.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.ArrowsHandle.scale">
+<span class="sig-name descname"><span class="pre">scale</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1.0</span></em><a class="headerlink" href="#viser.ArrowsHandle.scale" title="Link to this definition">¶</a></dt>
+<dd><p>Scale of the arrows.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.ArrowsHandle.shaft_radius">
+<span class="sig-name descname"><span class="pre">shaft_radius</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.02</span></em><a class="headerlink" href="#viser.ArrowsHandle.shaft_radius" title="Link to this definition">¶</a></dt>
+<dd><p>Radius of the arrow shaft.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="viser.ArrowsHandle.visible">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">visible</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.ArrowsHandle.visible" title="Link to this definition">¶</a></dt>
+<dd><p>Whether the scene node is visible or not. Synchronized to clients automatically when assigned.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="viser.ArrowsHandle.wxyz">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">wxyz</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">dtype</span><span class="p"><span class="pre">[</span></span><span class="pre">float64</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.ArrowsHandle.wxyz" title="Link to this definition">¶</a></dt>
+<dd><p>Orientation of the scene node. This is the quaternion representation of the R
+in <cite>p_parent = [R | t] p_local</cite>. Synchronized to clients automatically when assigned.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.ArrowsHandle.points">
+<span class="sig-name descname"><span class="pre">points</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">npt.NDArray</span><span class="p"><span class="pre">[</span></span><span class="pre">np.float32</span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.ArrowsHandle.points" title="Link to this definition">¶</a></dt>
+<dd><p>Array of shape (N, 2, 3) containing start/end points for each of N arrows.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.ArrowsHandle.colors">
+<span class="sig-name descname"><span class="pre">colors</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">npt.NDArray</span><span class="p"><span class="pre">[</span></span><span class="pre">np.uint8</span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.ArrowsHandle.colors" title="Link to this definition">¶</a></dt>
+<dd><p>Array of shape (N, 3) containing colors per arrow, or (3,) for uniform color.</p>
 </dd></dl>
 
 </dd></dl>
@@ -3692,6 +3778,21 @@ other objects.</p>
 <li><a class="reference internal" href="#viser.AmbientLightHandle.wxyz"><code class="docutils literal notranslate"><span class="pre">AmbientLightHandle.wxyz</span></code></a></li>
 <li><a class="reference internal" href="#viser.AmbientLightHandle.color"><code class="docutils literal notranslate"><span class="pre">AmbientLightHandle.color</span></code></a></li>
 <li><a class="reference internal" href="#viser.AmbientLightHandle.intensity"><code class="docutils literal notranslate"><span class="pre">AmbientLightHandle.intensity</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.ArrowsHandle"><code class="docutils literal notranslate"><span class="pre">ArrowsHandle</span></code></a><ul>
+<li><a class="reference internal" href="#viser.ArrowsHandle.head_length"><code class="docutils literal notranslate"><span class="pre">ArrowsHandle.head_length</span></code></a></li>
+<li><a class="reference internal" href="#viser.ArrowsHandle.head_radius"><code class="docutils literal notranslate"><span class="pre">ArrowsHandle.head_radius</span></code></a></li>
+<li><a class="reference internal" href="#viser.ArrowsHandle.line_width"><code class="docutils literal notranslate"><span class="pre">ArrowsHandle.line_width</span></code></a></li>
+<li><a class="reference internal" href="#viser.ArrowsHandle.name"><code class="docutils literal notranslate"><span class="pre">ArrowsHandle.name</span></code></a></li>
+<li><a class="reference internal" href="#viser.ArrowsHandle.position"><code class="docutils literal notranslate"><span class="pre">ArrowsHandle.position</span></code></a></li>
+<li><a class="reference internal" href="#viser.ArrowsHandle.remove"><code class="docutils literal notranslate"><span class="pre">ArrowsHandle.remove()</span></code></a></li>
+<li><a class="reference internal" href="#viser.ArrowsHandle.scale"><code class="docutils literal notranslate"><span class="pre">ArrowsHandle.scale</span></code></a></li>
+<li><a class="reference internal" href="#viser.ArrowsHandle.shaft_radius"><code class="docutils literal notranslate"><span class="pre">ArrowsHandle.shaft_radius</span></code></a></li>
+<li><a class="reference internal" href="#viser.ArrowsHandle.visible"><code class="docutils literal notranslate"><span class="pre">ArrowsHandle.visible</span></code></a></li>
+<li><a class="reference internal" href="#viser.ArrowsHandle.wxyz"><code class="docutils literal notranslate"><span class="pre">ArrowsHandle.wxyz</span></code></a></li>
+<li><a class="reference internal" href="#viser.ArrowsHandle.points"><code class="docutils literal notranslate"><span class="pre">ArrowsHandle.points</span></code></a></li>
+<li><a class="reference internal" href="#viser.ArrowsHandle.colors"><code class="docutils literal notranslate"><span class="pre">ArrowsHandle.colors</span></code></a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#viser.BatchedAxesHandle"><code class="docutils literal notranslate"><span class="pre">BatchedAxesHandle</span></code></a><ul>
