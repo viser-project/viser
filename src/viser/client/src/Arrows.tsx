@@ -89,39 +89,14 @@ export const Arrows = React.forwardRef<
       headScales[i * 3 + 2] = head_radius;
     }
 
-    // Split colors into shaft (start point) and head (end point) arrays.
-    // BatchedMeshBase treats byteLength === 3 as a uniform broadcast, and
-    // byteLength === N * 3 as per-instance colors.
-    let shaftColors: Uint8Array<ArrayBuffer>;
-    let headColors: Uint8Array<ArrayBuffer>;
-
-    if (colors.length === 3) {
-      shaftColors = colors;
-      headColors = colors;
-    } else {
-      // colors has flat layout (N, 2, 3): index 0 = shaft, index 1 = head.
-      shaftColors = new Uint8Array(numArrows * 3);
-      headColors = new Uint8Array(numArrows * 3);
-      for (let i = 0; i < numArrows; i++) {
-        shaftColors[i * 3] = colors[i * 6];
-        shaftColors[i * 3 + 1] = colors[i * 6 + 1];
-        shaftColors[i * 3 + 2] = colors[i * 6 + 2];
-        headColors[i * 3] = colors[i * 6 + 3];
-        headColors[i * 3 + 1] = colors[i * 6 + 4];
-        headColors[i * 3 + 2] = colors[i * 6 + 5];
-      }
-    }
-
     return {
       shaftPositions,
       shaftScales,
       headPositions,
       headScales,
       wxyzs,
-      shaftColors,
-      headColors,
     };
-  }, [points, colors, head_length, shaft_radius, head_radius]);
+  }, [points, head_length, shaft_radius, head_radius]);
 
   return (
     <group ref={ref}>
@@ -132,7 +107,7 @@ export const Arrows = React.forwardRef<
           batched_positions={instanceData.shaftPositions}
           batched_wxyzs={instanceData.wxyzs}
           batched_scales={instanceData.shaftScales}
-          batched_colors={instanceData.shaftColors}
+          batched_colors={colors}
           opacity={null}
           batched_opacities={null}
           lod="off"
@@ -145,7 +120,7 @@ export const Arrows = React.forwardRef<
           batched_positions={instanceData.headPositions}
           batched_wxyzs={instanceData.wxyzs}
           batched_scales={instanceData.headScales}
-          batched_colors={instanceData.headColors}
+          batched_colors={colors}
           opacity={null}
           batched_opacities={null}
           lod="off"

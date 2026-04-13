@@ -1754,7 +1754,7 @@ class ArrowProps:
     points: npt.NDArray[np.float32]
     """Array of shape (N, 2, 3) containing start/end points for each of N arrows."""
     colors: npt.NDArray[np.uint8]
-    """Array of shape (N, 2, 3) containing shaft/head colors per arrow, or (3,) for uniform color."""
+    """Array of shape (N, 3) containing colors per arrow, or (3,) for uniform color."""
     shaft_radius: float = 0.02
     """Radius of the arrow shaft."""
     head_radius: float = 0.05

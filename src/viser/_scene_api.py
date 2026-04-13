@@ -800,7 +800,7 @@ class SceneApi:
                 for each of N arrows.
             colors: Colors of the arrows. Can be a single color as an RGB tuple or
                 np.ndarray of shape (3,) to apply to all arrows, or an np.ndarray of
-                shape (N, 2, 3) to specify shaft/head colors per arrow.
+                shape (N, 3) to specify a color per arrow.
             shaft_radius: Radius of the arrow shaft.
             head_radius: Radius of the arrow head cone.
             head_length: Length of the arrow head.
@@ -824,9 +824,9 @@ class SceneApi:
 
         colors_array = colors_to_uint8(np.asarray(colors))
         assert colors_array.shape in {
-            (points_array.shape[0], 2, 3),
+            (points_array.shape[0], 3),
             (3,),
-        }, "Shape of colors should be (N, 2, 3) or (3,)."
+        }, "Shape of colors should be (N, 3) or (3,)."
 
         message = _messages.ArrowMessage(
             name=name,
