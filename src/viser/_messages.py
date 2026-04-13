@@ -1748,6 +1748,33 @@ class LineSegmentsProps:
 
 
 @dataclasses.dataclass
+class ArrowProps:
+    """Properties for arrow visualization."""
+
+    points: npt.NDArray[np.float32]
+    """Array of shape (N, 2, 3) containing start/end points for each of N arrows."""
+    colors: npt.NDArray[np.uint8]
+    """Array of shape (N, 3) containing colors per arrow, or (3,) for uniform color."""
+    shaft_radius: float = 0.02
+    """Radius of the arrow shaft."""
+    head_radius: float = 0.05
+    """Radius of the arrow head cone."""
+    head_length: float = 0.1
+    """Length of the arrow head."""
+    line_width: float = 1
+    """Width of the lines (fallback rendering)."""
+    scale: Union[float, Tuple[float, float, float]] = 1.0
+    """Scale of the arrows."""
+
+
+@dataclasses.dataclass
+class ArrowMessage(_CreateSceneNodeMessage):
+    """Message from server->client carrying arrow information."""
+
+    props: ArrowProps
+
+
+@dataclasses.dataclass
 class CatmullRomSplineMessage(_CreateSceneNodeMessage):
     """Message from server->client carrying Catmull-Rom spline information."""
 

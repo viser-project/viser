@@ -17,3 +17,4 @@ Examples showing 3D scene visualization in Viser.
    set_up_direction
    gaussian_splats
    fog
+   arrows
