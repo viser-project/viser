@@ -43,6 +43,8 @@ function useMessageHandler() {
   const updateUploadState = viewer.guiActions.updateUploadState;
   const setFormDirty = viewer.guiActions.setFormDirty;
   const clearFormDirty = viewer.guiActions.clearFormDirty;
+  const addAction = viewer.guiActions.addAction;
+  const removeAction = viewer.guiActions.removeAction;
 
   // Same as addSceneNode, but make a parent in the form of a dummy coordinate
   // frame if it doesn't exist yet.
@@ -252,6 +254,16 @@ function useMessageHandler() {
 
       case "GuiCloseModalMessage": {
         removeModal(message.uuid);
+        return;
+      }
+
+      // Register or remove command palette actions.
+      case "RegisterActionMessage": {
+        addAction(message);
+        return;
+      }
+      case "RemoveActionMessage": {
+        removeAction(message.uuid);
         return;
       }
 

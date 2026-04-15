@@ -1,4 +1,6 @@
 from ._gui_api import GuiApi as GuiApi
+from ._gui_handles import ActionEvent as ActionEvent
+from ._gui_handles import ActionHandle as ActionHandle
 from ._gui_handles import GuiButtonGroupHandle as GuiButtonGroupHandle
 from ._gui_handles import GuiButtonHandle as GuiButtonHandle
 from ._gui_handles import GuiCheckboxHandle as GuiCheckboxHandle
@@ -27,6 +29,9 @@ from ._gui_handles import GuiVector3Handle as GuiVector3Handle
 from ._gui_handles import UploadedFile as UploadedFile
 from ._icons_enum import Icon as Icon
 from ._icons_enum import IconName as IconName
+from ._messages import Hotkey as Hotkey
+from ._messages import HotkeyKey as HotkeyKey
+from ._messages import HotkeyModifier as HotkeyModifier
 from ._notification_handle import NotificationHandle as NotificationHandle
 from ._scene_api import SceneApi as SceneApi
 from ._scene_handles import AmbientLightHandle as AmbientLightHandle

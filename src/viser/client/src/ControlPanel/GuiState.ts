@@ -5,6 +5,7 @@ import { ColorTranslator } from "colortranslator";
 import {
   GuiComponentMessage,
   GuiModalMessage,
+  RegisterActionMessage,
   ThemeConfigurationMessage,
 } from "../WebsocketMessages";
 
@@ -32,6 +33,8 @@ export interface GuiState {
       filename: string;
     };
   };
+  /** Registered command palette actions, keyed by UUID. */
+  actions: { [uuid: string]: RegisterActionMessage };
 }
 
 export interface GuiActions {
@@ -51,6 +54,8 @@ export interface GuiActions {
   ) => void;
   setFormDirty: (uuid: string) => void;
   clearFormDirty: (uuid: string) => void;
+  addAction: (action: RegisterActionMessage) => void;
+  removeAction: (uuid: string) => void;
 }
 
 const searchParams = new URLSearchParams(window.location.search);
@@ -77,6 +82,7 @@ const cleanGuiState: GuiState = {
   guiOrderFromUuid: {},
   dirtyFormUuids: {},
   uploadsInProgress: {},
+  actions: {},
 };
 
 export function computeRelativeLuminance(color: string) {
@@ -219,6 +225,7 @@ export function useGuiState(initialServer: string) {
           guiOrderFromUuid: cleanGuiState.guiOrderFromUuid,
           dirtyFormUuids: cleanGuiState.dirtyFormUuids,
           uploadsInProgress: cleanGuiState.uploadsInProgress,
+          actions: cleanGuiState.actions,
         });
         configStore.setAll({}, true);
       },
@@ -245,6 +252,18 @@ export function useGuiState(initialServer: string) {
           const next = { ...state.dirtyFormUuids };
           delete next[uuid];
           return { dirtyFormUuids: next };
+        });
+      },
+      addAction: (action) => {
+        store.set((state) => ({
+          actions: { ...state.actions, [action.uuid]: action },
+        }));
+      },
+      removeAction: (uuid) => {
+        store.set((state) => {
+          const next = { ...state.actions };
+          delete next[uuid];
+          return { actions: next };
         });
       },
       updateGuiProps: (id, updates) => {

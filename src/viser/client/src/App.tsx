@@ -37,6 +37,7 @@ import { searchParamKey } from "./SearchParamsUtils";
 import { WebsocketMessageProducer } from "./WebsocketInterface";
 import { Titlebar } from "./Titlebar";
 import { ViserModal } from "./Modal";
+import { CommandPalette } from "./CommandPalette";
 import { useSceneTreeState } from "./SceneTreeState";
 import { useEnvironmentState } from "./EnvironmentState";
 import { useDevSettingsStore } from "./DevSettingsStore";
@@ -400,6 +401,7 @@ function ViewerContents({ children }: { children: React.ReactNode }) {
         <ColorSchemeSetter darkMode={darkMode} />
         <BrowserWarning />
         <ViserModal />
+        <CommandPalette />
         {/* App layout */}
         <Box
           style={{

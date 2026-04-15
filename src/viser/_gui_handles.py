@@ -28,6 +28,7 @@ from ._assignable_props_api import AssignablePropsBase
 from ._icons import svg_from_icon
 from ._icons_enum import IconName
 from ._messages import (
+    ActionProps,
     GuiBaseProps,
     GuiButtonGroupProps,
     GuiButtonProps,
@@ -55,6 +56,8 @@ from ._messages import (
     GuiUplotProps,
     GuiVector2Props,
     GuiVector3Props,
+    RegisterActionMessage,
+    RemoveActionMessage,
 )
 from ._scene_api import _encode_image_binary
 from .infra import ClientId
@@ -1098,3 +1101,92 @@ class GuiImageHandle(_GuiHandle[None], GuiImageProps):
         )
         self._format = resolved_format
         self._data = data
+
+
+@dataclasses.dataclass(frozen=True)
+class ActionEvent:
+    """Information associated with an action trigger from the command palette.
+
+    Passed as input to callback functions."""
+
+    client: ClientHandle | None
+    """Client that triggered this action."""
+    client_id: int | None
+    """ID of client that triggered this action."""
+    target: ActionHandle
+    """Action handle that was triggered."""
+
+
+@dataclasses.dataclass
+class _ActionHandleState:
+    """Internal state for a registered action."""
+
+    uuid: str
+    gui_api: GuiApi
+    props: ActionProps
+    icon: IconName | None
+    trigger_cb: list[Callable[[ActionEvent], None | Coroutine]] = dataclasses.field(
+        default_factory=list
+    )
+    removed: bool = False
+
+
+class ActionHandle(AssignablePropsBase[_ActionHandleState], ActionProps):
+    """Handle for an action registered in the command palette.
+
+    Actions are shown in a command palette (Ctrl/Cmd+K) and can optionally be
+    triggered via hotkeys."""
+
+    def __init__(self, _impl: _ActionHandleState) -> None:
+        super().__init__(impl=_impl)
+
+    @property
+    def icon(self) -> IconName | None:
+        """Icon displayed in the command palette."""
+        return self._impl.icon
+
+    @icon.setter
+    def icon(self, icon: IconName | None) -> None:
+        self._impl.icon = icon
+        self._impl.props._icon_html = None if icon is None else svg_from_icon(icon)
+        self._queue_update("_icon_html", self._impl.props._icon_html)
+
+    def _queue_update(self, name: str, value: Any) -> None:
+        self._impl.gui_api._websock_interface.queue_message(
+            RegisterActionMessage(
+                uuid=self._impl.uuid,
+                props=self._impl.props,
+            )
+        )
+
+    def on_trigger(
+        self, func: Callable[[ActionEvent], NoneOrCoroutine]
+    ) -> Callable[[ActionEvent], NoneOrCoroutine]:
+        """Attach a function to call when this action is triggered.
+
+        Note:
+        - If `func` is a regular function (defined with `def`), it will be executed in a thread pool.
+        - If `func` is an async function (defined with `async def`), it will be executed in the event loop.
+
+        Using async functions can be useful for reducing race conditions.
+        """
+        self._impl.trigger_cb.append(func)
+        return func
+
+    def remove(self) -> None:
+        """Remove this action from the command palette."""
+        if self._impl.removed:
+            import warnings
+
+            warnings.warn(
+                "Attempted to remove an already removed ActionHandle.",
+                stacklevel=2,
+            )
+            return
+        self._impl.removed = True
+        gui_api = self._impl.gui_api
+        gui_api._websock_interface.get_message_buffer().remove_from_buffer(
+            lambda message: getattr(message, "uuid", None) == self._impl.uuid
+        )
+        gui_api._websock_interface.queue_message(RemoveActionMessage(self._impl.uuid))
+        gui_api._action_handle_from_uuid.pop(self._impl.uuid, None)

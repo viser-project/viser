@@ -33,8 +33,11 @@ import {
   IconPlugConnectedX,
   IconQrcode,
   IconQrcodeOff,
+  IconListSearch,
 } from "@tabler/icons-react";
+import { spotlight } from "@mantine/spotlight";
 import React from "react";
+import { isMac } from "../utils/platform";
 import BottomPanel from "./BottomPanel";
 import FloatingPanel from "./FloatingPanel";
 import { ThemeConfigurationMessage } from "../WebsocketMessages";
@@ -120,6 +123,7 @@ export default function ControlPanel(props: {
         <BottomPanel.Handle>
           <ConnectionStatus />
           <BottomPanel.HideWhenCollapsed>
+            <ActionsButton />
             <ShareButton />
             {generatedServerToggleButton}
           </BottomPanel.HideWhenCollapsed>
@@ -134,6 +138,7 @@ export default function ControlPanel(props: {
         <FloatingPanel.Handle>
           <ConnectionStatus />
           <FloatingPanel.HideWhenCollapsed>
+            <ActionsButton />
             <ShareButton />
             {generatedServerToggleButton}
           </FloatingPanel.HideWhenCollapsed>
@@ -150,6 +155,7 @@ export default function ControlPanel(props: {
       >
         <SidebarPanel.Handle>
           <ConnectionStatus />
+          <ActionsButton />
           <ShareButton />
           {generatedServerToggleButton}
         </SidebarPanel.Handle>
@@ -220,6 +226,35 @@ function ConnectionStatus() {
               : "Inactive"}
       </Box>
     </>
+  );
+}
+
+function ActionsButton() {
+  const viewer = React.useContext(ViewerContext)!;
+  const hasActions = viewer.useGui(
+    (state) => Object.keys(state.actions).length > 0,
+  );
+
+  if (!hasActions) return null;
+
+  return (
+    <Tooltip
+      zIndex={100}
+      label={`Actions (${isMac ? "⌘" : "Ctrl+"}K)`}
+      withinPortal
+    >
+      <ActionIcon
+        onClick={(evt) => {
+          evt.stopPropagation();
+          spotlight.open();
+        }}
+        style={{
+          transform: "translateY(0.05em)",
+        }}
+      >
+        <IconListSearch stroke={1.625} />
+      </ActionIcon>
+    </Tooltip>
   );
 }
 

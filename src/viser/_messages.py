@@ -9,9 +9,101 @@ from typing import Any, ClassVar, Dict, Optional, Tuple, Type, TypeVar, Union
 
 import numpy as np
 import numpy.typing as npt
-from typing_extensions import Literal, override
+from typing_extensions import Literal, TypeAlias, override
 
 from . import infra, theme, uplot
+
+HotkeyModifier = Literal["mod", "ctrl", "alt", "meta", "shift"]
+"""A modifier key for hotkey bindings. ``mod`` maps to Cmd on macOS and Ctrl elsewhere."""
+
+HotkeyKey = Literal[
+    # Letters.
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J",
+    "K",
+    "L",
+    "M",
+    "N",
+    "O",
+    "P",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W",
+    "X",
+    "Y",
+    "Z",
+    # Digits.
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    # Special keys.
+    "space",
+    "enter",
+    "escape",
+    "tab",
+    "backspace",
+    "delete",
+    "insert",
+    "home",
+    "end",
+    "pageup",
+    "pagedown",
+    "arrowup",
+    "arrowdown",
+    "arrowleft",
+    "arrowright",
+    "plus",
+    "minus",
+    "asterisk",
+    "slash",
+    # Function keys.
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "F6",
+    "F7",
+    "F8",
+    "F9",
+    "F10",
+    "F11",
+    "F12",
+]
+"""A key for hotkey bindings."""
+
+Hotkey: TypeAlias = (
+    HotkeyKey
+    | tuple[HotkeyModifier, HotkeyKey]
+    | tuple[HotkeyModifier, HotkeyModifier, HotkeyKey]
+)
+"""A hotkey binding: a single key or a tuple of modifiers and a key.
+
+Examples::
+
+    hotkey: Hotkey = "K"
+    hotkey: Hotkey = ("mod", "K")
+    hotkey: Hotkey = ("mod", "shift", "R")
+"""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1972,3 +2064,49 @@ class SetGuiPanelLabelMessage(Message):
     """Message from server->client to set the label of the GUI panel."""
 
     label: Optional[str]
+
+
+@dataclasses.dataclass
+class ActionProps:
+    """Properties for an action in the command palette."""
+
+    label: str
+    """Label displayed in the command palette."""
+    description: Optional[str]
+    """Description displayed below the label."""
+    hotkey: Optional[Hotkey]
+    """Hotkey binding, e.g. ``"K"`` or ``("mod", "shift", "R")``."""
+    _icon_html: Optional[str]
+    """(Private) HTML string for the icon to be displayed on the action."""
+    disabled: bool
+    """Whether the action is disabled (visible but not triggerable)."""
+
+
+@dataclasses.dataclass
+class RegisterActionMessage(Message):
+    """Message from server->client to register an action in the command palette."""
+
+    uuid: str
+    props: ActionProps
+
+    @override
+    def redundancy_key(self) -> str:
+        return f"register-or-remove-action-{self.uuid}"
+
+
+@dataclasses.dataclass
+class RemoveActionMessage(Message):
+    """Message from server->client to remove an action from the command palette."""
+
+    uuid: str
+
+    @override
+    def redundancy_key(self) -> str:
+        return f"register-or-remove-action-{self.uuid}"
+
+
+@dataclasses.dataclass
+class ActionTriggerMessage(Message):
+    """Message from client->server when an action is triggered from the command palette."""
+
+    uuid: str

@@ -36,6 +36,8 @@ from viser._backwards_compat_shims import deprecated_positional_shim
 
 from . import _messages, uplot
 from ._gui_handles import (
+    ActionEvent,
+    ActionHandle,
     GuiButtonGroupHandle,
     GuiButtonHandle,
     GuiCheckboxHandle,
@@ -64,6 +66,7 @@ from ._gui_handles import (
     GuiVector3Handle,
     SupportsRemoveProtocol,
     UploadedFile,
+    _ActionHandleState,
     _GuiButtonHandleState,
     _GuiHandleState,
     _GuiInputHandle,
@@ -215,6 +218,7 @@ class GuiApi:
             "root": _RootGuiContainer({})
         }
         self._modal_handle_from_uuid: dict[str, GuiModalHandle] = {}
+        self._action_handle_from_uuid: dict[str, ActionHandle] = {}
         self._current_file_upload_states: dict[str, _FileUploadState] = {}
 
         # Set to True when plotly.min.js has been sent to client.
@@ -238,6 +242,9 @@ class GuiApi:
         self._websock_interface.register_handler(
             _messages.FileTransferPart,
             self._handle_file_transfer_part,
+        )
+        self._websock_interface.register_handler(
+            _messages.ActionTriggerMessage, self._handle_action_trigger
         )
 
     async def _handle_gui_updates(
@@ -475,6 +482,36 @@ class GuiApi:
                     cb, GuiEvent(client, client_id, handle)
                 ).add_done_callback(print_threadpool_errors)
 
+    async def _handle_action_trigger(
+        self, client_id: ClientId, message: _messages.ActionTriggerMessage
+    ) -> None:
+        """Callback for handling action trigger messages from the command palette."""
+        handle = self._action_handle_from_uuid.get(message.uuid, None)
+        if handle is None:
+            return
+        handle_state = handle._impl
+        if handle_state.props.disabled:
+            return
+
+        from ._viser import ClientHandle, ViserServer
+
+        if isinstance(self._owner, ClientHandle):
+            client = self._owner
+        elif isinstance(self._owner, ViserServer):
+            client = self._owner._connected_clients.get(client_id, None)
+            if client is None:
+                return
+        else:
+            assert False
+
+        for cb in handle_state.trigger_cb:
+            if asyncio.iscoroutinefunction(cb):
+                await cb(ActionEvent(client, client_id, handle))
+            else:
+                self._thread_executor.submit(
+                    cb, ActionEvent(client, client_id, handle)
+                ).add_done_callback(print_threadpool_errors)
+
     def _get_container_uuid(self) -> str:
         """Get container ID associated with the current thread."""
         return self._target_container_from_thread_id.get(threading.get_ident(), "root")
@@ -490,6 +527,8 @@ class GuiApi:
             next(iter(root_container._children.values())).remove()
         while len(self._modal_handle_from_uuid) > 0:
             next(iter(self._modal_handle_from_uuid.values())).close()
+        while len(self._action_handle_from_uuid) > 0:
+            next(iter(self._action_handle_from_uuid.values())).remove()
 
     def set_panel_label(self, label: str | None) -> None:
         """Set the main label that appears in the GUI panel.
@@ -573,6 +612,54 @@ class GuiApi:
                 colors=colors_cast,
             ),
         )
+
+    def add_action(
+        self,
+        label: str,
+        description: str | None = None,
+        hotkey: _messages.Hotkey | None = None,
+        icon: IconName | None = None,
+        disabled: bool = False,
+    ) -> ActionHandle:
+        """Register an action that can be triggered from the client's command palette.
+
+        Args:
+            label: Label displayed in the command palette.
+            description: Optional description displayed below the label.
+            hotkey: Optional hotkey binding. Can be a single key like ``"K"``
+                or a tuple with modifiers like ``("mod", "shift", "R")``.
+                ``mod`` maps to Cmd on macOS and Ctrl on other platforms.
+            icon: Optional icon to display next to the action label.
+            disabled: If True, the action is visible but not triggerable.
+
+        Returns:
+            A handle that can be used to attach callbacks via
+            :meth:`ActionHandle.on_trigger`, update properties, or remove the
+            action.
+        """
+        action_uuid = _make_uuid()
+        props = _messages.ActionProps(
+            label=label,
+            description=description,
+            hotkey=hotkey,
+            disabled=disabled,
+            _icon_html=None if icon is None else svg_from_icon(icon),
+        )
+        self._websock_interface.queue_message(
+            _messages.RegisterActionMessage(
+                uuid=action_uuid,
+                props=props,
+            )
+        )
+        handle_state = _ActionHandleState(
+            uuid=action_uuid,
+            gui_api=self,
+            props=props,
+            icon=icon,
+        )
+        handle = ActionHandle(handle_state)
+        self._action_handle_from_uuid[action_uuid] = handle
+        return handle
 
     @deprecated_positional_shim
     def add_folder(

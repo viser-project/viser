@@ -1471,9 +1471,11 @@ export interface GuiFormSubmitMessage {
 /** Bidirectional form dirty signal.
  *
  * - Sent client->server when any input inside the form first changes since
- *   the last submit. The server broadcasts this to all other clients.
+ * the last submit. The server broadcasts this to all other clients.
  * - Sent server->client (broadcast) to propagate dirty state. Clients show
- *   a dirty indicator on the form header on receipt.
+ * a dirty indicator on the form header on receipt.
+ *
+ * (automatically generated)
  */
 export interface GuiFormDirtyMessage {
   type: "GuiFormDirtyMessage";
@@ -1674,6 +1676,250 @@ export interface SetGuiPanelLabelMessage {
   type: "SetGuiPanelLabelMessage";
   label: string | null;
 }
+/** Message from server->client to register an action in the command palette.
+ *
+ * (automatically generated)
+ */
+export interface RegisterActionMessage {
+  type: "RegisterActionMessage";
+  uuid: string;
+  props: {
+    label: string;
+    description: string | null;
+    hotkey:
+      | "A"
+      | "B"
+      | "C"
+      | "D"
+      | "E"
+      | "F"
+      | "G"
+      | "H"
+      | "I"
+      | "J"
+      | "K"
+      | "L"
+      | "M"
+      | "N"
+      | "O"
+      | "P"
+      | "Q"
+      | "R"
+      | "S"
+      | "T"
+      | "U"
+      | "V"
+      | "W"
+      | "X"
+      | "Y"
+      | "Z"
+      | "0"
+      | "1"
+      | "2"
+      | "3"
+      | "4"
+      | "5"
+      | "6"
+      | "7"
+      | "8"
+      | "9"
+      | "space"
+      | "enter"
+      | "escape"
+      | "tab"
+      | "backspace"
+      | "delete"
+      | "insert"
+      | "home"
+      | "end"
+      | "pageup"
+      | "pagedown"
+      | "arrowup"
+      | "arrowdown"
+      | "arrowleft"
+      | "arrowright"
+      | "plus"
+      | "minus"
+      | "asterisk"
+      | "slash"
+      | "F1"
+      | "F2"
+      | "F3"
+      | "F4"
+      | "F5"
+      | "F6"
+      | "F7"
+      | "F8"
+      | "F9"
+      | "F10"
+      | "F11"
+      | "F12"
+      | [
+          "mod" | "ctrl" | "alt" | "meta" | "shift",
+          (
+            | "A"
+            | "B"
+            | "C"
+            | "D"
+            | "E"
+            | "F"
+            | "G"
+            | "H"
+            | "I"
+            | "J"
+            | "K"
+            | "L"
+            | "M"
+            | "N"
+            | "O"
+            | "P"
+            | "Q"
+            | "R"
+            | "S"
+            | "T"
+            | "U"
+            | "V"
+            | "W"
+            | "X"
+            | "Y"
+            | "Z"
+            | "0"
+            | "1"
+            | "2"
+            | "3"
+            | "4"
+            | "5"
+            | "6"
+            | "7"
+            | "8"
+            | "9"
+            | "space"
+            | "enter"
+            | "escape"
+            | "tab"
+            | "backspace"
+            | "delete"
+            | "insert"
+            | "home"
+            | "end"
+            | "pageup"
+            | "pagedown"
+            | "arrowup"
+            | "arrowdown"
+            | "arrowleft"
+            | "arrowright"
+            | "plus"
+            | "minus"
+            | "asterisk"
+            | "slash"
+            | "F1"
+            | "F2"
+            | "F3"
+            | "F4"
+            | "F5"
+            | "F6"
+            | "F7"
+            | "F8"
+            | "F9"
+            | "F10"
+            | "F11"
+            | "F12"
+          ),
+        ]
+      | [
+          "mod" | "ctrl" | "alt" | "meta" | "shift",
+          "mod" | "ctrl" | "alt" | "meta" | "shift",
+          (
+            | "A"
+            | "B"
+            | "C"
+            | "D"
+            | "E"
+            | "F"
+            | "G"
+            | "H"
+            | "I"
+            | "J"
+            | "K"
+            | "L"
+            | "M"
+            | "N"
+            | "O"
+            | "P"
+            | "Q"
+            | "R"
+            | "S"
+            | "T"
+            | "U"
+            | "V"
+            | "W"
+            | "X"
+            | "Y"
+            | "Z"
+            | "0"
+            | "1"
+            | "2"
+            | "3"
+            | "4"
+            | "5"
+            | "6"
+            | "7"
+            | "8"
+            | "9"
+            | "space"
+            | "enter"
+            | "escape"
+            | "tab"
+            | "backspace"
+            | "delete"
+            | "insert"
+            | "home"
+            | "end"
+            | "pageup"
+            | "pagedown"
+            | "arrowup"
+            | "arrowdown"
+            | "arrowleft"
+            | "arrowright"
+            | "plus"
+            | "minus"
+            | "asterisk"
+            | "slash"
+            | "F1"
+            | "F2"
+            | "F3"
+            | "F4"
+            | "F5"
+            | "F6"
+            | "F7"
+            | "F8"
+            | "F9"
+            | "F10"
+            | "F11"
+            | "F12"
+          ),
+        ]
+      | null;
+    _icon_html: string | null;
+    disabled: boolean;
+  };
+}
+/** Message from server->client to remove an action from the command palette.
+ *
+ * (automatically generated)
+ */
+export interface RemoveActionMessage {
+  type: "RemoveActionMessage";
+  uuid: string;
+}
+/** Message from client->server when an action is triggered from the command palette.
+ *
+ * (automatically generated)
+ */
+export interface ActionTriggerMessage {
+  type: "ActionTriggerMessage";
+  uuid: string;
+}
 
 export type Message =
   | CameraFrustumMessage
@@ -1773,7 +2019,10 @@ export type Message =
   | ShareUrlRequest
   | ShareUrlUpdated
   | ShareUrlDisconnect
-  | SetGuiPanelLabelMessage;
+  | SetGuiPanelLabelMessage
+  | RegisterActionMessage
+  | RemoveActionMessage
+  | ActionTriggerMessage;
 export type SceneNodeMessage =
   | CameraFrustumMessage
   | GlbMessage
