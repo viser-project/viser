@@ -36,8 +36,8 @@ import {
   IconListSearch,
 } from "@tabler/icons-react";
 import { spotlight } from "@mantine/spotlight";
-import React from "react";
 import { isMac } from "../utils/platform";
+import React from "react";
 import BottomPanel from "./BottomPanel";
 import FloatingPanel from "./FloatingPanel";
 import { ThemeConfigurationMessage } from "../WebsocketMessages";
@@ -240,7 +240,7 @@ function ActionsButton() {
   return (
     <Tooltip
       zIndex={100}
-      label={`Actions (${isMac ? "⌘" : "Ctrl+"}K)`}
+      label={`Actions (${isMac ? "Cmd" : "Ctrl"}+Shift+P)`}
       withinPortal
     >
       <ActionIcon

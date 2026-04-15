@@ -147,12 +147,12 @@ export function CommandPalette() {
   return (
     <Spotlight
       actions={spotlightActions}
-      shortcut={["mod + K", "mod + P"]}
+      shortcut={["mod + shift + P"]}
       nothingFound="No matching actions..."
       highlightQuery
       filter={fuseFilter}
-      scrollable
-      maxHeight={350}
+      scrollable={spotlightActions.length >= 5}
+      maxHeight={400}
       searchProps={{
         placeholder: "Search actions...",
       }}
