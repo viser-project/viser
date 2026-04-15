@@ -252,7 +252,7 @@ function ActionsButton() {
           transform: "translateY(0.05em)",
         }}
       >
-        <IconListSearch stroke={1.625} />
+        <IconListSearch stroke={2} height="1.3em" width="1.3em"  />
       </ActionIcon>
     </Tooltip>
   );
@@ -306,7 +306,7 @@ function ShareButton() {
           }}
           disabled={!connected}
         >
-          <IconShare stroke={2} height="1.125em" width="1.125em" />
+          <IconShare stroke={2.25} height="1.125em" width="1.125em" />
         </ActionIcon>
       </Tooltip>
       <Modal
