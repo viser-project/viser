@@ -144,6 +144,8 @@ export function CommandPalette() {
   );
   useHotkeys(hotkeyItems);
 
+  if (spotlightActions.length === 0) return null;
+
   return (
     <Spotlight
       actions={spotlightActions}
