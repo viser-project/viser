@@ -91,11 +91,11 @@ HotkeyKey = Literal[
 ]
 """A key for hotkey bindings."""
 
-Hotkey: TypeAlias = (
-    HotkeyKey
-    | tuple[HotkeyModifier, HotkeyKey]
-    | tuple[HotkeyModifier, HotkeyModifier, HotkeyKey]
-)
+Hotkey: TypeAlias = Union[
+    HotkeyKey,
+    Tuple[HotkeyModifier, HotkeyKey],
+    Tuple[HotkeyModifier, HotkeyModifier, HotkeyKey],
+]
 """A hotkey binding: a single key or a tuple of modifiers and a key.
 
 Examples::
