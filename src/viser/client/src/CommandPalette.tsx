@@ -21,7 +21,7 @@ function hotkeyToString(hotkey: NonNullable<Hotkey>): string {
   return hotkey.join("+");
 }
 
-/** Format a hotkey for display (e.g. ("mod", "shift", "R") → "⌘⇧R" or "Ctrl+Shift+R"). */
+/** Format a hotkey for display (e.g. ("mod", "shift", "R") -> "⌘⇧R" or "Ctrl+Shift+R"). */
 function formatHotkey(hotkey: NonNullable<Hotkey>): string {
   const parts = typeof hotkey === "string" ? [hotkey] : hotkey;
   return parts

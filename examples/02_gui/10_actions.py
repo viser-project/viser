@@ -27,7 +27,7 @@ import viser
 def main() -> None:
     server = viser.ViserServer()
 
-    # --- Basic action ---
+    # Basic action.
     hello_action = server.gui.add_action(
         "Say Hello",
         description="Show a greeting notification",
@@ -43,7 +43,7 @@ def main() -> None:
             color="teal",
         )
 
-    # --- Action with a hotkey ---
+    # Action with a hotkey.
     reset_action = server.gui.add_action(
         "Reset Camera",
         description="Move the camera back to the default view",
@@ -62,7 +62,7 @@ def main() -> None:
             color="blue",
         )
 
-    # --- Toggle action (changes label/icon on each trigger) ---
+    # Toggle action (changes label/icon on each trigger).
     grid_visible = True
     grid_handle = server.scene.add_grid("/grid", width=10.0, height=10.0)
 
@@ -85,7 +85,7 @@ def main() -> None:
             toggle_action.label = "Show Grid"
             toggle_action.icon = viser.Icon.EYE
 
-    # --- Removable action ---
+    # Removable action.
     counter = 0
     removable = server.gui.add_action(
         "Self-Destruct",
