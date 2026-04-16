@@ -2,8 +2,8 @@
 
 Register actions that users can discover and trigger from a command palette.
 
-Press **Ctrl+K** (or **Cmd+K** on macOS) to open the palette, then search for
-actions by name. Actions can also be bound to keyboard hotkeys.
+Press **Ctrl/Cmd+Shift+P** to open the palette, then search for actions by
+name. Actions can also be bound to keyboard hotkeys.
 
 **Key methods:**
 

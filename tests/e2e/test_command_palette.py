@@ -23,7 +23,7 @@ def test_command_palette_opens(
     viser_server: viser.ViserServer,
     viser_page: Page,
 ) -> None:
-    """Pressing Ctrl+K should open the command palette."""
+    """Pressing Ctrl+Shift+P should open the command palette."""
     viser_server.gui.add_action("Dummy Action")
     viser_page.wait_for_timeout(500)
 
@@ -154,17 +154,18 @@ def test_action_remove_disappears_from_palette(
     action = viser_page.locator(_SPOTLIGHT_ACTION, has_text="Removable Action")
     expect(action).to_be_visible(timeout=5_000)
 
-    # Close spotlight, remove action, reopen.
+    # Close spotlight, remove action.
     viser_page.keyboard.press("Escape")
     viser_page.wait_for_timeout(300)
 
     handle.remove()
     viser_page.wait_for_timeout(500)
 
-    _open_spotlight(viser_page)
-    # After removal, the "nothing found" message should show instead.
-    nothing = viser_page.locator("text=No matching actions...")
-    expect(nothing).to_be_visible(timeout=5_000)
+    # With zero actions the Spotlight component is unmounted, so the
+    # shortcut should no longer open anything.
+    viser_page.keyboard.press("Control+Shift+P")
+    viser_page.wait_for_timeout(500)
+    expect(viser_page.locator(_SPOTLIGHT_SEARCH)).to_be_hidden()
 
 
 def test_action_label_update(

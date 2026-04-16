@@ -1134,8 +1134,8 @@ class _ActionHandleState:
 class ActionHandle(AssignablePropsBase[_ActionHandleState], ActionProps):
     """Handle for an action registered in the command palette.
 
-    Actions are shown in a command palette (Ctrl/Cmd+K) and can optionally be
-    triggered via hotkeys."""
+    Actions are shown in a command palette (Ctrl/Cmd+Shift+P) and can
+    optionally be triggered via hotkeys."""
 
     def __init__(self, _impl: _ActionHandleState) -> None:
         super().__init__(impl=_impl)
