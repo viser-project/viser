@@ -15,7 +15,7 @@ _SPOTLIGHT_ACTION = "button.mantine-Spotlight-action"
 
 def _open_spotlight(page: Page) -> None:
     """Open the Mantine Spotlight command palette via keyboard shortcut."""
-    page.keyboard.press("Control+k")
+    page.keyboard.press("Control+Shift+P")
     page.locator(_SPOTLIGHT_SEARCH).wait_for(state="visible", timeout=5_000)
 
 
