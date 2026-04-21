@@ -606,7 +606,11 @@ class WebsockServer(WebsockMessageHandler):
             assert http_server_root is not None
 
             source_path = (http_server_root / relpath).resolve()
-            if not source_path.is_relative_to(http_server_root.resolve()):
+            # Reject path traversal. Equivalent to Path.is_relative_to(),
+            # which was added in Python 3.9.
+            try:
+                source_path.relative_to(http_server_root.resolve())
+            except ValueError:
                 return Response(http.HTTPStatus.NOT_FOUND, "NOT FOUND", Headers())
             if not source_path.exists():
                 return Response(http.HTTPStatus.NOT_FOUND, "NOT FOUND", Headers())
