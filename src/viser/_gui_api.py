@@ -589,6 +589,7 @@ class GuiApi:
     def add_command(
         self,
         label: str,
+        *,
         description: str | None = None,
         hotkey: _messages.Hotkey | None = None,
         icon: IconName | None = None,
@@ -618,12 +619,8 @@ class GuiApi:
             disabled=disabled,
             _icon_html=None if icon is None else svg_from_icon(icon),
         )
-        self._websock_interface.queue_message(
-            _messages.RegisterCommandMessage(
-                uuid=command_uuid,
-                props=props,
-            )
-        )
+        # Register in the local map before publishing, so an immediate
+        # trigger from the client can be resolved here.
         handle_state = _CommandHandleState(
             uuid=command_uuid,
             gui_api=self,
@@ -632,6 +629,12 @@ class GuiApi:
         )
         handle = CommandHandle(handle_state)
         self._command_handle_from_uuid[command_uuid] = handle
+        self._websock_interface.queue_message(
+            _messages.RegisterCommandMessage(
+                uuid=command_uuid,
+                props=props,
+            )
+        )
         return handle
 
     @deprecated_positional_shim

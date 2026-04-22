@@ -1185,9 +1185,8 @@ export interface NotificationShowMessage {
 }
 /** Server -> client message to update an existing notification.
  *
- * Carries the full ``NotificationProps`` (not a delta) so the client can
- * reuse the exact same construction path as the show case. Successive
- * updates coalesce to "latest wins" via the declarative redundancy key.
+ * Carries the full ``NotificationProps`` so the client shares a construction
+ * path with ``NotificationShowMessage``.
  *
  * (automatically generated)
  */
@@ -1777,20 +1776,8 @@ export interface RegisterCommandMessage {
       | "minus"
       | "asterisk"
       | "slash"
-      | "F1"
-      | "F2"
-      | "F3"
-      | "F4"
-      | "F5"
-      | "F6"
-      | "F7"
-      | "F8"
-      | "F9"
-      | "F10"
-      | "F11"
-      | "F12"
       | [
-          "mod" | "ctrl" | "alt" | "meta" | "shift",
+          "mod" | "ctrl" | "alt" | "shift",
           (
             | "A"
             | "B"
@@ -1847,23 +1834,11 @@ export interface RegisterCommandMessage {
             | "minus"
             | "asterisk"
             | "slash"
-            | "F1"
-            | "F2"
-            | "F3"
-            | "F4"
-            | "F5"
-            | "F6"
-            | "F7"
-            | "F8"
-            | "F9"
-            | "F10"
-            | "F11"
-            | "F12"
           ),
         ]
       | [
-          "mod" | "ctrl" | "alt" | "meta" | "shift",
-          "mod" | "ctrl" | "alt" | "meta" | "shift",
+          "mod" | "ctrl" | "alt" | "shift",
+          "mod" | "ctrl" | "alt" | "shift",
           (
             | "A"
             | "B"
@@ -1920,18 +1895,6 @@ export interface RegisterCommandMessage {
             | "minus"
             | "asterisk"
             | "slash"
-            | "F1"
-            | "F2"
-            | "F3"
-            | "F4"
-            | "F5"
-            | "F6"
-            | "F7"
-            | "F8"
-            | "F9"
-            | "F10"
-            | "F11"
-            | "F12"
           ),
         ]
       | null;

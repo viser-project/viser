@@ -96,7 +96,7 @@ def test_scene_serialization_flag_categorizes_correctly() -> None:
     assert SetPositionMessage.include_in_scene_serialization is True
     assert ThemeConfigurationMessage.include_in_scene_serialization is True
     assert RunJavascriptMessage.include_in_scene_serialization is True
-    # GUI / action / notification -> not recorded.
+    # GUI / command / notification -> not recorded.
     assert GuiFolderMessage.include_in_scene_serialization is False
     assert RegisterCommandMessage.include_in_scene_serialization is False
     assert NotificationShowMessage.include_in_scene_serialization is False
@@ -109,8 +109,8 @@ def test_scene_serialization_flag_categorizes_correctly() -> None:
 
 def test_command_update_has_own_redundancy_namespace() -> None:
     """CommandUpdateMessage must not share a redundancy key with Register /
-    Remove for the same action -- the key collision was the source of ghost
-    actions."""
+    Remove for the same command -- the key collision was the source of ghost
+    commands."""
     create_msg = RegisterCommandMessage(
         uuid="abc",
         props=viser._messages.CommandProps(
@@ -146,14 +146,14 @@ def test_update_keys_separate_per_prop_set() -> None:
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
 def test_command_tombstone_is_gcd() -> None:
     """RemoveCommandMessage must be discovered by the declarative GC; this
-    catches the pre-refactor bug where actions weren't in the isinstance
+    catches the pre-refactor bug where commands weren't in the isinstance
     chain and their tombstones accumulated unboundedly."""
     server = viser.ViserServer()
     buffer = server._websock_server._broadcast_buffer.message_from_id
     baseline = len(buffer)
 
     for i in range(10):
-        handle = server.gui.add_command(f"action_{i}")
+        handle = server.gui.add_command(f"command_{i}")
         handle.remove()
 
     # Before GC, the remove tombstones are in the buffer.
@@ -209,7 +209,7 @@ def test_post_remove_scene_write_raises() -> None:
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_post_remove_action_write_raises() -> None:
+def test_post_remove_command_write_raises() -> None:
     server = viser.ViserServer()
     handle = server.gui.add_command("test")
     handle.remove()
@@ -218,7 +218,7 @@ def test_post_remove_action_write_raises() -> None:
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_post_remove_action_icon_setter_raises() -> None:
+def test_post_remove_command_icon_setter_raises() -> None:
     """The explicit icon setter path also enforces the removed guard."""
     server = viser.ViserServer()
     handle = server.gui.add_command("test")
@@ -250,7 +250,7 @@ def test_modal_double_close_warns() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Action ghost-action scenario (the original motivating bug)
+# Command ghost-command scenario (the original motivating bug)
 # ---------------------------------------------------------------------------
 
 

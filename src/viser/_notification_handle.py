@@ -35,10 +35,8 @@ class NotificationHandle(
 
     @override
     def _queue_update(self, name: str, value: Any) -> None:
-        """Queue an update message with the property change. Notifications
-        send the full props object (not a delta) so the client uses the same
-        construction path as the show case; successive updates collapse to
-        "latest wins" via the redundancy key."""
+        # Send the full props each time; the redundancy key collapses
+        # successive updates to "latest wins".
         del name, value
         self._impl.websock_interface.queue_message(
             NotificationUpdateMessage(self._impl.uuid, self._impl.props)

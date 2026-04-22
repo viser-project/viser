@@ -13,7 +13,7 @@ from typing_extensions import Literal, TypeAlias, override
 
 from . import infra, theme, uplot
 
-HotkeyModifier = Literal["mod", "ctrl", "alt", "meta", "shift"]
+HotkeyModifier = Literal["mod", "ctrl", "alt", "shift"]
 """A modifier key for hotkey bindings. ``mod`` maps to Cmd on macOS and Ctrl elsewhere."""
 
 HotkeyKey = Literal[
@@ -75,19 +75,6 @@ HotkeyKey = Literal[
     "minus",
     "asterisk",
     "slash",
-    # Function keys.
-    "F1",
-    "F2",
-    "F3",
-    "F4",
-    "F5",
-    "F6",
-    "F7",
-    "F8",
-    "F9",
-    "F10",
-    "F11",
-    "F12",
 ]
 """A key for hotkey bindings."""
 
@@ -207,10 +194,13 @@ class Message(infra.Message):
             if self.lifecycle_phase in ("create", "remove"):
                 key = f"{self.entity_type}:{entity_id}:create-or-remove"
             else:
-                # Update: coalesce by prop-set so independent prop updates
-                # don't clobber each other.
-                updates = getattr(self, "updates", None)
-                prop_suffix = ",".join(sorted(updates.keys())) if updates else ""
+                # Delta updates coalesce per prop-set; full-props updates
+                # (no `updates` dict) coalesce latest-wins per entity.
+                if hasattr(self, "updates"):
+                    updates: Dict[str, Any] = self.updates  # type: ignore[attr-defined]
+                    prop_suffix = ",".join(sorted(updates.keys()))
+                else:
+                    prop_suffix = "full"
                 key = f"{self.entity_type}:{entity_id}:update:{prop_suffix}"
         else:
             # Non-entity fallback: ClassName + any incidental name/uuid fields.
@@ -342,9 +332,8 @@ class NotificationUpdateMessage(
 ):
     """Server -> client message to update an existing notification.
 
-    Carries the full ``NotificationProps`` (not a delta) so the client can
-    reuse the exact same construction path as the show case. Successive
-    updates coalesce to "latest wins" via the declarative redundancy key."""
+    Carries the full ``NotificationProps`` so the client shares a construction
+    path with ``NotificationShowMessage``."""
 
     uuid: str
     props: NotificationProps

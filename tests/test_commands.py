@@ -7,11 +7,11 @@ from viser._messages import RegisterCommandMessage, RemoveCommandMessage
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
 def test_add_command_returns_handle() -> None:
-    """add_command() should return an CommandHandle with correct properties."""
+    """add_command() should return a CommandHandle with correct properties."""
     server = viser.ViserServer()
-    handle = server.gui.add_command("My Action", description="Does a thing")
+    handle = server.gui.add_command("My Command", description="Does a thing")
 
-    assert handle.label == "My Action"
+    assert handle.label == "My Command"
     assert handle.description == "Does a thing"
     assert handle.hotkey is None
     assert handle.icon is None
@@ -64,7 +64,7 @@ def test_command_update_label() -> None:
 def test_command_update_description() -> None:
     """Updating the description should modify the handle's state."""
     server = viser.ViserServer()
-    handle = server.gui.add_command("Action", description="Original")
+    handle = server.gui.add_command("Command", description="Original")
 
     handle.description = "Updated"
     assert handle.description == "Updated"
@@ -75,7 +75,7 @@ def test_command_update_description() -> None:
 def test_command_update_icon() -> None:
     """Updating the icon should modify the handle's state and update icon HTML."""
     server = viser.ViserServer()
-    handle = server.gui.add_command("Action")
+    handle = server.gui.add_command("Command")
     assert handle.icon is None
 
     handle.icon = viser.Icon.CHECK
@@ -119,12 +119,12 @@ def test_command_remove_warns_on_double_remove() -> None:
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_multiple_actions() -> None:
-    """Multiple actions can be registered and tracked independently."""
+def test_multiple_commands() -> None:
+    """Multiple commands can be registered and tracked independently."""
     server = viser.ViserServer()
-    h1 = server.gui.add_command("Action 1")
-    h2 = server.gui.add_command("Action 2")
-    h3 = server.gui.add_command("Action 3")
+    h1 = server.gui.add_command("Command 1")
+    h2 = server.gui.add_command("Command 2")
+    h3 = server.gui.add_command("Command 3")
 
     assert len(server.gui._command_handle_from_uuid) == 3
 
@@ -138,7 +138,7 @@ def test_multiple_actions() -> None:
 def test_command_disabled_toggle() -> None:
     """Setting disabled should round-trip correctly."""
     server = viser.ViserServer()
-    handle = server.gui.add_command("Action")
+    handle = server.gui.add_command("Command")
 
     assert handle.disabled is False
 
@@ -165,7 +165,7 @@ def test_command_register_disabled() -> None:
 def test_command_update_hotkey() -> None:
     """Updating the hotkey should modify the handle's state."""
     server = viser.ViserServer()
-    handle = server.gui.add_command("Action", hotkey=("mod", "K"))
+    handle = server.gui.add_command("Command", hotkey=("mod", "K"))
 
     assert handle.hotkey == ("mod", "K")
 
@@ -178,11 +178,11 @@ def test_command_update_hotkey() -> None:
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_reset_clears_actions() -> None:
+def test_reset_clears_commands() -> None:
     """reset() should remove all registered commands."""
     server = viser.ViserServer()
-    server.gui.add_command("Action 1")
-    server.gui.add_command("Action 2")
+    server.gui.add_command("Command 1")
+    server.gui.add_command("Command 2")
 
     assert len(server.gui._command_handle_from_uuid) == 2
 

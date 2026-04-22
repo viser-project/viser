@@ -161,13 +161,7 @@ class _GuiHandle(Generic[T], AssignablePropsBase[_GuiHandleState]):
             return
         self._impl.removed = True
 
-        # Send remove to client(s) + update internal state.
         gui_api = self._impl.gui_api
-        gui_api._websock_interface.get_message_buffer().remove_from_buffer(
-            # Don't send outdated GUI updates to new clients.
-            # This is brittle...
-            lambda message: getattr(message, "uuid", None) == self._impl.uuid
-        )
         gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
         parent = gui_api._container_handle_from_uuid[self._impl.parent_container_id]
         parent._children.pop(self._impl.uuid)
@@ -667,13 +661,6 @@ class GuiTabGroupHandle(_GuiHandle[None], GuiTabGroupProps):
         for tab in tuple(self._tab_handles):
             tab.remove()
         gui_api = self._impl.gui_api
-        gui_api._websock_interface.get_message_buffer().remove_from_buffer(
-            # Don't send outdated GUI updates to new clients.
-            lambda message: (
-                isinstance(message, GuiUpdateMessage)
-                and message.uuid == self._impl.uuid
-            )
-        )
         gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
         parent = gui_api._container_handle_from_uuid[self._impl.parent_container_id]
         parent._children.pop(self._impl.uuid)
@@ -797,13 +784,6 @@ class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):
 
         # Remove children, then self.
         gui_api = self._impl.gui_api
-        gui_api._websock_interface.get_message_buffer().remove_from_buffer(
-            # Don't send outdated GUI updates to new clients.
-            lambda message: (
-                isinstance(message, GuiUpdateMessage)
-                and message.uuid == self._impl.uuid
-            )
-        )
         gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
         for child in tuple(self._children.values()):
             child.remove()
