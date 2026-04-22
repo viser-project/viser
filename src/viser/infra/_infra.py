@@ -24,7 +24,7 @@ import websockets.asyncio.server
 import websockets.datastructures
 import websockets.exceptions
 import zstandard
-from typing_extensions import Literal, assert_never, override
+from typing_extensions import override
 from websockets import Headers
 from websockets.asyncio.server import ServerConnection
 from websockets.http11 import Request, Response
@@ -319,8 +319,6 @@ class WebsockServer(WebsockMessageHandler):
             required in the future.
         http_server_root: Path to root for HTTP server.
         verbose: Toggle for print messages.
-        client_api_version: Flag for backwards compatibility. 0 sends individual
-            messages. 1 sends windowed messages.
     """
 
     def __init__(
@@ -330,7 +328,6 @@ class WebsockServer(WebsockMessageHandler):
         message_class: type[Message] = Message,
         http_server_root: Path | None = None,
         verbose: bool = True,
-        client_api_version: Literal[0, 1] = 0,
     ):
         super().__init__()
 
@@ -347,7 +344,6 @@ class WebsockServer(WebsockMessageHandler):
         self._message_class = message_class
         self._http_server_root = http_server_root
         self._verbose = verbose
-        self._client_api_version: Literal[0, 1] = client_api_version
         self._background_event_loop: asyncio.AbstractEventLoop | None = None
 
         self._stop_event: asyncio.Event | None = None
@@ -468,25 +464,24 @@ class WebsockServer(WebsockMessageHandler):
                 total_connections += 1
 
             # Version check to make sure Viser server/client match.
-            if self._client_api_version == 1:
-                import viser
+            import viser
 
-                # Extract client version from the selected subprotocol.
-                client_version_str = "unknown"
-                if connection.subprotocol is not None:
-                    if connection.subprotocol.startswith("viser-v"):
-                        client_version_str = connection.subprotocol[7:].strip()
+            # Extract client version from the selected subprotocol.
+            client_version_str = "unknown"
+            if connection.subprotocol is not None:
+                if connection.subprotocol.startswith("viser-v"):
+                    client_version_str = connection.subprotocol[7:].strip()
 
-                if client_version_str != viser.__version__:
-                    rich.print(
-                        f"[bold red](viser)[/bold red] Version mismatch - connection rejected. "
-                        f"Client: '{client_version_str}', Server: '{viser.__version__}'"
-                    )
-                    await connection.close(
-                        1002,
-                        f"Version mismatch. Client: {client_version_str}, Server: {viser.__version__}",
-                    )
-                    return  # Exit handler to prevent further processing.
+            if client_version_str != viser.__version__:
+                rich.print(
+                    f"[bold red](viser)[/bold red] Version mismatch - connection rejected. "
+                    f"Client: '{client_version_str}', Server: '{viser.__version__}'"
+                )
+                await connection.close(
+                    1002,
+                    f"Version mismatch. Client: {client_version_str}, Server: {viser.__version__}",
+                )
+                return  # Exit handler to prevent further processing.
 
             client_state = _ClientHandleState(
                 AsyncMessageBuffer(event_loop, persistent_messages=False),
@@ -526,13 +521,11 @@ class WebsockServer(WebsockMessageHandler):
                         connection,
                         client_state.message_buffer,
                         client_id,
-                        self._client_api_version,
                     ),
                     _message_producer(
                         connection,
                         self._broadcast_buffer,
                         client_id,
-                        self._client_api_version,
                     ),
                     _message_consumer(connection, handle_incoming, message_class),
                 )
@@ -738,9 +731,28 @@ async def _message_producer(
     websocket: ServerConnection,
     buffer: AsyncMessageBuffer,
     client_id: int,
-    client_api_version: Literal[0, 1],
 ) -> None:
-    """Infinite loop to broadcast windows of messages from a buffer."""
+    """Infinite loop to broadcast windows of messages from a buffer.
+
+    Wire format (hybrid zstd-compressed msgpack + raw binary buffers):
+    - Binary arrays (numpy) are extracted from messages and replaced with
+      tagged placeholder dicts so msgpack.encode() doesn't walk large arrays.
+    - Raw binary data is appended uncompressed after the zstd-compressed
+      msgpack, with 8-byte alignment padding.
+    - On the JS side, typed array views (Float32Array, etc.) are created
+      directly into the WebSocket's ArrayBuffer -- zero-copy for binary data.
+
+    Binary data is left uncompressed because float/int arrays (point clouds,
+    meshes) compress poorly, and at 30-60fps the zstd compress+decompress
+    cost adds up. Zero-copy is more valuable than modest compression.
+
+    Layout:
+      [8 bytes] decompressed size of msgpack (little-endian uint64)
+      [8 bytes] compressed size of msgpack (little-endian uint64)
+      [N bytes] zstd-compressed msgpack payload
+      [P bytes] padding to 8-byte alignment
+      [M bytes] concatenated binary buffers (each 8-byte aligned)
+    """
     window_generator = buffer.window_generator(client_id)
     zstd = zstandard.ZstdCompressor(level=1)
     while not buffer.done:
@@ -749,60 +761,26 @@ async def _message_producer(
         except StopAsyncIteration:
             break
 
-        if client_api_version == 1:
-            # Hybrid wire format: zstd-compressed msgpack metadata, followed
-            # by raw (uncompressed) aligned binary buffers.
-            #
-            # Binary arrays (numpy) are extracted from messages and replaced
-            # with tagged placeholder dicts. This makes msgpack.encode() fast
-            # (it doesn't walk the large arrays). The raw binary data is
-            # appended uncompressed after the zstd-compressed msgpack, with
-            # 8-byte alignment padding.
-            #
-            # On the JS side, typed array views (Float32Array, etc.) are
-            # created directly into the WebSocket's ArrayBuffer — zero-copy
-            # for the binary array data. (The msgpack metadata is still
-            # decompressed and parsed separately.)
-            #
-            # Binary data is left uncompressed because:
-            # - Float/int arrays (point clouds, meshes) compress poorly
-            # - At 30-60fps, zstd compress+decompress cost adds up
-            # - Zero-copy is more valuable than modest compression
-            #
-            # Wire format:
-            #   [8 bytes] decompressed size of msgpack (little-endian uint64)
-            #   [8 bytes] compressed size of msgpack (little-endian uint64)
-            #   [N bytes] zstd-compressed msgpack payload
-            #   [P bytes] padding to 8-byte alignment
-            #   [M bytes] concatenated binary buffers (each 8-byte aligned)
-            binary_buffers: list[memoryview] = []
-            serialized_messages = tuple(
-                message.as_serializable_dict(binary_buffers) for message in outgoing
-            )
-            inner = msgspec.msgpack.encode(
-                {
-                    "messages": serialized_messages,
-                    "timestampSec": time.perf_counter(),
-                    "binaryBufferLengths": tuple(b.nbytes for b in binary_buffers),
-                }
-            )
-            compressed = zstd.compress(inner)
+        binary_buffers: list[memoryview] = []
+        serialized_messages = tuple(
+            message.as_serializable_dict(binary_buffers) for message in outgoing
+        )
+        inner = msgspec.msgpack.encode(
+            {
+                "messages": serialized_messages,
+                "timestampSec": time.perf_counter(),
+                "binaryBufferLengths": tuple(b.nbytes for b in binary_buffers),
+            }
+        )
+        compressed = zstd.compress(inner)
 
-            # Build the wire payload: headers + compressed msgpack + raw binary.
-            parts: list[bytes | memoryview] = [
-                len(inner).to_bytes(8, "little"),
-                len(compressed).to_bytes(8, "little"),
-                compressed,
-            ]
-            _append_aligned_buffers(parts, binary_buffers, 16 + len(compressed))
-            await websocket.send(b"".join(parts))
-        elif client_api_version == 0:
-            for msg in outgoing:
-                serialized = msgspec.msgpack.encode(msg.as_serializable_dict())
-                assert isinstance(serialized, bytes)
-                await websocket.send(serialized)
-        else:
-            assert_never(client_api_version)
+        parts: list[bytes | memoryview] = [
+            len(inner).to_bytes(8, "little"),
+            len(compressed).to_bytes(8, "little"),
+            compressed,
+        ]
+        _append_aligned_buffers(parts, binary_buffers, 16 + len(compressed))
+        await websocket.send(b"".join(parts))
 
 
 async def _message_consumer(

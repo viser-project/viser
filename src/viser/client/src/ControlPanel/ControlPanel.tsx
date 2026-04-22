@@ -123,7 +123,7 @@ export default function ControlPanel(props: {
         <BottomPanel.Handle>
           <ConnectionStatus />
           <BottomPanel.HideWhenCollapsed>
-            <ActionsButton />
+            <CommandsButton />
             <ShareButton />
             {generatedServerToggleButton}
           </BottomPanel.HideWhenCollapsed>
@@ -138,7 +138,7 @@ export default function ControlPanel(props: {
         <FloatingPanel.Handle>
           <ConnectionStatus />
           <FloatingPanel.HideWhenCollapsed>
-            <ActionsButton />
+            <CommandsButton />
             <ShareButton />
             {generatedServerToggleButton}
           </FloatingPanel.HideWhenCollapsed>
@@ -155,7 +155,7 @@ export default function ControlPanel(props: {
       >
         <SidebarPanel.Handle>
           <ConnectionStatus />
-          <ActionsButton />
+          <CommandsButton />
           <ShareButton />
           {generatedServerToggleButton}
         </SidebarPanel.Handle>
@@ -229,18 +229,18 @@ function ConnectionStatus() {
   );
 }
 
-function ActionsButton() {
+function CommandsButton() {
   const viewer = React.useContext(ViewerContext)!;
-  const hasActions = viewer.useGui(
-    (state) => Object.keys(state.actions).length > 0,
+  const hasCommands = viewer.useGui(
+    (state) => Object.keys(state.commands).length > 0,
   );
 
-  if (!hasActions) return null;
+  if (!hasCommands) return null;
 
   return (
     <Tooltip
       zIndex={100}
-      label={`Actions (${isMac ? "Cmd" : "Ctrl"}+Shift+P)`}
+      label={`Commands (${isMac ? "Cmd" : "Ctrl"}+K)`}
       withinPortal
     >
       <ActionIcon
@@ -252,7 +252,7 @@ function ActionsButton() {
           transform: "translateY(0.05em)",
         }}
       >
-        <IconListSearch stroke={2} height="1.3em" width="1.3em"  />
+        <IconListSearch stroke={2} height="1.3em" width="1.3em" />
       </ActionIcon>
     </Tooltip>
   );

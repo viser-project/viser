@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Any, Literal
+import warnings
+from typing import Any
 
 from typing_extensions import override
 
 from viser._assignable_props_api import AssignablePropsBase
 
-from ._messages import NotificationMessage, NotificationProps, RemoveNotificationMessage
+from ._messages import (
+    NotificationProps,
+    NotificationShowMessage,
+    NotificationUpdateMessage,
+    RemoveNotificationMessage,
+)
 from .infra._infra import WebsockClientConnection
 
 
@@ -16,6 +22,7 @@ class _NotificationHandleState:
     websock_interface: WebsockClientConnection
     uuid: str
     props: NotificationProps
+    removed: bool = False
 
 
 class NotificationHandle(
@@ -28,22 +35,29 @@ class NotificationHandle(
 
     @override
     def _queue_update(self, name: str, value: Any) -> None:
-        """Queue an update message with the property change."""
-        # For notifications, we'll just send the whole props object when a
-        # property is reassigned. Deduplication in the message buffer will
-        # debounce this when multiple properties are updated in succession.
+        """Queue an update message with the property change. Notifications
+        send the full props object (not a delta) so the client uses the same
+        construction path as the show case; successive updates collapse to
+        "latest wins" via the redundancy key."""
         del name, value
-        self._sync_with_client("update")
+        self._impl.websock_interface.queue_message(
+            NotificationUpdateMessage(self._impl.uuid, self._impl.props)
+        )
 
-    def _sync_with_client(self, mode: Literal["show", "update"]) -> None:
-        msg = NotificationMessage(mode, self._impl.uuid, self._impl.props)
-        self._impl.websock_interface.queue_message(msg)
+    def _show(self) -> None:
+        """Emit the initial NotificationShowMessage."""
+        self._impl.websock_interface.queue_message(
+            NotificationShowMessage(self._impl.uuid, self._impl.props)
+        )
 
     def remove(self) -> None:
-        self._impl.websock_interface.get_message_buffer().remove_from_buffer(
-            # Don't send outdated GUI updates to new clients.
-            # This is brittle...
-            lambda message: getattr(message, "uuid", None) == self._impl.uuid
+        if self._impl.removed:
+            warnings.warn(
+                "Attempted to remove an already removed NotificationHandle.",
+                stacklevel=2,
+            )
+            return
+        self._impl.removed = True
+        self._impl.websock_interface.queue_message(
+            RemoveNotificationMessage(self._impl.uuid)
         )
-        msg = RemoveNotificationMessage(self._impl.uuid)
-        self._impl.websock_interface.queue_message(msg)

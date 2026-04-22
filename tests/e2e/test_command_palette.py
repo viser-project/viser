@@ -1,4 +1,4 @@
-"""E2E tests for the command palette (add_action) feature."""
+"""E2E tests for the command palette (add_command) feature."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ _SPOTLIGHT_ACTION = "button.mantine-Spotlight-action"
 
 def _open_spotlight(page: Page) -> None:
     """Open the Mantine Spotlight command palette via keyboard shortcut."""
-    page.keyboard.press("Control+Shift+P")
+    page.keyboard.press("Control+K")
     page.locator(_SPOTLIGHT_SEARCH).wait_for(state="visible", timeout=5_000)
 
 
@@ -23,62 +23,62 @@ def test_command_palette_opens(
     viser_server: viser.ViserServer,
     viser_page: Page,
 ) -> None:
-    """Pressing Ctrl+Shift+P should open the command palette."""
-    viser_server.gui.add_action("Dummy Action")
+    """Pressing Ctrl+K should open the command palette."""
+    viser_server.gui.add_command("Dummy Command")
     viser_page.wait_for_timeout(500)
 
     _open_spotlight(viser_page)
     expect(viser_page.locator(_SPOTLIGHT_SEARCH)).to_be_visible()
 
 
-def test_registered_action_appears(
+def test_registered_command_appears(
     viser_server: viser.ViserServer,
     viser_page: Page,
 ) -> None:
-    """A registered action should appear in the command palette."""
-    viser_server.gui.add_action(
-        "My Test Action", description="A test action description"
+    """A registered command should appear in the command palette."""
+    viser_server.gui.add_command(
+        "My Test Command", description="A test command description"
     )
     viser_page.wait_for_timeout(500)
 
     _open_spotlight(viser_page)
 
-    action = viser_page.locator(_SPOTLIGHT_ACTION, has_text="My Test Action")
+    action = viser_page.locator(_SPOTLIGHT_ACTION, has_text="My Test Command")
     expect(action).to_be_visible(timeout=5_000)
 
     # Description should be visible too.
     desc = action.locator(".mantine-Spotlight-actionDescription")
-    expect(desc).to_have_text("A test action description")
+    expect(desc).to_have_text("A test command description")
 
 
-def test_multiple_actions_appear(
+def test_multiple_commands_appear(
     viser_server: viser.ViserServer,
     viser_page: Page,
 ) -> None:
-    """Multiple registered actions should all appear in the palette."""
-    viser_server.gui.add_action("Action Alpha")
-    viser_server.gui.add_action("Action Beta")
-    viser_server.gui.add_action("Action Gamma")
+    """Multiple registered commands should all appear in the palette."""
+    viser_server.gui.add_command("Command Alpha")
+    viser_server.gui.add_command("Command Beta")
+    viser_server.gui.add_command("Command Gamma")
     viser_page.wait_for_timeout(500)
 
     _open_spotlight(viser_page)
 
-    for name in ["Action Alpha", "Action Beta", "Action Gamma"]:
+    for name in ["Command Alpha", "Command Beta", "Command Gamma"]:
         action = viser_page.locator(_SPOTLIGHT_ACTION, has_text=name)
         expect(action).to_be_visible(timeout=5_000)
 
 
-def test_action_triggers_callback(
+def test_command_triggers_callback(
     viser_server: viser.ViserServer,
     viser_page: Page,
 ) -> None:
-    """Clicking an action in the palette should trigger the on_trigger callback."""
+    """Clicking a command in the palette should trigger the on_trigger callback."""
     triggered = threading.Event()
 
-    handle = viser_server.gui.add_action("Trigger Me")
+    handle = viser_server.gui.add_command("Trigger Me")
 
     @handle.on_trigger
-    def _(event: viser.ActionEvent) -> None:
+    def _(event: viser.CommandEvent) -> None:
         triggered.set()
 
     viser_page.wait_for_timeout(500)
@@ -91,18 +91,18 @@ def test_action_triggers_callback(
     assert triggered.wait(timeout=5.0), "on_trigger callback was not invoked"
 
 
-def test_action_trigger_receives_client(
+def test_command_trigger_receives_client(
     viser_server: viser.ViserServer,
     viser_page: Page,
 ) -> None:
-    """The ActionEvent should contain a valid client reference."""
-    event_holder: list[viser.ActionEvent] = []
+    """The CommandEvent should contain a valid client reference."""
+    event_holder: list[viser.CommandEvent] = []
     triggered = threading.Event()
 
-    handle = viser_server.gui.add_action("Client Check")
+    handle = viser_server.gui.add_command("Client Check")
 
     @handle.on_trigger
-    def _(event: viser.ActionEvent) -> None:
+    def _(event: viser.CommandEvent) -> None:
         event_holder.append(event)
         triggered.set()
 
@@ -118,14 +118,14 @@ def test_action_trigger_receives_client(
     assert event_holder[0].client_id is not None
 
 
-def test_fuzzy_search_filters_actions(
+def test_fuzzy_search_filters_commands(
     viser_server: viser.ViserServer,
     viser_page: Page,
 ) -> None:
     """Typing in the search box should filter actions using fuzzy matching."""
-    viser_server.gui.add_action("Export Data")
-    viser_server.gui.add_action("Import Data")
-    viser_server.gui.add_action("Delete All")
+    viser_server.gui.add_command("Export Data")
+    viser_server.gui.add_command("Import Data")
+    viser_server.gui.add_command("Delete All")
     viser_page.wait_for_timeout(500)
 
     _open_spotlight(viser_page)
@@ -141,17 +141,17 @@ def test_fuzzy_search_filters_actions(
     expect(delete_action).to_be_hidden(timeout=3_000)
 
 
-def test_action_remove_disappears_from_palette(
+def test_command_remove_disappears_from_palette(
     viser_server: viser.ViserServer,
     viser_page: Page,
 ) -> None:
-    """Removing an action should remove it from the command palette."""
-    handle = viser_server.gui.add_action("Removable Action")
+    """Removing a command should remove it from the command palette."""
+    handle = viser_server.gui.add_command("Removable Command")
     viser_page.wait_for_timeout(500)
 
     # Verify it appears.
     _open_spotlight(viser_page)
-    action = viser_page.locator(_SPOTLIGHT_ACTION, has_text="Removable Action")
+    action = viser_page.locator(_SPOTLIGHT_ACTION, has_text="Removable Command")
     expect(action).to_be_visible(timeout=5_000)
 
     # Close spotlight, remove action.
@@ -168,12 +168,12 @@ def test_action_remove_disappears_from_palette(
     expect(viser_page.locator(_SPOTLIGHT_SEARCH)).to_be_hidden()
 
 
-def test_action_label_update(
+def test_command_label_update(
     viser_server: viser.ViserServer,
     viser_page: Page,
 ) -> None:
     """Updating the label from the server should update it in the palette."""
-    handle = viser_server.gui.add_action("Old Name")
+    handle = viser_server.gui.add_command("Old Name")
     viser_page.wait_for_timeout(500)
 
     handle.label = "New Name"
@@ -188,12 +188,12 @@ def test_action_label_update(
     expect(old_action).to_be_hidden(timeout=3_000)
 
 
-def test_action_with_icon(
+def test_command_with_icon(
     viser_server: viser.ViserServer,
     viser_page: Page,
 ) -> None:
     """An action registered with an icon should display the icon SVG."""
-    viser_server.gui.add_action(
+    viser_server.gui.add_command(
         "Save File",
         description="Save the current file",
         icon=viser.Icon.DEVICE_FLOPPY,
@@ -210,23 +210,23 @@ def test_action_with_icon(
     expect(svg).to_be_visible()
 
 
-def test_disabled_action_visible_but_not_triggerable(
+def test_disabled_command_visible_but_not_triggerable(
     viser_server: viser.ViserServer,
     viser_page: Page,
 ) -> None:
     """A disabled action should appear in the palette but not trigger callbacks."""
     triggered = threading.Event()
 
-    handle = viser_server.gui.add_action("Disabled Action", disabled=True)
+    handle = viser_server.gui.add_command("Disabled Command", disabled=True)
 
     @handle.on_trigger
-    def _(event: viser.ActionEvent) -> None:
+    def _(event: viser.CommandEvent) -> None:
         triggered.set()
 
     viser_page.wait_for_timeout(500)
     _open_spotlight(viser_page)
 
-    action = viser_page.locator(_SPOTLIGHT_ACTION, has_text="Disabled Action")
+    action = viser_page.locator(_SPOTLIGHT_ACTION, has_text="Disabled Command")
     expect(action).to_be_visible(timeout=5_000)
 
     # The button should be disabled.
@@ -239,22 +239,22 @@ def test_disabled_action_visible_but_not_triggerable(
     )
 
 
-def test_disabled_action_re_enabled(
+def test_disabled_command_re_enabled(
     viser_server: viser.ViserServer,
     viser_page: Page,
 ) -> None:
     """Re-enabling a disabled action should make it triggerable again."""
     triggered = threading.Event()
 
-    handle = viser_server.gui.add_action("Toggle Action", disabled=True)
+    handle = viser_server.gui.add_command("Toggle Action", disabled=True)
 
     @handle.on_trigger
-    def _(event: viser.ActionEvent) -> None:
+    def _(event: viser.CommandEvent) -> None:
         triggered.set()
 
     viser_page.wait_for_timeout(500)
 
-    # Re-enable the action.
+    # Re-enable the command.
     handle.disabled = False
     viser_page.wait_for_timeout(500)
 

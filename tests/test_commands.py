@@ -2,14 +2,14 @@ from unittest.mock import patch
 
 import viser
 import viser._client_autobuild
-from viser._messages import RegisterActionMessage, RemoveActionMessage
+from viser._messages import RegisterCommandMessage, RemoveCommandMessage
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_add_action_returns_handle() -> None:
-    """add_action() should return an ActionHandle with correct properties."""
+def test_add_command_returns_handle() -> None:
+    """add_command() should return an CommandHandle with correct properties."""
     server = viser.ViserServer()
-    handle = server.gui.add_action("My Action", description="Does a thing")
+    handle = server.gui.add_command("My Action", description="Does a thing")
 
     assert handle.label == "My Action"
     assert handle.description == "Does a thing"
@@ -18,10 +18,10 @@ def test_add_action_returns_handle() -> None:
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_add_action_with_hotkey_and_icon() -> None:
-    """add_action() with hotkey and icon should store them correctly."""
+def test_add_command_with_hotkey_and_icon() -> None:
+    """add_command() with hotkey and icon should store them correctly."""
     server = viser.ViserServer()
-    handle = server.gui.add_action(
+    handle = server.gui.add_command(
         "Save",
         description="Save the file",
         hotkey=("mod", "S"),
@@ -34,15 +34,15 @@ def test_add_action_with_hotkey_and_icon() -> None:
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_action_on_trigger_callback() -> None:
+def test_command_on_trigger_callback() -> None:
     """on_trigger decorator should register a callback that can be inspected."""
     server = viser.ViserServer()
-    handle = server.gui.add_action("Run")
+    handle = server.gui.add_command("Run")
 
     calls: list[str] = []
 
     @handle.on_trigger
-    def _(event: viser.ActionEvent) -> None:
+    def _(event: viser.CommandEvent) -> None:
         calls.append("triggered")
 
     # Verify the callback was registered.
@@ -50,10 +50,10 @@ def test_action_on_trigger_callback() -> None:
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_action_update_label() -> None:
+def test_command_update_label() -> None:
     """Updating the label should modify the handle's state."""
     server = viser.ViserServer()
-    handle = server.gui.add_action("Old Label")
+    handle = server.gui.add_command("Old Label")
 
     handle.label = "New Label"
     assert handle.label == "New Label"
@@ -61,10 +61,10 @@ def test_action_update_label() -> None:
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_action_update_description() -> None:
+def test_command_update_description() -> None:
     """Updating the description should modify the handle's state."""
     server = viser.ViserServer()
-    handle = server.gui.add_action("Action", description="Original")
+    handle = server.gui.add_command("Action", description="Original")
 
     handle.description = "Updated"
     assert handle.description == "Updated"
@@ -72,10 +72,10 @@ def test_action_update_description() -> None:
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_action_update_icon() -> None:
+def test_command_update_icon() -> None:
     """Updating the icon should modify the handle's state and update icon HTML."""
     server = viser.ViserServer()
-    handle = server.gui.add_action("Action")
+    handle = server.gui.add_command("Action")
     assert handle.icon is None
 
     handle.icon = viser.Icon.CHECK
@@ -88,26 +88,26 @@ def test_action_update_icon() -> None:
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_action_remove() -> None:
-    """Removing an action should mark it as removed and remove from registry."""
+def test_command_remove() -> None:
+    """Removing a command should mark it as removed and remove from registry."""
     server = viser.ViserServer()
-    handle = server.gui.add_action("Removable")
+    handle = server.gui.add_command("Removable")
 
     uuid = handle._impl.uuid
-    assert uuid in server.gui._action_handle_from_uuid
+    assert uuid in server.gui._command_handle_from_uuid
 
     handle.remove()
     assert handle._impl.removed is True
-    assert uuid not in server.gui._action_handle_from_uuid
+    assert uuid not in server.gui._command_handle_from_uuid
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_action_remove_warns_on_double_remove() -> None:
-    """Removing an action twice should emit a warning."""
+def test_command_remove_warns_on_double_remove() -> None:
+    """Removing a command twice should emit a warning."""
     import warnings
 
     server = viser.ViserServer()
-    handle = server.gui.add_action("Double Remove")
+    handle = server.gui.add_command("Double Remove")
 
     handle.remove()
 
@@ -122,23 +122,23 @@ def test_action_remove_warns_on_double_remove() -> None:
 def test_multiple_actions() -> None:
     """Multiple actions can be registered and tracked independently."""
     server = viser.ViserServer()
-    h1 = server.gui.add_action("Action 1")
-    h2 = server.gui.add_action("Action 2")
-    h3 = server.gui.add_action("Action 3")
+    h1 = server.gui.add_command("Action 1")
+    h2 = server.gui.add_command("Action 2")
+    h3 = server.gui.add_command("Action 3")
 
-    assert len(server.gui._action_handle_from_uuid) == 3
+    assert len(server.gui._command_handle_from_uuid) == 3
 
     h2.remove()
-    assert len(server.gui._action_handle_from_uuid) == 2
-    assert h1._impl.uuid in server.gui._action_handle_from_uuid
-    assert h3._impl.uuid in server.gui._action_handle_from_uuid
+    assert len(server.gui._command_handle_from_uuid) == 2
+    assert h1._impl.uuid in server.gui._command_handle_from_uuid
+    assert h3._impl.uuid in server.gui._command_handle_from_uuid
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_action_disabled_toggle() -> None:
+def test_command_disabled_toggle() -> None:
     """Setting disabled should round-trip correctly."""
     server = viser.ViserServer()
-    handle = server.gui.add_action("Action")
+    handle = server.gui.add_command("Action")
 
     assert handle.disabled is False
 
@@ -152,20 +152,20 @@ def test_action_disabled_toggle() -> None:
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_action_register_disabled() -> None:
-    """add_action() with disabled=True should set the property."""
+def test_command_register_disabled() -> None:
+    """add_command() with disabled=True should set the property."""
     server = viser.ViserServer()
-    handle = server.gui.add_action("Disabled Action", disabled=True)
+    handle = server.gui.add_command("Disabled Command", disabled=True)
 
     assert handle.disabled is True
     assert handle._impl.props.disabled is True
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_action_update_hotkey() -> None:
+def test_command_update_hotkey() -> None:
     """Updating the hotkey should modify the handle's state."""
     server = viser.ViserServer()
-    handle = server.gui.add_action("Action", hotkey=("mod", "K"))
+    handle = server.gui.add_command("Action", hotkey=("mod", "K"))
 
     assert handle.hotkey == ("mod", "K")
 
@@ -179,20 +179,20 @@ def test_action_update_hotkey() -> None:
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
 def test_reset_clears_actions() -> None:
-    """reset() should remove all registered actions."""
+    """reset() should remove all registered commands."""
     server = viser.ViserServer()
-    server.gui.add_action("Action 1")
-    server.gui.add_action("Action 2")
+    server.gui.add_command("Action 1")
+    server.gui.add_command("Action 2")
 
-    assert len(server.gui._action_handle_from_uuid) == 2
+    assert len(server.gui._command_handle_from_uuid) == 2
 
     server.gui.reset()
-    assert len(server.gui._action_handle_from_uuid) == 0
+    assert len(server.gui._command_handle_from_uuid) == 0
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_action_sends_register_message() -> None:
-    """add_action() should queue a RegisterActionMessage."""
+def test_command_sends_register_message() -> None:
+    """add_command() should queue a RegisterCommandMessage."""
     server = viser.ViserServer()
 
     # Capture messages sent through the websocket interface.
@@ -205,9 +205,9 @@ def test_action_sends_register_message() -> None:
 
     server._websock_server.queue_message = capture_queue
 
-    server.gui.add_action("Test", description="A test", hotkey=("mod", "T"))
+    server.gui.add_command("Test", description="A test", hotkey=("mod", "T"))
 
-    register_msgs = [m for m in sent if isinstance(m, RegisterActionMessage)]
+    register_msgs = [m for m in sent if isinstance(m, RegisterCommandMessage)]
     assert len(register_msgs) == 1
     assert register_msgs[0].props.label == "Test"
     assert register_msgs[0].props.description == "A test"
@@ -215,8 +215,8 @@ def test_action_sends_register_message() -> None:
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_action_remove_sends_remove_message() -> None:
-    """remove() should queue a RemoveActionMessage."""
+def test_command_remove_sends_remove_message() -> None:
+    """remove() should queue a RemoveCommandMessage."""
     server = viser.ViserServer()
 
     sent: list = []
@@ -228,11 +228,11 @@ def test_action_remove_sends_remove_message() -> None:
 
     server._websock_server.queue_message = capture_queue
 
-    handle = server.gui.add_action("Temp")
+    handle = server.gui.add_command("Temp")
     sent.clear()
 
     handle.remove()
 
-    remove_msgs = [m for m in sent if isinstance(m, RemoveActionMessage)]
+    remove_msgs = [m for m in sent if isinstance(m, RemoveCommandMessage)]
     assert len(remove_msgs) == 1
     assert remove_msgs[0].uuid == handle._impl.uuid

@@ -1151,13 +1151,48 @@ export interface RunJavascriptMessage {
   type: "RunJavascriptMessage";
   source: string;
 }
-/** Notification message.
+/** Server -> client message to show a new notification.
  *
  * (automatically generated)
  */
-export interface NotificationMessage {
-  type: "NotificationMessage";
-  mode: "show" | "update";
+export interface NotificationShowMessage {
+  type: "NotificationShowMessage";
+  uuid: string;
+  props: {
+    title: string;
+    body: string;
+    loading: boolean;
+    with_close_button: boolean;
+    auto_close_seconds: number | null;
+    color:
+      | "dark"
+      | "gray"
+      | "red"
+      | "pink"
+      | "grape"
+      | "violet"
+      | "indigo"
+      | "blue"
+      | "cyan"
+      | "green"
+      | "lime"
+      | "yellow"
+      | "orange"
+      | "teal"
+      | [number, number, number]
+      | null;
+  };
+}
+/** Server -> client message to update an existing notification.
+ *
+ * Carries the full ``NotificationProps`` (not a delta) so the client can
+ * reuse the exact same construction path as the show case. Successive
+ * updates coalesce to "latest wins" via the declarative redundancy key.
+ *
+ * (automatically generated)
+ */
+export interface NotificationUpdateMessage {
+  type: "NotificationUpdateMessage";
   uuid: string;
   props: {
     title: string;
@@ -1676,12 +1711,12 @@ export interface SetGuiPanelLabelMessage {
   type: "SetGuiPanelLabelMessage";
   label: string | null;
 }
-/** Message from server->client to register an action in the command palette.
+/** Message from server->client to register a command in the command palette.
  *
  * (automatically generated)
  */
-export interface RegisterActionMessage {
-  type: "RegisterActionMessage";
+export interface RegisterCommandMessage {
+  type: "RegisterCommandMessage";
   uuid: string;
   props: {
     label: string;
@@ -1904,20 +1939,29 @@ export interface RegisterActionMessage {
     disabled: boolean;
   };
 }
-/** Message from server->client to remove an action from the command palette.
+/** Message from server->client to update properties of an existing command.
  *
  * (automatically generated)
  */
-export interface RemoveActionMessage {
-  type: "RemoveActionMessage";
+export interface CommandUpdateMessage {
+  type: "CommandUpdateMessage";
+  uuid: string;
+  updates: { [key: string]: any };
+}
+/** Message from server->client to remove a command from the command palette.
+ *
+ * (automatically generated)
+ */
+export interface RemoveCommandMessage {
+  type: "RemoveCommandMessage";
   uuid: string;
 }
-/** Message from client->server when an action is triggered from the command palette.
+/** Message from client->server when a command is triggered from the command palette.
  *
  * (automatically generated)
  */
-export interface ActionTriggerMessage {
-  type: "ActionTriggerMessage";
+export interface CommandTriggerMessage {
+  type: "CommandTriggerMessage";
   uuid: string;
 }
 
@@ -1976,7 +2020,8 @@ export type Message =
   | GuiButtonGroupMessage
   | GuiRemoveMessage
   | RunJavascriptMessage
-  | NotificationMessage
+  | NotificationShowMessage
+  | NotificationUpdateMessage
   | RemoveNotificationMessage
   | ViewerCameraMessage
   | ScenePointerMessage
@@ -2020,9 +2065,10 @@ export type Message =
   | ShareUrlUpdated
   | ShareUrlDisconnect
   | SetGuiPanelLabelMessage
-  | RegisterActionMessage
-  | RemoveActionMessage
-  | ActionTriggerMessage;
+  | RegisterCommandMessage
+  | CommandUpdateMessage
+  | RemoveCommandMessage
+  | CommandTriggerMessage;
 export type SceneNodeMessage =
   | CameraFrustumMessage
   | GlbMessage

@@ -3,17 +3,16 @@ import {
   SpotlightActionData,
   SpotlightActionGroupData,
 } from "@mantine/spotlight";
-
-type SpotlightActions = SpotlightActionData | SpotlightActionGroupData;
 import "@mantine/spotlight/styles.css";
 import { useHotkeys } from "@mantine/hooks";
-import Fuse, { IFuseOptions } from "fuse.js";
+import Fuse, { FuseResult, IFuseOptions } from "fuse.js";
 import React, { useCallback, useContext, useMemo, useRef } from "react";
 import { ViewerContext } from "./ViewerContext";
-import { RegisterActionMessage } from "./WebsocketMessages";
+import { RegisterCommandMessage } from "./WebsocketMessages";
 import { isMac } from "./utils/platform";
 
-type Hotkey = RegisterActionMessage["props"]["hotkey"];
+type SpotlightItems = SpotlightActionData | SpotlightActionGroupData;
+type Hotkey = RegisterCommandMessage["props"]["hotkey"];
 
 /** Convert a hotkey value to the "mod+shift+R" string format for Mantine. */
 function hotkeyToString(hotkey: NonNullable<Hotkey>): string {
@@ -36,16 +35,16 @@ function formatHotkey(hotkey: NonNullable<Hotkey>): string {
     .join("");
 }
 
-/** Build Spotlight-compatible actions from the registered action map. */
+/** Build Spotlight-compatible entries from the registered command map. */
 function useSpotlightActions(
-  actions: Record<string, RegisterActionMessage>,
+  commands: Record<string, RegisterCommandMessage>,
   onTrigger: (uuid: string) => void,
 ): SpotlightActionData[] {
   return useMemo(
     () =>
-      Object.values(actions).map((action) => {
-        const hotkey = action.props.hotkey;
-        const desc = action.props.description;
+      Object.values(commands).map((command) => {
+        const hotkey = command.props.hotkey;
+        const desc = command.props.description;
         const description =
           desc && hotkey
             ? `${desc}  (${formatHotkey(hotkey)})`
@@ -54,29 +53,29 @@ function useSpotlightActions(
               : hotkey
                 ? formatHotkey(hotkey)
                 : undefined;
-        const disabled = action.props.disabled;
+        const disabled = command.props.disabled;
         return {
-          id: action.uuid,
-          label: action.props.label,
+          id: command.uuid,
+          label: command.props.label,
           description,
           disabled,
-          onClick: disabled ? undefined : () => onTrigger(action.uuid),
+          onClick: disabled ? undefined : () => onTrigger(command.uuid),
           style: disabled
             ? { opacity: 0.5, cursor: "not-allowed" }
             : undefined,
           leftSection:
-            action.props._icon_html != null ? (
+            command.props._icon_html != null ? (
               <span
                 style={{ display: "flex", alignItems: "center" }}
-                dangerouslySetInnerHTML={{ __html: action.props._icon_html }}
+                dangerouslySetInnerHTML={{ __html: command.props._icon_html }}
               />
             ) : undefined,
-          keywords: action.props.description
-            ? [action.props.description]
+          keywords: command.props.description
+            ? [command.props.description]
             : undefined,
         };
       }),
-    [actions, onTrigger],
+    [commands, onTrigger],
   );
 }
 
@@ -89,58 +88,60 @@ const FUSE_OPTIONS: IFuseOptions<SpotlightActionData> = {
 /** Hook returning a stable fuzzy filter function that reuses its Fuse index. */
 function useFuseFilter() {
   const fuseRef = useRef<{
-    actions: SpotlightActions[];
+    items: SpotlightItems[];
     fuse: Fuse<SpotlightActionData>;
   } | null>(null);
 
-  return useCallback((query: string, actions: SpotlightActions[]) => {
-    if (!query) return actions;
+  return useCallback((query: string, items: SpotlightItems[]) => {
+    if (!query) return items;
 
-    const flat: SpotlightActionData[] = actions.flatMap((a) =>
+    const flat: SpotlightActionData[] = items.flatMap((a) =>
       "group" in a
         ? (a as SpotlightActionGroupData).actions
         : [a as SpotlightActionData],
     );
 
-    // Rebuild the Fuse index only when the actions list changes.
-    if (!fuseRef.current || fuseRef.current.actions !== actions) {
-      fuseRef.current = { actions, fuse: new Fuse(flat, FUSE_OPTIONS) };
+    // Rebuild the Fuse index only when the items list changes.
+    if (!fuseRef.current || fuseRef.current.items !== items) {
+      fuseRef.current = { items, fuse: new Fuse(flat, FUSE_OPTIONS) };
     }
-    return fuseRef.current.fuse.search(query).map((result) => result.item);
+    return fuseRef.current.fuse
+      .search(query)
+      .map((result: FuseResult<SpotlightActionData>) => result.item);
   }, []);
 }
 
 export function CommandPalette() {
   const viewer = useContext(ViewerContext)!;
-  const actions = viewer.useGui((state) => state.actions);
-  const sendMessage = viewer.mutable.current.sendMessage;
+  const commands = viewer.useGui((state) => state.commands);
+  const viewerMutable = viewer.mutable.current;
 
   const handleTrigger = useCallback(
     (uuid: string) => {
-      sendMessage({
-        type: "ActionTriggerMessage",
+      viewerMutable.sendMessage({
+        type: "CommandTriggerMessage",
         uuid,
       });
     },
-    [sendMessage],
+    [viewerMutable],
   );
 
-  const spotlightActions = useSpotlightActions(actions, handleTrigger);
+  const spotlightActions = useSpotlightActions(commands, handleTrigger);
   const fuseFilter = useFuseFilter();
 
-  // Register per-action hotkeys.
+  // Register per-command hotkeys.
   const hotkeyItems = useMemo(
     () =>
-      Object.values(actions)
-        .filter((a) => a.props.hotkey != null && !a.props.disabled)
+      Object.values(commands)
+        .filter((c) => c.props.hotkey != null && !c.props.disabled)
         .map(
-          (a) =>
-            [hotkeyToString(a.props.hotkey!), () => handleTrigger(a.uuid)] as [
+          (c) =>
+            [hotkeyToString(c.props.hotkey!), () => handleTrigger(c.uuid)] as [
               string,
               (event: KeyboardEvent) => void,
             ],
         ),
-    [actions, handleTrigger],
+    [commands, handleTrigger],
   );
   useHotkeys(hotkeyItems);
 
@@ -149,14 +150,14 @@ export function CommandPalette() {
   return (
     <Spotlight
       actions={spotlightActions}
-      shortcut={["mod + shift + P"]}
-      nothingFound="No matching actions..."
+      shortcut={["mod + K", "mod + shift + P"]}
+      nothingFound="No matching commands..."
       highlightQuery
       filter={fuseFilter}
       scrollable={spotlightActions.length >= 5}
       maxHeight={400}
       searchProps={{
-        placeholder: "Search actions...",
+        placeholder: "Search commands...",
       }}
     />
   );

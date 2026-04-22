@@ -145,98 +145,175 @@ LabelAnchor = Literal[
 ]
 
 
+# Entity lifecycle markers. See architecture_hardening.md for design rationale.
+EntityType: TypeAlias = Literal[
+    "gui", "scene", "command", "notification", "modal"
+]
+"""Kinds of removable entities in the protocol."""
+
+LifecyclePhase: TypeAlias = Literal["create", "update", "remove"]
+"""Phase of an entity message. Create and Remove share a redundancy-key
+namespace (so Remove supersedes Create); Update has its own namespace keyed by
+prop-set."""
+
+EntityIdField: TypeAlias = Literal["uuid", "name"]
+"""Name of the dataclass field that carries the entity id. ``"uuid"`` for
+GUI/command/notification/modal; ``"name"`` for scene nodes."""
+
+
+@dataclasses.dataclass(frozen=True)
+class EntityLifecycle:
+    """Class-level markers that place a Message inside an entity's lifecycle.
+
+    Passed to ``Message.__init_subclass__`` as the ``entity=`` kwarg. Messages
+    that aren't part of any entity lifecycle omit the kwarg entirely.
+    """
+
+    type: EntityType
+    phase: LifecyclePhase
+    id_field: EntityIdField
+
+
 class Message(infra.Message):
     _tags: ClassVar[Tuple[TagLiteral, ...]] = tuple()
+
+    # Every Message subclass must explicitly declare whether it belongs in
+    # recorded scene serializations (.viser files, embed HTML). No default --
+    # the type-only annotation forces each subclass to pass the kwarg.
+    include_in_scene_serialization: ClassVar[bool]
 
     @override
     def redundancy_key(self) -> str:
         """Returns a unique key for this message, used for detecting redundant
         messages.
 
-        For example: if we send 1000 GUI value updates for the same GUI
-        element, we should only keep the latest message.
+        For entity messages, this is derived from the entity markers:
+        - ``create`` / ``remove`` share ``{entity_type}:{id}:create-or-remove``
+          so a Remove supersedes a pending Create (and vice versa).
+        - ``update`` uses ``{entity_type}:{id}:update:{props}`` so prop-set
+          updates coalesce among themselves but don't fight with create/remove.
+
+        For non-entity messages, falls back to a name-based default that keeps
+        independent messages in independent slots.
         """
-        # Cache the key since it's called multiple times per message (push +
-        # window_generator) and the result never changes.
-        cached = getattr(self, "_cached_redundancy_key", None)
+        cached = self.__dict__.get("_cached_redundancy_key")
         if cached is not None:
             return cached
 
-        parts = [type(self).__name__]
+        if (
+            self.entity_type is not None
+            and self.lifecycle_phase is not None
+            and self.entity_id_field is not None
+        ):
+            entity_id = getattr(self, self.entity_id_field)
+            if self.lifecycle_phase in ("create", "remove"):
+                key = f"{self.entity_type}:{entity_id}:create-or-remove"
+            else:
+                # Update: coalesce by prop-set so independent prop updates
+                # don't clobber each other.
+                updates = getattr(self, "updates", None)
+                prop_suffix = (
+                    ",".join(sorted(updates.keys())) if updates else ""
+                )
+                key = f"{self.entity_type}:{entity_id}:update:{prop_suffix}"
+        else:
+            # Non-entity fallback: ClassName + any incidental name/uuid fields.
+            parts = [type(self).__name__]
+            node_name = getattr(self, "name", None)
+            if node_name is not None:
+                parts.append(node_name)
+            uuid_val = getattr(self, "uuid", None)
+            if uuid_val is not None:
+                parts.append(uuid_val)
+            key = "_".join(parts)
 
-        # Scene node manipulation messages all have a "name" field.
-        node_name = getattr(self, "name", None)
-        if node_name is not None:
-            parts.append(node_name)
-
-        # GUI and notification messages all have an "uuid" field.
-        node_name = getattr(self, "uuid", None)
-        if node_name is not None:
-            parts.append(node_name)
-
-        key = "_".join(parts)
         object.__setattr__(self, "_cached_redundancy_key", key)
         return key
 
-    @classmethod
-    def __init_subclass__(cls, tag: TagLiteral | None = None):
-        """Tag will be used to create a union type in TypeScript."""
+    def __init_subclass__(
+        cls,
+        tag: Optional[TagLiteral] = None,
+        entity: Optional[EntityLifecycle] = None,
+        include_in_scene_serialization: Optional[bool] = None,
+    ) -> None:
+        """Extend class creation with:
+
+        - ``tag=``: append to the TypeScript union tag list (existing behavior).
+        - ``entity=``: declare entity lifecycle markers (type, phase, id_field)
+          as a single ``EntityLifecycle`` value.
+        - ``include_in_scene_serialization=``: required on every Message
+          subclass (directly or inherited from an intermediate base). Decides
+          whether instances are written to saved ``.viser`` recordings and
+          embed HTML bundles.
+        """
         super().__init_subclass__()
         if tag is not None:
             cls._tags = cls._tags + (tag,)
+        if entity is not None:
+            cls.entity_type = entity.type
+            cls.lifecycle_phase = entity.phase
+            cls.entity_id_field = entity.id_field
+        if include_in_scene_serialization is not None:
+            cls.include_in_scene_serialization = include_in_scene_serialization
+
+        # Require every Message subclass to resolve the scene-serialization
+        # flag -- either via the kwarg here, or inherited from an ancestor
+        # that did. The base Message declaration is a type-only ClassVar
+        # (no value), so `hasattr` is False until someone assigns it.
+        if not hasattr(cls, "include_in_scene_serialization"):
+            raise TypeError(
+                f"{cls.__name__}: include_in_scene_serialization must be "
+                f"set via the kwarg or inherited from an intermediate base."
+            )
 
 
 @dataclasses.dataclass
-class _CreateSceneNodeMessage(Message, tag="SceneNodeMessage"):
+class _CreateSceneNodeMessage(
+    Message,
+    tag="SceneNodeMessage",
+    entity=EntityLifecycle("scene", "create", "name"),
+    include_in_scene_serialization=True,
+):
     name: str
 
-    @override
-    def redundancy_key(self) -> str:
-        """All scene nodes will have the same redundancy key."""
-        return f"create-or-remove-scene-{self.name}"
-
 
 @dataclasses.dataclass
-class RemoveSceneNodeMessage(Message):
+class RemoveSceneNodeMessage(
+    Message,
+    entity=EntityLifecycle("scene", "remove", "name"),
+    include_in_scene_serialization=True,
+):
     """Remove a particular node from the scene."""
 
     name: str
 
-    @override
-    def redundancy_key(self) -> str:
-        # This is intentionally the same as the redundancy key for
-        # _CreateSceneNodeMessage: this way, when we remove a scene node the
-        # message for creating the scene node will automatically be culled.
-        return f"create-or-remove-scene-{self.name}"
-
 
 @dataclasses.dataclass
-class _CreateGuiComponentMessage(Message, tag="GuiComponentMessage"):
+class _CreateGuiComponentMessage(
+    Message,
+    tag="GuiComponentMessage",
+    entity=EntityLifecycle("gui", "create", "uuid"),
+    include_in_scene_serialization=False,
+):
     uuid: str
 
-    @override
-    def redundancy_key(self) -> str:
-        return f"create-or-remove-gui-{self.uuid}"
-
 
 @dataclasses.dataclass
-class GuiRemoveMessage(Message):
+class GuiRemoveMessage(
+    Message,
+    entity=EntityLifecycle("gui", "remove", "uuid"),
+    include_in_scene_serialization=False,
+):
     """Sent server->client to remove a GUI element."""
 
     uuid: str
-
-    @override
-    def redundancy_key(self) -> str:
-        # Intentionally the same as the redundancy key for
-        # _CreateGuiComponentMessage.
-        return f"create-or-remove-gui-{self.uuid}"
 
 
 T = TypeVar("T", bound=Type[Message])
 
 
 @dataclasses.dataclass
-class RunJavascriptMessage(Message):
+class RunJavascriptMessage(Message, include_in_scene_serialization=True):
     """Message for running some arbitrary Javascript on the client.
     We use this to set up the Plotly.js package, via the plotly.min.js source
     code."""
@@ -250,19 +327,31 @@ class RunJavascriptMessage(Message):
 
 
 @dataclasses.dataclass
-class NotificationMessage(Message):
-    """Notification message."""
+class NotificationShowMessage(
+    Message,
+    entity=EntityLifecycle("notification", "create", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """Server -> client message to show a new notification."""
 
-    mode: Literal["show", "update"]
     uuid: str
     props: NotificationProps
 
-    @override
-    def redundancy_key(self) -> str:
-        # Include mode in the key so "show" and "update" messages are kept
-        # separately. Without this, an "update" message would cull the "show"
-        # message, preventing the notification from being created.
-        return f"{type(self).__name__}_{self.uuid}_{self.mode}"
+
+@dataclasses.dataclass
+class NotificationUpdateMessage(
+    Message,
+    entity=EntityLifecycle("notification", "update", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """Server -> client message to update an existing notification.
+
+    Carries the full ``NotificationProps`` (not a delta) so the client can
+    reuse the exact same construction path as the show case. Successive
+    updates coalesce to "latest wins" via the declarative redundancy key."""
+
+    uuid: str
+    props: NotificationProps
 
 
 @dataclasses.dataclass
@@ -283,14 +372,18 @@ class NotificationProps:
 
 
 @dataclasses.dataclass
-class RemoveNotificationMessage(Message):
+class RemoveNotificationMessage(
+    Message,
+    entity=EntityLifecycle("notification", "remove", "uuid"),
+    include_in_scene_serialization=False,
+):
     """Remove a specific notification."""
 
     uuid: str
 
 
 @dataclasses.dataclass
-class ViewerCameraMessage(Message):
+class ViewerCameraMessage(Message, include_in_scene_serialization=False):
     """Message for a posed viewer camera.
     Pose is in the form T_world_camera, OpenCV convention, +Z forward."""
 
@@ -310,7 +403,7 @@ ScenePointerEventType = Literal["click", "rect-select"]
 
 
 @dataclasses.dataclass
-class ScenePointerMessage(Message):
+class ScenePointerMessage(Message, include_in_scene_serialization=False):
     """Message for a raycast-like pointer in the scene.
     origin is the viewing camera position, in world coordinates.
     direction is the vector if a ray is projected from the camera through the
@@ -325,7 +418,7 @@ class ScenePointerMessage(Message):
 
 
 @dataclasses.dataclass
-class ScenePointerEnableMessage(Message):
+class ScenePointerEnableMessage(Message, include_in_scene_serialization=False):
     """Message to enable/disable scene click events."""
 
     enable: bool
@@ -707,7 +800,7 @@ class SpotLightProps:
 
 
 @dataclasses.dataclass
-class FogMessage(Message):
+class FogMessage(Message, include_in_scene_serialization=True):
     """Fog message."""
 
     near: float
@@ -717,7 +810,7 @@ class FogMessage(Message):
 
 
 @dataclasses.dataclass
-class EnvironmentMapMessage(Message):
+class EnvironmentMapMessage(Message, include_in_scene_serialization=True):
     """Environment Map message."""
 
     hdri: Union[
@@ -744,7 +837,7 @@ class EnvironmentMapMessage(Message):
 
 
 @dataclasses.dataclass
-class EnableLightsMessage(Message):
+class EnableLightsMessage(Message, include_in_scene_serialization=True):
     """Default light message."""
 
     enabled: bool
@@ -1036,7 +1129,7 @@ class BatchedGlbProps(_BatchedMeshExtraProps):
 
 
 @dataclasses.dataclass
-class SetBoneOrientationMessage(Message):
+class SetBoneOrientationMessage(Message, include_in_scene_serialization=True):
     """Server -> client message to set a skinned mesh bone's orientation.
 
     As with all other messages, transforms take the `T_parent_local` convention."""
@@ -1051,7 +1144,7 @@ class SetBoneOrientationMessage(Message):
 
 
 @dataclasses.dataclass
-class SetBonePositionMessage(Message):
+class SetBonePositionMessage(Message, include_in_scene_serialization=True):
     """Server -> client message to set a skinned mesh bone's position.
 
     As with all other messages, transforms take the `T_parent_local` convention."""
@@ -1108,7 +1201,7 @@ class TransformControlsProps:
 
 
 @dataclasses.dataclass
-class SetCameraPositionMessage(Message):
+class SetCameraPositionMessage(Message, include_in_scene_serialization=True):
     """Server -> client message to set the camera's position."""
 
     position: Tuple[float, float, float]
@@ -1117,7 +1210,7 @@ class SetCameraPositionMessage(Message):
 
 
 @dataclasses.dataclass
-class SetCameraUpDirectionMessage(Message):
+class SetCameraUpDirectionMessage(Message, include_in_scene_serialization=True):
     """Server -> client message to set the camera's up direction."""
 
     position: Tuple[float, float, float]
@@ -1126,7 +1219,7 @@ class SetCameraUpDirectionMessage(Message):
 
 
 @dataclasses.dataclass
-class SetCameraLookAtMessage(Message):
+class SetCameraLookAtMessage(Message, include_in_scene_serialization=True):
     """Server -> client message to set the camera's look-at point."""
 
     look_at: Tuple[float, float, float]
@@ -1135,7 +1228,7 @@ class SetCameraLookAtMessage(Message):
 
 
 @dataclasses.dataclass
-class SetCameraNearMessage(Message):
+class SetCameraNearMessage(Message, include_in_scene_serialization=True):
     """Server -> client message to set the camera's near clipping plane."""
 
     near: float
@@ -1144,7 +1237,7 @@ class SetCameraNearMessage(Message):
 
 
 @dataclasses.dataclass
-class SetCameraFarMessage(Message):
+class SetCameraFarMessage(Message, include_in_scene_serialization=True):
     """Server -> client message to set the camera's far clipping plane."""
 
     far: float
@@ -1153,7 +1246,7 @@ class SetCameraFarMessage(Message):
 
 
 @dataclasses.dataclass
-class SetCameraFovMessage(Message):
+class SetCameraFovMessage(Message, include_in_scene_serialization=True):
     """Server -> client message to set the camera's field of view."""
 
     fov: float
@@ -1162,7 +1255,7 @@ class SetCameraFovMessage(Message):
 
 
 @dataclasses.dataclass
-class SetOrientationMessage(Message):
+class SetOrientationMessage(Message, include_in_scene_serialization=True):
     """Server -> client message to set a scene node's orientation.
 
     As with all other messages, transforms take the `T_parent_local` convention."""
@@ -1172,7 +1265,7 @@ class SetOrientationMessage(Message):
 
 
 @dataclasses.dataclass
-class SetPositionMessage(Message):
+class SetPositionMessage(Message, include_in_scene_serialization=True):
     """Server -> client message to set a scene node's position.
 
     As with all other messages, transforms take the `T_parent_local` convention."""
@@ -1182,7 +1275,7 @@ class SetPositionMessage(Message):
 
 
 @dataclasses.dataclass
-class TransformControlsUpdateMessage(Message):
+class TransformControlsUpdateMessage(Message, include_in_scene_serialization=False):
     """Client -> server message when a transform control is updated.
 
     As with all other messages, transforms take the `T_parent_local` convention."""
@@ -1193,21 +1286,21 @@ class TransformControlsUpdateMessage(Message):
 
 
 @dataclasses.dataclass
-class TransformControlsDragStartMessage(Message):
+class TransformControlsDragStartMessage(Message, include_in_scene_serialization=False):
     """Client -> server message when a transform control drag starts."""
 
     name: str
 
 
 @dataclasses.dataclass
-class TransformControlsDragEndMessage(Message):
+class TransformControlsDragEndMessage(Message, include_in_scene_serialization=False):
     """Client -> server message when a transform control drag ends."""
 
     name: str
 
 
 @dataclasses.dataclass
-class BackgroundImageMessage(Message):
+class BackgroundImageMessage(Message, include_in_scene_serialization=True):
     """Message for rendering a background image."""
 
     format: Literal["jpeg", "png"]
@@ -1244,7 +1337,7 @@ class ImageProps:
 
 
 @dataclasses.dataclass
-class SetSceneNodeVisibilityMessage(Message):
+class SetSceneNodeVisibilityMessage(Message, include_in_scene_serialization=True):
     """Set the visibility of a particular node in the scene."""
 
     name: str
@@ -1252,7 +1345,7 @@ class SetSceneNodeVisibilityMessage(Message):
 
 
 @dataclasses.dataclass
-class SetSceneNodeClickableMessage(Message):
+class SetSceneNodeClickableMessage(Message, include_in_scene_serialization=True):
     """Set the clickability of a particular node in the scene."""
 
     name: str
@@ -1260,7 +1353,7 @@ class SetSceneNodeClickableMessage(Message):
 
 
 @dataclasses.dataclass
-class SceneNodeClickMessage(Message):
+class SceneNodeClickMessage(Message, include_in_scene_serialization=False):
     """Message for clicked objects."""
 
     name: str
@@ -1272,7 +1365,7 @@ class SceneNodeClickMessage(Message):
 
 
 @dataclasses.dataclass
-class ResetGuiMessage(Message):
+class ResetGuiMessage(Message, include_in_scene_serialization=False):
     """Reset GUI."""
 
 
@@ -1324,7 +1417,7 @@ class GuiFormMessage(_CreateGuiComponentMessage):
 
 
 @dataclasses.dataclass
-class GuiFormSubmitMessage(Message):
+class GuiFormSubmitMessage(Message, include_in_scene_serialization=False):
     """Bidirectional form submit signal.
 
     - Sent client->server when the user presses Cmd/Ctrl+Enter inside a form.
@@ -1338,7 +1431,7 @@ class GuiFormSubmitMessage(Message):
 
 
 @dataclasses.dataclass
-class GuiFormDirtyMessage(Message):
+class GuiFormDirtyMessage(Message, include_in_scene_serialization=False):
     """Bidirectional form dirty signal.
 
     - Sent client->server when any input inside the form first changes since
@@ -1525,23 +1618,23 @@ class GuiTabGroupMessage(_CreateGuiComponentMessage):
 
 
 @dataclasses.dataclass
-class GuiModalMessage(Message):
+class GuiModalMessage(
+    Message,
+    entity=EntityLifecycle("modal", "create", "uuid"),
+    include_in_scene_serialization=False,
+):
     order: float
     uuid: str
     title: str
 
-    @override
-    def redundancy_key(self) -> str:
-        return f"modal-{self.uuid}"
-
 
 @dataclasses.dataclass
-class GuiCloseModalMessage(Message):
+class GuiCloseModalMessage(
+    Message,
+    entity=EntityLifecycle("modal", "remove", "uuid"),
+    include_in_scene_serialization=False,
+):
     uuid: str
-
-    @override
-    def redundancy_key(self) -> str:
-        return f"modal-{self.uuid}"
 
 
 @dataclasses.dataclass
@@ -1562,7 +1655,7 @@ class GuiButtonMessage(_CreateGuiComponentMessage):
 
 
 @dataclasses.dataclass
-class GuiButtonHoldMessage(Message):
+class GuiButtonHoldMessage(Message, include_in_scene_serialization=False):
     """Message sent from client->server when a button is being held.
 
     Sent periodically at the specified frequency while the button is pressed."""
@@ -1767,45 +1860,33 @@ class GuiButtonGroupMessage(_CreateGuiComponentMessage):
 
 
 @dataclasses.dataclass
-class GuiUpdateMessage(Message):
+class GuiUpdateMessage(
+    Message,
+    entity=EntityLifecycle("gui", "update", "uuid"),
+    include_in_scene_serialization=False,
+):
     """Sent client<->server when any property of a GUI component is changed."""
 
     uuid: str
     updates: Dict[str, Any]
     """Mapping from property name to new value."""
 
-    @override
-    def redundancy_key(self) -> str:
-        return (
-            type(self).__name__
-            + "-"
-            + self.uuid
-            + "-"
-            + ",".join(list(self.updates.keys()))
-        )
-
 
 @dataclasses.dataclass
-class SceneNodeUpdateMessage(Message):
+class SceneNodeUpdateMessage(
+    Message,
+    entity=EntityLifecycle("scene", "update", "name"),
+    include_in_scene_serialization=True,
+):
     """Sent client<->server when any property of a scene node is changed."""
 
     name: str
     updates: Dict[str, Any]
     """Mapping from property name to new value."""
 
-    @override
-    def redundancy_key(self) -> str:
-        return (
-            type(self).__name__
-            + "-"
-            + self.name
-            + "-"
-            + ",".join(list(self.updates.keys()))
-        )
-
 
 @dataclasses.dataclass
-class ThemeConfigurationMessage(Message):
+class ThemeConfigurationMessage(Message, include_in_scene_serialization=True):
     """Message from server->client to configure parts of the GUI."""
 
     titlebar_content: Optional[theme.TitlebarConfig]
@@ -1947,7 +2028,7 @@ class GaussianSplatsProps:
 
 
 @dataclasses.dataclass
-class GetRenderRequestMessage(Message):
+class GetRenderRequestMessage(Message, include_in_scene_serialization=False):
     """Message from server->client requesting a render from a specified camera
     pose."""
 
@@ -1962,14 +2043,14 @@ class GetRenderRequestMessage(Message):
 
 
 @dataclasses.dataclass
-class GetRenderResponseMessage(Message):
+class GetRenderResponseMessage(Message, include_in_scene_serialization=False):
     """Message from client->server carrying a render."""
 
     payload: bytes
 
 
 @dataclasses.dataclass
-class FileTransferStartUpload(Message):
+class FileTransferStartUpload(Message, include_in_scene_serialization=False):
     """Signal that a file is about to be sent.
 
     This message is used to upload files from clients to the server.
@@ -1988,7 +2069,7 @@ class FileTransferStartUpload(Message):
 
 
 @dataclasses.dataclass
-class FileTransferStartDownload(Message):
+class FileTransferStartDownload(Message, include_in_scene_serialization=False):
     """Signal that a file is about to be sent.
 
     This message is used to send files to clients from the server.
@@ -2007,7 +2088,7 @@ class FileTransferStartDownload(Message):
 
 
 @dataclasses.dataclass
-class FileTransferPart(Message):
+class FileTransferPart(Message, include_in_scene_serialization=False):
     """Send a file for clients to download or upload files from client."""
 
     source_component_uuid: Optional[str]
@@ -2023,7 +2104,7 @@ class FileTransferPart(Message):
 
 
 @dataclasses.dataclass
-class FileTransferPartAck(Message):
+class FileTransferPartAck(Message, include_in_scene_serialization=False):
     """Send a file for clients to download or upload files from client."""
 
     source_component_uuid: Optional[str]
@@ -2043,32 +2124,32 @@ class FileTransferPartAck(Message):
 
 
 @dataclasses.dataclass
-class ShareUrlRequest(Message):
+class ShareUrlRequest(Message, include_in_scene_serialization=False):
     """Message from client->server to connect to the share URL server."""
 
 
 @dataclasses.dataclass
-class ShareUrlUpdated(Message):
+class ShareUrlUpdated(Message, include_in_scene_serialization=False):
     """Message from server->client to indicate that the share URL has been updated."""
 
     share_url: Optional[str]
 
 
 @dataclasses.dataclass
-class ShareUrlDisconnect(Message):
+class ShareUrlDisconnect(Message, include_in_scene_serialization=False):
     """Message from client->server to disconnect from the share URL server."""
 
 
 @dataclasses.dataclass
-class SetGuiPanelLabelMessage(Message):
+class SetGuiPanelLabelMessage(Message, include_in_scene_serialization=False):
     """Message from server->client to set the label of the GUI panel."""
 
     label: Optional[str]
 
 
 @dataclasses.dataclass
-class ActionProps:
-    """Properties for an action in the command palette."""
+class CommandProps:
+    """Properties for a command in the command palette."""
 
     label: str
     """Label displayed in the command palette."""
@@ -2077,36 +2158,48 @@ class ActionProps:
     hotkey: Optional[Hotkey]
     """Hotkey binding, e.g. ``"K"`` or ``("mod", "shift", "R")``."""
     _icon_html: Optional[str]
-    """(Private) HTML string for the icon to be displayed on the action."""
+    """(Private) HTML string for the icon to be displayed on the command."""
     disabled: bool
-    """Whether the action is disabled (visible but not triggerable)."""
+    """Whether the command is disabled (visible but not triggerable)."""
 
 
 @dataclasses.dataclass
-class RegisterActionMessage(Message):
-    """Message from server->client to register an action in the command palette."""
+class RegisterCommandMessage(
+    Message,
+    entity=EntityLifecycle("command", "create", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """Message from server->client to register a command in the command palette."""
 
     uuid: str
-    props: ActionProps
-
-    @override
-    def redundancy_key(self) -> str:
-        return f"register-or-remove-action-{self.uuid}"
+    props: CommandProps
 
 
 @dataclasses.dataclass
-class RemoveActionMessage(Message):
-    """Message from server->client to remove an action from the command palette."""
+class CommandUpdateMessage(
+    Message,
+    entity=EntityLifecycle("command", "update", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """Message from server->client to update properties of an existing command."""
+
+    uuid: str
+    updates: Dict[str, Any]
+
+
+@dataclasses.dataclass
+class RemoveCommandMessage(
+    Message,
+    entity=EntityLifecycle("command", "remove", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """Message from server->client to remove a command from the command palette."""
 
     uuid: str
 
-    @override
-    def redundancy_key(self) -> str:
-        return f"register-or-remove-action-{self.uuid}"
-
 
 @dataclasses.dataclass
-class ActionTriggerMessage(Message):
-    """Message from client->server when an action is triggered from the command palette."""
+class CommandTriggerMessage(Message, include_in_scene_serialization=False):
+    """Message from client->server when a command is triggered from the command palette."""
 
     uuid: str

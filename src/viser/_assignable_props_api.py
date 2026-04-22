@@ -12,6 +12,7 @@ import numpy.typing as npt
 
 class HasProps(Protocol):
     props: Any  # One of the `*Props` objects in _messages.py.
+    removed: bool  # Lifecycle flag; see AssignablePropsBase guard below.
 
 
 TImpl = TypeVar("TImpl", bound=HasProps)
@@ -94,14 +95,30 @@ def props_setattr(self, name: str, value: Any) -> None:
     if name == "_impl":
         return object.__setattr__(self, name, value)
 
-    # If it's a property with a setter, use the setter.
     prop = getattr(self.__class__, name, None)
-    if isinstance(prop, property) and prop.fset is not None:
-        prop.fset(self, value)
+    prop_setter = (
+        prop.fset if isinstance(prop, property) and prop.fset is not None else None
+    )
+    is_prop_hint = name in self._prop_hints
+
+    # Reject property writes after the handle has been removed. This prevents
+    # stale update messages from being queued against a no-longer-registered
+    # entity, which would otherwise re-introduce it on the client (ghost
+    # entity) because the client blindly processes incoming updates. Guard
+    # both the @property.setter path (e.g. `value` on GUI input handles) and
+    # the _prop_hints path (generic props forwarded to _queue_update).
+    if (prop_setter is not None or is_prop_hint) and self._impl.removed:
+        raise RuntimeError(
+            f"Cannot assign to {name!r} on a removed "
+            f"{type(self).__name__}."
+        )
+
+    if prop_setter is not None:
+        prop_setter(self, value)
         return
 
     # Try to handle as a props field.
-    if name in self._prop_hints:
+    if is_prop_hint:
         # Handle type casting (arrays, tuples of arrays, etc.).
         value = self._cast_value_recursive(self._prop_hints[name], value, name)
         current_value = getattr(self._impl.props, name)

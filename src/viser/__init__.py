@@ -1,6 +1,6 @@
 from ._gui_api import GuiApi as GuiApi
-from ._gui_handles import ActionEvent as ActionEvent
-from ._gui_handles import ActionHandle as ActionHandle
+from ._gui_handles import CommandEvent as CommandEvent
+from ._gui_handles import CommandHandle as CommandHandle
 from ._gui_handles import GuiButtonGroupHandle as GuiButtonGroupHandle
 from ._gui_handles import GuiButtonHandle as GuiButtonHandle
 from ._gui_handles import GuiCheckboxHandle as GuiCheckboxHandle

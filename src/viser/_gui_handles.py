@@ -28,7 +28,8 @@ from ._assignable_props_api import AssignablePropsBase
 from ._icons import svg_from_icon
 from ._icons_enum import IconName
 from ._messages import (
-    ActionProps,
+    CommandProps,
+    CommandUpdateMessage,
     GuiBaseProps,
     GuiButtonGroupProps,
     GuiButtonProps,
@@ -56,8 +57,7 @@ from ._messages import (
     GuiUplotProps,
     GuiVector2Props,
     GuiVector3Props,
-    RegisterActionMessage,
-    RemoveActionMessage,
+    RemoveCommandMessage,
 )
 from ._scene_api import _encode_image_binary
 from .infra import ClientId
@@ -691,7 +691,7 @@ class GuiTabHandle:
     _children: dict[str, SupportsRemoveProtocol] = dataclasses.field(
         default_factory=dict
     )
-    _removed: bool = False
+    removed: bool = False
 
     @property
     def icon(self) -> IconName | None:
@@ -726,13 +726,13 @@ class GuiTabHandle:
         """Permanently remove this tab and all contained GUI elements from the
         visualizer."""
         # Warn if already removed.
-        if self._removed:
+        if self.removed:
             warnings.warn(
                 f"Attempted to remove an already removed {self.__class__.__name__}.",
                 stacklevel=2,
             )
             return
-        self._removed = True
+        self.removed = True
 
         # We may want to make this thread-safe in the future.
         found_index = -1
@@ -912,6 +912,7 @@ class GuiModalHandle:
     _children: dict[str, SupportsRemoveProtocol] = dataclasses.field(
         default_factory=dict
     )
+    closed: bool = False
 
     def __enter__(self) -> GuiModalHandle:
         self._container_uuid_restore = self._gui_api._get_container_uuid()
@@ -930,6 +931,13 @@ class GuiModalHandle:
 
     def close(self) -> None:
         """Close this modal and permananently remove all contained GUI elements."""
+        if self.closed:
+            warnings.warn(
+                "Attempted to close an already closed GuiModalHandle.",
+                stacklevel=2,
+            )
+            return
+        self.closed = True
         self._gui_api._websock_interface.queue_message(
             GuiCloseModalMessage(self._uuid),
         )
@@ -1083,8 +1091,6 @@ class GuiImageHandle(_GuiHandle[None], GuiImageProps):
 
     @format.setter
     def format(self, value: Literal["auto", "jpeg", "png"]) -> None:
-        import warnings
-
         # Skip if format isn't changing.
         if self._user_format == value:
             return
@@ -1104,40 +1110,40 @@ class GuiImageHandle(_GuiHandle[None], GuiImageProps):
 
 
 @dataclasses.dataclass(frozen=True)
-class ActionEvent:
-    """Information associated with an action trigger from the command palette.
+class CommandEvent:
+    """Information associated with a command trigger from the command palette.
 
     Passed as input to callback functions."""
 
     client: ClientHandle | None
-    """Client that triggered this action."""
+    """Client that triggered this command."""
     client_id: int | None
-    """ID of client that triggered this action."""
-    target: ActionHandle
-    """Action handle that was triggered."""
+    """ID of client that triggered this command."""
+    target: CommandHandle
+    """Command handle that was triggered."""
 
 
 @dataclasses.dataclass
-class _ActionHandleState:
-    """Internal state for a registered action."""
+class _CommandHandleState:
+    """Internal state for a registered command."""
 
     uuid: str
     gui_api: GuiApi
-    props: ActionProps
+    props: CommandProps
     icon: IconName | None
-    trigger_cb: list[Callable[[ActionEvent], None | Coroutine]] = dataclasses.field(
+    trigger_cb: list[Callable[[CommandEvent], None | Coroutine]] = dataclasses.field(
         default_factory=list
     )
     removed: bool = False
 
 
-class ActionHandle(AssignablePropsBase[_ActionHandleState], ActionProps):
-    """Handle for an action registered in the command palette.
+class CommandHandle(AssignablePropsBase[_CommandHandleState], CommandProps):
+    """Handle for a command registered in the command palette.
 
-    Actions are shown in a command palette (Ctrl/Cmd+Shift+P) and can
-    optionally be triggered via hotkeys."""
+    Commands are shown in a command palette (Ctrl/Cmd+K, also Ctrl/Cmd+Shift+P
+    on non-Firefox browsers) and can optionally be triggered via hotkeys."""
 
-    def __init__(self, _impl: _ActionHandleState) -> None:
+    def __init__(self, _impl: _CommandHandleState) -> None:
         super().__init__(impl=_impl)
 
     @property
@@ -1147,22 +1153,20 @@ class ActionHandle(AssignablePropsBase[_ActionHandleState], ActionProps):
 
     @icon.setter
     def icon(self, icon: IconName | None) -> None:
+        # Removed-guard enforced upstream by AssignablePropsBase.__setattr__.
         self._impl.icon = icon
         self._impl.props._icon_html = None if icon is None else svg_from_icon(icon)
         self._queue_update("_icon_html", self._impl.props._icon_html)
 
     def _queue_update(self, name: str, value: Any) -> None:
         self._impl.gui_api._websock_interface.queue_message(
-            RegisterActionMessage(
-                uuid=self._impl.uuid,
-                props=self._impl.props,
-            )
+            CommandUpdateMessage(uuid=self._impl.uuid, updates={name: value})
         )
 
     def on_trigger(
-        self, func: Callable[[ActionEvent], NoneOrCoroutine]
-    ) -> Callable[[ActionEvent], NoneOrCoroutine]:
-        """Attach a function to call when this action is triggered.
+        self, func: Callable[[CommandEvent], NoneOrCoroutine]
+    ) -> Callable[[CommandEvent], NoneOrCoroutine]:
+        """Attach a function to call when this command is triggered.
 
         Note:
         - If `func` is a regular function (defined with `def`), it will be executed in a thread pool.
@@ -1170,23 +1174,22 @@ class ActionHandle(AssignablePropsBase[_ActionHandleState], ActionProps):
 
         Using async functions can be useful for reducing race conditions.
         """
+        if self._impl.removed:
+            raise RuntimeError(
+                "Cannot attach a trigger callback to a removed CommandHandle."
+            )
         self._impl.trigger_cb.append(func)
         return func
 
     def remove(self) -> None:
-        """Remove this action from the command palette."""
+        """Remove this command from the command palette."""
         if self._impl.removed:
-            import warnings
-
             warnings.warn(
-                "Attempted to remove an already removed ActionHandle.",
+                "Attempted to remove an already removed CommandHandle.",
                 stacklevel=2,
             )
             return
         self._impl.removed = True
         gui_api = self._impl.gui_api
-        gui_api._websock_interface.get_message_buffer().remove_from_buffer(
-            lambda message: getattr(message, "uuid", None) == self._impl.uuid
-        )
-        gui_api._websock_interface.queue_message(RemoveActionMessage(self._impl.uuid))
-        gui_api._action_handle_from_uuid.pop(self._impl.uuid, None)
+        gui_api._websock_interface.queue_message(RemoveCommandMessage(self._impl.uuid))
+        gui_api._command_handle_from_uuid.pop(self._impl.uuid, None)

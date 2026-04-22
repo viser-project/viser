@@ -598,7 +598,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 ),
             )
         )
-        handle._sync_with_client("show")
+        handle._show()
         return handle
 
     @overload
@@ -744,7 +744,6 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             message_class=_messages.Message,
             http_server_root=Path(__file__).resolve().parent / "client" / "build",
             verbose=verbose,
-            client_api_version=1,
         )
         self._websock_server = server
 
@@ -925,65 +924,76 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         return self._initial_camera
 
     def _run_garbage_collector(self, force: bool = False) -> None:
-        """Clean up old messages. This is not elegant; a refactor of our
-        message persistence logic will significantly reduce complexity."""
+        """Purge from the persistent broadcast buffer:
+
+        - Every tombstone message (``lifecycle_phase == "remove"``) for an
+          entity -- new clients shouldn't replay removals of entities that
+          never existed to them.
+        - Every update message (``lifecycle_phase == "update"``) targeting an
+          entity that was already removed.
+        - Scene-node-adjacent ``Set*Message`` variants (SetPosition,
+          SetOrientation, SetBonePosition, SetBoneOrientation,
+          SetSceneNodeClickable, SetSceneNodeVisibility) that target a removed
+          scene node. These aren't entity-declared because they target the
+          node-by-name but don't fit the "updates: dict" shape; a `name`-match
+          against the tombstone set catches them generically.
+
+        Two passes so purging is order-independent under concurrent writers:
+        the first pass collects all tombstone entity ids, the second sweeps
+        updates (and scene-adjacent Set* messages) targeting them.
+        """
         buffer = self._websock_server._broadcast_buffer
         with buffer.buffer_lock:
-            # Skip garbage collection if we have messages that are queeud but
-            # not yet processed by the window generators.
-            #
-            # This makes sure that we don't accidentally cull messages before
-            # they're sent to existing clients. RemoveSceneNodeMessage, for example,
-            # needs to be sent to old clients but not new ones.
+            # Skip GC while there are messages queued but not yet processed by
+            # the window generators. Without this, we could cull messages
+            # before they reach existing clients.
             if (
                 not force
                 and self._websock_server._broadcast_buffer.message_event.is_set()
             ):
                 return
 
+            # First pass: collect every tombstone's entity id.
             remove_message_ids: list[int] = []
-
-            remove_scene_names: set[str] = set()
-            remove_gui_uuids: set[str] = set()
-
-            for id, message in reversed(buffer.message_from_id.items()):
-                # Find scene nodes or GUI elements that were removed.
-                if isinstance(message, _messages.RemoveSceneNodeMessage):
-                    remove_message_ids.append(id)
-                    remove_scene_names.add(message.name)
-                elif isinstance(message, _messages.GuiRemoveMessage):
-                    remove_message_ids.append(id)
-                    remove_gui_uuids.add(message.uuid)
-                elif isinstance(message, _messages.GuiCloseModalMessage):
-                    remove_message_ids.append(id)
-
-                # For removed elements, no need to send any update messages.
-                if (
-                    isinstance(
-                        message,
-                        (
-                            _messages.SetPositionMessage,
-                            _messages.SetOrientationMessage,
-                            _messages.SetBonePositionMessage,
-                            _messages.SetBoneOrientationMessage,
-                            _messages.SetSceneNodeClickableMessage,
-                            _messages.SetSceneNodeVisibilityMessage,
-                        ),
+            removed_ids_by_type: dict[str, set[str]] = {}
+            for msg_id, message in buffer.message_from_id.items():
+                if message.lifecycle_phase == "remove":
+                    assert (
+                        message.entity_type is not None
+                        and message.entity_id_field is not None
                     )
-                    and message.name in remove_scene_names
-                ):
-                    remove_message_ids.append(id)
+                    remove_message_ids.append(msg_id)
+                    removed_ids_by_type.setdefault(
+                        message.entity_type, set()
+                    ).add(getattr(message, message.entity_id_field))
 
-                if (
-                    isinstance(message, _messages.GuiUpdateMessage)
-                    and message.uuid in remove_gui_uuids
-                ):
-                    remove_message_ids.append(id)
+            # Second pass: purge updates whose target entity has a tombstone,
+            # including scene-adjacent Set*Message variants that target a
+            # removed scene node by `name` but aren't entity-declared. Skip
+            # the walk entirely when nothing was tombstoned this round.
+            if removed_ids_by_type:
+                for msg_id, message in buffer.message_from_id.items():
+                    phase = message.lifecycle_phase
+                    if phase == "update":
+                        assert (
+                            message.entity_type is not None
+                            and message.entity_id_field is not None
+                        )
+                        entity_id = getattr(message, message.entity_id_field)
+                        if entity_id in removed_ids_by_type.get(
+                            message.entity_type, ()
+                        ):
+                            remove_message_ids.append(msg_id)
+                    elif phase is None:
+                        name = getattr(message, "name", None)
+                        if name is not None and name in removed_ids_by_type.get(
+                            "scene", ()
+                        ):
+                            remove_message_ids.append(msg_id)
 
-            # Remove old messages.
-            for id in remove_message_ids:
-                message = buffer.message_from_id.pop(id)
-                buffer.id_from_redundancy_key.pop(message.redundancy_key())
+            for msg_id in remove_message_ids:
+                message = buffer.message_from_id.pop(msg_id)
+                buffer.id_from_redundancy_key.pop(message.redundancy_key(), None)
 
     def get_host(self) -> str:
         """Returns the host address of the Viser server.
@@ -1229,8 +1239,7 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         visualization.
         """
         serializer = self._websock_server.get_message_serializer(
-            # Don't record GUI messages. This feels brittle.
-            filter=lambda message: "Gui" not in type(message).__name__
+            filter=lambda message: message.include_in_scene_serialization
         )
         # Insert current scene state.
         buffer = self._websock_server._broadcast_buffer
