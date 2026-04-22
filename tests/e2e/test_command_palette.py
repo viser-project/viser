@@ -266,3 +266,169 @@ def test_disabled_command_re_enabled(
 
     action.click()
     assert triggered.wait(timeout=5.0), "Callback should fire after re-enabling"
+
+
+# ---------------------------------------------------------------------------
+# Hotkey binding and rebinding
+# ---------------------------------------------------------------------------
+#
+# These tests use Alt-prefixed bindings to avoid collisions with browser-
+# reserved shortcuts (Cmd/Ctrl+T, Cmd/Ctrl+W, etc.) and to sidestep the
+# Mac/Linux "mod" divergence -- "alt" maps to the Option/Alt key on every
+# platform.
+
+
+def test_command_hotkey_triggers_callback(
+    viser_server: viser.ViserServer,
+    viser_page: Page,
+) -> None:
+    """A command registered with a hotkey fires on the corresponding keypress,
+    without needing to open the palette."""
+    triggered = threading.Event()
+
+    handle = viser_server.gui.add_command(
+        "Hotkey Target", hotkey=("alt", "Y")
+    )
+
+    @handle.on_trigger
+    def _(event: viser.CommandEvent) -> None:
+        triggered.set()
+
+    viser_page.wait_for_timeout(500)
+
+    viser_page.keyboard.press("Alt+Y")
+    assert triggered.wait(timeout=5.0), "Hotkey did not fire the callback"
+
+
+def test_command_hotkey_rebind_loop(
+    viser_server: viser.ViserServer,
+    viser_page: Page,
+) -> None:
+    """Iteratively update `handle.hotkey` to different bindings and verify the
+    callback fires on each new keypress -- exercises the full update path
+    (server -> CommandUpdateMessage -> client store -> useHotkeys re-register).
+    """
+    count = {"n": 0}
+    fired = threading.Event()
+
+    handle = viser_server.gui.add_command("Counter", hotkey=("alt", "Y"))
+
+    @handle.on_trigger
+    def _(event: viser.CommandEvent) -> None:
+        count["n"] += 1
+        fired.set()
+
+    viser_page.wait_for_timeout(500)
+
+    bindings: list[tuple[str, viser.Hotkey]] = [
+        ("Alt+Y", ("alt", "Y")),  # initial binding, no rebind yet
+        ("Alt+H", ("alt", "H")),
+        ("Alt+Shift+J", ("alt", "shift", "J")),
+        ("Alt+U", ("alt", "U")),
+    ]
+
+    for expected_count, (keypress, hotkey_value) in enumerate(bindings, start=1):
+        # Skip the rebind for the first iteration (initial binding matches).
+        if expected_count > 1:
+            handle.hotkey = hotkey_value
+            viser_page.wait_for_timeout(300)  # let the update reach the client
+
+        fired.clear()
+        viser_page.keyboard.press(keypress)
+        assert fired.wait(timeout=3.0), (
+            f"Binding {hotkey_value} did not fire on keypress {keypress!r}"
+        )
+        assert count["n"] == expected_count, (
+            f"After {keypress!r} expected count {expected_count}, "
+            f"got {count['n']}"
+        )
+
+    # Final rebind: confirm the previous binding no longer fires.
+    handle.hotkey = ("alt", "P")
+    viser_page.wait_for_timeout(500)
+
+    fired.clear()
+    viser_page.keyboard.press("Alt+U")  # the previously-bound key
+    assert not fired.wait(timeout=1.0), (
+        "Old hotkey fired after rebind -- previous listener not unregistered"
+    )
+    assert count["n"] == len(bindings), (
+        "Count changed after rebind: old listener is still active"
+    )
+
+    # New binding fires.
+    fired.clear()
+    viser_page.keyboard.press("Alt+P")
+    assert fired.wait(timeout=3.0), "New binding did not fire"
+    assert count["n"] == len(bindings) + 1
+
+
+def test_command_description_update(
+    viser_server: viser.ViserServer,
+    viser_page: Page,
+) -> None:
+    """Description updates (set, change, clear) propagate to the palette."""
+    handle = viser_server.gui.add_command("Desc Target", description="first")
+    viser_page.wait_for_timeout(500)
+
+    _open_spotlight(viser_page)
+    action = viser_page.locator(_SPOTLIGHT_ACTION, has_text="Desc Target")
+    desc = action.locator(".mantine-Spotlight-actionDescription")
+    expect(desc).to_have_text("first", timeout=3_000)
+    viser_page.keyboard.press("Escape")
+    viser_page.wait_for_timeout(200)
+
+    # Change to a different description.
+    handle.description = "second"
+    viser_page.wait_for_timeout(300)
+    _open_spotlight(viser_page)
+    expect(desc).to_have_text("second", timeout=3_000)
+    viser_page.keyboard.press("Escape")
+    viser_page.wait_for_timeout(200)
+
+    # Clear the description. Mantine keeps the description DOM node even
+    # when empty, so assert the previous text has gone rather than element
+    # cardinality.
+    handle.description = None
+    viser_page.wait_for_timeout(500)
+    _open_spotlight(viser_page)
+    expect(action).not_to_contain_text("second", timeout=3_000)
+    expect(action).not_to_contain_text("first", timeout=1_000)
+
+
+def test_command_icon_update(
+    viser_server: viser.ViserServer,
+    viser_page: Page,
+) -> None:
+    """Icon updates (change, clear) propagate to the palette. The rendered
+    SVG changes with the icon, and is removed entirely when cleared."""
+    handle = viser_server.gui.add_command(
+        "Icon Target", icon=viser.Icon.DEVICE_FLOPPY
+    )
+    viser_page.wait_for_timeout(500)
+
+    _open_spotlight(viser_page)
+    action = viser_page.locator(_SPOTLIGHT_ACTION, has_text="Icon Target")
+    svg = action.locator("svg")
+    expect(svg).to_be_visible(timeout=3_000)
+    first_svg_html = svg.inner_html()
+    viser_page.keyboard.press("Escape")
+    viser_page.wait_for_timeout(200)
+
+    # Change to a different icon.
+    handle.icon = viser.Icon.CHECK
+    viser_page.wait_for_timeout(300)
+    _open_spotlight(viser_page)
+    expect(svg).to_be_visible(timeout=3_000)
+    second_svg_html = svg.inner_html()
+    assert first_svg_html != second_svg_html, (
+        "Icon update didn't change the rendered SVG"
+    )
+    viser_page.keyboard.press("Escape")
+    viser_page.wait_for_timeout(200)
+
+    # Clear the icon.
+    handle.icon = None
+    viser_page.wait_for_timeout(300)
+    _open_spotlight(viser_page)
+    expect(svg).to_have_count(0, timeout=3_000)
