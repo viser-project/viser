@@ -963,9 +963,9 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                         and message.entity_id_field is not None
                     )
                     remove_message_ids.append(msg_id)
-                    removed_ids_by_type.setdefault(
-                        message.entity_type, set()
-                    ).add(getattr(message, message.entity_id_field))
+                    removed_ids_by_type.setdefault(message.entity_type, set()).add(
+                        getattr(message, message.entity_id_field)
+                    )
 
             # Second pass: purge updates whose target entity has a tombstone,
             # including scene-adjacent Set*Message variants that target a

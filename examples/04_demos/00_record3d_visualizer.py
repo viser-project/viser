@@ -25,10 +25,11 @@ from pathlib import Path
 
 import numpy as np
 import tyro
+from tqdm.auto import tqdm
+
 import viser
 import viser.extras
 import viser.transforms as tf
-from tqdm.auto import tqdm
 
 
 def main(

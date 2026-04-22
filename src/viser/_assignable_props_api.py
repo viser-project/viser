@@ -109,8 +109,7 @@ def props_setattr(self, name: str, value: Any) -> None:
     # the _prop_hints path (generic props forwarded to _queue_update).
     if (prop_setter is not None or is_prop_hint) and self._impl.removed:
         raise RuntimeError(
-            f"Cannot assign to {name!r} on a removed "
-            f"{type(self).__name__}."
+            f"Cannot assign to {name!r} on a removed {type(self).__name__}."
         )
 
     if prop_setter is not None:

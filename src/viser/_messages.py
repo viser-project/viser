@@ -146,9 +146,7 @@ LabelAnchor = Literal[
 
 
 # Entity lifecycle markers. See architecture_hardening.md for design rationale.
-EntityType: TypeAlias = Literal[
-    "gui", "scene", "command", "notification", "modal"
-]
+EntityType: TypeAlias = Literal["gui", "scene", "command", "notification", "modal"]
 """Kinds of removable entities in the protocol."""
 
 LifecyclePhase: TypeAlias = Literal["create", "update", "remove"]
@@ -212,9 +210,7 @@ class Message(infra.Message):
                 # Update: coalesce by prop-set so independent prop updates
                 # don't clobber each other.
                 updates = getattr(self, "updates", None)
-                prop_suffix = (
-                    ",".join(sorted(updates.keys())) if updates else ""
-                )
+                prop_suffix = ",".join(sorted(updates.keys())) if updates else ""
                 key = f"{self.entity_type}:{entity_id}:update:{prop_suffix}"
         else:
             # Non-entity fallback: ClassName + any incidental name/uuid fields.

@@ -1113,7 +1113,14 @@ class GuiImageHandle(_GuiHandle[None], GuiImageProps):
 class CommandEvent:
     """Information associated with a command trigger from the command palette.
 
-    Passed as input to callback functions."""
+    Passed as input to callback functions.
+
+    ``client`` and ``client_id`` are typed Optional for parity with
+    :class:`GuiEvent` (which can fire server-side) and to leave room for a
+    future programmatic ``handle.trigger()`` path. In practice, every command
+    trigger today originates from a real client -- the dispatcher drops the
+    event if the client can't be resolved, so callbacks only see non-None
+    values."""
 
     client: ClientHandle | None
     """Client that triggered this command."""
