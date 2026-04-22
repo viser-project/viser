@@ -1,5 +1,4 @@
-"""Post-refactor contract tests. These pin invariants introduced by the
-entity-unification refactor and would have failed on the pre-refactor tree.
+"""Contract tests for the entity lifecycle protocol.
 
 Invariants exercised:
 - Post-remove writes raise RuntimeError (AssignablePropsBase guard).
@@ -145,9 +144,8 @@ def test_update_keys_separate_per_prop_set() -> None:
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
 def test_command_tombstone_is_gcd() -> None:
-    """RemoveCommandMessage must be discovered by the declarative GC; this
-    catches the pre-refactor bug where commands weren't in the isinstance
-    chain and their tombstones accumulated unboundedly."""
+    """RemoveCommandMessage tombstones must be purged by the declarative GC
+    so new clients don't replay removes of commands they never saw."""
     server = viser.ViserServer()
     buffer = server._websock_server._broadcast_buffer.message_from_id
     baseline = len(buffer)
@@ -166,7 +164,8 @@ def test_command_tombstone_is_gcd() -> None:
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
 def test_scene_node_update_is_purged_after_remove() -> None:
     """SceneNodeUpdateMessage for a removed scene node should be purged by
-    GC. Pre-refactor this wasn't in the isinstance chain."""
+    GC so a late-joining client doesn't see updates for a node that no longer
+    exists."""
     server = viser.ViserServer()
     buffer = server._websock_server._broadcast_buffer.message_from_id
     baseline = len(buffer)
@@ -250,15 +249,14 @@ def test_modal_double_close_warns() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Command ghost-command scenario (the original motivating bug)
+# Post-remove writes must not leave ghost commands in the buffer.
 # ---------------------------------------------------------------------------
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
 def test_command_update_after_remove_is_suppressed() -> None:
-    """End-to-end: add_command -> remove -> property write (now rejected).
-    Pre-refactor this would have queued a stale RegisterCommandMessage that
-    overwrote the pending RemoveCommandMessage in the buffer."""
+    """add_command -> remove -> property write must raise; no residual
+    messages for the command should remain in the broadcast buffer."""
     server = viser.ViserServer()
     buffer = server._websock_server._broadcast_buffer.message_from_id
 

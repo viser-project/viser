@@ -1,6 +1,5 @@
-"""Regression tests that pin add -> update -> remove lifecycle semantics across
-every removable entity type. These run on the current tree and continue to pass
-through the entity-unification refactor."""
+"""Tests that pin add -> update -> remove lifecycle semantics across every
+removable entity type."""
 
 from unittest.mock import patch
 
@@ -106,8 +105,7 @@ def test_command_reset_clears_registry() -> None:
 
 
 # Notifications are attached to ClientHandle, so they require a connected
-# client to exercise. They're covered by the post-refactor contract tests
-# (which stand up a fake client) rather than here.
+# client to exercise. They're covered in test_entity_lifecycle_contracts.py.
 
 
 # ---------------------------------------------------------------------------

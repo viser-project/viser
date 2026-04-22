@@ -86,7 +86,7 @@ def _prepare_for_serialization(
     after the msgpack payload, enabling zero-copy typed array views on the client.
 
     If ``binary_buffers`` is None, numpy arrays are inlined as memoryviews
-    (used by legacy callers that don't use the hybrid wire format)."""
+    in the serialized dict itself."""
     if annotation is Any:
         annotation = type(value)
 
@@ -132,7 +132,7 @@ def _prepare_for_serialization(
             binary_buffers.append(data)
             return {"__binary_index": idx, "dtype": value.dtype.str}
         else:
-            # Inline as memoryview (used by API v0).
+            # Inline as memoryview in the serialized dict.
             return data
 
     if isinstance(value, list):
@@ -184,7 +184,7 @@ class Message(abc.ABC):
 
         If ``binary_buffers`` is provided, numpy arrays are extracted into it
         and replaced with tagged placeholder dicts for the hybrid wire format.
-        Otherwise, arrays are inlined as memoryviews (used by API v0)."""
+        Otherwise, arrays are inlined as memoryviews in the returned dict."""
         message_type = type(self)
         hints = get_type_hints_cached(message_type)
         # Filter to type-hinted fields only — excludes dynamic attributes
