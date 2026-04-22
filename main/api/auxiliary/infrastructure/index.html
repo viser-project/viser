@@ -727,8 +727,6 @@ should have unique names. This argument is optional currently, but will be
 required in the future.</p></li>
 <li><p><strong>http_server_root</strong> – Path to root for HTTP server.</p></li>
 <li><p><strong>verbose</strong> – Toggle for print messages.</p></li>
-<li><p><strong>client_api_version</strong> – Flag for backwards compatibility. 0 sends individual
-messages. 1 sends windowed messages.</p></li>
 </ul>
 </dd>
 </dl>
@@ -912,13 +910,33 @@ serialized and can be used for playback.</p>
 send synchronization information to other clients.</p>
 </dd></dl>
 
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.infra.Message.entity_type">
+<span class="sig-name descname"><span class="pre">entity_type</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.ClassVar" title="(in Python v3.14)"><span class="pre">ClassVar</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#viser.infra.Message.entity_type" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.infra.Message.lifecycle_phase">
+<span class="sig-name descname"><span class="pre">lifecycle_phase</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.ClassVar" title="(in Python v3.14)"><span class="pre">ClassVar</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#viser.infra.Message.lifecycle_phase" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.infra.Message.entity_id_field">
+<span class="sig-name descname"><span class="pre">entity_id_field</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.ClassVar" title="(in Python v3.14)"><span class="pre">ClassVar</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#viser.infra.Message.entity_id_field" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.infra.Message.include_in_scene_serialization">
+<span class="sig-name descname"><span class="pre">include_in_scene_serialization</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.ClassVar" title="(in Python v3.14)"><span class="pre">ClassVar</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.infra.Message.include_in_scene_serialization" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
 <dl class="py method">
 <dt class="sig sig-object py" id="viser.infra.Message.as_serializable_dict">
 <span class="sig-name descname"><span class="pre">as_serializable_dict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">binary_buffers</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.14)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#memoryview" title="(in Python v3.14)"><span class="pre">memoryview</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.14)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../../../_modules/viser/infra/_messages/#Message.as_serializable_dict"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.infra.Message.as_serializable_dict" title="Link to this definition">¶</a></dt>
 <dd><p>Convert a Python Message object into a serializable dict.</p>
 <p>If <code class="docutils literal notranslate"><span class="pre">binary_buffers</span></code> is provided, numpy arrays are extracted into it
 and replaced with tagged placeholder dicts for the hybrid wire format.
-Otherwise, arrays are inlined as memoryviews (used by API v0).</p>
+Otherwise, arrays are inlined as memoryviews in the returned dict.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>binary_buffers</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.14)"><em>List</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#memoryview" title="(in Python v3.14)"><em>memoryview</em></a><em>] </em><em>| </em><em>None</em>)</p>
@@ -1104,6 +1122,10 @@ TypeScript annotation corresponding to a dataclass field.</p>
 </li>
 <li><a class="reference internal" href="#viser.infra.Message"><code class="docutils literal notranslate"><span class="pre">Message</span></code></a><ul>
 <li><a class="reference internal" href="#viser.infra.Message.excluded_self_client"><code class="docutils literal notranslate"><span class="pre">Message.excluded_self_client</span></code></a></li>
+<li><a class="reference internal" href="#viser.infra.Message.entity_type"><code class="docutils literal notranslate"><span class="pre">Message.entity_type</span></code></a></li>
+<li><a class="reference internal" href="#viser.infra.Message.lifecycle_phase"><code class="docutils literal notranslate"><span class="pre">Message.lifecycle_phase</span></code></a></li>
+<li><a class="reference internal" href="#viser.infra.Message.entity_id_field"><code class="docutils literal notranslate"><span class="pre">Message.entity_id_field</span></code></a></li>
+<li><a class="reference internal" href="#viser.infra.Message.include_in_scene_serialization"><code class="docutils literal notranslate"><span class="pre">Message.include_in_scene_serialization</span></code></a></li>
 <li><a class="reference internal" href="#viser.infra.Message.as_serializable_dict"><code class="docutils literal notranslate"><span class="pre">Message.as_serializable_dict()</span></code></a></li>
 <li><a class="reference internal" href="#viser.infra.Message.deserialize"><code class="docutils literal notranslate"><span class="pre">Message.deserialize()</span></code></a></li>
 <li><a class="reference internal" href="#viser.infra.Message.get_subclasses"><code class="docutils literal notranslate"><span class="pre">Message.get_subclasses()</span></code></a></li>

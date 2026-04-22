@@ -430,7 +430,18 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Type</span><span class="p">,</span> <span class="n">TypeVar</span><span class="p">,</span> <span class="n">Union</span><span class="p">,</span> <span class="n">cast</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">TYPE_CHECKING</span><span class="p">,</span>
+    <span class="n">Any</span><span class="p">,</span>
+    <span class="n">ClassVar</span><span class="p">,</span>
+    <span class="n">Dict</span><span class="p">,</span>
+    <span class="n">List</span><span class="p">,</span>
+    <span class="n">Optional</span><span class="p">,</span>
+    <span class="n">Type</span><span class="p">,</span>
+    <span class="n">TypeVar</span><span class="p">,</span>
+    <span class="n">Union</span><span class="p">,</span>
+    <span class="n">cast</span><span class="p">,</span>
+<span class="p">)</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">msgspec.msgpack</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
@@ -497,7 +508,8 @@
 <span class="sd">    This pairs with the hybrid wire format where binary data is appended raw</span>
 <span class="sd">    after the msgpack payload, enabling zero-copy typed array views on the client.</span>
 
-<span class="sd">    If ``binary_buffers`` is None, numpy arrays are inlined as memoryviews.&quot;&quot;&quot;</span>
+<span class="sd">    If ``binary_buffers`` is None, numpy arrays are inlined as memoryviews</span>
+<span class="sd">    in the serialized dict itself.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">annotation</span> <span class="ow">is</span> <span class="n">Any</span><span class="p">:</span>
         <span class="n">annotation</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
 
@@ -543,7 +555,7 @@
             <span class="n">binary_buffers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
             <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;__binary_index&quot;</span><span class="p">:</span> <span class="n">idx</span><span class="p">,</span> <span class="s2">&quot;dtype&quot;</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">dtype</span><span class="o">.</span><span class="n">str</span><span class="p">}</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="c1"># Inline as memoryview (used by API v0).</span>
+            <span class="c1"># Inline as memoryview in the serialized dict.</span>
             <span class="k">return</span> <span class="n">data</span>
 
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
@@ -575,6 +587,21 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Don&#39;t send this message to a particular client. Useful when a client wants to</span>
 <span class="sd">    send synchronization information to other clients.&quot;&quot;&quot;</span>
 
+    <span class="c1"># Entity lifecycle markers. Generic at this layer; application-specific</span>
+    <span class="c1"># literals (e.g. EntityType in viser._messages) narrow these in subclasses</span>
+    <span class="c1"># via the __init_subclass__ kwargs pattern. The buffer and GC read these</span>
+    <span class="c1"># via the Message base to coalesce create/remove and purge stale updates</span>
+    <span class="c1"># uniformly across entity types.</span>
+    <span class="n">entity_type</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">lifecycle_phase</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">entity_id_field</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="c1"># Required on every viser Message subclass (enforced in</span>
+    <span class="c1"># viser._messages.Message.__init_subclass__). Type-only declaration here</span>
+    <span class="c1"># so infra-level readers (e.g. the state-serializer filter) can access</span>
+    <span class="c1"># the attribute without static errors.</span>
+    <span class="n">include_in_scene_serialization</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span>
+
 <div class="viewcode-block" id="Message.as_serializable_dict">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.Message.as_serializable_dict">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">as_serializable_dict</span><span class="p">(</span>
@@ -584,7 +611,7 @@
 
 <span class="sd">        If ``binary_buffers`` is provided, numpy arrays are extracted into it</span>
 <span class="sd">        and replaced with tagged placeholder dicts for the hybrid wire format.</span>
-<span class="sd">        Otherwise, arrays are inlined as memoryviews (used by API v0).&quot;&quot;&quot;</span>
+<span class="sd">        Otherwise, arrays are inlined as memoryviews in the returned dict.&quot;&quot;&quot;</span>
         <span class="n">message_type</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
         <span class="n">hints</span> <span class="o">=</span> <span class="n">get_type_hints_cached</span><span class="p">(</span><span class="n">message_type</span><span class="p">)</span>
         <span class="c1"># Filter to type-hinted fields only — excludes dynamic attributes</span>

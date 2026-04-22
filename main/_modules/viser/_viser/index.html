@@ -1046,7 +1046,7 @@
                 <span class="p">),</span>
             <span class="p">)</span>
         <span class="p">)</span>
-        <span class="n">handle</span><span class="o">.</span><span class="n">_sync_with_client</span><span class="p">(</span><span class="s2">&quot;show&quot;</span><span class="p">)</span>
+        <span class="n">handle</span><span class="o">.</span><span class="n">_show</span><span class="p">()</span>
         <span class="k">return</span> <span class="n">handle</span></div>
 
 
@@ -1199,7 +1199,6 @@
             <span class="n">message_class</span><span class="o">=</span><span class="n">_messages</span><span class="o">.</span><span class="n">Message</span><span class="p">,</span>
             <span class="n">http_server_root</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">&quot;client&quot;</span> <span class="o">/</span> <span class="s2">&quot;build&quot;</span><span class="p">,</span>
             <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
-            <span class="n">client_api_version</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span> <span class="o">=</span> <span class="n">server</span>
 
@@ -1380,65 +1379,76 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_initial_camera</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_run_garbage_collector</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">force</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Clean up old messages. This is not elegant; a refactor of our</span>
-<span class="sd">        message persistence logic will significantly reduce complexity.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Purge from the persistent broadcast buffer:</span>
+
+<span class="sd">        - Every tombstone message (``lifecycle_phase == &quot;remove&quot;``) for an</span>
+<span class="sd">          entity -- new clients shouldn&#39;t replay removals of entities that</span>
+<span class="sd">          never existed to them.</span>
+<span class="sd">        - Every update message (``lifecycle_phase == &quot;update&quot;``) targeting an</span>
+<span class="sd">          entity that was already removed.</span>
+<span class="sd">        - Scene-node-adjacent ``Set*Message`` variants (SetPosition,</span>
+<span class="sd">          SetOrientation, SetBonePosition, SetBoneOrientation,</span>
+<span class="sd">          SetSceneNodeClickable, SetSceneNodeVisibility) that target a removed</span>
+<span class="sd">          scene node. These aren&#39;t entity-declared because they target the</span>
+<span class="sd">          node-by-name but don&#39;t fit the &quot;updates: dict&quot; shape; a `name`-match</span>
+<span class="sd">          against the tombstone set catches them generically.</span>
+
+<span class="sd">        Two passes so purging is order-independent under concurrent writers:</span>
+<span class="sd">        the first pass collects all tombstone entity ids, the second sweeps</span>
+<span class="sd">        updates (and scene-adjacent Set* messages) targeting them.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">buffer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">_broadcast_buffer</span>
         <span class="k">with</span> <span class="n">buffer</span><span class="o">.</span><span class="n">buffer_lock</span><span class="p">:</span>
-            <span class="c1"># Skip garbage collection if we have messages that are queeud but</span>
-            <span class="c1"># not yet processed by the window generators.</span>
-            <span class="c1">#</span>
-            <span class="c1"># This makes sure that we don&#39;t accidentally cull messages before</span>
-            <span class="c1"># they&#39;re sent to existing clients. RemoveSceneNodeMessage, for example,</span>
-            <span class="c1"># needs to be sent to old clients but not new ones.</span>
+            <span class="c1"># Skip GC while there are messages queued but not yet processed by</span>
+            <span class="c1"># the window generators. Without this, we could cull messages</span>
+            <span class="c1"># before they reach existing clients.</span>
             <span class="k">if</span> <span class="p">(</span>
                 <span class="ow">not</span> <span class="n">force</span>
                 <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">_broadcast_buffer</span><span class="o">.</span><span class="n">message_event</span><span class="o">.</span><span class="n">is_set</span><span class="p">()</span>
             <span class="p">):</span>
                 <span class="k">return</span>
 
+            <span class="c1"># First pass: collect every tombstone&#39;s entity id.</span>
             <span class="n">remove_message_ids</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-
-            <span class="n">remove_scene_names</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
-            <span class="n">remove_gui_uuids</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
-
-            <span class="k">for</span> <span class="nb">id</span><span class="p">,</span> <span class="n">message</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="n">buffer</span><span class="o">.</span><span class="n">message_from_id</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
-                <span class="c1"># Find scene nodes or GUI elements that were removed.</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">_messages</span><span class="o">.</span><span class="n">RemoveSceneNodeMessage</span><span class="p">):</span>
-                    <span class="n">remove_message_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">id</span><span class="p">)</span>
-                    <span class="n">remove_scene_names</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
-                <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">_messages</span><span class="o">.</span><span class="n">GuiRemoveMessage</span><span class="p">):</span>
-                    <span class="n">remove_message_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">id</span><span class="p">)</span>
-                    <span class="n">remove_gui_uuids</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
-                <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">_messages</span><span class="o">.</span><span class="n">GuiCloseModalMessage</span><span class="p">):</span>
-                    <span class="n">remove_message_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">id</span><span class="p">)</span>
-
-                <span class="c1"># For removed elements, no need to send any update messages.</span>
-                <span class="k">if</span> <span class="p">(</span>
-                    <span class="nb">isinstance</span><span class="p">(</span>
-                        <span class="n">message</span><span class="p">,</span>
-                        <span class="p">(</span>
-                            <span class="n">_messages</span><span class="o">.</span><span class="n">SetPositionMessage</span><span class="p">,</span>
-                            <span class="n">_messages</span><span class="o">.</span><span class="n">SetOrientationMessage</span><span class="p">,</span>
-                            <span class="n">_messages</span><span class="o">.</span><span class="n">SetBonePositionMessage</span><span class="p">,</span>
-                            <span class="n">_messages</span><span class="o">.</span><span class="n">SetBoneOrientationMessage</span><span class="p">,</span>
-                            <span class="n">_messages</span><span class="o">.</span><span class="n">SetSceneNodeClickableMessage</span><span class="p">,</span>
-                            <span class="n">_messages</span><span class="o">.</span><span class="n">SetSceneNodeVisibilityMessage</span><span class="p">,</span>
-                        <span class="p">),</span>
+            <span class="n">removed_ids_by_type</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">for</span> <span class="n">msg_id</span><span class="p">,</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">buffer</span><span class="o">.</span><span class="n">message_from_id</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">if</span> <span class="n">message</span><span class="o">.</span><span class="n">lifecycle_phase</span> <span class="o">==</span> <span class="s2">&quot;remove&quot;</span><span class="p">:</span>
+                    <span class="k">assert</span> <span class="p">(</span>
+                        <span class="n">message</span><span class="o">.</span><span class="n">entity_type</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                        <span class="ow">and</span> <span class="n">message</span><span class="o">.</span><span class="n">entity_id_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
                     <span class="p">)</span>
-                    <span class="ow">and</span> <span class="n">message</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">remove_scene_names</span>
-                <span class="p">):</span>
-                    <span class="n">remove_message_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">id</span><span class="p">)</span>
+                    <span class="n">remove_message_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">msg_id</span><span class="p">)</span>
+                    <span class="n">removed_ids_by_type</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">entity_type</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span><span class="o">.</span><span class="n">add</span><span class="p">(</span>
+                        <span class="nb">getattr</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">message</span><span class="o">.</span><span class="n">entity_id_field</span><span class="p">)</span>
+                    <span class="p">)</span>
 
-                <span class="k">if</span> <span class="p">(</span>
-                    <span class="nb">isinstance</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">_messages</span><span class="o">.</span><span class="n">GuiUpdateMessage</span><span class="p">)</span>
-                    <span class="ow">and</span> <span class="n">message</span><span class="o">.</span><span class="n">uuid</span> <span class="ow">in</span> <span class="n">remove_gui_uuids</span>
-                <span class="p">):</span>
-                    <span class="n">remove_message_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">id</span><span class="p">)</span>
+            <span class="c1"># Second pass: purge updates whose target entity has a tombstone,</span>
+            <span class="c1"># including scene-adjacent Set*Message variants that target a</span>
+            <span class="c1"># removed scene node by `name` but aren&#39;t entity-declared. Skip</span>
+            <span class="c1"># the walk entirely when nothing was tombstoned this round.</span>
+            <span class="k">if</span> <span class="n">removed_ids_by_type</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">msg_id</span><span class="p">,</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">buffer</span><span class="o">.</span><span class="n">message_from_id</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                    <span class="n">phase</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">lifecycle_phase</span>
+                    <span class="k">if</span> <span class="n">phase</span> <span class="o">==</span> <span class="s2">&quot;update&quot;</span><span class="p">:</span>
+                        <span class="k">assert</span> <span class="p">(</span>
+                            <span class="n">message</span><span class="o">.</span><span class="n">entity_type</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                            <span class="ow">and</span> <span class="n">message</span><span class="o">.</span><span class="n">entity_id_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                        <span class="p">)</span>
+                        <span class="n">entity_id</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">message</span><span class="o">.</span><span class="n">entity_id_field</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">entity_id</span> <span class="ow">in</span> <span class="n">removed_ids_by_type</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                            <span class="n">message</span><span class="o">.</span><span class="n">entity_type</span><span class="p">,</span> <span class="p">()</span>
+                        <span class="p">):</span>
+                            <span class="n">remove_message_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">msg_id</span><span class="p">)</span>
+                    <span class="k">elif</span> <span class="n">phase</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">name</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">removed_ids_by_type</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                            <span class="s2">&quot;scene&quot;</span><span class="p">,</span> <span class="p">()</span>
+                        <span class="p">):</span>
+                            <span class="n">remove_message_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">msg_id</span><span class="p">)</span>
 
-            <span class="c1"># Remove old messages.</span>
-            <span class="k">for</span> <span class="nb">id</span> <span class="ow">in</span> <span class="n">remove_message_ids</span><span class="p">:</span>
-                <span class="n">message</span> <span class="o">=</span> <span class="n">buffer</span><span class="o">.</span><span class="n">message_from_id</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="nb">id</span><span class="p">)</span>
-                <span class="n">buffer</span><span class="o">.</span><span class="n">id_from_redundancy_key</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">redundancy_key</span><span class="p">())</span>
+            <span class="k">for</span> <span class="n">msg_id</span> <span class="ow">in</span> <span class="n">remove_message_ids</span><span class="p">:</span>
+                <span class="n">message</span> <span class="o">=</span> <span class="n">buffer</span><span class="o">.</span><span class="n">message_from_id</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">msg_id</span><span class="p">)</span>
+                <span class="n">buffer</span><span class="o">.</span><span class="n">id_from_redundancy_key</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">redundancy_key</span><span class="p">(),</span> <span class="kc">None</span><span class="p">)</span>
 
 <div class="viewcode-block" id="ViserServer.get_host">
 <a class="viewcode-back" href="../../../api/core/server/#viser.ViserServer.get_host">[docs]</a>
@@ -1725,8 +1735,7 @@
 <span class="sd">        visualization.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">serializer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">get_message_serializer</span><span class="p">(</span>
-            <span class="c1"># Don&#39;t record GUI messages. This feels brittle.</span>
-            <span class="nb">filter</span><span class="o">=</span><span class="k">lambda</span> <span class="n">message</span><span class="p">:</span> <span class="s2">&quot;Gui&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="nb">type</span><span class="p">(</span><span class="n">message</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span>
+            <span class="nb">filter</span><span class="o">=</span><span class="k">lambda</span> <span class="n">message</span><span class="p">:</span> <span class="n">message</span><span class="o">.</span><span class="n">include_in_scene_serialization</span>
         <span class="p">)</span>
         <span class="c1"># Insert current scene state.</span>
         <span class="n">buffer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">_broadcast_buffer</span>

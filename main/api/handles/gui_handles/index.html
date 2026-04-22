@@ -1206,6 +1206,12 @@ synchronized between all connected clients. When a GUI element is added via
 <dt class="sig sig-object py" id="viser.GuiMarkdownHandle">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">GuiMarkdownHandle</span></span><a class="reference internal" href="../../../_modules/viser/_gui_handles/#GuiMarkdownHandle"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.GuiMarkdownHandle" title="Link to this definition">¶</a></dt>
 <dd><p>Handling for updating and removing markdown elements.</p>
+<dl class="py property">
+<dt class="sig sig-object py" id="viser.GuiMarkdownHandle.content">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">content</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.GuiMarkdownHandle.content" title="Link to this definition">¶</a></dt>
+<dd><p>Current content of this markdown element. Synchronized automatically when assigned.</p>
+</dd></dl>
+
 <dl class="py method">
 <dt class="sig sig-object py" id="viser.GuiMarkdownHandle.remove">
 <span class="sig-name descname"><span class="pre">remove</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.GuiMarkdownHandle.remove" title="Link to this definition">¶</a></dt>
@@ -1227,12 +1233,6 @@ synchronized between all connected clients. When a GUI element is added via
 <dt class="sig sig-object py" id="viser.GuiMarkdownHandle.visible">
 <span class="sig-name descname"><span class="pre">visible</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.GuiMarkdownHandle.visible" title="Link to this definition">¶</a></dt>
 <dd><p>Visibility state of the markdown element.</p>
-</dd></dl>
-
-<dl class="py property">
-<dt class="sig sig-object py" id="viser.GuiMarkdownHandle.content">
-<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">content</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.GuiMarkdownHandle.content" title="Link to this definition">¶</a></dt>
-<dd><p>Current content of this markdown element. Synchronized automatically when assigned.</p>
 </dd></dl>
 
 </dd></dl>
@@ -1489,6 +1489,12 @@ synchronized between all connected clients. When a GUI element is added via
 <dt class="sig sig-object py" id="viser.GuiPlotlyHandle">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">GuiPlotlyHandle</span></span><a class="reference internal" href="../../../_modules/viser/_gui_handles/#GuiPlotlyHandle"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.GuiPlotlyHandle" title="Link to this definition">¶</a></dt>
 <dd><p>Handle for updating and removing Plotly figures.</p>
+<dl class="py property">
+<dt class="sig sig-object py" id="viser.GuiPlotlyHandle.figure">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">figure</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">go.Figure</span></em><a class="headerlink" href="#viser.GuiPlotlyHandle.figure" title="Link to this definition">¶</a></dt>
+<dd><p>Current Plotly figure. Synchronized automatically when assigned.</p>
+</dd></dl>
+
 <dl class="py method">
 <dt class="sig sig-object py" id="viser.GuiPlotlyHandle.remove">
 <span class="sig-name descname"><span class="pre">remove</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.GuiPlotlyHandle.remove" title="Link to this definition">¶</a></dt>
@@ -1516,12 +1522,6 @@ synchronized between all connected clients. When a GUI element is added via
 <dt class="sig sig-object py" id="viser.GuiPlotlyHandle.visible">
 <span class="sig-name descname"><span class="pre">visible</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.GuiPlotlyHandle.visible" title="Link to this definition">¶</a></dt>
 <dd><p>Visibility state of the plot.</p>
-</dd></dl>
-
-<dl class="py property">
-<dt class="sig sig-object py" id="viser.GuiPlotlyHandle.figure">
-<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">figure</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">go.Figure</span></em><a class="headerlink" href="#viser.GuiPlotlyHandle.figure" title="Link to this definition">¶</a></dt>
-<dd><p>Current Plotly figure. Synchronized automatically when assigned.</p>
 </dd></dl>
 
 </dd></dl>
@@ -1882,6 +1882,11 @@ synchronized between all connected clients. When a GUI element is added via
 <dt class="sig sig-object py" id="viser.GuiTabHandle">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">GuiTabHandle</span></span><a class="reference internal" href="../../../_modules/viser/_gui_handles/#GuiTabHandle"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.GuiTabHandle" title="Link to this definition">¶</a></dt>
 <dd><p>Use as a context to place GUI elements into a tab.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.GuiTabHandle.removed">
+<span class="sig-name descname"><span class="pre">removed</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">False</span></em><a class="headerlink" href="#viser.GuiTabHandle.removed" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
 <dl class="py property">
 <dt class="sig sig-object py" id="viser.GuiTabHandle.icon">
 <em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">icon</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">IconName</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.GuiTabHandle.icon" title="Link to this definition">¶</a></dt>
@@ -2652,10 +2657,10 @@ Used when height is None.</p>
 </ul>
 </li>
 <li><a class="reference internal" href="#viser.GuiMarkdownHandle"><code class="docutils literal notranslate"><span class="pre">GuiMarkdownHandle</span></code></a><ul>
+<li><a class="reference internal" href="#viser.GuiMarkdownHandle.content"><code class="docutils literal notranslate"><span class="pre">GuiMarkdownHandle.content</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiMarkdownHandle.remove"><code class="docutils literal notranslate"><span class="pre">GuiMarkdownHandle.remove()</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiMarkdownHandle.order"><code class="docutils literal notranslate"><span class="pre">GuiMarkdownHandle.order</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiMarkdownHandle.visible"><code class="docutils literal notranslate"><span class="pre">GuiMarkdownHandle.visible</span></code></a></li>
-<li><a class="reference internal" href="#viser.GuiMarkdownHandle.content"><code class="docutils literal notranslate"><span class="pre">GuiMarkdownHandle.content</span></code></a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#viser.GuiMultiSliderHandle"><code class="docutils literal notranslate"><span class="pre">GuiMultiSliderHandle</span></code></a><ul>
@@ -2695,11 +2700,11 @@ Used when height is None.</p>
 </ul>
 </li>
 <li><a class="reference internal" href="#viser.GuiPlotlyHandle"><code class="docutils literal notranslate"><span class="pre">GuiPlotlyHandle</span></code></a><ul>
+<li><a class="reference internal" href="#viser.GuiPlotlyHandle.figure"><code class="docutils literal notranslate"><span class="pre">GuiPlotlyHandle.figure</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiPlotlyHandle.remove"><code class="docutils literal notranslate"><span class="pre">GuiPlotlyHandle.remove()</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiPlotlyHandle.order"><code class="docutils literal notranslate"><span class="pre">GuiPlotlyHandle.order</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiPlotlyHandle.aspect"><code class="docutils literal notranslate"><span class="pre">GuiPlotlyHandle.aspect</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiPlotlyHandle.visible"><code class="docutils literal notranslate"><span class="pre">GuiPlotlyHandle.visible</span></code></a></li>
-<li><a class="reference internal" href="#viser.GuiPlotlyHandle.figure"><code class="docutils literal notranslate"><span class="pre">GuiPlotlyHandle.figure</span></code></a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#viser.GuiRgbHandle"><code class="docutils literal notranslate"><span class="pre">GuiRgbHandle</span></code></a><ul>
@@ -2753,6 +2758,7 @@ Used when height is None.</p>
 </ul>
 </li>
 <li><a class="reference internal" href="#viser.GuiTabHandle"><code class="docutils literal notranslate"><span class="pre">GuiTabHandle</span></code></a><ul>
+<li><a class="reference internal" href="#viser.GuiTabHandle.removed"><code class="docutils literal notranslate"><span class="pre">GuiTabHandle.removed</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiTabHandle.icon"><code class="docutils literal notranslate"><span class="pre">GuiTabHandle.icon</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiTabHandle.remove"><code class="docutils literal notranslate"><span class="pre">GuiTabHandle.remove()</span></code></a></li>
 </ul>
