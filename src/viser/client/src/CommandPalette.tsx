@@ -14,19 +14,31 @@ import { isMac } from "./utils/platform";
 type SpotlightItems = SpotlightActionData | SpotlightActionGroupData;
 type Hotkey = RegisterCommandMessage["props"]["hotkey"];
 
-/** Convert a hotkey value to the "mod+shift+R" string format for Mantine. */
-function hotkeyToString(hotkey: NonNullable<Hotkey>): string {
-  if (typeof hotkey === "string") return hotkey;
-  return hotkey.join("+");
+/** Convert a hotkey value to Mantine hotkey strings (e.g. "ctrl+shift+R").
+ *
+ * ``"cmd/ctrl"`` in the viser hotkey is OR semantics (either Ctrl or Meta
+ * counts), so we emit *both* a `"ctrl+..."` and `"meta+..."` variant — on
+ * any platform, pressing either modifier triggers the hotkey. This matches
+ * the drag-binding semantics so users don't have to remember two rules. */
+function hotkeyToStrings(hotkey: NonNullable<Hotkey>): string[] {
+  const parts: string[] =
+    typeof hotkey === "string" ? [hotkey] : (hotkey as string[]);
+  if (!parts.includes("cmd/ctrl")) {
+    return [parts.join("+")];
+  }
+  return [
+    parts.map((p) => (p === "cmd/ctrl" ? "ctrl" : p)).join("+"),
+    parts.map((p) => (p === "cmd/ctrl" ? "meta" : p)).join("+"),
+  ];
 }
 
-/** Format a hotkey for display (e.g. ("mod", "shift", "R") -> "⌘⇧R" or "Ctrl+Shift+R"). */
+/** Format a hotkey for display (e.g. ("cmd/ctrl", "shift", "R") -> "⌘⇧R" or "Ctrl+Shift+R"). */
 function formatHotkey(hotkey: NonNullable<Hotkey>): string {
   const parts = typeof hotkey === "string" ? [hotkey] : hotkey;
   return parts
     .map((part) => {
       const key = part.toLowerCase();
-      if (key === "mod") return isMac ? "⌘" : "Ctrl+";
+      if (key === "cmd/ctrl") return isMac ? "⌘" : "Ctrl+";
       if (key === "shift") return isMac ? "⇧" : "Shift+";
       if (key === "alt") return isMac ? "⌥" : "Alt+";
       if (key === "ctrl") return isMac ? "⌃" : "Ctrl+";
@@ -129,18 +141,21 @@ export function CommandPalette() {
   const spotlightActions = useSpotlightActions(commands, handleTrigger);
   const fuseFilter = useFuseFilter();
 
-  // Register per-command hotkeys.
+  // Register per-command hotkeys. Each viser hotkey can expand to multiple
+  // Mantine entries (e.g. "cmd/ctrl" → both "ctrl+K" and "meta+K") so that
+  // either modifier matches on any platform — same OR semantics as drag
+  // bindings.
   const hotkeyItems = useMemo(
     () =>
       Object.values(commands)
         .filter((c) => c.props.hotkey != null && !c.props.disabled)
-        .map(
-          (c) =>
-            [hotkeyToString(c.props.hotkey!), () => handleTrigger(c.uuid)] as [
-              string,
-              (event: KeyboardEvent) => void,
-            ],
-        ),
+        .flatMap((c) => {
+          const trigger = () => handleTrigger(c.uuid);
+          return hotkeyToStrings(c.props.hotkey!).map(
+            (key) =>
+              [key, trigger] as [string, (event: KeyboardEvent) => void],
+          );
+        }),
     [commands, handleTrigger],
   );
   useHotkeys(hotkeyItems);

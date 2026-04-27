@@ -34,3 +34,13 @@ export function rayToViserCoords(
 
   return new THREE.Ray(origin, direction);
 }
+
+/** Helper for converting a point from the three.js world frame to the Python
+ * world frame.
+ */
+export function pointToViserCoords(
+  viewer: ViewerContextContents,
+  point: THREE.Vector3,
+): THREE.Vector3 {
+  return point.clone().applyMatrix4(computeT_threeworld_world(viewer).invert());
+}

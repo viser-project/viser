@@ -54,6 +54,7 @@ from ._scene_handles import (
     PointCloudHandle,
     PointLightHandle,
     RectAreaLightHandle,
+    SceneNodeDragEvent,
     SceneNodeHandle,
     SceneNodePointerEvent,
     ScenePointerEvent,
@@ -62,7 +63,8 @@ from ._scene_handles import (
     SpotLightHandle,
     TransformControlsEvent,
     TransformControlsHandle,
-    _ClickableSceneNodeHandle,
+    _DragInput,
+    _RaycastSupportedSceneNodeHandle,
     _TransformControlsState,
 )
 from ._threadpool_exceptions import print_threadpool_errors
@@ -82,6 +84,37 @@ RgbTupleOrArray: TypeAlias = Union[
 ]
 
 NoneOrCoroutine = TypeVar("NoneOrCoroutine", None, Coroutine)
+
+
+def _drag_input_matches_filter(
+    input: _DragInput,
+    filter_button: _messages.DragButton,
+    filter_modifiers: Tuple[_messages._DragModifierAtom, ...] | None,
+) -> bool:
+    """Return whether a drag input matches a registered binding filter.
+
+    ``filter_modifiers=None`` is a wildcard; otherwise the filter is
+    exact-match ("these modifiers held, others not"). ``"cmd/ctrl"`` treats
+    Ctrl and Cmd (meta) as interchangeable — matches whenever either is
+    held.
+    """
+    if filter_button not in ("any", input.button):
+        return False
+    if filter_modifiers is None:
+        return True
+    # filter_modifiers has at most 3 elements (DragModifier literal); using
+    # `in` directly on the tuple avoids per-event allocation.
+    if input.shift != ("shift" in filter_modifiers):
+        return False
+    if input.alt != ("alt" in filter_modifiers):
+        return False
+    if "cmd/ctrl" in filter_modifiers:
+        if not (input.ctrl or input.meta):
+            return False
+    else:
+        if input.ctrl or input.meta:
+            return False
+    return True
 
 
 def _encode_rgb(rgb: RgbTupleOrArray) -> tuple[int, int, int]:
@@ -194,6 +227,9 @@ class SceneApi:
         self._websock_interface.register_handler(
             _messages.SceneNodeClickMessage,
             self._handle_node_click_updates,
+        )
+        self._websock_interface.register_handler(
+            _messages.SceneNodeDragMessage, self._handle_node_drag
         )
         self._websock_interface.register_handler(
             _messages.ScenePointerMessage,
@@ -2663,12 +2699,59 @@ class SceneApi:
                 client=self._get_client_handle(client_id),
                 client_id=client_id,
                 event="click",
-                target=cast(_ClickableSceneNodeHandle, handle),
+                target=cast(_RaycastSupportedSceneNodeHandle, handle),
                 ray_origin=message.ray_origin,
                 ray_direction=message.ray_direction,
                 screen_pos=message.screen_pos,
                 instance_index=message.instance_index,
             )
+            if asyncio.iscoroutinefunction(cb):
+                await cb(event)
+            else:
+                self._thread_executor.submit(cb, event).add_done_callback(
+                    print_threadpool_errors
+                )
+
+    async def _handle_node_drag(
+        self,
+        client_id: ClientId,
+        message: _messages.SceneNodeDragMessage,
+    ) -> None:
+        """Dispatch a scene-node drag start/update/end message to matching
+        callbacks."""
+        handle = self._handle_from_node_name.get(message.name, None)
+        if handle is None or not isinstance(handle, _RaycastSupportedSceneNodeHandle):
+            return
+
+        input = _DragInput(
+            button=message.button,
+            ctrl=message.ctrl,
+            meta=message.meta,
+            shift=message.shift,
+            alt=message.alt,
+        )
+        matching = handle._dispatch_drag(message.phase, input)
+        if not matching:
+            return
+
+        event = SceneNodeDragEvent(
+            client=self._get_client_handle(client_id),
+            client_id=client_id,
+            target=cast(_RaycastSupportedSceneNodeHandle, handle),
+            instance_index=message.instance_index,
+            start_position=message.start_position,
+            start_screen_pos=message.start_screen_pos,
+            end_position=message.end_position,
+            end_screen_pos=message.end_screen_pos,
+            end_ray_origin=message.end_ray_origin,
+            end_ray_direction=message.end_ray_direction,
+            button=message.button,
+            ctrl=message.ctrl,
+            meta=message.meta,
+            shift=message.shift,
+            alt=message.alt,
+        )
+        for cb in matching:
             if asyncio.iscoroutinefunction(cb):
                 await cb(event)
             else:

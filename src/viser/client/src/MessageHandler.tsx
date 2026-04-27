@@ -570,6 +570,14 @@ function useMessageHandler() {
           updates: { clickable: message.clickable },
         };
       }
+      // Set the drag-binding set for a particular scene node.
+      case "SetSceneNodeDragBindingsMessage": {
+        return {
+          kind: "sceneNodeAttrUpdate",
+          targetNode: message.name,
+          updates: { dragBindings: message.bindings },
+        };
+      }
       // Update props of a GUI component — accumulated and applied in batch.
       case "GuiUpdateMessage": {
         return {

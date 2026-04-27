@@ -36,7 +36,6 @@ from viser._messages import (
     _CreateSceneNodeMessage,
 )
 
-
 # ---------------------------------------------------------------------------
 # Entity marker declarations
 # ---------------------------------------------------------------------------
@@ -173,15 +172,11 @@ def test_scene_node_update_is_purged_after_remove() -> None:
     frame = server.scene.add_frame("/gc_update_test")
     # Queue an update via declarative path.
     server._websock_server.queue_message(
-        SceneNodeUpdateMessage(
-            name="/gc_update_test", updates={"visible": False}
-        )
+        SceneNodeUpdateMessage(name="/gc_update_test", updates={"visible": False})
     )
     frame.remove()
     server._run_garbage_collector(force=True)
-    assert len(buffer) == baseline, (
-        "Stale SceneNodeUpdateMessage survived Remove"
-    )
+    assert len(buffer) == baseline, "Stale SceneNodeUpdateMessage survived Remove"
 
 
 # ---------------------------------------------------------------------------
@@ -243,9 +238,9 @@ def test_modal_double_close_warns() -> None:
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         modal.close()
-        assert any(
-            "already closed" in str(rec.message) for rec in w
-        ), "double-close should warn"
+        assert any("already closed" in str(rec.message) for rec in w), (
+            "double-close should warn"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -267,9 +262,7 @@ def test_command_update_after_remove_is_suppressed() -> None:
 
     server._run_garbage_collector(force=True)
     # After GC: no ghost-command messages left in the buffer.
-    command_messages = [
-        m for m in buffer.values() if m.entity_type == "command"
-    ]
+    command_messages = [m for m in buffer.values() if m.entity_type == "command"]
     assert command_messages == []
 
 
