@@ -27,3 +27,4 @@ test-results/
 
 # Scene verification outputs
 scene_verification_outputs/
+tests/e2e/test_webgl_warning.py

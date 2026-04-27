@@ -2718,7 +2718,16 @@ class SceneApi:
         message: _messages.SceneNodeDragMessage,
     ) -> None:
         """Dispatch a scene-node drag start/update/end message to matching
-        callbacks."""
+        callbacks.
+
+        Note on ordering: sync callbacks are submitted to a thread pool
+        fire-and-forget, so two drags messages dispatched back-to-back
+        (e.g. start + update) can race — the update's callback may run
+        before the start's callback finishes, leaving user state
+        half-initialized. Async callbacks are awaited in order and don't
+        have this issue, so for stateful gestures define your callbacks
+        as ``async def`` (with no internal ``await`` s, so each runs
+        atomically on the event loop)."""
         handle = self._handle_from_node_name.get(message.name, None)
         if handle is None or not isinstance(handle, _RaycastSupportedSceneNodeHandle):
             return
@@ -2905,7 +2914,7 @@ class SceneApi:
         """
 
         # Avoids circular import.
-        from ._gui_api import _make_uuid
+        from ._gui_handles import _make_uuid
 
         # New name to make the type checker happy; ViserServer and ClientHandle inherit
         # from both GuiApi and MessageApi. The pattern below is unideal.

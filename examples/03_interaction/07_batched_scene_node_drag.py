@@ -250,7 +250,7 @@ def main() -> None:
     # ==========================================================================
 
     @handle.on_drag_start("left", modifier="")
-    def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
         nonlocal active_idx, active_mode, spring_target, teleport_offset
         i = event.instance_index
         if i is None:
@@ -266,13 +266,13 @@ def main() -> None:
             spring_target = cursor
 
     @handle.on_drag_update("left", modifier="")
-    def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
         nonlocal spring_target
         with lock:
             spring_target = np.array(event.end_position)
 
     @handle.on_drag_end("left", modifier="")
-    def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
         nonlocal active_idx, active_mode, spring_target, teleport_offset
         i = event.instance_index
         if i is not None:
@@ -290,7 +290,7 @@ def main() -> None:
     # ==========================================================================
 
     @handle.on_drag_start("left", modifier="cmd/ctrl")
-    def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
         nonlocal active_idx, active_mode, grab_body, spring_target
         i = event.instance_index
         if i is None:
@@ -306,13 +306,13 @@ def main() -> None:
             spring_target = grab_world
 
     @handle.on_drag_update("left", modifier="cmd/ctrl")
-    def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
         nonlocal spring_target
         with lock:
             spring_target = np.array(event.end_position)
 
     @handle.on_drag_end("left", modifier="cmd/ctrl")
-    def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
         nonlocal active_idx, active_mode, grab_body, spring_target
         i = event.instance_index
         if i is not None:
@@ -331,7 +331,7 @@ def main() -> None:
     # ==========================================================================
 
     @handle.on_drag_start("left", modifier="cmd/ctrl+shift")
-    def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
         nonlocal active_idx, active_mode, grab_body, spring_target, ext_torque
         i = event.instance_index
         if i is None:
@@ -350,7 +350,7 @@ def main() -> None:
             ext_torque = np.zeros(3)
 
     @handle.on_drag_update("left", modifier="cmd/ctrl+shift")
-    def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
         nonlocal ext_torque
         # Drag vector = rotation axis (direction) × spin magnitude (length).
         # Use the *frozen* spring_target (click point at drag-start) rather
@@ -363,7 +363,7 @@ def main() -> None:
             ext_torque = TORQUE_K * drag_vec
 
     @handle.on_drag_end("left", modifier="cmd/ctrl+shift")
-    def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
         nonlocal active_idx, active_mode, grab_body, spring_target, ext_torque
         i = event.instance_index
         if i is not None:

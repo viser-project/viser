@@ -196,7 +196,7 @@ def main() -> None:
     # ==========================================================================
 
     @handle.on_drag_start("left", modifier="")
-    def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         nonlocal teleport_cursor, teleport_drag_offset
         handle.color = TELEPORT_COLOR
         with lock:
@@ -207,13 +207,13 @@ def main() -> None:
             teleport_drag_offset = position - cursor
 
     @handle.on_drag_update("left", modifier="")
-    def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         nonlocal teleport_cursor
         with lock:
             teleport_cursor = np.array(event.end_position)
 
     @handle.on_drag_end("left", modifier="")
-    def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         nonlocal teleport_cursor, teleport_drag_offset
         del event
         handle.color = IDLE_COLOR
@@ -226,7 +226,7 @@ def main() -> None:
     # ==========================================================================
 
     @handle.on_drag_start("left", modifier="cmd/ctrl")
-    def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         nonlocal grab_body, spring_target
         handle.color = TRANSLATE_COLOR
         with lock:
@@ -235,13 +235,13 @@ def main() -> None:
             spring_target = grab_world
 
     @handle.on_drag_update("left", modifier="cmd/ctrl")
-    def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         nonlocal spring_target
         with lock:
             spring_target = np.array(event.end_position)
 
     @handle.on_drag_end("left", modifier="cmd/ctrl")
-    def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         nonlocal grab_body, spring_target
         del event
         handle.color = IDLE_COLOR
@@ -260,7 +260,7 @@ def main() -> None:
     # ==========================================================================
 
     @handle.on_drag_start("left", modifier="cmd/ctrl+shift")
-    def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         nonlocal grab_body, spring_target, ext_torque
         handle.color = ROTATE_COLOR
         with lock:
@@ -272,7 +272,7 @@ def main() -> None:
             ext_torque = np.zeros(3)
 
     @handle.on_drag_update("left", modifier="cmd/ctrl+shift")
-    def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         nonlocal ext_torque
         # Drag vector (world space) used directly as the torque: its
         # direction is the rotation axis, its length the magnitude. The
@@ -287,7 +287,7 @@ def main() -> None:
             ext_torque = TORQUE_K * drag_vec
 
     @handle.on_drag_end("left", modifier="cmd/ctrl+shift")
-    def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         nonlocal grab_body, spring_target, ext_torque
         del event
         handle.color = IDLE_COLOR
