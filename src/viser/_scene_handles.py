@@ -251,30 +251,65 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             return
 
         # Collect all descendants via BFS.
+        api = self._impl.api
         to_remove = [self._impl.name]
         i = 0
         while i < len(to_remove):
-            children = self._impl.api._children_from_node_name.get(to_remove[i], ())
+            children = api._children_from_node_name.get(to_remove[i], ())
             to_remove.extend(children)
             i += 1
 
+        # Clear stale per-node interaction state (click + drag) before
+        # we tear down handles. ``SetSceneNodeClickableMessage`` and
+        # ``SetSceneNodeDragBindingsMessage`` are name-keyed in the
+        # persistent buffer and aren't purged by
+        # ``RemoveSceneNodeMessage``, so without an empty replacement a
+        # future node created with the same name would inherit stale
+        # interaction state on late-joining clients. Has to run for
+        # every node in ``to_remove`` (not just ``self``) so cascading
+        # parent removal cleans up interactive descendants too.
+        #
+        # Drag callbacks are preserved when a drag is in flight: the
+        # client will send a final ``phase="end"`` message after it
+        # observes the removal (via ``stopIfNodeIs``), and the user's
+        # ``on_drag_end`` MUST fire so per-drag state can be released.
+        # ``_handle_node_drag`` looks the handle up in the active-drag
+        # registry for non-start phases, so preserving ``drag_cb`` on
+        # the handle keeps the dispatch path alive until end.
+        for node_name in to_remove:
+            handle = api._handle_from_node_name.get(node_name)
+            if handle is None:
+                continue
+            impl = handle._impl
+            if len(impl.click_cb) > 0:
+                api._websock_interface.queue_message(
+                    _messages.SetSceneNodeClickableMessage(node_name, False)
+                )
+            if any(entries for entries in impl.drag_cb.values()):
+                if not api._is_drag_active_for(node_name):
+                    for entries in impl.drag_cb.values():
+                        entries.clear()
+                api._websock_interface.queue_message(
+                    _messages.SetSceneNodeDragBindingsMessage(node_name, ())
+                )
+
         # Clean up all descendants from both dicts.
         for node_name in to_remove:
-            handle = self._impl.api._handle_from_node_name.pop(node_name, None)
+            handle = api._handle_from_node_name.pop(node_name, None)
             if handle is not None:
                 handle._impl.removed = True
-            self._impl.api._children_from_node_name.pop(node_name, None)
+            api._children_from_node_name.pop(node_name, None)
 
         # Remove from parent's children set.
         parent = self._impl.name.rsplit("/", 1)[0]
-        parent_children = self._impl.api._children_from_node_name.get(parent)
+        parent_children = api._children_from_node_name.get(parent)
         if parent_children is not None:
             parent_children.discard(self._impl.name)
 
         # Send a RemoveSceneNodeMessage per descendant so redundancy keys
         # clean up their creation messages from the broadcast buffer.
         for node_name in to_remove:
-            self._impl.api._websock_interface.queue_message(
+            api._websock_interface.queue_message(
                 _messages.RemoveSceneNodeMessage(node_name)
             )
 
@@ -627,32 +662,6 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
             self._impl.api._websock_interface.queue_message(
                 _messages.SetSceneNodeClickableMessage(self._impl.name, False)
             )
-
-    def remove(self) -> None:
-        """Remove the node from the scene.
-
-        Clears any pending click + drag state from the broadcast buffer
-        before the node disappears, so a future node created with the
-        same name doesn't inherit stale interaction flags.
-        """
-        if len(self._impl.click_cb) > 0:
-            self._impl.api._websock_interface.queue_message(
-                _messages.SetSceneNodeClickableMessage(self._impl.name, False)
-            )
-        # Preserve drag callbacks if a drag is in flight for this node:
-        # the client will send a final ``phase="end"`` message after it
-        # observes the removal (via ``stopIfNodeIs``), and the user's
-        # ``on_drag_end`` MUST fire so per-drag state can be released.
-        # ``_handle_node_drag`` looks the handle up in the active-drag
-        # registry for non-start phases, so preserving ``drag_cb`` here
-        # keeps the dispatch path alive until end.
-        if self._has_any_drag_callbacks() and not self._impl.api._is_drag_active_for(
-            self._impl.name
-        ):
-            for entries in self._impl.drag_cb.values():
-                entries.clear()
-            self._sync_drag_bindings()
-        super().remove()
 
 
 class CameraFrustumHandle(

@@ -1385,10 +1385,16 @@ class DragBinding:
 
 
 @dataclasses.dataclass
-class SetSceneNodeDragBindingsMessage(Message, include_in_scene_serialization=True):
+class SetSceneNodeDragBindingsMessage(Message, include_in_scene_serialization=False):
     """Declare the drag-input combinations a scene node listens for.
 
     Sent as a full set; empty ``bindings`` means the node is not draggable.
+
+    Excluded from scene serialization: drag bindings are interaction state
+    (callbacks live on the server, the client's ``DragLayer`` is null in
+    static/embed/playback mode), so persisting them into ``.viser`` files
+    would just make exported nodes look draggable while no callback can
+    ever fire.
     """
 
     name: str
