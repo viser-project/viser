@@ -97,6 +97,13 @@ def _drag_input_matches_filter(
     exact-match ("these modifiers held, others not"). ``"cmd/ctrl"`` treats
     Ctrl and Cmd (meta) as interchangeable — matches whenever either is
     held.
+
+    The client mirrors this logic in ``matchesDragBinding`` (see
+    ``src/viser/client/src/dragUtils.ts``) to filter at the source
+    before sending a drag-start. Both must agree: the client decides
+    whether to enter drag mode at all; the server decides which
+    registered callbacks fire per phase. Drift = silent missed drags
+    or spurious teardowns.
     """
     if filter_button not in ("any", input.button):
         return False
@@ -196,6 +203,19 @@ class SceneApi:
         ] = {}
         self._handle_from_node_name: dict[str, SceneNodeHandle] = {}
         self._children_from_node_name: dict[str, set[str]] = {}
+        # Tracks handles with an in-flight drag gesture. Populated on
+        # ``phase="start"``, cleared on ``phase="end"``. Lets us dispatch
+        # ``on_drag_end`` even when the user calls ``handle.remove()``
+        # mid-drag (which pops the handle from
+        # ``_handle_from_node_name``); without this the end callback is
+        # silently dropped and per-drag user state leaks. Keyed by
+        # ``(client_id, node_name)`` because two clients can drag the
+        # same node concurrently — keying by name alone would let one
+        # client's start overwrite the other's, and ``end`` from the
+        # first client would pop the wrong entry.
+        self._active_drag_handles: dict[
+            tuple[ClientId, str], SceneNodeHandle
+        ] = {}
 
         self._scene_pointer_cb: (
             Callable[[ScenePointerEvent], None | Coroutine] | None
@@ -235,6 +255,24 @@ class SceneApi:
             _messages.ScenePointerMessage,
             self._handle_scene_pointer_updates,
         )
+
+    def _is_drag_active_for(self, name: str) -> bool:
+        """Whether the named scene node currently has any in-flight drag
+        gesture (from any connected client). Used by ``remove()`` to
+        decide whether to clear ``drag_cb`` immediately or preserve it
+        until the in-flight drag's ``end`` message arrives."""
+        return any(key[1] == name for key in self._active_drag_handles)
+
+    def _drop_active_drags_for_client(self, client_id: ClientId) -> None:
+        """Drop any in-flight drag entries for a disconnecting client.
+        Without this, a client that disconnects mid-drag leaks one
+        ``_active_drag_handles`` entry per dropped drag (the entry pins
+        a ``SceneNodeHandle`` reference, and ``_is_drag_active_for``
+        will return spurious-true for the leaked node name — preventing
+        a future ``remove()`` from clearing its callbacks)."""
+        stale_keys = [k for k in self._active_drag_handles if k[0] == client_id]
+        for k in stale_keys:
+            self._active_drag_handles.pop(k, None)
 
     def _ensure_ancestors_exist(self, name: str) -> None:
         """Create intermediate frame nodes for any missing ancestors of `name`."""
@@ -2728,7 +2766,25 @@ class SceneApi:
         have this issue, so for stateful gestures define your callbacks
         as ``async def`` (with no internal ``await`` s, so each runs
         atomically on the event loop)."""
-        handle = self._handle_from_node_name.get(message.name, None)
+        # On phase="start", look up the handle in the live registry and
+        # remember it. On update/end, prefer the active-drag map so we
+        # can still dispatch even if the node was removed mid-drag — the
+        # user's on_drag_end MUST fire so per-drag state can be released.
+        # The active-drag entry is always cleared on ``end``, even when
+        # dispatch falls through.
+        active_key = (client_id, message.name)
+        if message.phase == "start":
+            handle = self._handle_from_node_name.get(message.name, None)
+            if handle is not None and isinstance(
+                handle, _RaycastSupportedSceneNodeHandle
+            ):
+                self._active_drag_handles[active_key] = handle
+        else:
+            handle = self._active_drag_handles.get(
+                active_key
+            ) or self._handle_from_node_name.get(message.name, None)
+        if message.phase == "end":
+            self._active_drag_handles.pop(active_key, None)
         if handle is None or not isinstance(handle, _RaycastSupportedSceneNodeHandle):
             return
 
@@ -2752,8 +2808,6 @@ class SceneApi:
             start_screen_pos=message.start_screen_pos,
             end_position=message.end_position,
             end_screen_pos=message.end_screen_pos,
-            end_ray_origin=message.end_ray_origin,
-            end_ray_direction=message.end_ray_direction,
             button=message.button,
             ctrl=message.ctrl,
             meta=message.meta,

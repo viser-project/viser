@@ -7,7 +7,6 @@
 import * as THREE from "three";
 import { ViewerContextContents } from "./ViewerContext";
 import { SceneNodeMessage } from "./WebsocketMessages";
-import { pointToViserCoords, rayToViserCoords } from "./WorldTransformUtils";
 import { normalizeScale } from "./utils/normalizeScale";
 
 /** Wire-format drag-input filter that the server registers for a node.
@@ -39,7 +38,14 @@ export function pointerButtonFromNative(native: number): PointerButton | null {
 /** Match an input against a registered DragBinding. ``modifiers=null`` is a
  * wildcard; otherwise the listed modifiers must be held and any others
  * must not be. ``"cmd/ctrl"`` treats Ctrl and Cmd (meta) as interchangeable
- * — matches whenever either is held. */
+ * — matches whenever either is held.
+ *
+ * The server mirrors this in ``_drag_input_matches_filter`` (see
+ * ``src/viser/_scene_api.py``). The client filters at the source —
+ * if no binding matches the input, no drag-start is sent — and the
+ * server filters per registered callback to dispatch only to the
+ * ones whose binding matched the input. Both must agree; drift =
+ * silent missed drags or spurious teardowns. */
 export function matchesDragBinding(
   binding: DragBinding,
   input: DragInput,
@@ -64,29 +70,6 @@ export function anyBindingMatches(
   return bindings.some((b) => matchesDragBinding(b, input));
 }
 
-/** Convert a Three.js world-space point to viser coords as a 3-tuple. */
-export function pointToViserTuple(
-  viewer: ViewerContextContents,
-  pointThreeWorld: THREE.Vector3,
-): [number, number, number] {
-  const v = pointToViserCoords(viewer, pointThreeWorld);
-  return [v.x, v.y, v.z];
-}
-
-/** Convert a Three.js world-space ray to viser coords as a pair of 3-tuples. */
-export function rayToViserTuples(
-  viewer: ViewerContextContents,
-  ray: THREE.Ray,
-): {
-  origin: [number, number, number];
-  direction: [number, number, number];
-} {
-  const r = rayToViserCoords(viewer, ray);
-  return {
-    origin: [r.origin.x, r.origin.y, r.origin.z],
-    direction: [r.direction.x, r.direction.y, r.direction.z],
-  };
-}
 
 // ============================================================================
 // Active-drag state shape + batched-pose math.
@@ -94,8 +77,8 @@ export function rayToViserTuples(
 
 /** State of an in-progress drag, owned by ``DragLayer``. Refs into
  * scene/three.js objects (targetObj, cameraControl) are captured at
- * drag-start; mutable fields (``endPointWorld``, ``endRay``,
- * ``endPointerXy``) are updated in place on every pointermove. */
+ * drag-start; mutable fields (``endPointWorld``, ``endPointerXy``)
+ * are updated in place on every pointermove. */
 export type ActiveDragState = {
   nodeName: string;
   /** Frozen at drag-start. Non-null for batched scene nodes (meshes,
@@ -120,11 +103,9 @@ export type ActiveDragState = {
   /** Latest pointer-ray hit point on the drag plane, in Three world
    * coords. Updated on every pointermove (and at end). */
   endPointWorld: THREE.Vector3;
-  /** Latest pointer ray (camera origin + direction toward cursor) in
-   * Three world coords. Updated on every pointermove (and at end). */
-  endRay: THREE.Ray;
   /** Latest pointer pixel coordinates relative to the canvas. Used to
-   * compute ``end_screen_pos`` and (re)solve the pointer ray. */
+   * compute ``end_screen_pos`` and re-cast the pointer ray each
+   * pointermove. */
   endPointerXy: [number, number];
   input: DragInput;
   /** Camera-control instance captured at drag-start, so we re-enable the

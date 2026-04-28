@@ -1027,7 +1027,6 @@ export function SceneNodeThreeObject(props: { name: string }) {
                         : computeClickInstanceIndexFromInstanceId(e.instanceId),
                     targetObj: objRef.current,
                     eventPoint: e.point,
-                    eventRay: e.ray,
                     pointerXy: [pointerX, pointerY],
                     pointerId: e.nativeEvent.pointerId,
                     input,

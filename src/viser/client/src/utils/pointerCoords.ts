@@ -61,6 +61,9 @@ export function opencvXyFromPointerXy(
   viewer: ViewerContextContents,
   xy: [number, number],
 ): THREE.Vector2 {
+  // Returns a fresh Vector2 — callers like ``App.tsx`` (rect-select)
+  // call this twice in a row and use both results, so a shared scratch
+  // would alias. The 1 alloc/call is acceptable on the drag path.
   const mouseVector = new THREE.Vector2();
   mouseVector.x = (xy[0] + 0.5) / viewer.mutable.current.canvas!.clientWidth;
   mouseVector.y = (xy[1] + 0.5) / viewer.mutable.current.canvas!.clientHeight;

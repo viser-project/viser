@@ -1417,10 +1417,7 @@ class SceneNodeDragMessage(Message, include_in_scene_serialization=False):
     All position/screen fields are *live* — recomputed on every
     start/update/end. ``start_*`` tracks the original click point as it
     moves with the object (the grab point); ``end_*`` tracks the current
-    pointer cast onto the camera-aligned drag plane. The original click
-    ray is not preserved (a synthesized "frozen origin + live direction"
-    ray would be physically meaningless), so only the live pointer ray
-    is sent on the ``end_`` side."""
+    pointer projected onto the camera-aligned drag plane."""
 
     phase: _DragPhase
     name: str
@@ -1436,10 +1433,6 @@ class SceneNodeDragMessage(Message, include_in_scene_serialization=False):
     """Current pointer projected onto the drag plane, in world coords."""
     end_screen_pos: Tuple[float, float]
     """Current pointer in OpenCV screen-space coordinates."""
-    end_ray_origin: Tuple[float, float, float]
-    """Origin of the live pointer ray, in world coords."""
-    end_ray_direction: Tuple[float, float, float]
-    """Direction of the live pointer ray, in world coords."""
     button: Literal["left", "middle", "right"]
     ctrl: bool
     meta: bool

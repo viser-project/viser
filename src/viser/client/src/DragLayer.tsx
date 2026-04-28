@@ -25,6 +25,10 @@ import {
   opencvXyFromPointerXy,
 } from "./utils/pointerCoords";
 import { normalizeScale } from "./utils/normalizeScale";
+import {
+  computeT_threeworld_worldInto,
+  pointToViserCoordsInto,
+} from "./WorldTransformUtils";
 import { useThrottledMessageSender } from "./WebsocketUtils";
 import {
   ActiveDragState,
@@ -34,8 +38,6 @@ import {
   anyBindingMatches,
   computeInstanceWorldMatrix,
   isInstancedMesh2VendoredMessage,
-  pointToViserTuple,
-  rayToViserTuples,
 } from "./dragUtils";
 import { useDragArrow } from "./useDragArrow";
 
@@ -50,7 +52,6 @@ export type BeginDragArgs = {
   instanceIndex: number | null;
   targetObj: THREE.Object3D;
   eventPoint: THREE.Vector3;
-  eventRay: THREE.Ray;
   pointerXy: [number, number];
   /** PointerId of the pointerdown that's starting this drag. Used to
    * filter unrelated pointer events on multi-touch surfaces. */
@@ -77,7 +78,26 @@ export function useDragLayer(): DragLayerApi | null {
 // DragLayer component.
 // =============================================================================
 
+/** In playback / embedded / static viewers ``sendMessage`` is a no-op,
+ * so dragging makes no sense (it would disable camera controls and
+ * swallow left-clicks with nothing on the receiving end). The outer
+ * component branches on ``messageSource`` so the inner
+ * ``DragLayerActive`` component — which installs ``useFrame``,
+ * pointer-event listeners, and per-frame scratches — only mounts when
+ * a live websocket session is connected. */
 export function DragLayer({ children }: { children?: React.ReactNode }) {
+  const viewer = React.useContext(ViewerContext)!;
+  if (viewer.messageSource !== "websocket") {
+    return (
+      <DragLayerContext.Provider value={null}>
+        {children}
+      </DragLayerContext.Provider>
+    );
+  }
+  return <DragLayerActive>{children}</DragLayerActive>;
+}
+
+function DragLayerActive({ children }: { children?: React.ReactNode }) {
   const viewer = React.useContext(ViewerContext)!;
   const viewerMutable = viewer.mutable.current;
   const { raycaster, camera } = useThree();
@@ -99,6 +119,18 @@ export function DragLayer({ children }: { children?: React.ReactNode }) {
         pos: new THREE.Vector3(),
         scale: new THREE.Vector3(),
       } satisfies DragScratches,
+      // Per-buildDragMessage: amortize the viser-coords conversion
+      // across the start + end point. Without these, each point
+      // conversion would allocate a fresh Matrix4 + Quaternion via
+      // ``computeT_threeworld_world`` (4 allocs/message at 20Hz).
+      // ``tWorldQuat`` is a separate Quaternion scratch (vs reusing
+      // ``drag.quat``) so future refactors can't introduce a sequencing
+      // bug between ``computeStartWorld`` and the T_world_threeworld
+      // computation, both of which use a quaternion scratch.
+      tWorldThreeworld: new THREE.Matrix4(),
+      tWorldQuat: new THREE.Quaternion(),
+      viserStart: new THREE.Vector3(),
+      viserEnd: new THREE.Vector3(),
     }),
     [],
   );
@@ -124,7 +156,6 @@ export function DragLayer({ children }: { children?: React.ReactNode }) {
         ) === null
       )
         return false;
-      activeDrag.endRay.copy(raycaster.ray);
       return true;
     },
     [camera, raycaster, viewer, viewerMutable],
@@ -178,15 +209,36 @@ export function DragLayer({ children }: { children?: React.ReactNode }) {
       activeDrag: ActiveDragState,
       phase: "start" | "update" | "end",
     ): SceneNodeDragMessage | null => {
-      // If the live grab point is unavailable (node removed mid-drag,
-      // batched index out of bounds, etc.) we have no honest value for
-      // ``start_position`` — skip the message rather than synthesize a
-      // misleading ``start == end`` payload. The drag will be torn
-      // down by ``stopIfNodeIs`` (called from the unmount path) once
-      // React processes the removal.
-      const startWorld = computeStartWorld(activeDrag, startWorldScratch);
-      if (startWorld === null) return null;
-      const endRayViser = rayToViserTuples(viewer, activeDrag.endRay);
+      // Live grab point. If unavailable (node removed mid-drag,
+      // batched index out of bounds, etc.):
+      //   - For ``start``/``update``: skip — emitting a degenerate
+      //     ``start == end`` would mislead users who diff them.
+      //   - For ``end``: still emit, falling back to ``endPointWorld``
+      //     for ``start_position``. The server-side ``on_drag_end``
+      //     callback MUST fire so users can release per-drag state;
+      //     ``start == end`` here is the documented signal that the
+      //     grab point was lost (target removed, batch shrunk, etc).
+      const liveStart = computeStartWorld(activeDrag, startWorldScratch);
+      const startPointWorld =
+        liveStart ?? (phase === "end" ? activeDrag.endPointWorld : null);
+      if (startPointWorld === null) return null;
+      // Compute T_world_threeworld once and reuse for both points —
+      // halves Matrix4/Quaternion allocations per drag message.
+      computeT_threeworld_worldInto(
+        viewer,
+        frameScratches.tWorldThreeworld,
+        frameScratches.tWorldQuat,
+      ).invert();
+      const startViser = pointToViserCoordsInto(
+        startPointWorld,
+        frameScratches.tWorldThreeworld,
+        frameScratches.viserStart,
+      );
+      const endViser = pointToViserCoordsInto(
+        activeDrag.endPointWorld,
+        frameScratches.tWorldThreeworld,
+        frameScratches.viserEnd,
+      );
       const endScreenPos = opencvXyFromPointerXy(
         viewer,
         activeDrag.endPointerXy,
@@ -196,12 +248,10 @@ export function DragLayer({ children }: { children?: React.ReactNode }) {
         phase,
         name: activeDrag.nodeName,
         instance_index: activeDrag.instanceIndex,
-        start_position: pointToViserTuple(viewer, startWorld),
-        start_screen_pos: projectToOpenCvScreen(startWorld),
-        end_position: pointToViserTuple(viewer, activeDrag.endPointWorld),
+        start_position: [startViser.x, startViser.y, startViser.z],
+        start_screen_pos: projectToOpenCvScreen(startPointWorld),
+        end_position: [endViser.x, endViser.y, endViser.z],
         end_screen_pos: [endScreenPos.x, endScreenPos.y],
-        end_ray_origin: endRayViser.origin,
-        end_ray_direction: endRayViser.direction,
         button: activeDrag.input.button,
         ctrl: activeDrag.input.ctrl,
         meta: activeDrag.input.meta,
@@ -209,7 +259,13 @@ export function DragLayer({ children }: { children?: React.ReactNode }) {
         alt: activeDrag.input.alt,
       };
     },
-    [computeStartWorld, projectToOpenCvScreen, startWorldScratch, viewer],
+    [
+      computeStartWorld,
+      frameScratches,
+      projectToOpenCvScreen,
+      startWorldScratch,
+      viewer,
+    ],
   );
 
   // Build + send a drag message in one call, no-op if ``buildDragMessage``
@@ -286,7 +342,6 @@ export function DragLayer({ children }: { children?: React.ReactNode }) {
         instanceIndex,
         targetObj,
         eventPoint,
-        eventRay,
         pointerXy,
         pointerId,
         input,
@@ -401,7 +456,6 @@ export function DragLayer({ children }: { children?: React.ReactNode }) {
           // ``end`` collapses onto ``start`` (and the message's start_*
           // / end_* fields agree).
           endPointWorld: startWorld.clone(),
-          endRay: eventRay.clone(),
           endPointerXy: [pointerXy[0], pointerXy[1]],
           input,
           cameraControl: viewerMutable.cameraControl,

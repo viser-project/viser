@@ -344,10 +344,6 @@ class SceneNodeDragEvent(Generic[TSceneNodeHandle]):
     in world coords."""
     end_screen_pos: Tuple[float, float]
     """Current pointer in OpenCV screen-space coordinates."""
-    end_ray_origin: Tuple[float, float, float]
-    """Origin of the live pointer ray, in world coords."""
-    end_ray_direction: Tuple[float, float, float]
-    """Direction of the live pointer ray, in world coords."""
     button: Literal["left", "middle", "right"]
     """Mouse button that initiated the drag."""
     ctrl: bool
@@ -516,6 +512,16 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
                 are exact matches (listed modifiers held, others not).
                 Left-drag on this node intercepts the gesture — the
                 camera only orbits on empty-space drags.
+
+        Note on ordering: drag callbacks fire in three phases per
+        gesture (start → update* → end). Synchronous (``def``)
+        callbacks are submitted to a thread pool fire-and-forget and
+        can run out of order — an ``update`` may begin before
+        ``start`` finishes, leaving any state set in ``start`` (e.g.
+        a captured grab point) ``None`` when ``update`` reads it. To
+        get strict ordering, define your callbacks as ``async def``;
+        async callbacks are awaited on the event loop, which preserves
+        their phase order so long as you don't ``await`` inside them.
         """
         return self._register_drag_callback("start", button, modifier)
 
@@ -633,7 +639,16 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
             self._impl.api._websock_interface.queue_message(
                 _messages.SetSceneNodeClickableMessage(self._impl.name, False)
             )
-        if self._has_any_drag_callbacks():
+        # Preserve drag callbacks if a drag is in flight for this node:
+        # the client will send a final ``phase="end"`` message after it
+        # observes the removal (via ``stopIfNodeIs``), and the user's
+        # ``on_drag_end`` MUST fire so per-drag state can be released.
+        # ``_handle_node_drag`` looks the handle up in the active-drag
+        # registry for non-start phases, so preserving ``drag_cb`` here
+        # keeps the dispatch path alive until end.
+        if self._has_any_drag_callbacks() and not self._impl.api._is_drag_active_for(
+            self._impl.name
+        ):
             for entries in self._impl.drag_cb.values():
                 entries.clear()
             self._sync_drag_bindings()

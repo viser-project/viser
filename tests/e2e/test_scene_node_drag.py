@@ -306,7 +306,11 @@ def test_scene_node_drag_pointer_id_isolation(
         }
         """
     )
-    page.wait_for_timeout(200)
+    # Negative-assertion settle window: long enough that a real
+    # spurious teardown would round-trip (client → server → callback)
+    # under CI load. Round-trip is ~throttle (50ms) + msgpack + WS +
+    # asyncio dispatch ≈ 100-300ms typical, can exceed 500ms loaded.
+    page.wait_for_timeout(800)
     assert not drag_ended.is_set(), (
         "drag_end fired from a stray pointerId — DragLayer didn't filter "
         "by pointer identity"
@@ -340,17 +344,17 @@ def test_scene_node_drag_continues_outside_canvas(
     )
 
     @box.on_drag_start("left", modifier="cmd/ctrl")
-    def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         del event
         drag_started.set()
 
     @box.on_drag_update("left", modifier="cmd/ctrl")
-    def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         with lock:
             update_positions.append(event.end_position)
 
     @box.on_drag_end("left", modifier="cmd/ctrl")
-    def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         del event
         drag_ended.set()
 
@@ -406,8 +410,6 @@ def test_scene_node_drag_batched_axes(
     BatchedAxes uses a stock ``THREE.InstancedMesh`` that emits 3 mesh
     instances per logical axis (one per X/Y/Z cylinder); ``instance_index``
     on the wire is the *logical* axis index, not the raw mesh-instance ID."""
-    import numpy as np
-
     viser_server.initial_camera.position = (0.0, 0.0, 6.0)
     viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
 
@@ -483,12 +485,12 @@ def test_scene_node_drag_start_position_tracks_moving_object(
     )
 
     @box.on_drag_start("left", modifier="cmd/ctrl")
-    def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         del event
         drag_started.set()
 
     @box.on_drag_update("left", modifier="cmd/ctrl")
-    def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         with lock:
             update_events.append(event)
         # Translate the box by the incremental drag vector — this is
@@ -523,8 +525,6 @@ def test_scene_node_drag_start_position_tracks_moving_object(
     # therefore also shift across events. The total shift should be
     # comparable in magnitude to the cursor movement on the drag plane
     # — well above any FP roundoff threshold.
-    import math
-
     first_start = events[0].start_position
     last_start = events[-1].start_position
     shift = math.sqrt(sum((a - b) ** 2 for a, b in zip(last_start, first_start)))
@@ -610,7 +610,7 @@ def test_scene_node_drag_batched_mesh_repeat_after_translate(
     lock = threading.Lock()
 
     @handle.on_drag_start("left", modifier="cmd/ctrl")
-    def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
+    async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
         with lock:
             drag_starts.append(event)
 
@@ -692,7 +692,13 @@ def test_scene_node_drag_batched_mesh_repeat_after_translate(
         f"behavior from a hit at the original position. Adjust new_viser_pos "
         f"or camera distance."
     )
-    _do_drag(page, new_canvas_x, new_canvas_y, dx=20, dy=0)
+    page.keyboard.down("Control")
+    page.mouse.move(new_canvas_x, new_canvas_y)
+    page.mouse.down()
+    page.mouse.move(new_canvas_x + 20, new_canvas_y, steps=4)
+    page.mouse.up()
+    page.keyboard.up("Control")
+    page.wait_for_timeout(300)
 
     with lock:
         second_count = len(drag_starts)
@@ -708,15 +714,150 @@ def test_scene_node_drag_batched_mesh_repeat_after_translate(
     )
 
 
-def _do_drag(page: Page, x: float, y: float, dx: float = 20, dy: float = 0) -> None:
-    """Perform a Ctrl+drag at canvas coords (x, y), moving by (dx, dy)."""
+def test_scene_node_drag_no_spurious_update_before_end(
+    page: Page,
+    viser_server: viser.ViserServer,
+) -> None:
+    """A drag with no mouse motion (mousedown → mouseup at the same
+    pixel) must NOT fire any ``on_drag_update`` callbacks — ``flush()``
+    used to re-emit the last sent message even when nothing was
+    throttled, duplicating the start as a spurious update before end."""
+    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
+
+    drag_started = threading.Event()
+    drag_ended = threading.Event()
+    update_count = [0]
+    lock = threading.Lock()
+
+    box = viser_server.scene.add_box(
+        "/no_motion_box",
+        dimensions=(4.0, 4.0, 0.2),
+        color=(120, 200, 255),
+    )
+
+    @box.on_drag_start("left", modifier="cmd/ctrl")
+    async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        del event
+        drag_started.set()
+
+    @box.on_drag_update("left", modifier="cmd/ctrl")
+    async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        del event
+        with lock:
+            update_count[0] += 1
+
+    @box.on_drag_end("left", modifier="cmd/ctrl")
+    async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        del event
+        drag_ended.set()
+
+    wait_for_connection(page, viser_server.get_port())
+    wait_for_scene_node(page, "/no_motion_box")
+
+    canvas = page.locator("canvas").first
+    canvas_box = canvas.bounding_box()
+    assert canvas_box is not None
+    cx = canvas_box["x"] + canvas_box["width"] / 2
+    cy = canvas_box["y"] + canvas_box["height"] / 2
+
+    # Mouse down at center, then immediately up — no motion in between,
+    # so no pointermove → no throttled update queued.
     page.keyboard.down("Control")
-    page.mouse.move(x, y)
+    page.mouse.move(cx, cy)
     page.mouse.down()
-    page.mouse.move(x + dx, y + dy, steps=4)
+    assert drag_started.wait(timeout=5.0), "drag_start didn't fire"
     page.mouse.up()
     page.keyboard.up("Control")
+    assert drag_ended.wait(timeout=5.0), "drag_end didn't fire"
+
+    # Settle: any in-flight updates would have arrived by now.
     page.wait_for_timeout(300)
+    with lock:
+        count = update_count[0]
+    assert count == 0, (
+        f"expected 0 update callbacks (no mouse motion), got {count}. "
+        f"flush() likely re-sent the last message even though nothing "
+        f"was throttled, materializing a spurious update before end."
+    )
+
+
+def test_scene_node_drag_end_fires_when_node_removed_midflight(
+    page: Page,
+    viser_server: viser.ViserServer,
+) -> None:
+    """If the dragged node is removed from the server scene mid-drag,
+    the server's ``on_drag_end`` callback must still fire so user code
+    can release per-drag state (otherwise it leaks). Previously, when
+    the live grab point was unavailable ``buildDragMessage`` returned
+    null and the end message was silently dropped."""
+    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
+
+    drag_started = threading.Event()
+    drag_ended = threading.Event()
+
+    box = viser_server.scene.add_box(
+        "/disappearing_box",
+        dimensions=(4.0, 4.0, 0.2),
+        color=(255, 100, 100),
+    )
+
+    @box.on_drag_start("left", modifier="cmd/ctrl")
+    async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        del event
+        drag_started.set()
+
+    @box.on_drag_end("left", modifier="cmd/ctrl")
+    async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        del event
+        drag_ended.set()
+
+    wait_for_connection(page, viser_server.get_port())
+    wait_for_scene_node(page, "/disappearing_box")
+
+    canvas = page.locator("canvas").first
+    canvas_box = canvas.bounding_box()
+    assert canvas_box is not None
+    cx = canvas_box["x"] + canvas_box["width"] / 2
+    cy = canvas_box["y"] + canvas_box["height"] / 2
+
+    # Begin a drag, then remove the scene node mid-gesture. The end
+    # callback must fire from the *removal* path (client's
+    # ``stopIfNodeIs`` triggered by the visibility loss) — NOT from a
+    # subsequent ``mouse.up()``, which would mask a regression in the
+    # remove-driven teardown. We assert ``drag_ended.wait`` succeeds
+    # BEFORE releasing the mouse; only after that do we clean up the
+    # pointer state.
+    page.keyboard.down("Control")
+    page.mouse.move(cx, cy)
+    page.mouse.down()
+    assert drag_started.wait(timeout=5.0)
+
+    page.mouse.move(cx + 50, cy + 20, steps=5)
+    page.wait_for_timeout(150)
+    box.remove()
+
+    assert drag_ended.wait(timeout=5.0), (
+        "drag_end did not fire after the dragged node was removed mid-drag — "
+        "client likely dropped the end message because the live grab point "
+        "was unavailable, leaking per-drag state on the server. (The mouse "
+        "is still held down at this point — if the end fires only after "
+        "mouseup, this assertion catches that the remove path didn't fire)"
+    )
+
+    # Now release the pointer so the test cleans up cleanly.
+    page.mouse.up()
+    page.keyboard.up("Control")
+
+
+# Note: end-to-end coverage of "DragLayer disabled in embed/playback
+# mode" is awkward — verifying the user-visible outcome (camera
+# falls through, no callbacks fire) requires a separate fixture for
+# embed mode AND a related fix in SceneTree's onPointerDown handler
+# (which currently always ``stopPropagation`` for any node with
+# ``interactive = clickable || draggable``, blocking the camera even
+# when ``DragLayer`` exposes a null api). Tracked as future work.
 
 
 def test_scene_node_drag_callback_removal(
@@ -761,7 +902,10 @@ def test_scene_node_drag_callback_removal(
     wait_for_scene_node(page, "/removed_drag_box")
 
     _perform_modifier_drag(page, "Control")
-    page.wait_for_timeout(500)
+    # Negative-assertion settle window: if any callback were going to
+    # fire, it would have round-tripped (client → server → callback)
+    # within this window even under CI load.
+    page.wait_for_timeout(1000)
 
     assert not drag_started.is_set()
     assert not drag_updated.is_set()

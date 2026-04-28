@@ -1500,10 +1500,7 @@ export interface SceneNodeClickMessage {
  * All position/screen fields are *live* — recomputed on every
  * start/update/end. ``start_*`` tracks the original click point as it
  * moves with the object (the grab point); ``end_*`` tracks the current
- * pointer cast onto the camera-aligned drag plane. The original click
- * ray is not preserved (a synthesized "frozen origin + live direction"
- * ray would be physically meaningless), so only the live pointer ray
- * is sent on the ``end_`` side.
+ * pointer projected onto the camera-aligned drag plane.
  *
  * (automatically generated)
  */
@@ -1516,8 +1513,6 @@ export interface SceneNodeDragMessage {
   start_screen_pos: [number, number];
   end_position: [number, number, number];
   end_screen_pos: [number, number];
-  end_ray_origin: [number, number, number];
-  end_ray_direction: [number, number, number];
   button: "left" | "middle" | "right";
   ctrl: boolean;
   meta: boolean;

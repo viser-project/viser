@@ -827,6 +827,13 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                     return
 
                 handle = self._connected_clients.pop(conn.client_id)
+                # Drop any in-flight drag entries for this client; the
+                # corresponding ``phase="end"`` will never arrive, so
+                # without this the active-drag map leaks an entry per
+                # dropped drag.
+                self.scene._drop_active_drags_for_client(
+                    cast(infra.ClientId, conn.client_id)
+                )
                 for cb in self._client_disconnect_cb:
                     if asyncio.iscoroutinefunction(cb):
                         await cb(handle)

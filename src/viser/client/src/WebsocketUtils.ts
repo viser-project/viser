@@ -56,7 +56,13 @@ export function makeThrottledMessageSender(
   function flush() {
     const viewerMutable = viewer.mutable.current;
     if (viewerMutable.sendMessage === null) return;
-    if (latestMessage !== null) {
+    // Only emit if there's a *deferred* update pending (``stale``).
+    // ``latestMessage`` is always the most-recent message handed to
+    // ``send``, including ones that already went out — without the
+    // ``stale`` gate, ``flush`` would re-send the latest message even
+    // when nothing was throttled, duplicating the previous update
+    // before a follow-up ``end`` message.
+    if (latestMessage !== null && stale) {
       viewer.mutable.current.sendMessage(latestMessage);
       latestMessage = null;
       stale = false;
