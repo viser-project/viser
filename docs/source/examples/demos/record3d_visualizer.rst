@@ -92,6 +92,13 @@ Code
                "FPS options", ("10", "20", "30", "60")
            )
    
+       # Use spacebar to toggle play/pause.
+       play_pause = server.gui.add_command(label="Toggle Play / Pause", hotkey="space")
+   
+       @play_pause.on_trigger
+       def _(_) -> None:
+           gui_playing.value = not gui_playing.value
+   
        # Frame step buttons.
        @gui_next_frame.on_click
        def _(_) -> None:

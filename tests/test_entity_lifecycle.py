@@ -6,7 +6,6 @@ from unittest.mock import patch
 import viser
 import viser._client_autobuild
 
-
 # ---------------------------------------------------------------------------
 # GUI components
 # ---------------------------------------------------------------------------

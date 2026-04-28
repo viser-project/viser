@@ -20,7 +20,8 @@ from typing_extensions import Literal, deprecated
 from . import _client_autobuild, _messages, infra
 from . import transforms as tf
 from ._backwards_compat_shims import DeprecatedAttributeShim
-from ._gui_api import GuiApi, LiteralColor, _make_uuid
+from ._gui_api import GuiApi, LiteralColor
+from ._gui_handles import _make_uuid
 from ._notification_handle import NotificationHandle, _NotificationHandleState
 from ._scene_api import SceneApi, cast_vector
 from ._threadpool_exceptions import print_threadpool_errors
@@ -826,6 +827,13 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                     return
 
                 handle = self._connected_clients.pop(conn.client_id)
+                # Drop any in-flight drag entries for this client; the
+                # corresponding ``phase="end"`` will never arrive, so
+                # without this the active-drag map leaks an entry per
+                # dropped drag.
+                self.scene._drop_active_drags_for_client(
+                    cast(infra.ClientId, conn.client_id)
+                )
                 for cb in self._client_disconnect_cb:
                     if asyncio.iscoroutinefunction(cb):
                         await cb(handle)

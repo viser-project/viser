@@ -601,8 +601,9 @@ class GuiApi:
             label: Label displayed in the command palette.
             description: Optional description displayed below the label.
             hotkey: Optional hotkey binding. Can be a single key like ``"K"``
-                or a tuple with modifiers like ``("mod", "shift", "R")``.
-                ``mod`` maps to Cmd on macOS and Ctrl on other platforms.
+                or a tuple with modifiers like ``("cmd/ctrl", "shift", "R")``.
+                ``cmd/ctrl`` matches whenever either Cmd or Ctrl is held
+                (same as drag bindings).
             icon: Optional icon to display next to the command label.
             disabled: If True, the command is visible but not triggerable.
 

@@ -1468,6 +1468,21 @@ export interface SetSceneNodeClickableMessage {
   name: string;
   clickable: boolean;
 }
+/** Declare the drag-input combinations a scene node listens for.
+ *
+ * Sent as a full set; empty ``bindings`` means the node is not draggable.
+ *
+ *
+ * (automatically generated)
+ */
+export interface SetSceneNodeDragBindingsMessage {
+  type: "SetSceneNodeDragBindingsMessage";
+  name: string;
+  bindings: {
+    button: "left" | "middle" | "right" | "any";
+    modifiers: ("cmd/ctrl" | "alt" | "shift")[] | null;
+  }[];
+}
 /** Message for clicked objects.
  *
  * (automatically generated)
@@ -1479,6 +1494,30 @@ export interface SceneNodeClickMessage {
   ray_origin: [number, number, number];
   ray_direction: [number, number, number];
   screen_pos: [number, number];
+}
+/** Client -> server message for a scene-node drag (start/update/end).
+ *
+ * All position/screen fields are *live* — recomputed on every
+ * start/update/end. ``start_*`` tracks the original click point as it
+ * moves with the object (the grab point); ``end_*`` tracks the current
+ * pointer projected onto the camera-aligned drag plane.
+ *
+ * (automatically generated)
+ */
+export interface SceneNodeDragMessage {
+  type: "SceneNodeDragMessage";
+  phase: "start" | "update" | "end";
+  name: string;
+  instance_index: number | null;
+  start_position: [number, number, number];
+  start_screen_pos: [number, number];
+  end_position: [number, number, number];
+  end_screen_pos: [number, number];
+  button: "left" | "middle" | "right";
+  ctrl: boolean;
+  meta: boolean;
+  shift: boolean;
+  alt: boolean;
 }
 /** Reset GUI.
  *
@@ -1777,7 +1816,7 @@ export interface RegisterCommandMessage {
       | "asterisk"
       | "slash"
       | [
-          "mod" | "ctrl" | "alt" | "shift",
+          "cmd/ctrl" | "ctrl" | "alt" | "shift",
           (
             | "A"
             | "B"
@@ -1837,8 +1876,8 @@ export interface RegisterCommandMessage {
           ),
         ]
       | [
-          "mod" | "ctrl" | "alt" | "shift",
-          "mod" | "ctrl" | "alt" | "shift",
+          "cmd/ctrl" | "ctrl" | "alt" | "shift",
+          "cmd/ctrl" | "ctrl" | "alt" | "shift",
           (
             | "A"
             | "B"
@@ -2008,7 +2047,9 @@ export type Message =
   | BackgroundImageMessage
   | SetSceneNodeVisibilityMessage
   | SetSceneNodeClickableMessage
+  | SetSceneNodeDragBindingsMessage
   | SceneNodeClickMessage
+  | SceneNodeDragMessage
   | ResetGuiMessage
   | GuiFormSubmitMessage
   | GuiFormDirtyMessage

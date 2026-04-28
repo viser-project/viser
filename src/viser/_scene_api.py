@@ -54,6 +54,7 @@ from ._scene_handles import (
     PointCloudHandle,
     PointLightHandle,
     RectAreaLightHandle,
+    SceneNodeDragEvent,
     SceneNodeHandle,
     SceneNodePointerEvent,
     ScenePointerEvent,
@@ -62,7 +63,8 @@ from ._scene_handles import (
     SpotLightHandle,
     TransformControlsEvent,
     TransformControlsHandle,
-    _ClickableSceneNodeHandle,
+    _DragInput,
+    _RaycastSupportedSceneNodeHandle,
     _TransformControlsState,
 )
 from ._threadpool_exceptions import print_threadpool_errors
@@ -82,6 +84,44 @@ RgbTupleOrArray: TypeAlias = Union[
 ]
 
 NoneOrCoroutine = TypeVar("NoneOrCoroutine", None, Coroutine)
+
+
+def _drag_input_matches_filter(
+    input: _DragInput,
+    filter_button: _messages.DragButton,
+    filter_modifiers: Tuple[_messages._DragModifierAtom, ...] | None,
+) -> bool:
+    """Return whether a drag input matches a registered binding filter.
+
+    ``filter_modifiers=None`` is a wildcard; otherwise the filter is
+    exact-match ("these modifiers held, others not"). ``"cmd/ctrl"`` treats
+    Ctrl and Cmd (meta) as interchangeable — matches whenever either is
+    held.
+
+    The client mirrors this logic in ``matchesDragBinding`` (see
+    ``src/viser/client/src/dragUtils.ts``) to filter at the source
+    before sending a drag-start. Both must agree: the client decides
+    whether to enter drag mode at all; the server decides which
+    registered callbacks fire per phase. Drift = silent missed drags
+    or spurious teardowns.
+    """
+    if filter_button not in ("any", input.button):
+        return False
+    if filter_modifiers is None:
+        return True
+    # filter_modifiers has at most 3 elements (DragModifier literal); using
+    # `in` directly on the tuple avoids per-event allocation.
+    if input.shift != ("shift" in filter_modifiers):
+        return False
+    if input.alt != ("alt" in filter_modifiers):
+        return False
+    if "cmd/ctrl" in filter_modifiers:
+        if not (input.ctrl or input.meta):
+            return False
+    else:
+        if input.ctrl or input.meta:
+            return False
+    return True
 
 
 def _encode_rgb(rgb: RgbTupleOrArray) -> tuple[int, int, int]:
@@ -163,6 +203,17 @@ class SceneApi:
         ] = {}
         self._handle_from_node_name: dict[str, SceneNodeHandle] = {}
         self._children_from_node_name: dict[str, set[str]] = {}
+        # Tracks handles with an in-flight drag gesture. Populated on
+        # ``phase="start"``, cleared on ``phase="end"``. Lets us dispatch
+        # ``on_drag_end`` even when the user calls ``handle.remove()``
+        # mid-drag (which pops the handle from
+        # ``_handle_from_node_name``); without this the end callback is
+        # silently dropped and per-drag user state leaks. Keyed by
+        # ``(client_id, node_name)`` because two clients can drag the
+        # same node concurrently — keying by name alone would let one
+        # client's start overwrite the other's, and ``end`` from the
+        # first client would pop the wrong entry.
+        self._active_drag_handles: dict[tuple[ClientId, str], SceneNodeHandle] = {}
 
         self._scene_pointer_cb: (
             Callable[[ScenePointerEvent], None | Coroutine] | None
@@ -196,9 +247,30 @@ class SceneApi:
             self._handle_node_click_updates,
         )
         self._websock_interface.register_handler(
+            _messages.SceneNodeDragMessage, self._handle_node_drag
+        )
+        self._websock_interface.register_handler(
             _messages.ScenePointerMessage,
             self._handle_scene_pointer_updates,
         )
+
+    def _is_drag_active_for(self, name: str) -> bool:
+        """Whether the named scene node currently has any in-flight drag
+        gesture (from any connected client). Used by ``remove()`` to
+        decide whether to clear ``drag_cb`` immediately or preserve it
+        until the in-flight drag's ``end`` message arrives."""
+        return any(key[1] == name for key in self._active_drag_handles)
+
+    def _drop_active_drags_for_client(self, client_id: ClientId) -> None:
+        """Drop any in-flight drag entries for a disconnecting client.
+        Without this, a client that disconnects mid-drag leaks one
+        ``_active_drag_handles`` entry per dropped drag (the entry pins
+        a ``SceneNodeHandle`` reference, and ``_is_drag_active_for``
+        will return spurious-true for the leaked node name — preventing
+        a future ``remove()`` from clearing its callbacks)."""
+        stale_keys = [k for k in self._active_drag_handles if k[0] == client_id]
+        for k in stale_keys:
+            self._active_drag_handles.pop(k, None)
 
     def _ensure_ancestors_exist(self, name: str) -> None:
         """Create intermediate frame nodes for any missing ancestors of `name`."""
@@ -2663,12 +2735,84 @@ class SceneApi:
                 client=self._get_client_handle(client_id),
                 client_id=client_id,
                 event="click",
-                target=cast(_ClickableSceneNodeHandle, handle),
+                target=cast(_RaycastSupportedSceneNodeHandle, handle),
                 ray_origin=message.ray_origin,
                 ray_direction=message.ray_direction,
                 screen_pos=message.screen_pos,
                 instance_index=message.instance_index,
             )
+            if asyncio.iscoroutinefunction(cb):
+                await cb(event)
+            else:
+                self._thread_executor.submit(cb, event).add_done_callback(
+                    print_threadpool_errors
+                )
+
+    async def _handle_node_drag(
+        self,
+        client_id: ClientId,
+        message: _messages.SceneNodeDragMessage,
+    ) -> None:
+        """Dispatch a scene-node drag start/update/end message to matching
+        callbacks.
+
+        Note on ordering: sync callbacks are submitted to a thread pool
+        fire-and-forget, so two drags messages dispatched back-to-back
+        (e.g. start + update) can race — the update's callback may run
+        before the start's callback finishes, leaving user state
+        half-initialized. Async callbacks are awaited in order and don't
+        have this issue, so for stateful gestures define your callbacks
+        as ``async def`` (with no internal ``await`` s, so each runs
+        atomically on the event loop)."""
+        # On phase="start", look up the handle in the live registry and
+        # remember it. On update/end, prefer the active-drag map so we
+        # can still dispatch even if the node was removed mid-drag — the
+        # user's on_drag_end MUST fire so per-drag state can be released.
+        # The active-drag entry is always cleared on ``end``, even when
+        # dispatch falls through.
+        active_key = (client_id, message.name)
+        if message.phase == "start":
+            handle = self._handle_from_node_name.get(message.name, None)
+            if handle is not None and isinstance(
+                handle, _RaycastSupportedSceneNodeHandle
+            ):
+                self._active_drag_handles[active_key] = handle
+        else:
+            handle = self._active_drag_handles.get(
+                active_key
+            ) or self._handle_from_node_name.get(message.name, None)
+        if message.phase == "end":
+            self._active_drag_handles.pop(active_key, None)
+        if handle is None or not isinstance(handle, _RaycastSupportedSceneNodeHandle):
+            return
+
+        input = _DragInput(
+            button=message.button,
+            ctrl=message.ctrl,
+            meta=message.meta,
+            shift=message.shift,
+            alt=message.alt,
+        )
+        matching = handle._dispatch_drag(message.phase, input)
+        if not matching:
+            return
+
+        event = SceneNodeDragEvent(
+            client=self._get_client_handle(client_id),
+            client_id=client_id,
+            target=cast(_RaycastSupportedSceneNodeHandle, handle),
+            instance_index=message.instance_index,
+            start_position=message.start_position,
+            start_screen_pos=message.start_screen_pos,
+            end_position=message.end_position,
+            end_screen_pos=message.end_screen_pos,
+            button=message.button,
+            ctrl=message.ctrl,
+            meta=message.meta,
+            shift=message.shift,
+            alt=message.alt,
+        )
+        for cb in matching:
             if asyncio.iscoroutinefunction(cb):
                 await cb(event)
             else:
@@ -2822,7 +2966,7 @@ class SceneApi:
         """
 
         # Avoids circular import.
-        from ._gui_api import _make_uuid
+        from ._gui_handles import _make_uuid
 
         # New name to make the type checker happy; ViserServer and ClientHandle inherit
         # from both GuiApi and MessageApi. The pattern below is unideal.

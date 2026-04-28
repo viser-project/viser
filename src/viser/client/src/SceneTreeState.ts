@@ -1,6 +1,7 @@
 import React from "react";
 import * as THREE from "three";
 import { SceneNodeMessage } from "./WebsocketMessages";
+import { DragBinding } from "./dragUtils";
 import { createKeyedStore, KeyedStore } from "./store";
 import { NodePoseDataMap } from "./ViewerContext";
 
@@ -8,6 +9,7 @@ export type SceneNode = {
   message: SceneNodeMessage;
   children: string[];
   clickable: boolean;
+  dragBindings: DragBinding[];
   labelVisible?: boolean; // Whether to show the label for this node.
   poseUpdateState?: "updated" | "needsUpdate" | "waitForMakeObject";
   wxyz?: [number, number, number, number];
@@ -39,6 +41,7 @@ function makeRootNodeTemplate(): SceneNode {
     },
     children: ["/WorldAxes"],
     clickable: false,
+    dragBindings: [],
     visibility: true,
     effectiveVisibility: true,
     wxyz: [quat.w, quat.x, quat.y, quat.z],
@@ -62,6 +65,7 @@ function makeWorldAxesNodeTemplate(): SceneNode {
     },
     children: [],
     clickable: false,
+    dragBindings: [],
     visibility: true,
     effectiveVisibility: true,
   };
@@ -95,6 +99,7 @@ function createSceneTreeActions(
           message: message,
           children: existingNode?.children ?? [],
           clickable: existingNode?.clickable ?? false,
+          dragBindings: existingNode?.dragBindings ?? [],
           labelVisible: existingNode?.labelVisible ?? false,
           // Default to true, will be updated when visibility is set
           effectiveVisibility: existingNode?.effectiveVisibility ?? true,

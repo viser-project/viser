@@ -13,8 +13,42 @@ from typing_extensions import Literal, TypeAlias, override
 
 from . import infra, theme, uplot
 
-HotkeyModifier = Literal["mod", "ctrl", "alt", "shift"]
-"""A modifier key for hotkey bindings. ``mod`` maps to Cmd on macOS and Ctrl elsewhere."""
+HotkeyModifier = Literal["cmd/ctrl", "ctrl", "alt", "shift"]
+"""A modifier key for hotkey bindings. ``cmd/ctrl`` matches whenever either
+Cmd or Ctrl is held — same OR semantics as drag bindings, so one rule
+covers both APIs. ``ctrl`` specifically requires Ctrl (not Cmd)."""
+
+_DragModifierAtom = Literal["cmd/ctrl", "alt", "shift"]
+"""Internal: a single modifier key, as stored in the wire-level
+:class:`DragBinding.modifiers` tuple. Public API uses :data:`DragModifier`
+(a composed-Literal of ``"+"``-separated strings) instead."""
+
+DragModifier = Literal[
+    "",
+    "cmd/ctrl",
+    "alt",
+    "shift",
+    "cmd/ctrl+alt",
+    "cmd/ctrl+shift",
+    "alt+shift",
+    "cmd/ctrl+alt+shift",
+]
+"""Scene-node drag modifier filter.
+
+One canonical string per modifier combination. ``""`` means "no modifiers
+held at all"; ``"cmd/ctrl+shift"`` means "both cmd/ctrl and shift held,
+nothing else". Order within the string is canonical
+(``cmd/ctrl → alt → shift``) — non-canonical orderings like
+``"shift+cmd/ctrl"`` type-check-fail, though the runtime parser will
+accept them (it canonicalizes internally).
+
+``cmd/ctrl`` matches whenever either Cmd or Ctrl is held — users who
+need to distinguish can read ``event.ctrl`` / ``event.meta`` inside the
+callback. Pass ``None`` (not a member of this Literal) for "any modifier
+state" wildcard matching."""
+
+DragButton = Literal["left", "middle", "right", "any"]
+"""Mouse button that triggers a scene-node drag. ``any`` matches left/middle/right."""
 
 HotkeyKey = Literal[
     # Letters.
@@ -88,8 +122,8 @@ Hotkey: TypeAlias = Union[
 Examples::
 
     hotkey: Hotkey = "K"
-    hotkey: Hotkey = ("mod", "K")
-    hotkey: Hotkey = ("mod", "shift", "R")
+    hotkey: Hotkey = ("cmd/ctrl", "K")
+    hotkey: Hotkey = ("cmd/ctrl", "shift", "R")
 """
 
 
@@ -1337,6 +1371,36 @@ class SetSceneNodeClickableMessage(Message, include_in_scene_serialization=True)
     clickable: bool
 
 
+@dataclasses.dataclass(frozen=True)
+class DragBinding:
+    """A drag input combination: button + required modifier set.
+
+    ``modifiers=None`` is a wildcard (any modifier state matches). A tuple
+    encodes an exact-match set: modifiers listed must be held, others must
+    not be held.
+    """
+
+    button: DragButton
+    modifiers: Optional[Tuple[_DragModifierAtom, ...]]
+
+
+@dataclasses.dataclass
+class SetSceneNodeDragBindingsMessage(Message, include_in_scene_serialization=False):
+    """Declare the drag-input combinations a scene node listens for.
+
+    Sent as a full set; empty ``bindings`` means the node is not draggable.
+
+    Excluded from scene serialization: drag bindings are interaction state
+    (callbacks live on the server, the client's ``DragLayer`` is null in
+    static/embed/playback mode), so persisting them into ``.viser`` files
+    would just make exported nodes look draggable while no callback can
+    ever fire.
+    """
+
+    name: str
+    bindings: Tuple[DragBinding, ...]
+
+
 @dataclasses.dataclass
 class SceneNodeClickMessage(Message, include_in_scene_serialization=False):
     """Message for clicked objects."""
@@ -1347,6 +1411,39 @@ class SceneNodeClickMessage(Message, include_in_scene_serialization=False):
     ray_origin: Tuple[float, float, float]
     ray_direction: Tuple[float, float, float]
     screen_pos: Tuple[float, float]
+
+
+_DragPhase: TypeAlias = Literal["start", "update", "end"]
+
+
+@dataclasses.dataclass
+class SceneNodeDragMessage(Message, include_in_scene_serialization=False):
+    """Client -> server message for a scene-node drag (start/update/end).
+
+    All position/screen fields are *live* — recomputed on every
+    start/update/end. ``start_*`` tracks the original click point as it
+    moves with the object (the grab point); ``end_*`` tracks the current
+    pointer projected onto the camera-aligned drag plane."""
+
+    phase: _DragPhase
+    name: str
+    instance_index: Optional[int]
+    """Instance index when the drag target is a batched scene node (e.g.
+    batched meshes, batched GLBs, batched axes). ``None`` for
+    non-batched nodes."""
+    start_position: Tuple[float, float, float]
+    """Live world-coords position of the click point on the object."""
+    start_screen_pos: Tuple[float, float]
+    """Live OpenCV screen-space projection of the click point."""
+    end_position: Tuple[float, float, float]
+    """Current pointer projected onto the drag plane, in world coords."""
+    end_screen_pos: Tuple[float, float]
+    """Current pointer in OpenCV screen-space coordinates."""
+    button: Literal["left", "middle", "right"]
+    ctrl: bool
+    meta: bool
+    shift: bool
+    alt: bool
 
 
 @dataclasses.dataclass
@@ -2141,7 +2238,7 @@ class CommandProps:
     description: Optional[str]
     """Description displayed below the label."""
     hotkey: Optional[Hotkey]
-    """Hotkey binding, e.g. ``"K"`` or ``("mod", "shift", "R")``."""
+    """Hotkey binding, e.g. ``"K"`` or ``("cmd/ctrl", "shift", "R")``."""
     _icon_html: Optional[str]
     """(Private) HTML string for the icon to be displayed on the command."""
     disabled: bool

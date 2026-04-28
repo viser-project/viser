@@ -29,7 +29,12 @@ import { useDisclosure } from "@mantine/hooks";
 // Local imports.
 import { SynchronizedCameraControls } from "./CameraControls";
 import { SceneNodeThreeObject } from "./SceneTree";
+import { DragLayer } from "./DragLayer";
 import { shallowArrayEqual } from "./utils/shallowArrayEqual";
+import {
+  ndcFromPointerXy,
+  opencvXyFromPointerXy,
+} from "./utils/pointerCoords";
 import { ViewerContext, ViewerContextContents } from "./ViewerContext";
 import ControlPanel from "./ControlPanel/ControlPanel";
 import { useGuiState } from "./ControlPanel/GuiState";
@@ -85,43 +90,6 @@ const hdriPresets: Record<string, string> = {
 };
 
 // ======= Utility functions =======
-
-/** Turn a click event into a normalized device coordinate (NDC) vector.
- * Normalizes click coordinates to be between -1 and 1, with (0, 0) being the center of the screen.
- *
- * Returns null if input is not valid.
- */
-function ndcFromPointerXy(
-  viewer: ViewerContextContents,
-  xy: [number, number],
-): THREE.Vector2 | null {
-  const mouseVector = new THREE.Vector2();
-  mouseVector.x =
-    2 * ((xy[0] + 0.5) / viewer.mutable.current.canvas!.clientWidth) - 1;
-  mouseVector.y =
-    1 - 2 * ((xy[1] + 0.5) / viewer.mutable.current.canvas!.clientHeight);
-  return mouseVector.x < 1 &&
-    mouseVector.x > -1 &&
-    mouseVector.y < 1 &&
-    mouseVector.y > -1
-    ? mouseVector
-    : null;
-}
-
-/** Turn a click event to normalized OpenCV coordinate (NDC) vector.
- * Normalizes click coordinates to be between (0, 0) as upper-left corner,
- * and (1, 1) as lower-right corner, with (0.5, 0.5) being the center of the screen.
- * Uses offsetX/Y, and clientWidth/Height to get the coordinates.
- */
-function opencvXyFromPointerXy(
-  viewer: ViewerContextContents,
-  xy: [number, number],
-): THREE.Vector2 {
-  const mouseVector = new THREE.Vector2();
-  mouseVector.x = (xy[0] + 0.5) / viewer.mutable.current.canvas!.clientWidth;
-  mouseVector.y = (xy[1] + 0.5) / viewer.mutable.current.canvas!.clientHeight;
-  return mouseVector;
-}
 
 /** Gets default WebSocket server URL based on current window location. */
 const getDefaultServerFromUrl = (): string => {
@@ -593,7 +561,9 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
           <AdaptiveDpr />
           {children}
           <BatchedLabelManager>
-            <SceneNodeThreeObject name="" />
+            <DragLayer>
+              <SceneNodeThreeObject name="" />
+            </DragLayer>
           </BatchedLabelManager>
         </SplatRenderContext>
         <DefaultLights />

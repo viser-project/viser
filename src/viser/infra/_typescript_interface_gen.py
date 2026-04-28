@@ -69,13 +69,13 @@ def _get_ts_type(typ: Type[Any]) -> str:
     if origin_typ is tuple:
         args = get_args(typ)
         if len(args) == 2 and args[1] == ...:
-            return _get_ts_type(args[0]) + "[]"
+            return "(" + _get_ts_type(args[0]) + ")[]"
         else:
             return "[" + ", ".join(map(_get_ts_type, args)) + "]"
     elif origin_typ is list:
         args = get_args(typ)
         assert len(args) == 1
-        return _get_ts_type(args[0]) + "[]"
+        return "(" + _get_ts_type(args[0]) + ")[]"
     elif origin_typ is dict:
         args = get_args(typ)
         assert len(args) == 2
@@ -96,13 +96,6 @@ def _get_ts_type(typ: Type[Any]) -> str:
             )
             + ")"
         )
-    elif origin_typ is list:
-        args = get_args(typ)
-        return _get_ts_type(args[0]) + "[]"
-    elif origin_typ is dict:
-        args = get_args(typ)
-        assert len(args) == 2
-        return "{ [key: " + _get_ts_type(args[0]) + "]: " + _get_ts_type(args[1]) + " }"
     elif is_typeddict(typ) or dataclasses.is_dataclass(typ):
         hints = get_type_hints(typ)
         if dataclasses.is_dataclass(typ):
