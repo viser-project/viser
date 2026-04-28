@@ -213,9 +213,7 @@ class SceneApi:
         # same node concurrently — keying by name alone would let one
         # client's start overwrite the other's, and ``end`` from the
         # first client would pop the wrong entry.
-        self._active_drag_handles: dict[
-            tuple[ClientId, str], SceneNodeHandle
-        ] = {}
+        self._active_drag_handles: dict[tuple[ClientId, str], SceneNodeHandle] = {}
 
         self._scene_pointer_cb: (
             Callable[[ScenePointerEvent], None | Coroutine] | None
