@@ -537,6 +537,9 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
     ]:
         """Attach a callback for when dragging starts.
 
+        (Experimental) Scene-node drag callbacks may change in future
+        releases.
+
         Args:
             button: Mouse button that triggers the drag. One of
                 ``"left" | "middle" | "right" | "any"``.
@@ -569,7 +572,10 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         [Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine]],
         Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
     ]:
-        """Attach a callback for drag updates. See :meth:`on_drag_start` for argument docs."""
+        """Attach a callback for drag updates. See :meth:`on_drag_start` for argument docs.
+
+        (Experimental) Scene-node drag callbacks may change in future
+        releases."""
         return self._register_drag_callback("update", button, modifier)
 
     def on_drag_end(
@@ -581,7 +587,10 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         [Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine]],
         Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
     ]:
-        """Attach a callback for when dragging ends. See :meth:`on_drag_start` for argument docs."""
+        """Attach a callback for when dragging ends. See :meth:`on_drag_start` for argument docs.
+
+        (Experimental) Scene-node drag callbacks may change in future
+        releases."""
         return self._register_drag_callback("end", button, modifier)
 
     def _remove_drag_callback(

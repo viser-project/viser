@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import io
 import time
 import warnings
@@ -203,17 +204,23 @@ class SceneApi:
         ] = {}
         self._handle_from_node_name: dict[str, SceneNodeHandle] = {}
         self._children_from_node_name: dict[str, set[str]] = {}
-        # Tracks handles with an in-flight drag gesture. Populated on
-        # ``phase="start"``, cleared on ``phase="end"``. Lets us dispatch
-        # ``on_drag_end`` even when the user calls ``handle.remove()``
-        # mid-drag (which pops the handle from
-        # ``_handle_from_node_name``); without this the end callback is
-        # silently dropped and per-drag user state leaks. Keyed by
-        # ``(client_id, node_name)`` because two clients can drag the
-        # same node concurrently — keying by name alone would let one
-        # client's start overwrite the other's, and ``end`` from the
-        # first client would pop the wrong entry.
-        self._active_drag_handles: dict[tuple[ClientId, str], SceneNodeHandle] = {}
+        # Tracks handles with an in-flight drag gesture, plus the last
+        # message we processed for that drag. Populated on
+        # ``phase="start"``, refreshed on ``phase="update"``, cleared on
+        # ``phase="end"``. Lets us dispatch ``on_drag_end`` even when
+        # the user calls ``handle.remove()`` mid-drag (which pops the
+        # handle from ``_handle_from_node_name``) and when a client
+        # disconnects mid-drag (where the ``end`` message never
+        # arrives) — see ``_drop_active_drags_for_client``. Without
+        # this the end callback is silently dropped and per-drag user
+        # state leaks. Keyed by ``(client_id, node_name)`` because two
+        # clients can drag the same node concurrently — keying by name
+        # alone would let one client's start overwrite the other's,
+        # and ``end`` from the first client would pop the wrong entry.
+        self._active_drag_handles: dict[
+            tuple[ClientId, str],
+            tuple[_RaycastSupportedSceneNodeHandle, _messages.SceneNodeDragMessage],
+        ] = {}
 
         self._scene_pointer_cb: (
             Callable[[ScenePointerEvent], None | Coroutine] | None
@@ -261,16 +268,25 @@ class SceneApi:
         until the in-flight drag's ``end`` message arrives."""
         return any(key[1] == name for key in self._active_drag_handles)
 
-    def _drop_active_drags_for_client(self, client_id: ClientId) -> None:
-        """Drop any in-flight drag entries for a disconnecting client.
-        Without this, a client that disconnects mid-drag leaks one
-        ``_active_drag_handles`` entry per dropped drag (the entry pins
-        a ``SceneNodeHandle`` reference, and ``_is_drag_active_for``
-        will return spurious-true for the leaked node name — preventing
-        a future ``remove()`` from clearing its callbacks)."""
+    async def _drop_active_drags_for_client(self, client_id: ClientId) -> None:
+        """Drop any in-flight drag entries for a disconnecting client,
+        synthesizing a ``phase="end"`` event so user state allocated in
+        ``on_drag_start`` can be released. Without this, a mid-drag
+        disconnect both leaks the ``_active_drag_handles`` entry (the
+        entry pins a ``SceneNodeHandle`` reference, and
+        ``_is_drag_active_for`` will return spurious-true for the
+        leaked node name — preventing a future ``remove()`` from
+        clearing its callbacks) and silently skips ``on_drag_end``."""
         stale_keys = [k for k in self._active_drag_handles if k[0] == client_id]
         for k in stale_keys:
-            self._active_drag_handles.pop(k, None)
+            entry = self._active_drag_handles.pop(k, None)
+            if entry is None:
+                continue
+            handle, last_msg = entry
+            # Synthesize an end event using the most recently observed
+            # client-reported positions.
+            synthetic = dataclasses.replace(last_msg, phase="end")
+            await self._dispatch_drag_callbacks(client_id, handle, synthetic)
 
     def _ensure_ancestors_exist(self, name: str) -> None:
         """Create intermediate frame nodes for any missing ancestors of `name`."""
@@ -2765,27 +2781,44 @@ class SceneApi:
         as ``async def`` (with no internal ``await`` s, so each runs
         atomically on the event loop)."""
         # On phase="start", look up the handle in the live registry and
-        # remember it. On update/end, prefer the active-drag map so we
-        # can still dispatch even if the node was removed mid-drag — the
-        # user's on_drag_end MUST fire so per-drag state can be released.
-        # The active-drag entry is always cleared on ``end``, even when
-        # dispatch falls through.
+        # remember it (with the message, so a synthetic end on
+        # disconnect can carry the latest positions). On update, refresh
+        # the stored message. On update/end, prefer the active-drag map
+        # so we can still dispatch even if the node was removed
+        # mid-drag — the user's on_drag_end MUST fire so per-drag state
+        # can be released. The active-drag entry is always cleared on
+        # ``end``, even when dispatch falls through.
         active_key = (client_id, message.name)
+        handle: SceneNodeHandle | None
         if message.phase == "start":
             handle = self._handle_from_node_name.get(message.name, None)
-            if handle is not None and isinstance(
-                handle, _RaycastSupportedSceneNodeHandle
-            ):
-                self._active_drag_handles[active_key] = handle
+            if isinstance(handle, _RaycastSupportedSceneNodeHandle):
+                self._active_drag_handles[active_key] = (handle, message)
         else:
-            handle = self._active_drag_handles.get(
-                active_key
-            ) or self._handle_from_node_name.get(message.name, None)
+            entry = self._active_drag_handles.get(active_key)
+            if entry is not None:
+                handle = entry[0]
+                if message.phase == "update":
+                    self._active_drag_handles[active_key] = (handle, message)
+            else:
+                handle = self._handle_from_node_name.get(message.name, None)
         if message.phase == "end":
             self._active_drag_handles.pop(active_key, None)
-        if handle is None or not isinstance(handle, _RaycastSupportedSceneNodeHandle):
+        if not isinstance(handle, _RaycastSupportedSceneNodeHandle):
             return
 
+        await self._dispatch_drag_callbacks(client_id, handle, message)
+
+    async def _dispatch_drag_callbacks(
+        self,
+        client_id: ClientId,
+        handle: _RaycastSupportedSceneNodeHandle,
+        message: _messages.SceneNodeDragMessage,
+    ) -> None:
+        """Run all matching ``handle`` drag callbacks for ``message``.
+
+        Shared by ``_handle_node_drag`` (live messages) and
+        ``_drop_active_drags_for_client`` (synthetic end on disconnect)."""
         input = _DragInput(
             button=message.button,
             ctrl=message.ctrl,

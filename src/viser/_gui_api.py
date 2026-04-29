@@ -60,6 +60,7 @@ from ._gui_handles import (
     GuiRgbHandle,
     GuiSliderHandle,
     GuiTabGroupHandle,
+    GuiTabHandle,
     GuiTextHandle,
     GuiUploadButtonHandle,
     GuiUplotHandle,
@@ -597,6 +598,9 @@ class GuiApi:
     ) -> CommandHandle:
         """Register a command that can be triggered from the client's command palette.
 
+        (Experimental) The command palette API may change in future
+        releases.
+
         Args:
             label: Label displayed in the command palette.
             description: Optional description displayed below the label.
@@ -711,7 +715,11 @@ class GuiApi:
             A handle that can be used as a context to populate the form.
         """
         # Nested forms would produce invalid HTML on the client (nested
-        # <form> elements are not allowed and the browser flattens them).
+        # <form> elements are not allowed and the browser flattens
+        # them). Walk through folders, tabs, and tab groups — they
+        # share a DOM context with their ancestors. Stop at modals,
+        # which render into a separate React portal where a fresh
+        # <form> is well-formed.
         container = self._get_container_uuid()
         while container != "root":
             parent = self._container_handle_from_uuid.get(container)
@@ -720,11 +728,14 @@ class GuiApi:
                     "Nested forms are not supported: add_form() was called "
                     "inside an existing form's context."
                 )
-            # Only folder-like handles have an _impl.parent_container_id we
-            # can walk. For other container types (modals, tabs), stop.
-            if not isinstance(parent, GuiFolderHandle):
+            if isinstance(parent, GuiModalHandle):
                 break
-            container = parent._impl.parent_container_id
+            if isinstance(parent, GuiTabHandle):
+                container = parent._parent._impl.parent_container_id
+            elif isinstance(parent, (GuiFolderHandle, GuiTabGroupHandle)):
+                container = parent._impl.parent_container_id
+            else:
+                break
 
         form_container_id = _make_uuid()
         order = _apply_default_order(order)

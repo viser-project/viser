@@ -323,6 +323,24 @@ User Interaction
                </div>
            </a>
        </div>
+       <div class="example-card" style="border-radius: 3px; overflow: hidden; background: white; transition: transform 0.2s;">
+           <a href="examples/interaction/scene_node_drag/" style="text-decoration: none; color: inherit; display: block;">
+               <img src="_static/examples/thumbs/03_interaction_06_scene_node_drag.png" alt="Scene-node drag events with rigid-body physics" style="width: 100%; height: auto; aspect-ratio: 16/9; object-fit: cover; display: block;">
+               <div style="padding: 15px;">
+                   <h4 style="margin: 0; padding: 0; font-size: 16px; font-weight: 600; color: #333; margin-bottom: 8px;">Scene-node drag events with rigid-body physics</h4>
+                   <p style="margin: 0; padding: 0; color: #666; font-size: 13px; line-height: 1.4;">The box carries linear and angular velocity (both R^3), both damped.</p>
+               </div>
+           </a>
+       </div>
+       <div class="example-card" style="border-radius: 3px; overflow: hidden; background: white; transition: transform 0.2s;">
+           <a href="examples/interaction/batched_scene_node_drag/" style="text-decoration: none; color: inherit; display: block;">
+               <img src="_static/examples/thumbs/03_interaction_07_batched_scene_node_drag.png" alt="Drag events on batched scene nodes" style="width: 100%; height: auto; aspect-ratio: 16/9; object-fit: cover; display: block;">
+               <div style="padding: 15px;">
+                   <h4 style="margin: 0; padding: 0; font-size: 16px; font-weight: 600; color: #333; margin-bottom: 8px;">Drag events on batched scene nodes</h4>
+                   <p style="margin: 0; padding: 0; color: #666; font-size: 13px; line-height: 1.4;">Batched meshes, batched GLBs, and batched axes render many instances of the same geometry from a single scene node.</p>
+               </div>
+           </a>
+       </div>
    </div>
 
 Demos

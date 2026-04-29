@@ -1128,7 +1128,9 @@ class CommandHandle(AssignablePropsBase[_CommandHandleState], CommandProps):
     """Handle for a command registered in the command palette.
 
     Commands are shown in a command palette (Ctrl/Cmd+K, also Ctrl/Cmd+Shift+P
-    on non-Firefox browsers) and can optionally be triggered via hotkeys."""
+    on non-Firefox browsers) and can optionally be triggered via hotkeys.
+
+    (Experimental) The command palette API may change in future releases."""
 
     def __init__(self, _impl: _CommandHandleState) -> None:
         super().__init__(impl=_impl)

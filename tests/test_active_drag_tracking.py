@@ -15,7 +15,9 @@ is covered by the e2e suite.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Generator, cast
+from unittest.mock import Mock
 
 import pytest
 
@@ -34,6 +36,37 @@ def server() -> Generator[viser.ViserServer, None, None]:
         s.stop()
 
 
+def _drop_active_drags(server: viser.ViserServer, client_id: ClientId) -> None:
+    """Run ``_drop_active_drags_for_client`` on the server's own event
+    loop and block until done. Mirrors how production calls it from
+    the disconnect handler (which already runs on this loop)."""
+    asyncio.run_coroutine_threadsafe(
+        server.scene._drop_active_drags_for_client(client_id),
+        server._event_loop,
+    ).result()
+
+
+def _dummy_drag_msg(
+    name: str, phase: _messages._DragPhase = "start"
+) -> _messages.SceneNodeDragMessage:
+    """Build a placeholder drag message for tests that only need a
+    handle anchored in ``_active_drag_handles``."""
+    return _messages.SceneNodeDragMessage(
+        phase=phase,
+        name=name,
+        instance_index=None,
+        start_position=(0.0, 0.0, 0.0),
+        start_screen_pos=(0.0, 0.0),
+        end_position=(0.0, 0.0, 0.0),
+        end_screen_pos=(0.0, 0.0),
+        button="left",
+        ctrl=False,
+        meta=False,
+        shift=False,
+        alt=False,
+    )
+
+
 def test_active_drag_keyed_by_client_and_name(server: viser.ViserServer) -> None:
     """Two clients dragging the same node populate distinct keys, and
     each client's ``end`` only pops its own entry. Name-only keying
@@ -45,8 +78,14 @@ def test_active_drag_keyed_by_client_and_name(server: viser.ViserServer) -> None
 
     # Simulate the start-phase populate that ``_handle_node_drag``
     # performs for each client.
-    server.scene._active_drag_handles[(client_a, "/multi_box")] = box
-    server.scene._active_drag_handles[(client_b, "/multi_box")] = box
+    server.scene._active_drag_handles[(client_a, "/multi_box")] = (
+        box,
+        _dummy_drag_msg("/multi_box"),
+    )
+    server.scene._active_drag_handles[(client_b, "/multi_box")] = (
+        box,
+        _dummy_drag_msg("/multi_box"),
+    )
 
     assert (client_a, "/multi_box") in server.scene._active_drag_handles
     assert (client_b, "/multi_box") in server.scene._active_drag_handles
@@ -82,17 +121,19 @@ def test_drop_active_drags_for_client_evicts_only_target_client(
     client_a = cast(ClientId, 300)
     client_b = cast(ClientId, 400)
 
-    server.scene._active_drag_handles[(client_a, "/leak_box_1")] = box1
-    server.scene._active_drag_handles[(client_a, "/leak_box_2")] = box2
-    server.scene._active_drag_handles[(client_b, "/leak_box_1")] = box1
+    msg1 = _dummy_drag_msg("/leak_box_1")
+    msg2 = _dummy_drag_msg("/leak_box_2")
+    server.scene._active_drag_handles[(client_a, "/leak_box_1")] = (box1, msg1)
+    server.scene._active_drag_handles[(client_a, "/leak_box_2")] = (box2, msg2)
+    server.scene._active_drag_handles[(client_b, "/leak_box_1")] = (box1, msg1)
     assert len(server.scene._active_drag_handles) == 3
 
     # A "disconnects" — drop A's entries.
-    server.scene._drop_active_drags_for_client(client_a)
+    _drop_active_drags(server, client_a)
 
     # Only B's entry remains.
     assert server.scene._active_drag_handles == {
-        (client_b, "/leak_box_1"): box1,
+        (client_b, "/leak_box_1"): (box1, msg1),
     }
     assert server.scene._is_drag_active_for("/leak_box_1")
     assert not server.scene._is_drag_active_for("/leak_box_2")
@@ -104,8 +145,57 @@ def test_drop_active_drags_for_client_handles_empty_state(
     """No-op when the client had no in-flight drags. Defensive: this
     is the common path (most disconnects happen with no active drag)."""
     client = cast(ClientId, 500)
-    server.scene._drop_active_drags_for_client(client)
+    _drop_active_drags(server, client)
     assert server.scene._active_drag_handles == {}
+
+
+def test_drop_active_drags_for_client_fires_on_drag_end(
+    server: viser.ViserServer,
+) -> None:
+    """Mid-drag disconnect must synthesize a ``phase="end"`` event so
+    user state allocated in ``on_drag_start`` can be released. The
+    synthesized event carries the latest observed positions, with
+    ``phase`` overridden to ``"end"``."""
+    box = server.scene.add_box("/disco_box", dimensions=(1.0, 1.0, 1.0))
+    received: list[viser.SceneNodeDragEvent] = []
+
+    @box.on_drag_end("left")
+    def _(event: viser.SceneNodeDragEvent) -> None:
+        received.append(event)
+
+    client = cast(ClientId, 600)
+    # ``_drop_active_drags_for_client`` is only called from the
+    # disconnect handler before the client is popped from
+    # ``_connected_clients`` (see ``_viser.py``); the dispatch path
+    # then resolves the client handle. Register a placeholder so the
+    # lookup succeeds in this isolated unit test.
+    server._connected_clients[client] = Mock()
+    last_msg = _messages.SceneNodeDragMessage(
+        phase="update",
+        name="/disco_box",
+        instance_index=None,
+        start_position=(1.0, 2.0, 3.0),
+        start_screen_pos=(10.0, 20.0),
+        end_position=(4.0, 5.0, 6.0),
+        end_screen_pos=(30.0, 40.0),
+        button="left",
+        ctrl=False,
+        meta=False,
+        shift=False,
+        alt=False,
+    )
+    server.scene._active_drag_handles[(client, "/disco_box")] = (box, last_msg)
+
+    _drop_active_drags(server, client)
+
+    # Map cleared.
+    assert (client, "/disco_box") not in server.scene._active_drag_handles
+    # End callback fired with the latest observed positions.
+    assert len(received) == 1
+    event = received[0]
+    assert event.start_position == (1.0, 2.0, 3.0)
+    assert event.end_position == (4.0, 5.0, 6.0)
+    assert event.client_id == client
 
 
 def test_is_drag_active_for_returns_false_when_empty(
@@ -145,7 +235,7 @@ def test_remove_mid_drag_displaces_stale_binding_in_buffer(
     assert bindings[0].bindings != ()
 
     client = cast(ClientId, 1)
-    server.scene._active_drag_handles[(client, "/x")] = box
+    server.scene._active_drag_handles[(client, "/x")] = (box, _dummy_drag_msg("/x"))
     box.remove()
 
     bindings = _binding_messages_for(server, "/x")
