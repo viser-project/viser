@@ -249,6 +249,15 @@ GUI Controls
                </div>
            </a>
        </div>
+       <div class="example-card" style="border-radius: 3px; overflow: hidden; background: white; transition: transform 0.2s;">
+           <a href="examples/gui/commands/" style="text-decoration: none; color: inherit; display: block;">
+               <img src="_static/examples/thumbs/02_gui_10_commands.png" alt="Commands" style="width: 100%; height: auto; aspect-ratio: 16/9; object-fit: cover; display: block;">
+               <div style="padding: 15px;">
+                   <h4 style="margin: 0; padding: 0; font-size: 16px; font-weight: 600; color: #333; margin-bottom: 8px;">Commands</h4>
+                   <p style="margin: 0; padding: 0; color: #666; font-size: 13px; line-height: 1.4;">Register commands that users can discover and trigger from a command palette.</p>
+               </div>
+           </a>
+       </div>
    </div>
 
 User Interaction

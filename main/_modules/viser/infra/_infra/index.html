@@ -327,6 +327,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../../../examples/gui/plotly_integration/">Plotly integration</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../../examples/gui/uplot/">uPlot integration</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../../examples/gui/plots_as_images/">Plots as images</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../examples/gui/commands/">Commands</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../../examples/interaction/">User Interaction</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of User Interaction</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
@@ -1086,13 +1087,21 @@
                 <span class="n">relpath</span> <span class="o">=</span> <span class="s2">&quot;index.html&quot;</span>
             <span class="k">assert</span> <span class="n">http_server_root</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
 
-            <span class="n">source_path</span> <span class="o">=</span> <span class="p">(</span><span class="n">http_server_root</span> <span class="o">/</span> <span class="n">relpath</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span>
-            <span class="c1"># Reject path traversal. Equivalent to Path.is_relative_to(),</span>
-            <span class="c1"># which was added in Python 3.9.</span>
-            <span class="k">try</span><span class="p">:</span>
-                <span class="n">source_path</span><span class="o">.</span><span class="n">relative_to</span><span class="p">(</span><span class="n">http_server_root</span><span class="o">.</span><span class="n">resolve</span><span class="p">())</span>
-            <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="c1"># Reject path traversal by checking the URL parts, not</span>
+            <span class="c1"># by comparing resolved paths. Under Bazel/uv runfile</span>
+            <span class="c1"># trees, http_server_root and the files inside it can</span>
+            <span class="c1"># pass through independent symlinks (e.g. uv hardlinks</span>
+            <span class="c1"># individual files from a shared cache), so Path.resolve()</span>
+            <span class="c1"># places a legitimate child outside the resolved root.</span>
+            <span class="c1">#</span>
+            <span class="c1"># Skipping the resolved-path check means we no longer</span>
+            <span class="c1"># validate that symlinks inside http_server_root stay</span>
+            <span class="c1"># within it. That is fine here: http_server_root is set</span>
+            <span class="c1"># by the application, not by user input, so the only</span>
+            <span class="c1"># attacker-controlled component is the URL path.</span>
+            <span class="k">if</span> <span class="s2">&quot;..&quot;</span> <span class="ow">in</span> <span class="n">Path</span><span class="p">(</span><span class="n">relpath</span><span class="p">)</span><span class="o">.</span><span class="n">parts</span><span class="p">:</span>
                 <span class="k">return</span> <span class="n">Response</span><span class="p">(</span><span class="n">http</span><span class="o">.</span><span class="n">HTTPStatus</span><span class="o">.</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="s2">&quot;NOT FOUND&quot;</span><span class="p">,</span> <span class="n">Headers</span><span class="p">())</span>
+            <span class="n">source_path</span> <span class="o">=</span> <span class="n">http_server_root</span> <span class="o">/</span> <span class="n">relpath</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">source_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
                 <span class="k">return</span> <span class="n">Response</span><span class="p">(</span><span class="n">http</span><span class="o">.</span><span class="n">HTTPStatus</span><span class="o">.</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="s2">&quot;NOT FOUND&quot;</span><span class="p">,</span> <span class="n">Headers</span><span class="p">())</span>
 

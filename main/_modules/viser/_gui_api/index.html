@@ -327,6 +327,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../../examples/gui/plotly_integration/">Plotly integration</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../examples/gui/uplot/">uPlot integration</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../examples/gui/plots_as_images/">Plots as images</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/gui/commands/">Commands</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../examples/interaction/">User Interaction</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of User Interaction</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
@@ -1037,8 +1038,9 @@
 <span class="sd">            label: Label displayed in the command palette.</span>
 <span class="sd">            description: Optional description displayed below the label.</span>
 <span class="sd">            hotkey: Optional hotkey binding. Can be a single key like ``&quot;K&quot;``</span>
-<span class="sd">                or a tuple with modifiers like ``(&quot;mod&quot;, &quot;shift&quot;, &quot;R&quot;)``.</span>
-<span class="sd">                ``mod`` maps to Cmd on macOS and Ctrl on other platforms.</span>
+<span class="sd">                or a tuple with modifiers like ``(&quot;cmd/ctrl&quot;, &quot;shift&quot;, &quot;R&quot;)``.</span>
+<span class="sd">                ``cmd/ctrl`` matches whenever either Cmd or Ctrl is held</span>
+<span class="sd">                (same as drag bindings).</span>
 <span class="sd">            icon: Optional icon to display next to the command label.</span>
 <span class="sd">            disabled: If True, the command is visible but not triggerable.</span>
 
