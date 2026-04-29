@@ -337,6 +337,8 @@
 <li class="toctree-l2"><a class="reference internal" href="../../../examples/interaction/camera_poses/">Camera pose tracking</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../examples/interaction/camera_commands/">Programmatic camera control</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../examples/interaction/gui_in_scene/">3D GUI elements</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/interaction/scene_node_drag/">Scene-node drag events with rigid-body physics</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/interaction/batched_scene_node_drag/">Drag events on batched scene nodes</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../examples/demos/">Demos</a><input class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><div class="visually-hidden">Toggle navigation of Demos</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
@@ -484,6 +486,7 @@
     <span class="n">GuiRgbHandle</span><span class="p">,</span>
     <span class="n">GuiSliderHandle</span><span class="p">,</span>
     <span class="n">GuiTabGroupHandle</span><span class="p">,</span>
+    <span class="n">GuiTabHandle</span><span class="p">,</span>
     <span class="n">GuiTextHandle</span><span class="p">,</span>
     <span class="n">GuiUploadButtonHandle</span><span class="p">,</span>
     <span class="n">GuiUplotHandle</span><span class="p">,</span>
@@ -1034,6 +1037,9 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CommandHandle</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Register a command that can be triggered from the client&#39;s command palette.</span>
 
+<span class="sd">        (Experimental) The command palette API may change in future</span>
+<span class="sd">        releases.</span>
+
 <span class="sd">        Args:</span>
 <span class="sd">            label: Label displayed in the command palette.</span>
 <span class="sd">            description: Optional description displayed below the label.</span>
@@ -1154,7 +1160,11 @@
 <span class="sd">            A handle that can be used as a context to populate the form.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># Nested forms would produce invalid HTML on the client (nested</span>
-        <span class="c1"># &lt;form&gt; elements are not allowed and the browser flattens them).</span>
+        <span class="c1"># &lt;form&gt; elements are not allowed and the browser flattens</span>
+        <span class="c1"># them). Walk through folders, tabs, and tab groups — they</span>
+        <span class="c1"># share a DOM context with their ancestors. Stop at modals,</span>
+        <span class="c1"># which render into a separate React portal where a fresh</span>
+        <span class="c1"># &lt;form&gt; is well-formed.</span>
         <span class="n">container</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_container_uuid</span><span class="p">()</span>
         <span class="k">while</span> <span class="n">container</span> <span class="o">!=</span> <span class="s2">&quot;root&quot;</span><span class="p">:</span>
             <span class="n">parent</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_container_handle_from_uuid</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">container</span><span class="p">)</span>
@@ -1163,11 +1173,14 @@
                     <span class="s2">&quot;Nested forms are not supported: add_form() was called &quot;</span>
                     <span class="s2">&quot;inside an existing form&#39;s context.&quot;</span>
                 <span class="p">)</span>
-            <span class="c1"># Only folder-like handles have an _impl.parent_container_id we</span>
-            <span class="c1"># can walk. For other container types (modals, tabs), stop.</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">parent</span><span class="p">,</span> <span class="n">GuiFolderHandle</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">parent</span><span class="p">,</span> <span class="n">GuiModalHandle</span><span class="p">):</span>
                 <span class="k">break</span>
-            <span class="n">container</span> <span class="o">=</span> <span class="n">parent</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">parent_container_id</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">parent</span><span class="p">,</span> <span class="n">GuiTabHandle</span><span class="p">):</span>
+                <span class="n">container</span> <span class="o">=</span> <span class="n">parent</span><span class="o">.</span><span class="n">_parent</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">parent_container_id</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">parent</span><span class="p">,</span> <span class="p">(</span><span class="n">GuiFolderHandle</span><span class="p">,</span> <span class="n">GuiTabGroupHandle</span><span class="p">)):</span>
+                <span class="n">container</span> <span class="o">=</span> <span class="n">parent</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">parent_container_id</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">break</span>
 
         <span class="n">form_container_id</span> <span class="o">=</span> <span class="n">_make_uuid</span><span class="p">()</span>
         <span class="n">order</span> <span class="o">=</span> <span class="n">_apply_default_order</span><span class="p">(</span><span class="n">order</span><span class="p">)</span>
