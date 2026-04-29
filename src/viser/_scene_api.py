@@ -2822,7 +2822,7 @@ class SceneApi:
         """
 
         # Avoids circular import.
-        from ._gui_api import _make_uuid
+        from ._gui_handles import _make_uuid
 
         # New name to make the type checker happy; ViserServer and ClientHandle inherit
         # from both GuiApi and MessageApi. The pattern below is unideal.
