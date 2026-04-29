@@ -286,9 +286,7 @@ def test_command_hotkey_triggers_callback(
     without needing to open the palette."""
     triggered = threading.Event()
 
-    handle = viser_server.gui.add_command(
-        "Hotkey Target", hotkey=("alt", "Y")
-    )
+    handle = viser_server.gui.add_command("Hotkey Target", hotkey=("alt", "Y"))
 
     @handle.on_trigger
     def _(event: viser.CommandEvent) -> None:
@@ -339,8 +337,7 @@ def test_command_hotkey_rebind_loop(
             f"Binding {hotkey_value} did not fire on keypress {keypress!r}"
         )
         assert count["n"] == expected_count, (
-            f"After {keypress!r} expected count {expected_count}, "
-            f"got {count['n']}"
+            f"After {keypress!r} expected count {expected_count}, got {count['n']}"
         )
 
     # Final rebind: confirm the previous binding no longer fires.
@@ -402,9 +399,7 @@ def test_command_icon_update(
 ) -> None:
     """Icon updates (change, clear) propagate to the palette. The rendered
     SVG changes with the icon, and is removed entirely when cleared."""
-    handle = viser_server.gui.add_command(
-        "Icon Target", icon=viser.Icon.DEVICE_FLOPPY
-    )
+    handle = viser_server.gui.add_command("Icon Target", icon=viser.Icon.DEVICE_FLOPPY)
     viser_page.wait_for_timeout(500)
 
     _open_spotlight(viser_page)

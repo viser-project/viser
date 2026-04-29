@@ -10,6 +10,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Tuple
 from unittest.mock import patch
 
 import viser
@@ -50,7 +51,7 @@ def test_http_root_and_traversal():
         server.stop()
 
 
-def _fetch(url: str) -> tuple[int, bytes]:
+def _fetch(url: str) -> Tuple[int, bytes]:
     try:
         with urllib.request.urlopen(url, timeout=5) as resp:
             return resp.status, resp.read()
