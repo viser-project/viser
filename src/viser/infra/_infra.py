@@ -598,13 +598,21 @@ class WebsockServer(WebsockMessageHandler):
                 relpath = "index.html"
             assert http_server_root is not None
 
-            source_path = (http_server_root / relpath).resolve()
-            # Reject path traversal. Equivalent to Path.is_relative_to(),
-            # which was added in Python 3.9.
-            try:
-                source_path.relative_to(http_server_root.resolve())
-            except ValueError:
+            # Reject path traversal by checking the URL parts, not
+            # by comparing resolved paths. Under Bazel/uv runfile
+            # trees, http_server_root and the files inside it can
+            # pass through independent symlinks (e.g. uv hardlinks
+            # individual files from a shared cache), so Path.resolve()
+            # places a legitimate child outside the resolved root.
+            #
+            # Skipping the resolved-path check means we no longer
+            # validate that symlinks inside http_server_root stay
+            # within it. That is fine here: http_server_root is set
+            # by the application, not by user input, so the only
+            # attacker-controlled component is the URL path.
+            if ".." in Path(relpath).parts:
                 return Response(http.HTTPStatus.NOT_FOUND, "NOT FOUND", Headers())
+            source_path = http_server_root / relpath
             if not source_path.exists():
                 return Response(http.HTTPStatus.NOT_FOUND, "NOT FOUND", Headers())
 
