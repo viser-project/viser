@@ -6,6 +6,7 @@ import { InstancedMesh2 } from "../vendor/instanced-mesh/index.js";
 import { ViewerContext } from "../ViewerContext";
 import { BatchedMeshBase } from "./BatchedMeshBase";
 import { normalizeScale } from "../utils/normalizeScale";
+import { shallowArrayEqual } from "../utils/shallowArrayEqual";
 
 /**
  * Component for rendering batched/instanced meshes
@@ -17,6 +18,12 @@ export const BatchedMesh = React.forwardRef<
   const viewer = React.useContext(ViewerContext)!;
   const clickable =
     viewer.useSceneTree(message.name, (node) => node?.clickable) ?? false;
+  const draggable =
+    (viewer.useSceneTree(
+      message.name,
+      (node) => node?.dragBindings,
+      shallowArrayEqual,
+    ) ?? []).length > 0;
 
   // Create a material based on the message props.
   const material = useMemo(() => {
@@ -92,6 +99,7 @@ export const BatchedMesh = React.forwardRef<
           cast_shadow={message.props.cast_shadow}
           receive_shadow={message.props.receive_shadow}
           clickable={clickable}
+          draggable={draggable}
         />
       </group>
       {children}

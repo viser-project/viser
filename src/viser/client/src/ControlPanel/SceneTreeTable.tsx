@@ -356,14 +356,18 @@ export function VisibilityPaintProvider({
   const paintingRef = React.useRef(false);
   const paintValueRef = React.useRef(false);
 
-  const startPainting = (value: boolean) => {
+  // Stable identities so the context value below doesn't re-create every render
+  // (which would cascade re-renders to every consumer) and the mouseup effect
+  // below doesn't tear down + re-attach its listener on each render. Both
+  // functions only mutate refs, so they have no reactive deps.
+  const startPainting = React.useCallback((value: boolean) => {
     paintingRef.current = true;
     paintValueRef.current = value;
-  };
+  }, []);
 
-  const stopPainting = () => {
+  const stopPainting = React.useCallback(() => {
     paintingRef.current = false;
-  };
+  }, []);
 
   React.useEffect(() => {
     window.addEventListener("mouseup", stopPainting);

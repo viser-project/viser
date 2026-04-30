@@ -88,6 +88,7 @@
     "browserslist-to-esbuild": "^2.1.1",
     "eslint": "^8.43.0",
     "eslint-plugin-react": "^7.32.2",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.4.1",
     "typescript": "^5.0.4",
     "vite-plugin-eslint": "^1.8.1"

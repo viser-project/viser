@@ -21,7 +21,7 @@ module.exports = {
     ecmaVersion: "latest",
     sourceType: "module",
   },
-  plugins: ["react", "@typescript-eslint", "react-refresh"],
+  plugins: ["react", "react-hooks", "@typescript-eslint", "react-refresh"],
   ignorePatterns: ["build/", ".eslintrc.js", "src/csm", "src/vendor"],
   rules: {
     // https://github.com/jsx-eslint/eslint-plugin-react/issues/3423
@@ -39,5 +39,11 @@ module.exports = {
       },
     ],
     "react-refresh/only-export-components": "warn",
+    // Catches the stale-closure bug class (e.g. logCamera in CameraControls
+    // captured by a useCallback whose deps omitted it). v7's "recommended"
+    // config bundles many new rules that produce too much noise on this
+    // codebase; enable only the two classics here.
+    "react-hooks/exhaustive-deps": "warn",
+    "react-hooks/rules-of-hooks": "error",
   },
 };

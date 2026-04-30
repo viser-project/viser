@@ -361,6 +361,10 @@ export function SynchronizedCameraControls() {
     }
   };
 
+  const searchParams = new URLSearchParams(window.location.search);
+  const forceOrbitOriginTool = searchParams.get("forceOrbitOriginTool") === "1";
+  const logCamera = viewer.useDevSettings((state) => state.logCamera);
+
   // Callback for sending cameras.
   // It makes the code more chaotic, but we preallocate a bunch of things to
   // minimize garbage collection!
@@ -439,11 +443,7 @@ export function SynchronizedCameraControls() {
           `&initialCameraFar=${three_camera.far}`,
       );
     }
-  }, [camera, sendCameraThrottled]);
-
-  const searchParams = new URLSearchParams(window.location.search);
-  const forceOrbitOriginTool = searchParams.get("forceOrbitOriginTool") === "1";
-  const logCamera = viewer.useDevSettings((state) => state.logCamera);
+  }, [camera, sendCameraThrottled, logCamera]);
 
   // Send camera for new connections.
   // We add a small delay to give the server time to add a callback.
@@ -490,7 +490,7 @@ export function SynchronizedCameraControls() {
 
     // Cleanup.
     return () => resizeObserver.disconnect();
-  }, [canvas]);
+  }, [canvas, sendCamera]);
 
   // Keyboard controls.
   React.useEffect(() => {

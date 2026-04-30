@@ -985,6 +985,10 @@ function SceneContextSetter() {
     };
     w.__viserTestpoints = {
       rendererInfo: gl.info,
+      // Exposed for E2E regression tests of dev-settings-driven behavior
+      // (e.g. ``logCamera`` stale-closure fix, see
+      // ``tests/e2e/test_dev_settings_log_camera.py``).
+      devSettings: viewer.useDevSettings,
     };
 
     return () => {
