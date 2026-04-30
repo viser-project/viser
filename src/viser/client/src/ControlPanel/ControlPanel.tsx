@@ -282,7 +282,7 @@ function ShareButton() {
   }, [shareUrl]);
   React.useEffect(() => {
     if (!connected && shareModalOpened) closeShareModal();
-  }, [connected, shareModalOpened]);
+  }, [connected, shareModalOpened, closeShareModal]);
 
   const colorScheme = useMantineColorScheme().colorScheme;
 

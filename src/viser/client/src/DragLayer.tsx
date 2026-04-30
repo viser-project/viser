@@ -331,7 +331,6 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
       flushDragsThrottled,
       sendDragMessage,
       updateActiveDragEnd,
-      viewerMutable,
     ],
   );
 

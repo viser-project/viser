@@ -96,7 +96,7 @@ export const Arrows = React.forwardRef<
       headScales,
       wxyzs,
     };
-  }, [points, head_length, shaft_radius, head_radius]);
+  }, [points, head_length, shaft_radius, head_radius, numArrows]);
 
   return (
     <group ref={ref}>

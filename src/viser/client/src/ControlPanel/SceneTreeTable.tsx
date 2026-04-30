@@ -19,6 +19,7 @@ import {
 import { useDisclosure } from "@mantine/hooks";
 import { useForm } from "@mantine/form";
 import { ViewerContext } from "../ViewerContext";
+import { SceneNode } from "../SceneTreeState";
 import { shallowArrayEqual } from "../utils/shallowArrayEqual";
 import {
   Box,
@@ -41,11 +42,34 @@ function EditNodeProps({
 }) {
   const viewer = React.useContext(ViewerContext)!;
   const nodeMessage = viewer.useSceneTree(nodeName, (node) => node?.message);
-  const updateSceneNode = viewer.sceneTreeActions.updateSceneNodeProps;
 
   if (nodeMessage === undefined) {
     return null;
   }
+  return (
+    <EditNodePropsInner
+      nodeName={nodeName}
+      nodeMessage={nodeMessage}
+      updateSceneNode={viewer.sceneTreeActions.updateSceneNodeProps}
+      closePopoverFn={closePopoverFn}
+    />
+  );
+}
+
+function EditNodePropsInner({
+  nodeName,
+  nodeMessage,
+  updateSceneNode,
+  closePopoverFn,
+}: {
+  nodeName: string;
+  nodeMessage: SceneNode["message"];
+  updateSceneNode: (
+    name: string,
+    props: Record<string, unknown>,
+  ) => void;
+  closePopoverFn: () => void;
+}) {
 
   // We'll use JSON, but add support for Infinity.
   // We use infinity for point cloud rendering norms.

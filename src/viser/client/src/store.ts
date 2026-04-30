@@ -54,19 +54,15 @@ export function createStore<T extends object>(initialState: T): Store<T> {
     selector?: (s: T) => U,
     equalityFn?: (a: U, b: U) => boolean,
   ): T | U {
-    if (!selector) {
-      // No selector -- subscribe to full state.
-      return useSyncExternalStore(subscribe, get);
-    }
-
-    // Cache the last selected value to avoid unnecessary re-renders
-    // when the selector returns a structurally-equal result.
+    // Cache the last selected value to avoid unnecessary re-renders when
+    // the selector returns a structurally-equal result.
     const cache = useRef<{ value: U; initialized: boolean }>({
       value: undefined as U,
       initialized: false,
     });
 
-    const value = useSyncExternalStore(subscribe, () => {
+    return useSyncExternalStore(subscribe, () => {
+      if (!selector) return state as T | U;
       const next = selector(state);
       if (
         cache.current.initialized &&
@@ -80,8 +76,6 @@ export function createStore<T extends object>(initialState: T): Store<T> {
       cache.current.initialized = true;
       return next;
     });
-
-    return value;
   }
 
   useStore.get = get;

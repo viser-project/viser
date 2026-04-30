@@ -996,7 +996,7 @@ function SceneContextSetter() {
       delete w.__viserSceneTree;
       delete w.__viserTestpoints;
     };
-  }, [mutable, viewer.useSceneTree, gl]);
+  }, [mutable, viewer.useSceneTree, viewer.useDevSettings, gl]);
 
   return null;
 }

@@ -39,11 +39,14 @@ module.exports = {
       },
     ],
     "react-refresh/only-export-components": "warn",
-    // Catches the stale-closure bug class (e.g. logCamera in CameraControls
-    // captured by a useCallback whose deps omitted it). v7's "recommended"
-    // config bundles many new rules that produce too much noise on this
-    // codebase; enable only the two classics here.
-    "react-hooks/exhaustive-deps": "warn",
+    // ``rules-of-hooks`` catches structural hook violations (conditional
+    // calls, calls outside components) with near-zero false positives.
+    // ``exhaustive-deps`` was tried and removed: this codebase's patterns
+    // (Zustand selectors, mutable scene-tree refs, cleanup-only effects,
+    // mount-only subscriptions, identity-stable per-node components)
+    // produce a high false-positive rate, and the rule's "add this dep"
+    // suggestions were wrong often enough to be a source of subtle
+    // regressions rather than guidance.
     "react-hooks/rules-of-hooks": "error",
   },
 };

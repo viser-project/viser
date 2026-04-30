@@ -477,7 +477,7 @@ export function SynchronizedCameraControls() {
     viewerMutable.sendCamera = sendCamera;
     if (!connected) return;
     setTimeout(() => sendCamera(), 50);
-  }, [connected, sendCamera]);
+  }, [connected, sendCamera, camera, viewer.useInitialCamera, viewerMutable]);
 
   // Send camera for 3D viewport changes.
   const canvas = viewerMutable.canvas!; // R3F canvas.
@@ -574,7 +574,7 @@ export function SynchronizedCameraControls() {
     return () => {
       return;
     };
-  }, [CameraControls]);
+  }, [viewerMutable.cameraControl]);
 
   return (
     <>
@@ -633,7 +633,7 @@ function InitialCameraSetter() {
   React.useEffect(() => {
     if (!hasNonDefault) return;
     viewerMutable.resetCameraPose?.(false);
-  }, [hasNonDefault, rootWxyz]);
+  }, [hasNonDefault, rootWxyz, viewerMutable]);
 
   return null;
 }

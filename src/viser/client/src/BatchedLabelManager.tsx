@@ -81,7 +81,8 @@ export const BatchedLabelManager: React.FC<{
     const newGroup = new THREE.Group();
     setGroup(newGroup);
 
-    // Cleanup on unmount.
+    // Cleanup on unmount: read the latest set of registered texts via the
+    // ref (intentional — we want the value at unmount time, not mount).
     return () => {
       batchedTextsRef.current.forEach((batchedText) => {
         newGroup.remove(batchedText);

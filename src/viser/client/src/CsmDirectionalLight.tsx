@@ -212,6 +212,7 @@ function ShadowCsmLight({
     mode,
     shadowBias,
     shadowMapSize,
+    reversedDepth,
   ]);
 
   // Create a memoized color to avoid unnecessary recreations

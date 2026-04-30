@@ -193,7 +193,7 @@ export const BatchedMeshBase = React.forwardRef<
       lodGeometries.forEach((geometry) => geometry.dispose());
       lodMaterials.forEach((material) => material.dispose());
     };
-  }, [props.geometry, props.lod, props.material]); // Recreate when these change.
+  }, [props.geometry, props.lod, props.material]);
 
   // Update instances when positions or orientations change.
   useEffect(() => {
@@ -284,6 +284,9 @@ export const BatchedMeshBase = React.forwardRef<
     props.batched_wxyzs,
     props.batched_scales,
     mesh,
+    tempPosition,
+    tempQuaternion,
+    tempScale,
   ]);
 
   // Compute BVH for raycasting on interactive (clickable/draggable) or

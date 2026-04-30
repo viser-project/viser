@@ -29,6 +29,7 @@ export default function SidebarPanel({
   width: string;
 }) {
   const [collapsed, { toggle: toggleCollapsed }] = useDisclosure(false);
+  const { colorScheme } = useMantineColorScheme();
 
   const collapsedView = (
     <Box
@@ -43,7 +44,7 @@ export default function SidebarPanel({
         /* Visuals. */
         borderBottomLeftRadius: "0.5em",
         backgroundColor:
-          useMantineColorScheme().colorScheme == "dark"
+          colorScheme == "dark"
             ? theme.colors.dark[5]
             : theme.colors.gray[2],
         padding: "0.5em",
