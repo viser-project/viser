@@ -21,7 +21,7 @@ module.exports = {
     ecmaVersion: "latest",
     sourceType: "module",
   },
-  plugins: ["react", "@typescript-eslint", "react-refresh"],
+  plugins: ["react", "react-hooks", "@typescript-eslint", "react-refresh"],
   ignorePatterns: ["build/", ".eslintrc.js", "src/csm", "src/vendor"],
   rules: {
     // https://github.com/jsx-eslint/eslint-plugin-react/issues/3423
@@ -39,5 +39,14 @@ module.exports = {
       },
     ],
     "react-refresh/only-export-components": "warn",
+    // ``rules-of-hooks`` catches structural hook violations (conditional
+    // calls, calls outside components) with near-zero false positives.
+    // ``exhaustive-deps`` was tried and removed: this codebase's patterns
+    // (Zustand selectors, mutable scene-tree refs, cleanup-only effects,
+    // mount-only subscriptions, identity-stable per-node components)
+    // produce a high false-positive rate, and the rule's "add this dep"
+    // suggestions were wrong often enough to be a source of subtle
+    // regressions rather than guidance.
+    "react-hooks/rules-of-hooks": "error",
   },
 };

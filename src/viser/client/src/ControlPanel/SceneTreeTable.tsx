@@ -19,6 +19,7 @@ import {
 import { useDisclosure } from "@mantine/hooks";
 import { useForm } from "@mantine/form";
 import { ViewerContext } from "../ViewerContext";
+import { SceneNode } from "../SceneTreeState";
 import { shallowArrayEqual } from "../utils/shallowArrayEqual";
 import {
   Box,
@@ -41,11 +42,34 @@ function EditNodeProps({
 }) {
   const viewer = React.useContext(ViewerContext)!;
   const nodeMessage = viewer.useSceneTree(nodeName, (node) => node?.message);
-  const updateSceneNode = viewer.sceneTreeActions.updateSceneNodeProps;
 
   if (nodeMessage === undefined) {
     return null;
   }
+  return (
+    <EditNodePropsInner
+      nodeName={nodeName}
+      nodeMessage={nodeMessage}
+      updateSceneNode={viewer.sceneTreeActions.updateSceneNodeProps}
+      closePopoverFn={closePopoverFn}
+    />
+  );
+}
+
+function EditNodePropsInner({
+  nodeName,
+  nodeMessage,
+  updateSceneNode,
+  closePopoverFn,
+}: {
+  nodeName: string;
+  nodeMessage: SceneNode["message"];
+  updateSceneNode: (
+    name: string,
+    props: Record<string, unknown>,
+  ) => void;
+  closePopoverFn: () => void;
+}) {
 
   // We'll use JSON, but add support for Infinity.
   // We use infinity for point cloud rendering norms.
@@ -356,14 +380,18 @@ export function VisibilityPaintProvider({
   const paintingRef = React.useRef(false);
   const paintValueRef = React.useRef(false);
 
-  const startPainting = (value: boolean) => {
+  // Stable identities so the context value below doesn't re-create every render
+  // (which would cascade re-renders to every consumer) and the mouseup effect
+  // below doesn't tear down + re-attach its listener on each render. Both
+  // functions only mutate refs, so they have no reactive deps.
+  const startPainting = React.useCallback((value: boolean) => {
     paintingRef.current = true;
     paintValueRef.current = value;
-  };
+  }, []);
 
-  const stopPainting = () => {
+  const stopPainting = React.useCallback(() => {
     paintingRef.current = false;
-  };
+  }, []);
 
   React.useEffect(() => {
     window.addEventListener("mouseup", stopPainting);

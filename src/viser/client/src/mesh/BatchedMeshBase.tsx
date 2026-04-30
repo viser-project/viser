@@ -137,6 +137,7 @@ export const BatchedMeshBase = React.forwardRef<
 
     // Optional props.
     clickable?: boolean;
+    draggable?: boolean;
   }
 >(function BatchedMeshBase(props, ref) {
   // Store the mesh instance in state so effects can depend on it.
@@ -192,7 +193,7 @@ export const BatchedMeshBase = React.forwardRef<
       lodGeometries.forEach((geometry) => geometry.dispose());
       lodMaterials.forEach((material) => material.dispose());
     };
-  }, [props.geometry, props.lod, props.material]); // Recreate when these change.
+  }, [props.geometry, props.lod, props.material]);
 
   // Update instances when positions or orientations change.
   useEffect(() => {
@@ -283,21 +284,35 @@ export const BatchedMeshBase = React.forwardRef<
     props.batched_wxyzs,
     props.batched_scales,
     mesh,
+    tempPosition,
+    tempQuaternion,
+    tempScale,
   ]);
 
-  // Compute BVH for raycasting for clickable meshes.
+  // Compute BVH for raycasting on interactive (clickable/draggable) or
+  // very large meshes.
   //
-  // We could also do this always. This would speed up frustum culling, but
-  // would add overhead to every position/quaternion/scale update. Since we
-  // don't know in advance if the mesh will be static or dynamic, it seems
-  // conservative to avoid computing a BVH for now.
+  // The per-instance bounding-sphere fallback scales ~linearly with
+  // instance count: at 15k drag-only instances a single raycast takes
+  // ~1.9ms, at 30k it's ~7ms — burning almost half a 60Hz frame budget
+  // per hover event. BVH keeps it flat ~0.1–0.2ms across the range, so
+  // any interactive mesh wants it.
   //
-  // In the future, we could consider computing the BVH only if we detect that
-  // the mesh is static (no changes for N frames). There are a lot of possible
-  // heuristics that can be written here.
+  // We don't enable BVH unconditionally because for non-interactive
+  // meshes (static visualization, no hover/click/drag), the build cost
+  // and per-update refit cost on every position/quaternion/scale change
+  // outweigh the raycast savings — there are no raycasts to save.
+  //
+  // In the future, we could consider computing the BVH only if we detect
+  // that the mesh is static (no changes for N frames). There are a lot
+  // of possible heuristics that can be written here.
   React.useEffect(() => {
     if (mesh === null) return;
-    if (props.clickable || mesh.instancesCount > 50000) {
+    if (
+      props.clickable ||
+      (props.draggable ?? false) ||
+      mesh.instancesCount > 50000
+    ) {
       // We'll add a small margin to reduce the effort of updating the BVH if
       // instances need to move. This adds a small overhead to
       // raycasting/frustum culling, but should still be dramatically faster
@@ -306,7 +321,7 @@ export const BatchedMeshBase = React.forwardRef<
     } else {
       mesh.disposeBVH();
     }
-  }, [props.clickable, mesh]);
+  }, [props.clickable, props.draggable, mesh]);
 
   // Update instances when colors change (broadcast case).
   // When a single color is provided, broadcast it to all instances.

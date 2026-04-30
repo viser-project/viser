@@ -17,10 +17,10 @@ export function OutlinesIfHovered(
 ) {
   const hoverContext = React.useContext(HoverableContext);
   if (hoverContext === null || !hoverContext.clickable) return null;
-  return <_OutlinesIfHovered {...props} />;
+  return <OutlinesIfHoveredInner {...props} />;
 }
 
-function _OutlinesIfHovered(props: {
+function OutlinesIfHoveredInner(props: {
   unmountOnHide?: boolean;
   enableCreaseAngle?: boolean;
 }) {

@@ -6,6 +6,7 @@ import { ViewerContext } from "../ViewerContext";
 import { mergeBufferGeometries } from "three-stdlib";
 import { BatchedMeshBase } from "./BatchedMeshBase";
 import { normalizeScale } from "../utils/normalizeScale";
+import { shallowArrayEqual } from "../utils/shallowArrayEqual";
 
 /**
  * Component for rendering batched/instanced GLB models
@@ -22,6 +23,12 @@ export const BatchedGlbAsset = React.forwardRef<
   const viewer = React.useContext(ViewerContext)!;
   const clickable =
     viewer.useSceneTree(message.name, (node) => node?.clickable) ?? false;
+  const draggable =
+    (viewer.useSceneTree(
+      message.name,
+      (node) => node?.dragBindings,
+      shallowArrayEqual,
+    ) ?? []).length > 0;
 
   // Note: We don't support animations for batched meshes.
   const { gltf } = useGlbLoader(message.props.glb_data);
@@ -75,6 +82,7 @@ export const BatchedGlbAsset = React.forwardRef<
           cast_shadow={message.props.cast_shadow}
           receive_shadow={message.props.receive_shadow}
           clickable={clickable}
+          draggable={draggable}
         />
       </group>
       {children}

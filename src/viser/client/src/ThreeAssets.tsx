@@ -617,7 +617,7 @@ export const ViserLabel = React.forwardRef<
       manager.unregisterText(text);
       text.dispose();
     };
-  }, []); // Only create once.
+  }, []);
 
   // Update text content when it changes.
   React.useEffect(() => {

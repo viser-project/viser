@@ -124,6 +124,7 @@ function PlotComponent({
     props.legend,
     props.focus,
     colorScheme,
+    theme.colors.gray,
   ]);
 
   // Somewhat experimental: manual scale reset logic. When the plot data is
@@ -217,12 +218,12 @@ function PlotComponent({
 }
 
 export default function UplotComponent(message: GuiUplotMessage) {
-  // Modal state.
-  const [opened, { open, close }] = useDisclosure(false);
-
-  // Visibility check
   if (message.props.visible === false) return null;
+  return <UplotComponentInner {...message} />;
+}
 
+function UplotComponentInner(message: GuiUplotMessage) {
+  const [opened, { open, close }] = useDisclosure(false);
   return (
     <Box>
       {/* Small plot with expand button. */}

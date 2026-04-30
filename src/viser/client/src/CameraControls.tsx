@@ -361,6 +361,10 @@ export function SynchronizedCameraControls() {
     }
   };
 
+  const searchParams = new URLSearchParams(window.location.search);
+  const forceOrbitOriginTool = searchParams.get("forceOrbitOriginTool") === "1";
+  const logCamera = viewer.useDevSettings((state) => state.logCamera);
+
   // Callback for sending cameras.
   // It makes the code more chaotic, but we preallocate a bunch of things to
   // minimize garbage collection!
@@ -439,11 +443,7 @@ export function SynchronizedCameraControls() {
           `&initialCameraFar=${three_camera.far}`,
       );
     }
-  }, [camera, sendCameraThrottled]);
-
-  const searchParams = new URLSearchParams(window.location.search);
-  const forceOrbitOriginTool = searchParams.get("forceOrbitOriginTool") === "1";
-  const logCamera = viewer.useDevSettings((state) => state.logCamera);
+  }, [camera, sendCameraThrottled, logCamera]);
 
   // Send camera for new connections.
   // We add a small delay to give the server time to add a callback.
@@ -477,7 +477,7 @@ export function SynchronizedCameraControls() {
     viewerMutable.sendCamera = sendCamera;
     if (!connected) return;
     setTimeout(() => sendCamera(), 50);
-  }, [connected, sendCamera]);
+  }, [connected, sendCamera, camera, viewer.useInitialCamera, viewerMutable]);
 
   // Send camera for 3D viewport changes.
   const canvas = viewerMutable.canvas!; // R3F canvas.
@@ -490,7 +490,7 @@ export function SynchronizedCameraControls() {
 
     // Cleanup.
     return () => resizeObserver.disconnect();
-  }, [canvas]);
+  }, [canvas, sendCamera]);
 
   // Keyboard controls.
   React.useEffect(() => {
@@ -574,7 +574,7 @@ export function SynchronizedCameraControls() {
     return () => {
       return;
     };
-  }, [CameraControls]);
+  }, [viewerMutable.cameraControl]);
 
   return (
     <>
@@ -633,7 +633,7 @@ function InitialCameraSetter() {
   React.useEffect(() => {
     if (!hasNonDefault) return;
     viewerMutable.resetCameraPose?.(false);
-  }, [hasNonDefault, rootWxyz]);
+  }, [hasNonDefault, rootWxyz, viewerMutable]);
 
   return null;
 }
