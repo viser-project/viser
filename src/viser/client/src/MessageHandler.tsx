@@ -43,6 +43,9 @@ function useMessageHandler() {
   const updateUploadState = viewer.guiActions.updateUploadState;
   const setFormDirty = viewer.guiActions.setFormDirty;
   const clearFormDirty = viewer.guiActions.clearFormDirty;
+  const addCommand = viewer.guiActions.addCommand;
+  const updateCommand = viewer.guiActions.updateCommand;
+  const removeCommand = viewer.guiActions.removeCommand;
 
   // Same as addSceneNode, but make a parent in the form of a dummy coordinate
   // frame if it doesn't exist yet.
@@ -185,9 +188,15 @@ function useMessageHandler() {
         return;
       }
 
-      // Add a notification.
-      case "NotificationMessage": {
-        (message.mode === "show" ? notifications.show : notifications.update)({
+      // Show or update a notification. Show and Update carry the same
+      // NotificationProps shape, so one construction works for both.
+      case "NotificationShowMessage":
+      case "NotificationUpdateMessage": {
+        const fn =
+          message.type === "NotificationShowMessage"
+            ? notifications.show
+            : notifications.update;
+        fn({
           id: message.uuid,
           title: message.props.title,
           message: message.props.body,
@@ -252,6 +261,20 @@ function useMessageHandler() {
 
       case "GuiCloseModalMessage": {
         removeModal(message.uuid);
+        return;
+      }
+
+      // Register, update, or remove command palette actions.
+      case "RegisterCommandMessage": {
+        addCommand(message);
+        return;
+      }
+      case "CommandUpdateMessage": {
+        updateCommand(message.uuid, message.updates);
+        return;
+      }
+      case "RemoveCommandMessage": {
+        removeCommand(message.uuid);
         return;
       }
 
@@ -545,6 +568,14 @@ function useMessageHandler() {
           kind: "sceneNodeAttrUpdate",
           targetNode: message.name,
           updates: { clickable: message.clickable },
+        };
+      }
+      // Set the drag-binding set for a particular scene node.
+      case "SetSceneNodeDragBindingsMessage": {
+        return {
+          kind: "sceneNodeAttrUpdate",
+          targetNode: message.name,
+          updates: { dragBindings: message.bindings },
         };
       }
       // Update props of a GUI component — accumulated and applied in batch.

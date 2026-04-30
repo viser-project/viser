@@ -36,15 +36,23 @@ function rehypeCodeblock(): void | Transformer<Root, Root> {
   };
 }
 
-// Custom classes to pipe MDX into Mantine Components
-// Some of them separate the children into a separate prop since Mantine requires a child
-// and MDX always makes children optional, so destructuring props doesn't work
+// Custom classes to pipe MDX into Mantine Components.
+//
+// ``size="sm"`` (14px) on Text/Anchor/List is a compromise between
+// Mantine's default (16px, too big next to GUI inputs) and the ``xs``
+// (12px) used by input components themselves — paragraphs read cleanly
+// without feeling cramped. Titles keep their own order-based sizing so
+// headings still read as headings.
+//
+// Some of them separate the children into a separate prop since Mantine
+// requires a child and MDX always makes children optional, so
+// destructuring props doesn't work.
 function MdxText(props: React.ComponentPropsWithoutRef<typeof Text>) {
-  return <Text {...props} />;
+  return <Text size="sm" {...props} />;
 }
 
 function MdxAnchor(props: React.ComponentPropsWithoutRef<typeof Anchor>) {
-  return <Anchor {...props} />;
+  return <Anchor size="sm" {...props} />;
 }
 
 function MdxTitle(
@@ -62,13 +70,13 @@ function MdxList(
   // Account for GFM Checkboxes
   if (props.className == "contains-task-list") {
     return (
-      <List type={type} {...props} listStyleType="none">
+      <List size="sm" type={type} {...props} listStyleType="none">
         {children}
       </List>
     );
   }
   return (
-    <List type={type} {...props}>
+    <List size="sm" type={type} {...props}>
       {children}
     </List>
   );

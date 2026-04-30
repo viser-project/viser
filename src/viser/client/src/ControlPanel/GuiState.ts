@@ -5,6 +5,7 @@ import { ColorTranslator } from "colortranslator";
 import {
   GuiComponentMessage,
   GuiModalMessage,
+  RegisterCommandMessage,
   ThemeConfigurationMessage,
 } from "../WebsocketMessages";
 
@@ -32,6 +33,8 @@ export interface GuiState {
       filename: string;
     };
   };
+  /** Registered command palette actions, keyed by UUID. */
+  commands: { [uuid: string]: RegisterCommandMessage };
 }
 
 export interface GuiActions {
@@ -51,6 +54,9 @@ export interface GuiActions {
   ) => void;
   setFormDirty: (uuid: string) => void;
   clearFormDirty: (uuid: string) => void;
+  addCommand: (command: RegisterCommandMessage) => void;
+  updateCommand: (uuid: string, updates: { [key: string]: any }) => void;
+  removeCommand: (uuid: string) => void;
 }
 
 const searchParams = new URLSearchParams(window.location.search);
@@ -77,6 +83,7 @@ const cleanGuiState: GuiState = {
   guiOrderFromUuid: {},
   dirtyFormUuids: {},
   uploadsInProgress: {},
+  commands: {},
 };
 
 export function computeRelativeLuminance(color: string) {
@@ -219,6 +226,7 @@ export function useGuiState(initialServer: string) {
           guiOrderFromUuid: cleanGuiState.guiOrderFromUuid,
           dirtyFormUuids: cleanGuiState.dirtyFormUuids,
           uploadsInProgress: cleanGuiState.uploadsInProgress,
+          commands: cleanGuiState.commands,
         });
         configStore.setAll({}, true);
       },
@@ -245,6 +253,43 @@ export function useGuiState(initialServer: string) {
           const next = { ...state.dirtyFormUuids };
           delete next[uuid];
           return { dirtyFormUuids: next };
+        });
+      },
+      addCommand: (command) => {
+        store.set((state) => {
+          // Skip if an identical command is already registered (e.g. server
+          // reconnect replaying RegisterCommandMessage for every existing
+          // command). Prevents churning the whole subscriber set.
+          if (Object.is(state.commands[command.uuid], command)) return state;
+          return { commands: { ...state.commands, [command.uuid]: command } };
+        });
+      },
+      updateCommand: (uuid, updates) => {
+        store.set((state) => {
+          const existing = state.commands[uuid];
+          if (existing === undefined) return state;
+          const existingProps = existing.props as Record<string, unknown>;
+          let changed = false;
+          for (const [k, v] of Object.entries(updates)) {
+            if (!Object.is(existingProps[k], v)) {
+              changed = true;
+              break;
+            }
+          }
+          if (!changed) return state;
+          const merged: RegisterCommandMessage = {
+            ...existing,
+            props: { ...existing.props, ...updates },
+          };
+          return { commands: { ...state.commands, [uuid]: merged } };
+        });
+      },
+      removeCommand: (uuid) => {
+        store.set((state) => {
+          if (!(uuid in state.commands)) return state;
+          const next = { ...state.commands };
+          delete next[uuid];
+          return { commands: next };
         });
       },
       updateGuiProps: (id, updates) => {

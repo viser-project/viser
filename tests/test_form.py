@@ -72,6 +72,22 @@ def test_nested_forms_raise() -> None:
                 with server.gui.add_form("Inner2"):
                     pass
 
+    # Nesting via a tab group is also detected — tab content shares
+    # the parent DOM context with its surrounding form.
+    with server.gui.add_form("Outer3"):
+        tab_group = server.gui.add_tab_group()
+        with tab_group.add_tab("First"):
+            with pytest.raises(ValueError, match="Nested forms"):
+                with server.gui.add_form("Inner3"):
+                    pass
+
+    # A form inside a modal is fine — modals render into a separate
+    # React portal where a fresh <form> is well-formed.
+    with server.gui.add_form("Outer4"):
+        with server.gui.add_modal("Popup"):
+            with server.gui.add_form("InsideModal"):
+                pass
+
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
 def test_remove_submit_callback() -> None:

@@ -28,6 +28,8 @@ from ._assignable_props_api import AssignablePropsBase
 from ._icons import svg_from_icon
 from ._icons_enum import IconName
 from ._messages import (
+    CommandProps,
+    CommandUpdateMessage,
     GuiBaseProps,
     GuiButtonGroupProps,
     GuiButtonProps,
@@ -55,6 +57,7 @@ from ._messages import (
     GuiUplotProps,
     GuiVector2Props,
     GuiVector3Props,
+    RemoveCommandMessage,
 )
 from ._scene_api import _encode_image_binary
 from .infra import ClientId
@@ -158,13 +161,7 @@ class _GuiHandle(Generic[T], AssignablePropsBase[_GuiHandleState]):
             return
         self._impl.removed = True
 
-        # Send remove to client(s) + update internal state.
         gui_api = self._impl.gui_api
-        gui_api._websock_interface.get_message_buffer().remove_from_buffer(
-            # Don't send outdated GUI updates to new clients.
-            # This is brittle...
-            lambda message: getattr(message, "uuid", None) == self._impl.uuid
-        )
         gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
         parent = gui_api._container_handle_from_uuid[self._impl.parent_container_id]
         parent._children.pop(self._impl.uuid)
@@ -664,13 +661,6 @@ class GuiTabGroupHandle(_GuiHandle[None], GuiTabGroupProps):
         for tab in tuple(self._tab_handles):
             tab.remove()
         gui_api = self._impl.gui_api
-        gui_api._websock_interface.get_message_buffer().remove_from_buffer(
-            # Don't send outdated GUI updates to new clients.
-            lambda message: (
-                isinstance(message, GuiUpdateMessage)
-                and message.uuid == self._impl.uuid
-            )
-        )
         gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
         parent = gui_api._container_handle_from_uuid[self._impl.parent_container_id]
         parent._children.pop(self._impl.uuid)
@@ -688,7 +678,7 @@ class GuiTabHandle:
     _children: dict[str, SupportsRemoveProtocol] = dataclasses.field(
         default_factory=dict
     )
-    _removed: bool = False
+    removed: bool = False
 
     @property
     def icon(self) -> IconName | None:
@@ -723,13 +713,13 @@ class GuiTabHandle:
         """Permanently remove this tab and all contained GUI elements from the
         visualizer."""
         # Warn if already removed.
-        if self._removed:
+        if self.removed:
             warnings.warn(
                 f"Attempted to remove an already removed {self.__class__.__name__}.",
                 stacklevel=2,
             )
             return
-        self._removed = True
+        self.removed = True
 
         # We may want to make this thread-safe in the future.
         found_index = -1
@@ -794,13 +784,6 @@ class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):
 
         # Remove children, then self.
         gui_api = self._impl.gui_api
-        gui_api._websock_interface.get_message_buffer().remove_from_buffer(
-            # Don't send outdated GUI updates to new clients.
-            lambda message: (
-                isinstance(message, GuiUpdateMessage)
-                and message.uuid == self._impl.uuid
-            )
-        )
         gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
         for child in tuple(self._children.values()):
             child.remove()
@@ -909,6 +892,7 @@ class GuiModalHandle:
     _children: dict[str, SupportsRemoveProtocol] = dataclasses.field(
         default_factory=dict
     )
+    closed: bool = False
 
     def __enter__(self) -> GuiModalHandle:
         self._container_uuid_restore = self._gui_api._get_container_uuid()
@@ -927,6 +911,13 @@ class GuiModalHandle:
 
     def close(self) -> None:
         """Close this modal and permananently remove all contained GUI elements."""
+        if self.closed:
+            warnings.warn(
+                "Attempted to close an already closed GuiModalHandle.",
+                stacklevel=2,
+            )
+            return
+        self.closed = True
         self._gui_api._websock_interface.queue_message(
             GuiCloseModalMessage(self._uuid),
         )
@@ -1080,8 +1071,6 @@ class GuiImageHandle(_GuiHandle[None], GuiImageProps):
 
     @format.setter
     def format(self, value: Literal["auto", "jpeg", "png"]) -> None:
-        import warnings
-
         # Skip if format isn't changing.
         if self._user_format == value:
             return
@@ -1098,3 +1087,98 @@ class GuiImageHandle(_GuiHandle[None], GuiImageProps):
         )
         self._format = resolved_format
         self._data = data
+
+
+@dataclasses.dataclass(frozen=True)
+class CommandEvent:
+    """Information associated with a command trigger from the command palette.
+
+    Passed as input to callback functions.
+
+    ``client`` and ``client_id`` are typed Optional for parity with
+    :class:`GuiEvent` (which can fire server-side) and to leave room for a
+    future programmatic ``handle.trigger()`` path. In practice, every command
+    trigger today originates from a real client -- the dispatcher drops the
+    event if the client can't be resolved, so callbacks only see non-None
+    values."""
+
+    client: ClientHandle | None
+    """Client that triggered this command."""
+    client_id: int | None
+    """ID of client that triggered this command."""
+    target: CommandHandle
+    """Command handle that was triggered."""
+
+
+@dataclasses.dataclass
+class _CommandHandleState:
+    """Internal state for a registered command."""
+
+    uuid: str
+    gui_api: GuiApi
+    props: CommandProps
+    icon: IconName | None
+    trigger_cb: list[Callable[[CommandEvent], None | Coroutine]] = dataclasses.field(
+        default_factory=list
+    )
+    removed: bool = False
+
+
+class CommandHandle(AssignablePropsBase[_CommandHandleState], CommandProps):
+    """Handle for a command registered in the command palette.
+
+    Commands are shown in a command palette (Ctrl/Cmd+K, also Ctrl/Cmd+Shift+P
+    on non-Firefox browsers) and can optionally be triggered via hotkeys.
+
+    (Experimental) The command palette API may change in future releases."""
+
+    def __init__(self, _impl: _CommandHandleState) -> None:
+        super().__init__(impl=_impl)
+
+    @property
+    def icon(self) -> IconName | None:
+        """Icon displayed in the command palette."""
+        return self._impl.icon
+
+    @icon.setter
+    def icon(self, icon: IconName | None) -> None:
+        # Removed-guard enforced upstream by AssignablePropsBase.__setattr__.
+        self._impl.icon = icon
+        self._impl.props._icon_html = None if icon is None else svg_from_icon(icon)
+        self._queue_update("_icon_html", self._impl.props._icon_html)
+
+    def _queue_update(self, name: str, value: Any) -> None:
+        self._impl.gui_api._websock_interface.queue_message(
+            CommandUpdateMessage(uuid=self._impl.uuid, updates={name: value})
+        )
+
+    def on_trigger(
+        self, func: Callable[[CommandEvent], NoneOrCoroutine]
+    ) -> Callable[[CommandEvent], NoneOrCoroutine]:
+        """Attach a function to call when this command is triggered.
+
+        Note:
+        - If `func` is a regular function (defined with `def`), it will be executed in a thread pool.
+        - If `func` is an async function (defined with `async def`), it will be executed in the event loop.
+
+        Using async functions can be useful for reducing race conditions.
+        """
+        if self._impl.removed:
+            raise RuntimeError(
+                "Cannot attach a trigger callback to a removed CommandHandle."
+            )
+        self._impl.trigger_cb.append(func)
+        return func
+
+    def remove(self) -> None:
+        """Remove this command from the command palette."""
+        if self._impl.removed:
+            warnings.warn(
+                "Attempted to remove an already removed CommandHandle.",
+                stacklevel=2,
+            )
+            return
+        self._impl.removed = True
+        gui_api = self._impl.gui_api
+        gui_api._websock_interface.queue_message(RemoveCommandMessage(self._impl.uuid))
+        gui_api._command_handle_from_uuid.pop(self._impl.uuid, None)

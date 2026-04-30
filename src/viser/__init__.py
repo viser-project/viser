@@ -1,4 +1,6 @@
 from ._gui_api import GuiApi as GuiApi
+from ._gui_handles import CommandEvent as CommandEvent
+from ._gui_handles import CommandHandle as CommandHandle
 from ._gui_handles import GuiButtonGroupHandle as GuiButtonGroupHandle
 from ._gui_handles import GuiButtonHandle as GuiButtonHandle
 from ._gui_handles import GuiCheckboxHandle as GuiCheckboxHandle
@@ -27,6 +29,11 @@ from ._gui_handles import GuiVector3Handle as GuiVector3Handle
 from ._gui_handles import UploadedFile as UploadedFile
 from ._icons_enum import Icon as Icon
 from ._icons_enum import IconName as IconName
+from ._messages import DragButton as DragButton
+from ._messages import DragModifier as DragModifier
+from ._messages import Hotkey as Hotkey
+from ._messages import HotkeyKey as HotkeyKey
+from ._messages import HotkeyModifier as HotkeyModifier
 from ._notification_handle import NotificationHandle as NotificationHandle
 from ._scene_api import SceneApi as SceneApi
 from ._scene_handles import AmbientLightHandle as AmbientLightHandle
@@ -54,6 +61,7 @@ from ._scene_handles import MeshSkinnedHandle as MeshSkinnedHandle
 from ._scene_handles import PointCloudHandle as PointCloudHandle
 from ._scene_handles import PointLightHandle as PointLightHandle
 from ._scene_handles import RectAreaLightHandle as RectAreaLightHandle
+from ._scene_handles import SceneNodeDragEvent as SceneNodeDragEvent
 from ._scene_handles import SceneNodeHandle as SceneNodeHandle
 from ._scene_handles import SceneNodePointerEvent as SceneNodePointerEvent
 from ._scene_handles import ScenePointerEvent as ScenePointerEvent

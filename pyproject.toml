@@ -69,6 +69,7 @@ dev = [
 ]
 examples = [
     "torch>=1.13.1",
+    "torch<2.5.0; python_version<'3.9'",  # Last torch with cp38 wheels.
     "matplotlib>=3.7.1",
     "plotly>=5.21.0",
     "robot_descriptions>=1.18.0",

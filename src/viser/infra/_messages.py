@@ -7,7 +7,18 @@ import abc
 import dataclasses
 import functools
 import warnings
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Type, TypeVar, Union, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Dict,
+    List,
+    Optional,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+)
 
 import msgspec.msgpack
 import numpy as np
@@ -74,7 +85,8 @@ def _prepare_for_serialization(
     This pairs with the hybrid wire format where binary data is appended raw
     after the msgpack payload, enabling zero-copy typed array views on the client.
 
-    If ``binary_buffers`` is None, numpy arrays are inlined as memoryviews."""
+    If ``binary_buffers`` is None, numpy arrays are inlined as memoryviews
+    in the serialized dict itself."""
     if annotation is Any:
         annotation = type(value)
 
@@ -120,7 +132,7 @@ def _prepare_for_serialization(
             binary_buffers.append(data)
             return {"__binary_index": idx, "dtype": value.dtype.str}
         else:
-            # Inline as memoryview (used by API v0).
+            # Inline as memoryview in the serialized dict.
             return data
 
     if isinstance(value, list):
@@ -150,6 +162,21 @@ class Message(abc.ABC):
     """Don't send this message to a particular client. Useful when a client wants to
     send synchronization information to other clients."""
 
+    # Entity lifecycle markers. Generic at this layer; application-specific
+    # literals (e.g. EntityType in viser._messages) narrow these in subclasses
+    # via the __init_subclass__ kwargs pattern. The buffer and GC read these
+    # via the Message base to coalesce create/remove and purge stale updates
+    # uniformly across entity types.
+    entity_type: ClassVar[Optional[str]] = None
+    lifecycle_phase: ClassVar[Optional[str]] = None
+    entity_id_field: ClassVar[Optional[str]] = None
+
+    # Required on every viser Message subclass (enforced in
+    # viser._messages.Message.__init_subclass__). Type-only declaration here
+    # so infra-level readers (e.g. the state-serializer filter) can access
+    # the attribute without static errors.
+    include_in_scene_serialization: ClassVar[bool]
+
     def as_serializable_dict(
         self, binary_buffers: Optional[List[memoryview]] = None
     ) -> Dict[str, Any]:
@@ -157,7 +184,7 @@ class Message(abc.ABC):
 
         If ``binary_buffers`` is provided, numpy arrays are extracted into it
         and replaced with tagged placeholder dicts for the hybrid wire format.
-        Otherwise, arrays are inlined as memoryviews (used by API v0)."""
+        Otherwise, arrays are inlined as memoryviews in the returned dict."""
         message_type = type(self)
         hints = get_type_hints_cached(message_type)
         # Filter to type-hinted fields only — excludes dynamic attributes

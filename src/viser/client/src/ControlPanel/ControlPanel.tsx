@@ -33,7 +33,10 @@ import {
   IconPlugConnectedX,
   IconQrcode,
   IconQrcodeOff,
+  IconListSearch,
 } from "@tabler/icons-react";
+import { spotlight } from "@mantine/spotlight";
+import { isMac } from "../utils/platform";
 import React from "react";
 import BottomPanel from "./BottomPanel";
 import FloatingPanel from "./FloatingPanel";
@@ -120,6 +123,7 @@ export default function ControlPanel(props: {
         <BottomPanel.Handle>
           <ConnectionStatus />
           <BottomPanel.HideWhenCollapsed>
+            <CommandsButton />
             <ShareButton />
             {generatedServerToggleButton}
           </BottomPanel.HideWhenCollapsed>
@@ -134,6 +138,7 @@ export default function ControlPanel(props: {
         <FloatingPanel.Handle>
           <ConnectionStatus />
           <FloatingPanel.HideWhenCollapsed>
+            <CommandsButton />
             <ShareButton />
             {generatedServerToggleButton}
           </FloatingPanel.HideWhenCollapsed>
@@ -150,6 +155,7 @@ export default function ControlPanel(props: {
       >
         <SidebarPanel.Handle>
           <ConnectionStatus />
+          <CommandsButton />
           <ShareButton />
           {generatedServerToggleButton}
         </SidebarPanel.Handle>
@@ -223,6 +229,35 @@ function ConnectionStatus() {
   );
 }
 
+function CommandsButton() {
+  const viewer = React.useContext(ViewerContext)!;
+  const hasCommands = viewer.useGui(
+    (state) => Object.keys(state.commands).length > 0,
+  );
+
+  if (!hasCommands) return null;
+
+  return (
+    <Tooltip
+      zIndex={100}
+      label={`Commands (${isMac ? "Cmd" : "Ctrl"}+K)`}
+      withinPortal
+    >
+      <ActionIcon
+        onClick={(evt) => {
+          evt.stopPropagation();
+          spotlight.open();
+        }}
+        style={{
+          transform: "translateY(0.05em)",
+        }}
+      >
+        <IconListSearch stroke={2} height="1.3em" width="1.3em" />
+      </ActionIcon>
+    </Tooltip>
+  );
+}
+
 function ShareButton() {
   const viewer = React.useContext(ViewerContext)!;
   const viewerMutable = viewer.mutable.current; // Get mutable once.
@@ -271,7 +306,7 @@ function ShareButton() {
           }}
           disabled={!connected}
         >
-          <IconShare stroke={2} height="1.125em" width="1.125em" />
+          <IconShare stroke={2.25} height="1.125em" width="1.125em" />
         </ActionIcon>
       </Tooltip>
       <Modal

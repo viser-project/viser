@@ -1151,13 +1151,47 @@ export interface RunJavascriptMessage {
   type: "RunJavascriptMessage";
   source: string;
 }
-/** Notification message.
+/** Server -> client message to show a new notification.
  *
  * (automatically generated)
  */
-export interface NotificationMessage {
-  type: "NotificationMessage";
-  mode: "show" | "update";
+export interface NotificationShowMessage {
+  type: "NotificationShowMessage";
+  uuid: string;
+  props: {
+    title: string;
+    body: string;
+    loading: boolean;
+    with_close_button: boolean;
+    auto_close_seconds: number | null;
+    color:
+      | "dark"
+      | "gray"
+      | "red"
+      | "pink"
+      | "grape"
+      | "violet"
+      | "indigo"
+      | "blue"
+      | "cyan"
+      | "green"
+      | "lime"
+      | "yellow"
+      | "orange"
+      | "teal"
+      | [number, number, number]
+      | null;
+  };
+}
+/** Server -> client message to update an existing notification.
+ *
+ * Carries the full ``NotificationProps`` so the client shares a construction
+ * path with ``NotificationShowMessage``.
+ *
+ * (automatically generated)
+ */
+export interface NotificationUpdateMessage {
+  type: "NotificationUpdateMessage";
   uuid: string;
   props: {
     title: string;
@@ -1434,6 +1468,21 @@ export interface SetSceneNodeClickableMessage {
   name: string;
   clickable: boolean;
 }
+/** Declare the drag-input combinations a scene node listens for.
+ *
+ * Sent as a full set; empty ``bindings`` means the node is not draggable.
+ *
+ *
+ * (automatically generated)
+ */
+export interface SetSceneNodeDragBindingsMessage {
+  type: "SetSceneNodeDragBindingsMessage";
+  name: string;
+  bindings: {
+    button: "left" | "middle" | "right" | "any";
+    modifiers: ("cmd/ctrl" | "alt" | "shift")[] | null;
+  }[];
+}
 /** Message for clicked objects.
  *
  * (automatically generated)
@@ -1445,6 +1494,30 @@ export interface SceneNodeClickMessage {
   ray_origin: [number, number, number];
   ray_direction: [number, number, number];
   screen_pos: [number, number];
+}
+/** Client -> server message for a scene-node drag (start/update/end).
+ *
+ * All position/screen fields are *live* — recomputed on every
+ * start/update/end. ``start_*`` tracks the original click point as it
+ * moves with the object (the grab point); ``end_*`` tracks the current
+ * pointer projected onto the camera-aligned drag plane.
+ *
+ * (automatically generated)
+ */
+export interface SceneNodeDragMessage {
+  type: "SceneNodeDragMessage";
+  phase: "start" | "update" | "end";
+  name: string;
+  instance_index: number | null;
+  start_position: [number, number, number];
+  start_screen_pos: [number, number];
+  end_position: [number, number, number];
+  end_screen_pos: [number, number];
+  button: "left" | "middle" | "right";
+  ctrl: boolean;
+  meta: boolean;
+  shift: boolean;
+  alt: boolean;
 }
 /** Reset GUI.
  *
@@ -1471,9 +1544,11 @@ export interface GuiFormSubmitMessage {
 /** Bidirectional form dirty signal.
  *
  * - Sent client->server when any input inside the form first changes since
- *   the last submit. The server broadcasts this to all other clients.
+ * the last submit. The server broadcasts this to all other clients.
  * - Sent server->client (broadcast) to propagate dirty state. Clients show
- *   a dirty indicator on the form header on receipt.
+ * a dirty indicator on the form header on receipt.
+ *
+ * (automatically generated)
  */
 export interface GuiFormDirtyMessage {
   type: "GuiFormDirtyMessage";
@@ -1674,6 +1749,223 @@ export interface SetGuiPanelLabelMessage {
   type: "SetGuiPanelLabelMessage";
   label: string | null;
 }
+/** Message from server->client to register a command in the command palette.
+ *
+ * (automatically generated)
+ */
+export interface RegisterCommandMessage {
+  type: "RegisterCommandMessage";
+  uuid: string;
+  props: {
+    label: string;
+    description: string | null;
+    hotkey:
+      | "A"
+      | "B"
+      | "C"
+      | "D"
+      | "E"
+      | "F"
+      | "G"
+      | "H"
+      | "I"
+      | "J"
+      | "K"
+      | "L"
+      | "M"
+      | "N"
+      | "O"
+      | "P"
+      | "Q"
+      | "R"
+      | "S"
+      | "T"
+      | "U"
+      | "V"
+      | "W"
+      | "X"
+      | "Y"
+      | "Z"
+      | "0"
+      | "1"
+      | "2"
+      | "3"
+      | "4"
+      | "5"
+      | "6"
+      | "7"
+      | "8"
+      | "9"
+      | "space"
+      | "enter"
+      | "escape"
+      | "tab"
+      | "backspace"
+      | "delete"
+      | "insert"
+      | "home"
+      | "end"
+      | "pageup"
+      | "pagedown"
+      | "arrowup"
+      | "arrowdown"
+      | "arrowleft"
+      | "arrowright"
+      | "plus"
+      | "minus"
+      | "asterisk"
+      | "slash"
+      | [
+          "cmd/ctrl" | "ctrl" | "alt" | "shift",
+          (
+            | "A"
+            | "B"
+            | "C"
+            | "D"
+            | "E"
+            | "F"
+            | "G"
+            | "H"
+            | "I"
+            | "J"
+            | "K"
+            | "L"
+            | "M"
+            | "N"
+            | "O"
+            | "P"
+            | "Q"
+            | "R"
+            | "S"
+            | "T"
+            | "U"
+            | "V"
+            | "W"
+            | "X"
+            | "Y"
+            | "Z"
+            | "0"
+            | "1"
+            | "2"
+            | "3"
+            | "4"
+            | "5"
+            | "6"
+            | "7"
+            | "8"
+            | "9"
+            | "space"
+            | "enter"
+            | "escape"
+            | "tab"
+            | "backspace"
+            | "delete"
+            | "insert"
+            | "home"
+            | "end"
+            | "pageup"
+            | "pagedown"
+            | "arrowup"
+            | "arrowdown"
+            | "arrowleft"
+            | "arrowright"
+            | "plus"
+            | "minus"
+            | "asterisk"
+            | "slash"
+          ),
+        ]
+      | [
+          "cmd/ctrl" | "ctrl" | "alt" | "shift",
+          "cmd/ctrl" | "ctrl" | "alt" | "shift",
+          (
+            | "A"
+            | "B"
+            | "C"
+            | "D"
+            | "E"
+            | "F"
+            | "G"
+            | "H"
+            | "I"
+            | "J"
+            | "K"
+            | "L"
+            | "M"
+            | "N"
+            | "O"
+            | "P"
+            | "Q"
+            | "R"
+            | "S"
+            | "T"
+            | "U"
+            | "V"
+            | "W"
+            | "X"
+            | "Y"
+            | "Z"
+            | "0"
+            | "1"
+            | "2"
+            | "3"
+            | "4"
+            | "5"
+            | "6"
+            | "7"
+            | "8"
+            | "9"
+            | "space"
+            | "enter"
+            | "escape"
+            | "tab"
+            | "backspace"
+            | "delete"
+            | "insert"
+            | "home"
+            | "end"
+            | "pageup"
+            | "pagedown"
+            | "arrowup"
+            | "arrowdown"
+            | "arrowleft"
+            | "arrowright"
+            | "plus"
+            | "minus"
+            | "asterisk"
+            | "slash"
+          ),
+        ]
+      | null;
+    _icon_html: string | null;
+    disabled: boolean;
+  };
+}
+/** Message from server->client to update properties of an existing command.
+ *
+ * (automatically generated)
+ */
+export interface CommandUpdateMessage {
+  type: "CommandUpdateMessage";
+  uuid: string;
+  updates: { [key: string]: any };
+}
+/** Message from server->client to remove a command from the command palette.
+ *
+ * (automatically generated)
+ */
+export interface RemoveCommandMessage {
+  type: "RemoveCommandMessage";
+  uuid: string;
+}
+/** Message from client->server when a command is triggered from the command palette.
+ *
+ * (automatically generated)
+ */
+export interface CommandTriggerMessage {
+  type: "CommandTriggerMessage";
+  uuid: string;
+}
 
 export type Message =
   | CameraFrustumMessage
@@ -1730,7 +2022,8 @@ export type Message =
   | GuiButtonGroupMessage
   | GuiRemoveMessage
   | RunJavascriptMessage
-  | NotificationMessage
+  | NotificationShowMessage
+  | NotificationUpdateMessage
   | RemoveNotificationMessage
   | ViewerCameraMessage
   | ScenePointerMessage
@@ -1754,7 +2047,9 @@ export type Message =
   | BackgroundImageMessage
   | SetSceneNodeVisibilityMessage
   | SetSceneNodeClickableMessage
+  | SetSceneNodeDragBindingsMessage
   | SceneNodeClickMessage
+  | SceneNodeDragMessage
   | ResetGuiMessage
   | GuiFormSubmitMessage
   | GuiFormDirtyMessage
@@ -1773,7 +2068,11 @@ export type Message =
   | ShareUrlRequest
   | ShareUrlUpdated
   | ShareUrlDisconnect
-  | SetGuiPanelLabelMessage;
+  | SetGuiPanelLabelMessage
+  | RegisterCommandMessage
+  | CommandUpdateMessage
+  | RemoveCommandMessage
+  | CommandTriggerMessage;
 export type SceneNodeMessage =
   | CameraFrustumMessage
   | GlbMessage

@@ -264,6 +264,20 @@ export const BatchedMeshBase = React.forwardRef<
       obj.quaternion.copy(tempQuaternion);
       obj.scale.copy(tempScale);
     });
+
+    // Invalidate the union bounding sphere. The vendor InstancedMesh2
+    // raycast (and frustum culling) computes this lazily on first use
+    // and caches it forever — so without this, rays toward instances at
+    // their *new* positions early-exit at a sphere that was sized for
+    // the *old* positions. The BVH path auto-updates via ``bvh.move()``
+    // inside ``updateMatrix()``, but the BVH is only built for clickable
+    // or large meshes (see effect below); drag-only nodes (which never
+    // set ``clickable=true``) fall through to the bounding-sphere path.
+    // The vendor types ``boundingSphere`` as ``Sphere`` (non-null) but
+    // the lazy-init code in ``Raycasting.ts`` / ``FrustumCulling.ts``
+    // explicitly checks for null and recomputes — writing null is the
+    // correct invalidation primitive. Cast to satisfy the types.
+    (mesh as { boundingSphere: THREE.Sphere | null }).boundingSphere = null;
   }, [
     props.batched_positions,
     props.batched_wxyzs,

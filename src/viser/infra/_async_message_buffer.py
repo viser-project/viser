@@ -51,7 +51,38 @@ class AsyncMessageBuffer:
 
         # Add message to buffer.
         redundancy_key = message.redundancy_key()
+
+        # Pre-compute entity coordinates outside the lock.
+        purge_entity_type: str | None = None
+        purge_entity_id: str | None = None
+        if (
+            message.lifecycle_phase == "remove"
+            and message.entity_type is not None
+            and message.entity_id_field is not None
+        ):
+            purge_entity_type = message.entity_type
+            purge_entity_id = getattr(message, message.entity_id_field)
+
         with self.buffer_lock:
+            # On Remove, drop pending Updates for the same entity so a
+            # removed entity leaves no residue in the buffer. (Create+Remove
+            # coalesce via the redundancy key below; Updates use a separate
+            # namespace, so they need explicit purging.)
+            if purge_entity_type is not None:
+                stale_ids = [
+                    mid
+                    for mid, m in self.message_from_id.items()
+                    if m.lifecycle_phase == "update"
+                    and m.entity_type == purge_entity_type
+                    and m.entity_id_field is not None
+                    and getattr(m, m.entity_id_field, None) == purge_entity_id
+                ]
+                for mid in stale_ids:
+                    stale = self.message_from_id.pop(mid)
+                    stale_key = stale.redundancy_key()
+                    if stale_key is not None:
+                        self.id_from_redundancy_key.pop(stale_key, None)
+
             new_message_id = self.message_counter
             self.message_from_id[new_message_id] = message
             self.message_counter += 1
