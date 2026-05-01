@@ -21,6 +21,19 @@ export default function SliderComponent({
   },
 }: GuiSliderMessage) {
   const { setValue } = React.useContext(GuiComponentContext)!;
+  const [dragging, setDragging] = React.useState(false);
+  React.useEffect(() => {
+    if (!dragging) return;
+    const stop = () => setDragging(false);
+    window.addEventListener("mouseup", stop);
+    window.addEventListener("touchend", stop);
+    window.addEventListener("touchcancel", stop);
+    return () => {
+      window.removeEventListener("mouseup", stop);
+      window.removeEventListener("touchend", stop);
+      window.removeEventListener("touchcancel", stop);
+    };
+  }, [dragging]);
   if (!visible) return null;
   const updateValue = (value: number) => setValue(uuid, value);
   const input = (
@@ -32,6 +45,9 @@ export default function SliderComponent({
         thumbSize={0}
         radius="xs"
         style={{ flexGrow: 1 }}
+        onMouseDown={() => setDragging(true)}
+        onTouchStart={() => setDragging(true)}
+        onChangeEnd={() => setDragging(false)}
         styles={(theme) => ({
           thumb: {
             height: "0.75rem",
@@ -107,7 +123,12 @@ export default function SliderComponent({
   );
 
   return (
-    <ViserInputComponent {...{ uuid, hint, label }}>
+    <ViserInputComponent
+      uuid={uuid}
+      hint={hint}
+      label={label}
+      hintDisabled={dragging}
+    >
       {input}
     </ViserInputComponent>
   );
