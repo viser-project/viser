@@ -6,12 +6,14 @@ export function ViserInputComponent({
   uuid,
   label,
   hint,
+  hintDisabled,
   children,
 }: {
   uuid: string;
   children: React.ReactNode;
   label?: string;
   hint?: string | null;
+  hintDisabled?: boolean;
 }) {
   const { folderDepth } = React.useContext(GuiComponentContext)!;
   if (hint !== undefined && hint !== null) {
@@ -25,6 +27,7 @@ export function ViserInputComponent({
           withArrow
           openDelay={500}
           withinPortal
+          disabled={hintDisabled}
         >
           <Box>{children}</Box>
         </Tooltip>
