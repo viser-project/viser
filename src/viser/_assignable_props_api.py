@@ -5,9 +5,10 @@ from functools import cached_property
 from typing import Any, Dict, Generic, Protocol, TypeVar, get_type_hints
 
 import numpy as np
-import numpy.typing as npt
 
-# Type variable for props
+from . import _casts
+
+# Type variable for props.
 
 
 class HasProps(Protocol):
@@ -15,17 +16,6 @@ class HasProps(Protocol):
 
 
 TImpl = TypeVar("TImpl", bound=HasProps)
-
-
-def colors_to_uint8(colors: np.ndarray) -> npt.NDArray[np.uint8]:
-    """Convert intensity values to uint8. We assume the range [0,1] for floats, and
-    [0,255] for integers. Accepts any shape."""
-    if colors.dtype != np.uint8:
-        if np.issubdtype(colors.dtype, np.floating):
-            colors = np.clip(colors * 255.0, 0, 255).astype(np.uint8)
-        if np.issubdtype(colors.dtype, np.integer):
-            colors = np.clip(colors, 0, 255).astype(np.uint8)
-    return colors
 
 
 class AssignablePropsBase(Generic[TImpl]):
@@ -44,42 +34,11 @@ class AssignablePropsBase(Generic[TImpl]):
         # Store the implementation object.
         self._impl = impl
 
-    def _cast_value_recursive(self, hint: Any, value: Any, prop_name: str) -> Any:
-        """Recursively cast values to match type hints, handling arrays and tuples."""
-        # Handle numpy arrays
-        if hint == npt.NDArray[np.float16]:
-            return np.asarray(value).astype(np.float16)
-        elif hint == npt.NDArray[np.float32]:
-            return np.asarray(value).astype(np.float32)
-        elif hint == npt.NDArray[np.float64]:
-            return np.asarray(value).astype(np.float64)
-        elif hint == npt.NDArray[np.uint8] and "color" in prop_name:
-            return colors_to_uint8(value)
-        if isinstance(value, np.ndarray):
-            return value
-
-        # Handle tuple[T, ...] pattern
-        if (
-            isinstance(value, tuple)
-            and hasattr(hint, "__origin__")
-            and hint.__origin__ is tuple
-            and hasattr(hint, "__args__")
-            and len(hint.__args__) == 2
-            and hint.__args__[1] is ...
-        ):
-            element_type = hint.__args__[0]
-            return tuple(
-                self._cast_value_recursive(element_type, item, prop_name)
-                for item in value
-            )
-
-        return value
-
     def _cast_array_dtypes(
         self, prop_hints: Dict[str, Any], prop_name: str, value: np.ndarray
     ) -> np.ndarray:
         """Helper to cast array values to the correct data type."""
-        return self._cast_value_recursive(prop_hints[prop_name], value, prop_name)
+        return _casts.deserialize_from_wire(value, prop_hints[prop_name], prop_name)
 
     @cached_property
     def _prop_hints(self) -> Dict[str, Any]:

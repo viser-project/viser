@@ -4,6 +4,7 @@ import asyncio
 import builtins
 import colorsys
 import dataclasses
+import datetime
 import functools
 import threading
 import time
@@ -39,6 +40,8 @@ from ._gui_handles import (
     GuiButtonHandle,
     GuiCheckboxHandle,
     GuiContainerProtocol,
+    GuiDateHandle,
+    GuiDatetimeHandle,
     GuiDropdownHandle,
     GuiEvent,
     GuiFolderHandle,
@@ -55,6 +58,7 @@ from ._gui_handles import (
     GuiSliderHandle,
     GuiTabGroupHandle,
     GuiTextHandle,
+    GuiTimeHandle,
     GuiUploadButtonHandle,
     GuiUplotHandle,
     GuiVector2Handle,
@@ -246,18 +250,12 @@ class GuiApi:
             # expect floats but the Javascript side gives us integers or (2)
             # when we expect tuples but the Javascript side gives us lists.
             if prop_name == "value":
-                if isinstance(handle_state.value, tuple):
-                    if len(handle_state.value) > 0:
-                        # We currently assume non-empty tuple types have length
-                        # greater than 0, and contents are all the same type.
-                        typ = type(handle_state.value[0])
-                        assert all([type(x) == typ for x in handle_state.value])
-                        prop_value = tuple([typ(new) for new in prop_value])
-                    else:
-                        # Empty tuple.
-                        prop_value = tuple(prop_value)
-                else:
-                    prop_value = type(handle_state.value)(prop_value)
+                # Use centralized type casting from AssignablePropsBase
+                # This handles datetime, tuples, arrays, etc.
+                value_type_hint = handle._value_type_hint
+                prop_value = handle._cast_value_recursive(
+                    value_type_hint, prop_value, prop_name
+                )
 
             # Update handle property.
             if current_value != prop_value:
@@ -1795,6 +1793,141 @@ class GuiApi:
                     uuid=uuid,
                     container_uuid=self._get_container_uuid(),
                     props=_messages.GuiRgbaProps(
+                        order=order,
+                        label=label,
+                        hint=hint,
+                        disabled=disabled,
+                        visible=visible,
+                    ),
+                ),
+            )
+        )
+
+    @deprecated_positional_shim
+    def add_datetime(
+        self,
+        label: str,
+        initial_value: datetime.datetime,
+        *,
+        disabled: bool = False,
+        visible: bool = True,
+        hint: str | None = None,
+        order: float | None = None,
+    ) -> GuiDatetimeHandle:
+        """Add a datetime picker to the GUI.
+
+        Args:
+            label: Label to display on the datetime picker.
+            initial_value: Initial value of the datetime picker.
+            disabled: Whether the datetime picker is disabled.
+            visible: Whether the datetime picker is visible.
+            hint: Optional hint to display on hover.
+            order: Optional ordering, smallest values will be displayed first.
+
+        Returns:
+            A handle that can be used to interact with the GUI element.
+        """
+        # No conversion needed - infrastructure automatically serializes datetime to ISO string.
+        uuid = _make_uuid()
+        order = _apply_default_order(order)
+        return GuiDatetimeHandle(
+            self._create_gui_input(
+                initial_value,
+                message=_messages.GuiDatetimeMessage(
+                    value=initial_value,
+                    uuid=uuid,
+                    container_uuid=self._get_container_uuid(),
+                    props=_messages.GuiDatetimeProps(
+                        order=order,
+                        label=label,
+                        hint=hint,
+                        disabled=disabled,
+                        visible=visible,
+                    ),
+                ),
+            )
+        )
+
+    @deprecated_positional_shim
+    def add_date(
+        self,
+        label: str,
+        initial_value: datetime.date,
+        *,
+        disabled: bool = False,
+        visible: bool = True,
+        hint: str | None = None,
+        order: float | None = None,
+    ) -> GuiDateHandle:
+        """Add a date picker to the GUI.
+
+        Args:
+            label: Label to display on the date picker.
+            initial_value: Initial value of the date picker.
+            disabled: Whether the date picker is disabled.
+            visible: Whether the date picker is visible.
+            hint: Optional hint to display on hover.
+            order: Optional ordering, smallest values will be displayed first.
+
+        Returns:
+            A handle that can be used to interact with the GUI element.
+        """
+        # No conversion needed - infrastructure automatically serializes date to ISO string.
+        uuid = _make_uuid()
+        order = _apply_default_order(order)
+        return GuiDateHandle(
+            self._create_gui_input(
+                initial_value,
+                message=_messages.GuiDateMessage(
+                    value=initial_value,
+                    uuid=uuid,
+                    container_uuid=self._get_container_uuid(),
+                    props=_messages.GuiDateProps(
+                        order=order,
+                        label=label,
+                        hint=hint,
+                        disabled=disabled,
+                        visible=visible,
+                    ),
+                ),
+            )
+        )
+
+    @deprecated_positional_shim
+    def add_time(
+        self,
+        label: str,
+        initial_value: datetime.time,
+        *,
+        disabled: bool = False,
+        visible: bool = True,
+        hint: str | None = None,
+        order: float | None = None,
+    ) -> GuiTimeHandle:
+        """Add a time picker to the GUI.
+
+        Args:
+            label: Label to display on the time picker.
+            initial_value: Initial value of the time picker.
+            disabled: Whether the time picker is disabled.
+            visible: Whether the time picker is visible.
+            hint: Optional hint to display on hover.
+            order: Optional ordering, smallest values will be displayed first.
+
+        Returns:
+            A handle that can be used to interact with the GUI element.
+        """
+        # No conversion needed - infrastructure automatically serializes time to ISO string.
+        uuid = _make_uuid()
+        order = _apply_default_order(order)
+        return GuiTimeHandle(
+            self._create_gui_input(
+                initial_value,
+                message=_messages.GuiTimeMessage(
+                    value=initial_value,
+                    uuid=uuid,
+                    container_uuid=self._get_container_uuid(),
+                    props=_messages.GuiTimeProps(
                         order=order,
                         label=label,
                         hint=hint,

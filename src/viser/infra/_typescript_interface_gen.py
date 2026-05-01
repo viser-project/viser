@@ -1,4 +1,5 @@
 import dataclasses
+import datetime
 import types
 from collections import defaultdict
 from typing import Any, Type, Union, cast
@@ -34,6 +35,10 @@ _raw_type_mapping = {
     None: "null",
     Never: "never",
     type(None): "null",
+    # datetime types serialize as ISO 8601 strings
+    datetime.datetime: "string",
+    datetime.date: "string",
+    datetime.time: "string",
 }
 
 

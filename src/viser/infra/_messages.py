@@ -20,6 +20,29 @@ else:
 
 
 def _prepare_for_deserialization(value: Any, annotation: Type) -> Any:
+    import datetime
+
+    # Handle ISO strings → datetime types
+    if annotation is datetime.datetime:
+        if isinstance(value, str):
+            dt = datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
+            # Strip timezone info to avoid naive/aware mixing issues.
+            return dt.replace(tzinfo=None)
+        elif isinstance(value, (int, float)):
+            # Backward compatibility: support old timestamp format.
+            return datetime.datetime.fromtimestamp(value)
+        return value
+
+    if annotation is datetime.date:
+        if isinstance(value, str):
+            return datetime.date.fromisoformat(value)
+        return value
+
+    if annotation is datetime.time:
+        if isinstance(value, str):
+            return datetime.time.fromisoformat(value)
+        return value
+
     # If annotated as a float but we got an integer, cast to float. These
     # are both `number` in Javascript.
     if annotation is float:
@@ -47,8 +70,18 @@ def _prepare_for_deserialization(value: Any, annotation: Type) -> Any:
 
 def _prepare_for_serialization(value: Any, annotation: object) -> Any:
     """Prepare any special types for serialization."""
+    import datetime
+
     if annotation is Any:
         annotation = type(value)
+
+    # Handle datetime types → ISO 8601 strings
+    if isinstance(value, datetime.datetime):
+        return value.isoformat()
+    if isinstance(value, datetime.date):
+        return value.isoformat()
+    if isinstance(value, datetime.time):
+        return value.isoformat()
 
     # Coerce some scalar types: if we've annotated as float / int but we get an
     # np.float32 / np.int64, for example, we should cast automatically.

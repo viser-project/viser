@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import base64
 import dataclasses
+import datetime
 import re
 import time
 import uuid
 import warnings
 from collections.abc import Coroutine
+from functools import cached_property
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -32,6 +34,8 @@ from ._messages import (
     GuiButtonProps,
     GuiCheckboxProps,
     GuiCloseModalMessage,
+    GuiDateProps,
+    GuiDatetimeProps,
     GuiDropdownProps,
     GuiFolderProps,
     GuiHtmlProps,
@@ -47,6 +51,7 @@ from ._messages import (
     GuiSliderProps,
     GuiTabGroupProps,
     GuiTextProps,
+    GuiTimeProps,
     GuiUpdateMessage,
     GuiUploadButtonProps,
     GuiUplotProps,
@@ -165,6 +170,35 @@ class _GuiInputHandle(
     Generic[T],
     GuiBaseProps,
 ):
+    @cached_property
+    def _value_type_hint(self) -> Any:
+        """Extract the value type hint from the generic parameter."""
+        from typing import ForwardRef, get_args, get_origin
+        from typing_extensions import get_original_bases
+        import sys
+
+        # Search through base classes to find _GuiInputHandle[T]
+        for base in get_original_bases(type(self)):
+            origin = get_origin(base)
+            if origin is _GuiInputHandle or origin is GuiInputHandle:
+                args = get_args(base)
+                if len(args) > 0:
+                    type_param = args[0]
+
+                    # Resolve ForwardRef if needed
+                    if isinstance(type_param, ForwardRef):
+                        module = sys.modules[type(self).__module__]
+                        globalns = getattr(module, '__dict__', {})
+                        try:
+                            return type_param._evaluate(globalns, localns=None, recursive_guard=frozenset())
+                        except:
+                            # Fallback if evaluation fails
+                            return type_param
+                    return type_param
+
+        # Fallback: return Any if we can't determine the type
+        return Any
+
     @property
     def value(self) -> T:
         """Value of the GUI input. Synchronized automatically when assigned.
@@ -182,15 +216,19 @@ class _GuiInputHandle(
             assert len(value.shape) <= 1, f"{value.shape} should be at most 1D!"
             value = tuple(map(float, value))  # type: ignore
 
+        # Use centralized casting to convert to the correct type
+        value = self._cast_value_recursive(self._value_type_hint, value, "value")  # type: ignore
+
         # Send to client, except for buttons.
         if not self._impl.is_button:
+            # Serialize for client (e.g., datetime → timestamp)
+            serialized_value = self._serialize_for_client(value)
             self._impl.gui_api._websock_interface.queue_message(
-                GuiUpdateMessage(self._impl.uuid, {"value": value})
+                GuiUpdateMessage(self._impl.uuid, {"value": serialized_value})
             )
 
-        # Set internal state. We automatically convert numpy arrays to the expected
-        # internal type. (eg 1D arrays to tuples)
-        self._impl.value = type(self._impl.value)(value)  # type: ignore
+        # Set internal state
+        self._impl.value = value  # type: ignore
         self._impl.update_timestamp = time.time()
 
         # Call update callbacks.
@@ -323,6 +361,36 @@ class GuiRgbaHandle(GuiInputHandle[Tuple[int, int, int, int]], GuiRgbaProps):
 
     .. attribute:: value
        :type: tuple[int, int, int, int]
+
+       Value of the input. Synchronized automatically when assigned.
+    """
+
+
+class GuiDatetimeHandle(GuiInputHandle["datetime.datetime"], GuiDatetimeProps):
+    """Handle for datetime inputs.
+
+    .. attribute:: value
+       :type: datetime.datetime
+
+       Value of the input. Synchronized automatically when assigned.
+    """
+
+
+class GuiDateHandle(GuiInputHandle["datetime.date"], GuiDateProps):
+    """Handle for date inputs.
+
+    .. attribute:: value
+       :type: datetime.date
+
+       Value of the input. Synchronized automatically when assigned.
+    """
+
+
+class GuiTimeHandle(GuiInputHandle["datetime.time"], GuiTimeProps):
+    """Handle for time inputs.
+
+    .. attribute:: value
+       :type: datetime.time
 
        Value of the input. Synchronized automatically when assigned.
     """

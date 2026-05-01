@@ -23,9 +23,8 @@ from typing_extensions import Literal, ParamSpec, TypeAlias, deprecated
 
 from viser._backwards_compat_shims import deprecated_positional_shim
 
-from . import _messages
+from . import _casts, _messages
 from . import transforms as tf
-from ._assignable_props_api import colors_to_uint8
 from ._image_encoding import cv2_imencode_with_fallback
 from ._scene_handles import (
     AmbientLightHandle,
@@ -98,7 +97,7 @@ def _encode_image_binary(
     format: Literal["auto", "png", "jpeg"],
     jpeg_quality: int | None = None,
 ) -> tuple[Literal["jpeg", "png"], bytes]:
-    image = colors_to_uint8(image)
+    image = _casts.colors_to_uint8(image)
 
     # Resolve "auto" format
     resolved_format: Literal["jpeg", "png"]
@@ -694,7 +693,7 @@ class SceneApi:
         ):
             raise ValueError("Points should have shape (N, 2, 3) for N line segments.")
 
-        colors_array = colors_to_uint8(np.asarray(colors))
+        colors_array = _casts.colors_to_uint8(np.asarray(colors))
         colors_array = np.broadcast_to(colors_array, points_array.shape)
 
         message = _messages.LineSegmentsMessage(
@@ -1293,7 +1292,7 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        colors_cast = colors_to_uint8(np.asarray(colors))
+        colors_cast = _casts.colors_to_uint8(np.asarray(colors))
         assert len(points.shape) == 2 and points.shape[-1] == 3, (
             "Shape of points should be (N, 3)."
         )
@@ -1642,7 +1641,7 @@ class SceneApi:
         # Handle batched colors.
         batched_colors_array = None
         if batched_colors is not None:
-            batched_colors_array = colors_to_uint8(np.asarray(batched_colors))
+            batched_colors_array = _casts.colors_to_uint8(np.asarray(batched_colors))
 
         message = _messages.BatchedMeshesMessage(
             name=name,
@@ -1856,8 +1855,8 @@ class SceneApi:
                 # - xyz (96 bits): upper-triangular terms of covariance.
                 cov_triu.astype(np.float16).copy().view(np.uint8),
                 # - w (32 bits): rgba.
-                colors_to_uint8(rgbs),
-                colors_to_uint8(opacities),
+                _casts.colors_to_uint8(rgbs),
+                _casts.colors_to_uint8(opacities),
             ],
             axis=-1,
         ).view(np.uint32)

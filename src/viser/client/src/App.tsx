@@ -1,6 +1,7 @@
 // @refresh reset
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
+import "@mantine/dates/styles.css";
 import "./App.css";
 import "./index.css";
 

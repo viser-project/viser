@@ -914,6 +914,57 @@ export interface GuiRgbaMessage {
     disabled: boolean;
   };
 }
+/** GuiDatetimeMessage(uuid: 'str', value: 'datetime.datetime', container_uuid: 'str', props: 'GuiDatetimeProps')
+ *
+ * (automatically generated)
+ */
+export interface GuiDatetimeMessage {
+  type: "GuiDatetimeMessage";
+  uuid: string;
+  value: string;
+  container_uuid: string;
+  props: {
+    order: number;
+    label: string;
+    hint: string | null;
+    visible: boolean;
+    disabled: boolean;
+  };
+}
+/** GuiDateMessage(uuid: 'str', value: 'datetime.date', container_uuid: 'str', props: 'GuiDateProps')
+ *
+ * (automatically generated)
+ */
+export interface GuiDateMessage {
+  type: "GuiDateMessage";
+  uuid: string;
+  value: string;
+  container_uuid: string;
+  props: {
+    order: number;
+    label: string;
+    hint: string | null;
+    visible: boolean;
+    disabled: boolean;
+  };
+}
+/** GuiTimeMessage(uuid: 'str', value: 'datetime.time', container_uuid: 'str', props: 'GuiTimeProps')
+ *
+ * (automatically generated)
+ */
+export interface GuiTimeMessage {
+  type: "GuiTimeMessage";
+  uuid: string;
+  value: string;
+  container_uuid: string;
+  props: {
+    order: number;
+    label: string;
+    hint: string | null;
+    visible: boolean;
+    disabled: boolean;
+  };
+}
 /** GuiCheckboxMessage(uuid: 'str', value: 'bool', container_uuid: 'str', props: 'GuiCheckboxProps')
  *
  * (automatically generated)
@@ -1558,6 +1609,9 @@ export type Message =
   | GuiNumberMessage
   | GuiRgbMessage
   | GuiRgbaMessage
+  | GuiDatetimeMessage
+  | GuiDateMessage
+  | GuiTimeMessage
   | GuiCheckboxMessage
   | GuiVector2Message
   | GuiVector3Message
@@ -1649,6 +1703,9 @@ export type GuiComponentMessage =
   | GuiNumberMessage
   | GuiRgbMessage
   | GuiRgbaMessage
+  | GuiDatetimeMessage
+  | GuiDateMessage
+  | GuiTimeMessage
   | GuiCheckboxMessage
   | GuiVector2Message
   | GuiVector3Message
@@ -1704,6 +1761,9 @@ const typeSetGuiComponentMessage = new Set([
   "GuiNumberMessage",
   "GuiRgbMessage",
   "GuiRgbaMessage",
+  "GuiDatetimeMessage",
+  "GuiDateMessage",
+  "GuiTimeMessage",
   "GuiCheckboxMessage",
   "GuiVector2Message",
   "GuiVector3Message",

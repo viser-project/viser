@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import dataclasses
+import datetime
 import uuid
 from typing import Any, ClassVar, Dict, Optional, Tuple, Type, TypeVar, Union
 
@@ -1385,6 +1386,42 @@ class GuiRgbaMessage(_CreateGuiComponentMessage):
     value: Tuple[int, int, int, int]
     container_uuid: str
     props: GuiRgbaProps
+
+
+@dataclasses.dataclass
+class GuiDatetimeProps(GuiBaseProps):
+    disabled: bool
+
+
+@dataclasses.dataclass
+class GuiDatetimeMessage(_CreateGuiComponentMessage):
+    value: datetime.datetime
+    container_uuid: str
+    props: GuiDatetimeProps
+
+
+@dataclasses.dataclass
+class GuiDateProps(GuiBaseProps):
+    disabled: bool
+
+
+@dataclasses.dataclass
+class GuiDateMessage(_CreateGuiComponentMessage):
+    value: datetime.date
+    container_uuid: str
+    props: GuiDateProps
+
+
+@dataclasses.dataclass
+class GuiTimeProps(GuiBaseProps):
+    disabled: bool
+
+
+@dataclasses.dataclass
+class GuiTimeMessage(_CreateGuiComponentMessage):
+    value: datetime.time
+    container_uuid: str
+    props: GuiTimeProps
 
 
 @dataclasses.dataclass

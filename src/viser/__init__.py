@@ -2,6 +2,8 @@ from ._gui_api import GuiApi as GuiApi
 from ._gui_handles import GuiButtonGroupHandle as GuiButtonGroupHandle
 from ._gui_handles import GuiButtonHandle as GuiButtonHandle
 from ._gui_handles import GuiCheckboxHandle as GuiCheckboxHandle
+from ._gui_handles import GuiDateHandle as GuiDateHandle
+from ._gui_handles import GuiDatetimeHandle as GuiDatetimeHandle
 from ._gui_handles import GuiDropdownHandle as GuiDropdownHandle
 from ._gui_handles import GuiEvent as GuiEvent
 from ._gui_handles import GuiFolderHandle as GuiFolderHandle
@@ -18,6 +20,7 @@ from ._gui_handles import GuiSliderHandle as GuiSliderHandle
 from ._gui_handles import GuiTabGroupHandle as GuiTabGroupHandle
 from ._gui_handles import GuiTabHandle as GuiTabHandle
 from ._gui_handles import GuiTextHandle as GuiTextHandle
+from ._gui_handles import GuiTimeHandle as GuiTimeHandle
 from ._gui_handles import GuiUploadButtonHandle as GuiUploadButtonHandle
 from ._gui_handles import GuiUplotHandle as GuiUplotHandle
 from ._gui_handles import GuiVector2Handle as GuiVector2Handle

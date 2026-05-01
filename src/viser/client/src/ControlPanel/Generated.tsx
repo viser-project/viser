@@ -14,6 +14,9 @@ import Vector3Component from "../components/Vector3";
 import DropdownComponent from "../components/Dropdown";
 import RgbComponent from "../components/Rgb";
 import RgbaComponent from "../components/Rgba";
+import DatetimeComponent from "../components/Datetime";
+import DateComponent from "../components/Date";
+import TimeComponent from "../components/Time";
 import ButtonGroupComponent from "../components/ButtonGroup";
 import MarkdownComponent from "../components/Markdown";
 import PlotlyComponent from "../components/PlotlyComponent";
@@ -155,6 +158,12 @@ function GeneratedInput(props: {
       return <RgbComponent {...conf} />;
     case "GuiRgbaMessage":
       return <RgbaComponent {...conf} />;
+    case "GuiDatetimeMessage":
+      return <DatetimeComponent {...conf} />;
+    case "GuiDateMessage":
+      return <DateComponent {...conf} />;
+    case "GuiTimeMessage":
+      return <TimeComponent {...conf} />;
     case "GuiButtonGroupMessage":
       return <ButtonGroupComponent {...conf} />;
     case "GuiProgressBarMessage":

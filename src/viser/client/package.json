@@ -4,6 +4,7 @@
   "private": true,
   "dependencies": {
     "@mantine/core": "^8.3.0",
+    "@mantine/dates": "^8.3.3",
     "@mantine/form": "^8.3.0",
     "@mantine/hooks": "^8.3.0",
     "@mantine/notifications": "^8.3.0",
@@ -25,6 +26,7 @@
     "await-lock": "^2.2.2",
     "browserslist": "^4.24.4",
     "colortranslator": "^4.1.0",
+    "dayjs": "^1.11.18",
     "detect-browser": "^5.3.0",
     "fflate": "^0.8.2",
     "hold-event": "^1.1.0",
