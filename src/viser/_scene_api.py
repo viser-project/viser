@@ -2943,7 +2943,7 @@ class SceneApi:
         self,
     ) -> None:
         """Remove the currently attached scene pointer event. This will trigger
-        any callback attached to `.on_scene_pointer_removed()`."""
+        any callback attached to :meth:`on_pointer_callback_removed()`."""
 
         if self._scene_pointer_cb is None:
             warnings.warn(
