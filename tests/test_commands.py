@@ -167,9 +167,7 @@ def test_command_register_disabled() -> None:
 def test_command_update_hotkey() -> None:
     """Updating the hotkey should modify the handle's state."""
     server = viser.ViserServer()
-    handle = server.gui.add_command(
-        "Command", hotkey="K", modifier="cmd/ctrl"
-    )
+    handle = server.gui.add_command("Command", hotkey="K", modifier="cmd/ctrl")
 
     assert handle.hotkey == "K"
     assert handle.modifier == "cmd/ctrl"

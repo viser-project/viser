@@ -98,7 +98,6 @@ HotkeyKey = Literal[
 """A key for hotkey bindings."""
 
 
-
 @dataclasses.dataclass(frozen=True)
 class GuiSliderMark:
     value: float

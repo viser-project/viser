@@ -286,9 +286,7 @@ def test_command_hotkey_triggers_callback(
     without needing to open the palette."""
     triggered = threading.Event()
 
-    handle = viser_server.gui.add_command(
-        "Hotkey Target", hotkey="Y", modifier="alt"
-    )
+    handle = viser_server.gui.add_command("Hotkey Target", hotkey="Y", modifier="alt")
 
     @handle.on_trigger
     def _(event: viser.CommandEvent) -> None:
@@ -311,9 +309,7 @@ def test_command_hotkey_rebind_loop(
     count = {"n": 0}
     fired = threading.Event()
 
-    handle = viser_server.gui.add_command(
-        "Counter", hotkey="Y", modifier="alt"
-    )
+    handle = viser_server.gui.add_command("Counter", hotkey="Y", modifier="alt")
 
     @handle.on_trigger
     def _(event: viser.CommandEvent) -> None:
