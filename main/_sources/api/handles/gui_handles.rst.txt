@@ -4,6 +4,8 @@
 GUI Handles
 ===========
 
+.. autoclass:: viser.CommandHandle
+
 .. autoclass:: viser.GuiButtonGroupHandle
 
 .. autoclass:: viser.GuiButtonHandle
@@ -51,6 +53,12 @@ GUI Handles
 .. autoclass:: viser.GuiVector2Handle
 
 .. autoclass:: viser.GuiVector3Handle
+
+.. autodata:: viser.Hotkey
+
+.. autodata:: viser.HotkeyKey
+
+.. autodata:: viser.HotkeyModifier
 
 .. autoclass:: viser.UploadedFile
 

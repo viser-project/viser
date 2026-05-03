@@ -435,6 +435,49 @@
 <p>We define a small set of event types, which are passed to callback functions
 when events like clicks or GUI updates are triggered.</p>
 <dl class="py class">
+<dt class="sig sig-object py" id="viser.CommandEvent">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">CommandEvent</span></span><a class="reference internal" href="../../../_modules/viser/_gui_handles/#CommandEvent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.CommandEvent" title="Link to this definition">¶</a></dt>
+<dd><p>Information associated with a command trigger from the command palette.</p>
+<p>Passed as input to callback functions.</p>
+<p><code class="docutils literal notranslate"><span class="pre">client</span></code> and <code class="docutils literal notranslate"><span class="pre">client_id</span></code> are typed Optional for parity with
+<a class="reference internal" href="#viser.GuiEvent" title="viser.GuiEvent"><code class="xref py py-class docutils literal notranslate"><span class="pre">GuiEvent</span></code></a> (which can fire server-side) and to leave room for a
+future programmatic <code class="docutils literal notranslate"><span class="pre">handle.trigger()</span></code> path. In practice, every command
+trigger today originates from a real client – the dispatcher drops the
+event if the client can’t be resolved, so callbacks only see non-None
+values.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.CommandEvent.client">
+<span class="sig-name descname"><span class="pre">client</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="../../handles/client_handles/#viser.ClientHandle" title="viser.ClientHandle"><span class="pre">ClientHandle</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.CommandEvent.client" title="Link to this definition">¶</a></dt>
+<dd><p>Client that triggered this command.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.CommandEvent.client_id">
+<span class="sig-name descname"><span class="pre">client_id</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.CommandEvent.client_id" title="Link to this definition">¶</a></dt>
+<dd><p>ID of client that triggered this command.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.CommandEvent.target">
+<span class="sig-name descname"><span class="pre">target</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="../../handles/gui_handles/#viser.CommandHandle" title="viser.CommandHandle"><span class="pre">CommandHandle</span></a></em><a class="headerlink" href="#viser.CommandEvent.target" title="Link to this definition">¶</a></dt>
+<dd><p>Command handle that was triggered.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py data">
+<dt class="sig sig-object py" id="viser.DragButton">
+<span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">DragButton</span></span><a class="headerlink" href="#viser.DragButton" title="Link to this definition">¶</a></dt>
+<dd><p>alias of <a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Literal</span></code></a>[‘left’, ‘middle’, ‘right’, ‘any’]</p>
+</dd></dl>
+
+<dl class="py data">
+<dt class="sig sig-object py" id="viser.DragModifier">
+<span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">DragModifier</span></span><a class="headerlink" href="#viser.DragModifier" title="Link to this definition">¶</a></dt>
+<dd><p>alias of <a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Literal</span></code></a>[‘’, ‘cmd/ctrl’, ‘alt’, ‘shift’, ‘cmd/ctrl+alt’, ‘cmd/ctrl+shift’, ‘alt+shift’, ‘cmd/ctrl+alt+shift’]</p>
+</dd></dl>
+
+<dl class="py class">
 <dt class="sig sig-object py" id="viser.GuiEvent">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">GuiEvent</span></span><a class="reference internal" href="../../../_modules/viser/_gui_handles/#GuiEvent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.GuiEvent" title="Link to this definition">¶</a></dt>
 <dd><p>Information associated with a GUI event, such as an update or click.</p>
@@ -455,6 +498,97 @@ when events like clicks or GUI updates are triggered.</p>
 <dt class="sig sig-object py" id="viser.GuiEvent.target">
 <span class="sig-name descname"><span class="pre">target</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">TGuiHandle</span></em><a class="headerlink" href="#viser.GuiEvent.target" title="Link to this definition">¶</a></dt>
 <dd><p>GUI element that was affected.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.SceneNodeDragEvent">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">SceneNodeDragEvent</span></span><a class="reference internal" href="../../../_modules/viser/_scene_handles/#SceneNodeDragEvent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.SceneNodeDragEvent" title="Link to this definition">¶</a></dt>
+<dd><p>Event passed to scene-node drag callbacks.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneNodeDragEvent.client">
+<span class="sig-name descname"><span class="pre">client</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="../../handles/client_handles/#viser.ClientHandle" title="viser.ClientHandle"><span class="pre">ClientHandle</span></a></em><a class="headerlink" href="#viser.SceneNodeDragEvent.client" title="Link to this definition">¶</a></dt>
+<dd><p>Client that triggered this event.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneNodeDragEvent.client_id">
+<span class="sig-name descname"><span class="pre">client_id</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><a class="headerlink" href="#viser.SceneNodeDragEvent.client_id" title="Link to this definition">¶</a></dt>
+<dd><p>ID of client that triggered this event.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneNodeDragEvent.target">
+<span class="sig-name descname"><span class="pre">target</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">TSceneNodeHandle</span></em><a class="headerlink" href="#viser.SceneNodeDragEvent.target" title="Link to this definition">¶</a></dt>
+<dd><p>Scene node that is being dragged.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneNodeDragEvent.instance_index">
+<span class="sig-name descname"><span class="pre">instance_index</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.SceneNodeDragEvent.instance_index" title="Link to this definition">¶</a></dt>
+<dd><p>Instance index within a batched scene node (e.g. batched meshes,
+batched GLBs, batched axes); <code class="docutils literal notranslate"><span class="pre">None</span></code> for non-batched nodes. Frozen
+at drag-start — the drag always refers to the instance that was
+under the cursor when the gesture began.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneNodeDragEvent.start_position">
+<span class="sig-name descname"><span class="pre">start_position</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.SceneNodeDragEvent.start_position" title="Link to this definition">¶</a></dt>
+<dd><p>World-coords position of the click point on the object. <em>Live</em> —
+updates each event as the object moves, so it always reflects where
+the grab point currently is in world coords (useful for
+rotate-around-grab gestures).</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneNodeDragEvent.start_screen_pos">
+<span class="sig-name descname"><span class="pre">start_screen_pos</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.SceneNodeDragEvent.start_screen_pos" title="Link to this definition">¶</a></dt>
+<dd><p>Live OpenCV screen-space projection of the click point.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneNodeDragEvent.end_position">
+<span class="sig-name descname"><span class="pre">end_position</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.SceneNodeDragEvent.end_position" title="Link to this definition">¶</a></dt>
+<dd><p>Current pointer projected onto the camera-aligned drag plane,
+in world coords.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneNodeDragEvent.end_screen_pos">
+<span class="sig-name descname"><span class="pre">end_screen_pos</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.SceneNodeDragEvent.end_screen_pos" title="Link to this definition">¶</a></dt>
+<dd><p>Current pointer in OpenCV screen-space coordinates.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneNodeDragEvent.button">
+<span class="sig-name descname"><span class="pre">button</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Literal</span><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'left'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'middle'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'right'</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.SceneNodeDragEvent.button" title="Link to this definition">¶</a></dt>
+<dd><p>Mouse button that initiated the drag.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneNodeDragEvent.ctrl">
+<span class="sig-name descname"><span class="pre">ctrl</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.SceneNodeDragEvent.ctrl" title="Link to this definition">¶</a></dt>
+<dd><p>Whether Ctrl was held at drag-start (frozen for the drag’s lifetime).</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneNodeDragEvent.meta">
+<span class="sig-name descname"><span class="pre">meta</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.SceneNodeDragEvent.meta" title="Link to this definition">¶</a></dt>
+<dd><p>Whether the Meta/Cmd key was held at drag-start (frozen for the drag’s lifetime).</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneNodeDragEvent.shift">
+<span class="sig-name descname"><span class="pre">shift</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.SceneNodeDragEvent.shift" title="Link to this definition">¶</a></dt>
+<dd><p>Whether Shift was held at drag-start (frozen for the drag’s lifetime).</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneNodeDragEvent.alt">
+<span class="sig-name descname"><span class="pre">alt</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.SceneNodeDragEvent.alt" title="Link to this definition">¶</a></dt>
+<dd><p>Whether Alt/Option was held at drag-start (frozen for the drag’s lifetime).</p>
 </dd></dl>
 
 </dd></dl>
@@ -656,10 +790,34 @@ For a box selection, this includes the min- and max- corners of the box.</p>
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Events</a><ul>
+<li><a class="reference internal" href="#viser.CommandEvent"><code class="docutils literal notranslate"><span class="pre">CommandEvent</span></code></a><ul>
+<li><a class="reference internal" href="#viser.CommandEvent.client"><code class="docutils literal notranslate"><span class="pre">CommandEvent.client</span></code></a></li>
+<li><a class="reference internal" href="#viser.CommandEvent.client_id"><code class="docutils literal notranslate"><span class="pre">CommandEvent.client_id</span></code></a></li>
+<li><a class="reference internal" href="#viser.CommandEvent.target"><code class="docutils literal notranslate"><span class="pre">CommandEvent.target</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.DragButton"><code class="docutils literal notranslate"><span class="pre">DragButton</span></code></a></li>
+<li><a class="reference internal" href="#viser.DragModifier"><code class="docutils literal notranslate"><span class="pre">DragModifier</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiEvent"><code class="docutils literal notranslate"><span class="pre">GuiEvent</span></code></a><ul>
 <li><a class="reference internal" href="#viser.GuiEvent.client"><code class="docutils literal notranslate"><span class="pre">GuiEvent.client</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiEvent.client_id"><code class="docutils literal notranslate"><span class="pre">GuiEvent.client_id</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiEvent.target"><code class="docutils literal notranslate"><span class="pre">GuiEvent.target</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.SceneNodeDragEvent"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent</span></code></a><ul>
+<li><a class="reference internal" href="#viser.SceneNodeDragEvent.client"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.client</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneNodeDragEvent.client_id"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.client_id</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneNodeDragEvent.target"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.target</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneNodeDragEvent.instance_index"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.instance_index</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneNodeDragEvent.start_position"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.start_position</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneNodeDragEvent.start_screen_pos"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.start_screen_pos</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneNodeDragEvent.end_position"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.end_position</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneNodeDragEvent.end_screen_pos"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.end_screen_pos</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneNodeDragEvent.button"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.button</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneNodeDragEvent.ctrl"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.ctrl</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneNodeDragEvent.meta"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.meta</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneNodeDragEvent.shift"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.shift</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneNodeDragEvent.alt"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.alt</span></code></a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#viser.SceneNodePointerEvent"><code class="docutils literal notranslate"><span class="pre">SceneNodePointerEvent</span></code></a><ul>

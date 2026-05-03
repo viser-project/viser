@@ -793,6 +793,8 @@
 <span class="n">NoneOrCoroutine</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">&quot;NoneOrCoroutine&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="n">Coroutine</span><span class="p">)</span>
 
 
+<div class="viewcode-block" id="SceneNodeDragEvent">
+<a class="viewcode-back" href="../../../api/advanced/events/#viser.SceneNodeDragEvent">[docs]</a>
 <span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">SceneNodeDragEvent</span><span class="p">(</span><span class="n">Generic</span><span class="p">[</span><span class="n">TSceneNodeHandle</span><span class="p">]):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Event passed to scene-node drag callbacks.&quot;&quot;&quot;</span>
@@ -829,7 +831,8 @@
     <span class="n">shift</span><span class="p">:</span> <span class="nb">bool</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Whether Shift was held at drag-start (frozen for the drag&#39;s lifetime).&quot;&quot;&quot;</span>
     <span class="n">alt</span><span class="p">:</span> <span class="nb">bool</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Whether Alt/Option was held at drag-start (frozen for the drag&#39;s lifetime).&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Whether Alt/Option was held at drag-start (frozen for the drag&#39;s lifetime).&quot;&quot;&quot;</span></div>
+
 
 
 <span class="n">_DRAG_MODIFIER_CANONICAL_ORDER</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">_DragModifierAtom</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
