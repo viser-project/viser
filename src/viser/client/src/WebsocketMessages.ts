@@ -1472,6 +1472,12 @@ export interface SetSceneNodeClickableMessage {
  *
  * Sent as a full set; empty ``bindings`` means the node is not draggable.
  *
+ * Excluded from scene serialization: drag bindings are interaction state
+ * (callbacks live on the server, the client's ``DragLayer`` is null in
+ * static/embed/playback mode), so persisting them into ``.viser`` files
+ * would just make exported nodes look draggable while no callback can
+ * ever fire.
+ *
  *
  * (automatically generated)
  */
@@ -1480,7 +1486,7 @@ export interface SetSceneNodeDragBindingsMessage {
   name: string;
   bindings: {
     button: "left" | "middle" | "right" | "any";
-    modifiers: ("cmd/ctrl" | "alt" | "shift")[] | null;
+    modifiers: ("cmd/ctrl" | "alt" | "shift")[];
   }[];
 }
 /** Message for clicked objects.
@@ -1811,131 +1817,15 @@ export interface RegisterCommandMessage {
       | "arrowdown"
       | "arrowleft"
       | "arrowright"
-      | "plus"
-      | "minus"
-      | "asterisk"
-      | "slash"
-      | [
-          "cmd/ctrl" | "ctrl" | "alt" | "shift",
-          (
-            | "A"
-            | "B"
-            | "C"
-            | "D"
-            | "E"
-            | "F"
-            | "G"
-            | "H"
-            | "I"
-            | "J"
-            | "K"
-            | "L"
-            | "M"
-            | "N"
-            | "O"
-            | "P"
-            | "Q"
-            | "R"
-            | "S"
-            | "T"
-            | "U"
-            | "V"
-            | "W"
-            | "X"
-            | "Y"
-            | "Z"
-            | "0"
-            | "1"
-            | "2"
-            | "3"
-            | "4"
-            | "5"
-            | "6"
-            | "7"
-            | "8"
-            | "9"
-            | "space"
-            | "enter"
-            | "escape"
-            | "tab"
-            | "backspace"
-            | "delete"
-            | "insert"
-            | "home"
-            | "end"
-            | "pageup"
-            | "pagedown"
-            | "arrowup"
-            | "arrowdown"
-            | "arrowleft"
-            | "arrowright"
-            | "plus"
-            | "minus"
-            | "asterisk"
-            | "slash"
-          ),
-        ]
-      | [
-          "cmd/ctrl" | "ctrl" | "alt" | "shift",
-          "cmd/ctrl" | "ctrl" | "alt" | "shift",
-          (
-            | "A"
-            | "B"
-            | "C"
-            | "D"
-            | "E"
-            | "F"
-            | "G"
-            | "H"
-            | "I"
-            | "J"
-            | "K"
-            | "L"
-            | "M"
-            | "N"
-            | "O"
-            | "P"
-            | "Q"
-            | "R"
-            | "S"
-            | "T"
-            | "U"
-            | "V"
-            | "W"
-            | "X"
-            | "Y"
-            | "Z"
-            | "0"
-            | "1"
-            | "2"
-            | "3"
-            | "4"
-            | "5"
-            | "6"
-            | "7"
-            | "8"
-            | "9"
-            | "space"
-            | "enter"
-            | "escape"
-            | "tab"
-            | "backspace"
-            | "delete"
-            | "insert"
-            | "home"
-            | "end"
-            | "pageup"
-            | "pagedown"
-            | "arrowup"
-            | "arrowdown"
-            | "arrowleft"
-            | "arrowright"
-            | "plus"
-            | "minus"
-            | "asterisk"
-            | "slash"
-          ),
-        ]
+      | null;
+    modifier:
+      | "cmd/ctrl"
+      | "alt"
+      | "shift"
+      | "cmd/ctrl+alt"
+      | "cmd/ctrl+shift"
+      | "alt+shift"
+      | "cmd/ctrl+alt+shift"
       | null;
     _icon_html: string | null;
     disabled: boolean;

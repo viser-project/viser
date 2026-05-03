@@ -30,10 +30,6 @@ from ._gui_handles import UploadedFile as UploadedFile
 from ._icons_enum import Icon as Icon
 from ._icons_enum import IconName as IconName
 from ._messages import DragButton as DragButton
-from ._messages import DragModifier as DragModifier
-from ._messages import Hotkey as Hotkey
-from ._messages import HotkeyKey as HotkeyKey
-from ._messages import HotkeyModifier as HotkeyModifier
 from ._notification_handle import NotificationHandle as NotificationHandle
 from ._scene_api import SceneApi as SceneApi
 from ._scene_handles import AmbientLightHandle as AmbientLightHandle

@@ -98,7 +98,7 @@ class _DragCallbackEntry:
         [SceneNodeDragEvent[_RaycastSupportedSceneNodeHandle]], None | Coroutine
     ]
     button: _messages.DragButton
-    modifiers: Optional[Tuple[_messages._DragModifierAtom, ...]]
+    modifiers: Tuple[_messages._KeyModifierAtom, ...]
 
 
 @dataclasses.dataclass
@@ -391,7 +391,7 @@ class SceneNodeDragEvent(Generic[TSceneNodeHandle]):
     """Whether Alt/Option was held at drag-start (frozen for the drag's lifetime)."""
 
 
-_DRAG_MODIFIER_CANONICAL_ORDER: Tuple[_messages._DragModifierAtom, ...] = (
+_DRAG_MODIFIER_CANONICAL_ORDER: Tuple[_messages._KeyModifierAtom, ...] = (
     "cmd/ctrl",
     "alt",
     "shift",
@@ -400,19 +400,16 @@ _DRAG_MODIFIER_CANONICAL_ORDER: Tuple[_messages._DragModifierAtom, ...] = (
 
 def _normalize_drag_modifiers(
     modifiers: Optional[str],
-) -> Optional[Tuple[_messages._DragModifierAtom, ...]]:
-    """Parse a :data:`DragModifier` string into the canonical wire tuple.
+) -> Tuple[_messages._KeyModifierAtom, ...]:
+    """Parse a :data:`KeyModifier` string into the canonical wire tuple.
 
-    ``None`` passes through (wildcard). ``""`` returns ``()`` (exactly no
-    modifiers). Otherwise, split on ``"+"``, validate each name, and
-    canonicalize the order — so both ``"cmd/ctrl+shift"`` and
-    ``"shift+cmd/ctrl"`` yield ``("cmd/ctrl", "shift")``. Type annotations
-    only allow the canonical form; the runtime is lenient for users who
-    don't run a type-checker.
+    ``None`` and ``""`` map to ``()``. Otherwise, split on ``"+"``,
+    validate each name, and canonicalize the order — both
+    ``"cmd/ctrl+shift"`` and ``"shift+cmd/ctrl"`` yield
+    ``("cmd/ctrl", "shift")``. Type annotations only allow the canonical
+    form; the runtime is lenient for users who don't run a type-checker.
     """
-    if modifiers is None:
-        return None
-    if modifiers == "":
+    if modifiers is None or modifiers == "":
         return ()
     parts = modifiers.split("+")
     modifier_set = set(parts)
@@ -439,9 +436,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         """Recompute the union of registered (button, modifiers) across all
         phases and push it to the client as a full binding set."""
         seen: set[
-            Tuple[
-                _messages.DragButton, Optional[Tuple[_messages._DragModifierAtom, ...]]
-            ]
+            Tuple[_messages.DragButton, Tuple[_messages._KeyModifierAtom, ...]]
         ] = set()
         bindings: list[_messages.DragBinding] = []
         for entries in self._impl.drag_cb.values():
@@ -493,7 +488,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         self: Self,
         phase: DragPhase,
         button: _messages.DragButton,
-        modifier: Optional[_messages.DragModifier] = None,
+        modifier: Optional[_messages.KeyModifier] = None,
     ) -> Callable[
         [Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine]],
         Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
@@ -530,7 +525,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         self: Self,
         button: _messages.DragButton,
         *,
-        modifier: Optional[_messages.DragModifier] = None,
+        modifier: Optional[_messages.KeyModifier] = None,
     ) -> Callable[
         [Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine]],
         Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
@@ -544,12 +539,12 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
             button: Mouse button that triggers the drag. One of
                 ``"left" | "middle" | "right" | "any"``.
             modifier: Modifier keys that must be held, as a canonically
-                ordered ``"+"``-separated string. ``None`` matches any
-                modifier state; ``""`` means "exactly no modifiers held";
-                ``"cmd/ctrl"``, ``"shift"``, ``"cmd/ctrl+shift"``, etc.
-                are exact matches (listed modifiers held, others not).
-                Left-drag on this node intercepts the gesture — the
-                camera only orbits on empty-space drags.
+                ordered ``"+"``-separated string like ``"cmd/ctrl"``,
+                ``"shift"``, or ``"cmd/ctrl+shift"``. ``None`` matches
+                "no modifiers held". Matching is exact: listed modifiers
+                must be held and others must not be. Left-drag on this
+                node intercepts the gesture — the camera only orbits on
+                empty-space drags.
 
         Note on ordering: drag callbacks fire in three phases per
         gesture (start → update* → end). Synchronous (``def``)
@@ -567,7 +562,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         self: Self,
         button: _messages.DragButton,
         *,
-        modifier: Optional[_messages.DragModifier] = None,
+        modifier: Optional[_messages.KeyModifier] = None,
     ) -> Callable[
         [Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine]],
         Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
@@ -582,7 +577,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         self: Self,
         button: _messages.DragButton,
         *,
-        modifier: Optional[_messages.DragModifier] = None,
+        modifier: Optional[_messages.KeyModifier] = None,
     ) -> Callable[
         [Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine]],
         Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],

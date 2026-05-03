@@ -24,12 +24,14 @@ def test_add_command_with_hotkey_and_icon() -> None:
     handle = server.gui.add_command(
         "Save",
         description="Save the file",
-        hotkey=("mod", "S"),
+        hotkey="S",
+        modifier="cmd/ctrl",
         icon=viser.Icon.DEVICE_FLOPPY,
     )
 
     assert handle.label == "Save"
-    assert handle.hotkey == ("mod", "S")
+    assert handle.hotkey == "S"
+    assert handle.modifier == "cmd/ctrl"
     assert handle.icon == viser.Icon.DEVICE_FLOPPY
 
 
@@ -165,13 +167,16 @@ def test_command_register_disabled() -> None:
 def test_command_update_hotkey() -> None:
     """Updating the hotkey should modify the handle's state."""
     server = viser.ViserServer()
-    handle = server.gui.add_command("Command", hotkey=("mod", "K"))
+    handle = server.gui.add_command(
+        "Command", hotkey="K", modifier="cmd/ctrl"
+    )
 
-    assert handle.hotkey == ("mod", "K")
+    assert handle.hotkey == "K"
+    assert handle.modifier == "cmd/ctrl"
 
-    handle.hotkey = ("mod", "shift", "K")
-    assert handle.hotkey == ("mod", "shift", "K")
-    assert handle._impl.props.hotkey == ("mod", "shift", "K")
+    handle.modifier = "cmd/ctrl+shift"
+    assert handle.modifier == "cmd/ctrl+shift"
+    assert handle._impl.props.modifier == "cmd/ctrl+shift"
 
     handle.hotkey = None
     assert handle.hotkey is None
@@ -205,13 +210,16 @@ def test_command_sends_register_message() -> None:
 
     server._websock_server.queue_message = capture_queue
 
-    server.gui.add_command("Test", description="A test", hotkey=("mod", "T"))
+    server.gui.add_command(
+        "Test", description="A test", hotkey="T", modifier="cmd/ctrl"
+    )
 
     register_msgs = [m for m in sent if isinstance(m, RegisterCommandMessage)]
     assert len(register_msgs) == 1
     assert register_msgs[0].props.label == "Test"
     assert register_msgs[0].props.description == "A test"
-    assert register_msgs[0].props.hotkey == ("mod", "T")
+    assert register_msgs[0].props.hotkey == "T"
+    assert register_msgs[0].props.modifier == "cmd/ctrl"
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)

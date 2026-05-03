@@ -228,7 +228,7 @@ def test_scene_node_drag_modifier_order_insensitive(
     )
 
     # Two distinct function objects so the registry doesn't dedupe.
-    # type: ignore below because "shift+cmd/ctrl" is not in DragModifier's
+    # type: ignore below because "shift+cmd/ctrl" is not in KeyModifier's
     # Literal union — intentionally exercising runtime leniency.
     @box.on_drag_start("left", modifier="shift+cmd/ctrl")  # type: ignore[arg-type]
     def _cb_noncanonical(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:

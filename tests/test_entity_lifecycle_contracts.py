@@ -112,7 +112,12 @@ def test_command_update_has_own_redundancy_namespace() -> None:
     create_msg = RegisterCommandMessage(
         uuid="abc",
         props=viser._messages.CommandProps(
-            label="x", description=None, hotkey=None, _icon_html=None, disabled=False
+            label="x",
+            description=None,
+            hotkey=None,
+            modifier=None,
+            _icon_html=None,
+            disabled=False,
         ),
     )
     update_msg = CommandUpdateMessage(uuid="abc", updates={"label": "y"})

@@ -12,17 +12,24 @@ import { RegisterCommandMessage } from "./WebsocketMessages";
 import { isMac } from "./utils/platform";
 
 type SpotlightItems = SpotlightActionData | SpotlightActionGroupData;
-type Hotkey = RegisterCommandMessage["props"]["hotkey"];
+type HotkeyKey = NonNullable<RegisterCommandMessage["props"]["hotkey"]>;
+type KeyModifier = NonNullable<RegisterCommandMessage["props"]["modifier"]>;
 
-/** Convert a hotkey value to Mantine hotkey strings (e.g. "ctrl+shift+R").
+/** Atomic modifier + key parts for a hotkey, ordered for "+"-joining. */
+function hotkeyParts(key: HotkeyKey, modifier: KeyModifier | null): string[] {
+  return modifier ? [...modifier.split("+"), key] : [key];
+}
+
+/** Convert a hotkey to Mantine hotkey strings (e.g. "ctrl+shift+R").
  *
- * ``"cmd/ctrl"`` in the viser hotkey is OR semantics (either Ctrl or Meta
- * counts), so we emit *both* a `"ctrl+..."` and `"meta+..."` variant — on
- * any platform, pressing either modifier triggers the hotkey. This matches
- * the drag-binding semantics so users don't have to remember two rules. */
-function hotkeyToStrings(hotkey: NonNullable<Hotkey>): string[] {
-  const parts: string[] =
-    typeof hotkey === "string" ? [hotkey] : (hotkey as string[]);
+ * ``"cmd/ctrl"`` is OR semantics (either Ctrl or Meta counts), so we emit
+ * *both* a ``"ctrl+..."`` and ``"meta+..."`` variant — on any platform,
+ * pressing either modifier triggers the hotkey. */
+function hotkeyToStrings(
+  key: HotkeyKey,
+  modifier: KeyModifier | null,
+): string[] {
+  const parts = hotkeyParts(key, modifier);
   if (!parts.includes("cmd/ctrl")) {
     return [parts.join("+")];
   }
@@ -32,16 +39,14 @@ function hotkeyToStrings(hotkey: NonNullable<Hotkey>): string[] {
   ];
 }
 
-/** Format a hotkey for display (e.g. ("cmd/ctrl", "shift", "R") -> "⌘⇧R" or "Ctrl+Shift+R"). */
-function formatHotkey(hotkey: NonNullable<Hotkey>): string {
-  const parts = typeof hotkey === "string" ? [hotkey] : hotkey;
-  return parts
+/** Format a hotkey for display (e.g. "R" + "cmd/ctrl+shift" -> "⌘⇧R" or "Ctrl+Shift+R"). */
+function formatHotkey(key: HotkeyKey, modifier: KeyModifier | null): string {
+  return hotkeyParts(key, modifier)
     .map((part) => {
-      const key = part.toLowerCase();
-      if (key === "cmd/ctrl") return isMac ? "⌘" : "Ctrl+";
-      if (key === "shift") return isMac ? "⇧" : "Shift+";
-      if (key === "alt") return isMac ? "⌥" : "Alt+";
-      if (key === "ctrl") return isMac ? "⌃" : "Ctrl+";
+      const lower = part.toLowerCase();
+      if (lower === "cmd/ctrl") return isMac ? "⌘" : "Ctrl+";
+      if (lower === "shift") return isMac ? "⇧" : "Shift+";
+      if (lower === "alt") return isMac ? "⌥" : "Alt+";
       return part;
     })
     .join("");
@@ -56,14 +61,16 @@ function useSpotlightActions(
     () =>
       Object.values(commands).map((command) => {
         const hotkey = command.props.hotkey;
+        const modifier = command.props.modifier;
+        const formatted = hotkey ? formatHotkey(hotkey, modifier) : null;
         const desc = command.props.description;
         const description =
-          desc && hotkey
-            ? `${desc}  (${formatHotkey(hotkey)})`
+          desc && formatted
+            ? `${desc}  (${formatted})`
             : desc
               ? desc
-              : hotkey
-                ? formatHotkey(hotkey)
+              : formatted
+                ? formatted
                 : undefined;
         const disabled = command.props.disabled;
         return {
@@ -151,7 +158,7 @@ export function CommandPalette() {
         .filter((c) => c.props.hotkey != null && !c.props.disabled)
         .flatMap((c) => {
           const trigger = () => handleTrigger(c.uuid);
-          return hotkeyToStrings(c.props.hotkey!).map(
+          return hotkeyToStrings(c.props.hotkey!, c.props.modifier).map(
             (key) =>
               [key, trigger] as [string, (event: KeyboardEvent) => void],
           );

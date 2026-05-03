@@ -13,18 +13,12 @@ from typing_extensions import Literal, TypeAlias, override
 
 from . import infra, theme, uplot
 
-HotkeyModifier = Literal["cmd/ctrl", "ctrl", "alt", "shift"]
-"""A modifier key for hotkey bindings. ``cmd/ctrl`` matches whenever either
-Cmd or Ctrl is held — same OR semantics as drag bindings, so one rule
-covers both APIs. ``ctrl`` specifically requires Ctrl (not Cmd)."""
-
-_DragModifierAtom = Literal["cmd/ctrl", "alt", "shift"]
+_KeyModifierAtom = Literal["cmd/ctrl", "alt", "shift"]
 """Internal: a single modifier key, as stored in the wire-level
-:class:`DragBinding.modifiers` tuple. Public API uses :data:`DragModifier`
-(a composed-Literal of ``"+"``-separated strings) instead."""
+:class:`DragBinding.modifiers` tuple. Public API surfaces
+:data:`KeyModifier` (the ``"+"``-joined composed form) instead."""
 
-DragModifier = Literal[
-    "",
+KeyModifier = Literal[
     "cmd/ctrl",
     "alt",
     "shift",
@@ -33,19 +27,14 @@ DragModifier = Literal[
     "alt+shift",
     "cmd/ctrl+alt+shift",
 ]
-"""Scene-node drag modifier filter.
-
-One canonical string per modifier combination. ``""`` means "no modifiers
-held at all"; ``"cmd/ctrl+shift"`` means "both cmd/ctrl and shift held,
-nothing else". Order within the string is canonical
-(``cmd/ctrl → alt → shift``) — non-canonical orderings like
+"""Modifier-key combination, used by both scene-node drag bindings and
+hotkey bindings. A canonically ordered ``"+"``-separated string —
+``cmd/ctrl → alt → shift``. Non-canonical orderings like
 ``"shift+cmd/ctrl"`` type-check-fail, though the runtime parser will
 accept them (it canonicalizes internally).
 
-``cmd/ctrl`` matches whenever either Cmd or Ctrl is held — users who
-need to distinguish can read ``event.ctrl`` / ``event.meta`` inside the
-callback. Pass ``None`` (not a member of this Literal) for "any modifier
-state" wildcard matching."""
+``cmd/ctrl`` matches whenever either Cmd or Ctrl is held — callbacks
+that need to distinguish can read ``event.ctrl`` / ``event.meta``."""
 
 DragButton = Literal["left", "middle", "right", "any"]
 """Mouse button that triggers a scene-node drag. ``any`` matches left/middle/right."""
@@ -105,26 +94,9 @@ HotkeyKey = Literal[
     "arrowdown",
     "arrowleft",
     "arrowright",
-    "plus",
-    "minus",
-    "asterisk",
-    "slash",
 ]
 """A key for hotkey bindings."""
 
-Hotkey: TypeAlias = Union[
-    HotkeyKey,
-    Tuple[HotkeyModifier, HotkeyKey],
-    Tuple[HotkeyModifier, HotkeyModifier, HotkeyKey],
-]
-"""A hotkey binding: a single key or a tuple of modifiers and a key.
-
-Examples::
-
-    hotkey: Hotkey = "K"
-    hotkey: Hotkey = ("cmd/ctrl", "K")
-    hotkey: Hotkey = ("cmd/ctrl", "shift", "R")
-"""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1373,15 +1345,14 @@ class SetSceneNodeClickableMessage(Message, include_in_scene_serialization=True)
 
 @dataclasses.dataclass(frozen=True)
 class DragBinding:
-    """A drag input combination: button + required modifier set.
+    """A drag input combination: button + exact-match modifier set.
 
-    ``modifiers=None`` is a wildcard (any modifier state matches). A tuple
-    encodes an exact-match set: modifiers listed must be held, others must
-    not be held.
+    Listed modifiers must be held, others must not. Empty tuple = no
+    modifiers held.
     """
 
     button: DragButton
-    modifiers: Optional[Tuple[_DragModifierAtom, ...]]
+    modifiers: Tuple[_KeyModifierAtom, ...]
 
 
 @dataclasses.dataclass
@@ -2237,8 +2208,11 @@ class CommandProps:
     """Label displayed in the command palette."""
     description: Optional[str]
     """Description displayed below the label."""
-    hotkey: Optional[Hotkey]
-    """Hotkey binding, e.g. ``"K"`` or ``("cmd/ctrl", "shift", "R")``."""
+    hotkey: Optional[HotkeyKey]
+    """Hotkey key, e.g. ``"K"`` or ``"R"``."""
+    modifier: Optional[KeyModifier]
+    """Modifier-combo held with the hotkey, e.g. ``"cmd/ctrl"`` or
+    ``"cmd/ctrl+shift"``. ``None`` matches "no modifiers held"."""
     _icon_html: Optional[str]
     """(Private) HTML string for the icon to be displayed on the command."""
     disabled: bool

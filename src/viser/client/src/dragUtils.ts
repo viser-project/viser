@@ -15,7 +15,7 @@ import { normalizeScale } from "./utils/normalizeScale";
  * nested-dataclass types so this isn't named on the generated side). */
 export type DragBinding = {
   button: "left" | "middle" | "right" | "any";
-  modifiers: ("cmd/ctrl" | "alt" | "shift")[] | null;
+  modifiers: ("cmd/ctrl" | "alt" | "shift")[];
 };
 
 export type PointerButton = "left" | "middle" | "right";
@@ -35,10 +35,10 @@ export function pointerButtonFromNative(native: number): PointerButton | null {
   return null;
 }
 
-/** Match an input against a registered DragBinding. ``modifiers=null`` is a
- * wildcard; otherwise the listed modifiers must be held and any others
- * must not be. ``"cmd/ctrl"`` treats Ctrl and Cmd (meta) as interchangeable
- * — matches whenever either is held.
+/** Match an input against a registered DragBinding. Exact-match: listed
+ * modifiers must be held, others must not. Empty ``modifiers`` array =
+ * no modifiers held. ``"cmd/ctrl"`` treats Ctrl and Cmd (meta) as
+ * interchangeable — matches whenever either is held.
  *
  * The server mirrors this in ``_drag_input_matches_filter`` (see
  * ``src/viser/_scene_api.py``). The client filters at the source —
@@ -51,7 +51,6 @@ export function matchesDragBinding(
   input: DragInput,
 ): boolean {
   if (binding.button !== "any" && binding.button !== input.button) return false;
-  if (binding.modifiers === null) return true;
   const modSet = new Set(binding.modifiers);
   if (input.shift !== modSet.has("shift")) return false;
   if (input.alt !== modSet.has("alt")) return false;

@@ -592,7 +592,8 @@ class GuiApi:
         label: str,
         *,
         description: str | None = None,
-        hotkey: _messages.Hotkey | None = None,
+        hotkey: _messages.HotkeyKey | None = None,
+        modifier: _messages.KeyModifier | None = None,
         icon: IconName | None = None,
         disabled: bool = False,
     ) -> CommandHandle:
@@ -604,10 +605,14 @@ class GuiApi:
         Args:
             label: Label displayed in the command palette.
             description: Optional description displayed below the label.
-            hotkey: Optional hotkey binding. Can be a single key like ``"K"``
-                or a tuple with modifiers like ``("cmd/ctrl", "shift", "R")``.
-                ``cmd/ctrl`` matches whenever either Cmd or Ctrl is held
-                (same as drag bindings).
+            hotkey: Optional hotkey key, e.g. ``"K"`` or ``"R"``. ``None``
+                disables the hotkey.
+            modifier: Modifier-combo to require with the hotkey, as a
+                canonically ordered ``"+"``-separated string like
+                ``"cmd/ctrl"``, ``"shift"``, or ``"cmd/ctrl+shift"``.
+                ``None`` matches "no modifiers held". ``cmd/ctrl``
+                matches whenever either Cmd or Ctrl is held. Ignored if
+                ``hotkey`` is ``None``.
             icon: Optional icon to display next to the command label.
             disabled: If True, the command is visible but not triggerable.
 
@@ -621,6 +626,7 @@ class GuiApi:
             label=label,
             description=description,
             hotkey=hotkey,
+            modifier=modifier,
             disabled=disabled,
             _icon_html=None if icon is None else svg_from_icon(icon),
         )

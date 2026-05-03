@@ -54,11 +54,5 @@ GUI Handles
 
 .. autoclass:: viser.GuiVector3Handle
 
-.. autodata:: viser.Hotkey
-
-.. autodata:: viser.HotkeyKey
-
-.. autodata:: viser.HotkeyModifier
-
 .. autoclass:: viser.UploadedFile
 

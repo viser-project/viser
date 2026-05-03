@@ -286,7 +286,9 @@ def test_command_hotkey_triggers_callback(
     without needing to open the palette."""
     triggered = threading.Event()
 
-    handle = viser_server.gui.add_command("Hotkey Target", hotkey=("alt", "Y"))
+    handle = viser_server.gui.add_command(
+        "Hotkey Target", hotkey="Y", modifier="alt"
+    )
 
     @handle.on_trigger
     def _(event: viser.CommandEvent) -> None:
@@ -309,7 +311,9 @@ def test_command_hotkey_rebind_loop(
     count = {"n": 0}
     fired = threading.Event()
 
-    handle = viser_server.gui.add_command("Counter", hotkey=("alt", "Y"))
+    handle = viser_server.gui.add_command(
+        "Counter", hotkey="Y", modifier="alt"
+    )
 
     @handle.on_trigger
     def _(event: viser.CommandEvent) -> None:
@@ -318,30 +322,33 @@ def test_command_hotkey_rebind_loop(
 
     viser_page.wait_for_timeout(500)
 
-    bindings: list[tuple[str, viser.Hotkey]] = [
-        ("Alt+Y", ("alt", "Y")),  # initial binding, no rebind yet
-        ("Alt+H", ("alt", "H")),
-        ("Alt+Shift+J", ("alt", "shift", "J")),
-        ("Alt+U", ("alt", "U")),
+    # (keypress, hotkey, modifier)
+    bindings: list[tuple[str, str, str | None]] = [
+        ("Alt+Y", "Y", "alt"),  # initial binding, no rebind yet
+        ("Alt+H", "H", "alt"),
+        ("Alt+Shift+J", "J", "alt+shift"),
+        ("Alt+U", "U", "alt"),
     ]
 
-    for expected_count, (keypress, hotkey_value) in enumerate(bindings, start=1):
+    for expected_count, (keypress, key, mod) in enumerate(bindings, start=1):
         # Skip the rebind for the first iteration (initial binding matches).
         if expected_count > 1:
-            handle.hotkey = hotkey_value
+            handle.hotkey = key  # type: ignore[assignment]
+            handle.modifier = mod  # type: ignore[assignment]
             viser_page.wait_for_timeout(300)  # let the update reach the client
 
         fired.clear()
         viser_page.keyboard.press(keypress)
         assert fired.wait(timeout=3.0), (
-            f"Binding {hotkey_value} did not fire on keypress {keypress!r}"
+            f"Binding ({key!r}, {mod!r}) did not fire on keypress {keypress!r}"
         )
         assert count["n"] == expected_count, (
             f"After {keypress!r} expected count {expected_count}, got {count['n']}"
         )
 
     # Final rebind: confirm the previous binding no longer fires.
-    handle.hotkey = ("alt", "P")
+    handle.hotkey = "P"
+    handle.modifier = "alt"
     viser_page.wait_for_timeout(500)
 
     fired.clear()

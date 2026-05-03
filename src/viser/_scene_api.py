@@ -90,14 +90,13 @@ NoneOrCoroutine = TypeVar("NoneOrCoroutine", None, Coroutine)
 def _drag_input_matches_filter(
     input: _DragInput,
     filter_button: _messages.DragButton,
-    filter_modifiers: Tuple[_messages._DragModifierAtom, ...] | None,
+    filter_modifiers: Tuple[_messages._KeyModifierAtom, ...],
 ) -> bool:
     """Return whether a drag input matches a registered binding filter.
 
-    ``filter_modifiers=None`` is a wildcard; otherwise the filter is
-    exact-match ("these modifiers held, others not"). ``"cmd/ctrl"`` treats
-    Ctrl and Cmd (meta) as interchangeable — matches whenever either is
-    held.
+    Exact-match: listed modifiers must be held, others must not. Empty
+    ``filter_modifiers`` = no modifiers held. ``"cmd/ctrl"`` treats Ctrl
+    and Cmd (meta) as interchangeable — matches whenever either is held.
 
     The client mirrors this logic in ``matchesDragBinding`` (see
     ``src/viser/client/src/dragUtils.ts``) to filter at the source
@@ -108,9 +107,7 @@ def _drag_input_matches_filter(
     """
     if filter_button not in ("any", input.button):
         return False
-    if filter_modifiers is None:
-        return True
-    # filter_modifiers has at most 3 elements (DragModifier literal); using
+    # filter_modifiers has at most 3 elements (KeyModifier literal); using
     # `in` directly on the tuple avoids per-event allocation.
     if input.shift != ("shift" in filter_modifiers):
         return False
