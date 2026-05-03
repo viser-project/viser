@@ -2,7 +2,7 @@ import * as React from "react";
 import { GuiTabGroupMessage } from "../WebsocketMessages";
 import { Tabs } from "@mantine/core";
 import { GuiComponentContext } from "../ControlPanel/GuiComponentContext";
-import { htmlIconWrapper } from "./ComponentStyles.css";
+import { htmlIconWrapper, tabGroupWrap } from "./ComponentStyles.css";
 
 export default function TabGroupComponent({
   props: {
@@ -15,7 +15,12 @@ export default function TabGroupComponent({
   const { GuiContainer } = React.useContext(GuiComponentContext)!;
   if (!visible) return null;
   return (
-    <Tabs radius="xs" defaultValue={"0"} style={{ marginTop: "-0.55em" }}>
+    <Tabs
+      radius="xs"
+      defaultValue={"0"}
+      className={tabGroupWrap}
+      style={{ marginTop: "-0.55em" }}
+    >
       <Tabs.List>
         {tab_labels.map((label, index) => (
           <Tabs.Tab
