@@ -207,7 +207,7 @@ Code
        # Drag (no modifier): teleport — rigid follow, no physics.
        # ==========================================================================
    
-       @handle.on_drag_start("left", modifier="")
+       @handle.on_drag_start("left")
        async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
            nonlocal teleport_cursor, teleport_drag_offset
            handle.color = TELEPORT_COLOR
@@ -218,13 +218,13 @@ Code
                # tick keeps the grab point under the cursor as it moves.
                teleport_drag_offset = position - cursor
    
-       @handle.on_drag_update("left", modifier="")
+       @handle.on_drag_update("left")
        async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
            nonlocal teleport_cursor
            with lock:
                teleport_cursor = np.array(event.end_position)
    
-       @handle.on_drag_end("left", modifier="")
+       @handle.on_drag_end("left")
        async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
            nonlocal teleport_cursor, teleport_drag_offset
            del event

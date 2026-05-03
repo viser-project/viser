@@ -453,7 +453,7 @@ along the drag arrow, so the instance rotates around the arrow axis.</p></li>
 </ul>
 <p><strong>Source:</strong> <code class="docutils literal notranslate"><span class="pre">examples/03_interaction/07_batched_scene_node_drag.py</span></code></p>
 <figure class="align-default">
-<a class="reference internal image-reference" href="_static/examples/03_interaction_07_batched_scene_node_drag.png"><img alt="Drag events on batched scene nodes" src="_static/examples/03_interaction_07_batched_scene_node_drag.png" style="width: 100%;" /></a>
+<a class="reference internal image-reference" href="../../../_images/03_interaction_07_batched_scene_node_drag.png"><img alt="Drag events on batched scene nodes" src="../../../_images/03_interaction_07_batched_scene_node_drag.png" style="width: 100%;" /></a>
 </figure>
 <section id="code">
 <h2>Code<a class="headerlink" href="#code" title="Link to this heading">¶</a></h2>
@@ -680,7 +680,7 @@ along the drag arrow, so the instance rotates around the arrow axis.</p></li>
 <span class="linenos">221</span>    <span class="c1"># Drag (no modifier): teleport.</span>
 <span class="linenos">222</span>    <span class="c1"># ==========================================================================</span>
 <span class="linenos">223</span>
-<span class="linenos">224</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_start</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+<span class="linenos">224</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_start</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">)</span>
 <span class="linenos">225</span>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">BatchedMeshHandle</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="linenos">226</span>        <span class="k">nonlocal</span> <span class="n">active_idx</span><span class="p">,</span> <span class="n">active_mode</span><span class="p">,</span> <span class="n">spring_target</span><span class="p">,</span> <span class="n">teleport_offset</span>
 <span class="linenos">227</span>        <span class="n">i</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">instance_index</span>
@@ -696,13 +696,13 @@ along the drag arrow, so the instance rotates around the arrow axis.</p></li>
 <span class="linenos">237</span>            <span class="n">teleport_offset</span> <span class="o">=</span> <span class="n">position_arr</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="n">cursor</span>
 <span class="linenos">238</span>            <span class="n">spring_target</span> <span class="o">=</span> <span class="n">cursor</span>
 <span class="linenos">239</span>
-<span class="linenos">240</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_update</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+<span class="linenos">240</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_update</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">)</span>
 <span class="linenos">241</span>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">BatchedMeshHandle</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="linenos">242</span>        <span class="k">nonlocal</span> <span class="n">spring_target</span>
 <span class="linenos">243</span>        <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
 <span class="linenos">244</span>            <span class="n">spring_target</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">end_position</span><span class="p">)</span>
 <span class="linenos">245</span>
-<span class="linenos">246</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_end</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+<span class="linenos">246</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_end</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">)</span>
 <span class="linenos">247</span>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">BatchedMeshHandle</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="linenos">248</span>        <span class="k">nonlocal</span> <span class="n">active_idx</span><span class="p">,</span> <span class="n">active_mode</span><span class="p">,</span> <span class="n">spring_target</span><span class="p">,</span> <span class="n">teleport_offset</span>
 <span class="linenos">249</span>        <span class="n">i</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">instance_index</span>

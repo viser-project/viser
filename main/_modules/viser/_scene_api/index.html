@@ -437,6 +437,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">TYPE_CHECKING</span><span class="p">,</span>
     <span class="n">Callable</span><span class="p">,</span>
+    <span class="n">Optional</span><span class="p">,</span>
     <span class="n">Tuple</span><span class="p">,</span>
     <span class="n">TypeVar</span><span class="p">,</span>
     <span class="n">Union</span><span class="p">,</span>
@@ -516,12 +517,12 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">_drag_input_matches_filter</span><span class="p">(</span>
     <span class="nb">input</span><span class="p">:</span> <span class="n">_DragInput</span><span class="p">,</span>
     <span class="n">filter_button</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">,</span>
-    <span class="n">filter_modifiers</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">_DragModifierAtom</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">filter_modifier</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Return whether a drag input matches a registered binding filter.</span>
 
-<span class="sd">    ``filter_modifiers=None`` is a wildcard; otherwise the filter is</span>
-<span class="sd">    exact-match (&quot;these modifiers held, others not&quot;). ``&quot;cmd/ctrl&quot;`` treats</span>
+<span class="sd">    Exact-match: listed modifiers must be held, others must not.</span>
+<span class="sd">    ``filter_modifier=None`` = no modifiers held. ``&quot;cmd/ctrl&quot;`` treats</span>
 <span class="sd">    Ctrl and Cmd (meta) as interchangeable — matches whenever either is</span>
 <span class="sd">    held.</span>
 
@@ -532,17 +533,17 @@
 <span class="sd">    registered callbacks fire per phase. Drift = silent missed drags</span>
 <span class="sd">    or spurious teardowns.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="n">filter_button</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;any&quot;</span><span class="p">,</span> <span class="nb">input</span><span class="o">.</span><span class="n">button</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">filter_button</span> <span class="o">!=</span> <span class="nb">input</span><span class="o">.</span><span class="n">button</span><span class="p">:</span>
         <span class="k">return</span> <span class="kc">False</span>
-    <span class="k">if</span> <span class="n">filter_modifiers</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">return</span> <span class="kc">True</span>
-    <span class="c1"># filter_modifiers has at most 3 elements (DragModifier literal); using</span>
-    <span class="c1"># `in` directly on the tuple avoids per-event allocation.</span>
-    <span class="k">if</span> <span class="nb">input</span><span class="o">.</span><span class="n">shift</span> <span class="o">!=</span> <span class="p">(</span><span class="s2">&quot;shift&quot;</span> <span class="ow">in</span> <span class="n">filter_modifiers</span><span class="p">):</span>
+    <span class="c1"># The 7 valid KeyModifier strings are uniquely identifiable by</span>
+    <span class="c1"># substring presence of &quot;cmd/ctrl&quot;/&quot;alt&quot;/&quot;shift&quot;, so an `in` check</span>
+    <span class="c1"># on the joined string suffices without splitting.</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="n">filter_modifier</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">input</span><span class="o">.</span><span class="n">shift</span> <span class="o">!=</span> <span class="p">(</span><span class="s2">&quot;shift&quot;</span> <span class="ow">in</span> <span class="n">s</span><span class="p">):</span>
         <span class="k">return</span> <span class="kc">False</span>
-    <span class="k">if</span> <span class="nb">input</span><span class="o">.</span><span class="n">alt</span> <span class="o">!=</span> <span class="p">(</span><span class="s2">&quot;alt&quot;</span> <span class="ow">in</span> <span class="n">filter_modifiers</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">input</span><span class="o">.</span><span class="n">alt</span> <span class="o">!=</span> <span class="p">(</span><span class="s2">&quot;alt&quot;</span> <span class="ow">in</span> <span class="n">s</span><span class="p">):</span>
         <span class="k">return</span> <span class="kc">False</span>
-    <span class="k">if</span> <span class="s2">&quot;cmd/ctrl&quot;</span> <span class="ow">in</span> <span class="n">filter_modifiers</span><span class="p">:</span>
+    <span class="k">if</span> <span class="s2">&quot;cmd/ctrl&quot;</span> <span class="ow">in</span> <span class="n">s</span><span class="p">:</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="nb">input</span><span class="o">.</span><span class="n">ctrl</span> <span class="ow">or</span> <span class="nb">input</span><span class="o">.</span><span class="n">meta</span><span class="p">):</span>
             <span class="k">return</span> <span class="kc">False</span>
     <span class="k">else</span><span class="p">:</span>
@@ -3496,7 +3497,7 @@
         <span class="bp">self</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove the currently attached scene pointer event. This will trigger</span>
-<span class="sd">        any callback attached to `.on_scene_pointer_removed()`.&quot;&quot;&quot;</span>
+<span class="sd">        any callback attached to :meth:`on_pointer_callback_removed()`.&quot;&quot;&quot;</span>
 
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>

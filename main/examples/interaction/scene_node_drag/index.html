@@ -460,7 +460,7 @@ and angular velocity bleed off over ~1s.</p>
 the current orientation each tick.</p>
 <p><strong>Source:</strong> <code class="docutils literal notranslate"><span class="pre">examples/03_interaction/06_scene_node_drag.py</span></code></p>
 <figure class="align-default">
-<a class="reference internal image-reference" href="_static/examples/03_interaction_06_scene_node_drag.png"><img alt="Scene-node drag events with rigid-body physics" src="_static/examples/03_interaction_06_scene_node_drag.png" style="width: 100%;" /></a>
+<a class="reference internal image-reference" href="../../../_images/03_interaction_06_scene_node_drag.png"><img alt="Scene-node drag events with rigid-body physics" src="../../../_images/03_interaction_06_scene_node_drag.png" style="width: 100%;" /></a>
 </figure>
 <section id="code">
 <h2>Code<a class="headerlink" href="#code" title="Link to this heading">¶</a></h2>
@@ -629,7 +629,7 @@ the current orientation each tick.</p>
 <span class="linenos">163</span>    <span class="c1"># Drag (no modifier): teleport — rigid follow, no physics.</span>
 <span class="linenos">164</span>    <span class="c1"># ==========================================================================</span>
 <span class="linenos">165</span>
-<span class="linenos">166</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_start</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+<span class="linenos">166</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_start</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">)</span>
 <span class="linenos">167</span>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">BoxHandle</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="linenos">168</span>        <span class="k">nonlocal</span> <span class="n">teleport_cursor</span><span class="p">,</span> <span class="n">teleport_drag_offset</span>
 <span class="linenos">169</span>        <span class="n">handle</span><span class="o">.</span><span class="n">color</span> <span class="o">=</span> <span class="n">TELEPORT_COLOR</span>
@@ -640,13 +640,13 @@ the current orientation each tick.</p>
 <span class="linenos">174</span>            <span class="c1"># tick keeps the grab point under the cursor as it moves.</span>
 <span class="linenos">175</span>            <span class="n">teleport_drag_offset</span> <span class="o">=</span> <span class="n">position</span> <span class="o">-</span> <span class="n">cursor</span>
 <span class="linenos">176</span>
-<span class="linenos">177</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_update</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+<span class="linenos">177</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_update</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">)</span>
 <span class="linenos">178</span>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">BoxHandle</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="linenos">179</span>        <span class="k">nonlocal</span> <span class="n">teleport_cursor</span>
 <span class="linenos">180</span>        <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
 <span class="linenos">181</span>            <span class="n">teleport_cursor</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">end_position</span><span class="p">)</span>
 <span class="linenos">182</span>
-<span class="linenos">183</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_end</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+<span class="linenos">183</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_end</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">)</span>
 <span class="linenos">184</span>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">BoxHandle</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="linenos">185</span>        <span class="k">nonlocal</span> <span class="n">teleport_cursor</span><span class="p">,</span> <span class="n">teleport_drag_offset</span>
 <span class="linenos">186</span>        <span class="k">del</span> <span class="n">event</span>

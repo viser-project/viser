@@ -453,8 +453,15 @@ on non-Firefox browsers) and can optionally be triggered via hotkeys.</p>
 
 <dl class="py attribute">
 <dt class="sig sig-object py" id="viser.CommandHandle.hotkey">
-<span class="sig-name descname"><span class="pre">hotkey</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Hotkey</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.CommandHandle.hotkey" title="Link to this definition">¶</a></dt>
-<dd><p>Hotkey binding, e.g. <code class="docutils literal notranslate"><span class="pre">&quot;K&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">(&quot;cmd/ctrl&quot;,</span> <span class="pre">&quot;shift&quot;,</span> <span class="pre">&quot;R&quot;)</span></code>.</p>
+<span class="sig-name descname"><span class="pre">hotkey</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">HotkeyKey</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.CommandHandle.hotkey" title="Link to this definition">¶</a></dt>
+<dd><p>Hotkey key, e.g. <code class="docutils literal notranslate"><span class="pre">&quot;K&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;R&quot;</span></code>.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.CommandHandle.modifier">
+<span class="sig-name descname"><span class="pre">modifier</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">KeyModifier</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.CommandHandle.modifier" title="Link to this definition">¶</a></dt>
+<dd><p>Modifier-combo held with the hotkey, e.g. <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl&quot;</span></code> or
+<code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl+shift&quot;</span></code>. <code class="docutils literal notranslate"><span class="pre">None</span></code> matches “no modifiers held”.</p>
 </dd></dl>
 
 <dl class="py attribute">
@@ -2536,24 +2543,6 @@ Used when height is None.</p>
 
 </dd></dl>
 
-<dl class="py data">
-<dt class="sig sig-object py" id="viser.Hotkey">
-<span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">Hotkey</span></span><a class="headerlink" href="#viser.Hotkey" title="Link to this definition">¶</a></dt>
-<dd><p>alias of <a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Literal</span></code></a>[‘A’, ‘B’, ‘C’, ‘D’, ‘E’, ‘F’, ‘G’, ‘H’, ‘I’, ‘J’, ‘K’, ‘L’, ‘M’, ‘N’, ‘O’, ‘P’, ‘Q’, ‘R’, ‘S’, ‘T’, ‘U’, ‘V’, ‘W’, ‘X’, ‘Y’, ‘Z’, ‘0’, ‘1’, ‘2’, ‘3’, ‘4’, ‘5’, ‘6’, ‘7’, ‘8’, ‘9’, ‘space’, ‘enter’, ‘escape’, ‘tab’, ‘backspace’, ‘delete’, ‘insert’, ‘home’, ‘end’, ‘pageup’, ‘pagedown’, ‘arrowup’, ‘arrowdown’, ‘arrowleft’, ‘arrowright’, ‘plus’, ‘minus’, ‘asterisk’, ‘slash’] | <code class="xref py py-class docutils literal notranslate"><span class="pre">Tuple</span></code>[<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Literal</span></code></a>[‘cmd/ctrl’, ‘ctrl’, ‘alt’, ‘shift’], <a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Literal</span></code></a>[‘A’, ‘B’, ‘C’, ‘D’, ‘E’, ‘F’, ‘G’, ‘H’, ‘I’, ‘J’, ‘K’, ‘L’, ‘M’, ‘N’, ‘O’, ‘P’, ‘Q’, ‘R’, ‘S’, ‘T’, ‘U’, ‘V’, ‘W’, ‘X’, ‘Y’, ‘Z’, ‘0’, ‘1’, ‘2’, ‘3’, ‘4’, ‘5’, ‘6’, ‘7’, ‘8’, ‘9’, ‘space’, ‘enter’, ‘escape’, ‘tab’, ‘backspace’, ‘delete’, ‘insert’, ‘home’, ‘end’, ‘pageup’, ‘pagedown’, ‘arrowup’, ‘arrowdown’, ‘arrowleft’, ‘arrowright’, ‘plus’, ‘minus’, ‘asterisk’, ‘slash’]] | <code class="xref py py-class docutils literal notranslate"><span class="pre">Tuple</span></code>[<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Literal</span></code></a>[‘cmd/ctrl’, ‘ctrl’, ‘alt’, ‘shift’], <a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Literal</span></code></a>[‘cmd/ctrl’, ‘ctrl’, ‘alt’, ‘shift’], <a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Literal</span></code></a>[‘A’, ‘B’, ‘C’, ‘D’, ‘E’, ‘F’, ‘G’, ‘H’, ‘I’, ‘J’, ‘K’, ‘L’, ‘M’, ‘N’, ‘O’, ‘P’, ‘Q’, ‘R’, ‘S’, ‘T’, ‘U’, ‘V’, ‘W’, ‘X’, ‘Y’, ‘Z’, ‘0’, ‘1’, ‘2’, ‘3’, ‘4’, ‘5’, ‘6’, ‘7’, ‘8’, ‘9’, ‘space’, ‘enter’, ‘escape’, ‘tab’, ‘backspace’, ‘delete’, ‘insert’, ‘home’, ‘end’, ‘pageup’, ‘pagedown’, ‘arrowup’, ‘arrowdown’, ‘arrowleft’, ‘arrowright’, ‘plus’, ‘minus’, ‘asterisk’, ‘slash’]]</p>
-</dd></dl>
-
-<dl class="py data">
-<dt class="sig sig-object py" id="viser.HotkeyKey">
-<span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">HotkeyKey</span></span><a class="headerlink" href="#viser.HotkeyKey" title="Link to this definition">¶</a></dt>
-<dd><p>alias of <a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Literal</span></code></a>[‘A’, ‘B’, ‘C’, ‘D’, ‘E’, ‘F’, ‘G’, ‘H’, ‘I’, ‘J’, ‘K’, ‘L’, ‘M’, ‘N’, ‘O’, ‘P’, ‘Q’, ‘R’, ‘S’, ‘T’, ‘U’, ‘V’, ‘W’, ‘X’, ‘Y’, ‘Z’, ‘0’, ‘1’, ‘2’, ‘3’, ‘4’, ‘5’, ‘6’, ‘7’, ‘8’, ‘9’, ‘space’, ‘enter’, ‘escape’, ‘tab’, ‘backspace’, ‘delete’, ‘insert’, ‘home’, ‘end’, ‘pageup’, ‘pagedown’, ‘arrowup’, ‘arrowdown’, ‘arrowleft’, ‘arrowright’, ‘plus’, ‘minus’, ‘asterisk’, ‘slash’]</p>
-</dd></dl>
-
-<dl class="py data">
-<dt class="sig sig-object py" id="viser.HotkeyModifier">
-<span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">HotkeyModifier</span></span><a class="headerlink" href="#viser.HotkeyModifier" title="Link to this definition">¶</a></dt>
-<dd><p>alias of <a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Literal</span></code></a>[‘cmd/ctrl’, ‘ctrl’, ‘alt’, ‘shift’]</p>
-</dd></dl>
-
 <dl class="py class">
 <dt class="sig sig-object py" id="viser.UploadedFile">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">UploadedFile</span></span><a class="reference internal" href="../../../_modules/viser/_gui_handles/#UploadedFile"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.UploadedFile" title="Link to this definition">¶</a></dt>
@@ -2641,6 +2630,7 @@ Used when height is None.</p>
 <li><a class="reference internal" href="#viser.CommandHandle.label"><code class="docutils literal notranslate"><span class="pre">CommandHandle.label</span></code></a></li>
 <li><a class="reference internal" href="#viser.CommandHandle.description"><code class="docutils literal notranslate"><span class="pre">CommandHandle.description</span></code></a></li>
 <li><a class="reference internal" href="#viser.CommandHandle.hotkey"><code class="docutils literal notranslate"><span class="pre">CommandHandle.hotkey</span></code></a></li>
+<li><a class="reference internal" href="#viser.CommandHandle.modifier"><code class="docutils literal notranslate"><span class="pre">CommandHandle.modifier</span></code></a></li>
 <li><a class="reference internal" href="#viser.CommandHandle.disabled"><code class="docutils literal notranslate"><span class="pre">CommandHandle.disabled</span></code></a></li>
 <li><a class="reference internal" href="#viser.CommandHandle.icon"><code class="docutils literal notranslate"><span class="pre">CommandHandle.icon</span></code></a></li>
 <li><a class="reference internal" href="#viser.CommandHandle.on_trigger"><code class="docutils literal notranslate"><span class="pre">CommandHandle.on_trigger()</span></code></a></li>
@@ -2944,9 +2934,6 @@ Used when height is None.</p>
 <li><a class="reference internal" href="#viser.GuiVector3Handle.precision"><code class="docutils literal notranslate"><span class="pre">GuiVector3Handle.precision</span></code></a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#viser.Hotkey"><code class="docutils literal notranslate"><span class="pre">Hotkey</span></code></a></li>
-<li><a class="reference internal" href="#viser.HotkeyKey"><code class="docutils literal notranslate"><span class="pre">HotkeyKey</span></code></a></li>
-<li><a class="reference internal" href="#viser.HotkeyModifier"><code class="docutils literal notranslate"><span class="pre">HotkeyModifier</span></code></a></li>
 <li><a class="reference internal" href="#viser.UploadedFile"><code class="docutils literal notranslate"><span class="pre">UploadedFile</span></code></a><ul>
 <li><a class="reference internal" href="#viser.UploadedFile.name"><code class="docutils literal notranslate"><span class="pre">UploadedFile.name</span></code></a></li>
 <li><a class="reference internal" href="#viser.UploadedFile.content"><code class="docutils literal notranslate"><span class="pre">UploadedFile.content</span></code></a></li>
