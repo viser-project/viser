@@ -289,7 +289,7 @@ FloatingPanel.Contents = function FloatingPanelContents({
   const context = React.useContext(FloatingPanelContext)!;
   return (
     <Collapse in={context.expanded}>
-      <Divider mx="xs" />
+      <Divider />
       <ScrollArea.Autosize mah={context.maxHeight}>
         <Box
           /* Prevent internals from getting too wide. Needs to match the
