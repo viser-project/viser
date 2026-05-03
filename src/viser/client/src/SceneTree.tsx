@@ -20,7 +20,7 @@ import { rayToViserCoords } from "./WorldTransformUtils";
 import { HoverableContext, HoverState } from "./HoverContext";
 import { shallowArrayEqual } from "./utils/shallowArrayEqual";
 import { DragBinding } from "./dragUtils";
-import { useDragLayer } from "./DragLayer";
+import { useDragLayer } from "./dragLayerContext";
 import {
   DragInput,
   anyBindingMatches,

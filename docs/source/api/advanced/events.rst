@@ -9,8 +9,6 @@ when events like clicks or GUI updates are triggered.
 
 .. autoclass:: viser.CommandEvent()
 
-.. autodata:: viser.DragButton
-
 .. autoclass:: viser.GuiEvent()
 
 .. autoclass:: viser.SceneNodeDragEvent()

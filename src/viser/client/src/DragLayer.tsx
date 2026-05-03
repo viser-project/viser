@@ -32,47 +32,13 @@ import {
 import { useThrottledMessageSender } from "./WebsocketUtils";
 import {
   ActiveDragState,
-  DragBinding,
-  DragInput,
   DragScratches,
   anyBindingMatches,
   computeInstanceWorldMatrix,
   isInstancedMesh2VendoredMessage,
 } from "./dragUtils";
+import { DragLayerApi, DragLayerContext } from "./dragLayerContext";
 import { useDragArrow } from "./useDragArrow";
-
-// =============================================================================
-// Context.
-// =============================================================================
-
-export type BeginDragArgs = {
-  nodeName: string;
-  /** Instance index for batched meshes/GLBs/axes. ``null`` for non-batched
-   * nodes. Frozen at drag-start and sent on every drag message. */
-  instanceIndex: number | null;
-  targetObj: THREE.Object3D;
-  eventPoint: THREE.Vector3;
-  pointerXy: [number, number];
-  /** PointerId of the pointerdown that's starting this drag. Used to
-   * filter unrelated pointer events on multi-touch surfaces. */
-  pointerId: number;
-  input: DragInput;
-  bindings: DragBinding[];
-};
-
-export interface DragLayerApi {
-  /** Attempt to start a drag on the given scene node. No-op if any drag
-   * is already active, or if no binding matches the current input. */
-  beginDrag(args: BeginDragArgs): void;
-  /** End the active drag if (and only if) it targets the given node. */
-  stopIfNodeIs(nodeName: string): void;
-}
-
-const DragLayerContext = React.createContext<DragLayerApi | null>(null);
-
-export function useDragLayer(): DragLayerApi | null {
-  return React.useContext(DragLayerContext);
-}
 
 // =============================================================================
 // DragLayer component.

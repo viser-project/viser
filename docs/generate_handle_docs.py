@@ -18,7 +18,7 @@ import viser
 # so they need to be enumerated explicitly and emitted as ``autodata``.
 TYPE_ALIASES: Dict[str, List[str]] = {
     "gui": [],
-    "events": ["DragButton"],
+    "events": [],
 }
 
 

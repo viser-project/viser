@@ -29,7 +29,6 @@ from ._gui_handles import GuiVector3Handle as GuiVector3Handle
 from ._gui_handles import UploadedFile as UploadedFile
 from ._icons_enum import Icon as Icon
 from ._icons_enum import IconName as IconName
-from ._messages import DragButton as DragButton
 from ._notification_handle import NotificationHandle as NotificationHandle
 from ._scene_api import SceneApi as SceneApi
 from ._scene_handles import AmbientLightHandle as AmbientLightHandle
