@@ -128,7 +128,7 @@ def test_button_click_multiple_times(
     browser_button = viser_page.get_by_role("button", name="Multi Click")
     expect(browser_button).to_be_visible(timeout=5_000)
 
-    for _ in range(3):
+    for _i in range(3):
         browser_button.click()
 
     assert all_clicks_received.wait(timeout=5.0), (

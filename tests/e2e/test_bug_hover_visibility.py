@@ -26,7 +26,9 @@ def test_hover_count_resets_on_visibility_toggle(
     # Create a clickable box with an on_click callback.
     click_counter = {"count": 0}
 
-    def on_click_handler(event: viser.ScenePointerEvent) -> None:
+    def on_click_handler(
+        event: viser.SceneNodePointerEvent[viser.BoxHandle],
+    ) -> None:
         click_counter["count"] += 1
 
     # Create a large box that fills most of the viewport for easier targeting.

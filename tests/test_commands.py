@@ -202,9 +202,9 @@ def test_command_sends_register_message() -> None:
     sent: list = []
     original_queue = server._websock_server.queue_message
 
-    def capture_queue(msg):
-        sent.append(msg)
-        return original_queue(msg)
+    def capture_queue(message):
+        sent.append(message)
+        return original_queue(message)
 
     server._websock_server.queue_message = capture_queue
 
@@ -228,9 +228,9 @@ def test_command_remove_sends_remove_message() -> None:
     sent: list = []
     original_queue = server._websock_server.queue_message
 
-    def capture_queue(msg):
-        sent.append(msg)
-        return original_queue(msg)
+    def capture_queue(message):
+        sent.append(message)
+        return original_queue(message)
 
     server._websock_server.queue_message = capture_queue
 

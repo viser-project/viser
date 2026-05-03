@@ -657,8 +657,8 @@ def pointcloud_shapes(server: viser.ViserServer) -> None:
             points=pts,
             colors=(100, 180, 255),
             point_size=0.06,
-            point_shape=shape,
-        )  # type: ignore
+            point_shape=shape,  # type: ignore[arg-type]
+        )
         server.scene.add_label(
             f"/label_{shape}", shape, position=(i * 1.2 - 1.8, 0, 1.2)
         )

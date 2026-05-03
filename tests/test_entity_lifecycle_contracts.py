@@ -17,6 +17,7 @@ import pytest
 import viser
 import viser._client_autobuild
 from viser._messages import (
+    CommandProps,
     CommandUpdateMessage,
     EntityIdField,
     EntityType,
@@ -111,7 +112,7 @@ def test_command_update_has_own_redundancy_namespace() -> None:
     commands."""
     create_msg = RegisterCommandMessage(
         uuid="abc",
-        props=viser._messages.CommandProps(
+        props=CommandProps(
             label="x",
             description=None,
             hotkey=None,

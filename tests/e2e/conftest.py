@@ -31,12 +31,13 @@ def pytest_runtest_makereport(
 ) -> Generator[None, None, None]:
     """Capture a screenshot and page HTML whenever a test fails."""
     outcome = yield
-    report = outcome.get_result()
+    report = outcome.get_result()  # type: ignore[union-attr]
 
     if report.when != "call" or not report.failed:
         return
 
-    page = item.funcargs.get("viser_page") or item.funcargs.get("page")
+    funcargs = item.funcargs  # type: ignore[attr-defined]
+    page = funcargs.get("viser_page") or funcargs.get("page")
     if page is None:
         return
     try:
