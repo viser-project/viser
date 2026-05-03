@@ -48,7 +48,8 @@ def main() -> None:
     reset_cmd = server.gui.add_command(
         "Reset Camera",
         description="Move the camera back to the default view",
-        hotkey=("cmd/ctrl", "shift", "R"),
+        hotkey="R",
+        modifier="cmd/ctrl+shift",
         icon=viser.Icon.REFRESH,
     )
 

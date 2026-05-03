@@ -13,11 +13,6 @@ from typing_extensions import Literal, TypeAlias, override
 
 from . import infra, theme, uplot
 
-_KeyModifierAtom = Literal["cmd/ctrl", "alt", "shift"]
-"""Internal: a single modifier key, as stored in the wire-level
-:class:`DragBinding.modifiers` tuple. Public API surfaces
-:data:`KeyModifier` (the ``"+"``-joined composed form) instead."""
-
 KeyModifier = Literal[
     "cmd/ctrl",
     "alt",
@@ -36,8 +31,8 @@ accept them (it canonicalizes internally).
 ``cmd/ctrl`` matches whenever either Cmd or Ctrl is held — callbacks
 that need to distinguish can read ``event.ctrl`` / ``event.meta``."""
 
-DragButton = Literal["left", "middle", "right", "any"]
-"""Mouse button that triggers a scene-node drag. ``any`` matches left/middle/right."""
+DragButton = Literal["left", "middle", "right"]
+"""Mouse button that triggers a scene-node drag."""
 
 HotkeyKey = Literal[
     # Letters.
@@ -1346,12 +1341,12 @@ class SetSceneNodeClickableMessage(Message, include_in_scene_serialization=True)
 class DragBinding:
     """A drag input combination: button + exact-match modifier set.
 
-    Listed modifiers must be held, others must not. Empty tuple = no
-    modifiers held.
+    The modifier string lists modifiers that must be held; any not
+    listed must not be held. ``None`` = no modifiers held.
     """
 
     button: DragButton
-    modifiers: Tuple[_KeyModifierAtom, ...]
+    modifier: Optional[KeyModifier]
 
 
 @dataclasses.dataclass

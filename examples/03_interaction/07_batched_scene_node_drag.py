@@ -249,7 +249,7 @@ def main() -> None:
     # Drag (no modifier): teleport.
     # ==========================================================================
 
-    @handle.on_drag_start("left", modifier="")
+    @handle.on_drag_start("left")
     async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
         nonlocal active_idx, active_mode, spring_target, teleport_offset
         i = event.instance_index
@@ -265,13 +265,13 @@ def main() -> None:
             teleport_offset = position_arr[i] - cursor
             spring_target = cursor
 
-    @handle.on_drag_update("left", modifier="")
+    @handle.on_drag_update("left")
     async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
         nonlocal spring_target
         with lock:
             spring_target = np.array(event.end_position)
 
-    @handle.on_drag_end("left", modifier="")
+    @handle.on_drag_end("left")
     async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
         nonlocal active_idx, active_mode, spring_target, teleport_offset
         i = event.instance_index

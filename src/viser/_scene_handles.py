@@ -98,7 +98,7 @@ class _DragCallbackEntry:
         [SceneNodeDragEvent[_RaycastSupportedSceneNodeHandle]], None | Coroutine
     ]
     button: _messages.DragButton
-    modifiers: Tuple[_messages._KeyModifierAtom, ...]
+    modifier: Optional[_messages.KeyModifier]
 
 
 @dataclasses.dataclass
@@ -391,41 +391,40 @@ class SceneNodeDragEvent(Generic[TSceneNodeHandle]):
     """Whether Alt/Option was held at drag-start (frozen for the drag's lifetime)."""
 
 
-_DRAG_MODIFIER_CANONICAL_ORDER: Tuple[_messages._KeyModifierAtom, ...] = (
-    "cmd/ctrl",
-    "alt",
-    "shift",
-)
+_DRAG_MODIFIER_CANONICAL_ORDER: Tuple[str, ...] = ("cmd/ctrl", "alt", "shift")
 
 
-def _normalize_drag_modifiers(
-    modifiers: Optional[str],
-) -> Tuple[_messages._KeyModifierAtom, ...]:
-    """Parse a :data:`KeyModifier` string into the canonical wire tuple.
+def _normalize_drag_modifier(
+    modifier: Optional[str],
+) -> Optional[_messages.KeyModifier]:
+    """Parse a :data:`KeyModifier` string into its canonical form.
 
-    ``None`` and ``""`` map to ``()``. Otherwise, split on ``"+"``,
+    ``None`` and ``""`` map to ``None``. Otherwise, split on ``"+"``,
     validate each name, and canonicalize the order — both
     ``"cmd/ctrl+shift"`` and ``"shift+cmd/ctrl"`` yield
-    ``("cmd/ctrl", "shift")``. Type annotations only allow the canonical
+    ``"cmd/ctrl+shift"``. Type annotations only allow the canonical
     form; the runtime is lenient for users who don't run a type-checker.
     """
-    if modifiers is None or modifiers == "":
-        return ()
-    parts = modifiers.split("+")
+    if modifier is None or modifier == "":
+        return None
+    parts = modifier.split("+")
     modifier_set = set(parts)
     valid = set(_DRAG_MODIFIER_CANONICAL_ORDER)
     unknown = modifier_set - valid
     if unknown:
         raise ValueError(
-            f"Unknown drag modifier(s) in {modifiers!r}: {sorted(unknown)!r}. "
+            f"Unknown drag modifier(s) in {modifier!r}: {sorted(unknown)!r}. "
             f"Valid modifiers: {sorted(valid)!r}."
         )
     if len(parts) != len(modifier_set):
         duplicates = [p for p in parts if parts.count(p) > 1]
         raise ValueError(
-            f"Duplicate drag modifier(s) in {modifiers!r}: {sorted(set(duplicates))!r}."
+            f"Duplicate drag modifier(s) in {modifier!r}: {sorted(set(duplicates))!r}."
         )
-    return tuple(m for m in _DRAG_MODIFIER_CANONICAL_ORDER if m in modifier_set)
+    return cast(
+        _messages.KeyModifier,
+        "+".join(m for m in _DRAG_MODIFIER_CANONICAL_ORDER if m in modifier_set),
+    )
 
 
 _VALID_DRAG_BUTTONS: Tuple[_messages.DragButton, ...] = get_args(_messages.DragButton)
@@ -435,20 +434,16 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
     def _sync_drag_bindings(self) -> None:
         """Recompute the union of registered (button, modifiers) across all
         phases and push it to the client as a full binding set."""
-        seen: set[
-            Tuple[_messages.DragButton, Tuple[_messages._KeyModifierAtom, ...]]
-        ] = set()
+        seen: set[Tuple[_messages.DragButton, Optional[_messages.KeyModifier]]] = set()
         bindings: list[_messages.DragBinding] = []
         for entries in self._impl.drag_cb.values():
             for entry in entries:
-                key = (entry.button, entry.modifiers)
+                key = (entry.button, entry.modifier)
                 if key in seen:
                     continue
                 seen.add(key)
                 bindings.append(
-                    _messages.DragBinding(
-                        button=entry.button, modifiers=entry.modifiers
-                    )
+                    _messages.DragBinding(button=entry.button, modifier=entry.modifier)
                 )
         self._impl.api._websock_interface.queue_message(
             _messages.SetSceneNodeDragBindingsMessage(self._impl.name, tuple(bindings))
@@ -473,7 +468,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         return [
             entry.callback
             for entry in self._impl.drag_cb[phase]
-            if _drag_input_matches_filter(input, entry.button, entry.modifiers)
+            if _drag_input_matches_filter(input, entry.button, entry.modifier)
         ]
 
     @staticmethod
@@ -494,7 +489,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
     ]:
         self._validate_button(button)
-        normalized = _normalize_drag_modifiers(modifier)
+        normalized = _normalize_drag_modifier(modifier)
 
         def decorator(
             func: Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
@@ -508,7 +503,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
                     func,
                 ),
                 button=button,
-                modifiers=normalized,
+                modifier=normalized,
             )
             # Skip if an equivalent entry is already registered —
             # otherwise double-registration would fire the callback twice
@@ -537,7 +532,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
 
         Args:
             button: Mouse button that triggers the drag. One of
-                ``"left" | "middle" | "right" | "any"``.
+                ``"left" | "middle" | "right"``.
             modifier: Modifier keys that must be held, as a canonically
                 ordered ``"+"``-separated string like ``"cmd/ctrl"``,
                 ``"shift"``, or ``"cmd/ctrl+shift"``. ``None`` matches

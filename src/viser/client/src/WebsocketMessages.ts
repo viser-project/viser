@@ -1485,8 +1485,16 @@ export interface SetSceneNodeDragBindingsMessage {
   type: "SetSceneNodeDragBindingsMessage";
   name: string;
   bindings: {
-    button: "left" | "middle" | "right" | "any";
-    modifiers: ("cmd/ctrl" | "alt" | "shift")[];
+    button: "left" | "middle" | "right";
+    modifier:
+      | "cmd/ctrl"
+      | "alt"
+      | "shift"
+      | "cmd/ctrl+alt"
+      | "cmd/ctrl+shift"
+      | "alt+shift"
+      | "cmd/ctrl+alt+shift"
+      | null;
   }[];
 }
 /** Message for clicked objects.

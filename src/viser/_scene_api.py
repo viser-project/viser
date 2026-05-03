@@ -11,6 +11,7 @@ from functools import partial
 from typing import (
     TYPE_CHECKING,
     Callable,
+    Optional,
     Tuple,
     TypeVar,
     Union,
@@ -90,13 +91,14 @@ NoneOrCoroutine = TypeVar("NoneOrCoroutine", None, Coroutine)
 def _drag_input_matches_filter(
     input: _DragInput,
     filter_button: _messages.DragButton,
-    filter_modifiers: Tuple[_messages._KeyModifierAtom, ...],
+    filter_modifier: Optional[_messages.KeyModifier],
 ) -> bool:
     """Return whether a drag input matches a registered binding filter.
 
-    Exact-match: listed modifiers must be held, others must not. Empty
-    ``filter_modifiers`` = no modifiers held. ``"cmd/ctrl"`` treats Ctrl
-    and Cmd (meta) as interchangeable — matches whenever either is held.
+    Exact-match: listed modifiers must be held, others must not.
+    ``filter_modifier=None`` = no modifiers held. ``"cmd/ctrl"`` treats
+    Ctrl and Cmd (meta) as interchangeable — matches whenever either is
+    held.
 
     The client mirrors this logic in ``matchesDragBinding`` (see
     ``src/viser/client/src/dragUtils.ts``) to filter at the source
@@ -105,15 +107,17 @@ def _drag_input_matches_filter(
     registered callbacks fire per phase. Drift = silent missed drags
     or spurious teardowns.
     """
-    if filter_button not in ("any", input.button):
+    if filter_button != input.button:
         return False
-    # filter_modifiers has at most 3 elements (KeyModifier literal); using
-    # `in` directly on the tuple avoids per-event allocation.
-    if input.shift != ("shift" in filter_modifiers):
+    # The 7 valid KeyModifier strings are uniquely identifiable by
+    # substring presence of "cmd/ctrl"/"alt"/"shift", so an `in` check
+    # on the joined string suffices without splitting.
+    s = filter_modifier or ""
+    if input.shift != ("shift" in s):
         return False
-    if input.alt != ("alt" in filter_modifiers):
+    if input.alt != ("alt" in s):
         return False
-    if "cmd/ctrl" in filter_modifiers:
+    if "cmd/ctrl" in s:
         if not (input.ctrl or input.meta):
             return False
     else:
