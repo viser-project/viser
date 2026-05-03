@@ -18,7 +18,9 @@ export const SingleGlbAsset = React.forwardRef<
   ref: React.ForwardedRef<THREE.Group>,
 ) {
   // Load model without passing shadow settings - we'll apply them in useEffect.
-  const { gltf, meshes, mixerRef } = useGlbLoader(message.props.glb_data);
+  const { gltf, meshes, meshMatrices, mixerRef } = useGlbLoader(
+    message.props.glb_data,
+  );
 
   // Apply shadow settings directly to the model.
   React.useEffect(() => {
@@ -89,9 +91,8 @@ export const SingleGlbAsset = React.forwardRef<
               key={`shadow-${i}`}
               geometry={mesh.geometry}
               receiveShadow
-              position={mesh.position}
-              rotation={mesh.rotation}
-              scale={mesh.scale}
+              matrix={meshMatrices[i]}
+              matrixAutoUpdate={false}
             >
               <shadowMaterial
                 opacity={shadowOpacity}
@@ -103,9 +104,19 @@ export const SingleGlbAsset = React.forwardRef<
         </group>
       ) : null}
       {clickable ? (
-        <group ref={outlineRef} visible={false}>
+        <group
+          ref={outlineRef}
+          visible={false}
+          scale={normalizeScale(message.props.scale)}
+        >
           {meshes.map((mesh, i) => (
-            <mesh key={i} geometry={mesh.geometry} material={outlineMaterial} />
+            <mesh
+              key={i}
+              geometry={mesh.geometry}
+              material={outlineMaterial}
+              matrix={meshMatrices[i]}
+              matrixAutoUpdate={false}
+            />
           ))}
         </group>
       ) : null}

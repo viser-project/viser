@@ -34,6 +34,10 @@ export function useGlbLoader(glb_data: Uint8Array) {
   // State for loaded model and meshes
   const [gltf, setGltf] = React.useState<GLTF>();
   const [meshes, setMeshes] = React.useState<THREE.Mesh[]>([]);
+  // Per-mesh transforms relative to the gltf.scene root. These capture
+  // ancestor node transforms (e.g. translations on glTF nodes) that are not
+  // present in mesh.position/mesh.geometry alone.
+  const [meshMatrices, setMeshMatrices] = React.useState<THREE.Matrix4[]>([]);
 
   // Animation mixer reference
   const mixerRef = React.useRef<THREE.AnimationMixer | null>(null);
@@ -54,17 +58,33 @@ export function useGlbLoader(glb_data: Uint8Array) {
           });
         }
 
+        // Compute world matrices relative to gltf.scene root before it gets
+        // attached to the live scene graph (after attach, matrixWorld is
+        // re-computed against the real scene).
+        gltf.scene.updateMatrixWorld(true);
+        const sceneInverse = new THREE.Matrix4()
+          .copy(gltf.scene.matrixWorld)
+          .invert();
+
         // Process all meshes in the scene
         const meshes: THREE.Mesh[] = [];
+        const meshMatrices: THREE.Matrix4[] = [];
         gltf?.scene.traverse((obj) => {
           if (obj instanceof THREE.Mesh) {
             obj.geometry.computeVertexNormals();
             obj.geometry.computeBoundingSphere();
             meshes.push(obj);
+            meshMatrices.push(
+              new THREE.Matrix4().multiplyMatrices(
+                sceneInverse,
+                obj.matrixWorld,
+              ),
+            );
           }
         });
 
         setMeshes(meshes);
+        setMeshMatrices(meshMatrices);
         setGltf(gltf);
       },
       (error) => {
@@ -84,6 +104,7 @@ export function useGlbLoader(glb_data: Uint8Array) {
     };
   }, [glb_data]);
 
-  // Return the loaded model, meshes, and mixer for animation updates
-  return { gltf, meshes, mixerRef };
+  // Return the loaded model, meshes, per-mesh matrices, and mixer for
+  // animation updates.
+  return { gltf, meshes, meshMatrices, mixerRef };
 }
