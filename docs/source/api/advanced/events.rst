@@ -11,11 +11,15 @@ when events like clicks or GUI updates are triggered.
 
 .. autoclass:: viser.GuiEvent()
 
+.. autoclass:: viser.SceneClickEvent()
+
 .. autoclass:: viser.SceneNodeDragEvent()
 
 .. autoclass:: viser.SceneNodePointerEvent()
 
 .. autoclass:: viser.ScenePointerEvent()
+
+.. autoclass:: viser.SceneRectSelectEvent()
 
 .. autoclass:: viser.TransformControlsEvent()
 

@@ -37,8 +37,54 @@ if TYPE_CHECKING:
 
 
 @dataclasses.dataclass(frozen=True)
+class SceneClickEvent:
+    """Event passed to scene-level click callbacks (``SceneApi.on_click``)."""
+
+    client: ClientHandle
+    """Client that triggered this event."""
+    client_id: int
+    """ID of client that triggered this event."""
+    ray_origin: tuple[float, float, float]
+    """Origin of the 3D ray corresponding to this click, in world coordinates."""
+    ray_direction: tuple[float, float, float]
+    """Direction of the 3D ray corresponding to this click, in world coordinates."""
+    screen_pos: tuple[float, float]
+    """Screen position of the click in OpenCV image coordinates (0 to 1).
+    (0, 0) is the upper-left corner, (1, 1) is the bottom-right corner."""
+    modifier: _messages.KeyModifier | None
+    """Modifier-combo held at click time. ``None`` if no modifiers
+    were held; otherwise a canonical :data:`KeyModifier` string."""
+
+
+@dataclasses.dataclass(frozen=True)
+class SceneRectSelectEvent:
+    """Event passed to scene rectangle-select callbacks
+    (``SceneApi.on_rect_select``)."""
+
+    client: ClientHandle
+    """Client that triggered this event."""
+    client_id: int
+    """ID of client that triggered this event."""
+    screen_min: tuple[float, float]
+    """Min-corner of the selection rectangle in OpenCV image coordinates
+    (0 to 1)."""
+    screen_max: tuple[float, float]
+    """Max-corner of the selection rectangle."""
+    modifier: _messages.KeyModifier | None
+    """Modifier-combo held at gesture start. ``None`` if no modifiers
+    were held; otherwise a canonical :data:`KeyModifier` string."""
+
+
+@dataclasses.dataclass(frozen=True)
 class ScenePointerEvent:
-    """Event passed to pointer callbacks for the scene (currently only clicks)."""
+    """Event passed to scene pointer callbacks (legacy ``on_pointer_event``).
+
+    .. deprecated::
+        Use :meth:`SceneApi.on_click` with :class:`SceneClickEvent` or
+        :meth:`SceneApi.on_rect_select` with :class:`SceneRectSelectEvent`
+        instead. This shape unions the click and rect-select cases into a
+        single dataclass with awkward Optional/variable-length fields.
+    """
 
     client: ClientHandle
     """Client that triggered this event."""
@@ -54,14 +100,10 @@ class ScenePointerEvent:
     """Screen position of the click on the screen (OpenCV image coordinates, 0 to 1).
     (0, 0) is the upper-left corner, (1, 1) is the bottom-right corner.
     For a box selection, this includes the min- and max- corners of the box."""
-    ctrl: bool
-    """Whether Ctrl was held when this event fired."""
-    meta: bool
-    """Whether the Meta/Cmd key was held when this event fired."""
-    shift: bool
-    """Whether Shift was held when this event fired."""
-    alt: bool
-    """Whether Alt/Option was held when this event fired."""
+    modifier: _messages.KeyModifier | None
+    """Modifier-combo held when this event fired. ``None`` if no
+    modifiers were held; otherwise a canonical :data:`KeyModifier`
+    string."""
 
     @property
     @deprecated("The `event` property is deprecated. Use `event_type` instead.")
@@ -107,7 +149,7 @@ class _DragCallbackEntry:
         [SceneNodeDragEvent[_RaycastSupportedSceneNodeHandle]], None | Coroutine
     ]
     button: _messages.DragButton
-    modifier: Optional[_messages.KeyModifier]
+    modifier: _messages.KeyModifier | None
 
 
 @dataclasses.dataclass
@@ -119,7 +161,7 @@ class _ClickCallbackEntry:
     callback: Callable[
         [SceneNodePointerEvent[_RaycastSupportedSceneNodeHandle]], None | Coroutine
     ]
-    modifier: Optional[_messages.KeyModifier]
+    modifier: _messages.KeyModifier | None
 
 
 @dataclasses.dataclass
@@ -349,14 +391,10 @@ class SceneNodePointerEvent(Generic[TSceneNodeHandle]):
     (0, 0) is the upper-left corner, (1, 1) is the bottom-right corner."""
     instance_index: int | None
     """Instance ID of the clicked object, if applicable. Currently this is `None` for all objects except for the output of :meth:`SceneApi.add_batched_axes()`."""
-    ctrl: bool
-    """Whether Ctrl was held when this event fired."""
-    meta: bool
-    """Whether the Meta/Cmd key was held when this event fired."""
-    shift: bool
-    """Whether Shift was held when this event fired."""
-    alt: bool
-    """Whether Alt/Option was held when this event fired."""
+    modifier: _messages.KeyModifier | None
+    """Modifier-combo held when this event fired. ``None`` if no
+    modifiers were held; otherwise a canonical :data:`KeyModifier`
+    string."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -403,14 +441,10 @@ class SceneNodeDragEvent(Generic[TSceneNodeHandle]):
     """Current pointer in OpenCV screen-space coordinates."""
     button: Literal["left", "middle", "right"]
     """Mouse button that initiated the drag."""
-    ctrl: bool
-    """Whether Ctrl was held at drag-start (frozen for the drag's lifetime)."""
-    meta: bool
-    """Whether the Meta/Cmd key was held at drag-start (frozen for the drag's lifetime)."""
-    shift: bool
-    """Whether Shift was held at drag-start (frozen for the drag's lifetime)."""
-    alt: bool
-    """Whether Alt/Option was held at drag-start (frozen for the drag's lifetime)."""
+    modifier: _messages.KeyModifier | None
+    """Modifier-combo held at drag-start (frozen for the drag's
+    lifetime). ``None`` if no modifiers were held; otherwise a
+    canonical :data:`KeyModifier` string."""
 
 
 _VALID_DRAG_BUTTONS: Tuple[_messages.DragButton, ...] = get_args(_messages.DragButton)
@@ -420,7 +454,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
     def _sync_drag_bindings(self) -> None:
         """Recompute the union of registered (button, modifiers) across all
         phases and push it to the client as a full binding set."""
-        seen: set[Tuple[_messages.DragButton, Optional[_messages.KeyModifier]]] = set()
+        seen: set[Tuple[_messages.DragButton, _messages.KeyModifier | None]] = set()
         bindings: list[_messages.DragBinding] = []
         for entries in self._impl.drag_cb.values():
             for entry in entries:
@@ -469,7 +503,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         self: Self,
         phase: DragPhase,
         button: _messages.DragButton,
-        modifier: Optional[_messages.KeyModifier] = None,
+        modifier: _messages.KeyModifier | None = None,
     ) -> Callable[
         [Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine]],
         Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
@@ -513,7 +547,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         self: Self,
         button: _messages.DragButton = ...,
         *,
-        modifier: Optional[_messages.KeyModifier] = ...,
+        modifier: _messages.KeyModifier | None = ...,
     ) -> Callable[
         [Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine]],
         Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
@@ -523,7 +557,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         self: Self,
         button: Union[_messages.DragButton, Callable[..., Any]] = "left",
         *,
-        modifier: Optional[_messages.KeyModifier] = None,
+        modifier: _messages.KeyModifier | None = None,
     ) -> Any:
         """Attach a callback for when dragging starts.
 
@@ -568,7 +602,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         self: Self,
         button: _messages.DragButton = ...,
         *,
-        modifier: Optional[_messages.KeyModifier] = ...,
+        modifier: _messages.KeyModifier | None = ...,
     ) -> Callable[
         [Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine]],
         Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
@@ -578,7 +612,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         self: Self,
         button: Union[_messages.DragButton, Callable[..., Any]] = "left",
         *,
-        modifier: Optional[_messages.KeyModifier] = None,
+        modifier: _messages.KeyModifier | None = None,
     ) -> Any:
         """Attach a callback for drag updates. See :meth:`on_drag_start` for argument docs.
 
@@ -597,7 +631,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         self: Self,
         button: _messages.DragButton = ...,
         *,
-        modifier: Optional[_messages.KeyModifier] = ...,
+        modifier: _messages.KeyModifier | None = ...,
     ) -> Callable[
         [Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine]],
         Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
@@ -607,7 +641,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         self: Self,
         button: Union[_messages.DragButton, Callable[..., Any]] = "left",
         *,
-        modifier: Optional[_messages.KeyModifier] = None,
+        modifier: _messages.KeyModifier | None = None,
     ) -> Any:
         """Attach a callback for when dragging ends. See :meth:`on_drag_start` for argument docs.
 
@@ -619,7 +653,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         self: Self,
         phase: DragPhase,
         button_or_func: Union[_messages.DragButton, Callable[..., Any]],
-        modifier: Optional[_messages.KeyModifier],
+        modifier: _messages.KeyModifier | None,
     ) -> Any:
         """Bare-decorator (a callable in the first slot) registers
         immediately with default ``button="left"``; otherwise
@@ -673,7 +707,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
     def on_click(
         self: Self,
         *,
-        modifier: Optional[_messages.KeyModifier] = ...,
+        modifier: _messages.KeyModifier | None = ...,
     ) -> Callable[
         [Callable[[SceneNodePointerEvent[Self]], NoneOrCoroutine]],
         Callable[[SceneNodePointerEvent[Self]], NoneOrCoroutine],
@@ -683,7 +717,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         self: Self,
         func: Optional[Callable[[SceneNodePointerEvent[Self]], NoneOrCoroutine]] = None,
         *,
-        modifier: Optional[_messages.KeyModifier] = None,
+        modifier: _messages.KeyModifier | None = None,
     ) -> Any:
         """Attach a callback for when a scene node is clicked.
 

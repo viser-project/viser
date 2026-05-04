@@ -80,8 +80,8 @@ Code
            def _(_):
                click_button_handle.disabled = True
    
-               @client.scene.on_pointer_event(event_type="click")
-               def _(event: viser.ScenePointerEvent) -> None:
+               @client.scene.on_click()
+               def _(event: viser.SceneClickEvent) -> None:
                    # Check for intersection with the mesh, using trimesh's ray-mesh intersection.
                    # Note that mesh is in the mesh frame, so we need to transform the ray.
                    R_world_mesh = tf.SO3(mesh_handle.wxyz)
@@ -93,7 +93,7 @@ Code
    
                    if len(hit_pos) == 0:
                        return
-                   client.scene.remove_pointer_callback()
+                   client.scene.remove_click_callback()
    
                    # Get the first hit position (based on distance from the ray origin).
                    hit_pos = hit_pos[np.argmin(np.sum((hit_pos - origin) ** 2, axis=-1))]
@@ -118,9 +118,9 @@ Code
            def _(_):
                paint_button_handle.disabled = True
    
-               @client.scene.on_pointer_event(event_type="rect-select")
-               def _(event: viser.ScenePointerEvent) -> None:
-                   client.scene.remove_pointer_callback()
+               @client.scene.on_rect_select()
+               def _(event: viser.SceneRectSelectEvent) -> None:
+                   client.scene.remove_rect_select_callback()
    
                    nonlocal mesh_handle
                    camera = event.client.camera
@@ -150,8 +150,8 @@ Code
    
                    # Select the vertices that lie inside the 2D selected box, once projected.
                    mask = (
-                       (vertices_proj > np.array(event.screen_pos[0]))
-                       & (vertices_proj < np.array(event.screen_pos[1]))
+                       (vertices_proj > np.array(event.screen_min))
+                       & (vertices_proj < np.array(event.screen_max))
                    ).all(axis=1)[..., None]
    
                    # Update the mesh color based on whether the vertices are inside the box

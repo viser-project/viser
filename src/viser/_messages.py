@@ -28,10 +28,35 @@ hotkey bindings. A canonically ordered ``"+"``-separated string —
 ``"shift+cmd/ctrl"`` type-check-fail, though the runtime parser will
 accept them (it canonicalizes internally).
 
-``cmd/ctrl`` matches whenever either Cmd or Ctrl is held — callbacks
-that need to distinguish can read ``event.ctrl`` / ``event.meta``."""
+``cmd/ctrl`` matches whenever either Cmd or Ctrl is held; the two
+keys are deliberately collapsed (the same gesture is "Cmd" on Mac
+and "Ctrl" elsewhere)."""
 
 _KEY_MODIFIER_CANONICAL_ORDER: Tuple[str, ...] = ("cmd/ctrl", "alt", "shift")
+
+
+def _modifier_from_booleans(
+    ctrl: bool, meta: bool, shift: bool, alt: bool
+) -> Optional[KeyModifier]:
+    """Build a canonical :data:`KeyModifier` string from raw modifier
+    booleans. ``None`` means "no modifiers held".
+
+    Used by event-construction sites to surface the modifier state on
+    user-facing events. The Cmd vs Ctrl distinction is intentionally
+    lost (both collapse to ``"cmd/ctrl"``)."""
+    held = set()
+    if ctrl or meta:
+        held.add("cmd/ctrl")
+    if alt:
+        held.add("alt")
+    if shift:
+        held.add("shift")
+    if not held:
+        return None
+    return cast(
+        KeyModifier,
+        "+".join(m for m in _KEY_MODIFIER_CANONICAL_ORDER if m in held),
+    )
 
 
 def _normalize_key_modifier(modifier: Optional[str]) -> Optional[KeyModifier]:

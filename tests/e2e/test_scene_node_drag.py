@@ -161,10 +161,8 @@ def test_scene_node_drag_callbacks(
     # Input state: left button + primary modifier, nothing else.
     for event in (start_event, update_event, end_event):
         assert event.button == "left"
-        # Primary modifier: one of ctrl/meta is held, not both, not shift/alt.
-        assert event.ctrl != event.meta, (event.ctrl, event.meta)
-        assert not event.shift
-        assert not event.alt
+        # Primary modifier: cmd/ctrl held (Cmd and Ctrl collapse to one).
+        assert event.modifier == "cmd/ctrl", event.modifier
 
 
 def test_scene_node_drag_filter_rejects_wrong_modifier(

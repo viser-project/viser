@@ -107,7 +107,6 @@ class DeprecatedAttributeShim:
             # Map from old method names (viser v0.1.*) to new methods names.
             "reset_scene": "reset",
             "set_global_scene_node_visibility": "set_global_visibility",
-            "on_scene_pointer": "on_pointer_event",
             "on_scene_pointer_removed": "on_pointer_callback_removed",
             "remove_scene_pointer_callback": "remove_pointer_callback",
             "add_mesh": "add_mesh_simple",

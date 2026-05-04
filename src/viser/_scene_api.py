@@ -10,13 +10,12 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
-    Optional,
     Tuple,
     TypeVar,
     Union,
     cast,
-    get_args,
     overload,
 )
 
@@ -56,10 +55,12 @@ from ._scene_handles import (
     PointCloudHandle,
     PointLightHandle,
     RectAreaLightHandle,
+    SceneClickEvent,
     SceneNodeDragEvent,
     SceneNodeHandle,
     SceneNodePointerEvent,
     ScenePointerEvent,
+    SceneRectSelectEvent,
     SplineCatmullRomHandle,
     SplineCubicBezierHandle,
     SpotLightHandle,
@@ -90,15 +91,10 @@ NoneOrCoroutine = TypeVar("NoneOrCoroutine", None, Coroutine)
 
 @dataclasses.dataclass
 class _PointerCallbackEntry:
-    """One registered scene-pointer callback + its filters.
-
-    Private to :class:`SceneApi`; dispatch fires every entry whose
-    event_type matches the incoming message and whose modifier filter
-    matches the held modifiers."""
-
-    callback: Callable[[ScenePointerEvent], None | Coroutine]
+    callback: Callable[[Any], None | Coroutine]
     event_type: _messages.ScenePointerEventType
-    modifier: Optional[_messages.KeyModifier]
+    modifier: _messages.KeyModifier | None
+    event_class: type
 
 
 def _modifier_matches_filter(
@@ -106,7 +102,7 @@ def _modifier_matches_filter(
     meta: bool,
     shift: bool,
     alt: bool,
-    filter_modifier: Optional[_messages.KeyModifier],
+    filter_modifier: _messages.KeyModifier | None,
 ) -> bool:
     """Return whether the held modifiers match a :data:`KeyModifier`
     filter.
@@ -137,7 +133,7 @@ def _modifier_matches_filter(
 def _drag_input_matches_filter(
     input: _DragInput,
     filter_button: _messages.DragButton,
-    filter_modifier: Optional[_messages.KeyModifier],
+    filter_modifier: _messages.KeyModifier | None,
 ) -> bool:
     """Return whether a drag input matches a registered binding filter."""
     if filter_button != input.button:
@@ -2778,10 +2774,9 @@ class SceneApi:
             ray_direction=message.ray_direction,
             screen_pos=message.screen_pos,
             instance_index=message.instance_index,
-            ctrl=message.ctrl,
-            meta=message.meta,
-            shift=message.shift,
-            alt=message.alt,
+            modifier=_messages._modifier_from_booleans(
+                message.ctrl, message.meta, message.shift, message.alt
+            ),
         )
         # Snapshot the list — a callback may register/remove other
         # callbacks during dispatch; mutations should not affect the
@@ -2879,10 +2874,9 @@ class SceneApi:
             end_position=message.end_position,
             end_screen_pos=message.end_screen_pos,
             button=message.button,
-            ctrl=message.ctrl,
-            meta=message.meta,
-            shift=message.shift,
-            alt=message.alt,
+            modifier=_messages._modifier_from_booleans(
+                message.ctrl, message.meta, message.shift, message.alt
+            ),
         )
         for cb in matching:
             if asyncio.iscoroutinefunction(cb):
@@ -2898,18 +2892,11 @@ class SceneApi:
         """Callback for handling click messages."""
         if not self._scene_pointer_cb:
             return
-        event = ScenePointerEvent(
-            client=self._get_client_handle(client_id),
-            client_id=client_id,
-            event_type=message.event_type,
-            ray_origin=message.ray_origin,
-            ray_direction=message.ray_direction,
-            screen_pos=message.screen_pos,
-            ctrl=message.ctrl,
-            meta=message.meta,
-            shift=message.shift,
-            alt=message.alt,
+        client = self._get_client_handle(client_id)
+        modifier = _messages._modifier_from_booleans(
+            message.ctrl, message.meta, message.shift, message.alt
         )
+        event_cache: dict[type, Any] = {}
         # Snapshot — see _handle_node_click_updates for rationale.
         for entry in list(self._scene_pointer_cb):
             if entry.event_type != message.event_type:
@@ -2922,6 +2909,38 @@ class SceneApi:
                 entry.modifier,
             ):
                 continue
+            event = event_cache.get(entry.event_class)
+            if event is None:
+                if entry.event_class is SceneClickEvent:
+                    assert message.ray_origin is not None
+                    assert message.ray_direction is not None
+                    event = SceneClickEvent(
+                        client=client,
+                        client_id=client_id,
+                        ray_origin=message.ray_origin,
+                        ray_direction=message.ray_direction,
+                        screen_pos=message.screen_pos[0],
+                        modifier=modifier,
+                    )
+                elif entry.event_class is SceneRectSelectEvent:
+                    event = SceneRectSelectEvent(
+                        client=client,
+                        client_id=client_id,
+                        screen_min=message.screen_pos[0],
+                        screen_max=message.screen_pos[1],
+                        modifier=modifier,
+                    )
+                else:
+                    event = ScenePointerEvent(
+                        client=client,
+                        client_id=client_id,
+                        event_type=message.event_type,
+                        ray_origin=message.ray_origin,
+                        ray_direction=message.ray_direction,
+                        screen_pos=message.screen_pos,
+                        modifier=modifier,
+                    )
+                event_cache[entry.event_class] = event
             cb = entry.callback
             if asyncio.iscoroutinefunction(cb):
                 await cb(event)
@@ -2930,54 +2949,104 @@ class SceneApi:
                     print_threadpool_errors
                 )
 
-    def on_pointer_event(
+    def on_click(
         self,
-        event_type: Literal["click", "rect-select"],
         *,
-        modifier: Optional[_messages.KeyModifier] = None,
+        modifier: _messages.KeyModifier | None = None,
     ) -> Callable[
-        [Callable[[ScenePointerEvent], None]], Callable[[ScenePointerEvent], None]
+        [Callable[[SceneClickEvent], None]], Callable[[SceneClickEvent], None]
     ]:
-        """Add a callback for scene pointer events.
+        """Register a callback for clicks anywhere in the scene
+        (background and meshes both, after the per-node ``on_click``
+        for any clickable mesh under the cursor).
 
-        Multiple callbacks can be registered. Dispatch fires every
-        callback whose ``event_type`` matches the incoming message and
-        whose ``modifier`` filter matches the held modifiers.
+        Multiple callbacks can be registered. Each fires only when its
+        ``modifier`` filter matches the modifiers held at click time.
 
         Args:
-            event_type: Event to listen to.
             modifier: Modifier-combo filter. Default ``None`` matches
                 "no modifiers held". ``"cmd/ctrl"``, ``"shift"``,
                 ``"cmd/ctrl+shift"``, etc. are exact matches (listed
                 modifiers held, others not). ``cmd/ctrl`` matches
                 whenever either Cmd or Ctrl is held.
         """
-        assert event_type in get_args(_messages.ScenePointerEventType)
+        return self._register_scene_pointer_callback("click", modifier, SceneClickEvent)
+
+    def on_rect_select(
+        self,
+        *,
+        modifier: _messages.KeyModifier | None = None,
+    ) -> Callable[
+        [Callable[[SceneRectSelectEvent], None]],
+        Callable[[SceneRectSelectEvent], None],
+    ]:
+        """Register a callback for rectangle-select gestures (drag a
+        box on the canvas).
+
+        Multiple callbacks can be registered. Each fires only when its
+        ``modifier`` filter matches the modifiers held at gesture
+        start. The selection rectangle is drawn on the canvas only
+        when the held modifiers match at least one registered
+        callback's filter.
+
+        Args:
+            modifier: See :meth:`on_click` for semantics.
+        """
+        return self._register_scene_pointer_callback(
+            "rect-select", modifier, SceneRectSelectEvent
+        )
+
+    @deprecated(
+        "Use on_click() (with SceneClickEvent) or on_rect_select() "
+        "(with SceneRectSelectEvent) instead."
+    )
+    def on_pointer_event(
+        self,
+        event_type: Literal["click", "rect-select"],
+        *,
+        modifier: _messages.KeyModifier | None = None,
+    ) -> Callable[
+        [Callable[[ScenePointerEvent], None]], Callable[[ScenePointerEvent], None]
+    ]:
+        """Legacy registration that hands callbacks the union-shaped
+        :class:`ScenePointerEvent`.
+
+        .. deprecated::
+            Use :meth:`on_click` or :meth:`on_rect_select` instead;
+            those produce the typed :class:`SceneClickEvent` /
+            :class:`SceneRectSelectEvent`.
+        """
+        return self._register_scene_pointer_callback(
+            event_type, modifier, ScenePointerEvent
+        )
+
+    def _register_scene_pointer_callback(
+        self,
+        event_type: _messages.ScenePointerEventType,
+        modifier: _messages.KeyModifier | None,
+        event_class: type,
+    ) -> Any:
         normalized_modifier = _messages._normalize_key_modifier(modifier)
 
         from ._viser import ClientHandle, ViserServer
 
-        def decorator(
-            func: Callable[[ScenePointerEvent], None],
-        ) -> Callable[[ScenePointerEvent], None]:
+        def decorator(func: Callable[[Any], None]) -> Callable[[Any], None]:
             # Server-scope and client-scope share the same client-side
             # enable toggle. Coexistence would let one scope's
             # disable silently deactivate the other's callbacks;
             # enforce exclusivity instead.
             if isinstance(self._owner, ViserServer):
                 for client in self._owner.get_clients().values():
-                    if client.scene._scene_pointer_cb:
-                        client.scene.remove_pointer_callback()
+                    client.scene._remove_all_pointer_callbacks()
             elif isinstance(self._owner, ClientHandle):
-                server_scene = self._owner._viser_server.scene
-                if server_scene._scene_pointer_cb:
-                    server_scene.remove_pointer_callback()
+                self._owner._viser_server.scene._remove_all_pointer_callbacks()
 
             self._scene_pointer_cb.append(
                 _PointerCallbackEntry(
                     callback=func,
                     event_type=event_type,
                     modifier=normalized_modifier,
+                    event_class=event_class,
                 )
             )
             self._sync_scene_pointer_filters(event_type)
@@ -2991,7 +3060,7 @@ class SceneApi:
         """Send the current modifier-filter set for ``event_type`` to the
         client. An empty set disables the event type."""
         modifiers = cast(
-            Tuple[Optional[_messages.KeyModifier], ...],
+            Tuple[_messages.KeyModifier | None, ...],
             tuple(
                 entry.modifier
                 for entry in self._scene_pointer_cb
@@ -3020,18 +3089,68 @@ class SceneApi:
         self._scene_pointer_done_cb.append(func)
         return func
 
+    def remove_click_callback(
+        self, callback: Literal["all"] | Callable = "all"
+    ) -> None:
+        """Remove scene-level click callbacks registered via
+        :meth:`on_click`. Pass a specific function to remove just that
+        registration, or ``"all"`` to clear every click registration."""
+        self._remove_pointer_callback("click", callback)
+
+    def remove_rect_select_callback(
+        self, callback: Literal["all"] | Callable = "all"
+    ) -> None:
+        """Remove rect-select callbacks registered via
+        :meth:`on_rect_select`. Pass a specific function to remove just
+        that registration, or ``"all"`` to clear every rect-select
+        registration."""
+        self._remove_pointer_callback("rect-select", callback)
+
+    def _remove_pointer_callback(
+        self,
+        event_type: _messages.ScenePointerEventType,
+        callback: Literal["all"] | Callable,
+    ) -> None:
+        before = len(self._scene_pointer_cb)
+        if callback == "all":
+            self._scene_pointer_cb = [
+                entry
+                for entry in self._scene_pointer_cb
+                if entry.event_type != event_type
+            ]
+        else:
+            self._scene_pointer_cb = [
+                entry
+                for entry in self._scene_pointer_cb
+                if not (entry.event_type == event_type and entry.callback == callback)
+            ]
+        if len(self._scene_pointer_cb) != before:
+            self._sync_scene_pointer_filters(event_type)
+
+    @deprecated("Use remove_click_callback() or remove_rect_select_callback() instead.")
     def remove_pointer_callback(
         self,
     ) -> None:
         """Remove all attached scene pointer event callbacks. This will
         trigger any callback attached to
-        :meth:`on_pointer_callback_removed()`."""
+        :meth:`on_pointer_callback_removed()`.
 
+        .. deprecated::
+            Paired with the deprecated :meth:`on_pointer_event`. Use
+            :meth:`remove_click_callback` and/or
+            :meth:`remove_rect_select_callback` for the per-event-type
+            equivalents.
+        """
         if not self._scene_pointer_cb:
             warnings.warn(
                 "No scene pointer callbacks exist for this server/client, ignoring.",
                 stacklevel=2,
             )
+            return
+        self._remove_all_pointer_callbacks()
+
+    def _remove_all_pointer_callbacks(self) -> None:
+        if not self._scene_pointer_cb:
             return
 
         # Empty the callback list, then sync the disable for every

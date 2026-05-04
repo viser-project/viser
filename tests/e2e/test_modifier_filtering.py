@@ -78,15 +78,15 @@ def test_rect_select_does_not_fire_without_matching_modifier(
     viser_server: viser.ViserServer,
     viser_page: Page,
 ) -> None:
-    """Register on_pointer_event("rect-select", modifier="shift"). A
+    """Register on_rect_select(modifier="shift"). A
     plain click+drag (no shift) must NOT fire the callback. The
     rectangle drawing and the callback dispatch share the same client-
     side gating, so if the callback doesn't fire neither does the
     drawing."""
     fired = threading.Event()
 
-    @viser_server.scene.on_pointer_event("rect-select", modifier="shift")
-    def _on_rect(event: viser.ScenePointerEvent) -> None:
+    @viser_server.scene.on_rect_select(modifier="shift")
+    def _on_rect(event: viser.SceneRectSelectEvent) -> None:
         del event
         fired.set()
 
@@ -108,20 +108,20 @@ def test_pointer_event_plain_click_fires_with_no_modifier_filter(
     viser_server: viser.ViserServer,
     viser_page: Page,
 ) -> None:
-    """``on_pointer_event("click")`` (modifier=None) fires for a plain
+    """``on_click()`` (modifier=None) fires for a plain
     click on empty canvas — verifies the wire round-trip for scene-
     level pointer events with the new filter-list message format."""
     fired = threading.Event()
 
-    @viser_server.scene.on_pointer_event("click")
-    def _on_click(event: viser.ScenePointerEvent) -> None:
+    @viser_server.scene.on_click()
+    def _on_click(event: viser.SceneClickEvent) -> None:
         del event
         fired.set()
 
     viser_page.wait_for_timeout(500)
     cx, cy = _canvas_center(viser_page)
     viser_page.mouse.click(cx, cy)
-    assert fired.wait(timeout=5.0), "on_pointer_event('click') did not fire"
+    assert fired.wait(timeout=5.0), "on_click() did not fire"
     expect(viser_page.locator("canvas").first).to_be_visible()
 
 
@@ -133,8 +133,8 @@ def test_rect_select_fires_with_matching_modifier(
     ``modifier="shift"`` callback."""
     fired = threading.Event()
 
-    @viser_server.scene.on_pointer_event("rect-select", modifier="shift")
-    def _on_rect(event: viser.ScenePointerEvent) -> None:
+    @viser_server.scene.on_rect_select(modifier="shift")
+    def _on_rect(event: viser.SceneRectSelectEvent) -> None:
         del event
         fired.set()
 

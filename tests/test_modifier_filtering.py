@@ -1,5 +1,5 @@
 """Unit tests for modifier-filter validation and dispatch on
-``on_click`` / ``on_pointer_event`` / ``on_drag_*`` / ``add_command``."""
+``on_click`` / ``on_rect_select`` / ``on_drag_*`` / ``add_command``."""
 
 from __future__ import annotations
 
@@ -31,11 +31,11 @@ def test_on_click_rejects_invalid_modifier_string() -> None:
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_on_pointer_event_rejects_invalid_modifier_string() -> None:
-    """Same as above for ``on_pointer_event``."""
+def test_scene_on_click_rejects_invalid_modifier_string() -> None:
+    """Same as above for the scene-level ``on_click``."""
     server = viser.ViserServer()
     with pytest.raises(ValueError, match="Unknown modifier"):
-        server.scene.on_pointer_event("click", modifier="control")  # type: ignore[arg-type]
+        server.scene.on_click(modifier="control")  # type: ignore[arg-type]
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
@@ -132,8 +132,8 @@ def test_on_pointer_callback_removed_fires_all_registered() -> None:
     registrations and fire each one on remove."""
     server = viser.ViserServer()
 
-    @server.scene.on_pointer_event("click")
-    def _(event: viser.ScenePointerEvent) -> None:
+    @server.scene.on_click()
+    def _(event: viser.SceneClickEvent) -> None:
         del event
 
     fired: list[str] = []
@@ -146,7 +146,11 @@ def test_on_pointer_callback_removed_fires_all_registered() -> None:
     def _() -> None:
         fired.append("done2")
 
-    server.scene.remove_pointer_callback()
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        server.scene.remove_pointer_callback()
     assert sorted(fired) == ["done1", "done2"]
 
 
@@ -166,13 +170,17 @@ def test_pointer_event_server_scope_clears_client_scope_and_vice_versa() -> None
 
     # Stand up a minimal stub client that satisfies the cross-scope
     # cleanup branch — it just needs ``.scene._scene_pointer_cb`` and
-    # ``.scene.remove_pointer_callback`` to be present.
+    # ``.scene._remove_all_pointer_callbacks`` to be present.
     fake_client = MagicMock(name="fake-client")
     fake_client.client_id = ClientId(0)
     fake_client._viser_server = server
     fake_client.scene._scene_pointer_cb = []
-    fake_client.scene.remove_pointer_callback = MagicMock(
-        side_effect=fake_client.scene._scene_pointer_cb.clear
+
+    def _stub_remove_all(**_kwargs: object) -> None:
+        fake_client.scene._scene_pointer_cb.clear()
+
+    fake_client.scene._remove_all_pointer_callbacks = MagicMock(
+        side_effect=_stub_remove_all
     )
     server._connected_clients[ClientId(0)] = fake_client
 
@@ -181,13 +189,13 @@ def test_pointer_event_server_scope_clears_client_scope_and_vice_versa() -> None
     fake_client.scene._scene_pointer_cb.append(object())
     assert len(fake_client.scene._scene_pointer_cb) == 1
 
-    @server.scene.on_pointer_event("click")
-    def _server_cb(event: viser.ScenePointerEvent) -> None:
+    @server.scene.on_click()
+    def _server_cb(event: viser.SceneClickEvent) -> None:
         del event
 
     # Server-scope registration should have cleared the client-scope list.
     assert len(server.scene._scene_pointer_cb) == 1
-    fake_client.scene.remove_pointer_callback.assert_called_once()
+    fake_client.scene._remove_all_pointer_callbacks.assert_called_once()
     assert len(fake_client.scene._scene_pointer_cb) == 0
 
 
@@ -241,6 +249,61 @@ def test_on_drag_start_rejects_extra_positional_args() -> None:
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_remove_click_callback_targets_only_click_callbacks() -> None:
+    """``remove_click_callback`` clears scene click registrations and
+    leaves rect-select registrations intact."""
+    server = viser.ViserServer()
+
+    @server.scene.on_click()
+    def _click(event: viser.SceneClickEvent) -> None:
+        del event
+
+    @server.scene.on_rect_select()
+    def _rect(event: viser.SceneRectSelectEvent) -> None:
+        del event
+
+    assert len(server.scene._scene_pointer_cb) == 2
+
+    server.scene.remove_click_callback()
+    remaining = [e.event_type for e in server.scene._scene_pointer_cb]
+    assert remaining == ["rect-select"]
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_remove_rect_select_callback_targets_only_rect_callbacks() -> None:
+    server = viser.ViserServer()
+
+    @server.scene.on_click()
+    def _click(event: viser.SceneClickEvent) -> None:
+        del event
+
+    @server.scene.on_rect_select()
+    def _rect(event: viser.SceneRectSelectEvent) -> None:
+        del event
+
+    server.scene.remove_rect_select_callback()
+    remaining = [e.event_type for e in server.scene._scene_pointer_cb]
+    assert remaining == ["click"]
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_remove_click_callback_with_specific_function() -> None:
+    server = viser.ViserServer()
+
+    @server.scene.on_click()
+    def cb_a(event: viser.SceneClickEvent) -> None:
+        del event
+
+    @server.scene.on_click()
+    def cb_b(event: viser.SceneClickEvent) -> None:
+        del event
+
+    server.scene.remove_click_callback(cb_a)
+    callbacks = [e.callback for e in server.scene._scene_pointer_cb]
+    assert callbacks == [cb_b]
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
 def test_pointer_event_unapplied_decorator_does_not_destroy_callbacks() -> None:
     """Calling ``on_pointer_event(...)`` returns a decorator factory.
     If the user never applies it (typo, exception, etc.), no
@@ -248,15 +311,15 @@ def test_pointer_event_unapplied_decorator_does_not_destroy_callbacks() -> None:
     would silently disappear."""
     server = viser.ViserServer()
 
-    @server.scene.on_pointer_event("click")
-    def _(event: viser.ScenePointerEvent) -> None:
+    @server.scene.on_click()
+    def _(event: viser.SceneClickEvent) -> None:
         del event
 
     assert len(server.scene._scene_pointer_cb) == 1
 
     # Build a decorator factory but don't apply it — should not
     # mutate any state.
-    _unused = server.scene.on_pointer_event("click", modifier="cmd/ctrl")
+    _unused = server.scene.on_click(modifier="cmd/ctrl")
     assert len(server.scene._scene_pointer_cb) == 1
 
 
@@ -268,13 +331,13 @@ def test_pointer_dispatch_iterates_over_snapshot() -> None:
     server = viser.ViserServer()
     fired: list[str] = []
 
-    @server.scene.on_pointer_event("click")
-    def _(event: viser.ScenePointerEvent) -> None:
+    @server.scene.on_click()
+    def _(event: viser.SceneClickEvent) -> None:
         del event
         fired.append("cb1")
 
-        @server.scene.on_pointer_event("click")
-        def _added(event: viser.ScenePointerEvent) -> None:
+        @server.scene.on_click()
+        def _added(event: viser.SceneClickEvent) -> None:
             del event
             fired.append("added")
 
@@ -301,12 +364,12 @@ def test_pointer_event_supports_multiple_callbacks_simultaneously() -> None:
     both alive (no overwrite)."""
     server = viser.ViserServer()
 
-    @server.scene.on_pointer_event("click")
-    def _(event: viser.ScenePointerEvent) -> None:
+    @server.scene.on_click()
+    def _(event: viser.SceneClickEvent) -> None:
         del event
 
-    @server.scene.on_pointer_event("rect-select")
-    def _(event: viser.ScenePointerEvent) -> None:
+    @server.scene.on_rect_select()
+    def _(event: viser.SceneRectSelectEvent) -> None:
         del event
 
     assert len(server.scene._scene_pointer_cb) == 2
@@ -324,13 +387,13 @@ def test_pointer_event_modifier_dispatch_filters_correctly() -> None:
 
     fired: list[str] = []
 
-    @server.scene.on_pointer_event("click")  # modifier=None: no modifiers held
-    def _(event: viser.ScenePointerEvent) -> None:
+    @server.scene.on_click()  # modifier=None: no modifiers held
+    def _(event: viser.SceneClickEvent) -> None:
         del event
         fired.append("plain")
 
-    @server.scene.on_pointer_event("click", modifier="cmd/ctrl")
-    def _(event: viser.ScenePointerEvent) -> None:
+    @server.scene.on_click(modifier="cmd/ctrl")
+    def _(event: viser.SceneClickEvent) -> None:
         del event
         fired.append("cmd")
 

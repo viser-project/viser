@@ -1,3 +1,5 @@
+from typing import TYPE_CHECKING as _TYPE_CHECKING
+
 from ._gui_api import GuiApi as GuiApi
 from ._gui_handles import CommandEvent as CommandEvent
 from ._gui_handles import CommandHandle as CommandHandle
@@ -56,10 +58,11 @@ from ._scene_handles import MeshSkinnedHandle as MeshSkinnedHandle
 from ._scene_handles import PointCloudHandle as PointCloudHandle
 from ._scene_handles import PointLightHandle as PointLightHandle
 from ._scene_handles import RectAreaLightHandle as RectAreaLightHandle
+from ._scene_handles import SceneClickEvent as SceneClickEvent
 from ._scene_handles import SceneNodeDragEvent as SceneNodeDragEvent
 from ._scene_handles import SceneNodeHandle as SceneNodeHandle
 from ._scene_handles import SceneNodePointerEvent as SceneNodePointerEvent
-from ._scene_handles import ScenePointerEvent as ScenePointerEvent
+from ._scene_handles import SceneRectSelectEvent as SceneRectSelectEvent
 from ._scene_handles import SplineCatmullRomHandle as SplineCatmullRomHandle
 from ._scene_handles import SplineCubicBezierHandle as SplineCubicBezierHandle
 from ._scene_handles import SpotLightHandle as SpotLightHandle
@@ -69,5 +72,11 @@ from ._viser import CameraHandle as CameraHandle
 from ._viser import ClientHandle as ClientHandle
 from ._viser import InitialCameraConfig as InitialCameraConfig
 from ._viser import ViserServer as ViserServer
+
+# Legacy alias for ``ScenePointerEvent``: importable at runtime but
+# hidden from type-checkers so users get an early signal to migrate to
+# ``SceneClickEvent`` / ``SceneRectSelectEvent``.
+if not _TYPE_CHECKING:
+    from ._scene_handles import ScenePointerEvent as ScenePointerEvent
 
 __version__ = "1.0.26"
