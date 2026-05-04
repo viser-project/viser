@@ -1,8 +1,8 @@
 """E2E tests for uPlot zoom preservation in viser.
 
-Exercises the scale-config rewrite in
-``src/viser/client/src/components/uplotScales.ts`` and its memoization in
-``UplotComponent.tsx`` against a real Chromium-hosted uPlot instance.
+Exercises the ``transformScales`` rewrite and its memoization in
+``src/viser/client/src/components/UplotComponent.tsx`` against a real
+Chromium-hosted uPlot instance.
 
 The bug: a tuple ``range`` on the x-scale becomes a hard ``fnOrSelf``
 wrapper inside uPlot, and every commit (including the redraw uplot-react
