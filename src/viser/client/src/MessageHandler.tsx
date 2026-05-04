@@ -219,17 +219,20 @@ function useMessageHandler() {
         notifications.hide(message.uuid);
         return;
       }
-      // Enable/disable whether scene pointer events are sent.
+      // Set the modifier-filter list for a scene pointer event_type.
+      // An empty list disables the event_type. The client uses these
+      // filters to gate gesture engagement (no rectangle drawn for a
+      // modifier that no callback matches).
       case "ScenePointerEnableMessage": {
-        // Update scene click enable state.
-        viewerMutable.scenePointerInfo.enabled = message.enable
-          ? message.event_type
-          : false;
+        const filters = viewerMutable.scenePointerInfo.filtersByEventType;
+        if (message.modifiers.length === 0) {
+          filters.delete(message.event_type);
+        } else {
+          filters.set(message.event_type, [...message.modifiers]);
+        }
 
-        // Update cursor to indicate whether the scene can be clicked.
-        viewerMutable.canvas!.style.cursor = message.enable
-          ? "pointer"
-          : "auto";
+        viewerMutable.canvas!.style.cursor =
+          filters.size > 0 ? "pointer" : "auto";
         return;
       }
 

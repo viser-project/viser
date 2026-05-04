@@ -611,8 +611,9 @@ class GuiApi:
                 canonically ordered ``"+"``-separated string like
                 ``"cmd/ctrl"``, ``"shift"``, or ``"cmd/ctrl+shift"``.
                 ``None`` matches "no modifiers held". ``cmd/ctrl``
-                matches whenever either Cmd or Ctrl is held. Ignored if
-                ``hotkey`` is ``None``.
+                matches whenever either Cmd or Ctrl is held. Must be
+                ``None`` when ``hotkey`` is ``None``; passing a
+                modifier without a hotkey raises ``ValueError``.
             icon: Optional icon to display next to the command label.
             disabled: If True, the command is visible but not triggerable.
 
@@ -621,12 +622,18 @@ class GuiApi:
             :meth:`CommandHandle.on_trigger`, update properties, or remove the
             command.
         """
+        if hotkey is None and modifier is not None:
+            raise ValueError(
+                "add_command(modifier=...) requires hotkey= to also be set."
+            )
+        # Validate + canonicalize the modifier string. Raises on bad input.
+        normalized_modifier = _messages._normalize_key_modifier(modifier)
         command_uuid = _make_uuid()
         props = _messages.CommandProps(
             label=label,
             description=description,
             hotkey=hotkey,
-            modifier=modifier,
+            modifier=normalized_modifier,
             disabled=disabled,
             _icon_html=None if icon is None else svg_from_icon(icon),
         )

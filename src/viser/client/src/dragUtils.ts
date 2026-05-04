@@ -39,31 +39,33 @@ export function pointerButtonFromNative(native: number): PointerButton | null {
   return null;
 }
 
-/** Match an input against a registered DragBinding. Exact-match: listed
- * modifiers must be held, others must not. ``modifier=null`` = no
- * modifiers held. ``"cmd/ctrl"`` treats Ctrl and Cmd (meta) as
- * interchangeable — matches whenever either is held.
+/** Match held modifiers against a :data:`KeyModifier` filter.
  *
- * The server mirrors this in ``_drag_input_matches_filter`` (see
- * ``src/viser/_scene_api.py``). The client filters at the source —
- * if no binding matches the input, no drag-start is sent — and the
- * server filters per registered callback to dispatch only to the
- * ones whose binding matched the input. Both must agree; drift =
- * silent missed drags or spurious teardowns. */
+ * Exact-match: listed modifiers must be held, others must not.
+ * ``filter=null`` = no modifiers held. ``"cmd/ctrl"`` treats Ctrl and
+ * Cmd (meta) as interchangeable — matches whenever either is held.
+ *
+ * Mirrors ``_modifier_matches_filter`` on the server (see
+ * ``src/viser/_scene_api.py``). Drift between the two = silent missed
+ * events or spurious teardowns. */
+export function matchesModifierFilter(
+  input: { ctrl: boolean; meta: boolean; shift: boolean; alt: boolean },
+  filter: string | null,
+): boolean {
+  const s = filter ?? "";
+  if (input.shift !== s.includes("shift")) return false;
+  if (input.alt !== s.includes("alt")) return false;
+  if (s.includes("cmd/ctrl")) return input.ctrl || input.meta;
+  return !(input.ctrl || input.meta);
+}
+
+/** Match an input against a registered DragBinding. */
 export function matchesDragBinding(
   binding: DragBinding,
   input: DragInput,
 ): boolean {
   if (binding.button !== input.button) return false;
-  const s = binding.modifier ?? "";
-  if (input.shift !== s.includes("shift")) return false;
-  if (input.alt !== s.includes("alt")) return false;
-  if (s.includes("cmd/ctrl")) {
-    if (!input.ctrl && !input.meta) return false;
-  } else {
-    if (input.ctrl || input.meta) return false;
-  }
-  return true;
+  return matchesModifierFilter(input, binding.modifier);
 }
 
 export function anyBindingMatches(

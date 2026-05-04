@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import dataclasses
 import uuid
-from typing import Any, ClassVar, Dict, Optional, Tuple, Type, TypeVar, Union
+from typing import Any, ClassVar, Dict, Optional, Tuple, Type, TypeVar, Union, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -30,6 +30,40 @@ accept them (it canonicalizes internally).
 
 ``cmd/ctrl`` matches whenever either Cmd or Ctrl is held — callbacks
 that need to distinguish can read ``event.ctrl`` / ``event.meta``."""
+
+_KEY_MODIFIER_CANONICAL_ORDER: Tuple[str, ...] = ("cmd/ctrl", "alt", "shift")
+
+
+def _normalize_key_modifier(modifier: Optional[str]) -> Optional[KeyModifier]:
+    """Parse a :data:`KeyModifier` string into its canonical form.
+
+    ``None`` and ``""`` map to ``None``. Otherwise, split on ``"+"``,
+    validate each name, and canonicalize the order — both
+    ``"cmd/ctrl+shift"`` and ``"shift+cmd/ctrl"`` yield
+    ``"cmd/ctrl+shift"``. Type annotations only allow the canonical
+    form; the runtime is lenient for users who don't run a type-checker.
+    """
+    if modifier is None or modifier == "":
+        return None
+    parts = modifier.split("+")
+    modifier_set = set(parts)
+    valid = set(_KEY_MODIFIER_CANONICAL_ORDER)
+    unknown = modifier_set - valid
+    if unknown:
+        raise ValueError(
+            f"Unknown modifier(s) in {modifier!r}: {sorted(unknown)!r}. "
+            f"Valid modifiers: {sorted(valid)!r}."
+        )
+    if len(parts) != len(modifier_set):
+        duplicates = [p for p in parts if parts.count(p) > 1]
+        raise ValueError(
+            f"Duplicate modifier(s) in {modifier!r}: {sorted(set(duplicates))!r}."
+        )
+    return cast(
+        KeyModifier,
+        "+".join(m for m in _KEY_MODIFIER_CANONICAL_ORDER if m in modifier_set),
+    )
+
 
 DragButton = Literal["left", "middle", "right"]
 """Mouse button that triggers a scene-node drag."""
@@ -400,20 +434,28 @@ class ScenePointerMessage(Message, include_in_scene_serialization=False):
     ray_origin: Optional[Tuple[float, float, float]]
     ray_direction: Optional[Tuple[float, float, float]]
     screen_pos: Tuple[Tuple[float, float], ...]
+    ctrl: bool
+    meta: bool
+    shift: bool
+    alt: bool
 
 
 @dataclasses.dataclass
 class ScenePointerEnableMessage(Message, include_in_scene_serialization=False):
-    """Message to enable/disable scene click events."""
+    """Set the modifier-filter set for a scene pointer ``event_type``.
 
-    enable: bool
+    An empty ``modifiers`` tuple disables all callbacks for that
+    ``event_type``. A non-empty tuple enables them, and the client uses
+    the filter list to gate gesture engagement: a pointerdown whose
+    held-modifier state doesn't match any filter is treated as if no
+    callback were registered (no rectangle drawn, no message sent)."""
+
     event_type: ScenePointerEventType
+    modifiers: Tuple[Optional[KeyModifier], ...]
 
     @override
     def redundancy_key(self) -> str:
-        return (
-            type(self).__name__ + "-" + self.event_type + "-" + str(self.enable).lower()
-        )
+        return type(self).__name__ + "-" + self.event_type
 
 
 @dataclasses.dataclass
@@ -1376,6 +1418,10 @@ class SceneNodeClickMessage(Message, include_in_scene_serialization=False):
     ray_origin: Tuple[float, float, float]
     ray_direction: Tuple[float, float, float]
     screen_pos: Tuple[float, float]
+    ctrl: bool
+    meta: bool
+    shift: bool
+    alt: bool
 
 
 _DragPhase: TypeAlias = Literal["start", "update", "end"]

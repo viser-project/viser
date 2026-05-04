@@ -51,10 +51,35 @@ export type ViewerMutable = {
 
   // Interaction state.
   scenePointerInfo: {
-    enabled: false | "click" | "rect-select"; // Enable box events.
+    /** Modifier-filter lists keyed by event_type. Mirrors the
+     * server's per-event-type set: each entry is a registered
+     * callback's filter (``null`` = "no modifiers held"). An
+     * absent/empty entry means the event_type is disabled. Used to
+     * gate gesture engagement and dispatch on
+     * ``modifiersAtDown``-vs-filter match. */
+    filtersByEventType: Map<
+      "click" | "rect-select",
+      (string | null)[]
+    >;
     dragStart: [number, number]; // First mouse position.
     dragEnd: [number, number]; // Final mouse position.
     isDragging: boolean;
+    /** Modifier-key state captured at pointerdown. Frozen for the
+     * gesture's lifetime — we don't want releasing Shift/Cmd before
+     * mouse-up to lose the modifier match (or a mid-drag press to
+     * spuriously add one). Mirrors how drag callbacks freeze
+     * modifiers at drag-start. */
+    modifiersAtDown: {
+      ctrl: boolean;
+      meta: boolean;
+      shift: boolean;
+      alt: boolean;
+    };
+    /** Subset of event_types whose filter list matched
+     * ``modifiersAtDown`` at the time of the active gesture's
+     * pointerdown. Drives drawing + dispatch; empty means no gesture
+     * was engaged. */
+    activeEventTypes: Set<"click" | "rect-select">;
   };
 
   // Skinned mesh state.

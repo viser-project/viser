@@ -1122,6 +1122,10 @@ export function SceneNodeThreeObject(props: { name: string }) {
                       ray.direction.z,
                     ],
                     screen_pos: [mouseVectorOpenCV.x, mouseVectorOpenCV.y],
+                    ctrl: e.ctrlKey,
+                    meta: e.metaKey,
+                    shift: e.shiftKey,
+                    alt: e.altKey,
                   });
                 }
           }
