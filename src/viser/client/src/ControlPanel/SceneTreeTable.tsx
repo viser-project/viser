@@ -49,8 +49,9 @@ const PROP_INPUT_FILL = { width: "100%" };
 
 // Bumped above the surrounding popover so dropdowns and color pickers
 // don't get clipped. Matches the convention used in components/Rgb.tsx
-// and components/Dropdown.tsx.
-const PROP_INPUT_DROPDOWN_PROPS = { zIndex: 1000 };
+// and components/Dropdown.tsx. Offset is tightened so the options list
+// sits closer to the input.
+const PROP_INPUT_DROPDOWN_PROPS = { zIndex: 1000, offset: 4 };
 
 // "FrameMessage" -> "Frame", "Gui3DMessage" -> "Gui 3D", etc. Used both for
 // the popover header and the pencil-button tooltip on each row.
