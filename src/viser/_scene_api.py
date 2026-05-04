@@ -8,7 +8,17 @@ import warnings
 from collections.abc import Coroutine
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from typing import TYPE_CHECKING, Any, Callable, Tuple, TypeVar, Union, cast, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Optional,
+    Tuple,
+    TypeVar,
+    Union,
+    cast,
+    overload,
+)
 
 import numpy as np
 from typing_extensions import Literal, ParamSpec, TypeAlias, deprecated
@@ -3033,7 +3043,7 @@ class SceneApi:
         collapsed -- multiple callbacks under the same filter only need
         one wire entry to gate gesture engagement."""
         modifiers = cast(
-            Tuple[_messages.KeyModifier | None, ...],
+            Tuple[Optional[_messages.KeyModifier], ...],
             tuple(
                 {
                     entry.modifier
