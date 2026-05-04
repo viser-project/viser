@@ -1174,7 +1174,7 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># Nested forms would produce invalid HTML on the client (nested</span>
         <span class="c1"># &lt;form&gt; elements are not allowed and the browser flattens</span>
-        <span class="c1"># them). Walk through folders, tabs, and tab groups — they</span>
+        <span class="c1"># them). Walk through folders, tabs, and tab groups -- they</span>
         <span class="c1"># share a DOM context with their ancestors. Stop at modals,</span>
         <span class="c1"># which render into a separate React portal where a fresh</span>
         <span class="c1"># &lt;form&gt; is well-formed.</span>
@@ -1661,7 +1661,7 @@
 <span class="sd">            A handle for programmatically updating chart properties and data.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
 
-        <span class="c1"># Validate data structure</span>
+        <span class="c1"># Validate data structure.</span>
         <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">,</span> <span class="p">(</span>
             <span class="s2">&quot;data must have at least 2 arrays (x-data + at least one y-data series)&quot;</span>
         <span class="p">)</span>
@@ -1669,18 +1669,18 @@
             <span class="s2">&quot;all data elements must be numpy arrays&quot;</span>
         <span class="p">)</span>
 
-        <span class="c1"># Validate data dimensions and shapes</span>
+        <span class="c1"># Validate data dimensions and shapes.</span>
         <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">arr</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
             <span class="k">assert</span> <span class="n">arr</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;data[</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">] must be a 1D array, got shape </span><span class="si">{</span><span class="n">arr</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
 
-        <span class="c1"># Check that all arrays have the same length</span>
+        <span class="c1"># Check that all arrays have the same length.</span>
         <span class="n">lengths</span> <span class="o">=</span> <span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">arr</span><span class="p">)</span> <span class="k">for</span> <span class="n">arr</span> <span class="ow">in</span> <span class="n">data</span><span class="p">]</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span><span class="n">length</span> <span class="o">==</span> <span class="n">lengths</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">length</span> <span class="ow">in</span> <span class="n">lengths</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;All data arrays must have the same length. Got lengths: </span><span class="si">{</span><span class="n">lengths</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
 
-        <span class="c1"># Validate series configuration</span>
+        <span class="c1"># Validate series configuration.</span>
         <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">series</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;series must not be empty&quot;</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">series</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
@@ -1688,7 +1688,7 @@
                 <span class="sa">f</span><span class="s2">&quot;Each array in data needs a corresponding series configuration.&quot;</span>
             <span class="p">)</span>
 
-        <span class="c1"># Convert arrays to float64 as expected by GuiUplotProps</span>
+        <span class="c1"># Convert arrays to float64 as expected by GuiUplotProps.</span>
         <span class="n">data_float64</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">arr</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span> <span class="k">for</span> <span class="n">arr</span> <span class="ow">in</span> <span class="n">data</span><span class="p">)</span>
 
         <span class="n">message</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">GuiUplotMessage</span><span class="p">(</span>

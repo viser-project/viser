@@ -992,6 +992,18 @@ should only keep the latest message.</p>
 </dd></dl>
 
 <dl class="py class">
+<dt class="sig sig-object py" id="viser.infra.EditorHidden">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.infra.</span></span><span class="sig-name descname"><span class="pre">EditorHidden</span></span><a class="reference internal" href="../../../_modules/viser/infra/_typescript_interface_gen/#EditorHidden"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.infra.EditorHidden" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>Use with <code class="docutils literal notranslate"><span class="pre">typing.Annotated[]</span></code> to hide a scene-node prop from the
+interactive props editor in the client. The field is still present in
+the TS interface and on the wire; it just isn’t shown as an editable
+row. Use for props coupled to other fields that can’t be edited in
+isolation (e.g. <code class="docutils literal notranslate"><span class="pre">PointCloud.precision</span></code> constrains the dtype of
+<code class="docutils literal notranslate"><span class="pre">points</span></code>).</p>
+</dd></dl>
+
+<dl class="py class">
 <dt class="sig sig-object py" id="viser.infra.TypeScriptAnnotationOverride">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.infra.</span></span><span class="sig-name descname"><span class="pre">TypeScriptAnnotationOverride</span></span><a class="reference internal" href="../../../_modules/viser/infra/_typescript_interface_gen/#TypeScriptAnnotationOverride"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.infra.TypeScriptAnnotationOverride" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
@@ -1135,6 +1147,7 @@ TypeScript annotation corresponding to a dataclass field.</p>
 <li><a class="reference internal" href="#viser.infra.Message.redundancy_key"><code class="docutils literal notranslate"><span class="pre">Message.redundancy_key()</span></code></a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#viser.infra.EditorHidden"><code class="docutils literal notranslate"><span class="pre">EditorHidden</span></code></a></li>
 <li><a class="reference internal" href="#viser.infra.TypeScriptAnnotationOverride"><code class="docutils literal notranslate"><span class="pre">TypeScriptAnnotationOverride</span></code></a><ul>
 <li><a class="reference internal" href="#viser.infra.TypeScriptAnnotationOverride.annotation"><code class="docutils literal notranslate"><span class="pre">TypeScriptAnnotationOverride.annotation</span></code></a></li>
 </ul>

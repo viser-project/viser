@@ -456,7 +456,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">websockets.http11</span><span class="w"> </span><span class="kn">import</span> <span class="n">Request</span><span class="p">,</span> <span class="n">Response</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">websockets.typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Subprotocol</span>
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">viser</span>  <span class="c1"># Import for version checking</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">viser</span>  <span class="c1"># Import for version checking.</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">._async_message_buffer</span><span class="w"> </span><span class="kn">import</span> <span class="n">AsyncMessageBuffer</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">._messages</span><span class="w"> </span><span class="kn">import</span> <span class="n">Message</span>
@@ -1202,7 +1202,7 @@
         <span class="n">event_loop</span><span class="o">.</span><span class="n">run_until_complete</span><span class="p">(</span><span class="n">start_server</span><span class="p">())</span>
         <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="s2">&quot;[bold](viser)[/bold] Server stopped&quot;</span><span class="p">)</span>
 
-        <span class="c1"># Clean up the event loop to prevent reference leaks</span>
+        <span class="c1"># Clean up the event loop to prevent reference leaks.</span>
         <span class="n">event_loop</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
         <span class="n">event_loop</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div>
 

@@ -425,9 +425,10 @@
         <article role="main" id="furo-main-content">
           <h1>Source code for viser.infra._typescript_interface_gen</h1><div class="highlight"><pre>
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">types</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">defaultdict</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Type</span><span class="p">,</span> <span class="n">Union</span><span class="p">,</span> <span class="n">cast</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Type</span><span class="p">,</span> <span class="n">Union</span><span class="p">,</span> <span class="n">cast</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing_extensions</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
@@ -465,7 +466,7 @@
 
 <span class="c1"># Mapping from numpy dtype to TypeScript typed array type.</span>
 <span class="n">_numpy_dtype_to_ts_typed_array</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="n">np</span><span class="o">.</span><span class="n">float16</span><span class="p">:</span> <span class="s2">&quot;Uint16Array&quot;</span><span class="p">,</span>  <span class="c1"># No Float16Array in JS; stored as Uint16</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">float16</span><span class="p">:</span> <span class="s2">&quot;Uint16Array&quot;</span><span class="p">,</span>  <span class="c1"># No Float16Array in JS; stored as Uint16.</span>
     <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">:</span> <span class="s2">&quot;Float32Array&quot;</span><span class="p">,</span>
     <span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">:</span> <span class="s2">&quot;Float64Array&quot;</span><span class="p">,</span>
     <span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">:</span> <span class="s2">&quot;Uint8Array&lt;ArrayBuffer&gt;&quot;</span><span class="p">,</span>
@@ -487,8 +488,10 @@
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="n">TypeScriptAnnotationOverride</span><span class="p">):</span>
                 <span class="k">return</span> <span class="n">arg</span><span class="o">.</span><span class="n">annotation</span>
 
-        <span class="c1"># If no override is found, just use the unwrapped type.</span>
-        <span class="n">origin_typ</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="c1"># No override -- recurse on the unwrapped type so we re-derive the</span>
+        <span class="c1"># origin. (Just reassigning origin_typ here would skip the origin</span>
+        <span class="c1"># checks below for parameterized types like ``Literal[...]``.)</span>
+        <span class="k">return</span> <span class="n">_get_ts_type</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
 
     <span class="c1"># Automatic Python =&gt; TypeScript conversion.</span>
     <span class="n">UnionType</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">types</span><span class="p">,</span> <span class="s2">&quot;UnionType&quot;</span><span class="p">,</span> <span class="n">Union</span><span class="p">)</span>
@@ -568,6 +571,96 @@
 
 
 
+<div class="viewcode-block" id="EditorHidden">
+<a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.EditorHidden">[docs]</a>
+<span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">EditorHidden</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Use with ``typing.Annotated[]`` to hide a scene-node prop from the</span>
+<span class="sd">    interactive props editor in the client. The field is still present in</span>
+<span class="sd">    the TS interface and on the wire; it just isn&#39;t shown as an editable</span>
+<span class="sd">    row. Use for props coupled to other fields that can&#39;t be edited in</span>
+<span class="sd">    isolation (e.g. ``PointCloud.precision`` constrains the dtype of</span>
+<span class="sd">    ``points``).&quot;&quot;&quot;</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_prop_descriptor</span><span class="p">(</span><span class="n">typ</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span> <span class="n">field_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Classify a prop for the client-side edit-props UI.</span>
+
+<span class="sd">    ``kind`` selects the widget; ``tsType`` is shown verbatim on hover so the</span>
+<span class="sd">    user can see the source-level annotation. Unrecognized types fall back to</span>
+<span class="sd">    ``&quot;default&quot;`` (JSON text input).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">descriptor</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;kind&quot;</span><span class="p">:</span> <span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="s2">&quot;tsType&quot;</span><span class="p">:</span> <span class="n">_get_ts_type</span><span class="p">(</span><span class="n">typ</span><span class="p">)}</span>
+
+    <span class="k">if</span> <span class="n">get_origin</span><span class="p">(</span><span class="n">typ</span><span class="p">)</span> <span class="ow">is</span> <span class="n">Annotated</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">arg</span> <span class="ow">in</span> <span class="n">get_args</span><span class="p">(</span><span class="n">typ</span><span class="p">)[</span><span class="mi">1</span><span class="p">:]:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="n">EditorHidden</span><span class="p">):</span>
+                <span class="n">descriptor</span><span class="p">[</span><span class="s2">&quot;editorHidden&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">typ</span> <span class="o">=</span> <span class="n">get_args</span><span class="p">(</span><span class="n">typ</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">origin</span> <span class="o">=</span> <span class="n">get_origin</span><span class="p">(</span><span class="n">typ</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">typ</span> <span class="ow">is</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="n">descriptor</span><span class="p">[</span><span class="s2">&quot;kind&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;boolean&quot;</span>
+        <span class="k">return</span> <span class="n">descriptor</span>
+
+    <span class="k">if</span> <span class="n">origin</span> <span class="ow">in</span> <span class="p">(</span><span class="n">Literal</span><span class="p">,</span> <span class="n">LiteralAlt</span><span class="p">):</span>
+        <span class="n">args</span> <span class="o">=</span> <span class="n">get_args</span><span class="p">(</span><span class="n">typ</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">args</span> <span class="ow">and</span> <span class="nb">all</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">args</span><span class="p">):</span>
+            <span class="n">descriptor</span><span class="p">[</span><span class="s2">&quot;kind&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;stringLiteral&quot;</span>
+            <span class="n">descriptor</span><span class="p">[</span><span class="s2">&quot;options&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">descriptor</span>
+
+    <span class="c1"># Bare ``Tuple[int, int, int]`` named ``*color*`` is the only color</span>
+    <span class="c1"># signal today; Optional/Union variants stay as JSON to keep dispatch</span>
+    <span class="c1"># unambiguous.</span>
+    <span class="k">if</span> <span class="n">origin</span> <span class="ow">is</span> <span class="nb">tuple</span> <span class="ow">and</span> <span class="s2">&quot;color&quot;</span> <span class="ow">in</span> <span class="n">field_name</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
+        <span class="n">args</span> <span class="o">=</span> <span class="n">get_args</span><span class="p">(</span><span class="n">typ</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">and</span> <span class="nb">all</span><span class="p">(</span><span class="n">a</span> <span class="ow">is</span> <span class="nb">int</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">args</span><span class="p">):</span>
+            <span class="n">descriptor</span><span class="p">[</span><span class="s2">&quot;kind&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;color&quot;</span>
+            <span class="k">return</span> <span class="n">descriptor</span>
+
+    <span class="k">return</span> <span class="n">descriptor</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_generate_scene_node_props_schema</span><span class="p">(</span><span class="n">message_types</span><span class="p">:</span> <span class="nb">list</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Emit a descriptor object covering the editable props of every</span>
+<span class="sd">    scene-node message. The client uses this to drive widget dispatch in the</span>
+<span class="sd">    scene-tree edit-props popover.&quot;&quot;&quot;</span>
+    <span class="n">schema</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="bp">cls</span> <span class="ow">in</span> <span class="n">message_types</span><span class="p">:</span>
+        <span class="k">if</span> <span class="s2">&quot;SceneNodeMessage&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="s2">&quot;_tags&quot;</span><span class="p">,</span> <span class="p">()):</span>
+            <span class="k">continue</span>
+        <span class="n">hints</span> <span class="o">=</span> <span class="n">get_type_hints</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">include_extras</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">props_typ</span> <span class="o">=</span> <span class="n">hints</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;props&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">props_typ</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">is_dataclass</span><span class="p">(</span><span class="n">props_typ</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="n">prop_hints</span> <span class="o">=</span> <span class="n">get_type_hints</span><span class="p">(</span><span class="n">props_typ</span><span class="p">,</span> <span class="n">include_extras</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">per_message</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">fields</span><span class="p">(</span><span class="n">props_typ</span><span class="p">):</span>
+            <span class="n">per_message</span><span class="p">[</span><span class="n">field</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">_get_prop_descriptor</span><span class="p">(</span>
+                <span class="n">prop_hints</span><span class="p">[</span><span class="n">field</span><span class="o">.</span><span class="n">name</span><span class="p">],</span> <span class="n">field</span><span class="o">.</span><span class="n">name</span>
+            <span class="p">)</span>
+        <span class="n">schema</span><span class="p">[</span><span class="bp">cls</span><span class="o">.</span><span class="vm">__name__</span><span class="p">]</span> <span class="o">=</span> <span class="n">per_message</span>
+
+    <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s2">&quot;export type ScenePropDescriptor = {&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;  tsType: string;&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;  editorHidden?: boolean;&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;} &amp; (&quot;</span><span class="p">,</span>
+        <span class="s1">&#39;  | { kind: &quot;default&quot; }&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;  | { kind: &quot;boolean&quot; }&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;  | { kind: &quot;color&quot; }&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;  | { kind: &quot;stringLiteral&quot;; options: readonly string[] }&#39;</span><span class="p">,</span>
+        <span class="s2">&quot;);&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;export const SceneNodePropsSchema: {&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;  [messageType: string]: { [propName: string]: ScenePropDescriptor };&quot;</span><span class="p">,</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="se">}}</span><span class="s2"> = </span><span class="si">{</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">schema</span><span class="p">,</span><span class="w"> </span><span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="si">}</span><span class="s2">;&quot;</span><span class="p">,</span>
+    <span class="p">]</span>
+    <span class="k">return</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span>
+
+
 <div class="viewcode-block" id="generate_typescript_interfaces">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.generate_typescript_interfaces">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">generate_typescript_interfaces</span><span class="p">(</span><span class="n">message_cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Message</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
@@ -625,6 +718,9 @@
                 <span class="s2">&quot;}&quot;</span><span class="p">,</span>
             <span class="p">]</span>
         <span class="p">)</span>
+
+    <span class="n">out_lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+    <span class="n">out_lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_generate_scene_node_props_schema</span><span class="p">(</span><span class="n">message_types</span><span class="p">))</span>
 
     <span class="n">generated_typescript</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">out_lines</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span>
 

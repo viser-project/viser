@@ -617,7 +617,7 @@
 <span class="sd">        Otherwise, arrays are inlined as memoryviews in the returned dict.&quot;&quot;&quot;</span>
         <span class="n">message_type</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
         <span class="n">hints</span> <span class="o">=</span> <span class="n">get_type_hints_cached</span><span class="p">(</span><span class="n">message_type</span><span class="p">)</span>
-        <span class="c1"># Filter to type-hinted fields only — excludes dynamic attributes</span>
+        <span class="c1"># Filter to type-hinted fields only -- excludes dynamic attributes</span>
         <span class="c1"># like cached values that shouldn&#39;t be serialized.</span>
         <span class="n">out</span> <span class="o">=</span> <span class="p">{</span>
             <span class="n">k</span><span class="p">:</span> <span class="n">_prepare_for_serialization</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">hints</span><span class="p">[</span><span class="n">k</span><span class="p">],</span> <span class="n">binary_buffers</span><span class="p">)</span>
