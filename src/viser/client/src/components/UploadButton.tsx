@@ -90,7 +90,7 @@ function useFileUpload({
     return `${displaySize.toFixed(1)}${displayUnits[displayUnitIndex]}`;
   }, [totalBytes]);
 
-  // Update notification status
+  // Update notification status.
   React.useEffect(() => {
     if (uploadState === undefined) return;
     const { notificationId, filename } = uploadState;
@@ -133,7 +133,7 @@ function useFileUpload({
     uploadState.uploadedBytes < uploadState.totalBytes;
 
   async function upload(file: File) {
-    // Get viewer mutable once
+    // Get viewer mutable once.
     const viewerMutable = viewer.mutable.current;
 
     const chunkSize = 512 * 1024; // bytes
@@ -141,7 +141,7 @@ function useFileUpload({
     const transferUuid = uuid();
     const notificationId = "upload-" + transferUuid;
 
-    // Begin upload by setting initial state
+    // Begin upload by setting initial state.
     updateUploadState({
       componentId: componentUuid,
       uploadedBytes: 0,

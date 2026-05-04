@@ -23,7 +23,7 @@ function hotkeyParts(key: HotkeyKey, modifier: KeyModifier | null): string[] {
 /** Convert a hotkey to Mantine hotkey strings (e.g. "ctrl+shift+R").
  *
  * ``"cmd/ctrl"`` is OR semantics (either Ctrl or Meta counts), so we emit
- * *both* a ``"ctrl+..."`` and ``"meta+..."`` variant — on any platform,
+ * *both* a ``"ctrl+..."`` and ``"meta+..."`` variant -- on any platform,
  * pressing either modifier triggers the hotkey. */
 function hotkeyToStrings(
   key: HotkeyKey,
@@ -39,7 +39,7 @@ function hotkeyToStrings(
   ];
 }
 
-/** Format a hotkey for display (e.g. "R" + "cmd/ctrl+shift" -> "⌘⇧R" or "Ctrl+Shift+R"). */
+/** Format a hotkey for display (e.g. "R" + "cmd/ctrl+shift" -> "Cmd+Shift+R" or "Ctrl+Shift+R"). */
 function formatHotkey(key: HotkeyKey, modifier: KeyModifier | null): string {
   return hotkeyParts(key, modifier)
     .map((part) => {
@@ -149,8 +149,8 @@ export function CommandPalette() {
   const fuseFilter = useFuseFilter();
 
   // Register per-command hotkeys. Each viser hotkey can expand to multiple
-  // Mantine entries (e.g. "cmd/ctrl" → both "ctrl+K" and "meta+K") so that
-  // either modifier matches on any platform — same OR semantics as drag
+  // Mantine entries (e.g. "cmd/ctrl" -> both "ctrl+K" and "meta+K") so that
+  // either modifier matches on any platform -- same OR semantics as drag
   // bindings.
   const hotkeyItems = useMemo(
     () =>

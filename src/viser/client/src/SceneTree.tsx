@@ -55,7 +55,7 @@ import { normalizeScale } from "./utils/normalizeScale";
 import { opencvXyFromPointerXy } from "./utils/pointerCoords";
 
 /** Shared empty array so the `dragBindings` selector returns a stable
- * reference when no bindings are set — otherwise `?? []` would allocate a
+ * reference when no bindings are set -- otherwise `?? []` would allocate a
  * fresh array per render and force downstream memoization to recompute. */
 const EMPTY_DRAG_BINDINGS: DragBinding[] = [];
 
@@ -271,7 +271,7 @@ function createObjectFactory(
       };
     }
 
-    // Add mesh
+    // Add mesh.
     case "SkinnedMeshMessage": {
       return {
         makeObject: (ref, children) => (
@@ -584,7 +584,7 @@ function createObjectFactory(
       };
     }
 
-    // Add a directional light
+    // Add a directional light.
     case "DirectionalLightMessage": {
       return {
         makeObject: (ref, children) => (
@@ -603,8 +603,8 @@ function createObjectFactory(
       };
     }
 
-    // Add an ambient light
-    // Cannot cast shadows
+    // Add an ambient light.
+    // Cannot cast shadows.
     case "AmbientLightMessage": {
       return {
         makeObject: (ref, children) => (
@@ -619,8 +619,8 @@ function createObjectFactory(
       };
     }
 
-    // Add a hemisphere light
-    // Cannot cast shadows
+    // Add a hemisphere light.
+    // Cannot cast shadows.
     case "HemisphereLightMessage": {
       return {
         makeObject: (ref, children) => (
@@ -637,7 +637,7 @@ function createObjectFactory(
       };
     }
 
-    // Add a point light
+    // Add a point light.
     case "PointLightMessage": {
       return {
         makeObject: (ref, children) => (
@@ -655,8 +655,8 @@ function createObjectFactory(
         ),
       };
     }
-    // Add a rectangular area light
-    // Cannot cast shadows
+    // Add a rectangular area light.
+    // Cannot cast shadows.
     case "RectAreaLightMessage": {
       return {
         makeObject: (ref, children) => (
@@ -673,7 +673,7 @@ function createObjectFactory(
       };
     }
 
-    // Add a spot light
+    // Add a spot light.
     case "SpotLightMessage": {
       return {
         makeObject: (ref, children) => (
@@ -792,7 +792,7 @@ export function SceneNodeThreeObject(props: { name: string }) {
   // Reusable Vector2 for hover recheck raycasting.
   const pointerNDC = React.useMemo(() => new THREE.Vector2(), []);
 
-  // Drag state lives in the viewer-level DragLayer — this component only
+  // Drag state lives in the viewer-level DragLayer -- this component only
   // dispatches pointer events into it and reads bindings for matching.
   const dragLayer = useDragLayer();
 
@@ -1064,7 +1064,7 @@ export function SceneNodeThreeObject(props: { name: string }) {
                   };
 
                   // If a drag has been initiated, DragLayer's window
-                  // pointermove handler owns the gesture — skip local
+                  // pointermove handler owns the gesture -- skip local
                   // click-vs-drag bookkeeping.
                   const state = dragInfo.current;
                   if (state.dragging) return;
@@ -1137,12 +1137,12 @@ export function SceneNodeThreeObject(props: { name: string }) {
                   // Guard against double-increment if already hovered.
                   if (hoveredRef.current.isHovered) return;
 
-                  // Update hover state
+                  // Update hover state.
                   hoveredRef.current.isHovered = true;
-                  // Store the instanceId in the hover ref
+                  // Store the instanceId in the hover ref.
                   hoveredRef.current.instanceId = e.instanceId ?? null;
 
-                  // Increment global hover count and update cursor
+                  // Increment global hover count and update cursor.
                   viewerMutable.hoveredElementsCount++;
                   if (viewerMutable.hoveredElementsCount === 1) {
                     document.body.style.cursor = "pointer";
@@ -1157,12 +1157,12 @@ export function SceneNodeThreeObject(props: { name: string }) {
                   // Guard against decrementing if already reset (e.g., by objNode change).
                   if (!hoveredRef.current.isHovered) return;
 
-                  // Update hover state
+                  // Update hover state.
                   hoveredRef.current.isHovered = false;
-                  // Clear the instanceId when no longer hovering
+                  // Clear the instanceId when no longer hovering.
                   hoveredRef.current.instanceId = null;
 
-                  // Decrement global hover count and update cursor if needed
+                  // Decrement global hover count and update cursor if needed.
                   viewerMutable.hoveredElementsCount--;
                   if (viewerMutable.hoveredElementsCount === 0) {
                     document.body.style.cursor = "auto";

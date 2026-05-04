@@ -22,6 +22,7 @@ radius, head radius, and head length.
 import time
 
 import numpy as np
+
 import viser
 
 
@@ -37,7 +38,7 @@ def main() -> None:
     colors = np.zeros((N, 3), dtype=np.uint8)
 
     for i in range(N):
-        # Distribute arrows in a spiral pattern
+        # Distribute arrows in a spiral pattern.
         theta = i * 0.3
         r = 1.0 + i * 0.02
         x = r * np.cos(theta)
@@ -47,7 +48,7 @@ def main() -> None:
         points[i, 0] = [0, y, 0]  # start
         points[i, 1] = [x, y, z]  # end
 
-        # Color gradient from blue to red based on height
+        # Color gradient from blue to red based on height.
         color_value = int(255 * (y / (N * 0.05)))
         colors[i] = [color_value, 0, 255 - color_value]
 

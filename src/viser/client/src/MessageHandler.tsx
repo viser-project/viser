@@ -536,7 +536,7 @@ function useMessageHandler() {
         viewerMutable.backgroundMaterial!.uniforms.hasDepth.value =
           message.depth_data !== null;
         if (message.depth_data !== null) {
-          // If depth is available set the texture
+          // If depth is available set the texture.
           const depth_url = URL.createObjectURL(
             new Blob([message.depth_data], {
               type: "image/" + message.format,
@@ -776,10 +776,10 @@ export function FrameSynchronizedMessageHandler() {
         const targetWidth = viewerMutable.getRenderRequest!.width;
         const targetHeight = viewerMutable.getRenderRequest!.height;
 
-        // Render the scene using the virtual camera
+        // Render the scene using the virtual camera.
         const T_threeworld_world = computeT_threeworld_world(viewer);
 
-        // Create a new perspective camera
+        // Create a new perspective camera.
         const camera = new THREE.PerspectiveCamera(
           THREE.MathUtils.radToDeg(cameraFov),
           targetWidth / targetHeight,

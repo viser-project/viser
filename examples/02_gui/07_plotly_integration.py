@@ -49,7 +49,7 @@ def main() -> None:
     line_plot = server.gui.add_plotly(figure=create_sinusoidal_wave(line_plot_time))
 
     # Plot type 2: Image plot.
-    # Use Path to handle relative paths correctly from any working directory
+    # Use Path to handle relative paths correctly from any working directory.
     from pathlib import Path
 
     assets_dir = Path(__file__).parent.parent / "assets"

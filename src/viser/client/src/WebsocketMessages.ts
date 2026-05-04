@@ -2130,12 +2130,11 @@ export function isGuiComponentMessage(
 
 export type ScenePropDescriptor = {
   tsType: string;
-  // Mark a prop hidden from the interactive editor (still on the wire).
   editorHidden?: boolean;
 } & (
   | { kind: "default" }
   | { kind: "boolean" }
-  | { kind: "color"; scale: "0-255" | "0-1" }
+  | { kind: "color" }
   | { kind: "stringLiteral"; options: readonly string[] }
 );
 
@@ -2158,7 +2157,6 @@ export const SceneNodePropsSchema: {
     color: {
       kind: "color",
       tsType: "[number, number, number]",
-      scale: "0-255",
     },
     _format: {
       kind: "stringLiteral",
@@ -2225,7 +2223,6 @@ export const SceneNodePropsSchema: {
     origin_color: {
       kind: "color",
       tsType: "[number, number, number]",
-      scale: "0-255",
     },
     scale: {
       kind: "default",
@@ -2275,7 +2272,6 @@ export const SceneNodePropsSchema: {
     cell_color: {
       kind: "color",
       tsType: "[number, number, number]",
-      scale: "0-255",
     },
     cell_thickness: {
       kind: "default",
@@ -2288,7 +2284,6 @@ export const SceneNodePropsSchema: {
     section_color: {
       kind: "color",
       tsType: "[number, number, number]",
-      scale: "0-255",
     },
     section_thickness: {
       kind: "default",
@@ -2322,7 +2317,6 @@ export const SceneNodePropsSchema: {
     plane_color: {
       kind: "color",
       tsType: "[number, number, number]",
-      scale: "0-255",
     },
     plane_opacity: {
       kind: "default",
@@ -2420,7 +2414,6 @@ export const SceneNodePropsSchema: {
     color: {
       kind: "color",
       tsType: "[number, number, number]",
-      scale: "0-255",
     },
     intensity: {
       kind: "default",
@@ -2435,7 +2428,6 @@ export const SceneNodePropsSchema: {
     color: {
       kind: "color",
       tsType: "[number, number, number]",
-      scale: "0-255",
     },
     intensity: {
       kind: "default",
@@ -2446,12 +2438,10 @@ export const SceneNodePropsSchema: {
     sky_color: {
       kind: "color",
       tsType: "[number, number, number]",
-      scale: "0-255",
     },
     ground_color: {
       kind: "color",
       tsType: "[number, number, number]",
-      scale: "0-255",
     },
     intensity: {
       kind: "default",
@@ -2462,7 +2452,6 @@ export const SceneNodePropsSchema: {
     color: {
       kind: "color",
       tsType: "[number, number, number]",
-      scale: "0-255",
     },
     intensity: {
       kind: "default",
@@ -2485,7 +2474,6 @@ export const SceneNodePropsSchema: {
     color: {
       kind: "color",
       tsType: "[number, number, number]",
-      scale: "0-255",
     },
     intensity: {
       kind: "default",
@@ -2504,7 +2492,6 @@ export const SceneNodePropsSchema: {
     color: {
       kind: "color",
       tsType: "[number, number, number]",
-      scale: "0-255",
     },
     intensity: {
       kind: "default",
@@ -2547,7 +2534,6 @@ export const SceneNodePropsSchema: {
     color: {
       kind: "color",
       tsType: "[number, number, number]",
-      scale: "0-255",
     },
     wireframe: {
       kind: "boolean",
@@ -2592,7 +2578,6 @@ export const SceneNodePropsSchema: {
     color: {
       kind: "color",
       tsType: "[number, number, number]",
-      scale: "0-255",
     },
     wireframe: {
       kind: "boolean",
@@ -2641,7 +2626,6 @@ export const SceneNodePropsSchema: {
     color: {
       kind: "color",
       tsType: "[number, number, number]",
-      scale: "0-255",
     },
     wireframe: {
       kind: "boolean",
@@ -2690,7 +2674,6 @@ export const SceneNodePropsSchema: {
     color: {
       kind: "color",
       tsType: "[number, number, number]",
-      scale: "0-255",
     },
     radial_segments: {
       kind: "default",
@@ -2743,7 +2726,6 @@ export const SceneNodePropsSchema: {
     color: {
       kind: "color",
       tsType: "[number, number, number]",
-      scale: "0-255",
     },
     wireframe: {
       kind: "boolean",
@@ -3048,7 +3030,6 @@ export const SceneNodePropsSchema: {
     color: {
       kind: "color",
       tsType: "[number, number, number]",
-      scale: "0-255",
     },
     segments: {
       kind: "default",
@@ -3075,7 +3056,6 @@ export const SceneNodePropsSchema: {
     color: {
       kind: "color",
       tsType: "[number, number, number]",
-      scale: "0-255",
     },
     segments: {
       kind: "default",

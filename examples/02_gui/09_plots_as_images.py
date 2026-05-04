@@ -66,7 +66,7 @@ def get_line_plot(
     left_pad = int(y_text_size[0] * 1.5) + extra_padding  # Space for y-axis labels
     right_pad = int(10 * font_scale) + extra_padding
 
-    # Calculate top padding, accounting for title if present
+    # Calculate top padding, accounting for title if present.
     top_pad = int(10 * font_scale) + extra_padding
     title_font_scale = font_scale * 1.5  # Make title slightly larger
     if title is not None:
@@ -82,11 +82,11 @@ def get_line_plot(
     plot_height = height - top_pad - bottom_pad
     assert plot_width > 0 and plot_height > 0
 
-    # Create image with specified background color
+    # Create image with specified background color.
     img = np.ones((total_height, total_width, 3), dtype=np.uint8)
     img[:] = background_color
 
-    # Create plot area with specified color
+    # Create plot area with specified color.
     plot_area = np.ones((plot_height, plot_width, 3), dtype=np.uint8)
     plot_area[:] = plot_area_color
     img[top_pad : top_pad + plot_height, left_pad : left_pad + plot_width] = plot_area
@@ -129,7 +129,7 @@ def get_line_plot(
         img, [pts], False, line_color, thickness=line_thickness, lineType=cv2.LINE_AA
     )
 
-    # Draw title if specified
+    # Draw title if specified.
     if title is not None:
         title_size = cv2.getTextSize(title, font, title_font_scale, 1)[0]
         title_x = left_pad + (plot_width - title_size[0]) // 2

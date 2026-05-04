@@ -41,8 +41,8 @@ export const CylinderMesh = React.forwardRef<
       : 0.0;
 
   // The cylinder geometry has height along Y, but the PI/2 rotation around X
-  // remaps axes: local Y→Z, local Z→-Y. To make the user-facing scale axes
-  // match the visual axes (sx→X, sy→Y, sz→Z/height), we reorder:
+  // remaps axes: local Y->Z, local Z->-Y. To make the user-facing scale axes
+  // match the visual axes (sx->X, sy->Y, sz->Z/height), we reorder:
   //   local X = sx * radius, local Y = sz * height, local Z = sy * radius.
   const s = normalizeScale(message.props.scale);
   const r = message.props.radius;

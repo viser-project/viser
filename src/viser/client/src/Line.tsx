@@ -97,7 +97,7 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
         [ref],
       );
 
-      // R3F manages lifecycle for all declarative children — no manual disposal.
+      // R3F manages lifecycle for all declarative children -- no manual disposal.
       const materialJsx = (
         <lineMaterial
           ref={matRef}

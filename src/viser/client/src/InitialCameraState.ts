@@ -14,7 +14,7 @@
  * - position: [3, 3, 3]
  * - lookAt: [0, 0, 0]
  * - up: [0, 1, 0]
- * - fov: 75 degrees (≈1.309 radians, Three.js PerspectiveCamera default)
+ * - fov: 75 degrees (~1.309 radians, Three.js PerspectiveCamera default)
  * - near: 0.01
  * - far: 1000
  *

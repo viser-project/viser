@@ -95,7 +95,7 @@ class Record3dLoader:
             Generator of Record3dFrame objects, in the same order as indices.
         """
         # Threads are fine here because pyliblzfse should release the GIL, we
-        # can overlap with IO, etc..
+        # can overlap with IO, etc.
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             yield from executor.map(self.get_frame, indices)
 
@@ -113,9 +113,9 @@ class Record3dLoader:
             liblzfse.decompress(self.conf_paths[index].read_bytes()), dtype=np.uint8
         )
         if conf.shape[0] == 640 * 480:
-            conf = conf.reshape((640, 480))  # For a FaceID camera 3D Video
+            conf = conf.reshape((640, 480))  # For a FaceID camera 3D Video.
         elif conf.shape[0] == 256 * 192:
-            conf = conf.reshape((256, 192))  # For a LiDAR 3D Video
+            conf = conf.reshape((256, 192))  # For a LiDAR 3D Video.
         else:
             assert False, f"Unexpected conf shape {conf.shape}"
 
@@ -124,9 +124,9 @@ class Record3dLoader:
             liblzfse.decompress(self.depth_paths[index].read_bytes()), dtype=np.float32
         ).copy()
         if depth.shape[0] == 640 * 480:
-            depth = depth.reshape((640, 480))  # For a FaceID camera 3D Video
+            depth = depth.reshape((640, 480))  # For a FaceID camera 3D Video.
         elif depth.shape[0] == 256 * 192:
-            depth = depth.reshape((256, 192))  # For a LiDAR 3D Video
+            depth = depth.reshape((256, 192))  # For a LiDAR 3D Video.
         else:
             assert False, f"Unexpected depth shape {depth.shape}"
 

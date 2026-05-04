@@ -47,7 +47,7 @@ def _get_memory(page: Page) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Leak tests — these should FAIL on HEAD (missing disposal)
+# Leak tests -- these should FAIL on HEAD (missing disposal)
 # ---------------------------------------------------------------------------
 
 
@@ -122,7 +122,7 @@ def test_grid_material_dispose(
 
 
 # ---------------------------------------------------------------------------
-# Regression tests — these should PASS on HEAD (disposal works)
+# Regression tests -- these should PASS on HEAD (disposal works)
 # ---------------------------------------------------------------------------
 
 

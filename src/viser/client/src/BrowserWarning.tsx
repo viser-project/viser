@@ -87,7 +87,7 @@ export function BrowserWarning() {
         });
     }
 
-    // Check WebGL support
+    // Check WebGL support.
     const webglInfo = checkWebGLSupport();
     console.log(
       `WebGL support: ${webglInfo.supported}, renderer: ${webglInfo.renderer}, vendor: ${webglInfo.vendor}, contextCreationFailed: ${webglInfo.contextCreationFailed}`,

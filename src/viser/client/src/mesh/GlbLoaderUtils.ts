@@ -28,10 +28,10 @@ export function disposeNode(node: any) {
 }
 
 /**
- * Custom hook for loading a GLB model
+ * Custom hook for loading a GLB model.
  */
 export function useGlbLoader(glb_data: Uint8Array) {
-  // State for loaded model and meshes
+  // State for loaded model and meshes.
   const [gltf, setGltf] = React.useState<GLTF>();
   const [meshes, setMeshes] = React.useState<THREE.Mesh[]>([]);
   // Per-mesh transforms relative to the gltf.scene root. These capture
@@ -39,10 +39,10 @@ export function useGlbLoader(glb_data: Uint8Array) {
   // present in mesh.position/mesh.geometry alone.
   const [meshMatrices, setMeshMatrices] = React.useState<THREE.Matrix4[]>([]);
 
-  // Animation mixer reference
+  // Animation mixer reference.
   const mixerRef = React.useRef<THREE.AnimationMixer | null>(null);
 
-  // Load the GLB model
+  // Load the GLB model.
   React.useEffect(() => {
     const loader = new GLTFLoader();
     loader.setDRACOLoader(dracoLoader);
@@ -50,7 +50,7 @@ export function useGlbLoader(glb_data: Uint8Array) {
       new Uint8Array(glb_data).buffer,
       "",
       (gltf) => {
-        // Setup animations if present
+        // Setup animations if present.
         if (gltf.animations && gltf.animations.length) {
           mixerRef.current = new THREE.AnimationMixer(gltf.scene);
           gltf.animations.forEach((clip) => {
@@ -66,7 +66,7 @@ export function useGlbLoader(glb_data: Uint8Array) {
           .copy(gltf.scene.matrixWorld)
           .invert();
 
-        // Process all meshes in the scene
+        // Process all meshes in the scene.
         const meshes: THREE.Mesh[] = [];
         const meshMatrices: THREE.Matrix4[] = [];
         gltf?.scene.traverse((obj) => {
@@ -93,11 +93,11 @@ export function useGlbLoader(glb_data: Uint8Array) {
       },
     );
 
-    // Cleanup function
+    // Cleanup function.
     return () => {
       if (mixerRef.current) mixerRef.current.stopAllAction();
 
-      // Attempt to free resources
+      // Attempt to free resources.
       if (gltf) {
         gltf.scene.traverse(disposeNode);
       }

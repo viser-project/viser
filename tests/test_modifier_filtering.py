@@ -280,11 +280,11 @@ def test_remove_click_callback_does_not_fire_cleanup_with_remaining_rect_select(
         fired.append("done")
 
     server.scene.remove_click_callback()
-    # rect-select still registered → cleanup must not fire yet.
+    # rect-select still registered -> cleanup must not fire yet.
     assert fired == []
 
     server.scene.remove_rect_select_callback()
-    # Now the list is empty → cleanup fires.
+    # Now the list is empty -> cleanup fires.
     assert fired == ["done"]
 
 
@@ -512,7 +512,6 @@ def test_pointer_event_supports_multiple_callbacks_simultaneously() -> None:
 def test_pointer_event_modifier_dispatch_filters_correctly() -> None:
     """Two callbacks on the same event_type with different modifiers
     should each fire only when their modifier matches."""
-    import asyncio
 
     server = viser.ViserServer()
 
@@ -547,7 +546,7 @@ def test_pointer_event_modifier_dispatch_filters_correctly() -> None:
 
     # Cmd-click: only "cmd" fires.
     fired.clear()
-    asyncio.run(
+    _run_coro(
         server.scene._handle_scene_pointer_updates(ClientId(0), make_msg("cmd/ctrl"))
     )
     _wait_until(lambda: "cmd" in fired)

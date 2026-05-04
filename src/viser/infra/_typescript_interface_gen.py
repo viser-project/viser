@@ -40,7 +40,7 @@ _raw_type_mapping = {
 
 # Mapping from numpy dtype to TypeScript typed array type.
 _numpy_dtype_to_ts_typed_array = {
-    np.float16: "Uint16Array",  # No Float16Array in JS; stored as Uint16
+    np.float16: "Uint16Array",  # No Float16Array in JS; stored as Uint16.
     np.float32: "Float32Array",
     np.float64: "Float64Array",
     np.uint8: "Uint8Array<ArrayBuffer>",
@@ -144,43 +144,34 @@ class TypeScriptAnnotationOverride:
 
 @dataclasses.dataclass(frozen=True)
 class EditorHidden:
-    """Use with `typing.Annotated[]` to hide a scene-node prop from the
+    """Use with ``typing.Annotated[]`` to hide a scene-node prop from the
     interactive props editor in the client. The field is still present in
-    the TS interface and on the wire -- it just isn't shown as an editable
-    row. Use for props whose value is coupled to other fields and can't be
-    edited in isolation (e.g. ``PointCloud.precision`` constrains the
-    dtype of ``points``)."""
+    the TS interface and on the wire; it just isn't shown as an editable
+    row. Use for props coupled to other fields that can't be edited in
+    isolation (e.g. ``PointCloud.precision`` constrains the dtype of
+    ``points``)."""
 
 
 def _get_prop_descriptor(typ: Type[Any], field_name: str) -> Dict[str, Any]:
-    """Classify a single prop field for the runtime edit-props UI.
+    """Classify a prop for the client-side edit-props UI.
 
-    The descriptor's ``kind`` tells the client which input widget to render;
-    ``tsType`` is shown verbatim on hover so the user can see the source-level
-    annotation. Anything we don't special-case falls back to ``"default"``,
-    which uses the existing JSON text input.
+    ``kind`` selects the widget; ``tsType`` is shown verbatim on hover so the
+    user can see the source-level annotation. Unrecognized types fall back to
+    ``"default"`` (JSON text input).
     """
-    ts_type = _get_ts_type(typ)
-    descriptor: Dict[str, Any] = {"kind": "default", "tsType": ts_type}
+    descriptor: Dict[str, Any] = {"kind": "default", "tsType": _get_ts_type(typ)}
 
-    # Pick out marker annotations before we strip Annotated below.
     if get_origin(typ) is Annotated:
         for arg in get_args(typ)[1:]:
             if isinstance(arg, EditorHidden):
                 descriptor["editorHidden"] = True
-
-    # Strip Annotated wrapper for classification (but keep tsType from above,
-    # which already honors any TypeScriptAnnotationOverride).
-    if get_origin(typ) is Annotated:
         typ = get_args(typ)[0]
     origin = get_origin(typ)
 
-    # Plain bool -> Switch / Checkbox.
     if typ is bool:
         descriptor["kind"] = "boolean"
         return descriptor
 
-    # All-string Literal -> Select dropdown.
     if origin in (Literal, LiteralAlt):
         args = get_args(typ)
         if args and all(isinstance(a, str) for a in args):
@@ -188,21 +179,20 @@ def _get_prop_descriptor(typ: Type[Any], field_name: str) -> Dict[str, Any]:
             descriptor["options"] = list(args)
             return descriptor
 
-    # Tuple[int, int, int] named "*color*" -> ColorInput at 0-255 scale.
-    # We only special-case the bare-tuple case (no Optional/Union wrapping)
-    # to keep the dispatch unambiguous; richer color types stay JSON.
+    # Bare ``Tuple[int, int, int]`` named ``*color*`` is the only color
+    # signal today; Optional/Union variants stay as JSON to keep dispatch
+    # unambiguous.
     if origin is tuple and "color" in field_name.lower():
         args = get_args(typ)
         if len(args) == 3 and all(a is int for a in args):
             descriptor["kind"] = "color"
-            descriptor["scale"] = "0-255"
             return descriptor
 
     return descriptor
 
 
 def _generate_scene_node_props_schema(message_types: list) -> str:
-    """Emit a runtime descriptor object covering the editable props of every
+    """Emit a descriptor object covering the editable props of every
     scene-node message. The client uses this to drive widget dispatch in the
     scene-tree edit-props popover."""
     schema: Dict[str, Dict[str, Dict[str, Any]]] = {}
@@ -224,12 +214,11 @@ def _generate_scene_node_props_schema(message_types: list) -> str:
     lines = [
         "export type ScenePropDescriptor = {",
         "  tsType: string;",
-        "  // Mark a prop hidden from the interactive editor (still on the wire).",
         "  editorHidden?: boolean;",
         "} & (",
         '  | { kind: "default" }',
         '  | { kind: "boolean" }',
-        '  | { kind: "color"; scale: "0-255" | "0-1" }',
+        '  | { kind: "color" }',
         '  | { kind: "stringLiteral"; options: readonly string[] }',
         ");",
         "",

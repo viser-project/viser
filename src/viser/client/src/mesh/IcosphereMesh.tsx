@@ -11,7 +11,7 @@ import { normalizeScale } from "../utils/normalizeScale";
 const icosphereGeometryCache = new Map<number, THREE.IcosahedronGeometry>();
 
 /**
- * Component for rendering icosphere meshes
+ * Component for rendering icosphere meshes.
  */
 export const IcosphereMesh = React.forwardRef<
   THREE.Group,

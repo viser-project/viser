@@ -72,7 +72,7 @@ def test_nested_forms_raise() -> None:
                 with server.gui.add_form("Inner2"):
                     pass
 
-    # Nesting via a tab group is also detected — tab content shares
+    # Nesting via a tab group is also detected -- tab content shares
     # the parent DOM context with its surrounding form.
     with server.gui.add_form("Outer3"):
         tab_group = server.gui.add_tab_group()
@@ -81,7 +81,7 @@ def test_nested_forms_raise() -> None:
                 with server.gui.add_form("Inner3"):
                     pass
 
-    # A form inside a modal is fine — modals render into a separate
+    # A form inside a modal is fine -- modals render into a separate
     # React portal where a fresh <form> is well-formed.
     with server.gui.add_form("Outer4"):
         with server.gui.add_modal("Popup"):

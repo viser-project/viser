@@ -137,7 +137,7 @@ export function Root() {
   // If dummy window dimensions are specified, wrap content in MacWindowWrapper.
   if (!dummyWindowParam) return content;
 
-  // Handle "fill" flag to make window full size
+  // Handle "fill" flag to make window full size.
   if (dummyWindowParam === "fill") {
     return (
       <MacWindowWrapper

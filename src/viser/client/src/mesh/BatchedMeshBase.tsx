@@ -268,7 +268,7 @@ export const BatchedMeshBase = React.forwardRef<
 
     // Invalidate the union bounding sphere. The vendor InstancedMesh2
     // raycast (and frustum culling) computes this lazily on first use
-    // and caches it forever — so without this, rays toward instances at
+    // and caches it forever -- so without this, rays toward instances at
     // their *new* positions early-exit at a sphere that was sized for
     // the *old* positions. The BVH path auto-updates via ``bvh.move()``
     // inside ``updateMatrix()``, but the BVH is only built for clickable
@@ -276,7 +276,7 @@ export const BatchedMeshBase = React.forwardRef<
     // set ``clickable=true``) fall through to the bounding-sphere path.
     // The vendor types ``boundingSphere`` as ``Sphere`` (non-null) but
     // the lazy-init code in ``Raycasting.ts`` / ``FrustumCulling.ts``
-    // explicitly checks for null and recomputes — writing null is the
+    // explicitly checks for null and recomputes -- writing null is the
     // correct invalidation primitive. Cast to satisfy the types.
     (mesh as { boundingSphere: THREE.Sphere | null }).boundingSphere = null;
   }, [
@@ -294,14 +294,14 @@ export const BatchedMeshBase = React.forwardRef<
   //
   // The per-instance bounding-sphere fallback scales ~linearly with
   // instance count: at 15k drag-only instances a single raycast takes
-  // ~1.9ms, at 30k it's ~7ms — burning almost half a 60Hz frame budget
-  // per hover event. BVH keeps it flat ~0.1–0.2ms across the range, so
+  // ~1.9ms, at 30k it's ~7ms -- burning almost half a 60Hz frame budget
+  // per hover event. BVH keeps it flat ~0.1-0.2ms across the range, so
   // any interactive mesh wants it.
   //
   // We don't enable BVH unconditionally because for non-interactive
   // meshes (static visualization, no hover/click/drag), the build cost
   // and per-update refit cost on every position/quaternion/scale change
-  // outweigh the raycast savings — there are no raycasts to save.
+  // outweigh the raycast savings -- there are no raycasts to save.
   //
   // In the future, we could consider computing the BVH only if we detect
   // that the mesh is static (no changes for N frames). There are a lot
