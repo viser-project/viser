@@ -98,36 +98,22 @@ class _PointerCallbackEntry:
 
 
 def _modifier_matches_filter(
-    ctrl: bool,
-    meta: bool,
-    shift: bool,
-    alt: bool,
+    held: _messages.KeyModifier | None,
     filter_modifier: _messages.KeyModifier | None,
 ) -> bool:
-    """Return whether the held modifiers match a :data:`KeyModifier`
-    filter.
+    """Return whether a canonical held-modifier string matches a
+    :data:`KeyModifier` filter.
 
-    Exact-match: listed modifiers must be held, others must not.
-    ``filter_modifier=None`` = no modifiers held. ``"cmd/ctrl"`` treats
-    Ctrl and Cmd (meta) as interchangeable — matches whenever either is
-    held.
+    Both inputs are already canonicalized by the wire layer (server-side
+    receives them from clients post-canonicalization; user-supplied
+    filters go through ``_normalize_key_modifier``), so this is just
+    string equality.
 
-    Shared by drag, click, and scene-pointer dispatch on the server, and
-    mirrored client-side in ``matchesModifierFilter``
+    Mirrored client-side in ``matchesModifierFilter``
     (``src/viser/client/src/dragUtils.ts``). Drift = silent missed
     events or spurious teardowns.
     """
-    # The 7 valid KeyModifier strings are uniquely identifiable by
-    # substring presence of "cmd/ctrl"/"alt"/"shift", so an `in` check
-    # on the joined string suffices without splitting.
-    s = filter_modifier or ""
-    if shift != ("shift" in s):
-        return False
-    if alt != ("alt" in s):
-        return False
-    if "cmd/ctrl" in s:
-        return ctrl or meta
-    return not (ctrl or meta)
+    return held == filter_modifier
 
 
 def _drag_input_matches_filter(
@@ -138,9 +124,7 @@ def _drag_input_matches_filter(
     """Return whether a drag input matches a registered binding filter."""
     if filter_button != input.button:
         return False
-    return _modifier_matches_filter(
-        input.ctrl, input.meta, input.shift, input.alt, filter_modifier
-    )
+    return _modifier_matches_filter(input.modifier, filter_modifier)
 
 
 def _encode_rgb(rgb: RgbTupleOrArray) -> tuple[int, int, int]:
@@ -2774,21 +2758,13 @@ class SceneApi:
             ray_direction=message.ray_direction,
             screen_pos=message.screen_pos,
             instance_index=message.instance_index,
-            modifier=_messages._modifier_from_booleans(
-                message.ctrl, message.meta, message.shift, message.alt
-            ),
+            modifier=message.modifier,
         )
         # Snapshot the list — a callback may register/remove other
         # callbacks during dispatch; mutations should not affect the
         # in-flight iteration.
         for entry in list(handle._impl.click_cb):
-            if not _modifier_matches_filter(
-                message.ctrl,
-                message.meta,
-                message.shift,
-                message.alt,
-                entry.modifier,
-            ):
+            if not _modifier_matches_filter(message.modifier, entry.modifier):
                 continue
             cb = entry.callback
             if asyncio.iscoroutinefunction(cb):
@@ -2853,13 +2829,7 @@ class SceneApi:
 
         Shared by ``_handle_node_drag`` (live messages) and
         ``_drop_active_drags_for_client`` (synthetic end on disconnect)."""
-        input = _DragInput(
-            button=message.button,
-            ctrl=message.ctrl,
-            meta=message.meta,
-            shift=message.shift,
-            alt=message.alt,
-        )
+        input = _DragInput(button=message.button, modifier=message.modifier)
         matching = handle._dispatch_drag(message.phase, input)
         if not matching:
             return
@@ -2874,9 +2844,7 @@ class SceneApi:
             end_position=message.end_position,
             end_screen_pos=message.end_screen_pos,
             button=message.button,
-            modifier=_messages._modifier_from_booleans(
-                message.ctrl, message.meta, message.shift, message.alt
-            ),
+            modifier=message.modifier,
         )
         for cb in matching:
             if asyncio.iscoroutinefunction(cb):
@@ -2893,21 +2861,13 @@ class SceneApi:
         if not self._scene_pointer_cb:
             return
         client = self._get_client_handle(client_id)
-        modifier = _messages._modifier_from_booleans(
-            message.ctrl, message.meta, message.shift, message.alt
-        )
+        modifier = message.modifier
         event_cache: dict[type, Any] = {}
         # Snapshot — see _handle_node_click_updates for rationale.
         for entry in list(self._scene_pointer_cb):
             if entry.event_type != message.event_type:
                 continue
-            if not _modifier_matches_filter(
-                message.ctrl,
-                message.meta,
-                message.shift,
-                message.alt,
-                entry.modifier,
-            ):
+            if not _modifier_matches_filter(modifier, entry.modifier):
                 continue
             event = event_cache.get(entry.event_class)
             if event is None:

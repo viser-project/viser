@@ -111,10 +111,7 @@ def test_click_dispatch_iterates_over_snapshot() -> None:
         ray_origin=(0.0, 0.0, 0.0),
         ray_direction=(0.0, 0.0, 1.0),
         screen_pos=(0.5, 0.5),
-        ctrl=False,
-        meta=False,
-        shift=False,
-        alt=False,
+        modifier=None,
     )
     asyncio.run(server.scene._handle_node_click_updates(ClientId(0), msg))
 
@@ -347,10 +344,7 @@ def test_pointer_dispatch_iterates_over_snapshot() -> None:
         ray_origin=(0.0, 0.0, 0.0),
         ray_direction=(0.0, 0.0, 1.0),
         screen_pos=((0.5, 0.5),),
-        ctrl=False,
-        meta=False,
-        shift=False,
-        alt=False,
+        modifier=None,
     )
     asyncio.run(server.scene._handle_scene_pointer_updates(ClientId(0), msg))
 
@@ -399,24 +393,19 @@ def test_pointer_event_modifier_dispatch_filters_correctly() -> None:
 
     _inject_fake_client(server)
 
-    def make_msg(*, ctrl: bool, meta: bool, shift: bool, alt: bool):
+    def make_msg(modifier: _messages.KeyModifier | None):
         return _messages.ScenePointerMessage(
             event_type="click",
             ray_origin=(0.0, 0.0, 0.0),
             ray_direction=(0.0, 0.0, 1.0),
             screen_pos=((0.5, 0.5),),
-            ctrl=ctrl,
-            meta=meta,
-            shift=shift,
-            alt=alt,
+            modifier=modifier,
         )
 
     # Plain click: only "plain" fires.
     fired.clear()
     asyncio.run(
-        server.scene._handle_scene_pointer_updates(
-            ClientId(0), make_msg(ctrl=False, meta=False, shift=False, alt=False)
-        )
+        server.scene._handle_scene_pointer_updates(ClientId(0), make_msg(None))
     )
     assert fired == ["plain"]
 
@@ -424,7 +413,7 @@ def test_pointer_event_modifier_dispatch_filters_correctly() -> None:
     fired.clear()
     asyncio.run(
         server.scene._handle_scene_pointer_updates(
-            ClientId(0), make_msg(ctrl=False, meta=True, shift=False, alt=False)
+            ClientId(0), make_msg("cmd/ctrl")
         )
     )
     assert fired == ["cmd"]
@@ -453,31 +442,26 @@ def test_click_dispatch_filters_by_modifier() -> None:
 
     _inject_fake_client(server)
 
-    def make_msg(*, ctrl: bool, meta: bool, shift: bool, alt: bool):
+    def make_msg(modifier: _messages.KeyModifier | None):
         return _messages.SceneNodeClickMessage(
             name="/box",
             instance_index=None,
             ray_origin=(0.0, 0.0, 0.0),
             ray_direction=(0.0, 0.0, 1.0),
             screen_pos=(0.5, 0.5),
-            ctrl=ctrl,
-            meta=meta,
-            shift=shift,
-            alt=alt,
+            modifier=modifier,
         )
 
     fired.clear()
     asyncio.run(
-        server.scene._handle_node_click_updates(
-            ClientId(0), make_msg(ctrl=False, meta=False, shift=False, alt=False)
-        )
+        server.scene._handle_node_click_updates(ClientId(0), make_msg(None))
     )
     assert fired == ["plain"]
 
     fired.clear()
     asyncio.run(
         server.scene._handle_node_click_updates(
-            ClientId(0), make_msg(ctrl=False, meta=False, shift=True, alt=False)
+            ClientId(0), make_msg("shift")
         )
     )
     assert fired == ["shift"]

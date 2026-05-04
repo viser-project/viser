@@ -9,27 +9,34 @@ import { ViewerContextContents } from "./ViewerContext";
 import { SceneNodeMessage } from "./WebsocketMessages";
 import { normalizeScale } from "./utils/normalizeScale";
 
+/** Canonical modifier-key combo. Mirrors the Python ``KeyModifier``
+ * Literal in ``src/viser/_messages.py``. The TypeScript message
+ * generator inlines this union at every occurrence; we define it once
+ * here so it can be shared by ``DragInput``, ``DragBinding``,
+ * ``ScenePointerInfo.modifierAtDown``, etc. ``null`` means "no
+ * modifiers held". */
+export type KeyModifier =
+  | "cmd/ctrl"
+  | "alt"
+  | "shift"
+  | "cmd/ctrl+alt"
+  | "cmd/ctrl+shift"
+  | "alt+shift"
+  | "cmd/ctrl+alt+shift";
+
 /** Wire-format drag-input filter that the server registers for a node.
  * Mirrors the inlined ``bindings`` field on
- * ``SetSceneNodeDragBindingsMessage`` (the message generator inlines
- * nested-dataclass types so this isn't named on the generated side).
- *
- * ``modifier`` is a canonically ordered ``"+"``-joined string from the
- * Python ``KeyModifier`` Literal (e.g. ``"cmd/ctrl+shift"``). ``null``
- * means "no modifiers held". */
+ * ``SetSceneNodeDragBindingsMessage``. */
 export type DragBinding = {
   button: "left" | "middle" | "right";
-  modifier: string | null;
+  modifier: KeyModifier | null;
 };
 
 export type PointerButton = "left" | "middle" | "right";
 
 export type DragInput = {
   button: PointerButton;
-  ctrl: boolean;
-  meta: boolean;
-  shift: boolean;
-  alt: boolean;
+  modifier: KeyModifier | null;
 };
 
 export function pointerButtonFromNative(native: number): PointerButton | null {
@@ -39,24 +46,39 @@ export function pointerButtonFromNative(native: number): PointerButton | null {
   return null;
 }
 
-/** Match held modifiers against a :data:`KeyModifier` filter.
+/** Build a canonical ``KeyModifier`` string from a DOM event's modifier
+ * keys. Cmd and Ctrl collapse to ``"cmd/ctrl"`` (the same gesture across
+ * Mac/Windows/Linux). Returns ``null`` when no modifiers are held.
  *
- * Exact-match: listed modifiers must be held, others must not.
- * ``filter=null`` = no modifiers held. ``"cmd/ctrl"`` treats Ctrl and
- * Cmd (meta) as interchangeable — matches whenever either is held.
+ * The resulting string mirrors the server-side ``KeyModifier`` Literal,
+ * so wire messages can carry a single ``modifier`` field instead of
+ * four separate booleans. */
+export function keyModifierFromEvent(e: {
+  ctrlKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+}): KeyModifier | null {
+  const parts: string[] = [];
+  if (e.ctrlKey || e.metaKey) parts.push("cmd/ctrl");
+  if (e.altKey) parts.push("alt");
+  if (e.shiftKey) parts.push("shift");
+  return parts.length === 0 ? null : (parts.join("+") as KeyModifier);
+}
+
+/** Match a held-modifier string against a :data:`KeyModifier` filter.
+ *
+ * Both sides are already canonicalized (held strings come from
+ * ``keyModifierFromEvent``; filter strings come from the server, which
+ * normalizes user-supplied values), so this is just string equality.
  *
  * Mirrors ``_modifier_matches_filter`` on the server (see
- * ``src/viser/_scene_api.py``). Drift between the two = silent missed
- * events or spurious teardowns. */
+ * ``src/viser/_scene_api.py``). */
 export function matchesModifierFilter(
-  input: { ctrl: boolean; meta: boolean; shift: boolean; alt: boolean },
-  filter: string | null,
+  held: KeyModifier | null,
+  filter: KeyModifier | null,
 ): boolean {
-  const s = filter ?? "";
-  if (input.shift !== s.includes("shift")) return false;
-  if (input.alt !== s.includes("alt")) return false;
-  if (s.includes("cmd/ctrl")) return input.ctrl || input.meta;
-  return !(input.ctrl || input.meta);
+  return held === filter;
 }
 
 /** Match an input against a registered DragBinding. */
@@ -65,7 +87,7 @@ export function matchesDragBinding(
   input: DragInput,
 ): boolean {
   if (binding.button !== input.button) return false;
-  return matchesModifierFilter(input, binding.modifier);
+  return matchesModifierFilter(input.modifier, binding.modifier);
 }
 
 export function anyBindingMatches(

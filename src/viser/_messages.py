@@ -35,30 +35,6 @@ and "Ctrl" elsewhere)."""
 _KEY_MODIFIER_CANONICAL_ORDER: Tuple[str, ...] = ("cmd/ctrl", "alt", "shift")
 
 
-def _modifier_from_booleans(
-    ctrl: bool, meta: bool, shift: bool, alt: bool
-) -> Optional[KeyModifier]:
-    """Build a canonical :data:`KeyModifier` string from raw modifier
-    booleans. ``None`` means "no modifiers held".
-
-    Used by event-construction sites to surface the modifier state on
-    user-facing events. The Cmd vs Ctrl distinction is intentionally
-    lost (both collapse to ``"cmd/ctrl"``)."""
-    held = set()
-    if ctrl or meta:
-        held.add("cmd/ctrl")
-    if alt:
-        held.add("alt")
-    if shift:
-        held.add("shift")
-    if not held:
-        return None
-    return cast(
-        KeyModifier,
-        "+".join(m for m in _KEY_MODIFIER_CANONICAL_ORDER if m in held),
-    )
-
-
 def _normalize_key_modifier(modifier: Optional[str]) -> Optional[KeyModifier]:
     """Parse a :data:`KeyModifier` string into its canonical form.
 
@@ -459,10 +435,7 @@ class ScenePointerMessage(Message, include_in_scene_serialization=False):
     ray_origin: Optional[Tuple[float, float, float]]
     ray_direction: Optional[Tuple[float, float, float]]
     screen_pos: Tuple[Tuple[float, float], ...]
-    ctrl: bool
-    meta: bool
-    shift: bool
-    alt: bool
+    modifier: Optional[KeyModifier]
 
 
 @dataclasses.dataclass
@@ -1443,10 +1416,7 @@ class SceneNodeClickMessage(Message, include_in_scene_serialization=False):
     ray_origin: Tuple[float, float, float]
     ray_direction: Tuple[float, float, float]
     screen_pos: Tuple[float, float]
-    ctrl: bool
-    meta: bool
-    shift: bool
-    alt: bool
+    modifier: Optional[KeyModifier]
 
 
 _DragPhase: TypeAlias = Literal["start", "update", "end"]
@@ -1476,10 +1446,7 @@ class SceneNodeDragMessage(Message, include_in_scene_serialization=False):
     end_screen_pos: Tuple[float, float]
     """Current pointer in OpenCV screen-space coordinates."""
     button: Literal["left", "middle", "right"]
-    ctrl: bool
-    meta: bool
-    shift: bool
-    alt: bool
+    modifier: Optional[KeyModifier]
 
 
 @dataclasses.dataclass

@@ -13,6 +13,7 @@ import { useInitialCameraState } from "./InitialCameraState";
 import { useEnvironmentState } from "./EnvironmentState";
 import { useDevSettingsStore } from "./DevSettingsStore";
 import { GetRenderRequestMessage, Message } from "./WebsocketMessages";
+import { KeyModifier } from "./dragUtils";
 
 export type NodePoseEntry = {
   wxyz: [number, number, number, number];
@@ -56,27 +57,22 @@ export type ViewerMutable = {
      * callback's filter (``null`` = "no modifiers held"). An
      * absent/empty entry means the event_type is disabled. Used to
      * gate gesture engagement and dispatch on
-     * ``modifiersAtDown``-vs-filter match. */
+     * ``modifierAtDown``-vs-filter match. */
     filtersByEventType: Map<
       "click" | "rect-select",
-      (string | null)[]
+      (KeyModifier | null)[]
     >;
     dragStart: [number, number]; // First mouse position.
     dragEnd: [number, number]; // Final mouse position.
     isDragging: boolean;
-    /** Modifier-key state captured at pointerdown. Frozen for the
-     * gesture's lifetime — we don't want releasing Shift/Cmd before
-     * mouse-up to lose the modifier match (or a mid-drag press to
-     * spuriously add one). Mirrors how drag callbacks freeze
-     * modifiers at drag-start. */
-    modifiersAtDown: {
-      ctrl: boolean;
-      meta: boolean;
-      shift: boolean;
-      alt: boolean;
-    };
+    /** Canonical ``KeyModifier`` string captured at pointerdown.
+     * Frozen for the gesture's lifetime — we don't want releasing
+     * Shift/Cmd before mouse-up to lose the modifier match (or a
+     * mid-drag press to spuriously add one). Mirrors how drag
+     * callbacks freeze modifiers at drag-start. */
+    modifierAtDown: KeyModifier | null;
     /** Subset of event_types whose filter list matched
-     * ``modifiersAtDown`` at the time of the active gesture's
+     * ``modifierAtDown`` at the time of the active gesture's
      * pointerdown. Drives drawing + dispatch; empty means no gesture
      * was engaged. */
     activeEventTypes: Set<"click" | "rect-select">;

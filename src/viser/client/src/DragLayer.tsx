@@ -219,10 +219,7 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
         end_position: [endViser.x, endViser.y, endViser.z],
         end_screen_pos: [endScreenPos.x, endScreenPos.y],
         button: activeDrag.input.button,
-        ctrl: activeDrag.input.ctrl,
-        meta: activeDrag.input.meta,
-        shift: activeDrag.input.shift,
-        alt: activeDrag.input.alt,
+        modifier: activeDrag.input.modifier,
       };
     },
     [

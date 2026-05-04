@@ -127,16 +127,12 @@ DragPhase = Literal["start", "update", "end"]
 class _DragInput:
     """Pointer input state at the moment of a drag event.
 
-    Private — consolidates the button + modifier quintet that would
+    Private — consolidates the button + modifier pair that would
     otherwise move as separate positional args through every dispatch
-    function. The wire messages still carry the fields expanded; this
-    dataclass is used only for server-side routing and matching."""
+    function."""
 
     button: Literal["left", "middle", "right"]
-    ctrl: bool
-    meta: bool
-    shift: bool
-    alt: bool
+    modifier: _messages.KeyModifier | None
 
 
 @dataclasses.dataclass

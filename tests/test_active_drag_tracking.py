@@ -60,10 +60,7 @@ def _dummy_drag_msg(
         end_position=(0.0, 0.0, 0.0),
         end_screen_pos=(0.0, 0.0),
         button="left",
-        ctrl=False,
-        meta=False,
-        shift=False,
-        alt=False,
+        modifier=None,
     )
 
 
@@ -179,10 +176,7 @@ def test_drop_active_drags_for_client_fires_on_drag_end(
         end_position=(4.0, 5.0, 6.0),
         end_screen_pos=(30.0, 40.0),
         button="left",
-        ctrl=False,
-        meta=False,
-        shift=False,
-        alt=False,
+        modifier=None,
     )
     server.scene._active_drag_handles[(client, "/disco_box")] = (box, last_msg)
 

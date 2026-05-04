@@ -30,7 +30,11 @@ import { useDisclosure } from "@mantine/hooks";
 import { SynchronizedCameraControls } from "./CameraControls";
 import { SceneNodeThreeObject } from "./SceneTree";
 import { DragLayer } from "./DragLayer";
-import { matchesModifierFilter } from "./dragUtils";
+import {
+  KeyModifier,
+  keyModifierFromEvent,
+  matchesModifierFilter,
+} from "./dragUtils";
 import { shallowArrayEqual } from "./utils/shallowArrayEqual";
 import {
   ndcFromPointerXy,
@@ -221,7 +225,7 @@ function ViewerRoot() {
       dragStart: [0, 0],
       dragEnd: [0, 0],
       isDragging: false,
-      modifiersAtDown: { ctrl: false, meta: false, shift: false, alt: false },
+      modifierAtDown: null,
       activeEventTypes: new Set(),
     },
 
@@ -485,25 +489,20 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
 
     // Capture modifier state at gesture start; mid-gesture changes
     // shouldn't perturb dispatch (matches drag-callback semantics).
-    const modifiers = {
-      ctrl: e.ctrlKey,
-      meta: e.metaKey,
-      shift: e.shiftKey,
-      alt: e.altKey,
-    };
+    const modifier = keyModifierFromEvent(e);
 
     // Gate engagement on modifier match. If no registered filter for
     // any enabled event_type matches the held modifiers, this isn't a
     // scene-pointer gesture — let camera controls handle it.
     const activeEventTypes = new Set<"click" | "rect-select">();
     for (const [eventType, filters] of pointerInfo.filtersByEventType) {
-      if (filters.some((f) => matchesModifierFilter(modifiers, f))) {
+      if (filters.some((f) => matchesModifierFilter(modifier, f))) {
         activeEventTypes.add(eventType);
       }
     }
     if (activeEventTypes.size === 0) return;
 
-    pointerInfo.modifiersAtDown = modifiers;
+    pointerInfo.modifierAtDown = modifier;
     pointerInfo.activeEventTypes = activeEventTypes;
     pointerInfo.isDragging = true;
     mutable.current.cameraControl!.enabled = false;
@@ -571,7 +570,7 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     if (!wasDragging || activeEventTypes.size === 0) return;
 
-    const modifiers = pointerInfo.modifiersAtDown;
+    const modifier = pointerInfo.modifierAtDown;
 
     // Disambiguate click vs rect-select by displacement (same 3-pixel
     // threshold as handlePointerMove uses for drawing the rectangle).
@@ -582,11 +581,11 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
       sendClickMessage(
         viewer,
         pointerInfo.dragEnd,
-        modifiers,
+        modifier,
         sendClickThrottled,
       );
     } else if (moved && activeEventTypes.has("rect-select")) {
-      sendRectSelectMessage(viewer, pointerInfo, modifiers, sendClickThrottled);
+      sendRectSelectMessage(viewer, pointerInfo, modifier, sendClickThrottled);
     }
   };
 
@@ -639,12 +638,10 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
 /**
  * Send a click message based on the pointer position.
  */
-type Modifiers = { ctrl: boolean; meta: boolean; shift: boolean; alt: boolean };
-
 function sendClickMessage(
   viewer: ViewerContextContents,
   pointerPos: [number, number],
-  modifiers: Modifiers,
+  modifier: KeyModifier | null,
   sendClickThrottled: (message: any) => void,
 ) {
   const raycaster = new THREE.Raycaster();
@@ -661,7 +658,7 @@ function sendClickMessage(
     ray_origin: [ray.origin.x, ray.origin.y, ray.origin.z],
     ray_direction: [ray.direction.x, ray.direction.y, ray.direction.z],
     screen_pos: [[mouseVectorOpenCV.x, mouseVectorOpenCV.y]],
-    ...modifiers,
+    modifier,
   });
 }
 
@@ -671,7 +668,7 @@ function sendClickMessage(
 function sendRectSelectMessage(
   viewer: ViewerContextContents,
   pointerInfo: { dragStart: [number, number]; dragEnd: [number, number] },
-  modifiers: Modifiers,
+  modifier: KeyModifier | null,
   sendClickThrottled: (message: any) => void,
 ) {
   const firstMouseVector = opencvXyFromPointerXy(viewer, pointerInfo.dragStart);
@@ -691,7 +688,7 @@ function sendRectSelectMessage(
       [x_min, y_min],
       [x_max, y_max],
     ],
-    ...modifiers,
+    modifier,
   });
 }
 

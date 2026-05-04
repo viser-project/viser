@@ -24,6 +24,7 @@ import { useDragLayer } from "./dragLayerContext";
 import {
   DragInput,
   anyBindingMatches,
+  keyModifierFromEvent,
   pointerButtonFromNative,
 } from "./dragUtils";
 import {
@@ -1006,10 +1007,7 @@ export function SceneNodeThreeObject(props: { name: string }) {
                   if (buttonName === null) return;
                   const input: DragInput = {
                     button: buttonName,
-                    ctrl: e.ctrlKey,
-                    meta: e.metaKey,
-                    shift: e.shiftKey,
-                    alt: e.altKey,
+                    modifier: keyModifierFromEvent(e),
                   };
                   if (!anyBindingMatches(dragBindings, input)) return;
 
@@ -1045,10 +1043,7 @@ export function SceneNodeThreeObject(props: { name: string }) {
                   // right-clicks.
                   const input: DragInput = {
                     button: "right",
-                    ctrl: e.ctrlKey,
-                    meta: e.metaKey,
-                    shift: e.shiftKey,
-                    alt: e.altKey,
+                    modifier: keyModifierFromEvent(e),
                   };
                   if (!anyBindingMatches(dragBindings, input)) return;
                   e.nativeEvent.preventDefault();
@@ -1122,10 +1117,7 @@ export function SceneNodeThreeObject(props: { name: string }) {
                       ray.direction.z,
                     ],
                     screen_pos: [mouseVectorOpenCV.x, mouseVectorOpenCV.y],
-                    ctrl: e.ctrlKey,
-                    meta: e.metaKey,
-                    shift: e.shiftKey,
-                    alt: e.altKey,
+                    modifier: keyModifierFromEvent(e),
                   });
                 }
           }
