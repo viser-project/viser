@@ -444,6 +444,7 @@
     <span class="n">Union</span><span class="p">,</span>
     <span class="n">cast</span><span class="p">,</span>
     <span class="n">get_args</span><span class="p">,</span>
+    <span class="n">overload</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
@@ -461,11 +462,63 @@
     <span class="kn">from</span><span class="w"> </span><span class="nn">.infra</span><span class="w"> </span><span class="kn">import</span> <span class="n">ClientId</span>
 
 
+<div class="viewcode-block" id="SceneClickEvent">
+<a class="viewcode-back" href="../../../api/advanced/events/#viser.SceneClickEvent">[docs]</a>
+<span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SceneClickEvent</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Event passed to scene-level click callbacks (``SceneApi.on_click``).&quot;&quot;&quot;</span>
+
+    <span class="n">client</span><span class="p">:</span> <span class="n">ClientHandle</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Client that triggered this event.&quot;&quot;&quot;</span>
+    <span class="n">client_id</span><span class="p">:</span> <span class="nb">int</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;ID of client that triggered this event.&quot;&quot;&quot;</span>
+    <span class="n">ray_origin</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Origin of the 3D ray corresponding to this click, in world coordinates.&quot;&quot;&quot;</span>
+    <span class="n">ray_direction</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Direction of the 3D ray corresponding to this click, in world coordinates.&quot;&quot;&quot;</span>
+    <span class="n">screen_pos</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Screen position of the click in OpenCV image coordinates (0 to 1).</span>
+<span class="sd">    (0, 0) is the upper-left corner, (1, 1) is the bottom-right corner.&quot;&quot;&quot;</span>
+    <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Modifier-combo held at click time. ``None`` if no modifiers</span>
+<span class="sd">    were held; otherwise a canonical :data:`KeyModifier` string.&quot;&quot;&quot;</span></div>
+
+
+
+<div class="viewcode-block" id="SceneRectSelectEvent">
+<a class="viewcode-back" href="../../../api/advanced/events/#viser.SceneRectSelectEvent">[docs]</a>
+<span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SceneRectSelectEvent</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Event passed to scene rectangle-select callbacks</span>
+<span class="sd">    (``SceneApi.on_rect_select``).&quot;&quot;&quot;</span>
+
+    <span class="n">client</span><span class="p">:</span> <span class="n">ClientHandle</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Client that triggered this event.&quot;&quot;&quot;</span>
+    <span class="n">client_id</span><span class="p">:</span> <span class="nb">int</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;ID of client that triggered this event.&quot;&quot;&quot;</span>
+    <span class="n">screen_min</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Min-corner of the selection rectangle in OpenCV image coordinates</span>
+<span class="sd">    (0 to 1).&quot;&quot;&quot;</span>
+    <span class="n">screen_max</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Max-corner of the selection rectangle.&quot;&quot;&quot;</span>
+    <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Modifier-combo held at gesture start. ``None`` if no modifiers</span>
+<span class="sd">    were held; otherwise a canonical :data:`KeyModifier` string.&quot;&quot;&quot;</span></div>
+
+
+
 <div class="viewcode-block" id="ScenePointerEvent">
 <a class="viewcode-back" href="../../../api/advanced/events/#viser.ScenePointerEvent">[docs]</a>
 <span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">ScenePointerEvent</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Event passed to pointer callbacks for the scene (currently only clicks).&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Event passed to scene pointer callbacks (legacy ``on_pointer_event``).</span>
+
+<span class="sd">    .. deprecated::</span>
+<span class="sd">        Use :meth:`SceneApi.on_click` with :class:`SceneClickEvent` or</span>
+<span class="sd">        :meth:`SceneApi.on_rect_select` with :class:`SceneRectSelectEvent`</span>
+<span class="sd">        instead. This shape unions the click and rect-select cases into a</span>
+<span class="sd">        single dataclass with awkward Optional/variable-length fields.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">client</span><span class="p">:</span> <span class="n">ClientHandle</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Client that triggered this event.&quot;&quot;&quot;</span>
@@ -481,6 +534,10 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Screen position of the click on the screen (OpenCV image coordinates, 0 to 1).</span>
 <span class="sd">    (0, 0) is the upper-left corner, (1, 1) is the bottom-right corner.</span>
 <span class="sd">    For a box selection, this includes the min- and max- corners of the box.&quot;&quot;&quot;</span>
+    <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Modifier-combo held when this event fired. ``None`` if no</span>
+<span class="sd">    modifiers were held; otherwise a canonical :data:`KeyModifier`</span>
+<span class="sd">    string.&quot;&quot;&quot;</span>
 
     <span class="nd">@property</span>
     <span class="nd">@deprecated</span><span class="p">(</span><span class="s2">&quot;The `event` property is deprecated. Use `event_type` instead.&quot;</span><span class="p">)</span>
@@ -505,16 +562,12 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">_DragInput</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Pointer input state at the moment of a drag event.</span>
 
-<span class="sd">    Private — consolidates the button + modifier quintet that would</span>
+<span class="sd">    Private -- consolidates the button + modifier pair that would</span>
 <span class="sd">    otherwise move as separate positional args through every dispatch</span>
-<span class="sd">    function. The wire messages still carry the fields expanded; this</span>
-<span class="sd">    dataclass is used only for server-side routing and matching.&quot;&quot;&quot;</span>
+<span class="sd">    function.&quot;&quot;&quot;</span>
 
     <span class="n">button</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="s2">&quot;middle&quot;</span><span class="p">,</span> <span class="s2">&quot;right&quot;</span><span class="p">]</span>
-    <span class="n">ctrl</span><span class="p">:</span> <span class="nb">bool</span>
-    <span class="n">meta</span><span class="p">:</span> <span class="nb">bool</span>
-    <span class="n">shift</span><span class="p">:</span> <span class="nb">bool</span>
-    <span class="n">alt</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span>
 
 
 <span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span>
@@ -527,7 +580,19 @@
         <span class="p">[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">_RaycastSupportedSceneNodeHandle</span><span class="p">]],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span>
     <span class="p">]</span>
     <span class="n">button</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span>
-    <span class="n">modifier</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span><span class="p">]</span>
+    <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span>
+
+
+<span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">_ClickCallbackEntry</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;One registered click callback + its modifier filter.</span>
+
+<span class="sd">    Private to the handle; exposed to dispatch via ``_dispatch_click``.&quot;&quot;&quot;</span>
+
+    <span class="n">callback</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[</span>
+        <span class="p">[</span><span class="n">SceneNodePointerEvent</span><span class="p">[</span><span class="n">_RaycastSupportedSceneNodeHandle</span><span class="p">]],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span>
+    <span class="p">]</span>
+    <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span>
 
 
 <span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span>
@@ -544,14 +609,7 @@
         <span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])</span>
     <span class="p">)</span>
     <span class="n">visible</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
-    <span class="n">click_cb</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span>
-        <span class="n">Callable</span><span class="p">[</span>
-            <span class="p">[</span><span class="n">SceneNodePointerEvent</span><span class="p">[</span><span class="n">_RaycastSupportedSceneNodeHandle</span><span class="p">]],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span>
-        <span class="p">]</span>
-    <span class="p">]</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
-    <span class="c1"># Drag callbacks keyed by phase. Each entry records a callback together</span>
-    <span class="c1"># with its (button, modifiers) filter; dispatch iterates the list for</span>
-    <span class="c1"># the relevant phase and invokes every entry whose filter matches.</span>
+    <span class="n">click_cb</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">_ClickCallbackEntry</span><span class="p">]</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
     <span class="n">drag_cb</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="n">DragPhase</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="n">_DragCallbackEntry</span><span class="p">]]</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">field</span><span class="p">(</span>
         <span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;start&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;update&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;end&quot;</span><span class="p">:</span> <span class="p">[]}</span>
     <span class="p">)</span>
@@ -771,7 +829,11 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Screen position of the click on the screen (OpenCV image coordinates, 0 to 1).</span>
 <span class="sd">    (0, 0) is the upper-left corner, (1, 1) is the bottom-right corner.&quot;&quot;&quot;</span>
     <span class="n">instance_index</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Instance ID of the clicked object, if applicable. Currently this is `None` for all objects except for the output of :meth:`SceneApi.add_batched_axes()`.&quot;&quot;&quot;</span></div>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Instance ID of the clicked object, if applicable. Currently this is `None` for all objects except for the output of :meth:`SceneApi.add_batched_axes()`.&quot;&quot;&quot;</span>
+    <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Modifier-combo held when this event fired. ``None`` if no</span>
+<span class="sd">    modifiers were held; otherwise a canonical :data:`KeyModifier`</span>
+<span class="sd">    string.&quot;&quot;&quot;</span></div>
 
 
 
@@ -808,10 +870,10 @@
     <span class="n">instance_index</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Instance index within a batched scene node (e.g. batched meshes,</span>
 <span class="sd">    batched GLBs, batched axes); ``None`` for non-batched nodes. Frozen</span>
-<span class="sd">    at drag-start — the drag always refers to the instance that was</span>
+<span class="sd">    at drag-start -- the drag always refers to the instance that was</span>
 <span class="sd">    under the cursor when the gesture began.&quot;&quot;&quot;</span>
     <span class="n">start_position</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;World-coords position of the click point on the object. *Live* —</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;World-coords position of the click point on the object. *Live* --</span>
 <span class="sd">    updates each event as the object moves, so it always reflects where</span>
 <span class="sd">    the grab point currently is in world coords (useful for</span>
 <span class="sd">    rotate-around-grab gestures).&quot;&quot;&quot;</span>
@@ -824,51 +886,11 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Current pointer in OpenCV screen-space coordinates.&quot;&quot;&quot;</span>
     <span class="n">button</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="s2">&quot;middle&quot;</span><span class="p">,</span> <span class="s2">&quot;right&quot;</span><span class="p">]</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Mouse button that initiated the drag.&quot;&quot;&quot;</span>
-    <span class="n">ctrl</span><span class="p">:</span> <span class="nb">bool</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Whether Ctrl was held at drag-start (frozen for the drag&#39;s lifetime).&quot;&quot;&quot;</span>
-    <span class="n">meta</span><span class="p">:</span> <span class="nb">bool</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Whether the Meta/Cmd key was held at drag-start (frozen for the drag&#39;s lifetime).&quot;&quot;&quot;</span>
-    <span class="n">shift</span><span class="p">:</span> <span class="nb">bool</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Whether Shift was held at drag-start (frozen for the drag&#39;s lifetime).&quot;&quot;&quot;</span>
-    <span class="n">alt</span><span class="p">:</span> <span class="nb">bool</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Whether Alt/Option was held at drag-start (frozen for the drag&#39;s lifetime).&quot;&quot;&quot;</span></div>
+    <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Modifier-combo held at drag-start (frozen for the drag&#39;s</span>
+<span class="sd">    lifetime). ``None`` if no modifiers were held; otherwise a</span>
+<span class="sd">    canonical :data:`KeyModifier` string.&quot;&quot;&quot;</span></div>
 
-
-
-<span class="n">_DRAG_MODIFIER_CANONICAL_ORDER</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;cmd/ctrl&quot;</span><span class="p">,</span> <span class="s2">&quot;alt&quot;</span><span class="p">,</span> <span class="s2">&quot;shift&quot;</span><span class="p">)</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">_normalize_drag_modifier</span><span class="p">(</span>
-    <span class="n">modifier</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Parse a :data:`KeyModifier` string into its canonical form.</span>
-
-<span class="sd">    ``None`` and ``&quot;&quot;`` map to ``None``. Otherwise, split on ``&quot;+&quot;``,</span>
-<span class="sd">    validate each name, and canonicalize the order — both</span>
-<span class="sd">    ``&quot;cmd/ctrl+shift&quot;`` and ``&quot;shift+cmd/ctrl&quot;`` yield</span>
-<span class="sd">    ``&quot;cmd/ctrl+shift&quot;``. Type annotations only allow the canonical</span>
-<span class="sd">    form; the runtime is lenient for users who don&#39;t run a type-checker.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="n">modifier</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">modifier</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
-        <span class="k">return</span> <span class="kc">None</span>
-    <span class="n">parts</span> <span class="o">=</span> <span class="n">modifier</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;+&quot;</span><span class="p">)</span>
-    <span class="n">modifier_set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span>
-    <span class="n">valid</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">_DRAG_MODIFIER_CANONICAL_ORDER</span><span class="p">)</span>
-    <span class="n">unknown</span> <span class="o">=</span> <span class="n">modifier_set</span> <span class="o">-</span> <span class="n">valid</span>
-    <span class="k">if</span> <span class="n">unknown</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;Unknown drag modifier(s) in </span><span class="si">{</span><span class="n">modifier</span><span class="si">!r}</span><span class="s2">: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">unknown</span><span class="p">)</span><span class="si">!r}</span><span class="s2">. &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;Valid modifiers: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">valid</span><span class="p">)</span><span class="si">!r}</span><span class="s2">.&quot;</span>
-        <span class="p">)</span>
-    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">modifier_set</span><span class="p">):</span>
-        <span class="n">duplicates</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parts</span> <span class="k">if</span> <span class="n">parts</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">]</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;Duplicate drag modifier(s) in </span><span class="si">{</span><span class="n">modifier</span><span class="si">!r}</span><span class="s2">: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">duplicates</span><span class="p">))</span><span class="si">!r}</span><span class="s2">.&quot;</span>
-        <span class="p">)</span>
-    <span class="k">return</span> <span class="n">cast</span><span class="p">(</span>
-        <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span><span class="p">,</span>
-        <span class="s2">&quot;+&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">m</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">_DRAG_MODIFIER_CANONICAL_ORDER</span> <span class="k">if</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">modifier_set</span><span class="p">),</span>
-    <span class="p">)</span>
 
 
 <span class="n">_VALID_DRAG_BUTTONS</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_args</span><span class="p">(</span><span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">)</span>
@@ -878,7 +900,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_sync_drag_bindings</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Recompute the union of registered (button, modifiers) across all</span>
 <span class="sd">        phases and push it to the client as a full binding set.&quot;&quot;&quot;</span>
-        <span class="n">seen</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span><span class="p">]]]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">seen</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">,</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
         <span class="n">bindings</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">DragBinding</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">entries</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
             <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">entries</span><span class="p">:</span>
@@ -927,13 +949,13 @@
         <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
         <span class="n">phase</span><span class="p">:</span> <span class="n">DragPhase</span><span class="p">,</span>
         <span class="n">button</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">,</span>
-        <span class="n">modifier</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[</span>
         <span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">]],</span>
         <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
     <span class="p">]:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_button</span><span class="p">(</span><span class="n">button</span><span class="p">)</span>
-        <span class="n">normalized</span> <span class="o">=</span> <span class="n">_normalize_drag_modifier</span><span class="p">(</span><span class="n">modifier</span><span class="p">)</span>
+        <span class="n">normalized</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">_normalize_key_modifier</span><span class="p">(</span><span class="n">modifier</span><span class="p">)</span>
 
         <span class="k">def</span><span class="w"> </span><span class="nf">decorator</span><span class="p">(</span>
             <span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
@@ -949,7 +971,7 @@
                 <span class="n">button</span><span class="o">=</span><span class="n">button</span><span class="p">,</span>
                 <span class="n">modifier</span><span class="o">=</span><span class="n">normalized</span><span class="p">,</span>
             <span class="p">)</span>
-            <span class="c1"># Skip if an equivalent entry is already registered —</span>
+            <span class="c1"># Skip if an equivalent entry is already registered --</span>
             <span class="c1"># otherwise double-registration would fire the callback twice</span>
             <span class="c1"># per matching event. `_DragCallbackEntry` is a plain</span>
             <span class="c1"># dataclass so tuple/dataclass equality catches duplicates.</span>
@@ -960,72 +982,133 @@
 
         <span class="k">return</span> <span class="n">decorator</span>
 
+    <span class="nd">@overload</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_start</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
-        <span class="n">button</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">,</span>
+        <span class="n">button</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">]:</span> <span class="o">...</span>
+
+    <span class="nd">@overload</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_start</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
+        <span class="n">button</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span> <span class="o">=</span> <span class="o">...</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
-        <span class="n">modifier</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="o">...</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[</span>
         <span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">]],</span>
         <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
-    <span class="p">]:</span>
+    <span class="p">]:</span> <span class="o">...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_start</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
+        <span class="n">button</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="s2">&quot;left&quot;</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a callback for when dragging starts.</span>
 
 <span class="sd">        (Experimental) Scene-node drag callbacks may change in future</span>
 <span class="sd">        releases.</span>
 
+<span class="sd">        Usable as a bare decorator (``@handle.on_drag_start``, defaults</span>
+<span class="sd">        to ``button=&quot;left&quot;`` and no modifiers) or with arguments</span>
+<span class="sd">        (``@handle.on_drag_start(&quot;left&quot;, modifier=&quot;cmd/ctrl&quot;)``).</span>
+
 <span class="sd">        Args:</span>
 <span class="sd">            button: Mouse button that triggers the drag. One of</span>
-<span class="sd">                ``&quot;left&quot; | &quot;middle&quot; | &quot;right&quot;``.</span>
+<span class="sd">                ``&quot;left&quot; | &quot;middle&quot; | &quot;right&quot;``. Defaults to ``&quot;left&quot;``.</span>
 <span class="sd">            modifier: Modifier keys that must be held, as a canonically</span>
 <span class="sd">                ordered ``&quot;+&quot;``-separated string like ``&quot;cmd/ctrl&quot;``,</span>
 <span class="sd">                ``&quot;shift&quot;``, or ``&quot;cmd/ctrl+shift&quot;``. ``None`` matches</span>
 <span class="sd">                &quot;no modifiers held&quot;. Matching is exact: listed modifiers</span>
 <span class="sd">                must be held and others must not be. Left-drag on this</span>
-<span class="sd">                node intercepts the gesture — the camera only orbits on</span>
+<span class="sd">                node intercepts the gesture -- the camera only orbits on</span>
 <span class="sd">                empty-space drags.</span>
 
 <span class="sd">        Note on ordering: drag callbacks fire in three phases per</span>
 <span class="sd">        gesture (start → update* → end). Synchronous (``def``)</span>
 <span class="sd">        callbacks are submitted to a thread pool fire-and-forget and</span>
-<span class="sd">        can run out of order — an ``update`` may begin before</span>
+<span class="sd">        can run out of order -- an ``update`` may begin before</span>
 <span class="sd">        ``start`` finishes, leaving any state set in ``start`` (e.g.</span>
 <span class="sd">        a captured grab point) ``None`` when ``update`` reads it. To</span>
 <span class="sd">        get strict ordering, define your callbacks as ``async def``;</span>
 <span class="sd">        async callbacks are awaited on the event loop, which preserves</span>
 <span class="sd">        their phase order so long as you don&#39;t ``await`` inside them.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_register_drag_callback</span><span class="p">(</span><span class="s2">&quot;start&quot;</span><span class="p">,</span> <span class="n">button</span><span class="p">,</span> <span class="n">modifier</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dispatch_on_drag</span><span class="p">(</span><span class="s2">&quot;start&quot;</span><span class="p">,</span> <span class="n">button</span><span class="p">,</span> <span class="n">modifier</span><span class="p">)</span>
 
+    <span class="nd">@overload</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_update</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
-        <span class="n">button</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">,</span>
+        <span class="n">button</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">]:</span> <span class="o">...</span>
+
+    <span class="nd">@overload</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_update</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
+        <span class="n">button</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span> <span class="o">=</span> <span class="o">...</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
-        <span class="n">modifier</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="o">...</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[</span>
         <span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">]],</span>
         <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
-    <span class="p">]:</span>
+    <span class="p">]:</span> <span class="o">...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_update</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
+        <span class="n">button</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="s2">&quot;left&quot;</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a callback for drag updates. See :meth:`on_drag_start` for argument docs.</span>
 
 <span class="sd">        (Experimental) Scene-node drag callbacks may change in future</span>
 <span class="sd">        releases.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_register_drag_callback</span><span class="p">(</span><span class="s2">&quot;update&quot;</span><span class="p">,</span> <span class="n">button</span><span class="p">,</span> <span class="n">modifier</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dispatch_on_drag</span><span class="p">(</span><span class="s2">&quot;update&quot;</span><span class="p">,</span> <span class="n">button</span><span class="p">,</span> <span class="n">modifier</span><span class="p">)</span>
 
+    <span class="nd">@overload</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_end</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
-        <span class="n">button</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">,</span>
+        <span class="n">button</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">]:</span> <span class="o">...</span>
+
+    <span class="nd">@overload</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_end</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
+        <span class="n">button</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span> <span class="o">=</span> <span class="o">...</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
-        <span class="n">modifier</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="o">...</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[</span>
         <span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">]],</span>
         <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
-    <span class="p">]:</span>
+    <span class="p">]:</span> <span class="o">...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_end</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
+        <span class="n">button</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="s2">&quot;left&quot;</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a callback for when dragging ends. See :meth:`on_drag_start` for argument docs.</span>
 
 <span class="sd">        (Experimental) Scene-node drag callbacks may change in future</span>
 <span class="sd">        releases.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_register_drag_callback</span><span class="p">(</span><span class="s2">&quot;end&quot;</span><span class="p">,</span> <span class="n">button</span><span class="p">,</span> <span class="n">modifier</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dispatch_on_drag</span><span class="p">(</span><span class="s2">&quot;end&quot;</span><span class="p">,</span> <span class="n">button</span><span class="p">,</span> <span class="n">modifier</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_dispatch_on_drag</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
+        <span class="n">phase</span><span class="p">:</span> <span class="n">DragPhase</span><span class="p">,</span>
+        <span class="n">button_or_func</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
+        <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Bare-decorator (a callable in the first slot) registers</span>
+<span class="sd">        immediately with default ``button=&quot;left&quot;``; otherwise</span>
+<span class="sd">        ``button_or_func`` is the button literal.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">button_or_func</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_register_drag_callback</span><span class="p">(</span><span class="n">phase</span><span class="p">,</span> <span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="p">)(</span>
+                <span class="n">button_or_func</span>  <span class="c1"># type: ignore[arg-type]</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_register_drag_callback</span><span class="p">(</span><span class="n">phase</span><span class="p">,</span> <span class="n">button_or_func</span><span class="p">,</span> <span class="n">modifier</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_remove_drag_callback</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -1060,34 +1143,73 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove drag end callbacks from the scene node.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_remove_drag_callback</span><span class="p">(</span><span class="s2">&quot;end&quot;</span><span class="p">,</span> <span class="n">callback</span><span class="p">)</span>
 
+    <span class="nd">@overload</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">on_click</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
         <span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodePointerEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodePointerEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">]:</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodePointerEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">]:</span> <span class="o">...</span>
+
+    <span class="nd">@overload</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_click</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="o">...</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[</span>
+        <span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodePointerEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">]],</span>
+        <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodePointerEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
+    <span class="p">]:</span> <span class="o">...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_click</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
+        <span class="n">func</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodePointerEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a callback for when a scene node is clicked.</span>
+
+<span class="sd">        Usable as a bare decorator (``@handle.on_click``) or with a</span>
+<span class="sd">        modifier filter (``@handle.on_click(modifier=&quot;cmd/ctrl&quot;)``).</span>
 
 <span class="sd">        The callback can be either a standard function or an async function:</span>
 <span class="sd">        - Standard functions (def) will be executed in a threadpool.</span>
 <span class="sd">        - Async functions (async def) will be executed in the event loop.</span>
-
 <span class="sd">        Using async functions can be useful for reducing race conditions.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            modifier: Modifier-combo filter. Default ``None`` matches</span>
+<span class="sd">                &quot;no modifiers held&quot;. ``&quot;cmd/ctrl&quot;``, ``&quot;shift&quot;``,</span>
+<span class="sd">                ``&quot;cmd/ctrl+shift&quot;``, etc. are exact matches (listed</span>
+<span class="sd">                modifiers held, others not). ``cmd/ctrl`` matches</span>
+<span class="sd">                whenever either Cmd or Ctrl is held.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
-            <span class="n">_messages</span><span class="o">.</span><span class="n">SetSceneNodeClickableMessage</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
-        <span class="p">)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-            <span class="n">cast</span><span class="p">(</span>
-                <span class="n">Callable</span><span class="p">[</span>
-                    <span class="p">[</span><span class="n">SceneNodePointerEvent</span><span class="p">[</span><span class="n">_RaycastSupportedSceneNodeHandle</span><span class="p">]],</span>
-                    <span class="c1"># `Union[X, Y]` instead of `X | Y` for Python 3.8 support.</span>
-                    <span class="n">Union</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="n">Coroutine</span><span class="p">],</span>
-                <span class="p">],</span>
-                <span class="n">func</span><span class="p">,</span>
+        <span class="c1"># Validate eagerly so a bad string raises at the call site,</span>
+        <span class="c1"># not when the user later applies the returned decorator.</span>
+        <span class="n">normalized_modifier</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">_normalize_key_modifier</span><span class="p">(</span><span class="n">modifier</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">register</span><span class="p">(</span><span class="n">callback</span><span class="p">:</span> <span class="n">Callable</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">:</span>
+            <span class="c1"># Mark the node clickable only when a callback actually</span>
+            <span class="c1"># lands -- an unapplied decorator factory shouldn&#39;t leave</span>
+            <span class="c1"># the client thinking the node is clickable.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+                <span class="n">_messages</span><span class="o">.</span><span class="n">SetSceneNodeClickableMessage</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
             <span class="p">)</span>
-        <span class="p">)</span>
-        <span class="k">return</span> <span class="n">func</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">_ClickCallbackEntry</span><span class="p">(</span>
+                    <span class="n">callback</span><span class="o">=</span><span class="n">cast</span><span class="p">(</span>
+                        <span class="n">Callable</span><span class="p">[</span>
+                            <span class="p">[</span><span class="n">SceneNodePointerEvent</span><span class="p">[</span><span class="n">_RaycastSupportedSceneNodeHandle</span><span class="p">]],</span>
+                            <span class="n">Union</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="n">Coroutine</span><span class="p">],</span>
+                        <span class="p">],</span>
+                        <span class="n">callback</span><span class="p">,</span>
+                    <span class="p">),</span>
+                    <span class="n">modifier</span><span class="o">=</span><span class="n">normalized_modifier</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">callback</span>
+
+        <span class="k">if</span> <span class="n">func</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">register</span>
+        <span class="k">return</span> <span class="n">register</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">remove_click_callback</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">callback</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;all&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="n">Callable</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
@@ -1100,7 +1222,9 @@
         <span class="k">if</span> <span class="n">callback</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span> <span class="o">=</span> <span class="p">[</span><span class="n">cb</span> <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span> <span class="k">if</span> <span class="n">cb</span> <span class="o">!=</span> <span class="n">callback</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">entry</span> <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span> <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">callback</span> <span class="o">!=</span> <span class="n">callback</span>
+            <span class="p">]</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
                 <span class="n">_messages</span><span class="o">.</span><span class="n">SetSceneNodeClickableMessage</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>

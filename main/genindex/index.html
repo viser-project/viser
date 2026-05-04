@@ -843,8 +843,6 @@
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.ALPHABET_LATIN">ALPHABET_LATIN (viser.Icon attribute)</a>
 </li>
-        <li><a href="../api/advanced/events/#viser.SceneNodeDragEvent.alt">alt (viser.SceneNodeDragEvent attribute)</a>
-</li>
         <li><a href="../api/handles/scene_handles/#viser.AmbientLightHandle">AmbientLightHandle (class in viser)</a>
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.AMBULANCE">AMBULANCE (viser.Icon attribute)</a>
@@ -3511,14 +3509,14 @@
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.CLICK">CLICK (viser.Icon attribute)</a>
 </li>
-    </ul></td>
-    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="../api/advanced/uplot/#viser.uplot.Cursor_Bind.click">click (viser.uplot.Cursor_Bind attribute)</a>
 
         <ul>
           <li><a href="../api/advanced/uplot/#viser.uplot.Cursor_Drag.click">(viser.uplot.Cursor_Drag attribute)</a>
 </li>
         </ul></li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="../api/handles/camera_handles/#viser.CameraHandle.client">client (viser.CameraHandle property)</a>
 
         <ul>
@@ -3526,11 +3524,15 @@
 </li>
           <li><a href="../api/advanced/events/#viser.GuiEvent.client">(viser.GuiEvent attribute)</a>
 </li>
+          <li><a href="../api/advanced/events/#viser.SceneClickEvent.client">(viser.SceneClickEvent attribute)</a>
+</li>
           <li><a href="../api/advanced/events/#viser.SceneNodeDragEvent.client">(viser.SceneNodeDragEvent attribute)</a>
 </li>
           <li><a href="../api/advanced/events/#viser.SceneNodePointerEvent.client">(viser.SceneNodePointerEvent attribute)</a>
 </li>
           <li><a href="../api/advanced/events/#viser.ScenePointerEvent.client">(viser.ScenePointerEvent attribute)</a>
+</li>
+          <li><a href="../api/advanced/events/#viser.SceneRectSelectEvent.client">(viser.SceneRectSelectEvent attribute)</a>
 </li>
           <li><a href="../api/advanced/events/#viser.TransformControlsEvent.client">(viser.TransformControlsEvent attribute)</a>
 </li>
@@ -3542,11 +3544,15 @@
 </li>
           <li><a href="../api/advanced/events/#viser.GuiEvent.client_id">(viser.GuiEvent attribute)</a>
 </li>
+          <li><a href="../api/advanced/events/#viser.SceneClickEvent.client_id">(viser.SceneClickEvent attribute)</a>
+</li>
           <li><a href="../api/advanced/events/#viser.SceneNodeDragEvent.client_id">(viser.SceneNodeDragEvent attribute)</a>
 </li>
           <li><a href="../api/advanced/events/#viser.SceneNodePointerEvent.client_id">(viser.SceneNodePointerEvent attribute)</a>
 </li>
           <li><a href="../api/advanced/events/#viser.ScenePointerEvent.client_id">(viser.ScenePointerEvent attribute)</a>
+</li>
+          <li><a href="../api/advanced/events/#viser.SceneRectSelectEvent.client_id">(viser.SceneRectSelectEvent attribute)</a>
 </li>
           <li><a href="../api/advanced/events/#viser.TransformControlsEvent.client_id">(viser.TransformControlsEvent attribute)</a>
 </li>
@@ -4024,8 +4030,6 @@
         <li><a href="../api/advanced/icons/#viser.Icon.CRYSTAL_BALL">CRYSTAL_BALL (viser.Icon attribute)</a>
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.CSV">CSV (viser.Icon attribute)</a>
-</li>
-        <li><a href="../api/advanced/events/#viser.SceneNodeDragEvent.ctrl">ctrl (viser.SceneNodeDragEvent attribute)</a>
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.CUBE">CUBE (viser.Icon attribute)</a>
 </li>
@@ -7605,12 +7609,12 @@
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.MESSAGE_CIRCLE_CANCEL">MESSAGE_CIRCLE_CANCEL (viser.Icon attribute)</a>
 </li>
-    </ul></td>
-    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="../api/advanced/icons/#viser.Icon.MESSAGE_CIRCLE_CHECK">MESSAGE_CIRCLE_CHECK (viser.Icon attribute)</a>
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.MESSAGE_CIRCLE_CODE">MESSAGE_CIRCLE_CODE (viser.Icon attribute)</a>
 </li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="../api/advanced/icons/#viser.Icon.MESSAGE_CIRCLE_COG">MESSAGE_CIRCLE_COG (viser.Icon attribute)</a>
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.MESSAGE_CIRCLE_DOLLAR">MESSAGE_CIRCLE_DOLLAR (viser.Icon attribute)</a>
@@ -7689,8 +7693,6 @@
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.MESSAGES_OFF">MESSAGES_OFF (viser.Icon attribute)</a>
 </li>
-        <li><a href="../api/advanced/events/#viser.SceneNodeDragEvent.meta">meta (viser.SceneNodeDragEvent attribute)</a>
-</li>
         <li><a href="../api/advanced/icons/#viser.Icon.METEOR">METEOR (viser.Icon attribute)</a>
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.METEOR_OFF">METEOR_OFF (viser.Icon attribute)</a>
@@ -7768,7 +7770,19 @@
         <li><a href="../api/handles/gui_handles/#viser.GuiUplotHandle.mode">mode (viser.GuiUplotHandle attribute)</a>
 </li>
         <li><a href="../api/handles/gui_handles/#viser.CommandHandle.modifier">modifier (viser.CommandHandle attribute)</a>
+
+        <ul>
+          <li><a href="../api/advanced/events/#viser.SceneClickEvent.modifier">(viser.SceneClickEvent attribute)</a>
 </li>
+          <li><a href="../api/advanced/events/#viser.SceneNodeDragEvent.modifier">(viser.SceneNodeDragEvent attribute)</a>
+</li>
+          <li><a href="../api/advanced/events/#viser.SceneNodePointerEvent.modifier">(viser.SceneNodePointerEvent attribute)</a>
+</li>
+          <li><a href="../api/advanced/events/#viser.ScenePointerEvent.modifier">(viser.ScenePointerEvent attribute)</a>
+</li>
+          <li><a href="../api/advanced/events/#viser.SceneRectSelectEvent.modifier">(viser.SceneRectSelectEvent attribute)</a>
+</li>
+        </ul></li>
         <li>
     module
 
@@ -8211,6 +8225,8 @@
 </li>
           <li><a href="../api/handles/scene_handles/#viser.MeshSkinnedHandle.on_click">(viser.MeshSkinnedHandle method)</a>
 </li>
+          <li><a href="../api/core/scene_api/#viser.SceneApi.on_click">(viser.SceneApi method)</a>
+</li>
         </ul></li>
         <li><a href="../api/auxiliary/infrastructure/#viser.infra.WebsockServer.on_client_connect">on_client_connect() (viser.infra.WebsockServer method)</a>
 
@@ -8319,6 +8335,8 @@
         <li><a href="../api/core/scene_api/#viser.SceneApi.on_pointer_callback_removed">on_pointer_callback_removed() (viser.SceneApi method)</a>
 </li>
         <li><a href="../api/core/scene_api/#viser.SceneApi.on_pointer_event">on_pointer_event() (viser.SceneApi method)</a>
+</li>
+        <li><a href="../api/core/scene_api/#viser.SceneApi.on_rect_select">on_rect_select() (viser.SceneApi method)</a>
 </li>
         <li><a href="../api/handles/gui_handles/#viser.GuiFormHandle.on_submit">on_submit() (viser.GuiFormHandle method)</a>
 </li>
@@ -9178,15 +9196,19 @@
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.RATING_21_PLUS">RATING_21_PLUS (viser.Icon attribute)</a>
 </li>
-        <li><a href="../api/advanced/events/#viser.SceneNodePointerEvent.ray_direction">ray_direction (viser.SceneNodePointerEvent attribute)</a>
+        <li><a href="../api/advanced/events/#viser.SceneClickEvent.ray_direction">ray_direction (viser.SceneClickEvent attribute)</a>
 
         <ul>
+          <li><a href="../api/advanced/events/#viser.SceneNodePointerEvent.ray_direction">(viser.SceneNodePointerEvent attribute)</a>
+</li>
           <li><a href="../api/advanced/events/#viser.ScenePointerEvent.ray_direction">(viser.ScenePointerEvent attribute)</a>
 </li>
         </ul></li>
-        <li><a href="../api/advanced/events/#viser.SceneNodePointerEvent.ray_origin">ray_origin (viser.SceneNodePointerEvent attribute)</a>
+        <li><a href="../api/advanced/events/#viser.SceneClickEvent.ray_origin">ray_origin (viser.SceneClickEvent attribute)</a>
 
         <ul>
+          <li><a href="../api/advanced/events/#viser.SceneNodePointerEvent.ray_origin">(viser.SceneNodePointerEvent attribute)</a>
+</li>
           <li><a href="../api/advanced/events/#viser.ScenePointerEvent.ray_origin">(viser.ScenePointerEvent attribute)</a>
 </li>
         </ul></li>
@@ -9435,6 +9457,8 @@
 </li>
           <li><a href="../api/handles/scene_handles/#viser.MeshSkinnedHandle.remove_click_callback">(viser.MeshSkinnedHandle method)</a>
 </li>
+          <li><a href="../api/core/scene_api/#viser.SceneApi.remove_click_callback">(viser.SceneApi method)</a>
+</li>
         </ul></li>
         <li><a href="../api/handles/scene_handles/#viser.BatchedAxesHandle.remove_drag_end_callback">remove_drag_end_callback() (viser.BatchedAxesHandle method)</a>
 
@@ -9527,6 +9551,8 @@
 </li>
         </ul></li>
         <li><a href="../api/core/scene_api/#viser.SceneApi.remove_pointer_callback">remove_pointer_callback() (viser.SceneApi method)</a>
+</li>
+        <li><a href="../api/core/scene_api/#viser.SceneApi.remove_rect_select_callback">remove_rect_select_callback() (viser.SceneApi method)</a>
 </li>
         <li><a href="../api/handles/gui_handles/#viser.GuiFormHandle.remove_submit_callback">remove_submit_callback() (viser.GuiFormHandle method)</a>
 </li>
@@ -9876,6 +9902,8 @@
         </ul></li>
         <li><a href="../api/core/scene_api/#viser.SceneApi">SceneApi (class in viser)</a>
 </li>
+        <li><a href="../api/advanced/events/#viser.SceneClickEvent">SceneClickEvent (class in viser)</a>
+</li>
         <li><a href="../api/advanced/events/#viser.SceneNodeDragEvent">SceneNodeDragEvent (class in viser)</a>
 </li>
         <li><a href="../api/handles/scene_handles/#viser.SceneNodeHandle">SceneNodeHandle (class in viser)</a>
@@ -9883,6 +9911,8 @@
         <li><a href="../api/advanced/events/#viser.SceneNodePointerEvent">SceneNodePointerEvent (class in viser)</a>
 </li>
         <li><a href="../api/advanced/events/#viser.ScenePointerEvent">ScenePointerEvent (class in viser)</a>
+</li>
+        <li><a href="../api/advanced/events/#viser.SceneRectSelectEvent">SceneRectSelectEvent (class in viser)</a>
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.SCHEMA">SCHEMA (viser.Icon attribute)</a>
 </li>
@@ -9904,9 +9934,15 @@
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.SCOREBOARD">SCOREBOARD (viser.Icon attribute)</a>
 </li>
-        <li><a href="../api/advanced/events/#viser.SceneNodePointerEvent.screen_pos">screen_pos (viser.SceneNodePointerEvent attribute)</a>
+        <li><a href="../api/advanced/events/#viser.SceneRectSelectEvent.screen_max">screen_max (viser.SceneRectSelectEvent attribute)</a>
+</li>
+        <li><a href="../api/advanced/events/#viser.SceneRectSelectEvent.screen_min">screen_min (viser.SceneRectSelectEvent attribute)</a>
+</li>
+        <li><a href="../api/advanced/events/#viser.SceneClickEvent.screen_pos">screen_pos (viser.SceneClickEvent attribute)</a>
 
         <ul>
+          <li><a href="../api/advanced/events/#viser.SceneNodePointerEvent.screen_pos">(viser.SceneNodePointerEvent attribute)</a>
+</li>
           <li><a href="../api/advanced/events/#viser.ScenePointerEvent.screen_pos">(viser.ScenePointerEvent attribute)</a>
 </li>
         </ul></li>
@@ -10164,8 +10200,6 @@
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.SHIELD_X">SHIELD_X (viser.Icon attribute)</a>
 </li>
-        <li><a href="../api/advanced/events/#viser.SceneNodeDragEvent.shift">shift (viser.SceneNodeDragEvent attribute)</a>
-</li>
         <li><a href="../api/advanced/icons/#viser.Icon.SHIP">SHIP (viser.Icon attribute)</a>
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.SHIP_OFF">SHIP_OFF (viser.Icon attribute)</a>
@@ -10382,12 +10416,12 @@
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.SORT_DESCENDING_LETTERS">SORT_DESCENDING_LETTERS (viser.Icon attribute)</a>
 </li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="../api/advanced/icons/#viser.Icon.SORT_DESCENDING_NUMBERS">SORT_DESCENDING_NUMBERS (viser.Icon attribute)</a>
 </li>
         <li><a href="../api/advanced/icons/#viser.Icon.SORT_Z_A">SORT_Z_A (viser.Icon attribute)</a>
 </li>
-    </ul></td>
-    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="../api/advanced/uplot/#viser.uplot.Series.sorted">sorted (viser.uplot.Series attribute)</a>
 
         <ul>

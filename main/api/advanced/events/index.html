@@ -491,6 +491,50 @@ values.</p>
 </dd></dl>
 
 <dl class="py class">
+<dt class="sig sig-object py" id="viser.SceneClickEvent">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">SceneClickEvent</span></span><a class="reference internal" href="../../../_modules/viser/_scene_handles/#SceneClickEvent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.SceneClickEvent" title="Link to this definition">¶</a></dt>
+<dd><p>Event passed to scene-level click callbacks (<code class="docutils literal notranslate"><span class="pre">SceneApi.on_click</span></code>).</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneClickEvent.client">
+<span class="sig-name descname"><span class="pre">client</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="../../handles/client_handles/#viser.ClientHandle" title="viser.ClientHandle"><span class="pre">ClientHandle</span></a></em><a class="headerlink" href="#viser.SceneClickEvent.client" title="Link to this definition">¶</a></dt>
+<dd><p>Client that triggered this event.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneClickEvent.client_id">
+<span class="sig-name descname"><span class="pre">client_id</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><a class="headerlink" href="#viser.SceneClickEvent.client_id" title="Link to this definition">¶</a></dt>
+<dd><p>ID of client that triggered this event.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneClickEvent.ray_origin">
+<span class="sig-name descname"><span class="pre">ray_origin</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.SceneClickEvent.ray_origin" title="Link to this definition">¶</a></dt>
+<dd><p>Origin of the 3D ray corresponding to this click, in world coordinates.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneClickEvent.ray_direction">
+<span class="sig-name descname"><span class="pre">ray_direction</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.SceneClickEvent.ray_direction" title="Link to this definition">¶</a></dt>
+<dd><p>Direction of the 3D ray corresponding to this click, in world coordinates.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneClickEvent.screen_pos">
+<span class="sig-name descname"><span class="pre">screen_pos</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.SceneClickEvent.screen_pos" title="Link to this definition">¶</a></dt>
+<dd><p>Screen position of the click in OpenCV image coordinates (0 to 1).
+(0, 0) is the upper-left corner, (1, 1) is the bottom-right corner.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneClickEvent.modifier">
+<span class="sig-name descname"><span class="pre">modifier</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">_messages.KeyModifier</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.SceneClickEvent.modifier" title="Link to this definition">¶</a></dt>
+<dd><p>Modifier-combo held at click time. <code class="docutils literal notranslate"><span class="pre">None</span></code> if no modifiers
+were held; otherwise a canonical <code class="xref py py-data docutils literal notranslate"><span class="pre">KeyModifier</span></code> string.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
 <dt class="sig sig-object py" id="viser.SceneNodeDragEvent">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">SceneNodeDragEvent</span></span><a class="reference internal" href="../../../_modules/viser/_scene_handles/#SceneNodeDragEvent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.SceneNodeDragEvent" title="Link to this definition">¶</a></dt>
 <dd><p>Event passed to scene-node drag callbacks.</p>
@@ -517,14 +561,14 @@ values.</p>
 <span class="sig-name descname"><span class="pre">instance_index</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.SceneNodeDragEvent.instance_index" title="Link to this definition">¶</a></dt>
 <dd><p>Instance index within a batched scene node (e.g. batched meshes,
 batched GLBs, batched axes); <code class="docutils literal notranslate"><span class="pre">None</span></code> for non-batched nodes. Frozen
-at drag-start — the drag always refers to the instance that was
+at drag-start – the drag always refers to the instance that was
 under the cursor when the gesture began.</p>
 </dd></dl>
 
 <dl class="py attribute">
 <dt class="sig sig-object py" id="viser.SceneNodeDragEvent.start_position">
 <span class="sig-name descname"><span class="pre">start_position</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.SceneNodeDragEvent.start_position" title="Link to this definition">¶</a></dt>
-<dd><p>World-coords position of the click point on the object. <em>Live</em> —
+<dd><p>World-coords position of the click point on the object. <em>Live</em> –
 updates each event as the object moves, so it always reflects where
 the grab point currently is in world coords (useful for
 rotate-around-grab gestures).</p>
@@ -556,27 +600,11 @@ in world coords.</p>
 </dd></dl>
 
 <dl class="py attribute">
-<dt class="sig sig-object py" id="viser.SceneNodeDragEvent.ctrl">
-<span class="sig-name descname"><span class="pre">ctrl</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.SceneNodeDragEvent.ctrl" title="Link to this definition">¶</a></dt>
-<dd><p>Whether Ctrl was held at drag-start (frozen for the drag’s lifetime).</p>
-</dd></dl>
-
-<dl class="py attribute">
-<dt class="sig sig-object py" id="viser.SceneNodeDragEvent.meta">
-<span class="sig-name descname"><span class="pre">meta</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.SceneNodeDragEvent.meta" title="Link to this definition">¶</a></dt>
-<dd><p>Whether the Meta/Cmd key was held at drag-start (frozen for the drag’s lifetime).</p>
-</dd></dl>
-
-<dl class="py attribute">
-<dt class="sig sig-object py" id="viser.SceneNodeDragEvent.shift">
-<span class="sig-name descname"><span class="pre">shift</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.SceneNodeDragEvent.shift" title="Link to this definition">¶</a></dt>
-<dd><p>Whether Shift was held at drag-start (frozen for the drag’s lifetime).</p>
-</dd></dl>
-
-<dl class="py attribute">
-<dt class="sig sig-object py" id="viser.SceneNodeDragEvent.alt">
-<span class="sig-name descname"><span class="pre">alt</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.SceneNodeDragEvent.alt" title="Link to this definition">¶</a></dt>
-<dd><p>Whether Alt/Option was held at drag-start (frozen for the drag’s lifetime).</p>
+<dt class="sig sig-object py" id="viser.SceneNodeDragEvent.modifier">
+<span class="sig-name descname"><span class="pre">modifier</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">_messages.KeyModifier</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.SceneNodeDragEvent.modifier" title="Link to this definition">¶</a></dt>
+<dd><p>Modifier-combo held at drag-start (frozen for the drag’s
+lifetime). <code class="docutils literal notranslate"><span class="pre">None</span></code> if no modifiers were held; otherwise a
+canonical <code class="xref py py-data docutils literal notranslate"><span class="pre">KeyModifier</span></code> string.</p>
 </dd></dl>
 
 </dd></dl>
@@ -634,12 +662,26 @@ in world coords.</p>
 <dd><p>Instance ID of the clicked object, if applicable. Currently this is <cite>None</cite> for all objects except for the output of <a class="reference internal" href="../../core/scene_api/#viser.SceneApi.add_batched_axes" title="viser.SceneApi.add_batched_axes"><code class="xref py py-meth docutils literal notranslate"><span class="pre">SceneApi.add_batched_axes()</span></code></a>.</p>
 </dd></dl>
 
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneNodePointerEvent.modifier">
+<span class="sig-name descname"><span class="pre">modifier</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">_messages.KeyModifier</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.SceneNodePointerEvent.modifier" title="Link to this definition">¶</a></dt>
+<dd><p>Modifier-combo held when this event fired. <code class="docutils literal notranslate"><span class="pre">None</span></code> if no
+modifiers were held; otherwise a canonical <code class="xref py py-data docutils literal notranslate"><span class="pre">KeyModifier</span></code>
+string.</p>
+</dd></dl>
+
 </dd></dl>
 
 <dl class="py class">
 <dt class="sig sig-object py" id="viser.ScenePointerEvent">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">ScenePointerEvent</span></span><a class="reference internal" href="../../../_modules/viser/_scene_handles/#ScenePointerEvent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.ScenePointerEvent" title="Link to this definition">¶</a></dt>
-<dd><p>Event passed to pointer callbacks for the scene (currently only clicks).</p>
+<dd><p>Event passed to scene pointer callbacks (legacy <code class="docutils literal notranslate"><span class="pre">on_pointer_event</span></code>).</p>
+<div class="deprecated">
+<p><span class="versionmodified deprecated">Deprecated since version Use: </span><a class="reference internal" href="../../core/scene_api/#viser.SceneApi.on_click" title="viser.SceneApi.on_click"><code class="xref py py-meth docutils literal notranslate"><span class="pre">SceneApi.on_click()</span></code></a> with <a class="reference internal" href="#viser.SceneClickEvent" title="viser.SceneClickEvent"><code class="xref py py-class docutils literal notranslate"><span class="pre">SceneClickEvent</span></code></a> or
+<a class="reference internal" href="../../core/scene_api/#viser.SceneApi.on_rect_select" title="viser.SceneApi.on_rect_select"><code class="xref py py-meth docutils literal notranslate"><span class="pre">SceneApi.on_rect_select()</span></code></a> with <a class="reference internal" href="#viser.SceneRectSelectEvent" title="viser.SceneRectSelectEvent"><code class="xref py py-class docutils literal notranslate"><span class="pre">SceneRectSelectEvent</span></code></a>
+instead. This shape unions the click and rect-select cases into a
+single dataclass with awkward Optional/variable-length fields.</p>
+</div>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="viser.ScenePointerEvent.client">
 <span class="sig-name descname"><span class="pre">client</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="../../handles/client_handles/#viser.ClientHandle" title="viser.ClientHandle"><span class="pre">ClientHandle</span></a></em><a class="headerlink" href="#viser.ScenePointerEvent.client" title="Link to this definition">¶</a></dt>
@@ -678,6 +720,14 @@ in world coords.</p>
 For a box selection, this includes the min- and max- corners of the box.</p>
 </dd></dl>
 
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.ScenePointerEvent.modifier">
+<span class="sig-name descname"><span class="pre">modifier</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">_messages.KeyModifier</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.ScenePointerEvent.modifier" title="Link to this definition">¶</a></dt>
+<dd><p>Modifier-combo held when this event fired. <code class="docutils literal notranslate"><span class="pre">None</span></code> if no
+modifiers were held; otherwise a canonical <code class="xref py py-data docutils literal notranslate"><span class="pre">KeyModifier</span></code>
+string.</p>
+</dd></dl>
+
 <dl class="py property">
 <dt class="sig sig-object py" id="viser.ScenePointerEvent.event">
 <em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">event</span></span><a class="headerlink" href="#viser.ScenePointerEvent.event" title="Link to this definition">¶</a></dt>
@@ -685,6 +735,45 @@ For a box selection, this includes the min- and max- corners of the box.</p>
 <div class="deprecated">
 <p><span class="versionmodified deprecated">Deprecated since version 0.2.23: </span>The <cite>event</cite> property is deprecated. Use <cite>event_type</cite> instead.</p>
 </div>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.SceneRectSelectEvent">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">SceneRectSelectEvent</span></span><a class="reference internal" href="../../../_modules/viser/_scene_handles/#SceneRectSelectEvent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.SceneRectSelectEvent" title="Link to this definition">¶</a></dt>
+<dd><p>Event passed to scene rectangle-select callbacks
+(<code class="docutils literal notranslate"><span class="pre">SceneApi.on_rect_select</span></code>).</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneRectSelectEvent.client">
+<span class="sig-name descname"><span class="pre">client</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="../../handles/client_handles/#viser.ClientHandle" title="viser.ClientHandle"><span class="pre">ClientHandle</span></a></em><a class="headerlink" href="#viser.SceneRectSelectEvent.client" title="Link to this definition">¶</a></dt>
+<dd><p>Client that triggered this event.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneRectSelectEvent.client_id">
+<span class="sig-name descname"><span class="pre">client_id</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><a class="headerlink" href="#viser.SceneRectSelectEvent.client_id" title="Link to this definition">¶</a></dt>
+<dd><p>ID of client that triggered this event.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneRectSelectEvent.screen_min">
+<span class="sig-name descname"><span class="pre">screen_min</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.SceneRectSelectEvent.screen_min" title="Link to this definition">¶</a></dt>
+<dd><p>Min-corner of the selection rectangle in OpenCV image coordinates
+(0 to 1).</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneRectSelectEvent.screen_max">
+<span class="sig-name descname"><span class="pre">screen_max</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.SceneRectSelectEvent.screen_max" title="Link to this definition">¶</a></dt>
+<dd><p>Max-corner of the selection rectangle.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneRectSelectEvent.modifier">
+<span class="sig-name descname"><span class="pre">modifier</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">_messages.KeyModifier</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.SceneRectSelectEvent.modifier" title="Link to this definition">¶</a></dt>
+<dd><p>Modifier-combo held at gesture start. <code class="docutils literal notranslate"><span class="pre">None</span></code> if no modifiers
+were held; otherwise a canonical <code class="xref py py-data docutils literal notranslate"><span class="pre">KeyModifier</span></code> string.</p>
 </dd></dl>
 
 </dd></dl>
@@ -790,6 +879,15 @@ For a box selection, this includes the min- and max- corners of the box.</p>
 <li><a class="reference internal" href="#viser.GuiEvent.target"><code class="docutils literal notranslate"><span class="pre">GuiEvent.target</span></code></a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#viser.SceneClickEvent"><code class="docutils literal notranslate"><span class="pre">SceneClickEvent</span></code></a><ul>
+<li><a class="reference internal" href="#viser.SceneClickEvent.client"><code class="docutils literal notranslate"><span class="pre">SceneClickEvent.client</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneClickEvent.client_id"><code class="docutils literal notranslate"><span class="pre">SceneClickEvent.client_id</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneClickEvent.ray_origin"><code class="docutils literal notranslate"><span class="pre">SceneClickEvent.ray_origin</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneClickEvent.ray_direction"><code class="docutils literal notranslate"><span class="pre">SceneClickEvent.ray_direction</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneClickEvent.screen_pos"><code class="docutils literal notranslate"><span class="pre">SceneClickEvent.screen_pos</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneClickEvent.modifier"><code class="docutils literal notranslate"><span class="pre">SceneClickEvent.modifier</span></code></a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#viser.SceneNodeDragEvent"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent</span></code></a><ul>
 <li><a class="reference internal" href="#viser.SceneNodeDragEvent.client"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.client</span></code></a></li>
 <li><a class="reference internal" href="#viser.SceneNodeDragEvent.client_id"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.client_id</span></code></a></li>
@@ -800,10 +898,7 @@ For a box selection, this includes the min- and max- corners of the box.</p>
 <li><a class="reference internal" href="#viser.SceneNodeDragEvent.end_position"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.end_position</span></code></a></li>
 <li><a class="reference internal" href="#viser.SceneNodeDragEvent.end_screen_pos"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.end_screen_pos</span></code></a></li>
 <li><a class="reference internal" href="#viser.SceneNodeDragEvent.button"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.button</span></code></a></li>
-<li><a class="reference internal" href="#viser.SceneNodeDragEvent.ctrl"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.ctrl</span></code></a></li>
-<li><a class="reference internal" href="#viser.SceneNodeDragEvent.meta"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.meta</span></code></a></li>
-<li><a class="reference internal" href="#viser.SceneNodeDragEvent.shift"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.shift</span></code></a></li>
-<li><a class="reference internal" href="#viser.SceneNodeDragEvent.alt"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.alt</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneNodeDragEvent.modifier"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.modifier</span></code></a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#viser.SceneNodePointerEvent"><code class="docutils literal notranslate"><span class="pre">SceneNodePointerEvent</span></code></a><ul>
@@ -815,6 +910,7 @@ For a box selection, this includes the min- and max- corners of the box.</p>
 <li><a class="reference internal" href="#viser.SceneNodePointerEvent.ray_direction"><code class="docutils literal notranslate"><span class="pre">SceneNodePointerEvent.ray_direction</span></code></a></li>
 <li><a class="reference internal" href="#viser.SceneNodePointerEvent.screen_pos"><code class="docutils literal notranslate"><span class="pre">SceneNodePointerEvent.screen_pos</span></code></a></li>
 <li><a class="reference internal" href="#viser.SceneNodePointerEvent.instance_index"><code class="docutils literal notranslate"><span class="pre">SceneNodePointerEvent.instance_index</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneNodePointerEvent.modifier"><code class="docutils literal notranslate"><span class="pre">SceneNodePointerEvent.modifier</span></code></a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#viser.ScenePointerEvent"><code class="docutils literal notranslate"><span class="pre">ScenePointerEvent</span></code></a><ul>
@@ -824,7 +920,16 @@ For a box selection, this includes the min- and max- corners of the box.</p>
 <li><a class="reference internal" href="#viser.ScenePointerEvent.ray_origin"><code class="docutils literal notranslate"><span class="pre">ScenePointerEvent.ray_origin</span></code></a></li>
 <li><a class="reference internal" href="#viser.ScenePointerEvent.ray_direction"><code class="docutils literal notranslate"><span class="pre">ScenePointerEvent.ray_direction</span></code></a></li>
 <li><a class="reference internal" href="#viser.ScenePointerEvent.screen_pos"><code class="docutils literal notranslate"><span class="pre">ScenePointerEvent.screen_pos</span></code></a></li>
+<li><a class="reference internal" href="#viser.ScenePointerEvent.modifier"><code class="docutils literal notranslate"><span class="pre">ScenePointerEvent.modifier</span></code></a></li>
 <li><a class="reference internal" href="#viser.ScenePointerEvent.event"><code class="docutils literal notranslate"><span class="pre">ScenePointerEvent.event</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.SceneRectSelectEvent"><code class="docutils literal notranslate"><span class="pre">SceneRectSelectEvent</span></code></a><ul>
+<li><a class="reference internal" href="#viser.SceneRectSelectEvent.client"><code class="docutils literal notranslate"><span class="pre">SceneRectSelectEvent.client</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneRectSelectEvent.client_id"><code class="docutils literal notranslate"><span class="pre">SceneRectSelectEvent.client_id</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneRectSelectEvent.screen_min"><code class="docutils literal notranslate"><span class="pre">SceneRectSelectEvent.screen_min</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneRectSelectEvent.screen_max"><code class="docutils literal notranslate"><span class="pre">SceneRectSelectEvent.screen_max</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneRectSelectEvent.modifier"><code class="docutils literal notranslate"><span class="pre">SceneRectSelectEvent.modifier</span></code></a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#viser.TransformControlsEvent"><code class="docutils literal notranslate"><span class="pre">TransformControlsEvent</span></code></a><ul>

@@ -436,13 +436,13 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">partial</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">TYPE_CHECKING</span><span class="p">,</span>
+    <span class="n">Any</span><span class="p">,</span>
     <span class="n">Callable</span><span class="p">,</span>
     <span class="n">Optional</span><span class="p">,</span>
     <span class="n">Tuple</span><span class="p">,</span>
     <span class="n">TypeVar</span><span class="p">,</span>
     <span class="n">Union</span><span class="p">,</span>
     <span class="n">cast</span><span class="p">,</span>
-    <span class="n">get_args</span><span class="p">,</span>
     <span class="n">overload</span><span class="p">,</span>
 <span class="p">)</span>
 
@@ -482,10 +482,12 @@
     <span class="n">PointCloudHandle</span><span class="p">,</span>
     <span class="n">PointLightHandle</span><span class="p">,</span>
     <span class="n">RectAreaLightHandle</span><span class="p">,</span>
+    <span class="n">SceneClickEvent</span><span class="p">,</span>
     <span class="n">SceneNodeDragEvent</span><span class="p">,</span>
     <span class="n">SceneNodeHandle</span><span class="p">,</span>
     <span class="n">SceneNodePointerEvent</span><span class="p">,</span>
     <span class="n">ScenePointerEvent</span><span class="p">,</span>
+    <span class="n">SceneRectSelectEvent</span><span class="p">,</span>
     <span class="n">SplineCatmullRomHandle</span><span class="p">,</span>
     <span class="n">SplineCubicBezierHandle</span><span class="p">,</span>
     <span class="n">SpotLightHandle</span><span class="p">,</span>
@@ -514,42 +516,42 @@
 <span class="n">NoneOrCoroutine</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">&quot;NoneOrCoroutine&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="n">Coroutine</span><span class="p">)</span>
 
 
+<span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">_PointerCallbackEntry</span><span class="p">:</span>
+    <span class="n">callback</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Any</span><span class="p">],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">]</span>
+    <span class="n">event_type</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">ScenePointerEventType</span>
+    <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span>
+    <span class="n">event_class</span><span class="p">:</span> <span class="nb">type</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_modifier_matches_filter</span><span class="p">(</span>
+    <span class="n">held</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">filter_modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return whether a canonical held-modifier string matches a</span>
+<span class="sd">    :data:`KeyModifier` filter.</span>
+
+<span class="sd">    Both inputs are already canonicalized by the wire layer (server-side</span>
+<span class="sd">    receives them from clients post-canonicalization; user-supplied</span>
+<span class="sd">    filters go through ``_normalize_key_modifier``), so this is just</span>
+<span class="sd">    string equality.</span>
+
+<span class="sd">    Mirrored client-side in ``matchesModifierFilter``</span>
+<span class="sd">    (``src/viser/client/src/dragUtils.ts``). Drift = silent missed</span>
+<span class="sd">    events or spurious teardowns.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">held</span> <span class="o">==</span> <span class="n">filter_modifier</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_drag_input_matches_filter</span><span class="p">(</span>
     <span class="nb">input</span><span class="p">:</span> <span class="n">_DragInput</span><span class="p">,</span>
     <span class="n">filter_button</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">,</span>
-    <span class="n">filter_modifier</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span><span class="p">],</span>
+    <span class="n">filter_modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return whether a drag input matches a registered binding filter.</span>
-
-<span class="sd">    Exact-match: listed modifiers must be held, others must not.</span>
-<span class="sd">    ``filter_modifier=None`` = no modifiers held. ``&quot;cmd/ctrl&quot;`` treats</span>
-<span class="sd">    Ctrl and Cmd (meta) as interchangeable — matches whenever either is</span>
-<span class="sd">    held.</span>
-
-<span class="sd">    The client mirrors this logic in ``matchesDragBinding`` (see</span>
-<span class="sd">    ``src/viser/client/src/dragUtils.ts``) to filter at the source</span>
-<span class="sd">    before sending a drag-start. Both must agree: the client decides</span>
-<span class="sd">    whether to enter drag mode at all; the server decides which</span>
-<span class="sd">    registered callbacks fire per phase. Drift = silent missed drags</span>
-<span class="sd">    or spurious teardowns.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return whether a drag input matches a registered binding filter.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">filter_button</span> <span class="o">!=</span> <span class="nb">input</span><span class="o">.</span><span class="n">button</span><span class="p">:</span>
         <span class="k">return</span> <span class="kc">False</span>
-    <span class="c1"># The 7 valid KeyModifier strings are uniquely identifiable by</span>
-    <span class="c1"># substring presence of &quot;cmd/ctrl&quot;/&quot;alt&quot;/&quot;shift&quot;, so an `in` check</span>
-    <span class="c1"># on the joined string suffices without splitting.</span>
-    <span class="n">s</span> <span class="o">=</span> <span class="n">filter_modifier</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
-    <span class="k">if</span> <span class="nb">input</span><span class="o">.</span><span class="n">shift</span> <span class="o">!=</span> <span class="p">(</span><span class="s2">&quot;shift&quot;</span> <span class="ow">in</span> <span class="n">s</span><span class="p">):</span>
-        <span class="k">return</span> <span class="kc">False</span>
-    <span class="k">if</span> <span class="nb">input</span><span class="o">.</span><span class="n">alt</span> <span class="o">!=</span> <span class="p">(</span><span class="s2">&quot;alt&quot;</span> <span class="ow">in</span> <span class="n">s</span><span class="p">):</span>
-        <span class="k">return</span> <span class="kc">False</span>
-    <span class="k">if</span> <span class="s2">&quot;cmd/ctrl&quot;</span> <span class="ow">in</span> <span class="n">s</span><span class="p">:</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="nb">input</span><span class="o">.</span><span class="n">ctrl</span> <span class="ow">or</span> <span class="nb">input</span><span class="o">.</span><span class="n">meta</span><span class="p">):</span>
-            <span class="k">return</span> <span class="kc">False</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="k">if</span> <span class="nb">input</span><span class="o">.</span><span class="n">ctrl</span> <span class="ow">or</span> <span class="nb">input</span><span class="o">.</span><span class="n">meta</span><span class="p">:</span>
-            <span class="k">return</span> <span class="kc">False</span>
-    <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">return</span> <span class="n">_modifier_matches_filter</span><span class="p">(</span><span class="nb">input</span><span class="o">.</span><span class="n">modifier</span><span class="p">,</span> <span class="n">filter_modifier</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_encode_rgb</span><span class="p">(</span><span class="n">rgb</span><span class="p">:</span> <span class="n">RgbTupleOrArray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
@@ -640,10 +642,10 @@
         <span class="c1"># the user calls ``handle.remove()`` mid-drag (which pops the</span>
         <span class="c1"># handle from ``_handle_from_node_name``) and when a client</span>
         <span class="c1"># disconnects mid-drag (where the ``end`` message never</span>
-        <span class="c1"># arrives) — see ``_drop_active_drags_for_client``. Without</span>
+        <span class="c1"># arrives) -- see ``_drop_active_drags_for_client``. Without</span>
         <span class="c1"># this the end callback is silently dropped and per-drag user</span>
         <span class="c1"># state leaks. Keyed by ``(client_id, node_name)`` because two</span>
-        <span class="c1"># clients can drag the same node concurrently — keying by name</span>
+        <span class="c1"># clients can drag the same node concurrently -- keying by name</span>
         <span class="c1"># alone would let one client&#39;s start overwrite the other&#39;s,</span>
         <span class="c1"># and ``end`` from the first client would pop the wrong entry.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_active_drag_handles</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span>
@@ -651,11 +653,12 @@
             <span class="nb">tuple</span><span class="p">[</span><span class="n">_RaycastSupportedSceneNodeHandle</span><span class="p">,</span> <span class="n">_messages</span><span class="o">.</span><span class="n">SceneNodeDragMessage</span><span class="p">],</span>
         <span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span><span class="p">:</span> <span class="p">(</span>
-            <span class="n">Callable</span><span class="p">[[</span><span class="n">ScenePointerEvent</span><span class="p">],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span>
-        <span class="p">)</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_done_cb</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">]</span> <span class="o">=</span> <span class="k">lambda</span><span class="p">:</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_event_type</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">ScenePointerEventType</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="c1"># Enable/disable of ``ScenePointerEnableMessage`` is</span>
+        <span class="c1"># reference-counted per ``event_type``: enable when the first</span>
+        <span class="c1"># callback for that type registers, disable when the last is</span>
+        <span class="c1"># removed.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">_PointerCallbackEntry</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_done_cb</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Callable</span><span class="p">[[],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
 
         <span class="c1"># Set up world axes handle.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">world_axes</span><span class="p">:</span> <span class="n">FrameHandle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">add_frame</span><span class="p">(</span>
@@ -704,7 +707,7 @@
 <span class="sd">        disconnect both leaks the ``_active_drag_handles`` entry (the</span>
 <span class="sd">        entry pins a ``SceneNodeHandle`` reference, and</span>
 <span class="sd">        ``_is_drag_active_for`` will return spurious-true for the</span>
-<span class="sd">        leaked node name — preventing a future ``remove()`` from</span>
+<span class="sd">        leaked node name -- preventing a future ``remove()`` from</span>
 <span class="sd">        clearing its callbacks) and silently skips ``on_drag_end``.&quot;&quot;&quot;</span>
         <span class="n">stale_keys</span> <span class="o">=</span> <span class="p">[</span><span class="n">k</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active_drag_handles</span> <span class="k">if</span> <span class="n">k</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">client_id</span><span class="p">]</span>
         <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">stale_keys</span><span class="p">:</span>
@@ -3282,6 +3285,21 @@
                     <span class="n">print_threadpool_errors</span>
                 <span class="p">)</span>
 
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_dispatch_callback</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">cb</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Any</span><span class="p">],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">],</span>
+        <span class="n">event</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Run a user callback either via ``await`` (async) or via the</span>
+<span class="sd">        thread pool (sync). The thread-pool branch routes exceptions</span>
+<span class="sd">        through ``print_threadpool_errors``.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
+            <span class="k">await</span> <span class="n">cb</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">cb</span><span class="p">,</span> <span class="n">event</span><span class="p">)</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span>
+                <span class="n">print_threadpool_errors</span>
+            <span class="p">)</span>
+
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_handle_node_click_updates</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">SceneNodeClickMessage</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -3289,23 +3307,24 @@
         <span class="n">handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">handle</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span>
-        <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="n">handle</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span><span class="p">:</span>
-            <span class="n">event</span> <span class="o">=</span> <span class="n">SceneNodePointerEvent</span><span class="p">(</span>
-                <span class="n">client</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_client_handle</span><span class="p">(</span><span class="n">client_id</span><span class="p">),</span>
-                <span class="n">client_id</span><span class="o">=</span><span class="n">client_id</span><span class="p">,</span>
-                <span class="n">event</span><span class="o">=</span><span class="s2">&quot;click&quot;</span><span class="p">,</span>
-                <span class="n">target</span><span class="o">=</span><span class="n">cast</span><span class="p">(</span><span class="n">_RaycastSupportedSceneNodeHandle</span><span class="p">,</span> <span class="n">handle</span><span class="p">),</span>
-                <span class="n">ray_origin</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">ray_origin</span><span class="p">,</span>
-                <span class="n">ray_direction</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">ray_direction</span><span class="p">,</span>
-                <span class="n">screen_pos</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">screen_pos</span><span class="p">,</span>
-                <span class="n">instance_index</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">instance_index</span><span class="p">,</span>
-            <span class="p">)</span>
-            <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
-                <span class="k">await</span> <span class="n">cb</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">cb</span><span class="p">,</span> <span class="n">event</span><span class="p">)</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span>
-                    <span class="n">print_threadpool_errors</span>
-                <span class="p">)</span>
+        <span class="n">event</span> <span class="o">=</span> <span class="n">SceneNodePointerEvent</span><span class="p">(</span>
+            <span class="n">client</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_client_handle</span><span class="p">(</span><span class="n">client_id</span><span class="p">),</span>
+            <span class="n">client_id</span><span class="o">=</span><span class="n">client_id</span><span class="p">,</span>
+            <span class="n">event</span><span class="o">=</span><span class="s2">&quot;click&quot;</span><span class="p">,</span>
+            <span class="n">target</span><span class="o">=</span><span class="n">cast</span><span class="p">(</span><span class="n">_RaycastSupportedSceneNodeHandle</span><span class="p">,</span> <span class="n">handle</span><span class="p">),</span>
+            <span class="n">ray_origin</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">ray_origin</span><span class="p">,</span>
+            <span class="n">ray_direction</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">ray_direction</span><span class="p">,</span>
+            <span class="n">screen_pos</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">screen_pos</span><span class="p">,</span>
+            <span class="n">instance_index</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">instance_index</span><span class="p">,</span>
+            <span class="n">modifier</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">modifier</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="c1"># Snapshot the list -- a callback may register/remove other</span>
+        <span class="c1"># callbacks during dispatch; mutations should not affect the</span>
+        <span class="c1"># in-flight iteration.</span>
+        <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">handle</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span><span class="p">):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">_modifier_matches_filter</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">modifier</span><span class="p">,</span> <span class="n">entry</span><span class="o">.</span><span class="n">modifier</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dispatch_callback</span><span class="p">(</span><span class="n">entry</span><span class="o">.</span><span class="n">callback</span><span class="p">,</span> <span class="n">event</span><span class="p">)</span>
 
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_handle_node_drag</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -3317,7 +3336,7 @@
 
 <span class="sd">        Note on ordering: sync callbacks are submitted to a thread pool</span>
 <span class="sd">        fire-and-forget, so two drags messages dispatched back-to-back</span>
-<span class="sd">        (e.g. start + update) can race — the update&#39;s callback may run</span>
+<span class="sd">        (e.g. start + update) can race -- the update&#39;s callback may run</span>
 <span class="sd">        before the start&#39;s callback finishes, leaving user state</span>
 <span class="sd">        half-initialized. Async callbacks are awaited in order and don&#39;t</span>
 <span class="sd">        have this issue, so for stateful gestures define your callbacks</span>
@@ -3328,7 +3347,7 @@
         <span class="c1"># disconnect can carry the latest positions). On update, refresh</span>
         <span class="c1"># the stored message. On update/end, prefer the active-drag map</span>
         <span class="c1"># so we can still dispatch even if the node was removed</span>
-        <span class="c1"># mid-drag — the user&#39;s on_drag_end MUST fire so per-drag state</span>
+        <span class="c1"># mid-drag -- the user&#39;s on_drag_end MUST fire so per-drag state</span>
         <span class="c1"># can be released. The active-drag entry is always cleared on</span>
         <span class="c1"># ``end``, even when dispatch falls through.</span>
         <span class="n">active_key</span> <span class="o">=</span> <span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="n">message</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
@@ -3362,13 +3381,7 @@
 
 <span class="sd">        Shared by ``_handle_node_drag`` (live messages) and</span>
 <span class="sd">        ``_drop_active_drags_for_client`` (synthetic end on disconnect).&quot;&quot;&quot;</span>
-        <span class="nb">input</span> <span class="o">=</span> <span class="n">_DragInput</span><span class="p">(</span>
-            <span class="n">button</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">button</span><span class="p">,</span>
-            <span class="n">ctrl</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">ctrl</span><span class="p">,</span>
-            <span class="n">meta</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">meta</span><span class="p">,</span>
-            <span class="n">shift</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">shift</span><span class="p">,</span>
-            <span class="n">alt</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">alt</span><span class="p">,</span>
-        <span class="p">)</span>
+        <span class="nb">input</span> <span class="o">=</span> <span class="n">_DragInput</span><span class="p">(</span><span class="n">button</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">button</span><span class="p">,</span> <span class="n">modifier</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">modifier</span><span class="p">)</span>
         <span class="n">matching</span> <span class="o">=</span> <span class="n">handle</span><span class="o">.</span><span class="n">_dispatch_drag</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">phase</span><span class="p">,</span> <span class="nb">input</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">matching</span><span class="p">:</span>
             <span class="k">return</span>
@@ -3383,148 +3396,340 @@
             <span class="n">end_position</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">end_position</span><span class="p">,</span>
             <span class="n">end_screen_pos</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">end_screen_pos</span><span class="p">,</span>
             <span class="n">button</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">button</span><span class="p">,</span>
-            <span class="n">ctrl</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">ctrl</span><span class="p">,</span>
-            <span class="n">meta</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">meta</span><span class="p">,</span>
-            <span class="n">shift</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">shift</span><span class="p">,</span>
-            <span class="n">alt</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">alt</span><span class="p">,</span>
+            <span class="n">modifier</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">modifier</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="n">matching</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
-                <span class="k">await</span> <span class="n">cb</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">cb</span><span class="p">,</span> <span class="n">event</span><span class="p">)</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span>
-                    <span class="n">print_threadpool_errors</span>
-                <span class="p">)</span>
+            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dispatch_callback</span><span class="p">(</span><span class="n">cb</span><span class="p">,</span> <span class="n">event</span><span class="p">)</span>
 
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_handle_scene_pointer_updates</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">ScenePointerMessage</span>
     <span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Callback for handling click messages.&quot;&quot;&quot;</span>
-        <span class="n">event</span> <span class="o">=</span> <span class="n">ScenePointerEvent</span><span class="p">(</span>
-            <span class="n">client</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_client_handle</span><span class="p">(</span><span class="n">client_id</span><span class="p">),</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Dispatch a scene-level click or rect-select to matching</span>
+<span class="sd">        callbacks (new typed APIs and legacy ``on_pointer_event``).&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">client</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_client_handle</span><span class="p">(</span><span class="n">client_id</span><span class="p">)</span>
+        <span class="n">modifier</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">modifier</span>
+
+        <span class="c1"># Build the typed event once for the actual gesture; the legacy</span>
+        <span class="c1"># union-shape event is also built once. ``ScenePointerEvent``</span>
+        <span class="c1"># remains a separate path because it lumps clicks and rect-</span>
+        <span class="c1"># selects into one shape with Optional ray fields.</span>
+        <span class="n">typed_event</span><span class="p">:</span> <span class="n">SceneClickEvent</span> <span class="o">|</span> <span class="n">SceneRectSelectEvent</span>
+        <span class="k">if</span> <span class="n">message</span><span class="o">.</span><span class="n">event_type</span> <span class="o">==</span> <span class="s2">&quot;click&quot;</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="n">message</span><span class="o">.</span><span class="n">ray_origin</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">assert</span> <span class="n">message</span><span class="o">.</span><span class="n">ray_direction</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="n">typed_event</span> <span class="o">=</span> <span class="n">SceneClickEvent</span><span class="p">(</span>
+                <span class="n">client</span><span class="o">=</span><span class="n">client</span><span class="p">,</span>
+                <span class="n">client_id</span><span class="o">=</span><span class="n">client_id</span><span class="p">,</span>
+                <span class="n">ray_origin</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">ray_origin</span><span class="p">,</span>
+                <span class="n">ray_direction</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">ray_direction</span><span class="p">,</span>
+                <span class="n">screen_pos</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">screen_pos</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                <span class="n">modifier</span><span class="o">=</span><span class="n">modifier</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">typed_event</span> <span class="o">=</span> <span class="n">SceneRectSelectEvent</span><span class="p">(</span>
+                <span class="n">client</span><span class="o">=</span><span class="n">client</span><span class="p">,</span>
+                <span class="n">client_id</span><span class="o">=</span><span class="n">client_id</span><span class="p">,</span>
+                <span class="n">screen_min</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">screen_pos</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                <span class="n">screen_max</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">screen_pos</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                <span class="n">modifier</span><span class="o">=</span><span class="n">modifier</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="n">legacy_event</span> <span class="o">=</span> <span class="n">ScenePointerEvent</span><span class="p">(</span>
+            <span class="n">client</span><span class="o">=</span><span class="n">client</span><span class="p">,</span>
             <span class="n">client_id</span><span class="o">=</span><span class="n">client_id</span><span class="p">,</span>
             <span class="n">event_type</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">event_type</span><span class="p">,</span>
             <span class="n">ray_origin</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">ray_origin</span><span class="p">,</span>
             <span class="n">ray_direction</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">ray_direction</span><span class="p">,</span>
             <span class="n">screen_pos</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">screen_pos</span><span class="p">,</span>
+            <span class="n">modifier</span><span class="o">=</span><span class="n">modifier</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="c1"># Call the callback if it exists, and the after-run callback.</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">return</span>
-        <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span><span class="p">):</span>
-            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span><span class="p">,</span> <span class="n">event</span>
-            <span class="p">)</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span><span class="n">print_threadpool_errors</span><span class="p">)</span>
+
+        <span class="c1"># Snapshot the list -- a callback may register/remove other</span>
+        <span class="c1"># callbacks during dispatch; mutations should not affect the</span>
+        <span class="c1"># in-flight iteration.</span>
+        <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">event_type</span> <span class="o">!=</span> <span class="n">message</span><span class="o">.</span><span class="n">event_type</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">_modifier_matches_filter</span><span class="p">(</span><span class="n">modifier</span><span class="p">,</span> <span class="n">entry</span><span class="o">.</span><span class="n">modifier</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">event</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">legacy_event</span> <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">event_class</span> <span class="ow">is</span> <span class="n">ScenePointerEvent</span> <span class="k">else</span> <span class="n">typed_event</span>
+            <span class="p">)</span>
+            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dispatch_callback</span><span class="p">(</span><span class="n">entry</span><span class="o">.</span><span class="n">callback</span><span class="p">,</span> <span class="n">event</span><span class="p">)</span>
+
+<div class="viewcode-block" id="SceneApi.on_click">
+<a class="viewcode-back" href="../../../api/core/scene_api/#viser.SceneApi.on_click">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_click</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[</span>
+        <span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">SceneClickEvent</span><span class="p">],</span> <span class="kc">None</span><span class="p">]],</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneClickEvent</span><span class="p">],</span> <span class="kc">None</span><span class="p">]</span>
+    <span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register a callback for clicks anywhere in the scene</span>
+<span class="sd">        (background and meshes both, after the per-node ``on_click``</span>
+<span class="sd">        for any clickable mesh under the cursor).</span>
+
+<span class="sd">        Multiple callbacks can be registered. Each fires only when its</span>
+<span class="sd">        ``modifier`` filter matches the modifiers held at click time.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            modifier: Modifier-combo filter. Default ``None`` matches</span>
+<span class="sd">                &quot;no modifiers held&quot;. ``&quot;cmd/ctrl&quot;``, ``&quot;shift&quot;``,</span>
+<span class="sd">                ``&quot;cmd/ctrl+shift&quot;``, etc. are exact matches (listed</span>
+<span class="sd">                modifiers held, others not). ``cmd/ctrl`` matches</span>
+<span class="sd">                whenever either Cmd or Ctrl is held.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_register_scene_pointer_callback</span><span class="p">(</span><span class="s2">&quot;click&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="p">,</span> <span class="n">SceneClickEvent</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="SceneApi.on_rect_select">
+<a class="viewcode-back" href="../../../api/core/scene_api/#viser.SceneApi.on_rect_select">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_rect_select</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[</span>
+        <span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">SceneRectSelectEvent</span><span class="p">],</span> <span class="kc">None</span><span class="p">]],</span>
+        <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneRectSelectEvent</span><span class="p">],</span> <span class="kc">None</span><span class="p">],</span>
+    <span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register a callback for rectangle-select gestures (drag a</span>
+<span class="sd">        box on the canvas).</span>
+
+<span class="sd">        Multiple callbacks can be registered. Each fires only when its</span>
+<span class="sd">        ``modifier`` filter matches the modifiers held at gesture</span>
+<span class="sd">        start. The selection rectangle is drawn on the canvas only</span>
+<span class="sd">        when the held modifiers match at least one registered</span>
+<span class="sd">        callback&#39;s filter.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            modifier: See :meth:`on_click` for semantics.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_register_scene_pointer_callback</span><span class="p">(</span>
+            <span class="s2">&quot;rect-select&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="p">,</span> <span class="n">SceneRectSelectEvent</span>
+        <span class="p">)</span></div>
+
 
 <div class="viewcode-block" id="SceneApi.on_pointer_event">
 <a class="viewcode-back" href="../../../api/core/scene_api/#viser.SceneApi.on_pointer_event">[docs]</a>
+    <span class="nd">@deprecated</span><span class="p">(</span>
+        <span class="s2">&quot;Use on_click() (with SceneClickEvent) or on_rect_select() &quot;</span>
+        <span class="s2">&quot;(with SceneRectSelectEvent) instead.&quot;</span>
+    <span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">on_pointer_event</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">event_type</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;click&quot;</span><span class="p">,</span> <span class="s2">&quot;rect-select&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">event_type</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;click&quot;</span><span class="p">,</span> <span class="s2">&quot;rect-select&quot;</span><span class="p">],</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[</span>
         <span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">ScenePointerEvent</span><span class="p">],</span> <span class="kc">None</span><span class="p">]],</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">ScenePointerEvent</span><span class="p">],</span> <span class="kc">None</span><span class="p">]</span>
     <span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add a callback for scene pointer events.</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Legacy registration that hands callbacks the union-shaped</span>
+<span class="sd">        :class:`ScenePointerEvent`. Single-slot semantics: re-registering</span>
+<span class="sd">        replaces the existing pointer callback (and fires any pending</span>
+<span class="sd">        :meth:`on_pointer_callback_removed` cleanups).</span>
 
-<span class="sd">        Args:</span>
-<span class="sd">            event_type: event to listen to.</span>
+<span class="sd">        .. deprecated::</span>
+<span class="sd">            Use :meth:`on_click` or :meth:`on_rect_select` instead.</span>
+<span class="sd">            They produce the typed :class:`SceneClickEvent` /</span>
+<span class="sd">            :class:`SceneRectSelectEvent` and accept multiple</span>
+<span class="sd">            coexisting callbacks.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># Ensure the event type is valid.</span>
-        <span class="k">assert</span> <span class="n">event_type</span> <span class="ow">in</span> <span class="n">get_args</span><span class="p">(</span><span class="n">_messages</span><span class="o">.</span><span class="n">ScenePointerEventType</span><span class="p">)</span>
-
-        <span class="kn">from</span><span class="w"> </span><span class="nn">._viser</span><span class="w"> </span><span class="kn">import</span> <span class="n">ClientHandle</span><span class="p">,</span> <span class="n">ViserServer</span>
-
-        <span class="k">def</span><span class="w"> </span><span class="nf">cleanup_previous_event</span><span class="p">(</span><span class="n">target</span><span class="p">:</span> <span class="n">ViserServer</span> <span class="o">|</span> <span class="n">ClientHandle</span><span class="p">):</span>
-            <span class="c1"># If the server or client does not have a scene pointer callback, return.</span>
-            <span class="k">if</span> <span class="n">target</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">_scene_pointer_cb</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">return</span>
-
-            <span class="c1"># Remove callback.</span>
-            <span class="n">target</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">remove_pointer_callback</span><span class="p">()</span>
+        <span class="n">register</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_register_scene_pointer_callback</span><span class="p">(</span>
+            <span class="n">event_type</span><span class="p">,</span> <span class="n">modifier</span><span class="p">,</span> <span class="n">ScenePointerEvent</span>
+        <span class="p">)</span>
 
         <span class="k">def</span><span class="w"> </span><span class="nf">decorator</span><span class="p">(</span>
             <span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">ScenePointerEvent</span><span class="p">],</span> <span class="kc">None</span><span class="p">],</span>
         <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">ScenePointerEvent</span><span class="p">],</span> <span class="kc">None</span><span class="p">]:</span>
-            <span class="c1"># Check if another scene pointer event was previously registered.</span>
-            <span class="c1"># If so, we need to clear the previous event and register the new one.</span>
-            <span class="n">cleanup_previous_event</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="p">)</span>
-
-            <span class="c1"># If called on the server handle, remove all clients&#39; callbacks.</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="p">,</span> <span class="n">ViserServer</span><span class="p">):</span>
-                <span class="k">for</span> <span class="n">client</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="o">.</span><span class="n">get_clients</span><span class="p">()</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
-                    <span class="n">cleanup_previous_event</span><span class="p">(</span><span class="n">client</span><span class="p">)</span>
-
-            <span class="c1"># If called on the client handle, and server handle has a callback, remove the server&#39;s callback.</span>
-            <span class="c1"># (If the server has a callback, none of the clients should have callbacks.)</span>
-            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="p">,</span> <span class="n">ClientHandle</span><span class="p">):</span>
-                <span class="n">server</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="o">.</span><span class="n">_viser_server</span>
-                <span class="n">cleanup_previous_event</span><span class="p">(</span><span class="n">server</span><span class="p">)</span>
-
-            <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span> <span class="o">=</span> <span class="n">func</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_event_type</span> <span class="o">=</span> <span class="n">event_type</span>
-
-            <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
-                <span class="n">_messages</span><span class="o">.</span><span class="n">ScenePointerEnableMessage</span><span class="p">(</span><span class="n">enable</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">event_type</span><span class="o">=</span><span class="n">event_type</span><span class="p">)</span>
-            <span class="p">)</span>
-            <span class="k">return</span> <span class="n">func</span>
+            <span class="c1"># Preserve legacy &quot;one pointer callback at a time&quot; semantic</span>
+            <span class="c1"># -- replace any prior on_pointer_event/on_click/on_rect_select</span>
+            <span class="c1"># registrations and fire their cleanup hooks before adding.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_remove_all_pointer_callbacks</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">register</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
 
         <span class="k">return</span> <span class="n">decorator</span></div>
 
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_register_scene_pointer_callback</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">event_type</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">ScenePointerEventType</span><span class="p">,</span>
+        <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">event_class</span><span class="p">:</span> <span class="nb">type</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+        <span class="n">normalized_modifier</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">_normalize_key_modifier</span><span class="p">(</span><span class="n">modifier</span><span class="p">)</span>
+
+        <span class="kn">from</span><span class="w"> </span><span class="nn">._viser</span><span class="w"> </span><span class="kn">import</span> <span class="n">ClientHandle</span><span class="p">,</span> <span class="n">ViserServer</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">decorator</span><span class="p">(</span><span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Any</span><span class="p">],</span> <span class="kc">None</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Any</span><span class="p">],</span> <span class="kc">None</span><span class="p">]:</span>
+            <span class="c1"># Server-scope and client-scope share the same client-side</span>
+            <span class="c1"># enable toggle. Coexistence would let one scope&#39;s</span>
+            <span class="c1"># disable silently deactivate the other&#39;s callbacks;</span>
+            <span class="c1"># enforce exclusivity instead.</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="p">,</span> <span class="n">ViserServer</span><span class="p">):</span>
+                <span class="k">for</span> <span class="n">client</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="o">.</span><span class="n">get_clients</span><span class="p">()</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+                    <span class="n">client</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">_remove_all_pointer_callbacks</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="p">,</span> <span class="n">ClientHandle</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="o">.</span><span class="n">_viser_server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">_remove_all_pointer_callbacks</span><span class="p">()</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">_PointerCallbackEntry</span><span class="p">(</span>
+                    <span class="n">callback</span><span class="o">=</span><span class="n">func</span><span class="p">,</span>
+                    <span class="n">event_type</span><span class="o">=</span><span class="n">event_type</span><span class="p">,</span>
+                    <span class="n">modifier</span><span class="o">=</span><span class="n">normalized_modifier</span><span class="p">,</span>
+                    <span class="n">event_class</span><span class="o">=</span><span class="n">event_class</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_sync_scene_pointer_filters</span><span class="p">(</span><span class="n">event_type</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">func</span>
+
+        <span class="k">return</span> <span class="n">decorator</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_sync_scene_pointer_filters</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">event_type</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">ScenePointerEventType</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Send the current modifier-filter set for ``event_type`` to the</span>
+<span class="sd">        client. An empty set disables the event type. Duplicates are</span>
+<span class="sd">        collapsed -- multiple callbacks under the same filter only need</span>
+<span class="sd">        one wire entry to gate gesture engagement.&quot;&quot;&quot;</span>
+        <span class="n">modifiers</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span>
+            <span class="n">Tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span><span class="p">],</span> <span class="o">...</span><span class="p">],</span>
+            <span class="nb">tuple</span><span class="p">(</span>
+                <span class="p">{</span>
+                    <span class="n">entry</span><span class="o">.</span><span class="n">modifier</span>
+                    <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span>
+                    <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">event_type</span> <span class="o">==</span> <span class="n">event_type</span>
+                <span class="p">}</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+            <span class="n">_messages</span><span class="o">.</span><span class="n">ScenePointerEnableMessage</span><span class="p">(</span>
+                <span class="n">event_type</span><span class="o">=</span><span class="n">event_type</span><span class="p">,</span> <span class="n">modifiers</span><span class="o">=</span><span class="n">modifiers</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
 <div class="viewcode-block" id="SceneApi.on_pointer_callback_removed">
 <a class="viewcode-back" href="../../../api/core/scene_api/#viser.SceneApi.on_pointer_callback_removed">[docs]</a>
+    <span class="nd">@deprecated</span><span class="p">(</span>
+        <span class="s2">&quot;Run cleanup inline right after remove_click_callback() / &quot;</span>
+        <span class="s2">&quot;remove_rect_select_callback() instead.&quot;</span>
+    <span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">on_pointer_callback_removed</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="n">NoneOrCoroutine</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add a callback to run automatically when the callback for a scene</span>
-<span class="sd">        pointer event is removed. This will be triggered exactly once, either</span>
-<span class="sd">        manually (via :meth:`remove_pointer_callback()`) or automatically (if</span>
-<span class="sd">        the scene pointer event is overridden with another call to</span>
-<span class="sd">        :meth:`on_pointer_event()`).</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add a cleanup callback fired when the scene pointer</span>
+<span class="sd">        registration list becomes empty.</span>
+
+<span class="sd">        .. deprecated::</span>
+<span class="sd">            Paired with the deprecated :meth:`on_pointer_event` /</span>
+<span class="sd">            :meth:`remove_pointer_callback`. With :meth:`on_click` /</span>
+<span class="sd">            :meth:`on_rect_select` (which can coexist) and</span>
+<span class="sd">            :meth:`remove_click_callback` /</span>
+<span class="sd">            :meth:`remove_rect_select_callback`, run cleanup inline</span>
+<span class="sd">            right after the per-event removal.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            func: Callback for when scene pointer events are removed.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_done_cb</span> <span class="o">=</span> <span class="n">func</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_done_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">func</span></div>
 
 
+<div class="viewcode-block" id="SceneApi.remove_click_callback">
+<a class="viewcode-back" href="../../../api/core/scene_api/#viser.SceneApi.remove_click_callback">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">remove_click_callback</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">callback</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;all&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="n">Callable</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove scene-level click callbacks registered via</span>
+<span class="sd">        :meth:`on_click`. Pass a specific function to remove just that</span>
+<span class="sd">        registration, or ``&quot;all&quot;`` to clear every click registration.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_remove_pointer_callback</span><span class="p">(</span><span class="s2">&quot;click&quot;</span><span class="p">,</span> <span class="n">callback</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="SceneApi.remove_rect_select_callback">
+<a class="viewcode-back" href="../../../api/core/scene_api/#viser.SceneApi.remove_rect_select_callback">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">remove_rect_select_callback</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">callback</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;all&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="n">Callable</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove rect-select callbacks registered via</span>
+<span class="sd">        :meth:`on_rect_select`. Pass a specific function to remove just</span>
+<span class="sd">        that registration, or ``&quot;all&quot;`` to clear every rect-select</span>
+<span class="sd">        registration.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_remove_pointer_callback</span><span class="p">(</span><span class="s2">&quot;rect-select&quot;</span><span class="p">,</span> <span class="n">callback</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_remove_pointer_callback</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">event_type</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">ScenePointerEventType</span><span class="p">,</span>
+        <span class="n">callback</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;all&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="n">Callable</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">before</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">callback</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">entry</span>
+                <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span>
+                <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">event_type</span> <span class="o">!=</span> <span class="n">event_type</span>
+            <span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">entry</span>
+                <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">entry</span><span class="o">.</span><span class="n">event_type</span> <span class="o">==</span> <span class="n">event_type</span> <span class="ow">and</span> <span class="n">entry</span><span class="o">.</span><span class="n">callback</span> <span class="o">==</span> <span class="n">callback</span><span class="p">)</span>
+            <span class="p">]</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span><span class="p">)</span> <span class="o">==</span> <span class="n">before</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sync_scene_pointer_filters</span><span class="p">(</span><span class="n">event_type</span><span class="p">)</span>
+        <span class="c1"># Fire cleanup callbacks once the user&#39;s last registration is</span>
+        <span class="c1"># gone -- same teardown contract as the legacy</span>
+        <span class="c1"># ``remove_pointer_callback()`` path.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_fire_scene_pointer_done_callbacks</span><span class="p">()</span>
+
 <div class="viewcode-block" id="SceneApi.remove_pointer_callback">
 <a class="viewcode-back" href="../../../api/core/scene_api/#viser.SceneApi.remove_pointer_callback">[docs]</a>
+    <span class="nd">@deprecated</span><span class="p">(</span><span class="s2">&quot;Use remove_click_callback() or remove_rect_select_callback() instead.&quot;</span><span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">remove_pointer_callback</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove the currently attached scene pointer event. This will trigger</span>
-<span class="sd">        any callback attached to :meth:`on_pointer_callback_removed()`.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove all attached scene pointer event callbacks. This will</span>
+<span class="sd">        trigger any callback attached to</span>
+<span class="sd">        :meth:`on_pointer_callback_removed()`.</span>
 
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="s2">&quot;No scene pointer callback exists for this server/client, ignoring.&quot;</span><span class="p">,</span>
-                <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-            <span class="p">)</span>
+<span class="sd">        .. deprecated::</span>
+<span class="sd">            Paired with the deprecated :meth:`on_pointer_event`. Use</span>
+<span class="sd">            :meth:`remove_click_callback` and/or</span>
+<span class="sd">            :meth:`remove_rect_select_callback` for the per-event-type</span>
+<span class="sd">            equivalents.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_remove_all_pointer_callbacks</span><span class="p">()</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_remove_all_pointer_callbacks</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span><span class="p">:</span>
             <span class="k">return</span>
 
-        <span class="c1"># Notify client that the listener has been removed.</span>
-        <span class="n">event_type</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_event_type</span>
-        <span class="k">assert</span> <span class="n">event_type</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
-            <span class="n">_messages</span><span class="o">.</span><span class="n">ScenePointerEnableMessage</span><span class="p">(</span><span class="n">enable</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">event_type</span><span class="o">=</span><span class="n">event_type</span><span class="p">)</span>
-        <span class="p">)</span>
+        <span class="c1"># Empty the callback list, then sync the disable for every</span>
+        <span class="c1"># event_type that had at least one entry.</span>
+        <span class="n">seen_event_types</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">ScenePointerEventType</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">entry</span><span class="o">.</span><span class="n">event_type</span> <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span>
+        <span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">event_type</span> <span class="ow">in</span> <span class="n">seen_event_types</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_sync_scene_pointer_filters</span><span class="p">(</span><span class="n">event_type</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_fire_scene_pointer_done_callbacks</span><span class="p">()</span>
 
-        <span class="c1"># Run cleanup callback.</span>
-        <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_done_cb</span><span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_event_loop</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_done_cb</span><span class="p">())</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_done_cb</span><span class="p">()</span>
-
-        <span class="c1"># Reset the callback and event type, on the python side.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_done_cb</span> <span class="o">=</span> <span class="k">lambda</span><span class="p">:</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_event_type</span> <span class="o">=</span> <span class="kc">None</span></div>
-
+    <span class="k">def</span><span class="w"> </span><span class="nf">_fire_scene_pointer_done_callbacks</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Snapshot -- each cleanup may unregister itself via the same</span>
+        <span class="c1"># handle without breaking iteration.</span>
+        <span class="k">for</span> <span class="n">cleanup</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_done_cb</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cleanup</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_event_loop</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">cleanup</span><span class="p">())</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">cleanup</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_done_cb</span> <span class="o">=</span> <span class="p">[]</span>
 
 <div class="viewcode-block" id="SceneApi.add_3d_gui_container">
 <a class="viewcode-back" href="../../../api/core/scene_api/#viser.SceneApi.add_3d_gui_container">[docs]</a>

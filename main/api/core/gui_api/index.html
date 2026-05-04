@@ -504,8 +504,9 @@ disables the hotkey.</p></li>
 canonically ordered <code class="docutils literal notranslate"><span class="pre">&quot;+&quot;</span></code>-separated string like
 <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;shift&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl+shift&quot;</span></code>.
 <code class="docutils literal notranslate"><span class="pre">None</span></code> matches “no modifiers held”. <code class="docutils literal notranslate"><span class="pre">cmd/ctrl</span></code>
-matches whenever either Cmd or Ctrl is held. Ignored if
-<code class="docutils literal notranslate"><span class="pre">hotkey</span></code> is <code class="docutils literal notranslate"><span class="pre">None</span></code>.</p></li>
+matches whenever either Cmd or Ctrl is held. Must be
+<code class="docutils literal notranslate"><span class="pre">None</span></code> when <code class="docutils literal notranslate"><span class="pre">hotkey</span></code> is <code class="docutils literal notranslate"><span class="pre">None</span></code>; passing a
+modifier without a hotkey raises <code class="docutils literal notranslate"><span class="pre">ValueError</span></code>.</p></li>
 <li><p><strong>icon</strong> (<em>IconName</em><em> | </em><em>None</em>) – Optional icon to display next to the command label.</p></li>
 <li><p><strong>disabled</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, the command is visible but not triggerable.</p></li>
 </ul>
