@@ -1,7 +1,7 @@
 /** Shared types + pure helpers for scene-node drag handling.
  *
  * Split from ``DragLayer.tsx`` so the Fast Refresh (HMR) module boundary
- * only contains components — React warns when a component file also
+ * only contains components -- React warns when a component file also
  * exports non-components. */
 
 import * as THREE from "three";
@@ -114,7 +114,7 @@ export type ActiveDragState = {
   targetObj: THREE.Object3D;
   /** PointerId from the pointerdown that started this drag. Window-level
    * pointermove / pointerup / pointercancel events carry their own
-   * pointerId and we ignore mismatches — a second finger's release on a
+   * pointerId and we ignore mismatches -- a second finger's release on a
    * multi-touch surface shouldn't end the first finger's drag. */
   pointerId: number;
   /** Click point expressed in the instance's local coordinate frame
@@ -162,7 +162,7 @@ export function isBatchedMessage(
 /** Subset of batched message types that route through the vendored
  * ``InstancedMesh2`` (BatchedMesh, BatchedGlb), whose raycast emits
  * ``intersection.point`` in InstancedMesh-local coords instead of
- * world coords — see ``vendor/instanced-mesh/core/feature/Raycasting.ts``.
+ * world coords -- see ``vendor/instanced-mesh/core/feature/Raycasting.ts``.
  *
  * ``BatchedAxesMessage`` is intentionally NOT included: it uses a stock
  * ``THREE.InstancedMesh`` which does the standard ``mesh.matrixWorld``
@@ -198,7 +198,7 @@ export type DragScratches = {
  *      that frame, not the frame's logical pose.
  *   2. The InstancedMesh2 child can be remounted (e.g. when LoD switches
  *      reconstruct it), invalidating any stashed reference.
- *   3. ``getMatrixAt`` does no bounds-check — past-end reads silently
+ *   3. ``getMatrixAt`` does no bounds-check -- past-end reads silently
  *      return whatever was last written there. */
 export function readBatchedInstanceLocalMatrix(
   message: BatchedSceneNodeMessage,
@@ -244,7 +244,7 @@ export function readBatchedInstanceLocalMatrix(
  *
  * For a non-batched node, the target is ``targetObj`` (the scene-node
  * Group) and its ``matrixWorld`` already includes the full ancestor
- * chain — including the ``""`` root node's frame-conversion rotation.
+ * chain -- including the ``""`` root node's frame-conversion rotation.
  *
  * For a batched node, the per-instance transform is read from the scene
  * store via ``readBatchedInstanceLocalMatrix``. The full world matrix

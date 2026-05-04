@@ -93,7 +93,7 @@ def test_rect_select_does_not_fire_without_matching_modifier(
     viser_page.wait_for_timeout(500)
     cx, cy = _canvas_center(viser_page)
 
-    # Plain drag (no shift) should NOT fire — neither rectangle
+    # Plain drag (no shift) should NOT fire -- neither rectangle
     # drawn nor message dispatched.
     viser_page.mouse.move(cx - 30, cy - 30)
     viser_page.mouse.down()
@@ -109,7 +109,7 @@ def test_pointer_event_plain_click_fires_with_no_modifier_filter(
     viser_page: Page,
 ) -> None:
     """``on_click()`` (modifier=None) fires for a plain
-    click on empty canvas — verifies the wire round-trip for scene-
+    click on empty canvas -- verifies the wire round-trip for scene-
     level pointer events with the new filter-list message format."""
     fired = threading.Event()
 

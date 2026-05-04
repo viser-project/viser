@@ -59,7 +59,7 @@ def test_on_click_accepts_canonical_modifier_strings() -> None:
 def test_add_command_rejects_invalid_modifier_string() -> None:
     """``add_command(hotkey="K", modifier="ctrl")`` is the same kind of
     typo as ``on_click(modifier="ctrl")``. Should raise just like the
-    other registration paths — silently no-op'ing on the client (the
+    other registration paths -- silently no-op'ing on the client (the
     substring matcher uses ``"cmd/ctrl"``) is the worst outcome."""
     server = viser.ViserServer()
     with pytest.raises(ValueError, match="Unknown modifier"):
@@ -69,7 +69,7 @@ def test_add_command_rejects_invalid_modifier_string() -> None:
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
 def test_add_command_rejects_modifier_without_hotkey() -> None:
     """Passing ``modifier=`` without ``hotkey=`` silently produces an
-    unbound command — the modifier has no key to attach to. This is
+    unbound command -- the modifier has no key to attach to. This is
     almost always a user mistake; should raise."""
     server = viser.ViserServer()
     with pytest.raises(ValueError, match="modifier"):
@@ -79,7 +79,7 @@ def test_add_command_rejects_modifier_without_hotkey() -> None:
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
 def test_click_dispatch_iterates_over_snapshot() -> None:
     """A click callback that mutates click_cb during dispatch must not
-    affect the in-progress dispatch — snapshot semantics."""
+    affect the in-progress dispatch -- snapshot semantics."""
     import asyncio
 
     server = viser.ViserServer()
@@ -117,7 +117,7 @@ def test_click_dispatch_iterates_over_snapshot() -> None:
 
     # Snapshot semantics: cb1 + cb2 fire (registered before dispatch),
     # the newly-added callback does NOT fire on this dispatch. Without
-    # snapshot, Python's list iterator picks up appends — `added` would
+    # snapshot, Python's list iterator picks up appends -- `added` would
     # also be in `fired`.
     assert fired == ["cb1", "cb2"]
     assert len(box._impl.click_cb) == 3
@@ -152,6 +152,101 @@ def test_on_pointer_callback_removed_fires_all_registered() -> None:
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_on_pointer_event_replaces_existing_and_fires_cleanup() -> None:
+    """The deprecated ``on_pointer_event`` is single-slot: registering a
+    new callback replaces any prior pointer registrations (legacy or
+    typed) and fires existing ``on_pointer_callback_removed`` cleanups.
+    Without this, mixing legacy and typed callbacks would let both fire
+    for the same gesture, which the legacy API never did."""
+    import warnings
+
+    server = viser.ViserServer()
+
+    fired: list[str] = []
+
+    # Pre-register a typed click callback + cleanup. Both should be
+    # cleared when on_pointer_event registers next.
+    @server.scene.on_click()
+    def _(event: viser.SceneClickEvent) -> None:
+        del event
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+
+        @server.scene.on_pointer_callback_removed
+        def _() -> None:
+            fired.append("pre-cleanup")
+
+        @server.scene.on_pointer_event(event_type="click")
+        def _(event: viser.ScenePointerEvent) -> None:
+            del event
+
+    # Pre-existing typed callback was cleared, on_pointer_event left
+    # exactly one registration, and the pre-cleanup fired.
+    assert len(server.scene._scene_pointer_cb) == 1
+    assert fired == ["pre-cleanup"]
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_remove_click_callback_fires_cleanup_when_list_empties() -> None:
+    """The per-event removal APIs (``remove_click_callback`` /
+    ``remove_rect_select_callback``) must fire ``on_pointer_callback_removed``
+    cleanup callbacks when the user's last registration goes away.
+    Without this, the canonical example pattern of "disable a button on
+    click registration, re-enable it via on_pointer_callback_removed
+    when the click handler tears itself down" silently leaks a
+    permanently-disabled button."""
+    server = viser.ViserServer()
+
+    @server.scene.on_click()
+    def _(event: viser.SceneClickEvent) -> None:
+        del event
+
+    fired: list[str] = []
+
+    @server.scene.on_pointer_callback_removed
+    def _() -> None:
+        fired.append("done")
+
+    # Per-event removal should empty the list and fire cleanup.
+    server.scene.remove_click_callback()
+    assert fired == ["done"]
+    assert len(server.scene._scene_pointer_cb) == 0
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_remove_click_callback_does_not_fire_cleanup_with_remaining_rect_select() -> (
+    None
+):
+    """Cleanup only fires when the user's *last* registration is
+    removed. If a rect-select callback remains, cleanup must not fire
+    yet -- the user still has live event handlers."""
+    server = viser.ViserServer()
+
+    @server.scene.on_click()
+    def _(event: viser.SceneClickEvent) -> None:
+        del event
+
+    @server.scene.on_rect_select()
+    def _(event: viser.SceneRectSelectEvent) -> None:
+        del event
+
+    fired: list[str] = []
+
+    @server.scene.on_pointer_callback_removed
+    def _() -> None:
+        fired.append("done")
+
+    server.scene.remove_click_callback()
+    # rect-select still registered → cleanup must not fire yet.
+    assert fired == []
+
+    server.scene.remove_rect_select_callback()
+    # Now the list is empty → cleanup fires.
+    assert fired == ["done"]
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
 def test_pointer_event_server_scope_clears_client_scope_and_vice_versa() -> None:
     """Server-scope and per-client-scope ``on_pointer_event`` share the
     same wire (the ``ScenePointerEnableMessage`` toggle on the client
@@ -159,14 +254,14 @@ def test_pointer_event_server_scope_clears_client_scope_and_vice_versa() -> None
     scope's ``enable=False`` deactivate the other's callbacks. The API
     enforces exclusivity: registering on one scope clears the other.
 
-    This is asserted indirectly — we don't fully spin up a client
+    This is asserted indirectly -- we don't fully spin up a client
     handle here; we only verify the cross-scope cleanup hook is wired
     by checking that the server-scope list is cleared via a fake
     client whose ``scene._scene_pointer_cb`` we observe."""
     server = viser.ViserServer()
 
     # Stand up a minimal stub client that satisfies the cross-scope
-    # cleanup branch — it just needs ``.scene._scene_pointer_cb`` and
+    # cleanup branch -- it just needs ``.scene._scene_pointer_cb`` and
     # ``.scene._remove_all_pointer_callbacks`` to be present.
     fake_client = MagicMock(name="fake-client")
     fake_client.client_id = ClientId(0)
@@ -200,7 +295,7 @@ def test_pointer_event_server_scope_clears_client_scope_and_vice_versa() -> None
 def test_on_click_unapplied_decorator_does_not_mark_clickable() -> None:
     """``box.on_click(modifier="shift")`` returns a decorator factory.
     If the user never applies it, the client must not be told the
-    node is clickable — otherwise we'd have a clickable-but-unbound
+    node is clickable -- otherwise we'd have a clickable-but-unbound
     node from the user's perspective."""
     server = viser.ViserServer()
     box = server.scene.add_box("/box", dimensions=(1.0, 1.0, 1.0))
@@ -304,7 +399,7 @@ def test_remove_click_callback_with_specific_function() -> None:
 def test_pointer_event_unapplied_decorator_does_not_destroy_callbacks() -> None:
     """Calling ``on_pointer_event(...)`` returns a decorator factory.
     If the user never applies it (typo, exception, etc.), no
-    cross-scope cleanup should fire — otherwise existing callbacks
+    cross-scope cleanup should fire -- otherwise existing callbacks
     would silently disappear."""
     server = viser.ViserServer()
 
@@ -314,7 +409,7 @@ def test_pointer_event_unapplied_decorator_does_not_destroy_callbacks() -> None:
 
     assert len(server.scene._scene_pointer_cb) == 1
 
-    # Build a decorator factory but don't apply it — should not
+    # Build a decorator factory but don't apply it -- should not
     # mutate any state.
     _unused = server.scene.on_click(modifier="cmd/ctrl")
     assert len(server.scene._scene_pointer_cb) == 1
@@ -322,7 +417,7 @@ def test_pointer_event_unapplied_decorator_does_not_destroy_callbacks() -> None:
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
 def test_pointer_dispatch_iterates_over_snapshot() -> None:
-    """Same as click — pointer dispatch must use snapshot semantics."""
+    """Same as click -- pointer dispatch must use snapshot semantics."""
     import asyncio
 
     server = viser.ViserServer()

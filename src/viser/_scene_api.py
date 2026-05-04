@@ -8,16 +8,7 @@ import warnings
 from collections.abc import Coroutine
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Tuple,
-    TypeVar,
-    Union,
-    cast,
-    overload,
-)
+from typing import TYPE_CHECKING, Any, Callable, Tuple, TypeVar, Union, cast, overload
 
 import numpy as np
 from typing_extensions import Literal, ParamSpec, TypeAlias, deprecated
@@ -213,10 +204,10 @@ class SceneApi:
         # the user calls ``handle.remove()`` mid-drag (which pops the
         # handle from ``_handle_from_node_name``) and when a client
         # disconnects mid-drag (where the ``end`` message never
-        # arrives) — see ``_drop_active_drags_for_client``. Without
+        # arrives) -- see ``_drop_active_drags_for_client``. Without
         # this the end callback is silently dropped and per-drag user
         # state leaks. Keyed by ``(client_id, node_name)`` because two
-        # clients can drag the same node concurrently — keying by name
+        # clients can drag the same node concurrently -- keying by name
         # alone would let one client's start overwrite the other's,
         # and ``end`` from the first client would pop the wrong entry.
         self._active_drag_handles: dict[
@@ -278,7 +269,7 @@ class SceneApi:
         disconnect both leaks the ``_active_drag_handles`` entry (the
         entry pins a ``SceneNodeHandle`` reference, and
         ``_is_drag_active_for`` will return spurious-true for the
-        leaked node name — preventing a future ``remove()`` from
+        leaked node name -- preventing a future ``remove()`` from
         clearing its callbacks) and silently skips ``on_drag_end``."""
         stale_keys = [k for k in self._active_drag_handles if k[0] == client_id]
         for k in stale_keys:
@@ -2775,7 +2766,7 @@ class SceneApi:
             instance_index=message.instance_index,
             modifier=message.modifier,
         )
-        # Snapshot the list — a callback may register/remove other
+        # Snapshot the list -- a callback may register/remove other
         # callbacks during dispatch; mutations should not affect the
         # in-flight iteration.
         for entry in list(handle._impl.click_cb):
@@ -2793,7 +2784,7 @@ class SceneApi:
 
         Note on ordering: sync callbacks are submitted to a thread pool
         fire-and-forget, so two drags messages dispatched back-to-back
-        (e.g. start + update) can race — the update's callback may run
+        (e.g. start + update) can race -- the update's callback may run
         before the start's callback finishes, leaving user state
         half-initialized. Async callbacks are awaited in order and don't
         have this issue, so for stateful gestures define your callbacks
@@ -2804,7 +2795,7 @@ class SceneApi:
         # disconnect can carry the latest positions). On update, refresh
         # the stored message. On update/end, prefer the active-drag map
         # so we can still dispatch even if the node was removed
-        # mid-drag — the user's on_drag_end MUST fire so per-drag state
+        # mid-drag -- the user's on_drag_end MUST fire so per-drag state
         # can be released. The active-drag entry is always cleared on
         # ``end``, even when dispatch falls through.
         active_key = (client_id, message.name)
@@ -2902,7 +2893,7 @@ class SceneApi:
             modifier=modifier,
         )
 
-        # Snapshot the list — a callback may register/remove other
+        # Snapshot the list -- a callback may register/remove other
         # callbacks during dispatch; mutations should not affect the
         # in-flight iteration.
         for entry in list(self._scene_pointer_cb):
@@ -2975,16 +2966,30 @@ class SceneApi:
         [Callable[[ScenePointerEvent], None]], Callable[[ScenePointerEvent], None]
     ]:
         """Legacy registration that hands callbacks the union-shaped
-        :class:`ScenePointerEvent`.
+        :class:`ScenePointerEvent`. Single-slot semantics: re-registering
+        replaces the existing pointer callback (and fires any pending
+        :meth:`on_pointer_callback_removed` cleanups).
 
         .. deprecated::
-            Use :meth:`on_click` or :meth:`on_rect_select` instead;
-            those produce the typed :class:`SceneClickEvent` /
-            :class:`SceneRectSelectEvent`.
+            Use :meth:`on_click` or :meth:`on_rect_select` instead.
+            They produce the typed :class:`SceneClickEvent` /
+            :class:`SceneRectSelectEvent` and accept multiple
+            coexisting callbacks.
         """
-        return self._register_scene_pointer_callback(
+        register = self._register_scene_pointer_callback(
             event_type, modifier, ScenePointerEvent
         )
+
+        def decorator(
+            func: Callable[[ScenePointerEvent], None],
+        ) -> Callable[[ScenePointerEvent], None]:
+            # Preserve legacy "one pointer callback at a time" semantic
+            # -- replace any prior on_pointer_event/on_click/on_rect_select
+            # registrations and fire their cleanup hooks before adding.
+            self._remove_all_pointer_callbacks()
+            return register(func)
+
+        return decorator
 
     def _register_scene_pointer_callback(
         self,
@@ -3025,7 +3030,7 @@ class SceneApi:
     ) -> None:
         """Send the current modifier-filter set for ``event_type`` to the
         client. An empty set disables the event type. Duplicates are
-        collapsed — multiple callbacks under the same filter only need
+        collapsed -- multiple callbacks under the same filter only need
         one wire entry to gate gesture engagement."""
         modifiers = cast(
             Tuple[_messages.KeyModifier | None, ...],
@@ -3043,15 +3048,24 @@ class SceneApi:
             )
         )
 
+    @deprecated(
+        "Run cleanup inline right after remove_click_callback() / "
+        "remove_rect_select_callback() instead."
+    )
     def on_pointer_callback_removed(
         self,
         func: Callable[[], NoneOrCoroutine],
     ) -> Callable[[], NoneOrCoroutine]:
-        """Add a cleanup callback fired when scene pointer event
-        callbacks are torn down via :meth:`remove_pointer_callback()`.
+        """Add a cleanup callback fired when the scene pointer
+        registration list becomes empty.
 
-        Multiple cleanup callbacks may be registered; each fires
-        exactly once per ``remove_pointer_callback()`` call.
+        .. deprecated::
+            Paired with the deprecated :meth:`on_pointer_event` /
+            :meth:`remove_pointer_callback`. With :meth:`on_click` /
+            :meth:`on_rect_select` (which can coexist) and
+            :meth:`remove_click_callback` /
+            :meth:`remove_rect_select_callback`, run cleanup inline
+            right after the per-event removal.
 
         Args:
             func: Callback for when scene pointer events are removed.
@@ -3098,7 +3112,7 @@ class SceneApi:
             return
         self._sync_scene_pointer_filters(event_type)
         # Fire cleanup callbacks once the user's last registration is
-        # gone — same teardown contract as the legacy
+        # gone -- same teardown contract as the legacy
         # ``remove_pointer_callback()`` path.
         if not self._scene_pointer_cb:
             self._fire_scene_pointer_done_callbacks()
@@ -3135,7 +3149,7 @@ class SceneApi:
         self._fire_scene_pointer_done_callbacks()
 
     def _fire_scene_pointer_done_callbacks(self) -> None:
-        # Snapshot — each cleanup may unregister itself via the same
+        # Snapshot -- each cleanup may unregister itself via the same
         # handle without breaking iteration.
         for cleanup in list(self._scene_pointer_done_cb):
             if asyncio.iscoroutinefunction(cleanup):

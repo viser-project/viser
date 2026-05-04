@@ -4,10 +4,10 @@ Capture mouse pointer events to create rays for 3D scene interaction and ray-mes
 
 **Features:**
 
-* :meth:`viser.ViserServer.on_scene_pointer` for mouse ray events
+* :meth:`viser.SceneApi.on_click` for click ray events
+* :meth:`viser.SceneApi.on_rect_select` for box-select drag events
 * Ray-mesh intersection calculations with trimesh
 * Dynamic mesh highlighting based on ray hits
-* Real-time pointer coordinate display
 
 .. note::
     This example requires external assets. To download them, run:
@@ -82,6 +82,7 @@ def main() -> None:
                 if len(hit_pos) == 0:
                     return
                 client.scene.remove_click_callback()
+                click_button_handle.disabled = False
 
                 # Get the first hit position (based on distance from the ray origin).
                 hit_pos = hit_pos[np.argmin(np.sum((hit_pos - origin) ** 2, axis=-1))]
@@ -95,10 +96,6 @@ def main() -> None:
                 )
                 hit_pos_handles.append(hit_pos_handle)
 
-            @client.scene.on_pointer_callback_removed
-            def _():
-                click_button_handle.disabled = False
-
         # Tests "rect-select" scenepointerevent.
         paint_button_handle = client.gui.add_button("Paint mesh", icon=viser.Icon.PAINT)
 
@@ -109,6 +106,7 @@ def main() -> None:
             @client.scene.on_rect_select()
             def _(event: viser.SceneRectSelectEvent) -> None:
                 client.scene.remove_rect_select_callback()
+                paint_button_handle.disabled = False
 
                 nonlocal mesh_handle
                 camera = event.client.camera
@@ -151,10 +149,6 @@ def main() -> None:
                     mesh=mesh,
                     position=(0.0, 0.0, 0.0),
                 )
-
-            @client.scene.on_pointer_callback_removed
-            def _():
-                paint_button_handle.disabled = False
 
         # Button to clear spheres.
         clear_button_handle = client.gui.add_button("Clear scene", icon=viser.Icon.X)

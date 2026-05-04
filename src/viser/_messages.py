@@ -23,7 +23,7 @@ KeyModifier = Literal[
     "cmd/ctrl+alt+shift",
 ]
 """Modifier-key combination, used by both scene-node drag bindings and
-hotkey bindings. A canonically ordered ``"+"``-separated string —
+hotkey bindings. A canonically ordered ``"+"``-separated string --
 ``cmd/ctrl → alt → shift``. Non-canonical orderings like
 ``"shift+cmd/ctrl"`` type-check-fail, though the runtime parser will
 accept them (it canonicalizes internally).
@@ -39,7 +39,7 @@ def _normalize_key_modifier(modifier: Optional[str]) -> Optional[KeyModifier]:
     """Parse a :data:`KeyModifier` string into its canonical form.
 
     ``None`` and ``""`` map to ``None``. Otherwise, split on ``"+"``,
-    validate each name, and canonicalize the order — both
+    validate each name, and canonicalize the order -- both
     ``"cmd/ctrl+shift"`` and ``"shift+cmd/ctrl"`` yield
     ``"cmd/ctrl+shift"``. Type annotations only allow the canonical
     form; the runtime is lenient for users who don't run a type-checker.
@@ -1426,7 +1426,7 @@ _DragPhase: TypeAlias = Literal["start", "update", "end"]
 class SceneNodeDragMessage(Message, include_in_scene_serialization=False):
     """Client -> server message for a scene-node drag (start/update/end).
 
-    All position/screen fields are *live* — recomputed on every
+    All position/screen fields are *live* -- recomputed on every
     start/update/end. ``start_*`` tracks the original click point as it
     moves with the object (the grab point); ``end_*`` tracks the current
     pointer projected onto the camera-aligned drag plane."""

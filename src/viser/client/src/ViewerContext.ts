@@ -66,7 +66,7 @@ export type ViewerMutable = {
     dragEnd: [number, number]; // Final mouse position.
     isDragging: boolean;
     /** Canonical ``KeyModifier`` string captured at pointerdown.
-     * Frozen for the gesture's lifetime — we don't want releasing
+     * Frozen for the gesture's lifetime -- we don't want releasing
      * Shift/Cmd before mouse-up to lose the modifier match (or a
      * mid-drag press to spuriously add one). Mirrors how drag
      * callbacks freeze modifiers at drag-start. */

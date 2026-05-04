@@ -48,8 +48,8 @@ import { useDragArrow } from "./useDragArrow";
  * so dragging makes no sense (it would disable camera controls and
  * swallow left-clicks with nothing on the receiving end). The outer
  * component branches on ``messageSource`` so the inner
- * ``DragLayerActive`` component — which installs ``useFrame``,
- * pointer-event listeners, and per-frame scratches — only mounts when
+ * ``DragLayerActive`` component -- which installs ``useFrame``,
+ * pointer-event listeners, and per-frame scratches -- only mounts when
  * a live websocket session is connected. */
 export function DragLayer({ children }: { children?: React.ReactNode }) {
   const viewer = React.useContext(ViewerContext)!;
@@ -105,7 +105,7 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
   // result on the active drag. Returns false if the camera ray misses
   // the plane (e.g. ray parallel to plane); the caller should skip
   // sending an update in that case. Mutates the existing scratch
-  // vectors/ray on ``activeDrag`` — no allocation per pointermove.
+  // vectors/ray on ``activeDrag`` -- no allocation per pointermove.
   const updateActiveDragEnd = React.useCallback(
     (clientX: number, clientY: number): boolean => {
       const activeDrag = activeDragRef.current;
@@ -167,7 +167,7 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
   const dragArrow = useDragArrow(activeDragRef, computeStartWorld);
 
   // Build the flat wire payload for a SceneNodeDragMessage. Reads the
-  // *current* state of activeDrag — start_position is recomputed from
+  // *current* state of activeDrag -- start_position is recomputed from
   // ``startLocalOffset`` so it tracks the object's live pose. */
   const startWorldScratch = React.useMemo(() => new THREE.Vector3(), []);
   const buildDragMessage = React.useCallback(
@@ -177,7 +177,7 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
     ): SceneNodeDragMessage | null => {
       // Live grab point. If unavailable (node removed mid-drag,
       // batched index out of bounds, etc.):
-      //   - For ``start``/``update``: skip — emitting a degenerate
+      //   - For ``start``/``update``: skip -- emitting a degenerate
       //     ``start == end`` would mislead users who diff them.
       //   - For ``end``: still emit, falling back to ``endPointWorld``
       //     for ``start_position``. The server-side ``on_drag_end``
@@ -188,7 +188,7 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
       const startPointWorld =
         liveStart ?? (phase === "end" ? activeDrag.endPointWorld : null);
       if (startPointWorld === null) return null;
-      // Compute T_world_threeworld once and reuse for both points —
+      // Compute T_world_threeworld once and reuse for both points --
       // halves Matrix4/Quaternion allocations per drag message.
       computeT_threeworld_worldInto(
         viewer,
@@ -281,7 +281,7 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
       activeDrag.cleanup();
       activeDragRef.current = null;
       dragArrow.visible = false;
-      // Re-enable the *same* camera control instance we disabled — a
+      // Re-enable the *same* camera control instance we disabled -- a
       // camera-type swap during the drag would have replaced
       // viewerMutable.cameraControl, and restoring the new one would
       // leave the stashed one disabled forever.
@@ -358,14 +358,14 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
         const handleWindowPointerMove = (event: PointerEvent) => {
           const activeDrag = activeDragRef.current;
           if (activeDrag === null) return;
-          // Ignore pointers that didn't start this drag — multi-touch
+          // Ignore pointers that didn't start this drag -- multi-touch
           // surfaces happily deliver other fingers' events through the
           // same window listener.
           if (event.pointerId !== activeDrag.pointerId) return;
           if (!updateActiveDragEnd(event.clientX, event.clientY)) return;
 
           // Modifier/button state is frozen at drag_start and reused on
-          // every update/end — see the note in `stopActiveDrag` above.
+          // every update/end -- see the note in `stopActiveDrag` above.
           // ``start_position`` is recomputed live inside buildDragMessage,
           // so the wire payload always reflects the click point's
           // current world position (tracking the moving object).
@@ -375,7 +375,7 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
         };
 
         const handleWindowPointerUp = (event: PointerEvent) => {
-          // Ignore mismatched pointers — we only end the drag when the
+          // Ignore mismatched pointers -- we only end the drag when the
           // *same* pointer that started it lifts up (or cancels).
           const activeDrag = activeDragRef.current;
           if (activeDrag === null) return;
@@ -453,7 +453,7 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
 
   // End any active drag if the DragLayer itself unmounts (viewer
   // teardown). The cleanup must run only at unmount, not whenever
-  // ``stopActiveDrag``'s identity changes — so we route through a ref
+  // ``stopActiveDrag``'s identity changes -- so we route through a ref
   // that always points at the latest closure.
   const stopActiveDragRef = React.useRef(stopActiveDrag);
   stopActiveDragRef.current = stopActiveDrag;

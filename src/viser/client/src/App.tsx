@@ -493,7 +493,7 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
 
     // Gate engagement on modifier match. If no registered filter for
     // any enabled event_type matches the held modifiers, this isn't a
-    // scene-pointer gesture — let camera controls handle it.
+    // scene-pointer gesture -- let camera controls handle it.
     const activeEventTypes = new Set<"click" | "rect-select">();
     for (const [eventType, filters] of pointerInfo.filtersByEventType) {
       if (filters.some((f) => matchesModifierFilter(modifier, f))) {
@@ -560,7 +560,7 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     const wasDragging = pointerInfo.isDragging;
 
     // Reset gesture state and erase the rectangle overlay before any
-    // early return — otherwise a server callback removed mid-gesture
+    // early return -- otherwise a server callback removed mid-gesture
     // can leave stale ``isDragging`` or a drawn rectangle behind.
     mutable.current.cameraControl!.enabled = true;
     pointerInfo.isDragging = false;

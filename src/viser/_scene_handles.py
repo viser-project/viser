@@ -127,7 +127,7 @@ DragPhase = Literal["start", "update", "end"]
 class _DragInput:
     """Pointer input state at the moment of a drag event.
 
-    Private — consolidates the button + modifier pair that would
+    Private -- consolidates the button + modifier pair that would
     otherwise move as separate positional args through every dispatch
     function."""
 
@@ -421,10 +421,10 @@ class SceneNodeDragEvent(Generic[TSceneNodeHandle]):
     instance_index: int | None
     """Instance index within a batched scene node (e.g. batched meshes,
     batched GLBs, batched axes); ``None`` for non-batched nodes. Frozen
-    at drag-start — the drag always refers to the instance that was
+    at drag-start -- the drag always refers to the instance that was
     under the cursor when the gesture began."""
     start_position: Tuple[float, float, float]
-    """World-coords position of the click point on the object. *Live* —
+    """World-coords position of the click point on the object. *Live* --
     updates each event as the object moves, so it always reflects where
     the grab point currently is in world coords (useful for
     rotate-around-grab gestures)."""
@@ -521,7 +521,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
                 button=button,
                 modifier=normalized,
             )
-            # Skip if an equivalent entry is already registered —
+            # Skip if an equivalent entry is already registered --
             # otherwise double-registration would fire the callback twice
             # per matching event. `_DragCallbackEntry` is a plain
             # dataclass so tuple/dataclass equality catches duplicates.
@@ -572,13 +572,13 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
                 ``"shift"``, or ``"cmd/ctrl+shift"``. ``None`` matches
                 "no modifiers held". Matching is exact: listed modifiers
                 must be held and others must not be. Left-drag on this
-                node intercepts the gesture — the camera only orbits on
+                node intercepts the gesture -- the camera only orbits on
                 empty-space drags.
 
         Note on ordering: drag callbacks fire in three phases per
         gesture (start → update* → end). Synchronous (``def``)
         callbacks are submitted to a thread pool fire-and-forget and
-        can run out of order — an ``update`` may begin before
+        can run out of order -- an ``update`` may begin before
         ``start`` finishes, leaving any state set in ``start`` (e.g.
         a captured grab point) ``None`` when ``update`` reads it. To
         get strict ordering, define your callbacks as ``async def``;
@@ -738,7 +738,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
 
         def register(callback: Callable) -> Callable:
             # Mark the node clickable only when a callback actually
-            # lands — an unapplied decorator factory shouldn't leave
+            # lands -- an unapplied decorator factory shouldn't leave
             # the client thinking the node is clickable.
             self._impl.api._websock_interface.queue_message(
                 _messages.SetSceneNodeClickableMessage(self._impl.name, True)

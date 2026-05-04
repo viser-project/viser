@@ -581,7 +581,7 @@ function useMessageHandler() {
           updates: { dragBindings: message.bindings },
         };
       }
-      // Update props of a GUI component — accumulated and applied in batch.
+      // Update props of a GUI component -- accumulated and applied in batch.
       case "GuiUpdateMessage": {
         return {
           kind: "guiUpdate",
