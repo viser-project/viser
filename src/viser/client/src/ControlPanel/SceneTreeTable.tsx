@@ -28,10 +28,10 @@ import {
 import { parseToRgb, toMantineColor } from "../components/colorUtils";
 import {
   Box,
+  Checkbox,
   Flex,
   ScrollArea,
   Select,
-  Switch,
   TextInput,
   Tooltip,
   ColorInput,
@@ -108,19 +108,13 @@ function PropInput({
     case "boolean": {
       return (
         <TsTypeTooltip tsType={tsType}>
-          <Switch
+          <Checkbox
             size="xs"
+            radius="xs"
             checked={stringValue === "true"}
             onChange={(evt) => {
               form.setFieldValue(propKey, stringify(evt.currentTarget.checked));
               submit();
-            }}
-            styles={{
-              root: {
-                width: "100%",
-                display: "flex",
-                justifyContent: "flex-end",
-              },
             }}
           />
         </TsTypeTooltip>
