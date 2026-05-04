@@ -9,11 +9,11 @@ import Fuse, { FuseResult, IFuseOptions } from "fuse.js";
 import React, { useCallback, useContext, useMemo, useRef } from "react";
 import { ViewerContext } from "./ViewerContext";
 import { RegisterCommandMessage } from "./WebsocketMessages";
+import { KeyModifier } from "./dragUtils";
 import { isMac } from "./utils/platform";
 
 type SpotlightItems = SpotlightActionData | SpotlightActionGroupData;
 type HotkeyKey = NonNullable<RegisterCommandMessage["props"]["hotkey"]>;
-type KeyModifier = NonNullable<RegisterCommandMessage["props"]["modifier"]>;
 
 /** Atomic modifier + key parts for a hotkey, ordered for "+"-joining. */
 function hotkeyParts(key: HotkeyKey, modifier: KeyModifier | null): string[] {

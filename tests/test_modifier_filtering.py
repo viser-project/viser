@@ -404,17 +404,13 @@ def test_pointer_event_modifier_dispatch_filters_correctly() -> None:
 
     # Plain click: only "plain" fires.
     fired.clear()
-    asyncio.run(
-        server.scene._handle_scene_pointer_updates(ClientId(0), make_msg(None))
-    )
+    asyncio.run(server.scene._handle_scene_pointer_updates(ClientId(0), make_msg(None)))
     assert fired == ["plain"]
 
     # Cmd-click: only "cmd" fires.
     fired.clear()
     asyncio.run(
-        server.scene._handle_scene_pointer_updates(
-            ClientId(0), make_msg("cmd/ctrl")
-        )
+        server.scene._handle_scene_pointer_updates(ClientId(0), make_msg("cmd/ctrl"))
     )
     assert fired == ["cmd"]
 
@@ -453,15 +449,9 @@ def test_click_dispatch_filters_by_modifier() -> None:
         )
 
     fired.clear()
-    asyncio.run(
-        server.scene._handle_node_click_updates(ClientId(0), make_msg(None))
-    )
+    asyncio.run(server.scene._handle_node_click_updates(ClientId(0), make_msg(None)))
     assert fired == ["plain"]
 
     fired.clear()
-    asyncio.run(
-        server.scene._handle_node_click_updates(
-            ClientId(0), make_msg("shift")
-        )
-    )
+    asyncio.run(server.scene._handle_node_click_updates(ClientId(0), make_msg("shift")))
     assert fired == ["shift"]
