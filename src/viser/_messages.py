@@ -9,7 +9,7 @@ from typing import Any, ClassVar, Dict, Optional, Tuple, Type, TypeVar, Union, c
 
 import numpy as np
 import numpy.typing as npt
-from typing_extensions import Literal, TypeAlias, override
+from typing_extensions import Annotated, Literal, TypeAlias, override
 
 from . import infra, theme, uplot
 
@@ -678,7 +678,7 @@ class PointCloudProps:
     """Size of each point."""
     point_shape: Literal["square", "diamond", "circle", "rounded", "sparkle"]
     """Shape to draw each point."""
-    precision: Literal["float16", "float32"]
+    precision: Annotated[Literal["float16", "float32"], infra.EditorHidden()]
     """Precision of the point cloud. Assignments to `points` are automatically casted
     based on the current precision value. Updates to `points` should therefore happen
     *after* updates to `precision`."""

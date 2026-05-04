@@ -22,9 +22,15 @@ import { ViewerContext } from "../ViewerContext";
 import { SceneNode } from "../SceneTreeState";
 import { shallowArrayEqual } from "../utils/shallowArrayEqual";
 import {
+  ScenePropDescriptor,
+  SceneNodePropsSchema,
+} from "../WebsocketMessages";
+import {
   Box,
   Flex,
   ScrollArea,
+  Select,
+  Switch,
   TextInput,
   Tooltip,
   ColorInput,
@@ -32,6 +38,191 @@ import {
   useMantineColorScheme,
   Popover,
 } from "@mantine/core";
+
+function PropLabel({ label, tsType }: { label: string; tsType: string }) {
+  // The TS annotation goes on hover so the user can see the underlying type
+  // (e.g. `'square' | 'diamond' | ...`) without having to read the source.
+  const inner = (
+    <Box style={{ flexGrow: "1" }} fz="xs">
+      {label}
+    </Box>
+  );
+  if (!tsType) return inner;
+  return (
+    <Tooltip
+      label={tsType}
+      withArrow
+      openDelay={300}
+      multiline
+      style={{ fontFamily: "monospace", maxWidth: "20em" }}
+    >
+      {inner}
+    </Tooltip>
+  );
+}
+
+function PropInput({
+  propKey,
+  descriptor,
+  form,
+  initialValues,
+  stringify,
+  parse,
+  submit,
+}: {
+  propKey: string;
+  descriptor: ScenePropDescriptor;
+  form: ReturnType<typeof useForm<Record<string, string>>>;
+  initialValues: Record<string, string>;
+  stringify: (value: any) => string;
+  parse: (value: string) => any;
+  submit: () => void;
+}) {
+  const stringValue = form.values[propKey];
+  const inputStyles = {
+    input: { height: "1.625rem", minHeight: "1.625rem", width: "100%" },
+  };
+
+  switch (descriptor.kind) {
+    case "boolean": {
+      // The form keeps every value JSON-stringified for uniform validation,
+      // so we encode booleans as "true"/"false" strings here too.
+      const checked = stringValue === "true";
+      return (
+        <Switch
+          size="xs"
+          checked={checked}
+          onChange={(evt) => {
+            form.setFieldValue(propKey, stringify(evt.currentTarget.checked));
+            submit();
+          }}
+          styles={{
+            root: { width: "100%", display: "flex", justifyContent: "flex-end" },
+          }}
+        />
+      );
+    }
+
+    case "stringLiteral": {
+      // form value is JSON-stringified, so it carries the surrounding quotes.
+      let current: string | null = null;
+      try {
+        const parsed = parse(stringValue);
+        if (typeof parsed === "string") current = parsed;
+      } catch (e) {
+        // leave null; Select will show placeholder
+      }
+      return (
+        <Select
+          size="xs"
+          radius="xs"
+          data={descriptor.options as unknown as string[]}
+          value={current}
+          allowDeselect={false}
+          styles={inputStyles}
+          style={{ width: "100%" }}
+          onChange={(next) => {
+            if (next === null) return;
+            form.setFieldValue(propKey, stringify(next));
+            submit();
+          }}
+        />
+      );
+    }
+
+    case "color": {
+      // Always render a ColorInput when the schema says it's a color, even
+      // if the current form text is mid-edit and not a valid 3-tuple. We
+      // fall back to black so the picker stays usable.
+      const rgbToHex = (r: number, g: number, b: number) => {
+        const toHex = (n: number) => {
+          const clamped = Math.max(0, Math.min(255, Math.round(n)));
+          return clamped.toString(16).padStart(2, "0");
+        };
+        return "#" + toHex(r) + toHex(g) + toHex(b);
+      };
+      const hexToRgb = (hex: string) => [
+        parseInt(hex.slice(1, 3), 16),
+        parseInt(hex.slice(3, 5), 16),
+        parseInt(hex.slice(5, 7), 16),
+      ];
+
+      let hex = "#000000";
+      try {
+        const parsed = parse(stringValue);
+        if (
+          Array.isArray(parsed) &&
+          parsed.length === 3 &&
+          parsed.every((v) => typeof v === "number")
+        ) {
+          // Schema currently only emits scale "0-255"; the branch is here
+          // for the day someone adds 0-1 floats.
+          const [r, g, b] =
+            descriptor.scale === "0-1"
+              ? [parsed[0] * 255, parsed[1] * 255, parsed[2] * 255]
+              : (parsed as [number, number, number]);
+          hex = rgbToHex(r, g, b);
+        }
+      } catch (e) {
+        // keep default hex
+      }
+      return (
+        <ColorInput
+          size="xs"
+          styles={inputStyles}
+          style={{ width: "100%" }}
+          value={hex}
+          onChange={(nextHex) => {
+            const rgb = hexToRgb(nextHex);
+            const value =
+              descriptor.scale === "0-1"
+                ? rgb.map((v) => v / 255)
+                : rgb;
+            form.setFieldValue(propKey, stringify(value));
+            submit();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submit();
+            }
+          }}
+        />
+      );
+    }
+
+    default: {
+      const isDirty = stringValue !== initialValues[propKey];
+      return (
+        <TextInput
+          size="xs"
+          styles={inputStyles}
+          style={{ width: "100%" }}
+          {...form.getInputProps(propKey)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          rightSection={
+            <IconDeviceFloppy
+              style={{
+                width: "1rem",
+                height: "1rem",
+                opacity: isDirty ? 1.0 : 0.3,
+                cursor: isDirty ? "pointer" : "default",
+              }}
+              onClick={() => {
+                if (isDirty) submit();
+              }}
+            />
+          }
+        />
+      );
+    }
+  }
+}
 
 function EditNodeProps({
   nodeName,
@@ -135,6 +326,7 @@ function EditNodePropsInner({
     <Box
       className={propsWrapper}
       component="form"
+      data-props-popover-for={nodeName}
       onSubmit={form.onSubmit(handleSubmit)}
       w="15em"
     >
@@ -190,16 +382,22 @@ function EditNodePropsInner({
               return null;
             }
 
+            // Skip props the schema marks as editor-hidden (e.g. PointCloud
+            // precision is coupled to the dtype of `points` and can't be
+            // edited in isolation).
+            const messageDescriptor = SceneNodePropsSchema[nodeMessage.type];
+            if (messageDescriptor?.[key]?.editorHidden) {
+              return null;
+            }
+
             const label =
               key.charAt(0).toUpperCase() + key.slice(1).split("_").join(" ");
 
             // Show typed arrays as read-only type + length.
             if (ArrayBuffer.isView(value)) {
               return (
-                <Flex key={key} align="center">
-                  <Box style={{ flexGrow: "1" }} fz="xs">
-                    {label}
-                  </Box>
+                <Flex key={key} align="center" data-prop-key={key}>
+                  <PropLabel label={label} tsType="(typed array)" />
                   <Flex gap="xs" style={{ width: "9em", flexShrink: 0 }}>
                     <TextInput
                       size="xs"
@@ -218,114 +416,23 @@ function EditNodePropsInner({
               );
             }
 
-            const isDirty = form.values[key] !== initialValues[key];
+            const descriptor: ScenePropDescriptor = SceneNodePropsSchema[
+              nodeMessage.type
+            ]?.[key] ?? { kind: "default", tsType: "" };
 
             return (
-              <Flex key={key} align="center">
-                <Box style={{ flexGrow: "1" }} fz="xs">
-                  {label}
-                </Box>
+              <Flex key={key} align="center" data-prop-key={key}>
+                <PropLabel label={label} tsType={descriptor.tsType} />
                 <Flex gap="xs" style={{ width: "9em", flexShrink: 0 }}>
-                  {(() => {
-                    // Check if this is a color property
-                    try {
-                      const parsedValue = parse(form.values[key]);
-                      const isColorProp =
-                        key.toLowerCase().includes("color") &&
-                        Array.isArray(parsedValue) &&
-                        parsedValue.length === 3 &&
-                        parsedValue.every((v) => typeof v === "number");
-
-                      if (isColorProp) {
-                        // Convert RGB array [0-1] to hex color
-                        const rgbToHex = (r: number, g: number, b: number) => {
-                          const toHex = (n: number) => {
-                            const hex = Math.round(n).toString(16);
-                            return hex.length === 1 ? "0" + hex : hex;
-                          };
-                          return "#" + toHex(r) + toHex(g) + toHex(b);
-                        };
-
-                        // Convert hex color to RGB array [0-1]
-                        const hexToRgb = (hex: string) => {
-                          const r = parseInt(hex.slice(1, 3), 16);
-                          const g = parseInt(hex.slice(3, 5), 16);
-                          const b = parseInt(hex.slice(5, 7), 16);
-                          return [r, g, b];
-                        };
-
-                        return (
-                          <ColorInput
-                            size="xs"
-                            styles={{
-                              input: {
-                                height: "1.625rem",
-                                minHeight: "1.625rem",
-                              },
-                              // icon: { transform: "scale(0.8)" },
-                            }}
-                            style={{ width: "100%" }}
-                            value={rgbToHex(
-                              parsedValue[0],
-                              parsedValue[1],
-                              parsedValue[2],
-                            )}
-                            onChange={(hex) => {
-                              const rgb = hexToRgb(hex);
-                              form.setFieldValue(key, stringify(rgb));
-                              form.onSubmit(handleSubmit)();
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                form.onSubmit(handleSubmit)();
-                              }
-                            }}
-                          />
-                        );
-                      }
-                    } catch (e) {
-                      // If parsing fails, fall back to TextInput
-                    }
-
-                    // Default TextInput for non-color properties
-                    return (
-                      <TextInput
-                        size="xs"
-                        styles={{
-                          input: {
-                            height: "1.625rem",
-                            minHeight: "1.625rem",
-                            width: "100%",
-                          },
-                          // icon: { transform: "scale(0.8)" },
-                        }}
-                        style={{ width: "100%" }}
-                        {...form.getInputProps(key)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            form.onSubmit(handleSubmit)();
-                          }
-                        }}
-                        rightSection={
-                          <IconDeviceFloppy
-                            style={{
-                              width: "1rem",
-                              height: "1rem",
-                              opacity: isDirty ? 1.0 : 0.3,
-                              cursor: isDirty ? "pointer" : "default",
-                            }}
-                            onClick={() => {
-                              if (isDirty) {
-                                form.onSubmit(handleSubmit)();
-                              }
-                            }}
-                          />
-                        }
-                      />
-                    );
-                  })()}
+                  <PropInput
+                    propKey={key}
+                    descriptor={descriptor}
+                    form={form}
+                    initialValues={initialValues}
+                    stringify={stringify}
+                    parse={parse}
+                    submit={() => form.onSubmit(handleSubmit)()}
+                  />
                 </Flex>
               </Flex>
             );
@@ -521,6 +628,7 @@ const SceneTreeTableRow = React.memo(function SceneTreeTableRow(props: {
     <>
       <Box
         className={tableRow}
+        data-scene-node={props.nodeName}
         style={{
           cursor: expandable ? "pointer" : undefined,
         }}
@@ -654,6 +762,7 @@ const SceneTreeTableRow = React.memo(function SceneTreeTableRow(props: {
             >
               <Tooltip label={"Local props"}>
                 <IconPencil
+                  aria-label={`Edit props for ${props.nodeName}`}
                   style={{
                     cursor: "pointer",
                     width: "1.25em",
