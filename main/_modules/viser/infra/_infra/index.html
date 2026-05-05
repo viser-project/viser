@@ -444,6 +444,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Coroutine</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Generator</span><span class="p">,</span> <span class="n">NewType</span><span class="p">,</span> <span class="n">TypeVar</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">urllib.parse</span><span class="w"> </span><span class="kn">import</span> <span class="n">unquote</span> <span class="k">as</span> <span class="n">_url_unquote</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">msgspec.msgpack</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">websockets.asyncio.server</span>
@@ -1081,28 +1082,34 @@
             <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">headers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;Upgrade&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;websocket&quot;</span><span class="p">:</span>
                 <span class="k">return</span> <span class="kc">None</span>
 
-            <span class="c1"># Strip out search params, get relative path.</span>
+            <span class="c1"># Strip out search params, get relative path. URL-decode so</span>
+            <span class="c1"># percent-encoded traversal sequences (e.g. ``%2e%2e/``)</span>
+            <span class="c1"># can&#39;t slip past the segment check below; normalize</span>
+            <span class="c1"># backslashes to forward slashes so a Windows-style path</span>
+            <span class="c1"># like ``foo\..\bar`` is also caught on Linux, where</span>
+            <span class="c1"># ``pathlib`` would otherwise treat the whole thing as a</span>
+            <span class="c1"># single literal filename.</span>
             <span class="n">path</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">path</span>
             <span class="n">path</span> <span class="o">=</span> <span class="n">path</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s2">&quot;?&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
-            <span class="n">relpath</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">relative_to</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">))</span>
-            <span class="k">if</span> <span class="n">relpath</span> <span class="o">==</span> <span class="s2">&quot;.&quot;</span><span class="p">:</span>
-                <span class="n">relpath</span> <span class="o">=</span> <span class="s2">&quot;index.html&quot;</span>
-            <span class="k">assert</span> <span class="n">http_server_root</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="n">_url_unquote</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot;/&quot;</span><span class="p">)</span>
 
-            <span class="c1"># Reject path traversal by checking the URL parts, not</span>
-            <span class="c1"># by comparing resolved paths. Under Bazel/uv runfile</span>
-            <span class="c1"># trees, http_server_root and the files inside it can</span>
-            <span class="c1"># pass through independent symlinks (e.g. uv hardlinks</span>
-            <span class="c1"># individual files from a shared cache), so Path.resolve()</span>
-            <span class="c1"># places a legitimate child outside the resolved root.</span>
+            <span class="c1"># Reject path traversal by checking URL segments, not by</span>
+            <span class="c1"># comparing resolved paths. Under Bazel/uv runfile trees,</span>
+            <span class="c1"># http_server_root and the files inside it can pass through</span>
+            <span class="c1"># independent symlinks (e.g. uv hardlinks individual files</span>
+            <span class="c1"># from a shared cache), so Path.resolve() places a</span>
+            <span class="c1"># legitimate child outside the resolved root.</span>
             <span class="c1">#</span>
             <span class="c1"># Skipping the resolved-path check means we no longer</span>
             <span class="c1"># validate that symlinks inside http_server_root stay</span>
             <span class="c1"># within it. That is fine here: http_server_root is set</span>
             <span class="c1"># by the application, not by user input, so the only</span>
             <span class="c1"># attacker-controlled component is the URL path.</span>
-            <span class="k">if</span> <span class="s2">&quot;..&quot;</span> <span class="ow">in</span> <span class="n">Path</span><span class="p">(</span><span class="n">relpath</span><span class="p">)</span><span class="o">.</span><span class="n">parts</span><span class="p">:</span>
+            <span class="n">segments</span> <span class="o">=</span> <span class="p">[</span><span class="n">s</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">path</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="n">s</span> <span class="ow">and</span> <span class="n">s</span> <span class="o">!=</span> <span class="s2">&quot;.&quot;</span><span class="p">]</span>
+            <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">s</span> <span class="o">==</span> <span class="s2">&quot;..&quot;</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">segments</span><span class="p">):</span>
                 <span class="k">return</span> <span class="n">Response</span><span class="p">(</span><span class="n">http</span><span class="o">.</span><span class="n">HTTPStatus</span><span class="o">.</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="s2">&quot;NOT FOUND&quot;</span><span class="p">,</span> <span class="n">Headers</span><span class="p">())</span>
+            <span class="n">relpath</span> <span class="o">=</span> <span class="s2">&quot;/&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">segments</span><span class="p">)</span> <span class="k">if</span> <span class="n">segments</span> <span class="k">else</span> <span class="s2">&quot;index.html&quot;</span>
+            <span class="k">assert</span> <span class="n">http_server_root</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="n">source_path</span> <span class="o">=</span> <span class="n">http_server_root</span> <span class="o">/</span> <span class="n">relpath</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">source_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
                 <span class="k">return</span> <span class="n">Response</span><span class="p">(</span><span class="n">http</span><span class="o">.</span><span class="n">HTTPStatus</span><span class="o">.</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="s2">&quot;NOT FOUND&quot;</span><span class="p">,</span> <span class="n">Headers</span><span class="p">())</span>
