@@ -375,6 +375,9 @@ export function SynchronizedCameraControls() {
   const searchParams = new URLSearchParams(window.location.search);
   const forceOrbitOriginTool = searchParams.get("forceOrbitOriginTool") === "1";
   const logCamera = viewer.useDevSettings((state) => state.logCamera);
+  const firstPersonInvertLookY = viewer.useDevSettings(
+    (state) => state.firstPersonInvertLookY,
+  );
 
   // Callback for sending cameras.
   // It makes the code more chaotic, but we preallocate a bunch of things to
@@ -693,12 +696,17 @@ export function SynchronizedCameraControls() {
       );
       sendCamera();
     });
+    const pitchMul = firstPersonInvertLookY ? 1 : -1;
     keys.up.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      camera.rotateX(-0.05 * THREE.MathUtils.DEG2RAD * (event?.deltaTime ?? 0));
+      camera.rotateX(
+        pitchMul * 0.05 * THREE.MathUtils.DEG2RAD * (event?.deltaTime ?? 0),
+      );
       sendCamera();
     });
     keys.down.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      camera.rotateX(0.05 * THREE.MathUtils.DEG2RAD * (event?.deltaTime ?? 0));
+      camera.rotateX(
+        -pitchMul * 0.05 * THREE.MathUtils.DEG2RAD * (event?.deltaTime ?? 0),
+      );
       sendCamera();
     });
     for (const key of Object.values(keys)) {
@@ -713,28 +721,29 @@ export function SynchronizedCameraControls() {
     return () => {
       return;
     };
-  }, [isFirstPerson, camera, sendCamera]);
+  }, [isFirstPerson, camera, sendCamera, firstPersonInvertLookY]);
 
-  // Optional yaw sign for FPS feel with Viser's camera/world frame; drei matches
-  // the standard Three.js pointer-lock example, not a broken default.
+  // Yaw: +movementX matches common FPS feel vs stock three pointer-lock.
+  // Pitch sign: default normal FPS; optional invert via dev settings.
   useLayoutEffect(() => {
     if (!isFirstPerson) return;
     const c = pointerLockRef.current;
     if (c == null) return;
     const euler = new THREE.Euler(0, 0, 0, "YXZ");
     const sens = 2e-3;
+    const pitchMul = firstPersonInvertLookY ? 1 : -1;
     const pl = c as unknown as { onMouseMove: (e: MouseEvent) => void };
     pl.onMouseMove = (e) => {
       if (!c.domElement || !c.isLocked) return;
       euler.setFromQuaternion(c.camera.quaternion);
       euler.y += e.movementX * sens * c.pointerSpeed;
-      euler.x -= e.movementY * sens * c.pointerSpeed;
+      euler.x += pitchMul * e.movementY * sens * c.pointerSpeed;
       const h = Math.PI / 2;
       euler.x = Math.max(h - c.maxPolarAngle, Math.min(h - c.minPolarAngle, euler.x));
       c.camera.quaternion.setFromEuler(euler);
       c.dispatchEvent({ type: "change" } as never);
     };
-  }, [isFirstPerson]);
+  }, [isFirstPerson, firstPersonInvertLookY]);
 
   return (
     <>
