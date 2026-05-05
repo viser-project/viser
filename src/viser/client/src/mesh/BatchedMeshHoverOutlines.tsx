@@ -20,14 +20,14 @@ interface BatchedMeshHoverOutlinesProps {
     rotation: THREE.Quaternion;
     scale: THREE.Vector3;
   };
-  // Function to compute batch index from instance index - needed for cases like InstancedAxes.
-  // where instanceId (from hover) doesn't match batched_positions indexing
+  // Function to compute batch index from instance index -- needed for cases like InstancedAxes,
+  // where instanceId (from hover) doesn't match batched_positions indexing.
   computeBatchIndexFromInstanceIndex?: (instanceId: number) => number;
 }
 
 /**
- * A reusable component that renders hover outlines for batched/instanced meshes
- * Shows a highlighted outline around the instance that is currently being hovered
+ * A reusable component that renders hover outlines for batched/instanced meshes.
+ * Shows a highlighted outline around the instance that is currently being hovered.
  */
 // Static reusable objects for matrix operations.
 const _tempObjects = {

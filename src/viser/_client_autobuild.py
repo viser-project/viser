@@ -31,14 +31,14 @@ def _check_viser_dev_running() -> bool:
     for process in psutil.process_iter():
         try:
             # Check if the process is running from the correct viser client directory
-            # and is actually a vite dev server (not just any vite command)
+            # and is actually a vite dev server (not just any vite command).
             cwd = Path(process.cwd()).resolve()
             expected_cwd = client_dir.resolve()
 
             if cwd == expected_cwd:
                 cmdline = process.cmdline()
                 # Check for vite with --host flag (which is our dev command)
-                # Make sure it's not a build command
+                # Make sure it's not a build command.
                 has_vite = any("vite" in part for part in cmdline)
                 has_host = any("--host" in part for part in cmdline)
                 not_build = not any("build" in part for part in cmdline)

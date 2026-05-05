@@ -8,12 +8,12 @@ type DevSettingsState = {
   enableOrbitCrosshair: boolean;
 };
 
-/** Create a dev settings store with initial values from URL search params for backward compatibility */
+/** Create a dev settings store with initial values from URL search params for backward compatibility. */
 export function useDevSettingsStore() {
   return React.useState(() => {
     const searchParams = new URLSearchParams(window.location.search);
 
-    // Parse initial values from search params
+    // Parse initial values from search params.
     const showStats = searchParams.get("showStats") !== null;
     const fixedDprParam = searchParams.get("fixedDpr");
     const fixedDpr = fixedDprParam ? parseFloat(fixedDprParam) : null;

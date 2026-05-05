@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
+from typing import Any, Callable, Coroutine
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,6 +20,42 @@ def _inject_fake_client(server: viser.ViserServer, client_id: int = 0) -> None:
     """Inject a stub client handle so ``_get_client_handle`` resolves
     when we hand-feed dispatch messages in unit tests."""
     server._connected_clients[ClientId(client_id)] = MagicMock(name="fake-client")
+
+
+def _run_coro(coro: Coroutine[Any, Any, Any]) -> Any:
+    """Run a coroutine on a fresh event loop without ``asyncio.run``'s
+    'no running loop' precondition.
+
+    Some test fixtures (e.g. pytest-playwright's sync API) leave a running
+    event loop attached to the main thread, which breaks ``asyncio.run``
+    when these unit tests run in the same process.
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+def _wait_until(
+    predicate: Callable[[], bool], timeout: float = 2.0, interval: float = 0.005
+) -> None:
+    """Poll ``predicate`` until it returns True or the timeout expires.
+
+    Click / pointer / drag dispatchers submit sync callbacks to a 32-worker
+    threadpool and return without waiting (see ``_dispatch_callback`` in
+    ``_scene_api.py``). Tests that immediately inspect callback side effects
+    can race the threadpool unless we wait for the work to drain.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(interval)
+    raise AssertionError(
+        f"Predicate did not become true within {timeout}s -- callbacks "
+        f"likely did not all fire."
+    )
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
@@ -80,7 +119,6 @@ def test_add_command_rejects_modifier_without_hotkey() -> None:
 def test_click_dispatch_iterates_over_snapshot() -> None:
     """A click callback that mutates click_cb during dispatch must not
     affect the in-progress dispatch -- snapshot semantics."""
-    import asyncio
 
     server = viser.ViserServer()
     box = server.scene.add_box("/box", dimensions=(1.0, 1.0, 1.0))
@@ -113,13 +151,17 @@ def test_click_dispatch_iterates_over_snapshot() -> None:
         screen_pos=(0.5, 0.5),
         modifier=None,
     )
-    asyncio.run(server.scene._handle_node_click_updates(ClientId(0), msg))
+    _run_coro(server.scene._handle_node_click_updates(ClientId(0), msg))
 
     # Snapshot semantics: cb1 + cb2 fire (registered before dispatch),
     # the newly-added callback does NOT fire on this dispatch. Without
     # snapshot, Python's list iterator picks up appends -- `added` would
     # also be in `fired`.
-    assert fired == ["cb1", "cb2"]
+    #
+    # Sync callbacks run on a 32-worker threadpool, so cb1/cb2 may finish in
+    # either order; the test only cares that *both* (and only those two) ran.
+    _wait_until(lambda: len(fired) >= 2)
+    assert sorted(fired) == ["cb1", "cb2"]
     assert len(box._impl.click_cb) == 3
 
 
@@ -238,11 +280,11 @@ def test_remove_click_callback_does_not_fire_cleanup_with_remaining_rect_select(
         fired.append("done")
 
     server.scene.remove_click_callback()
-    # rect-select still registered → cleanup must not fire yet.
+    # rect-select still registered -> cleanup must not fire yet.
     assert fired == []
 
     server.scene.remove_rect_select_callback()
-    # Now the list is empty → cleanup fires.
+    # Now the list is empty -> cleanup fires.
     assert fired == ["done"]
 
 
@@ -418,7 +460,6 @@ def test_pointer_event_unapplied_decorator_does_not_destroy_callbacks() -> None:
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
 def test_pointer_dispatch_iterates_over_snapshot() -> None:
     """Same as click -- pointer dispatch must use snapshot semantics."""
-    import asyncio
 
     server = viser.ViserServer()
     fired: list[str] = []
@@ -441,8 +482,9 @@ def test_pointer_dispatch_iterates_over_snapshot() -> None:
         screen_pos=((0.5, 0.5),),
         modifier=None,
     )
-    asyncio.run(server.scene._handle_scene_pointer_updates(ClientId(0), msg))
+    _run_coro(server.scene._handle_scene_pointer_updates(ClientId(0), msg))
 
+    _wait_until(lambda: "cb1" in fired)
     assert fired == ["cb1"]
     assert len(server.scene._scene_pointer_cb) == 2
 
@@ -470,7 +512,6 @@ def test_pointer_event_supports_multiple_callbacks_simultaneously() -> None:
 def test_pointer_event_modifier_dispatch_filters_correctly() -> None:
     """Two callbacks on the same event_type with different modifiers
     should each fire only when their modifier matches."""
-    import asyncio
 
     server = viser.ViserServer()
 
@@ -499,14 +540,16 @@ def test_pointer_event_modifier_dispatch_filters_correctly() -> None:
 
     # Plain click: only "plain" fires.
     fired.clear()
-    asyncio.run(server.scene._handle_scene_pointer_updates(ClientId(0), make_msg(None)))
+    _run_coro(server.scene._handle_scene_pointer_updates(ClientId(0), make_msg(None)))
+    _wait_until(lambda: "plain" in fired)
     assert fired == ["plain"]
 
     # Cmd-click: only "cmd" fires.
     fired.clear()
-    asyncio.run(
+    _run_coro(
         server.scene._handle_scene_pointer_updates(ClientId(0), make_msg("cmd/ctrl"))
     )
+    _wait_until(lambda: "cmd" in fired)
     assert fired == ["cmd"]
 
 
@@ -514,7 +557,6 @@ def test_pointer_event_modifier_dispatch_filters_correctly() -> None:
 def test_click_dispatch_filters_by_modifier() -> None:
     """Two click callbacks with different modifiers should each fire
     only when their modifier matches."""
-    import asyncio
 
     server = viser.ViserServer()
     box = server.scene.add_box("/box", dimensions=(1.0, 1.0, 1.0))
@@ -544,9 +586,11 @@ def test_click_dispatch_filters_by_modifier() -> None:
         )
 
     fired.clear()
-    asyncio.run(server.scene._handle_node_click_updates(ClientId(0), make_msg(None)))
+    _run_coro(server.scene._handle_node_click_updates(ClientId(0), make_msg(None)))
+    _wait_until(lambda: "plain" in fired)
     assert fired == ["plain"]
 
     fired.clear()
-    asyncio.run(server.scene._handle_node_click_updates(ClientId(0), make_msg("shift")))
+    _run_coro(server.scene._handle_node_click_updates(ClientId(0), make_msg("shift")))
+    _wait_until(lambda: "shift" in fired)
     assert fired == ["shift"]

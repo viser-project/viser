@@ -190,7 +190,7 @@ def test_scene_node_drag_filter_rejects_wrong_modifier(
     wait_for_scene_node(page, "/filter_box")
 
     # Shift-drag: should not match the "cmd/ctrl" binding.
-    # Positive control: a cmd/ctrl drag must register *after* this — if
+    # Positive control: a cmd/ctrl drag must register *after* this -- if
     # the drag never fires for this scene at all (e.g. the canvas isn't
     # ready, registration silently failed, or the pointer missed the
     # box), this test would pass trivially. We verify the binding IS
@@ -201,7 +201,7 @@ def test_scene_node_drag_filter_rejects_wrong_modifier(
         "shift-drag should not trigger a binding that requires cmd/ctrl"
     )
 
-    # Positive control: a matching cmd/ctrl drag MUST fire — proves the
+    # Positive control: a matching cmd/ctrl drag MUST fire -- proves the
     # rejection above wasn't due to an unrelated failure (canvas not
     # ready, missed click, broken registration).
     _perform_modifier_drag(page, "Control")
@@ -227,7 +227,7 @@ def test_scene_node_drag_modifier_order_insensitive(
 
     # Two distinct function objects so the registry doesn't dedupe.
     # type: ignore below because "shift+cmd/ctrl" is not in KeyModifier's
-    # Literal union — intentionally exercising runtime leniency.
+    # Literal union -- intentionally exercising runtime leniency.
     @box.on_drag_start("left", modifier="shift+cmd/ctrl")  # type: ignore[arg-type]
     def _cb_noncanonical(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         del event
@@ -305,16 +305,16 @@ def test_scene_node_drag_pointer_id_isolation(
         """
     )
     # Negative-assertion settle window: long enough that a real
-    # spurious teardown would round-trip (client → server → callback)
+    # spurious teardown would round-trip (client -> server -> callback)
     # under CI load. Round-trip is ~throttle (50ms) + msgpack + WS +
-    # asyncio dispatch ≈ 100-300ms typical, can exceed 500ms loaded.
+    # asyncio dispatch ~100-300ms typical, can exceed 500ms loaded.
     page.wait_for_timeout(800)
     assert not drag_ended.is_set(), (
-        "drag_end fired from a stray pointerId — DragLayer didn't filter "
+        "drag_end fired from a stray pointerId -- DragLayer didn't filter "
         "by pointer identity"
     )
 
-    # Release the real pointer → drag should end normally.
+    # Release the real pointer -> drag should end normally.
     page.mouse.up()
     page.keyboard.up("Control")
     assert drag_ended.wait(timeout=5.0), "drag_end didn't fire on real release"
@@ -325,7 +325,7 @@ def test_scene_node_drag_continues_outside_canvas(
     viser_server: viser.ViserServer,
 ) -> None:
     """Pulling the cursor past the canvas edge mid-drag must NOT stall the
-    drag — drag_update should keep firing, and drag_end should fire when
+    drag -- drag_update should keep firing, and drag_end should fire when
     the pointer is released outside the canvas."""
     viser_server.initial_camera.position = (0.0, 0.0, 4.0)
     viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
@@ -376,14 +376,14 @@ def test_scene_node_drag_continues_outside_canvas(
     page.mouse.down()
     assert drag_started.wait(timeout=5.0), "drag_start didn't fire"
 
-    # Step out of the canvas — every step should produce a drag_update.
+    # Step out of the canvas -- every step should produce a drag_update.
     page.mouse.move(outside_x, outside_y, steps=20)
     page.wait_for_timeout(200)
 
     with lock:
         positions = list(update_positions)
     assert positions, (
-        "no drag_update fired after pointer left the canvas — "
+        "no drag_update fired after pointer left the canvas -- "
         "out-of-canvas check probably stalled the gesture"
     )
     # The drag should have moved (positions strictly differ from start).
@@ -453,7 +453,7 @@ def test_scene_node_drag_batched_axes(
     with lock:
         start_index = captured["start_index"]
         end_index = captured["end_index"]
-    # We have only one logical axis, so the index must be 0 — not 1 or 2
+    # We have only one logical axis, so the index must be 0 -- not 1 or 2
     # (which would indicate the raw 3-per-axis mesh-instance ID had leaked
     # through instead of the logical batch index).
     assert start_index == 0, f"expected logical instance_index=0, got {start_index}"
@@ -464,7 +464,7 @@ def test_scene_node_drag_start_position_tracks_moving_object(
     page: Page,
     viser_server: viser.ViserServer,
 ) -> None:
-    """``start_position`` is *live* — when the object moves between
+    """``start_position`` is *live* -- when the object moves between
     drag events, ``start_position`` should track the click point on
     the object as it moves in world coords. We move the box from the
     drag_update callback (a typical translate-gesture pattern) and
@@ -491,7 +491,7 @@ def test_scene_node_drag_start_position_tracks_moving_object(
     async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         with lock:
             update_events.append(event)
-        # Translate the box by the incremental drag vector — this is
+        # Translate the box by the incremental drag vector -- this is
         # the typical "follow the cursor" gesture, and it makes the
         # object move between events.
         delta = tuple(e - s for e, s in zip(event.end_position, event.start_position))
@@ -522,7 +522,7 @@ def test_scene_node_drag_start_position_tracks_moving_object(
     # ``start_position`` (the live grab point on the object) should
     # therefore also shift across events. The total shift should be
     # comparable in magnitude to the cursor movement on the drag plane
-    # — well above any FP roundoff threshold.
+    # -- well above any FP roundoff threshold.
     first_start = events[0].start_position
     last_start = events[-1].start_position
     shift = math.sqrt(sum((a - b) ** 2 for a, b in zip(last_start, first_start)))
@@ -547,14 +547,14 @@ def test_scene_node_drag_batched_mesh_repeat_after_translate(
     (per user report): "after I move a mesh, I often can't click and
     drag on it a second time. But if I move the camera so its
     reprojected position is close to its original position, then I'm
-    able to drag it again." — exactly consistent with a stale spatial
+    able to drag it again." -- exactly consistent with a stale spatial
     cache: rays toward the new position miss because the cached sphere
     still encloses only the old positions; rays whose camera reprojects
     near the original position pass the sphere check and the per-
     instance check (which uses the live matrix) hits.
 
     The BVH path auto-updates via ``bvh.move(id)`` per ``updateMatrix``,
-    but the BVH is only built for clickable meshes — a drag-only node
+    but the BVH is only built for clickable meshes -- a drag-only node
     falls through to the bounding-sphere path."""
     viser_server.initial_camera.position = (0.0, 0.0, 8.0)
     viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
@@ -618,7 +618,7 @@ def test_scene_node_drag_batched_mesh_repeat_after_translate(
     # Helper: project a viser-world point through the THREE camera and
     # return canvas-relative (x, y) pixels. Done in the page so we use
     # the same coordinate-frame conversion the renderer uses (the
-    # ``""`` root node carries the viser→three rotation, so we read
+    # ``""`` root node carries the viser->three rotation, so we read
     # ``targetObj.matrixWorld`` to apply it).
     def project_viser_to_canvas_xy(
         viser_xyz: tuple[float, float, float],
@@ -629,7 +629,7 @@ def test_scene_node_drag_batched_mesh_repeat_after_translate(
                 if (!m || !m.camera || !m.canvas || !m.nodeRefFromName) return null;
                 // The viser root (node name "") carries the viser-Z-up
                 // -> three-Y-up rotation. Look it up by name rather than
-                // traversing — many three.js objects have name="" and
+                // traversing -- many three.js objects have name="" and
                 // traversal would match the wrong one.
                 const root = m.nodeRefFromName[""];
                 if (!root) return null;
@@ -667,8 +667,8 @@ def test_scene_node_drag_batched_mesh_repeat_after_translate(
     )
 
     # Programmatically translate the box to a new world position. This
-    # exercises the ``batched_positions`` setter directly — no drag
-    # callback involved — so any failure of the second drag is purely
+    # exercises the ``batched_positions`` setter directly -- no drag
+    # callback involved -- so any failure of the second drag is purely
     # about whether the raycast finds the instance at its new location.
     # In viser (Z-up), the camera at (0, 0, 8) looks straight down the
     # -Z axis and the screen-horizontal axis is viser-(-Y). We move the
@@ -686,7 +686,7 @@ def test_scene_node_drag_batched_mesh_repeat_after_translate(
     pixel_shift = math.sqrt((new_x - initial_x) ** 2 + (new_y - initial_y) ** 2)
     assert pixel_shift > 30.0, (
         f"projected pixel shift after translating to {new_viser_pos} is "
-        f"only {pixel_shift:.1f}px — too small to differentiate stale-cache "
+        f"only {pixel_shift:.1f}px -- too small to differentiate stale-cache "
         f"behavior from a hit at the original position. Adjust new_viser_pos "
         f"or camera distance."
     )
@@ -704,7 +704,7 @@ def test_scene_node_drag_batched_mesh_repeat_after_translate(
         f"after translating the instance to viser={new_viser_pos} (canvas "
         f"pixel shift {pixel_shift:.1f}px from the original), a second drag "
         f"at its new screen position ({new_canvas_x:.1f}, {new_canvas_y:.1f}) "
-        f"should fire — got {second_count} total drag_starts. Root cause is "
+        f"should fire -- got {second_count} total drag_starts. Root cause is "
         f"a stale union bounding sphere in the vendor InstancedMesh2 raycast: "
         f"it's computed lazily on first raycast and never invalidated when "
         f"``batched_positions`` updates. Fix: invalidate ``mesh.boundingSphere`` "
@@ -716,8 +716,8 @@ def test_scene_node_drag_no_spurious_update_before_end(
     page: Page,
     viser_server: viser.ViserServer,
 ) -> None:
-    """A drag with no mouse motion (mousedown → mouseup at the same
-    pixel) must NOT fire any ``on_drag_update`` callbacks — ``flush()``
+    """A drag with no mouse motion (mousedown -> mouseup at the same
+    pixel) must NOT fire any ``on_drag_update`` callbacks -- ``flush()``
     used to re-emit the last sent message even when nothing was
     throttled, duplicating the start as a spurious update before end."""
     viser_server.initial_camera.position = (0.0, 0.0, 4.0)
@@ -759,8 +759,8 @@ def test_scene_node_drag_no_spurious_update_before_end(
     cx = canvas_box["x"] + canvas_box["width"] / 2
     cy = canvas_box["y"] + canvas_box["height"] / 2
 
-    # Mouse down at center, then immediately up — no motion in between,
-    # so no pointermove → no throttled update queued.
+    # Mouse down at center, then immediately up -- no motion in between,
+    # so no pointermove -> no throttled update queued.
     page.keyboard.down("Control")
     page.mouse.move(cx, cy)
     page.mouse.down()
@@ -822,7 +822,7 @@ def test_scene_node_drag_end_fires_when_node_removed_midflight(
 
     # Begin a drag, then remove the scene node mid-gesture. The end
     # callback must fire from the *removal* path (client's
-    # ``stopIfNodeIs`` triggered by the visibility loss) — NOT from a
+    # ``stopIfNodeIs`` triggered by the visibility loss) -- NOT from a
     # subsequent ``mouse.up()``, which would mask a regression in the
     # remove-driven teardown. We assert ``drag_ended.wait`` succeeds
     # BEFORE releasing the mouse; only after that do we clean up the
@@ -837,10 +837,10 @@ def test_scene_node_drag_end_fires_when_node_removed_midflight(
     box.remove()
 
     assert drag_ended.wait(timeout=5.0), (
-        "drag_end did not fire after the dragged node was removed mid-drag — "
+        "drag_end did not fire after the dragged node was removed mid-drag -- "
         "client likely dropped the end message because the live grab point "
         "was unavailable, leaking per-drag state on the server. (The mouse "
-        "is still held down at this point — if the end fires only after "
+        "is still held down at this point -- if the end fires only after "
         "mouseup, this assertion catches that the remove path didn't fire)"
     )
 
@@ -850,7 +850,7 @@ def test_scene_node_drag_end_fires_when_node_removed_midflight(
 
 
 # Note: end-to-end coverage of "DragLayer disabled in embed/playback
-# mode" is awkward — verifying the user-visible outcome (camera
+# mode" is awkward -- verifying the user-visible outcome (camera
 # falls through, no callbacks fire) requires a separate fixture for
 # embed mode AND a related fix in SceneTree's onPointerDown handler
 # (which currently always ``stopPropagation`` for any node with
@@ -901,7 +901,7 @@ def test_scene_node_drag_callback_removal(
 
     _perform_modifier_drag(page, "Control")
     # Negative-assertion settle window: if any callback were going to
-    # fire, it would have round-tripped (client → server → callback)
+    # fire, it would have round-tripped (client -> server -> callback)
     # within this window even under CI load.
     page.wait_for_timeout(1000)
 

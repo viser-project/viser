@@ -101,7 +101,7 @@ export const PointCloud = React.forwardRef<
 
   const props = message.props;
 
-  // Geometry populated via ref — R3F auto-disposes on unmount.
+  // Geometry populated via ref -- R3F auto-disposes on unmount.
   const geomRef = React.useRef<THREE.BufferGeometry>(null);
   React.useLayoutEffect(() => {
     const geom = geomRef.current;
@@ -153,7 +153,7 @@ export const PointCloud = React.forwardRef<
     return () => material.dispose();
   }, [material]);
 
-  // Update material properties with point_ball_norm
+  // Update material properties with point_ball_norm.
   React.useEffect(() => {
     material.uniforms.scale.value = 10.0;
     material.uniforms.point_ball_norm.value = {

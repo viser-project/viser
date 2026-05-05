@@ -27,24 +27,24 @@ def main(sync_messages: bool = False, sync_version: bool = False) -> None:
     )
 
     if sync_messages:
-        # Generate TypeScript message interfaces
+        # Generate TypeScript message interfaces.
         defs = viser.infra.generate_typescript_interfaces(Message)
 
-        # Create directory if it doesn't exist
+        # Create directory if it doesn't exist.
         messages_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Write to file even if it doesn't exist yet
+        # Write to file even if it doesn't exist yet.
         messages_path.write_text(defs)
         print(f"{messages_path} updated")
 
     if sync_version:
-        # Create directory if it doesn't exist
+        # Create directory if it doesn't exist.
         version_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Try to fetch contributors from GitHub API
+        # Try to fetch contributors from GitHub API.
         contributors_data = []
         try:
-            # GitHub API endpoint for contributors
+            # GitHub API endpoint for contributors.
             api_url = "https://api.github.com/repos/viser-project/viser/contributors?per_page=500"
             req = urllib.request.Request(
                 api_url,
@@ -56,7 +56,7 @@ def main(sync_messages: bool = False, sync_version: bool = False) -> None:
             with urllib.request.urlopen(req) as response:
                 contributors_json = json.loads(response.read().decode())
 
-                # Extract relevant contributor information
+                # Extract relevant contributor information.
                 for contributor in contributors_json:
                     if (
                         isinstance(contributor, dict)
@@ -75,7 +75,7 @@ def main(sync_messages: bool = False, sync_version: bool = False) -> None:
             print("Skipping version and contributors info.")
 
         if len(contributors_data) > 0:
-            # Generate combined version and contributors file
+            # Generate combined version and contributors file.
             version_content = f"""// Automatically generated file - do not edit manually.
         // This is synchronized with the Python package version in viser/__init__.py.
         export const VISER_VERSION = "{viser.__version__}";
@@ -91,7 +91,7 @@ def main(sync_messages: bool = False, sync_version: bool = False) -> None:
             version_path.write_text(version_content)
             print(f"Version and contributors info generated: {version_path}")
 
-    # Run prettier on all generated files if it's available
+    # Run prettier on all generated files if it's available.
     try:
         subprocess.run(
             args=["npx", "prettier", "-w", str(messages_path), str(version_path)],

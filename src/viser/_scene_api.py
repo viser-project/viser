@@ -1022,7 +1022,7 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        # Handle backward compatibility: support old 'positions' parameter
+        # Handle backward compatibility: support old 'positions' parameter.
         if "positions" in _deprecated_kwargs:
             if points is not MISSING_SENTINEL:
                 raise ValueError(
@@ -1157,7 +1157,7 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        # Handle backward compatibility: support old 'positions' parameter
+        # Handle backward compatibility: support old 'positions' parameter.
         if "positions" in _deprecated_kwargs:
             if points is not MISSING_SENTINEL:
                 raise ValueError(

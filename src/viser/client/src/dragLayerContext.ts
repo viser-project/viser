@@ -1,7 +1,7 @@
 /** Context + hook for the viewer-level drag coordinator.
  *
  * Split from ``DragLayer.tsx`` so the Fast Refresh (HMR) module boundary
- * only contains components — React warns when a component file also
+ * only contains components -- React warns when a component file also
  * exports non-components. */
 
 import React from "react";

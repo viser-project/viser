@@ -187,7 +187,7 @@ class Message(abc.ABC):
         Otherwise, arrays are inlined as memoryviews in the returned dict."""
         message_type = type(self)
         hints = get_type_hints_cached(message_type)
-        # Filter to type-hinted fields only — excludes dynamic attributes
+        # Filter to type-hinted fields only -- excludes dynamic attributes
         # like cached values that shouldn't be serialized.
         out = {
             k: _prepare_for_serialization(v, hints[k], binary_buffers)

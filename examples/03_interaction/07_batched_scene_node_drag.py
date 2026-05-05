@@ -159,7 +159,7 @@ def main() -> None:
     active_mode: str | None = None
     grab_body: np.ndarray | None = None  # body-frame grab, for translate/rotate
     spring_target: np.ndarray | None = None  # world target for the spring
-    teleport_offset: np.ndarray | None = None  # cursor → instance position
+    teleport_offset: np.ndarray | None = None  # cursor -> instance position
     ext_torque = np.zeros(3)
 
     shutdown = threading.Event()
@@ -188,7 +188,7 @@ def main() -> None:
                         # Spring acts on the *grab point* (body-frame
                         # ``grab_body`` mapped to world via the body's
                         # current pose). Off-center grabs naturally
-                        # produce a torque (lever × force) on top of
+                        # produce a torque (lever x force) on top of
                         # the linear pull, so dragging an edge yanks
                         # AND spins the body. Force is zero at drag
                         # start (grab_world == spring_target == click)
@@ -344,7 +344,7 @@ def main() -> None:
             active_mode = "rotate"
             grab_world = np.array(event.start_position)
             grab_body = compute_grab_body(i, grab_world)
-            # Pin the grab point to where it was clicked — the instance
+            # Pin the grab point to where it was clicked -- the instance
             # rotates around this point.
             spring_target = grab_world
             ext_torque = np.zeros(3)
@@ -352,10 +352,10 @@ def main() -> None:
     @handle.on_drag_update("left", modifier="cmd/ctrl+shift")
     async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
         nonlocal ext_torque
-        # Drag vector = rotation axis (direction) × spin magnitude (length).
+        # Drag vector = rotation axis (direction) x spin magnitude (length).
         # Use the *frozen* spring_target (click point at drag-start) rather
         # than ``event.start_position``, which is live and tracks the
-        # instance's current pose — keeps the gesture independent of
+        # instance's current pose -- keeps the gesture independent of
         # spring stiffness.
         with lock:
             assert spring_target is not None

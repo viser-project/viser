@@ -2153,3 +2153,953 @@ export function isGuiComponentMessage(
 ): message is GuiComponentMessage {
   return typeSetGuiComponentMessage.has(message.type);
 }
+
+export type ScenePropDescriptor = {
+  tsType: string;
+  editorHidden?: boolean;
+} & (
+  | { kind: "default" }
+  | { kind: "boolean" }
+  | { kind: "color" }
+  | { kind: "stringLiteral"; options: readonly string[] }
+);
+
+export const SceneNodePropsSchema: {
+  [messageType: string]: { [propName: string]: ScenePropDescriptor };
+} = {
+  CameraFrustumMessage: {
+    fov: {
+      kind: "default",
+      tsType: "number",
+    },
+    aspect: {
+      kind: "default",
+      tsType: "number",
+    },
+    line_width: {
+      kind: "default",
+      tsType: "number",
+    },
+    color: {
+      kind: "color",
+      tsType: "[number, number, number]",
+    },
+    _format: {
+      kind: "stringLiteral",
+      tsType: "'jpeg' | 'png'",
+      options: ["jpeg", "png"],
+    },
+    _image_data: {
+      kind: "default",
+      tsType: "(Uint8Array<ArrayBuffer> | null)",
+    },
+    cast_shadow: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    receive_shadow: {
+      kind: "default",
+      tsType: "(boolean | number)",
+    },
+    variant: {
+      kind: "stringLiteral",
+      tsType: "'wireframe' | 'filled'",
+      options: ["wireframe", "filled"],
+    },
+    scale: {
+      kind: "default",
+      tsType: "(number | [number, number, number])",
+    },
+  },
+  GlbMessage: {
+    glb_data: {
+      kind: "default",
+      tsType: "Uint8Array<ArrayBuffer>",
+    },
+    cast_shadow: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    receive_shadow: {
+      kind: "default",
+      tsType: "(boolean | number)",
+    },
+    scale: {
+      kind: "default",
+      tsType: "(number | [number, number, number])",
+    },
+  },
+  FrameMessage: {
+    show_axes: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    axes_length: {
+      kind: "default",
+      tsType: "number",
+    },
+    axes_radius: {
+      kind: "default",
+      tsType: "number",
+    },
+    origin_radius: {
+      kind: "default",
+      tsType: "number",
+    },
+    origin_color: {
+      kind: "color",
+      tsType: "[number, number, number]",
+    },
+    scale: {
+      kind: "default",
+      tsType: "(number | [number, number, number])",
+    },
+  },
+  BatchedAxesMessage: {
+    batched_wxyzs: {
+      kind: "default",
+      tsType: "Float32Array",
+    },
+    batched_positions: {
+      kind: "default",
+      tsType: "Float32Array",
+    },
+    batched_scales: {
+      kind: "default",
+      tsType: "(Float32Array | null)",
+    },
+    axes_length: {
+      kind: "default",
+      tsType: "number",
+    },
+    axes_radius: {
+      kind: "default",
+      tsType: "number",
+    },
+    scale: {
+      kind: "default",
+      tsType: "(number | [number, number, number])",
+    },
+  },
+  GridMessage: {
+    width: {
+      kind: "default",
+      tsType: "number",
+    },
+    height: {
+      kind: "default",
+      tsType: "number",
+    },
+    plane: {
+      kind: "stringLiteral",
+      tsType: "'xz' | 'xy' | 'yx' | 'yz' | 'zx' | 'zy'",
+      options: ["xz", "xy", "yx", "yz", "zx", "zy"],
+    },
+    cell_color: {
+      kind: "color",
+      tsType: "[number, number, number]",
+    },
+    cell_thickness: {
+      kind: "default",
+      tsType: "number",
+    },
+    cell_size: {
+      kind: "default",
+      tsType: "number",
+    },
+    section_color: {
+      kind: "color",
+      tsType: "[number, number, number]",
+    },
+    section_thickness: {
+      kind: "default",
+      tsType: "number",
+    },
+    section_size: {
+      kind: "default",
+      tsType: "number",
+    },
+    infinite_grid: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    fade_distance: {
+      kind: "default",
+      tsType: "number",
+    },
+    fade_strength: {
+      kind: "default",
+      tsType: "number",
+    },
+    fade_from: {
+      kind: "stringLiteral",
+      tsType: "'camera' | 'origin'",
+      options: ["camera", "origin"],
+    },
+    shadow_opacity: {
+      kind: "default",
+      tsType: "number",
+    },
+    plane_color: {
+      kind: "color",
+      tsType: "[number, number, number]",
+    },
+    plane_opacity: {
+      kind: "default",
+      tsType: "number",
+    },
+    scale: {
+      kind: "default",
+      tsType: "(number | [number, number, number])",
+    },
+  },
+  LabelMessage: {
+    text: {
+      kind: "default",
+      tsType: "string",
+    },
+    font_size_mode: {
+      kind: "stringLiteral",
+      tsType: "'screen' | 'scene'",
+      options: ["screen", "scene"],
+    },
+    font_screen_scale: {
+      kind: "default",
+      tsType: "number",
+    },
+    font_scene_height: {
+      kind: "default",
+      tsType: "number",
+    },
+    depth_test: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    anchor: {
+      kind: "stringLiteral",
+      tsType:
+        "'top-left' | 'top-center' | 'top-right' | 'center-left' | 'center-center' | 'center-right' | 'bottom-left' | 'bottom-center' | 'bottom-right'",
+      options: [
+        "top-left",
+        "top-center",
+        "top-right",
+        "center-left",
+        "center-center",
+        "center-right",
+        "bottom-left",
+        "bottom-center",
+        "bottom-right",
+      ],
+    },
+  },
+  Gui3DMessage: {
+    order: {
+      kind: "default",
+      tsType: "number",
+    },
+    container_uuid: {
+      kind: "default",
+      tsType: "string",
+    },
+  },
+  PointCloudMessage: {
+    points: {
+      kind: "default",
+      tsType: "(Uint16Array | Float32Array)",
+    },
+    colors: {
+      kind: "default",
+      tsType: "Uint8Array<ArrayBuffer>",
+    },
+    point_size: {
+      kind: "default",
+      tsType: "number",
+    },
+    point_shape: {
+      kind: "stringLiteral",
+      tsType: "'square' | 'diamond' | 'circle' | 'rounded' | 'sparkle'",
+      options: ["square", "diamond", "circle", "rounded", "sparkle"],
+    },
+    precision: {
+      kind: "stringLiteral",
+      tsType: "'float16' | 'float32'",
+      editorHidden: true,
+      options: ["float16", "float32"],
+    },
+    scale: {
+      kind: "default",
+      tsType: "(number | [number, number, number])",
+    },
+    point_shading: {
+      kind: "stringLiteral",
+      tsType: "'flat' | 'gradient'",
+      options: ["flat", "gradient"],
+    },
+  },
+  DirectionalLightMessage: {
+    color: {
+      kind: "color",
+      tsType: "[number, number, number]",
+    },
+    intensity: {
+      kind: "default",
+      tsType: "number",
+    },
+    cast_shadow: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+  },
+  AmbientLightMessage: {
+    color: {
+      kind: "color",
+      tsType: "[number, number, number]",
+    },
+    intensity: {
+      kind: "default",
+      tsType: "number",
+    },
+  },
+  HemisphereLightMessage: {
+    sky_color: {
+      kind: "color",
+      tsType: "[number, number, number]",
+    },
+    ground_color: {
+      kind: "color",
+      tsType: "[number, number, number]",
+    },
+    intensity: {
+      kind: "default",
+      tsType: "number",
+    },
+  },
+  PointLightMessage: {
+    color: {
+      kind: "color",
+      tsType: "[number, number, number]",
+    },
+    intensity: {
+      kind: "default",
+      tsType: "number",
+    },
+    distance: {
+      kind: "default",
+      tsType: "number",
+    },
+    decay: {
+      kind: "default",
+      tsType: "number",
+    },
+    cast_shadow: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+  },
+  RectAreaLightMessage: {
+    color: {
+      kind: "color",
+      tsType: "[number, number, number]",
+    },
+    intensity: {
+      kind: "default",
+      tsType: "number",
+    },
+    width: {
+      kind: "default",
+      tsType: "number",
+    },
+    height: {
+      kind: "default",
+      tsType: "number",
+    },
+  },
+  SpotLightMessage: {
+    color: {
+      kind: "color",
+      tsType: "[number, number, number]",
+    },
+    intensity: {
+      kind: "default",
+      tsType: "number",
+    },
+    distance: {
+      kind: "default",
+      tsType: "number",
+    },
+    angle: {
+      kind: "default",
+      tsType: "number",
+    },
+    penumbra: {
+      kind: "default",
+      tsType: "number",
+    },
+    decay: {
+      kind: "default",
+      tsType: "number",
+    },
+    cast_shadow: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    direction: {
+      kind: "default",
+      tsType: "[number, number, number]",
+    },
+  },
+  MeshMessage: {
+    vertices: {
+      kind: "default",
+      tsType: "Float32Array",
+    },
+    faces: {
+      kind: "default",
+      tsType: "Uint32Array",
+    },
+    color: {
+      kind: "color",
+      tsType: "[number, number, number]",
+    },
+    wireframe: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    opacity: {
+      kind: "default",
+      tsType: "(number | null)",
+    },
+    flat_shading: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    side: {
+      kind: "stringLiteral",
+      tsType: "'front' | 'back' | 'double'",
+      options: ["front", "back", "double"],
+    },
+    material: {
+      kind: "stringLiteral",
+      tsType: "'standard' | 'toon3' | 'toon5'",
+      options: ["standard", "toon3", "toon5"],
+    },
+    scale: {
+      kind: "default",
+      tsType: "(number | [number, number, number])",
+    },
+    cast_shadow: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    receive_shadow: {
+      kind: "default",
+      tsType: "(boolean | number)",
+    },
+  },
+  BoxMessage: {
+    dimensions: {
+      kind: "default",
+      tsType: "[number, number, number]",
+    },
+    color: {
+      kind: "color",
+      tsType: "[number, number, number]",
+    },
+    wireframe: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    opacity: {
+      kind: "default",
+      tsType: "(number | null)",
+    },
+    flat_shading: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    side: {
+      kind: "stringLiteral",
+      tsType: "'front' | 'back' | 'double'",
+      options: ["front", "back", "double"],
+    },
+    material: {
+      kind: "stringLiteral",
+      tsType: "'standard' | 'toon3' | 'toon5'",
+      options: ["standard", "toon3", "toon5"],
+    },
+    cast_shadow: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    receive_shadow: {
+      kind: "default",
+      tsType: "(boolean | number)",
+    },
+    scale: {
+      kind: "default",
+      tsType: "(number | [number, number, number])",
+    },
+  },
+  IcosphereMessage: {
+    radius: {
+      kind: "default",
+      tsType: "number",
+    },
+    subdivisions: {
+      kind: "default",
+      tsType: "number",
+    },
+    color: {
+      kind: "color",
+      tsType: "[number, number, number]",
+    },
+    wireframe: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    opacity: {
+      kind: "default",
+      tsType: "(number | null)",
+    },
+    flat_shading: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    side: {
+      kind: "stringLiteral",
+      tsType: "'front' | 'back' | 'double'",
+      options: ["front", "back", "double"],
+    },
+    material: {
+      kind: "stringLiteral",
+      tsType: "'standard' | 'toon3' | 'toon5'",
+      options: ["standard", "toon3", "toon5"],
+    },
+    cast_shadow: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    receive_shadow: {
+      kind: "default",
+      tsType: "(boolean | number)",
+    },
+    scale: {
+      kind: "default",
+      tsType: "(number | [number, number, number])",
+    },
+  },
+  CylinderMessage: {
+    radius: {
+      kind: "default",
+      tsType: "number",
+    },
+    height: {
+      kind: "default",
+      tsType: "number",
+    },
+    color: {
+      kind: "color",
+      tsType: "[number, number, number]",
+    },
+    radial_segments: {
+      kind: "default",
+      tsType: "number",
+    },
+    wireframe: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    opacity: {
+      kind: "default",
+      tsType: "(number | null)",
+    },
+    flat_shading: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    side: {
+      kind: "stringLiteral",
+      tsType: "'front' | 'back' | 'double'",
+      options: ["front", "back", "double"],
+    },
+    material: {
+      kind: "stringLiteral",
+      tsType: "'standard' | 'toon3' | 'toon5'",
+      options: ["standard", "toon3", "toon5"],
+    },
+    cast_shadow: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    receive_shadow: {
+      kind: "default",
+      tsType: "(boolean | number)",
+    },
+    scale: {
+      kind: "default",
+      tsType: "(number | [number, number, number])",
+    },
+  },
+  SkinnedMeshMessage: {
+    vertices: {
+      kind: "default",
+      tsType: "Float32Array",
+    },
+    faces: {
+      kind: "default",
+      tsType: "Uint32Array",
+    },
+    color: {
+      kind: "color",
+      tsType: "[number, number, number]",
+    },
+    wireframe: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    opacity: {
+      kind: "default",
+      tsType: "(number | null)",
+    },
+    flat_shading: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    side: {
+      kind: "stringLiteral",
+      tsType: "'front' | 'back' | 'double'",
+      options: ["front", "back", "double"],
+    },
+    material: {
+      kind: "stringLiteral",
+      tsType: "'standard' | 'toon3' | 'toon5'",
+      options: ["standard", "toon3", "toon5"],
+    },
+    scale: {
+      kind: "default",
+      tsType: "(number | [number, number, number])",
+    },
+    cast_shadow: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    receive_shadow: {
+      kind: "default",
+      tsType: "(boolean | number)",
+    },
+    bone_wxyzs: {
+      kind: "default",
+      tsType: "Float32Array",
+    },
+    bone_positions: {
+      kind: "default",
+      tsType: "Float32Array",
+    },
+    skin_indices: {
+      kind: "default",
+      tsType: "Uint16Array",
+    },
+    skin_weights: {
+      kind: "default",
+      tsType: "Float32Array",
+    },
+  },
+  BatchedMeshesMessage: {
+    batched_wxyzs: {
+      kind: "default",
+      tsType: "Float32Array",
+    },
+    batched_positions: {
+      kind: "default",
+      tsType: "Float32Array",
+    },
+    batched_scales: {
+      kind: "default",
+      tsType: "(Float32Array | null)",
+    },
+    lod: {
+      kind: "default",
+      tsType: "('auto' | 'off' | ([number, number])[])",
+    },
+    vertices: {
+      kind: "default",
+      tsType: "Float32Array",
+    },
+    faces: {
+      kind: "default",
+      tsType: "Uint32Array",
+    },
+    batched_colors: {
+      kind: "default",
+      tsType: "Uint8Array<ArrayBuffer>",
+    },
+    wireframe: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    opacity: {
+      kind: "default",
+      tsType: "(number | null)",
+    },
+    flat_shading: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    side: {
+      kind: "stringLiteral",
+      tsType: "'front' | 'back' | 'double'",
+      options: ["front", "back", "double"],
+    },
+    material: {
+      kind: "stringLiteral",
+      tsType: "'standard' | 'toon3' | 'toon5'",
+      options: ["standard", "toon3", "toon5"],
+    },
+    cast_shadow: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    receive_shadow: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    batched_opacities: {
+      kind: "default",
+      tsType: "(Float32Array | null)",
+    },
+    scale: {
+      kind: "default",
+      tsType: "(number | [number, number, number])",
+    },
+  },
+  BatchedGlbMessage: {
+    batched_wxyzs: {
+      kind: "default",
+      tsType: "Float32Array",
+    },
+    batched_positions: {
+      kind: "default",
+      tsType: "Float32Array",
+    },
+    batched_scales: {
+      kind: "default",
+      tsType: "(Float32Array | null)",
+    },
+    lod: {
+      kind: "default",
+      tsType: "('auto' | 'off' | ([number, number])[])",
+    },
+    glb_data: {
+      kind: "default",
+      tsType: "Uint8Array<ArrayBuffer>",
+    },
+    cast_shadow: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    receive_shadow: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    scale: {
+      kind: "default",
+      tsType: "(number | [number, number, number])",
+    },
+  },
+  TransformControlsMessage: {
+    scale: {
+      kind: "default",
+      tsType: "number",
+    },
+    line_width: {
+      kind: "default",
+      tsType: "number",
+    },
+    fixed: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    active_axes: {
+      kind: "default",
+      tsType: "[boolean, boolean, boolean]",
+    },
+    disable_axes: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    disable_sliders: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    disable_rotations: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    translation_limits: {
+      kind: "default",
+      tsType: "[[number, number], [number, number], [number, number]]",
+    },
+    rotation_limits: {
+      kind: "default",
+      tsType: "[[number, number], [number, number], [number, number]]",
+    },
+    depth_test: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    opacity: {
+      kind: "default",
+      tsType: "number",
+    },
+  },
+  ImageMessage: {
+    _format: {
+      kind: "stringLiteral",
+      tsType: "'jpeg' | 'png'",
+      options: ["jpeg", "png"],
+    },
+    _data: {
+      kind: "default",
+      tsType: "Uint8Array<ArrayBuffer>",
+    },
+    render_width: {
+      kind: "default",
+      tsType: "number",
+    },
+    render_height: {
+      kind: "default",
+      tsType: "number",
+    },
+    cast_shadow: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    receive_shadow: {
+      kind: "default",
+      tsType: "(boolean | number)",
+    },
+    scale: {
+      kind: "default",
+      tsType: "(number | [number, number, number])",
+    },
+  },
+  LineSegmentsMessage: {
+    points: {
+      kind: "default",
+      tsType: "Float32Array",
+    },
+    line_width: {
+      kind: "default",
+      tsType: "number",
+    },
+    colors: {
+      kind: "default",
+      tsType: "Uint8Array<ArrayBuffer>",
+    },
+    scale: {
+      kind: "default",
+      tsType: "(number | [number, number, number])",
+    },
+  },
+  ArrowMessage: {
+    points: {
+      kind: "default",
+      tsType: "Float32Array",
+    },
+    colors: {
+      kind: "default",
+      tsType: "Uint8Array<ArrayBuffer>",
+    },
+    shaft_radius: {
+      kind: "default",
+      tsType: "number",
+    },
+    head_radius: {
+      kind: "default",
+      tsType: "number",
+    },
+    head_length: {
+      kind: "default",
+      tsType: "number",
+    },
+    line_width: {
+      kind: "default",
+      tsType: "number",
+    },
+    scale: {
+      kind: "default",
+      tsType: "(number | [number, number, number])",
+    },
+  },
+  CatmullRomSplineMessage: {
+    points: {
+      kind: "default",
+      tsType: "Float32Array",
+    },
+    curve_type: {
+      kind: "stringLiteral",
+      tsType: "'centripetal' | 'chordal' | 'catmullrom'",
+      options: ["centripetal", "chordal", "catmullrom"],
+    },
+    tension: {
+      kind: "default",
+      tsType: "number",
+    },
+    closed: {
+      kind: "boolean",
+      tsType: "boolean",
+    },
+    line_width: {
+      kind: "default",
+      tsType: "number",
+    },
+    color: {
+      kind: "color",
+      tsType: "[number, number, number]",
+    },
+    segments: {
+      kind: "default",
+      tsType: "(number | null)",
+    },
+    scale: {
+      kind: "default",
+      tsType: "(number | [number, number, number])",
+    },
+  },
+  CubicBezierSplineMessage: {
+    points: {
+      kind: "default",
+      tsType: "Float32Array",
+    },
+    control_points: {
+      kind: "default",
+      tsType: "Float32Array",
+    },
+    line_width: {
+      kind: "default",
+      tsType: "number",
+    },
+    color: {
+      kind: "color",
+      tsType: "[number, number, number]",
+    },
+    segments: {
+      kind: "default",
+      tsType: "(number | null)",
+    },
+    scale: {
+      kind: "default",
+      tsType: "(number | [number, number, number])",
+    },
+  },
+  GaussianSplatsMessage: {
+    buffer: {
+      kind: "default",
+      tsType: "Uint32Array",
+    },
+    scale: {
+      kind: "default",
+      tsType: "(number | [number, number, number])",
+    },
+  },
+};

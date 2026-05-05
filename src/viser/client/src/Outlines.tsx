@@ -74,7 +74,7 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
           oldAngle.current = angle;
           oldGeometry.current = parent.geometry;
 
-          // Remove old mesh
+          // Remove old mesh.
           let mesh = group.children[0] as any;
           if (mesh) {
             if (angle) mesh.geometry.dispose();

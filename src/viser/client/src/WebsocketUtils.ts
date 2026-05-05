@@ -58,7 +58,7 @@ export function makeThrottledMessageSender(
     if (viewerMutable.sendMessage === null) return;
     // Only emit if there's a *deferred* update pending (``stale``).
     // ``latestMessage`` is always the most-recent message handed to
-    // ``send``, including ones that already went out — without the
+    // ``send``, including ones that already went out -- without the
     // ``stale`` gate, ``flush`` would re-send the latest message even
     // when nothing was throttled, duplicating the previous update
     // before a follow-up ``end`` message.

@@ -800,7 +800,7 @@ class GuiApi:
         """
         # Nested forms would produce invalid HTML on the client (nested
         # <form> elements are not allowed and the browser flattens
-        # them). Walk through folders, tabs, and tab groups — they
+        # them). Walk through folders, tabs, and tab groups -- they
         # share a DOM context with their ancestors. Stop at modals,
         # which render into a separate React portal where a fresh
         # <form> is well-formed.
@@ -1263,7 +1263,7 @@ class GuiApi:
             A handle for programmatically updating chart properties and data.
         """
 
-        # Validate data structure
+        # Validate data structure.
         assert len(data) >= 2, (
             "data must have at least 2 arrays (x-data + at least one y-data series)"
         )
@@ -1271,18 +1271,18 @@ class GuiApi:
             "all data elements must be numpy arrays"
         )
 
-        # Validate data dimensions and shapes
+        # Validate data dimensions and shapes.
         for i, arr in enumerate(data):
             assert arr.ndim == 1, f"data[{i}] must be a 1D array, got shape {arr.shape}"
 
-        # Check that all arrays have the same length
+        # Check that all arrays have the same length.
         lengths = [len(arr) for arr in data]
         if not all(length == lengths[0] for length in lengths):
             raise ValueError(
                 f"All data arrays must have the same length. Got lengths: {lengths}"
             )
 
-        # Validate series configuration
+        # Validate series configuration.
         assert len(series) > 0, "series must not be empty"
         if len(series) != len(data):
             raise ValueError(
@@ -1290,7 +1290,7 @@ class GuiApi:
                 f"Each array in data needs a corresponding series configuration."
             )
 
-        # Convert arrays to float64 as expected by GuiUplotProps
+        # Convert arrays to float64 as expected by GuiUplotProps.
         data_float64 = tuple(arr.astype(np.float64) for arr in data)
 
         message = _messages.GuiUplotMessage(

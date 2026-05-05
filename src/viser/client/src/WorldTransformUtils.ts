@@ -45,7 +45,7 @@ export function pointToViserCoords(
   return point.clone().applyMatrix4(computeT_threeworld_world(viewer).invert());
 }
 
-/** Scratch-aware variant of ``computeT_threeworld_world`` — writes the
+/** Scratch-aware variant of ``computeT_threeworld_world`` -- writes the
  * matrix into ``out`` and uses ``scratchQuat`` for the intermediate
  * quaternion. Allocation-free; intended for hot paths (e.g. the drag
  * message builder, which calls this once per send). */
@@ -67,7 +67,7 @@ export function computeT_threeworld_worldInto(
 /** Scratch-aware point conversion: writes ``point`` transformed by
  * ``T_world_threeworld`` into ``out``. Caller is responsible for
  * computing the matrix (via ``computeT_threeworld_worldInto`` then
- * ``.invert()``) — typically once and reused across multiple points. */
+ * ``.invert()``) -- typically once and reused across multiple points. */
 export function pointToViserCoordsInto(
   point: THREE.Vector3,
   T_world_threeworld: THREE.Matrix4,

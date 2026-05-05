@@ -35,10 +35,10 @@ def main() -> None:
     # points shape: (N, 2, 3) where points[i, 0] is the start and points[i, 1] is the end.
     N = 200
     points = np.zeros((N, 2, 3), dtype=np.float32)
-    colors = np.zeros((N, 2, 3), dtype=np.uint8)
+    colors = np.zeros((N, 3), dtype=np.uint8)
 
     for i in range(N):
-        # Distribute arrows in a spiral pattern
+        # Distribute arrows in a spiral pattern.
         theta = i * 0.3
         r = 1.0 + i * 0.02
         x = r * np.cos(theta)
@@ -48,10 +48,9 @@ def main() -> None:
         points[i, 0] = [0, y, 0]  # start
         points[i, 1] = [x, y, z]  # end
 
-        # Color gradient from blue to red based on height
+        # Color gradient from blue to red based on height.
         color_value = int(255 * (y / (N * 0.05)))
-        colors[i, 0] = [color_value, 0, 255 - color_value]  # shaft color
-        colors[i, 1] = [color_value, 0, 255 - color_value]  # head color
+        colors[i] = [color_value, 0, 255 - color_value]
 
     server.scene.add_arrows(
         "/arrows/spiral",
@@ -76,9 +75,9 @@ def main() -> None:
     )
     frame_colors = np.array(
         [
-            [[255, 0, 0], [255, 0, 0]],  # X: red
-            [[0, 255, 0], [0, 255, 0]],  # Y: green
-            [[0, 0, 255], [0, 0, 255]],  # Z: blue
+            [255, 0, 0],  # X: red
+            [0, 255, 0],  # Y: green
+            [0, 0, 255],  # Z: blue
         ],
         dtype=np.uint8,
     )
@@ -106,12 +105,7 @@ def main() -> None:
         dtype=np.float32,
     )
     force_colors = np.array(
-        [
-            [[255, 200, 0], [255, 200, 0]],
-            [[255, 100, 0], [255, 100, 0]],
-            [[255, 50, 0], [255, 50, 0]],
-            [[255, 150, 0], [255, 150, 0]],
-        ],
+        [[255, 200, 0], [255, 100, 0], [255, 50, 0], [255, 150, 0]],
         dtype=np.uint8,
     )
     server.scene.add_arrows(

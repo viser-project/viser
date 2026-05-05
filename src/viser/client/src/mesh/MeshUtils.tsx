@@ -13,7 +13,7 @@ export type { StandardMaterialProps } from "./meshMaterialUtils";
 
 /**
  * Declarative material component for standard/toon materials.
- * R3F manages lifecycle — no manual disposal needed.
+ * R3F manages lifecycle -- no manual disposal needed.
  */
 export function ViserStandardMeshMaterial(props: StandardMaterialProps) {
   const color = props.color === undefined ? 0xffffff : rgbToInt(props.color);
@@ -70,7 +70,7 @@ export function ViserStandardMeshMaterial(props: StandardMaterialProps) {
 
 /**
  * Declarative shadow mesh. Renders a mesh with ShadowMaterial when opacity > 0.
- * R3F manages material lifecycle — no manual disposal needed.
+ * R3F manages material lifecycle -- no manual disposal needed.
  */
 export function ShadowMesh({
   opacity,

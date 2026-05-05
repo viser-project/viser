@@ -728,7 +728,7 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         verbose: bool = True,
         **_deprecated_kwargs,
     ):
-        # Check for port override environment variable
+        # Check for port override environment variable.
         port_override = os.environ.get("_VISER_PORT_OVERRIDE")
         if port_override is not None:
             try:

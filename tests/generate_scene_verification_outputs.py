@@ -1087,7 +1087,7 @@ def _generate_gallery_html(
     progress_html = (
         f'<div class="progress-bar"><div class="progress-fill" style="width:{progress_pct}%"></div></div>'
         f'<p class="progress-text">{done_count}/{total} scenes generated'
-        + (" — auto-refreshing every 3s" if done_count < total else " — all done!")
+        + (" -- auto-refreshing every 3s" if done_count < total else " -- all done!")
         + "</p>"
     )
 

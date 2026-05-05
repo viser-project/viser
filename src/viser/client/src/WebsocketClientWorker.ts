@@ -48,7 +48,7 @@ type SerializedStruct = {
  *
  * Binary arrays in the msgpack are replaced with tagged placeholder objects.
  * These are reconstructed as typed array views directly into the WebSocket's
- * ArrayBuffer — zero-copy for the binary array data.
+ * ArrayBuffer -- zero-copy for the binary array data.
  */
 function decodeHybridMessage(
   buffer: ArrayBuffer,

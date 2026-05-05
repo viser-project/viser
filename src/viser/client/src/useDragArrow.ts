@@ -58,7 +58,7 @@ export function useDragArrow(
     if (activeDrag === null) return;
     const tailWorld = computeStartWorld(activeDrag, tailScratch);
     // Hide the arrow if the live grab point is unavailable (node
-    // removed, batched index out of bounds, etc.) — otherwise the
+    // removed, batched index out of bounds, etc.) -- otherwise the
     // arrow would freeze at its last known position until pointerup.
     if (tailWorld === null) {
       dragArrow.visible = false;

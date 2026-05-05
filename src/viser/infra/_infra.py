@@ -30,7 +30,7 @@ from websockets.asyncio.server import ServerConnection
 from websockets.http11 import Request, Response
 from websockets.typing import Subprotocol
 
-import viser  # Import for version checking
+import viser  # Import for version checking.
 
 from ._async_message_buffer import AsyncMessageBuffer
 from ._messages import Message
@@ -711,7 +711,7 @@ class WebsockServer(WebsockMessageHandler):
         event_loop.run_until_complete(start_server())
         rich.print("[bold](viser)[/bold] Server stopped")
 
-        # Clean up the event loop to prevent reference leaks
+        # Clean up the event loop to prevent reference leaks.
         event_loop.stop()
         event_loop.close()
 
