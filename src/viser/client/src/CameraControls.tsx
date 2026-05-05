@@ -144,7 +144,7 @@ export function SynchronizedCameraControls() {
   const camera = useThree((state) => state.camera as PerspectiveCamera);
   const gl = useThree((state) => state.gl);
 
-  const [isFirstPerson, setIsFirstPerson] = useState(false);
+  const isFirstPerson = viewer.useGui((s) => s.firstPersonCamera);
 
   const sendCameraThrottled = useThrottledMessageSender(20).send;
 
@@ -532,11 +532,11 @@ export function SynchronizedCameraControls() {
         return;
       }
       e.preventDefault();
-      setIsFirstPerson((prev) => {
-        if (prev) {
+      viewer.useGui.set((state) => {
+        if (state.firstPersonCamera) {
           document.exitPointerLock();
         }
-        return !prev;
+        return { firstPersonCamera: !state.firstPersonCamera };
       });
     };
     window.addEventListener("keydown", onKey);
