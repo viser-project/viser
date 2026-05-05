@@ -145,6 +145,8 @@ export function SynchronizedCameraControls() {
   const gl = useThree((state) => state.gl);
 
   const isFirstPerson = viewer.useGui((s) => s.firstPersonCamera);
+  const pointerLockRef =
+    useRef<React.ElementRef<typeof PointerLockControls>>(null);
 
   const sendCameraThrottled = useThrottledMessageSender(20).send;
 
@@ -713,6 +715,27 @@ export function SynchronizedCameraControls() {
     };
   }, [isFirstPerson, camera, sendCamera]);
 
+  // Optional yaw sign for FPS feel with Viser's camera/world frame; drei matches
+  // the standard Three.js pointer-lock example, not a broken default.
+  useLayoutEffect(() => {
+    if (!isFirstPerson) return;
+    const c = pointerLockRef.current;
+    if (c == null) return;
+    const euler = new THREE.Euler(0, 0, 0, "YXZ");
+    const sens = 2e-3;
+    const pl = c as unknown as { onMouseMove: (e: MouseEvent) => void };
+    pl.onMouseMove = (e) => {
+      if (!c.domElement || !c.isLocked) return;
+      euler.setFromQuaternion(c.camera.quaternion);
+      euler.y += e.movementX * sens * c.pointerSpeed;
+      euler.x -= e.movementY * sens * c.pointerSpeed;
+      const h = Math.PI / 2;
+      euler.x = Math.max(h - c.maxPolarAngle, Math.min(h - c.minPolarAngle, euler.x));
+      c.camera.quaternion.setFromEuler(euler);
+      c.dispatchEvent({ type: "change" } as never);
+    };
+  }, [isFirstPerson]);
+
   return (
     <>
       {!isFirstPerson ? (
@@ -745,6 +768,7 @@ export function SynchronizedCameraControls() {
       ) : null}
       {isFirstPerson ? (
         <PointerLockControls
+          ref={pointerLockRef}
           domElement={gl.domElement}
           onChange={sendCamera}
         />
