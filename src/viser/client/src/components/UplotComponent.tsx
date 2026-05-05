@@ -21,47 +21,63 @@ import uPlot from "uplot";
 type UplotScale = NonNullable<uPlot.Options["scales"]>[string];
 
 /**
- * Rewrite an x-scale that uses a static [min, max] tuple `range` so user
- * zoom is preserved across data updates.
+ * Rewrite x-scales whose `range` is a static [min, max] tuple so user
+ * zoom is preserved across data updates, and emit init hooks that pin
+ * the initial bounds.
  *
  * uPlot's tuple-range path wraps the array via `fnOrSelf` into a function
  * that ignores its inputs and always returns the static bounds. Every
  * redraw — including the one `uplot-react` issues on each data push —
  * re-commits the current scale through that range function, silently
- * reverting any drag-to-zoom.
+ * reverting any drag-to-zoom. Replacing the array with a callable that
+ * honors the explicit min/max uPlot supplies fixes that, but creates a
+ * second problem: uPlot's `_init` calls `autoScaleX()` unconditionally
+ * when `pendScales[x]` is empty (uPlot.cjs.js:6080), which pushes the
+ * data extrema through our callable and drops the caller's tuple at
+ * first render. The init hook below pre-populates `pendScales[x]` so
+ * uPlot skips the autoscale path on construction.
  *
- * The replacement function uses the tuple as a default at init (uPlot
- * calls range(self, null, null) on the x-scale's first commit) but honors
- * the explicit min/max uPlot supplies for every subsequent setScale —
- * including the redraw scale-preservation path that pushes the current
- * scaleX.min/max back through.
+ * Non-x tuple ranges are left untouched: `range=(ymin, ymax)` on a
+ * y-scale almost always means "lock this axis," and uPlot's existing
+ * tuple-range semantic is exactly that. See `examples/02_gui/08_uplot.py`.
  *
- * Non-x tuple ranges are deliberately left untouched: `range=(ymin, ymax)`
- * on a y-scale almost always means "lock this axis." uPlot calls a y-scale's
- * range function with non-null `accScale`-derived inputs even on first
- * render, so a smart-range here would silently replace the user's static
- * bounds with the data extrema. See `examples/02_gui/08_uplot.py`.
+ * We also pin `auto: false` to mirror uPlot's own
+ * `sc.auto = fnOrSelf(rangeIsArr ? false : sc.auto)` (uPlot.cjs.js:3070).
+ *
+ * Trade-off: dblclick now resets to the data range (uPlot's normal
+ * `autoScaleX` behavior) rather than the caller's tuple. With the original
+ * hard-lock semantic dblclick was a no-op; the new behavior matches every
+ * other interactive chart library.
  */
-function transformScales(
-  scales: { [key: string]: UplotScale } | null | undefined,
-): { [key: string]: UplotScale } | undefined {
-  if (!scales) return undefined;
+function transformScales(scales: GuiUplotMessage["props"]["scales"]): {
+  scales: { [key: string]: UplotScale } | undefined;
+  hooks: { init: ((u: uPlot) => void)[] };
+} {
+  if (!scales) return { scales: undefined, hooks: { init: [] } };
   const out: { [key: string]: UplotScale } = {};
+  const initHooks: ((u: uPlot) => void)[] = [];
   for (const [key, scale] of Object.entries(scales)) {
     if (key !== "x" || !scale || !Array.isArray(scale.range)) {
-      out[key] = scale;
+      out[key] = scale as UplotScale;
       continue;
     }
     const [hardMin, hardMax] = scale.range as [number | null, number | null];
     out[key] = {
       ...scale,
-      range: (_u, dataMin, dataMax) =>
-        dataMin == null && dataMax == null
-          ? [hardMin, hardMax]
-          : [dataMin ?? hardMin, dataMax ?? hardMax],
-    };
+      auto: false,
+      range: (_u, dataMin, dataMax) => [
+        dataMin ?? hardMin,
+        dataMax ?? hardMax,
+      ],
+    } as UplotScale;
+    initHooks.push((u) =>
+      // Cast: uPlot's setScale opts are typed `number`, but null is the
+      // "auto on this side" sentinel for partial-null tuples like
+      // (None, 0) — runtime accepts it.
+      u.setScale(key, { min: hardMin, max: hardMax } as { min: number; max: number }),
+    );
   }
-  return out;
+  return { scales: out, hooks: { init: initHooks } };
 }
 
 // E2E testpoint: lives under the same `__viserTestpoints` namespace as
@@ -110,10 +126,10 @@ function PlotComponent({
   }, [props.data]);
 
   // Memoized on `props.scales` alone so width / theme re-renders don't
-  // mint a fresh `range` callable each tick — uplot-react would diff that
-  // as a `'create'` and rebuild the chart, dropping user zoom. See
-  // `transformScales` for what the rewrite actually does.
-  const processedScales = useMemo(
+  // mint fresh `range` / `hooks` references each tick — uplot-react would
+  // diff those as `'create'` and rebuild the chart, dropping user zoom.
+  // See `transformScales` for what the rewrite actually does.
+  const { scales: processedScales, hooks: scaleHooks } = useMemo(
     () => transformScales(props.scales),
     [props.scales],
   );
@@ -169,6 +185,7 @@ function PlotComponent({
       bands: props.bands || undefined,
       scales: processedScales,
       axes: processedAxes,
+      hooks: scaleHooks,
       legend: (props.legend as any) || undefined,
       focus: props.focus || undefined,
       // Set tighter default padding [top, right, bottom, left].
@@ -185,6 +202,7 @@ function PlotComponent({
     props.cursor,
     props.bands,
     processedScales,
+    scaleHooks,
     processedAxes,
     props.legend,
     props.focus,

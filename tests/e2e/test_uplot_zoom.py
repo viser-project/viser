@@ -160,3 +160,40 @@ def test_y_tuple_range_remains_locked(
         f"Y-axis fit to data instead of staying locked at (-1.5, 2.5): "
         f"got {yrange}. Smart-range transform leaked into y-scale."
     )
+
+
+def test_x_tuple_range_without_explicit_auto_locks_initial_bounds(
+    viser_server: viser.ViserServer,
+    viser_page: Page,
+) -> None:
+    """``Scale(range=(a, b))`` without an explicit ``auto=False`` must still
+    show ``[a, b]`` initially. uPlot normally forces ``auto=false`` when the
+    range field is an array (uPlot.cjs.js:3070); the smart-range transform
+    replaces the array with a function before uPlot sees it, defeating that
+    forcing — so the rewritten scale must pin ``auto=false`` itself.
+
+    Data is intentionally outside the configured range so a regression
+    (auto-fitting to data) is observable."""
+    x = np.linspace(-50.0, 50.0, 64, dtype=np.float64)
+    y = np.sin(x * 0.1).astype(np.float64)
+
+    handle = viser_server.gui.add_uplot(
+        data=(x, y),
+        series=(viser.uplot.Series(label="t"), viser.uplot.Series(label="v")),
+        scales={
+            # Note: no `auto=False` — relying on uPlot's tuple-range semantic.
+            "x": viser.uplot.Scale(time=False, range=(-100.0, 0.0)),
+            "y": viser.uplot.Scale(auto=True),
+        },
+        aspect=2.0,
+        title="x-locked-without-explicit-auto",
+    )
+    uuid = handle._impl.uuid
+
+    _wait_for_chart(viser_page, uuid)
+    xrange = _eval_uplot(viser_page, uuid, "[ch.scales.x.min, ch.scales.x.max]")
+    assert xrange == [-100.0, 0.0], (
+        f"X-scale fit to data ({xrange}) instead of honoring tuple "
+        "range (-100, 0). transformScales must preserve uPlot's "
+        "implicit `auto=false` for array ranges."
+    )
