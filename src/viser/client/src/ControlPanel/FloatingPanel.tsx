@@ -42,14 +42,30 @@ const FloatingPanelContext = React.createContext<null | {
 /** A floating panel for displaying controls. */
 export default function FloatingPanel({
   children,
-  width,
+  width: initialWidth,
+  initialPosition,
+  resizable = false,
+  minWidthPx = 220,
+  maxWidthPx = 960,
+  onGeometryChange,
 }: {
   children: string | React.ReactNode;
   width: string;
+  /** Initial (x, y) offset. Negative values anchor to the right/bottom edge. */
+  initialPosition?: [number, number];
+  resizable?: boolean;
+  minWidthPx?: number;
+  maxWidthPx?: number;
+  onGeometryChange?: (g: { width: string; x: number; y: number }) => void;
 }) {
   const panelWrapperRef = React.useRef<HTMLDivElement>(null);
   const [expanded, { toggle: toggleExpanded }] = useDisclosure(true);
   const [maxHeight, setMaxHeight] = React.useState(800);
+  const [width, setWidth] = React.useState(initialWidth);
+  // True while actively dragging the resize handle — used to suppress the
+  // ResizeObserver's reposition pass, which would otherwise fight the
+  // width updates and cause a flicker.
+  const resizingRef = React.useRef(false);
 
   // Things to track for dragging.
   const dragInfo = React.useRef({
@@ -116,6 +132,12 @@ export default function FloatingPanel({
     if (parent === null) return;
 
     const observer = new ResizeObserver(() => {
+      if (resizingRef.current) {
+        // The resize handler is authoritative during an active drag.
+        const newMaxHeight = parent.clientHeight - panelBoundaryPad * 2;
+        if (maxHeight !== newMaxHeight) setMaxHeight(newMaxHeight);
+        return;
+      }
       if (unfixedOffset.current.x === undefined)
         unfixedOffset.current.x = computePanelOffset(
           panel.offsetLeft,
@@ -187,6 +209,7 @@ export default function FloatingPanel({
         newX,
         newY,
       );
+      onGeometryChange?.({ width, x: newX, y: newY });
     }
     window.addEventListener(eventNames.move, dragListener);
     window.addEventListener(
@@ -196,6 +219,65 @@ export default function FloatingPanel({
           state.dragging = false;
         }
         window.removeEventListener(eventNames.move, dragListener);
+      },
+      { once: true },
+    );
+  };
+
+  // Seed the initial panel position. `unfixedOffset`'s sign convention
+  // (negative = measured from right/bottom edge) lets us pass any of the
+  // common anchors by just picking the right sign.
+  React.useEffect(() => {
+    if (initialPosition && unfixedOffset.current.x === undefined) {
+      unfixedOffset.current.x = initialPosition[0];
+      unfixedOffset.current.y = initialPosition[1];
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const resizeHandler = (
+    event:
+      | React.TouchEvent<HTMLDivElement>
+      | React.MouseEvent<HTMLDivElement, MouseEvent>,
+  ) => {
+    const panel = panelWrapperRef.current;
+    if (!panel) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const startWidth = panel.getBoundingClientRect().width;
+    const startClientX =
+      event.type === "touchstart"
+        ? (event as React.TouchEvent<HTMLDivElement>).touches[0].clientX
+        : (event as React.MouseEvent<HTMLDivElement, MouseEvent>).clientX;
+    const evs = event.type === "touchstart" ? touchEvents : mouseEvents;
+    resizingRef.current = true;
+
+    function onMove(ev: MouseEvent | TouchEvent) {
+      const clientX = isTouchEvent(ev)
+        ? ev.touches[0].clientX
+        : (ev as MouseEvent).clientX;
+      const next = Math.max(
+        minWidthPx,
+        Math.min(maxWidthPx, startWidth + (clientX - startClientX)),
+      );
+      const nextStr = `${next}px`;
+      setWidth(nextStr);
+      onGeometryChange?.({
+        width: nextStr,
+        x: unfixedOffset.current.x ?? 0,
+        y: unfixedOffset.current.y ?? 0,
+      });
+    }
+    window.addEventListener(evs.move, onMove);
+    window.addEventListener(
+      evs.end,
+      () => {
+        resizingRef.current = false;
+        window.removeEventListener(evs.move, onMove);
+        // Recompute the unfixed offset from the final pinned position so
+        // subsequent parent resizes respect the new width.
+        unfixedOffset.current.x = undefined;
+        unfixedOffset.current.y = undefined;
       },
       { once: true },
     );
@@ -231,6 +313,29 @@ export default function FloatingPanel({
         }}
         ref={panelWrapperRef}
       >
+        {resizable && expanded ? (
+          <Box
+            onMouseDown={resizeHandler}
+            onTouchStart={resizeHandler}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.background =
+                "var(--mantine-color-blue-5, rgba(66,133,244,0.5))")
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.background = "transparent")
+            }
+            style={{
+              position: "absolute",
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: "6px",
+              cursor: "ew-resize",
+              zIndex: 30,
+              background: "transparent",
+            }}
+          />
+        ) : null}
         {children}
       </Paper>
     </FloatingPanelContext.Provider>

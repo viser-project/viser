@@ -545,6 +545,29 @@ export interface GuiFormMessage {
     expand_by_default: boolean;
   };
 }
+/** Floating, draggable, resizable panel rendered alongside the main
+ * control panel. ``container_uuid`` is always ``"root"``; child GUI
+ * elements use the panel's ``uuid`` as their container.
+ *
+ * (automatically generated)
+ */
+export interface GuiPanelMessage {
+  type: "GuiPanelMessage";
+  uuid: string;
+  container_uuid: string;
+  props: {
+    order: number;
+    title: string;
+    visible: boolean;
+    initial_x: number | "center";
+    initial_y: number | "center";
+    initial_width_px: number;
+    min_width_px: number;
+    max_width_px: number;
+    resizable: boolean;
+    layout: "column" | "row";
+  };
+}
 /** GuiMarkdownMessage(uuid: 'str', container_uuid: 'str', props: 'GuiMarkdownProps')
  *
  * (automatically generated)
@@ -1544,7 +1567,7 @@ export interface SceneNodeClickMessage {
 }
 /** Client -> server message for a scene-node drag (start/update/end).
  *
- * All position/screen fields are *live* — recomputed on every
+ * All position/screen fields are *live* -- recomputed on every
  * start/update/end. ``start_*`` tracks the original click point as it
  * moves with the object (the grab point); ``end_*`` tracks the current
  * pointer projected onto the camera-aligned drag plane.
@@ -1935,6 +1958,7 @@ export type Message =
   | RemoveSceneNodeMessage
   | GuiFolderMessage
   | GuiFormMessage
+  | GuiPanelMessage
   | GuiMarkdownMessage
   | GuiHtmlMessage
   | GuiDividerMessage
@@ -2041,6 +2065,7 @@ export type SceneNodeMessage =
 export type GuiComponentMessage =
   | GuiFolderMessage
   | GuiFormMessage
+  | GuiPanelMessage
   | GuiMarkdownMessage
   | GuiHtmlMessage
   | GuiDividerMessage
@@ -2100,6 +2125,7 @@ export function isSceneNodeMessage(
 const typeSetGuiComponentMessage = new Set([
   "GuiFolderMessage",
   "GuiFormMessage",
+  "GuiPanelMessage",
   "GuiMarkdownMessage",
   "GuiHtmlMessage",
   "GuiDividerMessage",

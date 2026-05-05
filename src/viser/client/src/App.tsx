@@ -42,6 +42,7 @@ import {
 } from "./utils/pointerCoords";
 import { ViewerContext, ViewerContextContents } from "./ViewerContext";
 import ControlPanel from "./ControlPanel/ControlPanel";
+import UserPanels from "./ControlPanel/UserPanels";
 import { useGuiState } from "./ControlPanel/GuiState";
 import { searchParamKey } from "./SearchParamsUtils";
 import { WebsocketMessageProducer } from "./WebsocketInterface";
@@ -410,7 +411,10 @@ function ViewerContents({ children }: { children: React.ReactNode }) {
               {showLogo && messageSource === "websocket" && <ViserLogo />}
             </Box>
             {messageSource === "websocket" && (
-              <ControlPanel control_layout={controlLayout} />
+              <>
+                <ControlPanel control_layout={controlLayout} />
+                <UserPanels />
+              </>
             )}
           </Box>
         </Box>

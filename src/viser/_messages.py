@@ -1502,6 +1502,34 @@ class GuiFormMessage(_CreateGuiComponentMessage):
 
 
 @dataclasses.dataclass
+class GuiPanelProps:
+    order: float
+    title: str
+    visible: bool
+    initial_x: Union[int, Literal["center"]]
+    """Initial x offset in pixels. Negative values anchor to the right edge.
+    ``"center"`` horizontally centers the panel."""
+    initial_y: Union[int, Literal["center"]]
+    """Initial y offset in pixels. Negative values anchor to the bottom edge.
+    ``"center"`` vertically centers the panel."""
+    initial_width_px: int
+    min_width_px: int
+    max_width_px: int
+    resizable: bool
+    layout: Literal["column", "row"]
+
+
+@dataclasses.dataclass
+class GuiPanelMessage(_CreateGuiComponentMessage):
+    """Floating, draggable, resizable panel rendered alongside the main
+    control panel. ``container_uuid`` is always ``"root"``; child GUI
+    elements use the panel's ``uuid`` as their container."""
+
+    container_uuid: str
+    props: GuiPanelProps
+
+
+@dataclasses.dataclass
 class GuiFormSubmitMessage(Message, include_in_scene_serialization=False):
     """Bidirectional form submit signal.
 
