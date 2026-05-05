@@ -303,7 +303,10 @@ function useMessageHandler() {
           return;
         }
 
-        const cameraControls = viewerMutable.cameraControl!;
+        const cameraControls = viewerMutable.cameraControl;
+        if (cameraControls === null) {
+          return;
+        }
 
         const T_threeworld_world = computeT_threeworld_world(viewer);
         const target = new THREE.Vector3(
@@ -324,7 +327,10 @@ function useMessageHandler() {
         }
 
         const camera = viewerMutable.camera!;
-        const cameraControls = viewerMutable.cameraControl!;
+        const cameraControls = viewerMutable.cameraControl;
+        if (cameraControls === null) {
+          return;
+        }
         const T_threeworld_world = computeT_threeworld_world(viewer);
         const updir = new THREE.Vector3(
           message.position[0],
@@ -360,7 +366,10 @@ function useMessageHandler() {
           return;
         }
 
-        const cameraControls = viewerMutable.cameraControl!;
+        const cameraControls = viewerMutable.cameraControl;
+        if (cameraControls === null) {
+          return;
+        }
 
         // Set the camera position. Due to the look-at, note that this will
         // shift the orientation as-well.

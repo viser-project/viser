@@ -9,7 +9,7 @@ import {
 } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import * as holdEvent from "hold-event";
-import React, { useContext, useRef, useState } from "react";
+import React, { useContext, useLayoutEffect, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { PerspectiveCamera } from "three";
 import * as THREE from "three";
@@ -341,32 +341,32 @@ export function SynchronizedCameraControls() {
     initialLookAt.applyMatrix4(T_threeworld_world);
 
     camera.up.set(initialUp.x, initialUp.y, initialUp.z);
-    viewerMutable.cameraControl!.updateCameraUp();
-    if (animate) {
-      viewerMutable.cameraControl!.setLookAt(
-        initialPos.x,
-        initialPos.y,
-        initialPos.z,
-        initialLookAt.x,
-        initialLookAt.y,
-        initialLookAt.z,
-        true,
-      );
+    const cc = viewerMutable.cameraControl;
+    if (cc !== null) {
+      cc.updateCameraUp();
+      if (animate) {
+        cc.setLookAt(
+          initialPos.x,
+          initialPos.y,
+          initialPos.z,
+          initialLookAt.x,
+          initialLookAt.y,
+          initialLookAt.z,
+          true,
+        );
+      } else {
+        cc.setPosition(initialPos.x, initialPos.y, initialPos.z, false);
+        cc.setTarget(
+          initialLookAt.x,
+          initialLookAt.y,
+          initialLookAt.z,
+          false,
+        );
+      }
     } else {
-      // Calling setLookAt with animate = false seems to break future calls to
-      // setLookAt. Possible dpeendency bug.
-      viewerMutable.cameraControl!.setPosition(
-        initialPos.x,
-        initialPos.y,
-        initialPos.z,
-        false,
-      );
-      viewerMutable.cameraControl!.setTarget(
-        initialLookAt.x,
-        initialLookAt.y,
-        initialLookAt.z,
-        false,
-      );
+      camera.position.copy(initialPos);
+      camera.lookAt(initialLookAt);
+      camera.updateMatrixWorld();
     }
   };
 
@@ -395,9 +395,10 @@ export function SynchronizedCameraControls() {
     const canvas = viewerMutable.canvas!;
 
     if (camera_control === null) {
-      // Camera controls not yet ready, let's re-try later.
-      setTimeout(sendCamera, 10);
-      return;
+      if (!isFirstPerson) {
+        setTimeout(sendCamera, 10);
+        return;
+      }
     }
 
     // We put Z up to match the scene tree, and convert threejs camera convention
@@ -416,7 +417,7 @@ export function SynchronizedCameraControls() {
       three_camera.getWorldDirection(forwardTmp);
       lookAt.copy(three_camera.position).add(forwardTmp);
     } else {
-      camera_control.getTarget(lookAt);
+      camera_control!.getTarget(lookAt);
     }
     lookAt.applyQuaternion(R_world_threeworld);
     const up = three_camera.up.clone().applyQuaternion(R_world_threeworld);
@@ -509,7 +510,7 @@ export function SynchronizedCameraControls() {
   }, [canvas, sendCamera]);
 
   const wasFirstPerson = useRef(false);
-  React.useEffect(() => {
+  useLayoutEffect(() => {
     if (wasFirstPerson.current && !isFirstPerson) {
       const cc = viewerMutable.cameraControl;
       if (cc !== null) {
@@ -548,7 +549,10 @@ export function SynchronizedCameraControls() {
     if (isFirstPerson) {
       return;
     }
-    const cameraControls = viewerMutable.cameraControl!;
+    const cameraControls = viewerMutable.cameraControl;
+    if (cameraControls === null) {
+      return;
+    }
 
     const keys = {
       w: new holdEvent.KeyboardKeyHold("KeyW", 1000 / 60),
@@ -711,22 +715,23 @@ export function SynchronizedCameraControls() {
 
   return (
     <>
-      <CameraControls
-        ref={(controls) => (viewerMutable.cameraControl = controls)}
-        minDistance={0.01}
-        dollySpeed={0.3}
-        smoothTime={0.05}
-        draggingSmoothTime={0.0}
-        enabled={!isFirstPerson}
-        onChange={sendCamera}
-        onStart={() => {
-          setPointerInteractionActive(true);
-        }}
-        onEnd={() => {
-          setPointerInteractionActive(false);
-        }}
-        makeDefault
-      />
+      {!isFirstPerson ? (
+        <CameraControls
+          ref={(controls) => (viewerMutable.cameraControl = controls)}
+          minDistance={0.01}
+          dollySpeed={0.3}
+          smoothTime={0.05}
+          draggingSmoothTime={0.0}
+          onChange={sendCamera}
+          onStart={() => {
+            setPointerInteractionActive(true);
+          }}
+          onEnd={() => {
+            setPointerInteractionActive(false);
+          }}
+          makeDefault
+        />
+      ) : null}
       {!isFirstPerson ? (
         <OrbitOriginTool
           forceShow={forceOrbitOriginTool}
@@ -739,7 +744,10 @@ export function SynchronizedCameraControls() {
         />
       ) : null}
       {isFirstPerson ? (
-        <PointerLockControls domElement={gl.domElement} />
+        <PointerLockControls
+          domElement={gl.domElement}
+          onChange={sendCamera}
+        />
       ) : null}
       <InitialCameraSetter />
     </>
