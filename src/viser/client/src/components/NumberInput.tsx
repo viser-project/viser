@@ -1,25 +1,20 @@
 import * as React from "react";
 import { GuiComponentContext } from "../ControlPanel/GuiComponentContext";
-import { GuiAddNumberMessage } from "../WebsocketMessages";
+import { GuiNumberMessage } from "../WebsocketMessages";
 import { ViserInputComponent } from "./common";
 import { NumberInput } from "@mantine/core";
 
 export default function NumberInputComponent({
-  visible,
-  id,
-  label,
-  hint,
+  uuid,
   value,
-  disabled,
-  ...otherProps
-}: GuiAddNumberMessage) {
+  props: { visible, label, hint, disabled, precision, min, max, step },
+}: GuiNumberMessage) {
   const { setValue } = React.useContext(GuiComponentContext)!;
-  const { precision, min, max, step } = otherProps;
-  if (!visible) return <></>;
+  if (!visible) return null;
   return (
-    <ViserInputComponent {...{ id, hint, label }}>
+    <ViserInputComponent {...{ uuid, hint, label }}>
       <NumberInput
-        id={id}
+        id={uuid}
         value={value}
         // This was renamed in Mantine v7.
         decimalScale={precision}
@@ -29,7 +24,7 @@ export default function NumberInputComponent({
         size="xs"
         onChange={(newValue) => {
           // Ignore empty values.
-          newValue !== "" && setValue(id, newValue);
+          newValue !== "" && setValue(uuid, newValue);
         }}
         styles={{
           input: {

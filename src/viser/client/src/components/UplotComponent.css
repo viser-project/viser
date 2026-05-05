@@ -1,0 +1,96 @@
+.uplot .u-title {
+  font-family:
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    "Roboto",
+    "Oxygen",
+    "Ubuntu",
+    "Cantarell",
+    "Fira Sans",
+    "Droid Sans",
+    "Helvetica Neue",
+    sans-serif;
+  font-size: 0.875em;
+  font-weight: 500;
+  color: var(--mantine-color-text);
+  padding-top: 0.375em;
+  padding-bottom: 0.25em;
+}
+
+/* Legend styling */
+.uplot .u-legend {
+  font-family:
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    "Roboto",
+    "Oxygen",
+    "Ubuntu",
+    "Cantarell",
+    "Fira Sans",
+    "Droid Sans",
+    "Helvetica Neue",
+    sans-serif;
+  font-size: 0.7em;
+  padding: 0;
+  margin: -1em 0 0 0;
+}
+
+/* Override border color only. */
+.uplot-container {
+  border-color: var(--mantine-color-gray-2) !important;
+}
+
+/* Make border even lighter in dark mode. */
+[data-mantine-color-scheme="dark"] .uplot-container {
+  border-color: var(--mantine-color-dark-6) !important;
+}
+
+.uplot .u-legend .u-series {
+  padding: 0;
+  margin-right: 0.375em;
+}
+
+.uplot .u-legend .u-marker {
+  width: 0.75em;
+  height: 0.75em;
+  margin-right: 0.25em;
+}
+
+.uplot .u-legend .u-label {
+  color: var(--mantine-color-text);
+  font-weight: 450;
+}
+
+.uplot .u-legend .u-value {
+  color: var(--mantine-color-dimmed);
+  font-weight: 400;
+  margin-left: 0.0625em;
+}
+
+/* Axis labels and values styling */
+.uplot .u-axis {
+  font-family:
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    "Roboto",
+    "Oxygen",
+    "Ubuntu",
+    "Cantarell",
+    "Fira Sans",
+    "Droid Sans",
+    "Helvetica Neue",
+    sans-serif;
+  font-size: 0.7em;
+}
+
+/* Axis text values */
+.uplot .u-axis text {
+  stroke: none;
+  fill: var(--mantine-color-text);
+}

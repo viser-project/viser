@@ -1,0 +1,102 @@
+.multi-slider {
+  position: relative;
+  width: 100%;
+  height: 1rem;
+  margin-top: -0.5rem;
+}
+
+.multi-slider-track-container {
+  position: relative;
+  height: 0.25rem;
+  cursor: pointer;
+  margin: 1rem 0;
+}
+
+.multi-slider-track {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  background-color: var(--mantine-color-gray-3);
+  border-radius: var(--mantine-radius-xl);
+}
+
+.multi-slider-thumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 0.5rem;
+  height: 0.75rem;
+  border-radius: var(--mantine-radius-xs);
+  cursor: pointer;
+  transition: transform 0.1s;
+  z-index: 2;
+}
+
+.multi-slider-thumb:active {
+  transform: translate(-50%, -50%) scale(1.1);
+}
+
+.multi-slider.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.multi-slider.disabled .multi-slider-track-container {
+  cursor: not-allowed;
+}
+
+.multi-slider.disabled .multi-slider-thumb {
+  cursor: not-allowed;
+  background-color: var(--mantine-color-gray-5) !important;
+}
+
+.multi-slider-mark-wrapper {
+  position: absolute;
+  top: 0px;
+  transform: translateX(-50%);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.multi-slider-mark {
+  width: 0.25rem;
+  height: 0.25rem;
+  background-color: var(--mantine-color-gray-3);
+  border-radius: 50%;
+  transform: scale(2);
+}
+
+.multi-slider-mark-label {
+  position: absolute;
+  top: 100%;
+  margin-top: 0.05rem;
+  font-size: 0.6rem;
+  color: var(--mantine-color-gray-6);
+  white-space: nowrap;
+}
+
+/* Support for dark mode. */
+[data-mantine-color-scheme="dark"] .multi-slider-track {
+  background-color: var(--mantine-color-dark-4);
+}
+
+[data-mantine-color-scheme="dark"] .multi-slider-thumb {
+  border-color: var(--mantine-color-dark-7);
+}
+
+[data-mantine-color-scheme="dark"] .multi-slider.disabled .multi-slider-thumb {
+  background-color: var(--mantine-color-dark-3);
+}
+
+[data-mantine-color-scheme="dark"] .multi-slider-mark {
+  background-color: var(--mantine-color-dark-4);
+}
+
+[data-mantine-color-scheme="dark"] .multi-slider-mark-label {
+  color: var(--mantine-color-dark-2);
+}

@@ -1,6 +1,5 @@
-""":mod:`viser.theme` provides interfaces for themeing the viser
-frontend from within Python.
-"""
+""":mod:`viser.theme` provides interfaces for theming the Viser frontend from
+within Python."""
 
 from ._titlebar import TitlebarButton as TitlebarButton
 from ._titlebar import TitlebarConfig as TitlebarConfig

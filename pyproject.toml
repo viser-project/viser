@@ -1,10 +1,24 @@
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+exclude = ["src/viser/client/.nodeenv", "src/viser/client/node_modules", "**/__pycache__/**"]
+# Client build is in the gitignore, but we still want it in the distribution.
+ignore-vcs = true
+
+[tool.hatch.version]
+path = "src/viser/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+only-include = ["src/viser"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/viser"]
 
 [project]
 name = "viser"
-version = "0.2.3"
+dynamic = ["version"]
 description = "3D visualization + Python"
 readme = "README.md"
 license = { text="MIT" }
@@ -16,72 +30,72 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent"
 ]
 dependencies = [
-    "websockets>=10.4",
-    "numpy>=1.0.0",
-    "msgspec>=0.18.6",
-    "imageio>=2.0.0",
-    "pyliblzfse>=0.4.1; platform_system!='Windows'",
-    "scikit-image>=0.18.0",
-    "scipy>=1.7.3",
-    "tqdm>=4.0.0",
-    "tyro>=0.2.0",
-    "rich>=13.3.3",
-    "trimesh>=3.21.7",
-    "nodeenv>=1.8.0",
-    "psutil>=5.9.5",
-    "yourdfpy>=0.0.53",
-    "plyfile>=1.0.2"
+    "requests>=2.0.0,<3.0.0",
+    "websockets>=13.1,<17.0.0",
+    "numpy>=1.0.0,<3.0.0",
+    "msgspec>=0.18.6,<1.0.0",
+    "imageio>=2.0.0,<3.0.0",
+    "tqdm>=4.0.0,<5.0.0",
+    "rich>=13.3.3,<15.0.0",
+    "trimesh>=3.21.7,<5.0.0",
+    "yourdfpy>=0.0.53,<1.0.0",
+    "typing_extensions>=4.0.0",
+    # TODO: migrate to backports.zstd when we drop Python 3.8 support.
+    # https://pypi.org/project/backports.zstd/
+    # Then migrate to stdlib compression.zstd in Python 3.14+.
+    # https://docs.python.org/3.14/library/compression.zstd.html
+    "zstandard>=0.20.0,<1.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pyright>=1.1.308",
-    "ruff==0.4.6",
+    "ruff>=0.9.3",
     "pre-commit==3.3.2",
+    "pytest",
+    "hypothesis[numpy]",
+    "opencv-python>=4.0.0.21,<5.0.0",
+    "psutil>=5.9.5,<8.0.0",
+    "nodeenv>=1.9.1,<2.0.0",
+    "playwright>=1.40.0",
+    "pytest-playwright>=0.4.0",
+    "pytest-xdist>=3.0.0",
 ]
 examples = [
     "torch>=1.13.1",
+    "torch<2.5.0; python_version<'3.9'",  # Last torch with cp38 wheels.
     "matplotlib>=3.7.1",
     "plotly>=5.21.0",
-    "robot_descriptions>=1.10.0",
+    "robot_descriptions>=1.18.0",
     "gdown>=4.6.6",
     "plyfile",
+    "opencv-python",
+    "pyliblzfse>=0.4.1; platform_system!='Windows'",
+    "pandas",  # https://github.com/viser-project/viser/issues/457
+    "tyro>=0.2.0,<1.0.0",
 ]
 
 [project.urls]
-"GitHub" = "https://github.com/nerfstudio-project/viser"
-
-# <>
-# Important: in the ./.github/workflows/publish.yml action, we have sed
-# commands that assume the `viser = ...` line below directly follows
-# `[tool.setuptools.package-data]`. We use this to remove the client source
-# from PyPI builds.
-#
-# We should make sure that any modifications to the package-data list remain
-# compatible with the sed commands!
-#
-# We keep the client source in by default to support things like pip
-# installation via the Git URL, because build artifacts aren't
-# version-controlled.
-[tool.setuptools.package-data]
-viser = ["py.typed", "*.pyi", "_icons/tabler-icons.tar", "client/**/*", "client/**/.*"]
-# </>
-
-[tool.setuptools.exclude-package-data]
-# We exclude node_modules to prevent long build times for wheels when
-# installing from source, eg via `pip install .`.
-#
-# https://github.com/nerfstudio-project/viser/issues/271
-viser = ["**/node_modules/**"]
+"GitHub" = "https://github.com/viser-project/viser"
 
 [project.scripts]
-viser-dev-checks = "viser.scripts.dev_checks:entrypoint"
+viser-build-client = "viser._client_autobuild:build_client_entrypoint"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "e2e: end-to-end browser tests (require Playwright)",
+]
+addopts = "--strict-markers"
 
 [tool.pyright]
+extraPaths = []
 exclude = ["./docs/**/*", "./examples/assets/**/*", "./src/viser/client/.nodeenv", "./build"]
 
 [tool.ruff]
@@ -92,10 +106,11 @@ lint.select = [
     "PLE",  # Pylint errors.
     "PLR",  # Pylint refactor recommendations.
     "PLW",  # Pylint warnings.
-    "I", # Import sorting.
+    "I",  # Import sorting.
 ]
 lint.ignore = [
-    "E741", # Ambiguous variable name. (l, O, or I)
+    "E731",  # Do not assign a lambda expression, use a def.
+    "E741",  # Ambiguous variable name. (l, O, or I)
     "E501",  # Line too long.
     "E721",  # Do not compare types, use `isinstance()`.
     "F722",  # Forward annotation false positive from jaxtyping. Should be caught by pyright.
@@ -104,11 +119,13 @@ lint.ignore = [
     "PLR0915",  # Too many statements.
     "PLR0913",  # Too many arguments.
     "PLC0414",  # Import alias does not rename variable. (this is used for exporting names)
+    "PLC0415",  # Import should be at the top-level of a file.
     "PLC1901",  # Use falsey strings.
     "PLR5501",  # Use `elif` instead of `else if`.
     "PLR0911",  # Too many return statements.
     "PLR0912",  # Too many branches.
-    "PLW0603",  # Globa statement updates are discouraged.
+    "PLW0603",  # Global statement updates are discouraged.
     "PLW2901",  # For loop variable overwritten.
+    "PLW0642",  # Reassigned self in instance method.
 ]
 exclude = [ ".nodeenv" ]

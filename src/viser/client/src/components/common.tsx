@@ -3,15 +3,17 @@ import { Box, Flex, Text, NumberInput, Tooltip } from "@mantine/core";
 import { GuiComponentContext } from "../ControlPanel/GuiComponentContext";
 
 export function ViserInputComponent({
-  id,
+  uuid,
   label,
   hint,
+  hintDisabled,
   children,
 }: {
-  id: string;
+  uuid: string;
   children: React.ReactNode;
   label?: string;
   hint?: string | null;
+  hintDisabled?: boolean;
 }) {
   const { folderDepth } = React.useContext(GuiComponentContext)!;
   if (hint !== undefined && hint !== null) {
@@ -21,10 +23,11 @@ export function ViserInputComponent({
           zIndex={100}
           label={hint}
           multiline
-          w="15rem"
+          style={{ width: "15rem" }}
           withArrow
           openDelay={500}
           withinPortal
+          disabled={hintDisabled}
         >
           <Box>{children}</Box>
         </Tooltip>
@@ -34,7 +37,7 @@ export function ViserInputComponent({
   if (label !== undefined)
     children = (
       <LabeledInput
-        id={id}
+        uuid={uuid}
         label={label}
         input={children}
         folderDepth={folderDepth}
@@ -50,7 +53,7 @@ export function ViserInputComponent({
 
 /** GUI input with a label horizontally placed to the left of it. */
 function LabeledInput(props: {
-  id: string;
+  uuid: string;
   label: string;
   input: React.ReactNode;
   folderDepth: number;
@@ -59,23 +62,34 @@ function LabeledInput(props: {
     <Flex align="center">
       <Box
         // The per-layer offset here is just eyeballed.
-        w={`${7.25 - props.folderDepth * 0.6375}em`}
         pr="xs"
-        style={{ flexShrink: 0, position: "relative" }}
+        style={{
+          width: `${7.25 - props.folderDepth * 0.6375}em`,
+          flexShrink: 0,
+          position: "relative",
+        }}
       >
         <Text
           c="dimmed"
-          fz="0.875em"
-          fw="450"
-          lh="1.375em"
-          lts="-0.75px"
-          unselectable="off"
           style={{
+            fontSize: "0.875em",
+            fontWeight: "450",
+            lineHeight: "1.375em",
+            letterSpacing: "-0.75px",
             width: "100%",
             boxSizing: "content-box",
+            overflowWrap: "anywhere",
           }}
+          unselectable="off"
         >
-          <label htmlFor={props.id}>{props.label}</label>
+          <label htmlFor={props.uuid}>
+            {props.label.split(/(?<=[_\-/.])/).map((part, i) => (
+              <React.Fragment key={i}>
+                {i > 0 && <wbr />}
+                {part}
+              </React.Fragment>
+            ))}
+          </label>
         </Text>
       </Box>
       <Box style={{ flexGrow: 1 }}>{props.input}</Box>
@@ -86,7 +100,7 @@ function LabeledInput(props: {
 export function VectorInput(
   props:
     | {
-        id: string;
+        uuid: string;
         n: 2;
         value: [number, number];
         min: [number, number] | null;
@@ -97,7 +111,7 @@ export function VectorInput(
         disabled: boolean;
       }
     | {
-        id: string;
+        uuid: string;
         n: 3;
         value: [number, number, number];
         min: [number, number, number] | null;
@@ -112,7 +126,7 @@ export function VectorInput(
     <Flex justify="space-between" columnGap="0.5em">
       {[...Array(props.n).keys()].map((i) => (
         <NumberInput
-          id={i === 0 ? props.id : undefined}
+          id={i === 0 ? props.uuid : undefined}
           key={i}
           value={props.value[i]}
           onChange={(v) => {

@@ -1,6 +1,6 @@
 @font-face {
   font-family: "Inter";
-  src: url("/Inter-VariableFont_slnt,wght.ttf") format("truetype");
+  src: url("./assets/Inter-VariableFont_slnt,wght.ttf") format("truetype");
   font-weight: 1 100 200 300 400 500 600 700 800 900 1000;
   font-style: normal italic;
 }
@@ -33,8 +33,8 @@ body {
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
-    monospace;
+  font-family:
+    source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
 }
 
 #root {

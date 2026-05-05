@@ -1,32 +1,35 @@
-import { GuiAddUploadButtonMessage } from "../WebsocketMessages";
+import { GuiUploadButtonMessage } from "../WebsocketMessages";
 import { v4 as uuid } from "uuid";
 import { Box, Progress } from "@mantine/core";
 
 import { Button } from "@mantine/core";
 import React, { useContext } from "react";
-import { ViewerContext, ViewerContextContents } from "../App";
+import { ViewerContext, ViewerContextContents } from "../ViewerContext";
 import { IconCheck } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { htmlIconWrapper } from "./ComponentStyles.css";
+import { toMantineColor } from "./colorUtils";
 
-export default function UploadButtonComponent(conf: GuiAddUploadButtonMessage) {
+export default function UploadButtonComponent({
+  uuid,
+  props: { disabled, mime_type, color, _icon_html: icon_html, label },
+}: GuiUploadButtonMessage) {
   // Handle GUI input types.
   const viewer = useContext(ViewerContext)!;
   const fileUploadRef = React.useRef<HTMLInputElement>(null);
   const { isUploading, upload } = useFileUpload({
     viewer,
-    componentId: conf.id,
+    componentUuid: uuid,
   });
 
-  const disabled = conf.disabled || isUploading;
   return (
     <Box mx="xs" mb="0.5em">
       <input
         type="file"
         style={{ display: "none" }}
-        id={`file_upload_${conf.id}`}
+        id={`file_upload_${uuid}`}
         name="file"
-        accept={conf.mime_type}
+        accept={mime_type}
         ref={fileUploadRef}
         onChange={(e) => {
           const input = e.target as HTMLInputElement;
@@ -35,27 +38,27 @@ export default function UploadButtonComponent(conf: GuiAddUploadButtonMessage) {
         }}
       />
       <Button
-        id={conf.id}
+        id={uuid}
         fullWidth
-        color={conf.color ?? undefined}
+        color={toMantineColor(color)}
         onClick={() => {
           if (fileUploadRef.current === null) return;
           fileUploadRef.current.value = fileUploadRef.current.defaultValue;
           fileUploadRef.current.click();
         }}
-        style={{ height: "2.125em" }}
-        disabled={disabled}
+        style={{ height: "2em" }}
+        disabled={disabled || isUploading}
         size="sm"
         leftSection={
-          conf.icon_html === null ? undefined : (
+          icon_html === null ? undefined : (
             <div
               className={htmlIconWrapper}
-              dangerouslySetInnerHTML={{ __html: conf.icon_html }}
+              dangerouslySetInnerHTML={{ __html: icon_html }}
             />
           )
         }
       >
-        {conf.label}
+        {label}
       </Button>
     </Box>
   );
@@ -63,18 +66,18 @@ export default function UploadButtonComponent(conf: GuiAddUploadButtonMessage) {
 
 function useFileUpload({
   viewer,
-  componentId,
+  componentUuid,
 }: {
-  componentId: string;
+  componentUuid: string;
   viewer: ViewerContextContents;
 }) {
-  const updateUploadState = viewer.useGui((state) => state.updateUploadState);
+  const updateUploadState = viewer.guiActions.updateUploadState;
   const uploadState = viewer.useGui(
-    (state) => state.uploadsInProgress[componentId],
+    (state) => state.uploadsInProgress[componentUuid],
   );
   const totalBytes = uploadState?.totalBytes;
 
-  // Cache total bytes string
+  // Cache total bytes string.
   const totalBytesString = React.useMemo(() => {
     if (totalBytes === undefined) return "";
     let displaySize = totalBytes;
@@ -87,7 +90,7 @@ function useFileUpload({
     return `${displaySize.toFixed(1)}${displayUnits[displayUnitIndex]}`;
   }, [totalBytes]);
 
-  // Update notification status
+  // Update notification status.
   React.useEffect(() => {
     if (uploadState === undefined) return;
     const { notificationId, filename } = uploadState;
@@ -130,23 +133,26 @@ function useFileUpload({
     uploadState.uploadedBytes < uploadState.totalBytes;
 
   async function upload(file: File) {
+    // Get viewer mutable once.
+    const viewerMutable = viewer.mutable.current;
+
     const chunkSize = 512 * 1024; // bytes
     const numChunks = Math.ceil(file.size / chunkSize);
     const transferUuid = uuid();
     const notificationId = "upload-" + transferUuid;
 
-    // Begin upload by setting initial state
+    // Begin upload by setting initial state.
     updateUploadState({
-      componentId: componentId,
+      componentId: componentUuid,
       uploadedBytes: 0,
       totalBytes: file.size,
       filename: file.name,
       notificationId,
     });
 
-    viewer.sendMessageRef.current({
-      type: "FileTransferStart",
-      source_component_id: componentId,
+    viewerMutable.sendMessage({
+      type: "FileTransferStartUpload",
+      source_component_uuid: componentUuid,
       transfer_uuid: transferUuid,
       filename: file.name,
       mime_type: file.type,
@@ -160,11 +166,11 @@ function useFileUpload({
       const chunk = file.slice(start, end);
       const buffer = await chunk.arrayBuffer();
 
-      viewer.sendMessageRef.current({
+      viewerMutable.sendMessage({
         type: "FileTransferPart",
-        source_component_id: componentId,
+        source_component_uuid: componentUuid,
         transfer_uuid: transferUuid,
-        part: i,
+        part_index: i,
         content: new Uint8Array(buffer),
       });
     }

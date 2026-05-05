@@ -1,16 +1,13 @@
 import abc
 from typing import ClassVar, Generic, Tuple, TypeVar, Union, overload
 
-import numpy as onp
-import numpy.typing as onpt
+import numpy as np
+import numpy.typing as npt
 from typing_extensions import Self, final, get_args, override
 
 
 class MatrixLieGroup(abc.ABC):
     """Interface definition for matrix Lie groups."""
-
-    # Class properties.
-    # > These will be set in `_utils.register_lie_group()`.
 
     matrix_dim: ClassVar[int]
     """Dimension of square matrix output from `.as_matrix()`."""
@@ -31,10 +28,23 @@ class MatrixLieGroup(abc.ABC):
         # - This method is implicitly overriden by the dataclass decorator and
         #   should _not_ be marked abstract.
         self,
-        parameters: onp.ndarray,
+        parameters: np.ndarray,
     ):
         """Construct a group object from its underlying parameters."""
         raise NotImplementedError()
+
+    def __init_subclass__(
+        cls,
+        matrix_dim: int = 0,
+        parameters_dim: int = 0,
+        tangent_dim: int = 0,
+        space_dim: int = 0,
+    ) -> None:
+        """Set class properties for subclasses. We default to dummy values."""
+        cls.matrix_dim = matrix_dim
+        cls.parameters_dim = parameters_dim
+        cls.tangent_dim = tangent_dim
+        cls.space_dim = space_dim
 
     # Shared implementations.
 
@@ -43,22 +53,22 @@ class MatrixLieGroup(abc.ABC):
 
     @overload
     def __matmul__(
-        self, other: onpt.NDArray[onp.floating]
-    ) -> onpt.NDArray[onp.floating]: ...
+        self, other: npt.NDArray[np.floating]
+    ) -> npt.NDArray[np.floating]: ...
 
     def __matmul__(
-        self, other: Union[Self, onpt.NDArray[onp.floating]]
-    ) -> Union[Self, onpt.NDArray[onp.floating]]:
+        self, other: Union[Self, npt.NDArray[np.floating]]
+    ) -> Union[Self, npt.NDArray[np.floating]]:
         """Overload for the `@` operator.
 
         Switches between the group action (`.apply()`) and multiplication
         (`.multiply()`) based on the type of `other`.
         """
-        if isinstance(other, onp.ndarray):
+        if isinstance(other, np.ndarray):
             return self.apply(target=other)
         elif isinstance(other, MatrixLieGroup):
             assert self.space_dim == other.space_dim
-            return self.multiply(other=other)
+            return self.multiply(other=other)  # type: ignore
         else:
             assert False, f"Invalid argument type for `@` operator: {type(other)}"
 
@@ -66,11 +76,14 @@ class MatrixLieGroup(abc.ABC):
 
     @classmethod
     @abc.abstractmethod
-    def identity(cls, batch_axes: Tuple[int, ...] = ()) -> Self:
+    def identity(
+        cls, batch_axes: Tuple[int, ...] = (), dtype: npt.DTypeLike = np.float64
+    ) -> Self:
         """Returns identity element.
 
         Args:
             batch_axes: Any leading batch axes for the output transform.
+            dtype: Datatype for the output.
 
         Returns:
             Identity element.
@@ -78,7 +91,7 @@ class MatrixLieGroup(abc.ABC):
 
     @classmethod
     @abc.abstractmethod
-    def from_matrix(cls, matrix: onpt.NDArray[onp.floating]) -> Self:
+    def from_matrix(cls, matrix: npt.NDArray[np.floating]) -> Self:
         """Get group member from matrix representation.
 
         Args:
@@ -91,17 +104,17 @@ class MatrixLieGroup(abc.ABC):
     # Accessors.
 
     @abc.abstractmethod
-    def as_matrix(self) -> onpt.NDArray[onp.floating]:
+    def as_matrix(self) -> npt.NDArray[np.floating]:
         """Get transformation as a matrix. Homogeneous for SE groups."""
 
     @abc.abstractmethod
-    def parameters(self) -> onpt.NDArray[onp.floating]:
+    def parameters(self) -> npt.NDArray[np.floating]:
         """Get underlying representation."""
 
     # Operations.
 
     @abc.abstractmethod
-    def apply(self, target: onpt.NDArray[onp.floating]) -> onpt.NDArray[onp.floating]:
+    def apply(self, target: npt.NDArray[np.floating]) -> npt.NDArray[np.floating]:
         """Applies group action to a point.
 
         Args:
@@ -121,7 +134,7 @@ class MatrixLieGroup(abc.ABC):
 
     @classmethod
     @abc.abstractmethod
-    def exp(cls, tangent: onpt.NDArray[onp.floating]) -> Self:
+    def exp(cls, tangent: npt.NDArray[np.floating]) -> Self:
         """Computes `expm(wedge(tangent))`.
 
         Args:
@@ -132,7 +145,7 @@ class MatrixLieGroup(abc.ABC):
         """
 
     @abc.abstractmethod
-    def log(self) -> onpt.NDArray[onp.floating]:
+    def log(self) -> npt.NDArray[np.floating]:
         """Computes `vee(logm(transformation matrix))`.
 
         Returns:
@@ -140,7 +153,7 @@ class MatrixLieGroup(abc.ABC):
         """
 
     @abc.abstractmethod
-    def adjoint(self) -> onpt.NDArray[onp.floating]:
+    def adjoint(self) -> npt.NDArray[np.floating]:
         """Computes the adjoint, which transforms tangent vectors between tangent
         spaces.
 
@@ -172,20 +185,25 @@ class MatrixLieGroup(abc.ABC):
             Normalized group member.
         """
 
-    # @classmethod
-    # @abc.abstractmethod
-    # def sample_uniform(cls, key: onp.ndarray, batch_axes: Tuple[int, ...] = ()) -> Self:
-    #     """Draw a uniform sample from the group. Translations (if applicable) are in the
-    #     range [-1, 1].
-    #
-    #     Args:
-    #         key: PRNG key, as returned by `jax.random.PRNGKey()`.
-    #         batch_axes: Any leading batch axes for the output transforms. Each
-    #             sampled transform will be different.
-    #
-    #     Returns:
-    #         Sampled group member.
-    #     """
+    @classmethod
+    @abc.abstractmethod
+    def sample_uniform(
+        cls,
+        rng: np.random.Generator,
+        batch_axes: Tuple[int, ...] = (),
+        dtype: npt.DTypeLike = np.float64,
+    ) -> Self:
+        """Draw a uniform sample from the group. Translations (if applicable) are in the
+        range [-1, 1].
+
+        Args:
+            rng: numpy generator object.
+            batch_axes: Any leading batch axes for the output transforms. Each
+                sampled transform will be different.
+
+        Returns:
+            Sampled group member.
+        """
 
     @final
     def get_batch_axes(self) -> Tuple[int, ...]:
@@ -216,7 +234,7 @@ class SEBase(Generic[ContainedSOType], MatrixLieGroup):
     def from_rotation_and_translation(
         cls,
         rotation: ContainedSOType,
-        translation: onpt.NDArray[onp.floating],
+        translation: npt.NDArray[np.floating],
     ) -> Self:
         """Construct a rigid transform from a rotation and a translation.
 
@@ -233,7 +251,7 @@ class SEBase(Generic[ContainedSOType], MatrixLieGroup):
     def from_rotation(cls, rotation: ContainedSOType) -> Self:
         return cls.from_rotation_and_translation(
             rotation=rotation,
-            translation=onp.zeros(
+            translation=np.zeros(
                 (*rotation.get_batch_axes(), cls.space_dim),
                 dtype=rotation.parameters().dtype,
             ),
@@ -241,7 +259,7 @@ class SEBase(Generic[ContainedSOType], MatrixLieGroup):
 
     @final
     @classmethod
-    def from_translation(cls, translation: onpt.NDArray[onp.floating]) -> Self:
+    def from_translation(cls, translation: npt.NDArray[np.floating]) -> Self:
         # Extract rotation class from type parameter.
         assert len(cls.__orig_bases__) == 1  # type: ignore
         return cls.from_rotation_and_translation(
@@ -254,19 +272,19 @@ class SEBase(Generic[ContainedSOType], MatrixLieGroup):
         """Returns a transform's rotation term."""
 
     @abc.abstractmethod
-    def translation(self) -> onpt.NDArray[onp.floating]:
+    def translation(self) -> npt.NDArray[np.floating]:
         """Returns a transform's translation term."""
 
     # Overrides.
 
     @final
     @override
-    def apply(self, target: onpt.NDArray[onp.floating]) -> onpt.NDArray[onp.floating]:
+    def apply(self, target: npt.NDArray[np.floating]) -> npt.NDArray[np.floating]:
         return self.rotation() @ target + self.translation()  # type: ignore
 
     @final
     @override
-    def multiply(self, other: Self) -> Self:
+    def multiply(self, other: Self) -> Self:  # type: ignore
         return type(self).from_rotation_and_translation(
             rotation=self.rotation() @ other.rotation(),
             translation=(self.rotation() @ other.translation()) + self.translation(),

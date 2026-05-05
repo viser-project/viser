@@ -4,7 +4,7 @@ import asyncio
 import dataclasses
 import threading
 from asyncio.events import AbstractEventLoop
-from typing import AsyncGenerator, Dict, List, Sequence
+from typing import AsyncGenerator, Callable, Dict, List, Sequence
 
 from ._messages import Message
 
@@ -30,6 +30,19 @@ class AsyncMessageBuffer:
     max_window_size: int = 128
     window_duration_sec: float = 1.0 / 60.0
     done: bool = False
+    atomic_counter: int = 0
+
+    def remove_from_buffer(self, match_fn: Callable[[Message], bool]) -> None:
+        """Remove messages that match some condition."""
+
+        with self.buffer_lock:
+            # Remove messages that match the condition.
+            for id, message in filter(
+                lambda kv_pair: match_fn(self.message_from_id[kv_pair[0]]),
+                tuple(self.message_from_id.items()),
+            ):
+                self.message_from_id.pop(id)
+                self.id_from_redundancy_key.pop(message.redundancy_key())
 
     def push(self, message: Message) -> None:
         """Push a new message to our buffer, and remove old redundant ones."""
@@ -38,7 +51,38 @@ class AsyncMessageBuffer:
 
         # Add message to buffer.
         redundancy_key = message.redundancy_key()
+
+        # Pre-compute entity coordinates outside the lock.
+        purge_entity_type: str | None = None
+        purge_entity_id: str | None = None
+        if (
+            message.lifecycle_phase == "remove"
+            and message.entity_type is not None
+            and message.entity_id_field is not None
+        ):
+            purge_entity_type = message.entity_type
+            purge_entity_id = getattr(message, message.entity_id_field)
+
         with self.buffer_lock:
+            # On Remove, drop pending Updates for the same entity so a
+            # removed entity leaves no residue in the buffer. (Create+Remove
+            # coalesce via the redundancy key below; Updates use a separate
+            # namespace, so they need explicit purging.)
+            if purge_entity_type is not None:
+                stale_ids = [
+                    mid
+                    for mid, m in self.message_from_id.items()
+                    if m.lifecycle_phase == "update"
+                    and m.entity_type == purge_entity_type
+                    and m.entity_id_field is not None
+                    and getattr(m, m.entity_id_field, None) == purge_entity_id
+                ]
+                for mid in stale_ids:
+                    stale = self.message_from_id.pop(mid)
+                    stale_key = stale.redundancy_key()
+                    if stale_key is not None:
+                        self.id_from_redundancy_key.pop(stale_key, None)
+
             new_message_id = self.message_counter
             self.message_from_id[new_message_id] = message
             self.message_counter += 1
@@ -53,8 +97,31 @@ class AsyncMessageBuffer:
                 self.message_from_id.pop(old_message_id)
             self.id_from_redundancy_key[redundancy_key] = new_message_id
 
-        # Pulse message event to notify consumers that a new message is available.
-        self.event_loop.call_soon_threadsafe(self.message_event.set)
+            # Pulse message event to notify consumers that a new message is
+            # available.
+            #
+            # We set this both inside and outside of the event loop.
+            #
+            # This call is necessary so we can read the value immedaitely
+            # in synchronous logic.
+            self.message_event.set()
+            if self.atomic_counter == 0:
+                # This call is necessary to make sure that awaiting tasks are
+                # triggered correctly.
+                #
+                # If we're in an atomic block, this will happen when
+                # atomic_end() is called.
+                self.event_loop.call_soon_threadsafe(self.message_event.set)
+
+    def atomic_start(self) -> None:
+        """Start an atomic block. No new messages/windows should be sent."""
+        self.atomic_counter += 1
+
+    def atomic_end(self) -> None:
+        """End an atomic block."""
+        self.atomic_counter -= 1
+        if self.atomic_counter == 0:
+            self.event_loop.call_soon_threadsafe(self.message_event.set)
 
     def flush(self) -> None:
         """Flush the message buffer; signals to yield a message window immediately."""
@@ -64,11 +131,15 @@ class AsyncMessageBuffer:
         """Set the done flag. Kills the generator."""
         self.done = True
 
-        # Pulse message event to make sure we aren't waiting for a new message.
-        self.event_loop.call_soon_threadsafe(self.message_event.set)
+        try:
+            # Pulse message event to make sure we aren't waiting for a new message.
+            self.event_loop.call_soon_threadsafe(self.message_event.set)
 
-        # Pulse flush event to skip any windowing delay.
-        self.event_loop.call_soon_threadsafe(self.flush_event.set)
+            # Pulse flush event to skip any windowing delay.
+            self.event_loop.call_soon_threadsafe(self.flush_event.set)
+        except RuntimeError:
+            # Event loop may already be closed during teardown.
+            pass
 
     async def window_generator(
         self, client_id: int
@@ -77,13 +148,15 @@ class AsyncMessageBuffer:
         are available."""
 
         last_sent_id = -1
-        flush_wait = asyncio.create_task(self.flush_event.wait())
+        flush_wait = self.event_loop.create_task(self.flush_event.wait())
         while not self.done:
             window: List[Message] = []
             most_recent_message_id = self.message_counter - 1
             while (
                 last_sent_id < most_recent_message_id
                 and len(window) < self.max_window_size
+                # We should only be polling for new messages if we aren't in an atomic block.
+                and self.atomic_counter == 0
             ):
                 last_sent_id += 1
                 if self.persistent_messages:
@@ -116,4 +189,4 @@ class AsyncMessageBuffer:
                 del pending
                 if flush_wait in done and not self.done:
                     self.flush_event.clear()
-                    flush_wait = asyncio.create_task(self.flush_event.wait())
+                    flush_wait = self.event_loop.create_task(self.flush_event.wait())

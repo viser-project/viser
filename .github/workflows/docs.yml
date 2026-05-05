@@ -9,48 +9,49 @@ on:
     types: [created]
   workflow_dispatch:
 
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
 jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
       # Check out source.
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # This ensures the entire history is fetched so we can switch branches
 
-      - name: Set up Python
-        uses: actions/setup-python@v1
-        with:
-          python-version: "3.10"
-
-      - name: Set up dependencies
-        run: |
-          pip install uv
-          uv pip install --system -e ".[dev]"
-          uv pip install --system -r docs/requirements.txt
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
 
       # Get version from pyproject.toml.
       - name: Get version + subdirectory
         run: |
-          VERSION=$(python -c "import toml; print(toml.load('pyproject.toml')['project']['version'])")
+          VERSION=$(uv run --extra dev --python 3.12 python -c "import viser; print(viser.__version__)")
+          echo "VISER_RELEASE_WORKFLOW_VERSION=$VERSION" >> $GITHUB_ENV
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "DOCS_SUBDIR=versions/$VERSION" >> $GITHUB_ENV
 
       # Hack to overwrite version.
-      - name: Set version to 'latest' for pushes (this will appear in the doc banner)
+      - name: Set version to 'main' for pushes (this will appear in the doc banner)
         run: |
-          python -c "import toml; conf = toml.load('pyproject.toml'); conf['project']['version'] = 'latest'; toml.dump(conf, open('pyproject.toml', 'w'))"
+          echo "VISER_VERSION_STR_OVERRIDE=main" >> $GITHUB_ENV
         if: github.event_name == 'push'
 
       # Build documentation.
       - name: Building documentation
         run: |
-          sphinx-build docs/source docs/build -b dirhtml
+          uv run --extra dev --extra examples --python 3.12 --with-requirements docs/requirements.txt \
+            sphinx-build docs/source docs/build -b dirhtml
 
       # Get version from pyproject.toml.
-      - name: Override subdirectory to `latest/` for pushes
+      - name: Override subdirectory to `main/` for pushes
         run: |
-          echo "DOCS_SUBDIR=latest" >> $GITHUB_ENV
+          echo "DOCS_SUBDIR=main" >> $GITHUB_ENV
         if: github.event_name == 'push'
 
       # Deploy to version-dependent subdirectory.

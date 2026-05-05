@@ -12,10 +12,12 @@ you're building a web-based application from scratch.
 """
 
 from ._infra import ClientId as ClientId
+from ._infra import StateSerializer as StateSerializer
 from ._infra import WebsockClientConnection as WebsockClientConnection
 from ._infra import WebsockMessageHandler as WebsockMessageHandler
 from ._infra import WebsockServer as WebsockServer
 from ._messages import Message as Message
+from ._typescript_interface_gen import EditorHidden as EditorHidden
 from ._typescript_interface_gen import (
     TypeScriptAnnotationOverride as TypeScriptAnnotationOverride,
 )

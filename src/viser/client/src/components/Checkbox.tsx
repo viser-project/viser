@@ -1,40 +1,37 @@
 import * as React from "react";
 import { ViserInputComponent } from "./common";
 import { GuiComponentContext } from "../ControlPanel/GuiComponentContext";
-import { GuiAddCheckboxMessage } from "../WebsocketMessages";
+import { GuiCheckboxMessage } from "../WebsocketMessages";
 import { Box, Checkbox, Tooltip } from "@mantine/core";
 
 export default function CheckboxComponent({
-  id,
-  disabled,
-  visible,
-  hint,
-  label,
+  uuid,
   value,
-}: GuiAddCheckboxMessage) {
+  props: { disabled, visible, hint, label },
+}: GuiCheckboxMessage) {
   const { setValue } = React.useContext(GuiComponentContext)!;
-  if (!visible) return <></>;
+  if (!visible) return null;
   let input = (
     <Checkbox
-      id={id}
+      id={uuid}
       checked={value}
       size="xs"
       onChange={(value) => {
-        setValue(id, value.target.checked);
+        setValue(uuid, value.target.checked);
       }}
       disabled={disabled}
     />
   );
   if (hint !== null && hint !== undefined) {
     // For checkboxes, we want to make sure that the wrapper
-    // doesn't expand to the full width of the parent. This will
+    // doesn't expand to the full wuuidth of the parent. This will
     // de-center the tooltip.
     input = (
       <Tooltip
         zIndex={100}
         label={hint}
         multiline
-        w="15rem"
+        style={{ width: "15rem" }}
         withArrow
         openDelay={500}
         withinPortal
@@ -43,5 +40,7 @@ export default function CheckboxComponent({
       </Tooltip>
     );
   }
-  return <ViserInputComponent {...{ id, label }}>{input}</ViserInputComponent>;
+  return (
+    <ViserInputComponent {...{ uuid, label }}>{input}</ViserInputComponent>
+  );
 }

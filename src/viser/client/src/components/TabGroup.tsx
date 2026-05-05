@@ -1,19 +1,26 @@
 import * as React from "react";
-import { GuiAddTabGroupMessage } from "../WebsocketMessages";
+import { GuiTabGroupMessage } from "../WebsocketMessages";
 import { Tabs } from "@mantine/core";
 import { GuiComponentContext } from "../ControlPanel/GuiComponentContext";
-import { htmlIconWrapper } from "./ComponentStyles.css";
+import { htmlIconWrapper, tabGroupWrap } from "./ComponentStyles.css";
 
 export default function TabGroupComponent({
-  tab_labels,
-  tab_icons_html,
-  tab_container_ids,
-  visible,
-}: GuiAddTabGroupMessage) {
+  props: {
+    _tab_labels: tab_labels,
+    _tab_icons_html: tab_icons_html,
+    _tab_container_ids: tab_container_ids,
+    visible,
+  },
+}: GuiTabGroupMessage) {
   const { GuiContainer } = React.useContext(GuiComponentContext)!;
-  if (!visible) return <></>;
+  if (!visible) return null;
   return (
-    <Tabs radius="xs" defaultValue={"0"} style={{ marginTop: "-0.55em" }}>
+    <Tabs
+      radius="xs"
+      defaultValue={"0"}
+      className={tabGroupWrap}
+      style={{ marginTop: "-0.55em" }}
+    >
       <Tabs.List>
         {tab_labels.map((label, index) => (
           <Tabs.Tab
@@ -36,9 +43,9 @@ export default function TabGroupComponent({
           </Tabs.Tab>
         ))}
       </Tabs.List>
-      {tab_container_ids.map((containerId, index) => (
-        <Tabs.Panel value={index.toString()} key={containerId}>
-          <GuiContainer containerId={containerId} />
+      {tab_container_ids.map((containerUuid, index) => (
+        <Tabs.Panel value={index.toString()} key={containerUuid}>
+          <GuiContainer containerUuid={containerUuid} />
         </Tabs.Panel>
       ))}
     </Tabs>

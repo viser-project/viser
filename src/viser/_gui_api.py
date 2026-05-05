@@ -1,50 +1,84 @@
 from __future__ import annotations
 
+import asyncio
+import builtins
 import colorsys
 import dataclasses
 import functools
 import threading
 import time
+from asyncio import AbstractEventLoop
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Sequence, Tuple, TypeVar, cast, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Protocol,
+    Sequence,
+    Tuple,
+    TypeVar,
+    cast,
+    overload,
+)
 
-import numpy as onp
+import numpy as np
 from typing_extensions import (
     Literal,
     LiteralString,
     TypeAlias,
     TypedDict,
+    assert_never,
     get_type_hints,
 )
 
 from viser import theme
+from viser._backwards_compat_shims import deprecated_positional_shim
 
-from . import _messages
+from . import _messages, uplot
 from ._gui_handles import (
+    CommandEvent,
+    CommandHandle,
     GuiButtonGroupHandle,
     GuiButtonHandle,
+    GuiCheckboxHandle,
     GuiContainerProtocol,
+    GuiDividerHandle,
     GuiDropdownHandle,
     GuiEvent,
     GuiFolderHandle,
-    GuiInputHandle,
+    GuiFormHandle,
+    GuiHtmlHandle,
+    GuiImageHandle,
     GuiMarkdownHandle,
     GuiModalHandle,
+    GuiMultiSliderHandle,
+    GuiNumberHandle,
     GuiPlotlyHandle,
     GuiProgressBarHandle,
+    GuiRgbaHandle,
+    GuiRgbHandle,
+    GuiSliderHandle,
     GuiTabGroupHandle,
+    GuiTabHandle,
+    GuiTextHandle,
     GuiUploadButtonHandle,
+    GuiUplotHandle,
+    GuiVector2Handle,
+    GuiVector3Handle,
     SupportsRemoveProtocol,
     UploadedFile,
+    _CommandHandleState,
+    _GuiButtonHandleState,
     _GuiHandleState,
     _GuiInputHandle,
-    _make_unique_id,
+    _make_uuid,
 )
 from ._icons import svg_from_icon
 from ._icons_enum import IconName
-from ._messages import FileTransferPartAck
+from ._messages import FileTransferPartAck, GuiBaseProps, GuiSliderMark
 from ._scene_api import cast_vector
+from ._threadpool_exceptions import print_threadpool_errors
 
 if TYPE_CHECKING:
     import plotly.graph_objects as go
@@ -52,13 +86,13 @@ if TYPE_CHECKING:
     from ._viser import ClientHandle, ViserServer
     from .infra import ClientId
 
-
+GuiInputPropsType = TypeVar("GuiInputPropsType", bound=GuiBaseProps)
 IntOrFloat = TypeVar("IntOrFloat", int, float)
 TString = TypeVar("TString", bound=str)
 TLiteralString = TypeVar("TLiteralString", bound=LiteralString)
 T = TypeVar("T")
 LengthTenStrTuple: TypeAlias = Tuple[str, str, str, str, str, str, str, str, str, str]
-Color: TypeAlias = Literal[
+LiteralColor: TypeAlias = Literal[
     "dark",
     "gray",
     "red",
@@ -165,12 +199,14 @@ class GuiApi:
         self,
         owner: ViserServer | ClientHandle,  # Who do I belong to?
         thread_executor: ThreadPoolExecutor,
+        event_loop: AbstractEventLoop,
     ) -> None:
         from ._viser import ViserServer
 
         self._owner = owner
         """Entity that owns this API."""
         self._thread_executor = thread_executor
+        self._event_loop = event_loop
 
         self._websock_interface = (
             owner._websock_server
@@ -179,10 +215,12 @@ class GuiApi:
         )
         """Interface for sending and listening to messages."""
 
-        self._gui_input_handle_from_id: dict[str, _GuiInputHandle[Any]] = {}
-        self._container_handle_from_id: dict[str, GuiContainerProtocol] = {
+        self._gui_input_handle_from_uuid: dict[str, _GuiInputHandle[Any]] = {}
+        self._container_handle_from_uuid: dict[str, GuiContainerProtocol] = {
             "root": _RootGuiContainer({})
         }
+        self._modal_handle_from_uuid: dict[str, GuiModalHandle] = {}
+        self._command_handle_from_uuid: dict[str, CommandHandle] = {}
         self._current_file_upload_states: dict[str, _FileUploadState] = {}
 
         # Set to True when plotly.min.js has been sent to client.
@@ -192,19 +230,44 @@ class GuiApi:
             _messages.GuiUpdateMessage, self._handle_gui_updates
         )
         self._websock_interface.register_handler(
-            _messages.FileTransferStart, self._handle_file_transfer_start
+            _messages.GuiButtonHoldMessage, self._handle_gui_button_hold
+        )
+        self._websock_interface.register_handler(
+            _messages.GuiFormSubmitMessage, self._handle_gui_form_submit
+        )
+        self._websock_interface.register_handler(
+            _messages.GuiFormDirtyMessage, self._handle_gui_form_dirty
+        )
+        self._websock_interface.register_handler(
+            _messages.FileTransferStartUpload, self._handle_file_transfer_start
         )
         self._websock_interface.register_handler(
             _messages.FileTransferPart,
             self._handle_file_transfer_part,
         )
+        self._websock_interface.register_handler(
+            _messages.CommandTriggerMessage, self._handle_command_trigger
+        )
 
-    def _handle_gui_updates(
+    def _resolve_client(self, client_id: ClientId) -> ClientHandle | None:
+        """Resolve the ClientHandle for a given client_id. Returns None when
+        the client has disconnected between queuing and dispatch -- callers
+        should early-return."""
+        # Runtime import to break the circular edge with `_viser`.
+        from ._viser import ClientHandle, ViserServer
+
+        if isinstance(self._owner, ClientHandle):
+            return self._owner
+        if isinstance(self._owner, ViserServer):
+            return self._owner._connected_clients.get(client_id, None)
+        assert_never(self._owner)
+
+    async def _handle_gui_updates(
         self, client_id: ClientId, message: _messages.GuiUpdateMessage
     ) -> None:
         """Callback for handling GUI messages."""
-        handle = self._gui_input_handle_from_id.get(message.id, None)
-        if handle is None:
+        handle = self._gui_input_handle_from_uuid.get(message.uuid, None)
+        if handle is None or handle._impl.removed:
             return
         handle_state = handle._impl
 
@@ -219,12 +282,15 @@ class GuiApi:
             # when we expect tuples but the Javascript side gives us lists.
             if prop_name == "value":
                 if isinstance(handle_state.value, tuple):
-                    # We currently assume all tuple types have length >0, and
-                    # contents are all the same type.
-                    assert len(handle_state.value) > 0
-                    typ = type(handle_state.value[0])
-                    assert all([type(x) == typ for x in handle_state.value])
-                    prop_value = tuple([typ(new) for new in prop_value])
+                    if len(handle_state.value) > 0:
+                        # We currently assume non-empty tuple types have length
+                        # greater than 0, and contents are all the same type.
+                        typ = type(handle_state.value[0])
+                        assert all([type(x) == typ for x in handle_state.value])
+                        prop_value = tuple([typ(new) for new in prop_value])
+                    else:
+                        # Empty tuple.
+                        prop_value = tuple(prop_value)
                 else:
                     prop_value = type(handle_state.value)(prop_value)
 
@@ -242,26 +308,90 @@ class GuiApi:
 
         # GUI element has been updated!
         handle_state.update_timestamp = time.time()
+        client = self._resolve_client(client_id)
+        if client is None:
+            return
         for cb in handle_state.update_cb:
-            from ._viser import ClientHandle, ViserServer
-
-            # Get the handle of the client that triggered this event.
-            if isinstance(self._owner, ClientHandle):
-                client = self._owner
-            elif isinstance(self._owner, ViserServer):
-                client = self._owner.get_clients()[client_id]
+            if asyncio.iscoroutinefunction(cb):
+                await cb(GuiEvent(client, client_id, handle))
             else:
-                assert False
-
-            cb(GuiEvent(client, client_id, handle))
+                self._thread_executor.submit(
+                    cb, GuiEvent(client, client_id, handle)
+                ).add_done_callback(print_threadpool_errors)
 
         if handle_state.sync_cb is not None:
             handle_state.sync_cb(client_id, updates_cast)
 
-    def _handle_file_transfer_start(
-        self, client_id: ClientId, message: _messages.FileTransferStart
+    async def _handle_gui_button_hold(
+        self, client_id: ClientId, message: _messages.GuiButtonHoldMessage
     ) -> None:
-        if message.source_component_id not in self._gui_input_handle_from_id:
+        """Callback for handling button hold messages."""
+        handle = self._gui_input_handle_from_uuid.get(message.uuid, None)
+        if handle is None or handle._impl.removed:
+            return
+
+        # Ensure this is a button handle with hold callbacks.
+        if not isinstance(handle, GuiButtonHandle):
+            return
+
+        # Get callbacks registered for this frequency.
+        callbacks = handle._button_impl.hold_cbs_from_freq.get(message.frequency, [])
+        if not callbacks:
+            return
+
+        client = self._resolve_client(client_id)
+        if client is None:
+            return
+
+        # Call all callbacks for this frequency.
+        for cb in callbacks:
+            if asyncio.iscoroutinefunction(cb):
+                await cb(GuiEvent(client, client_id, handle))
+            else:
+                self._thread_executor.submit(
+                    cb, GuiEvent(client, client_id, handle)
+                ).add_done_callback(print_threadpool_errors)
+
+    async def _handle_gui_form_submit(
+        self, client_id: ClientId, message: _messages.GuiFormSubmitMessage
+    ) -> None:
+        """Callback for client-initiated form submits (Cmd/Ctrl+Enter).
+
+        Fires the form's on_submit callbacks and broadcasts the message back
+        to all clients so they reset their dirty indicators.
+        """
+        handle = self._container_handle_from_uuid.get(message.uuid, None)
+        if not isinstance(handle, GuiFormHandle):
+            return
+
+        client = self._resolve_client(client_id)
+        if client is None:
+            return
+
+        for cb in handle._submit_cb:
+            if asyncio.iscoroutinefunction(cb):
+                await cb(GuiEvent(client, client_id, handle))
+            else:
+                self._thread_executor.submit(
+                    cb, GuiEvent(client, client_id, handle)
+                ).add_done_callback(print_threadpool_errors)
+
+        # Broadcast to clients so they clear their dirty indicators.
+        self._websock_interface.queue_message(
+            _messages.GuiFormSubmitMessage(uuid=message.uuid)
+        )
+
+    async def _handle_gui_form_dirty(
+        self, client_id: ClientId, message: _messages.GuiFormDirtyMessage
+    ) -> None:
+        """Broadcast form dirty signal to all other clients."""
+        message.excluded_self_client = client_id
+        self._websock_interface.queue_message(message)
+
+    def _handle_file_transfer_start(
+        self, client_id: ClientId, message: _messages.FileTransferStartUpload
+    ) -> None:
+        if message.source_component_uuid not in self._gui_input_handle_from_uuid:
             return
         self._current_file_upload_states[message.transfer_uuid] = {
             "filename": message.filename,
@@ -278,10 +408,10 @@ class GuiApi:
     ) -> None:
         if message.transfer_uuid not in self._current_file_upload_states:
             return
-        assert message.source_component_id in self._gui_input_handle_from_id
+        assert message.source_component_uuid in self._gui_input_handle_from_uuid
 
         state = self._current_file_upload_states[message.transfer_uuid]
-        state["parts"][message.part] = message.content
+        state["parts"][message.part_index] = message.content
         total_bytes = state["total_bytes"]
 
         with state["lock"]:
@@ -290,7 +420,7 @@ class GuiApi:
             # Send ack to the server.
             self._websock_interface.queue_message(
                 FileTransferPartAck(
-                    source_component_id=message.source_component_id,
+                    source_component_uuid=message.source_component_uuid,
                     transfer_uuid=message.transfer_uuid,
                     transferred_bytes=state["transferred_bytes"],
                     total_bytes=total_bytes,
@@ -304,8 +434,10 @@ class GuiApi:
         assert state["transferred_bytes"] == total_bytes
         state = self._current_file_upload_states.pop(message.transfer_uuid)
 
-        handle = self._gui_input_handle_from_id.get(message.source_component_id, None)
-        if handle is None:
+        handle = self._gui_input_handle_from_uuid.get(
+            message.source_component_uuid, None
+        )
+        if handle is None or handle._impl.removed:
             return
 
         handle_state = handle._impl
@@ -316,35 +448,61 @@ class GuiApi:
         )
 
         # Update state.
-        with self._owner.atomic():
-            handle_state.value = value
-            handle_state.update_timestamp = time.time()
+        handle_state.value = value
+        handle_state.update_timestamp = time.time()
 
         # Trigger callbacks.
+        client = self._resolve_client(client_id)
+        if client is None:
+            return
         for cb in handle_state.update_cb:
-            from ._viser import ClientHandle, ViserServer
-
-            # Get the handle of the client that triggered this event.
-            if isinstance(self._owner, ClientHandle):
-                client = self._owner
-            elif isinstance(self._owner, ViserServer):
-                client = self._owner.get_clients()[client_id]
+            if asyncio.iscoroutinefunction(cb):
+                self._event_loop.create_task(cb(GuiEvent(client, client_id, handle)))
             else:
-                assert False
+                self._thread_executor.submit(
+                    cb, GuiEvent(client, client_id, handle)
+                ).add_done_callback(print_threadpool_errors)
 
-            cb(GuiEvent(client, client_id, handle))
+    async def _handle_command_trigger(
+        self, client_id: ClientId, message: _messages.CommandTriggerMessage
+    ) -> None:
+        """Callback for handling command trigger messages from the command palette."""
+        handle = self._command_handle_from_uuid.get(message.uuid, None)
+        if handle is None or handle._impl.removed:
+            return
+        handle_state = handle._impl
+        if handle_state.props.disabled:
+            return
 
-    def _get_container_id(self) -> str:
+        client = self._resolve_client(client_id)
+        if client is None:
+            return
+
+        for cb in handle_state.trigger_cb:
+            if asyncio.iscoroutinefunction(cb):
+                await cb(CommandEvent(client, client_id, handle))
+            else:
+                self._thread_executor.submit(
+                    cb, CommandEvent(client, client_id, handle)
+                ).add_done_callback(print_threadpool_errors)
+
+    def _get_container_uuid(self) -> str:
         """Get container ID associated with the current thread."""
         return self._target_container_from_thread_id.get(threading.get_ident(), "root")
 
-    def _set_container_id(self, container_id: str) -> None:
+    def _set_container_uuid(self, container_uuid: str) -> None:
         """Set container ID associated with the current thread."""
-        self._target_container_from_thread_id[threading.get_ident()] = container_id
+        self._target_container_from_thread_id[threading.get_ident()] = container_uuid
 
     def reset(self) -> None:
         """Reset the GUI."""
-        self._websock_interface.queue_message(_messages.ResetGuiMessage())
+        root_container = self._container_handle_from_uuid["root"]
+        while root_container._children:
+            next(iter(root_container._children.values())).remove()
+        while self._modal_handle_from_uuid:
+            next(iter(self._modal_handle_from_uuid.values())).close()
+        while self._command_handle_from_uuid:
+            next(iter(self._command_handle_from_uuid.values())).remove()
 
     def set_panel_label(self, label: str | None) -> None:
         """Set the main label that appears in the GUI panel.
@@ -384,9 +542,9 @@ class GuiApi:
         if brand_color is not None:
             assert len(brand_color) in (3, 10)
             if len(brand_color) == 3:
-                assert all(
-                    map(lambda val: isinstance(val, int), brand_color)
-                ), "All channels should be integers."
+                assert all(map(lambda val: isinstance(val, int), brand_color)), (
+                    "All channels should be integers."
+                )
 
                 # RGB => HLS.
                 h, l, s = colorsys.rgb_to_hls(
@@ -402,15 +560,15 @@ class GuiApi:
 
                 primary_index = 8
                 ls = tuple(
-                    onp.interp(
-                        x=onp.arange(10),
-                        xp=onp.array([0, primary_index, 9]),
-                        fp=onp.array([max_l, l, min_l]),
+                    np.interp(
+                        x=np.arange(10),
+                        xp=np.array([0, primary_index, 9]),
+                        fp=np.array([max_l, l, min_l]),
                     )
                 )
                 colors_cast = cast(
                     LengthTenStrTuple,
-                    tuple(_hex_from_hls(h, ls[i], s) for i in range(10)),
+                    tuple(_hex_from_hls(h, float(ls[i]), s) for i in range(10)),
                 )
 
         assert colors_cast is None or all(
@@ -429,9 +587,79 @@ class GuiApi:
             ),
         )
 
-    def add_folder(
+    def add_command(
         self,
         label: str,
+        *,
+        description: str | None = None,
+        hotkey: _messages.HotkeyKey | None = None,
+        modifier: _messages.KeyModifier | None = None,
+        icon: IconName | None = None,
+        disabled: bool = False,
+    ) -> CommandHandle:
+        """Register a command that can be triggered from the client's command palette.
+
+        (Experimental) The command palette API may change in future
+        releases.
+
+        Args:
+            label: Label displayed in the command palette.
+            description: Optional description displayed below the label.
+            hotkey: Optional hotkey key, e.g. ``"K"`` or ``"R"``. ``None``
+                disables the hotkey.
+            modifier: Modifier-combo to require with the hotkey, as a
+                canonically ordered ``"+"``-separated string like
+                ``"cmd/ctrl"``, ``"shift"``, or ``"cmd/ctrl+shift"``.
+                ``None`` matches "no modifiers held". ``cmd/ctrl``
+                matches whenever either Cmd or Ctrl is held. Must be
+                ``None`` when ``hotkey`` is ``None``; passing a
+                modifier without a hotkey raises ``ValueError``.
+            icon: Optional icon to display next to the command label.
+            disabled: If True, the command is visible but not triggerable.
+
+        Returns:
+            A handle that can be used to attach callbacks via
+            :meth:`CommandHandle.on_trigger`, update properties, or remove the
+            command.
+        """
+        if hotkey is None and modifier is not None:
+            raise ValueError(
+                "add_command(modifier=...) requires hotkey= to also be set."
+            )
+        # Validate + canonicalize the modifier string. Raises on bad input.
+        normalized_modifier = _messages._normalize_key_modifier(modifier)
+        command_uuid = _make_uuid()
+        props = _messages.CommandProps(
+            label=label,
+            description=description,
+            hotkey=hotkey,
+            modifier=normalized_modifier,
+            disabled=disabled,
+            _icon_html=None if icon is None else svg_from_icon(icon),
+        )
+        # Register in the local map before publishing, so an immediate
+        # trigger from the client can be resolved here.
+        handle_state = _CommandHandleState(
+            uuid=command_uuid,
+            gui_api=self,
+            props=props,
+            icon=icon,
+        )
+        handle = CommandHandle(handle_state)
+        self._command_handle_from_uuid[command_uuid] = handle
+        self._websock_interface.queue_message(
+            _messages.RegisterCommandMessage(
+                uuid=command_uuid,
+                props=props,
+            )
+        )
+        return handle
+
+    @deprecated_positional_shim
+    def add_folder(
+        self,
+        label: str | None,
+        *,
         order: float | None = None,
         expand_by_default: bool = True,
         visible: bool = True,
@@ -439,37 +667,119 @@ class GuiApi:
         """Add a folder, and return a handle that can be used to populate it.
 
         Args:
-            label: Label to display on the folder.
+            label: Label to display on the folder. If ``None``, the folder is
+                rendered without a header or border, which is useful for pure
+                layout grouping.
             order: Optional ordering, smallest values will be displayed first.
             expand_by_default: Open the folder by default. Set to False to collapse it by
-                default.
+                default. Ignored when ``label`` is ``None``.
             visible: Whether the component is visible.
 
         Returns:
             A handle that can be used as a context to populate the folder.
         """
-        folder_container_id = _make_unique_id()
+        folder_container_id = _make_uuid()
         order = _apply_default_order(order)
+        props = _messages.GuiFolderProps(
+            order=order,
+            label=label,
+            expand_by_default=expand_by_default,
+            visible=visible,
+        )
         self._websock_interface.queue_message(
-            _messages.GuiAddFolderMessage(
-                order=order,
-                id=folder_container_id,
-                label=label,
-                container_id=self._get_container_id(),
-                expand_by_default=expand_by_default,
-                visible=visible,
+            _messages.GuiFolderMessage(
+                uuid=folder_container_id,
+                container_uuid=self._get_container_uuid(),
+                props=props,
             )
         )
         return GuiFolderHandle(
-            _gui_api=self,
-            _id=folder_container_id,
-            _parent_container_id=self._get_container_id(),
-            _order=order,
+            _GuiHandleState(
+                folder_container_id,
+                self,
+                None,
+                props=props,
+                parent_container_id=self._get_container_uuid(),
+            )
         )
 
+    @deprecated_positional_shim
+    def add_form(
+        self,
+        label: str | None,
+        *,
+        order: float | None = None,
+        expand_by_default: bool = True,
+        visible: bool = True,
+    ) -> GuiFormHandle:
+        """Add a form, and return a handle that can be used to populate it.
+
+        See :class:`GuiFormHandle` for usage and semantics.
+
+        Args:
+            label: Label to display on the form. If ``None``, the form is
+                rendered without a header or border.
+            order: Optional ordering, smallest values will be displayed first.
+            expand_by_default: Open the form by default. Set to False to
+                collapse it by default. Ignored when ``label`` is ``None``.
+            visible: Whether the component is visible.
+
+        Returns:
+            A handle that can be used as a context to populate the form.
+        """
+        # Nested forms would produce invalid HTML on the client (nested
+        # <form> elements are not allowed and the browser flattens
+        # them). Walk through folders, tabs, and tab groups -- they
+        # share a DOM context with their ancestors. Stop at modals,
+        # which render into a separate React portal where a fresh
+        # <form> is well-formed.
+        container = self._get_container_uuid()
+        while container != "root":
+            parent = self._container_handle_from_uuid.get(container)
+            if isinstance(parent, GuiFormHandle):
+                raise ValueError(
+                    "Nested forms are not supported: add_form() was called "
+                    "inside an existing form's context."
+                )
+            if isinstance(parent, GuiModalHandle):
+                break
+            if isinstance(parent, GuiTabHandle):
+                container = parent._parent._impl.parent_container_id
+            elif isinstance(parent, (GuiFolderHandle, GuiTabGroupHandle)):
+                container = parent._impl.parent_container_id
+            else:
+                break
+
+        form_container_id = _make_uuid()
+        order = _apply_default_order(order)
+        props = _messages.GuiFolderProps(
+            order=order,
+            label=label,
+            expand_by_default=expand_by_default,
+            visible=visible,
+        )
+        self._websock_interface.queue_message(
+            _messages.GuiFormMessage(
+                uuid=form_container_id,
+                container_uuid=self._get_container_uuid(),
+                props=props,
+            )
+        )
+        return GuiFormHandle(
+            _GuiHandleState(
+                form_container_id,
+                self,
+                None,
+                props=props,
+                parent_container_id=self._get_container_uuid(),
+            )
+        )
+
+    @deprecated_positional_shim
     def add_modal(
         self,
         title: str,
+        *,
         order: float | None = None,
     ) -> GuiModalHandle:
         """Show a modal window, which can be useful for popups and messages, then return
@@ -482,22 +792,24 @@ class GuiApi:
         Returns:
             A handle that can be used as a context to populate the modal.
         """
-        modal_container_id = _make_unique_id()
+        modal_container_id = _make_uuid()
         order = _apply_default_order(order)
         self._websock_interface.queue_message(
             _messages.GuiModalMessage(
                 order=order,
-                id=modal_container_id,
+                uuid=modal_container_id,
                 title=title,
             )
         )
         return GuiModalHandle(
             _gui_api=self,
-            _id=modal_container_id,
+            _uuid=modal_container_id,
         )
 
+    @deprecated_positional_shim
     def add_tab_group(
         self,
+        *,
         order: float | None = None,
         visible: bool = True,
     ) -> GuiTabGroupHandle:
@@ -510,33 +822,36 @@ class GuiApi:
         Returns:
             A handle that can be used as a context to populate the tab group.
         """
-        tab_group_id = _make_unique_id()
+        tab_group_id = _make_uuid()
         order = _apply_default_order(order)
 
-        self._websock_interface.queue_message(
-            _messages.GuiAddTabGroupMessage(
+        message = _messages.GuiTabGroupMessage(
+            uuid=tab_group_id,
+            container_uuid=self._get_container_uuid(),
+            props=_messages.GuiTabGroupProps(
                 order=order,
-                id=tab_group_id,
-                container_id=self._get_container_id(),
-                tab_labels=(),
+                _tab_labels=(),
                 visible=visible,
-                tab_icons_html=(),
-                tab_container_ids=(),
+                _tab_icons_html=(),
+                _tab_container_ids=(),
+            ),
+        )
+        self._websock_interface.queue_message(message)
+        return GuiTabGroupHandle(
+            _GuiHandleState(
+                message.uuid,
+                self,
+                value=None,
+                props=message.props,
+                parent_container_id=message.container_uuid,
             )
         )
-        return GuiTabGroupHandle(
-            _tab_group_id=tab_group_id,
-            _labels=[],
-            _icons_html=[],
-            _tabs=[],
-            _gui_api=self,
-            _parent_container_id=self._get_container_id(),
-            _order=order,
-        )
 
+    @deprecated_positional_shim
     def add_markdown(
         self,
         content: str,
+        *,
         image_root: Path | None = None,
         order: float | None = None,
         visible: bool = True,
@@ -552,23 +867,27 @@ class GuiApi:
         Returns:
             A handle that can be used to interact with the GUI element.
         """
-        handle = GuiMarkdownHandle(
-            _gui_api=self,
-            _id=_make_unique_id(),
-            _visible=visible,
-            _parent_container_id=self._get_container_id(),
-            _order=_apply_default_order(order),
-            _image_root=image_root,
-            _content=None,
-        )
-        self._websock_interface.queue_message(
-            _messages.GuiAddMarkdownMessage(
-                order=handle._order,
-                id=handle._id,
-                markdown="",
-                container_id=handle._parent_container_id,
+        message = _messages.GuiMarkdownMessage(
+            uuid=_make_uuid(),
+            container_uuid=self._get_container_uuid(),
+            props=_messages.GuiMarkdownProps(
+                order=_apply_default_order(order),
+                _markdown="",
                 visible=visible,
-            )
+            ),
+        )
+        self._websock_interface.queue_message(message)
+
+        handle = GuiMarkdownHandle(
+            _GuiHandleState(
+                message.uuid,
+                self,
+                None,
+                props=message.props,
+                parent_container_id=message.container_uuid,
+            ),
+            _content=content,
+            _image_root=image_root,
         )
 
         # Logic for processing markdown, handling images, etc is all in the
@@ -576,9 +895,147 @@ class GuiApi:
         handle.content = content
         return handle
 
+    @deprecated_positional_shim
+    def add_html(
+        self,
+        content: str,
+        *,
+        order: float | None = None,
+        visible: bool = True,
+    ) -> GuiHtmlHandle:
+        """Add HTML to the GUI.
+
+        Args:
+            content: HTML content to display.
+            order: Optional ordering, smallest values will be displayed first.
+            visible: Whether the component is visible.
+
+        Returns:
+            A handle that can be used to interact with the GUI element.
+        """
+        message = _messages.GuiHtmlMessage(
+            uuid=_make_uuid(),
+            container_uuid=self._get_container_uuid(),
+            props=_messages.GuiHtmlProps(
+                order=_apply_default_order(order),
+                content=content,
+                visible=visible,
+            ),
+        )
+        self._websock_interface.queue_message(message)
+
+        handle = GuiHtmlHandle(
+            _GuiHandleState(
+                message.uuid,
+                self,
+                None,
+                props=message.props,
+                parent_container_id=message.container_uuid,
+            ),
+        )
+        return handle
+
+    @deprecated_positional_shim
+    def add_divider(
+        self,
+        *,
+        order: float | None = None,
+        visible: bool = True,
+    ) -> GuiDividerHandle:
+        """Add a horizontal divider line to the GUI.
+
+        Args:
+            order: Optional ordering, smallest values will be displayed first.
+            visible: Whether the component is visible.
+
+        Returns:
+            A handle that can be used to interact with the GUI element.
+        """
+        message = _messages.GuiDividerMessage(
+            uuid=_make_uuid(),
+            container_uuid=self._get_container_uuid(),
+            props=_messages.GuiDividerProps(
+                order=_apply_default_order(order),
+                visible=visible,
+            ),
+        )
+        self._websock_interface.queue_message(message)
+
+        handle = GuiDividerHandle(
+            _GuiHandleState(
+                message.uuid,
+                self,
+                None,
+                props=message.props,
+                parent_container_id=message.container_uuid,
+            ),
+        )
+        return handle
+
+    @deprecated_positional_shim
+    def add_image(
+        self,
+        image: np.ndarray,
+        *,
+        label: str | None = None,
+        format: Literal["auto", "png", "jpeg"] = "auto",
+        jpeg_quality: int | None = None,
+        order: float | None = None,
+        visible: bool = True,
+    ) -> GuiImageHandle:
+        """Add an image element to the GUI.
+
+        Args:
+            image: A numpy array representing the image to display.
+            label: Label to display on the image element.
+            format: Format to transport and display the image using. 'auto' will use PNG for RGBA images and JPEG for RGB.
+            jpeg_quality: Quality of the jpeg image (if jpeg format is used).
+            order: Order of the element for sorting.
+            visible: Whether the image element is visible initially.
+
+        Returns:
+            Handle for manipulating the image element.
+        """
+        # Resolve format if auto.
+        if format == "auto":
+            resolved_format = "png" if image.shape[2] == 4 else "jpeg"
+        else:
+            resolved_format = format
+
+        message = _messages.GuiImageMessage(
+            uuid=_make_uuid(),
+            container_uuid=self._get_container_uuid(),
+            props=_messages.GuiImageProps(
+                _data=None,  # Sent in prop update later.
+                label=label,
+                _format=resolved_format,
+                order=_apply_default_order(order),
+                visible=visible,
+            ),
+        )
+        self._websock_interface.queue_message(message)
+
+        handle = GuiImageHandle(
+            _GuiHandleState(
+                message.uuid,
+                self,
+                None,
+                props=message.props,
+                parent_container_id=message.container_uuid,
+            ),
+            _image=image,
+            _jpeg_quality=jpeg_quality,
+        )
+        handle._user_format = format
+        handle.image = image
+        return handle
+
+    @deprecated_positional_shim
     def add_plotly(
         self,
         figure: go.Figure,
+        *,
+        config: Mapping[str, Any] | None = None,
         aspect: float = 1.0,
         order: float | None = None,
         visible: bool = True,
@@ -586,8 +1043,16 @@ class GuiApi:
         """Add a Plotly figure to the GUI. Requires the `plotly` package to be
         installed.
 
+        .. note::
+           Updates to Plotly figures can be slow when you have many plots or frequent updates. For real-time visualization, consider using
+           :meth:`add_uplot` instead.
+
         Args:
             figure: Plotly figure to display.
+            config: Plotly config dict merged into the figure JSON. Controls
+                display options like ``{"displayModeBar": False}``. Values
+                must be JSON-serializable. See
+                https://plotly.com/javascript/configuration-options/
             aspect: Aspect ratio of the plot in the control panel (width/height).
             order: Optional ordering, smallest values will be displayed first.
             visible: Whether the component is visible.
@@ -595,15 +1060,6 @@ class GuiApi:
         Returns:
             A handle that can be used to interact with the GUI element.
         """
-        handle = GuiPlotlyHandle(
-            _gui_api=self,
-            _id=_make_unique_id(),
-            _visible=visible,
-            _parent_container_id=self._get_container_id(),
-            _order=_apply_default_order(order),
-            _figure=None,
-            _aspect=None,
-        )
 
         # If plotly.min.js hasn't been sent to the client yet, the client won't be able
         # to render the plot. Send this large file now! (~3MB)
@@ -620,9 +1076,9 @@ class GuiApi:
             plotly_path = (
                 Path(plotly.__file__).parent / "package_data" / "plotly.min.js"
             )
-            assert (
-                plotly_path.exists()
-            ), f"Could not find plotly.min.js at {plotly_path}."
+            assert plotly_path.exists(), (
+                f"Could not find plotly.min.js at {plotly_path}."
+            )
 
             # Send it over!
             plotly_js = plotly_path.read_text(encoding="utf-8")
@@ -635,30 +1091,179 @@ class GuiApi:
 
         # After plotly.min.js has been sent, we can send the plotly figure.
         # Empty string for `plotly_json_str` is a signal to the client to render nothing.
-        self._websock_interface.queue_message(
-            _messages.GuiAddPlotlyMessage(
-                order=handle._order,
-                id=handle._id,
-                plotly_json_str="",
+        message = _messages.GuiPlotlyMessage(
+            uuid=_make_uuid(),
+            container_uuid=self._get_container_uuid(),
+            props=_messages.GuiPlotlyProps(
+                order=_apply_default_order(order),
+                _plotly_json_str="",
                 aspect=1.0,
-                container_id=handle._parent_container_id,
                 visible=visible,
-            )
+            ),
+        )
+        self._websock_interface.queue_message(message)
+
+        handle = GuiPlotlyHandle(
+            _GuiHandleState(
+                message.uuid,
+                self,
+                value=None,
+                props=message.props,
+                parent_container_id=message.container_uuid,
+            ),
+            _figure=figure,
+            _config=config,
         )
 
         # Set the plotly handle properties.
         handle.figure = figure
         handle.aspect = aspect
-
         return handle
 
+    @deprecated_positional_shim
+    def add_uplot(
+        self,
+        data: tuple[np.ndarray, ...],
+        series: tuple[uplot.Series, ...],
+        *,
+        mode: Literal[1, 2] | None = None,
+        title: str | None = None,
+        bands: tuple[uplot.Band, ...] | None = None,
+        scales: dict[str, uplot.Scale] | None = None,
+        axes: tuple[uplot.Axis, ...] | None = None,
+        legend: uplot.Legend | None = None,
+        cursor: uplot.Cursor | None = None,
+        focus: uplot.Focus | None = None,
+        aspect: float = 1.0,
+        height: int | None = None,
+        padding: tuple[int, int, int, int] | None = None,
+        order: float | None = None,
+        visible: bool = True,
+    ) -> GuiUplotHandle:
+        """Add a uPlot chart to the GUI for high-performance time-series visualization.
+
+        uPlot is optimized for plotting large datasets with smooth pan/zoom interactions.
+        All configuration options follow the standard uPlot API. For comprehensive
+        documentation, see: https://github.com/leeoniya/uPlot/tree/1.6.32/docs
+
+        .. note::
+           Configuration types are exposed under the :mod:`viser.uplot` module for convenience:
+           :class:`viser.uplot.Series`, :class:`viser.uplot.Scale`, :class:`viser.uplot.Axis`,
+           :class:`viser.uplot.Band`, :class:`viser.uplot.Legend`, :class:`viser.uplot.Cursor`,
+           and :class:`viser.uplot.Focus`. These are :py:class:`~typing.TypedDict` types;
+           standard dictionaries can also be used.
+
+        Args:
+            data: Tuple of 1D numpy arrays containing chart data. The first array provides
+                x-axis values, and subsequent arrays contain y-axis data for
+                each series. All arrays must have identical length. Minimum 2
+                arrays.
+            series: Series configuration objects defining visual appearance and behavior.
+                Must match the length of data tuple.
+            mode: Chart layout mode. 1 = aligned (default) where all series share axes,
+                2 = faceted where each series gets its own subplot panel.
+            title: Chart title displayed at the top.
+            bands: High/low range visualizations between data series. Useful for showing
+                confidence intervals, error bounds, or min/max ranges. Each band connects
+                two adjacent series indices.
+            scales: Scale definitions controlling data-to-pixel mapping and axis ranges.
+                Key features include auto-ranging, manual min/max, time-based scaling,
+                and logarithmic distributions. Multiple scales enable dual-axis charts.
+            axes: Axis configuration for labels, ticks, grids, and positioning.
+                Controls which side axes appear (top/right/bottom/left), tick formatting,
+                grid line styling, and spacing between tick marks.
+            legend: Legend display options including positioning, styling, and custom
+                value formatting functions for hover states.
+            cursor: Interactive cursor behavior including hover proximity detection,
+                drag-to-zoom, and crosshair appearance. Controls how users interact
+                with the chart through mouse/touch.
+            focus: Visual highlighting when hovering over series. Controls the alpha
+                transparency of non-focused series to emphasize the active one.
+            aspect: Width-to-height ratio for the chart display in the control panel.
+                1.0 creates a square chart, values > 1.0 create wider charts.
+                Used when height is None.
+            height: Fixed height in pixels. Overrides aspect ratio when set.
+            padding: Chart padding (top, right, bottom, left) in pixels. Defaults
+                to (0, 24, 0, 0) when omitted.
+            order: Display ordering relative to other GUI elements (lower values first).
+            visible: Whether the chart is visible in the interface.
+
+        Returns:
+            A handle for programmatically updating chart properties and data.
+        """
+
+        # Validate data structure.
+        assert len(data) >= 2, (
+            "data must have at least 2 arrays (x-data + at least one y-data series)"
+        )
+        assert all(isinstance(arr, np.ndarray) for arr in data), (
+            "all data elements must be numpy arrays"
+        )
+
+        # Validate data dimensions and shapes.
+        for i, arr in enumerate(data):
+            assert arr.ndim == 1, f"data[{i}] must be a 1D array, got shape {arr.shape}"
+
+        # Check that all arrays have the same length.
+        lengths = [len(arr) for arr in data]
+        if not all(length == lengths[0] for length in lengths):
+            raise ValueError(
+                f"All data arrays must have the same length. Got lengths: {lengths}"
+            )
+
+        # Validate series configuration.
+        assert len(series) > 0, "series must not be empty"
+        if len(series) != len(data):
+            raise ValueError(
+                f"Length of series ({len(series)}) must match length of data ({len(data)}). "
+                f"Each array in data needs a corresponding series configuration."
+            )
+
+        # Convert arrays to float64 as expected by GuiUplotProps.
+        data_float64 = tuple(arr.astype(np.float64) for arr in data)
+
+        message = _messages.GuiUplotMessage(
+            uuid=_make_uuid(),
+            container_uuid=self._get_container_uuid(),
+            props=_messages.GuiUplotProps(
+                order=_apply_default_order(order),
+                data=data_float64,
+                mode=mode,
+                title=title,
+                series=series,
+                bands=bands,
+                scales=scales,
+                axes=axes,
+                legend=legend,
+                cursor=cursor,
+                focus=focus,
+                aspect=aspect,
+                height=height,
+                padding=padding,
+                visible=visible,
+            ),
+        )
+        self._websock_interface.queue_message(message)
+
+        return GuiUplotHandle(
+            _GuiHandleState(
+                message.uuid,
+                self,
+                value=None,
+                props=message.props,
+                parent_container_id=message.container_uuid,
+            ),
+        )
+
+    @deprecated_positional_shim
     def add_button(
         self,
         label: str,
+        *,
         disabled: bool = False,
         visible: bool = True,
         hint: str | None = None,
-        color: Color | None = None,
+        color: LiteralColor | tuple[int, int, int] | None = None,
         icon: IconName | None = None,
         order: float | None = None,
     ) -> GuiButtonHandle:
@@ -679,34 +1284,53 @@ class GuiApi:
         """
 
         # Re-wrap the GUI handle with a button interface.
-        id = _make_unique_id()
+        uuid = _make_uuid()
         order = _apply_default_order(order)
-        return GuiButtonHandle(
-            self._create_gui_input(
-                value=False,
-                message=_messages.GuiAddButtonMessage(
-                    order=order,
-                    id=id,
-                    label=label,
-                    container_id=self._get_container_id(),
-                    hint=hint,
-                    value=False,
-                    color=color,
-                    icon_html=None if icon is None else svg_from_icon(icon),
-                    disabled=disabled,
-                    visible=visible,
-                ),
-                is_button=True,
-            )._impl
+        props = _messages.GuiButtonProps(
+            order=order,
+            label=label,
+            hint=hint,
+            color=color,
+            _icon_html=None if icon is None else svg_from_icon(icon),
+            _hold_callback_freqs=(),
+            disabled=disabled,
+            visible=visible,
+        )
+        message = _messages.GuiButtonMessage(
+            value=False,
+            uuid=uuid,
+            container_uuid=self._get_container_uuid(),
+            props=props,
         )
 
+        # Send the message.
+        self._websock_interface.queue_message(message)
+
+        # Construct button-specific handle state with hold callback support.
+        handle_state = _GuiButtonHandleState(
+            props=props,
+            gui_api=self,
+            value=False,
+            update_timestamp=time.time(),
+            parent_container_id=self._get_container_uuid(),
+            update_cb=[],
+            is_button=True,
+            sync_cb=None,
+            uuid=uuid,
+            hold_cbs_from_freq={},
+        )
+
+        return GuiButtonHandle(handle_state, _icon=icon)
+
+    @deprecated_positional_shim
     def add_upload_button(
         self,
         label: str,
+        *,
         disabled: bool = False,
         visible: bool = True,
         hint: str | None = None,
-        color: Color | None = None,
+        color: LiteralColor | tuple[int, int, int] | None = None,
         icon: IconName | None = None,
         mime_type: str = "*/*",
         order: float | None = None,
@@ -729,71 +1353,48 @@ class GuiApi:
         """
 
         # Re-wrap the GUI handle with a button interface.
-        id = _make_unique_id()
+        uuid = _make_uuid()
         order = _apply_default_order(order)
         return GuiUploadButtonHandle(
             self._create_gui_input(
                 value=UploadedFile("", b""),
-                message=_messages.GuiAddUploadButtonMessage(
-                    value=None,
-                    disabled=disabled,
-                    visible=visible,
-                    order=order,
-                    id=id,
-                    label=label,
-                    container_id=self._get_container_id(),
-                    hint=hint,
-                    color=color,
-                    mime_type=mime_type,
-                    icon_html=None if icon is None else svg_from_icon(icon),
+                message=_messages.GuiUploadButtonMessage(
+                    uuid=uuid,
+                    container_uuid=self._get_container_uuid(),
+                    props=_messages.GuiUploadButtonProps(
+                        disabled=disabled,
+                        visible=visible,
+                        order=order,
+                        label=label,
+                        hint=hint,
+                        color=color,
+                        mime_type=mime_type,
+                        _icon_html=None if icon is None else svg_from_icon(icon),
+                    ),
                 ),
                 is_button=True,
-            )._impl
+            ),
+            _icon=icon,
         )
 
-    # The TLiteralString overload tells pyright to resolve the value type to a Literal
-    # whenever possible.
-    #
-    # TString is helpful when the input types are generic (could be str, could be
-    # Literal).
-    @overload
+    @deprecated_positional_shim
     def add_button_group(
         self,
         label: str,
-        options: Sequence[TLiteralString],
-        visible: bool = True,
+        options: Sequence[str],
+        *,
         disabled: bool = False,
+        visible: bool = True,
         hint: str | None = None,
         order: float | None = None,
-    ) -> GuiButtonGroupHandle[TLiteralString]: ...
-
-    @overload
-    def add_button_group(
-        self,
-        label: str,
-        options: Sequence[TString],
-        visible: bool = True,
-        disabled: bool = False,
-        hint: str | None = None,
-        order: float | None = None,
-    ) -> GuiButtonGroupHandle[TString]: ...
-
-    def add_button_group(
-        self,
-        label: str,
-        options: Sequence[TLiteralString] | Sequence[TString],
-        visible: bool = True,
-        disabled: bool = False,
-        hint: str | None = None,
-        order: float | None = None,
-    ) -> GuiButtonGroupHandle[Any]:  # Return types are specified in overloads.
+    ) -> GuiButtonGroupHandle:
         """Add a button group to the GUI.
 
         Args:
             label: Label to display on the button group.
             options: Sequence of options to display as buttons.
-            visible: Whether the button group is visible.
             disabled: Whether the button group is disabled.
+            visible: Whether the button group is visible.
             hint: Optional hint to display on hover.
             order: Optional ordering, smallest values will be displayed first.
 
@@ -801,34 +1402,39 @@ class GuiApi:
             A handle that can be used to interact with the GUI element.
         """
         value = options[0]
-        id = _make_unique_id()
+        uuid = _make_uuid()
         order = _apply_default_order(order)
         return GuiButtonGroupHandle(
             self._create_gui_input(
                 value,
-                message=_messages.GuiAddButtonGroupMessage(
-                    order=order,
-                    id=id,
-                    label=label,
-                    container_id=self._get_container_id(),
-                    hint=hint,
+                message=_messages.GuiButtonGroupMessage(
                     value=value,
-                    options=tuple(options),
-                    disabled=disabled,
-                    visible=visible,
+                    uuid=uuid,
+                    container_uuid=self._get_container_uuid(),
+                    props=_messages.GuiButtonGroupProps(
+                        order=order,
+                        label=label,
+                        hint=hint,
+                        options=tuple(options),
+                        disabled=disabled,
+                        visible=visible,
+                    ),
                 ),
-            )._impl,
+                is_button=True,
+            ),
         )
 
+    @deprecated_positional_shim
     def add_checkbox(
         self,
         label: str,
         initial_value: bool,
+        *,
         disabled: bool = False,
         visible: bool = True,
         hint: str | None = None,
         order: float | None = None,
-    ) -> GuiInputHandle[bool]:
+    ) -> GuiCheckboxHandle:
         """Add a checkbox to the GUI.
 
         Args:
@@ -844,36 +1450,45 @@ class GuiApi:
         """
         value = initial_value
         assert isinstance(value, bool)
-        id = _make_unique_id()
+        uuid = _make_uuid()
         order = _apply_default_order(order)
-        return self._create_gui_input(
-            value,
-            message=_messages.GuiAddCheckboxMessage(
-                order=order,
-                id=id,
-                label=label,
-                container_id=self._get_container_id(),
-                hint=hint,
-                value=value,
-                disabled=disabled,
-                visible=visible,
-            ),
+        return GuiCheckboxHandle(
+            self._create_gui_input(
+                value,
+                message=_messages.GuiCheckboxMessage(
+                    value=value,
+                    uuid=uuid,
+                    container_uuid=self._get_container_uuid(),
+                    props=_messages.GuiCheckboxProps(
+                        order=order,
+                        label=label,
+                        hint=hint,
+                        disabled=disabled,
+                        visible=visible,
+                    ),
+                ),
+            )
         )
 
+    @deprecated_positional_shim
     def add_text(
         self,
         label: str,
         initial_value: str,
+        *,
+        multiline: bool = False,
         disabled: bool = False,
         visible: bool = True,
         hint: str | None = None,
         order: float | None = None,
-    ) -> GuiInputHandle[str]:
-        """Add a text input to the GUI.
+    ) -> GuiTextHandle:
+        r"""Add a text input to the GUI.
 
         Args:
             label: Label to display on the text input.
             initial_value: Initial value of the text input.
+            multiline: Whether the text input supports multiple lines, delimited with
+                the \n character.
             disabled: Whether the text input is disabled.
             visible: Whether the text input is visible.
             hint: Optional hint to display on hover.
@@ -884,26 +1499,33 @@ class GuiApi:
         """
         value = initial_value
         assert isinstance(value, str)
-        id = _make_unique_id()
+        uuid = _make_uuid()
         order = _apply_default_order(order)
-        return self._create_gui_input(
-            value,
-            message=_messages.GuiAddTextMessage(
-                order=order,
-                id=id,
-                label=label,
-                container_id=self._get_container_id(),
-                hint=hint,
-                value=value,
-                disabled=disabled,
-                visible=visible,
-            ),
+        return GuiTextHandle(
+            self._create_gui_input(
+                value,
+                message=_messages.GuiTextMessage(
+                    value=value,
+                    uuid=uuid,
+                    container_uuid=self._get_container_uuid(),
+                    props=_messages.GuiTextProps(
+                        order=order,
+                        label=label,
+                        hint=hint,
+                        disabled=disabled,
+                        visible=visible,
+                        multiline=multiline,
+                    ),
+                ),
+            )
         )
 
+    @deprecated_positional_shim
     def add_number(
         self,
         label: str,
         initial_value: IntOrFloat,
+        *,
         min: IntOrFloat | None = None,
         max: IntOrFloat | None = None,
         step: IntOrFloat | None = None,
@@ -911,7 +1533,7 @@ class GuiApi:
         visible: bool = True,
         hint: str | None = None,
         order: float | None = None,
-    ) -> GuiInputHandle[IntOrFloat]:
+    ) -> GuiNumberHandle[IntOrFloat]:
         """Add a number input to the GUI, with user-specifiable bound and precision parameters.
 
         Args:
@@ -937,7 +1559,7 @@ class GuiApi:
             # It's ok that `step` is always a float, even if the value is an integer,
             # because things all become `number` types after serialization.
             step = float(  # type: ignore
-                onp.min(
+                np.min(
                     [
                         _compute_step(value),
                         _compute_step(min),
@@ -948,39 +1570,45 @@ class GuiApi:
 
         assert step is not None
 
-        id = _make_unique_id()
+        uuid = _make_uuid()
         order = _apply_default_order(order)
-        return self._create_gui_input(
-            value,
-            message=_messages.GuiAddNumberMessage(
-                order=order,
-                id=id,
-                label=label,
-                container_id=self._get_container_id(),
-                hint=hint,
-                value=value,
-                min=min,
-                max=max,
-                precision=_compute_precision_digits(step),
-                step=step,
-                disabled=disabled,
-                visible=visible,
-            ),
-            is_button=False,
+        return GuiNumberHandle(
+            self._create_gui_input(
+                value,
+                message=_messages.GuiNumberMessage(
+                    value=value,
+                    uuid=uuid,
+                    container_uuid=self._get_container_uuid(),
+                    props=_messages.GuiNumberProps(
+                        order=order,
+                        label=label,
+                        hint=hint,
+                        min=min,
+                        max=max,
+                        precision=_compute_precision_digits(step),
+                        step=step,
+                        disabled=disabled,
+                        visible=visible,
+                    ),
+                ),
+                is_button=False,
+            )
         )
 
+    @deprecated_positional_shim
     def add_vector2(
         self,
         label: str,
-        initial_value: tuple[float, float] | onp.ndarray,
-        min: tuple[float, float] | onp.ndarray | None = None,
-        max: tuple[float, float] | onp.ndarray | None = None,
+        initial_value: tuple[float, float] | np.ndarray,
+        *,
+        min: tuple[float, float] | np.ndarray | None = None,
+        max: tuple[float, float] | np.ndarray | None = None,
         step: float | None = None,
         disabled: bool = False,
         visible: bool = True,
         hint: str | None = None,
         order: float | None = None,
-    ) -> GuiInputHandle[tuple[float, float]]:
+    ) -> GuiVector2Handle:
         """Add a length-2 vector input to the GUI.
 
         Args:
@@ -1001,7 +1629,7 @@ class GuiApi:
         value = cast_vector(value, 2)
         min = cast_vector(min, 2) if min is not None else None
         max = cast_vector(max, 2) if max is not None else None
-        id = _make_unique_id()
+        uuid = _make_uuid()
         order = _apply_default_order(order)
 
         if step is None:
@@ -1011,38 +1639,44 @@ class GuiApi:
                 possible_steps.extend([_compute_step(x) for x in min])
             if max is not None:
                 possible_steps.extend([_compute_step(x) for x in max])
-            step = float(onp.min(possible_steps))
+            step = float(np.min(possible_steps))
 
-        return self._create_gui_input(
-            value,
-            message=_messages.GuiAddVector2Message(
-                order=order,
-                id=id,
-                label=label,
-                container_id=self._get_container_id(),
-                hint=hint,
-                value=value,
-                min=min,
-                max=max,
-                step=step,
-                precision=_compute_precision_digits(step),
-                disabled=disabled,
-                visible=visible,
-            ),
+        return GuiVector2Handle(
+            self._create_gui_input(
+                value,
+                message=_messages.GuiVector2Message(
+                    value=value,
+                    uuid=uuid,
+                    container_uuid=self._get_container_uuid(),
+                    props=_messages.GuiVector2Props(
+                        order=order,
+                        label=label,
+                        hint=hint,
+                        min=min,
+                        max=max,
+                        step=step,
+                        precision=_compute_precision_digits(step),
+                        disabled=disabled,
+                        visible=visible,
+                    ),
+                ),
+            )
         )
 
+    @deprecated_positional_shim
     def add_vector3(
         self,
         label: str,
-        initial_value: tuple[float, float, float] | onp.ndarray,
-        min: tuple[float, float, float] | onp.ndarray | None = None,
-        max: tuple[float, float, float] | onp.ndarray | None = None,
+        initial_value: tuple[float, float, float] | np.ndarray,
+        *,
+        min: tuple[float, float, float] | np.ndarray | None = None,
+        max: tuple[float, float, float] | np.ndarray | None = None,
         step: float | None = None,
         disabled: bool = False,
         visible: bool = True,
         hint: str | None = None,
         order: float | None = None,
-    ) -> GuiInputHandle[tuple[float, float, float]]:
+    ) -> GuiVector3Handle:
         """Add a length-3 vector input to the GUI.
 
         Args:
@@ -1063,7 +1697,7 @@ class GuiApi:
         value = cast_vector(value, 3)
         min = cast_vector(min, 3) if min is not None else None
         max = cast_vector(max, 3) if max is not None else None
-        id = _make_unique_id()
+        uuid = _make_uuid()
         order = _apply_default_order(order)
 
         if step is None:
@@ -1073,24 +1707,28 @@ class GuiApi:
                 possible_steps.extend([_compute_step(x) for x in min])
             if max is not None:
                 possible_steps.extend([_compute_step(x) for x in max])
-            step = float(onp.min(possible_steps))
+            step = float(np.min(possible_steps))
 
-        return self._create_gui_input(
-            value,
-            message=_messages.GuiAddVector3Message(
-                order=order,
-                id=id,
-                label=label,
-                container_id=self._get_container_id(),
-                hint=hint,
-                value=value,
-                min=min,
-                max=max,
-                step=step,
-                precision=_compute_precision_digits(step),
-                disabled=disabled,
-                visible=visible,
-            ),
+        return GuiVector3Handle(
+            self._create_gui_input(
+                value,
+                message=_messages.GuiVector3Message(
+                    value=value,
+                    uuid=uuid,
+                    container_uuid=self._get_container_uuid(),
+                    props=_messages.GuiVector3Props(
+                        order=order,
+                        label=label,
+                        hint=hint,
+                        min=min,
+                        max=max,
+                        step=step,
+                        precision=_compute_precision_digits(step),
+                        disabled=disabled,
+                        visible=visible,
+                    ),
+                ),
+            )
         )
 
     # See add_dropdown for notes on overloads.
@@ -1099,6 +1737,7 @@ class GuiApi:
         self,
         label: str,
         options: Sequence[TLiteralString],
+        *,
         initial_value: TLiteralString | None = None,
         disabled: bool = False,
         visible: bool = True,
@@ -1111,6 +1750,7 @@ class GuiApi:
         self,
         label: str,
         options: Sequence[TString],
+        *,
         initial_value: TString | None = None,
         disabled: bool = False,
         visible: bool = True,
@@ -1118,10 +1758,12 @@ class GuiApi:
         order: float | None = None,
     ) -> GuiDropdownHandle[TString]: ...
 
+    @deprecated_positional_shim
     def add_dropdown(
         self,
         label: str,
         options: Sequence[TLiteralString] | Sequence[TString],
+        *,
         initial_value: TLiteralString | TString | None = None,
         disabled: bool = False,
         visible: bool = True,
@@ -1145,32 +1787,35 @@ class GuiApi:
         value = initial_value
         if value is None:
             value = options[0]
-        id = _make_unique_id()
+        uuid = _make_uuid()
         order = _apply_default_order(order)
         return GuiDropdownHandle(
             self._create_gui_input(
                 value,
-                message=_messages.GuiAddDropdownMessage(
-                    order=order,
-                    id=id,
-                    label=label,
-                    container_id=self._get_container_id(),
-                    hint=hint,
+                message=_messages.GuiDropdownMessage(
                     value=value,
-                    options=tuple(options),
-                    disabled=disabled,
-                    visible=visible,
+                    uuid=uuid,
+                    container_uuid=self._get_container_uuid(),
+                    props=_messages.GuiDropdownProps(
+                        order=order,
+                        label=label,
+                        hint=hint,
+                        options=tuple(options),
+                        disabled=disabled,
+                        visible=visible,
+                    ),
                 ),
-            )._impl,
-            _impl_options=tuple(options),
+            ),
         )
 
+    @deprecated_positional_shim
     def add_progress_bar(
         self,
         value: float,
+        *,
         visible: bool = True,
         animated: bool = False,
-        color: Color | None = None,
+        color: LiteralColor | tuple[int, int, int] | None = None,
         order: float | None = None,
     ) -> GuiProgressBarHandle:
         """Add a progress bar to the GUI.
@@ -1186,28 +1831,30 @@ class GuiApi:
             A handle that can be used to interact with the GUI element.
         """
         assert value >= 0 and value <= 100
-        handle = GuiProgressBarHandle(
-            _gui_api=self,
-            _id=_make_unique_id(),
-            _visible=visible,
-            _animated=animated,
-            _parent_container_id=self._get_container_id(),
-            _order=_apply_default_order(order),
-            _value=value,
-        )
-        self._websock_interface.queue_message(
-            _messages.GuiAddProgressBarMessage(
-                order=handle._order,
-                id=handle._id,
-                value=value,
+        message = _messages.GuiProgressBarMessage(
+            value=value,
+            uuid=_make_uuid(),
+            container_uuid=self._get_container_uuid(),
+            props=_messages.GuiProgressBarProps(
+                order=_apply_default_order(order),
                 animated=animated,
                 color=color,
-                container_id=handle._parent_container_id,
                 visible=visible,
-            )
+            ),
+        )
+        self._websock_interface.queue_message(message)
+        handle = GuiProgressBarHandle(
+            _GuiHandleState(
+                message.uuid,
+                self,
+                value=value,
+                props=message.props,
+                parent_container_id=message.container_uuid,
+            ),
         )
         return handle
 
+    @deprecated_positional_shim
     def add_slider(
         self,
         label: str,
@@ -1215,12 +1862,13 @@ class GuiApi:
         max: IntOrFloat,
         step: IntOrFloat,
         initial_value: IntOrFloat,
+        *,
         marks: tuple[IntOrFloat | tuple[IntOrFloat, str], ...] | None = None,
         disabled: bool = False,
         visible: bool = True,
         hint: str | None = None,
         order: float | None = None,
-    ) -> GuiInputHandle[IntOrFloat]:
+    ) -> GuiSliderHandle[IntOrFloat]:
         """Add a slider to the GUI. Types of the min, max, step, and initial value should match.
 
         Args:
@@ -1242,8 +1890,7 @@ class GuiApi:
         """
         value: IntOrFloat = initial_value
         assert max >= min
-        if step > max - min:
-            step = max - min
+        step = builtins.min(step, max - min)
         assert max >= value >= min
 
         # GUI callbacks cast incoming values to match the type of the initial value. If
@@ -1260,35 +1907,40 @@ class GuiApi:
         #
         # assert type(min) == type(max) == type(step) == type(value)
 
-        id = _make_unique_id()
+        uuid = _make_uuid()
         order = _apply_default_order(order)
-        return self._create_gui_input(
-            value,
-            message=_messages.GuiAddSliderMessage(
-                order=order,
-                id=id,
-                label=label,
-                container_id=self._get_container_id(),
-                hint=hint,
-                min=min,
-                max=max,
-                step=step,
-                value=value,
-                precision=_compute_precision_digits(step),
-                visible=visible,
-                disabled=disabled,
-                marks=tuple(
-                    {"value": float(x[0]), "label": x[1]}
-                    if isinstance(x, tuple)
-                    else {"value": float(x)}
-                    for x in marks
-                )
-                if marks is not None
-                else None,
-            ),
-            is_button=False,
+        return GuiSliderHandle(
+            self._create_gui_input(
+                value,
+                message=_messages.GuiSliderMessage(
+                    value=value,
+                    uuid=uuid,
+                    container_uuid=self._get_container_uuid(),
+                    props=_messages.GuiSliderProps(
+                        order=order,
+                        label=label,
+                        hint=hint,
+                        min=min,
+                        max=max,
+                        step=step,
+                        precision=_compute_precision_digits(step),
+                        visible=visible,
+                        disabled=disabled,
+                        _marks=tuple(
+                            GuiSliderMark(value=float(x[0]), label=x[1])
+                            if isinstance(x, tuple)
+                            else GuiSliderMark(value=x, label=None)
+                            for x in marks
+                        )
+                        if marks is not None
+                        else None,
+                    ),
+                ),
+                is_button=False,
+            )
         )
 
+    @deprecated_positional_shim
     def add_multi_slider(
         self,
         label: str,
@@ -1296,6 +1948,7 @@ class GuiApi:
         max: IntOrFloat,
         step: IntOrFloat,
         initial_value: tuple[IntOrFloat, ...],
+        *,
         min_range: IntOrFloat | None = None,
         fixed_endpoints: bool = False,
         marks: tuple[IntOrFloat | tuple[IntOrFloat, str], ...] | None = None,
@@ -1303,7 +1956,7 @@ class GuiApi:
         visible: bool = True,
         hint: str | None = None,
         order: float | None = None,
-    ) -> GuiInputHandle[tuple[IntOrFloat, ...]]:
+    ) -> GuiMultiSliderHandle[IntOrFloat]:
         """Add a multi slider to the GUI. Types of the min, max, step, and initial value should match.
 
         Args:
@@ -1326,8 +1979,7 @@ class GuiApi:
             A handle that can be used to interact with the GUI element.
         """
         assert max >= min
-        if step > max - min:
-            step = max - min
+        step = builtins.min(step, max - min)
         assert all(max >= x >= min for x in initial_value)
 
         # GUI callbacks cast incoming values to match the type of the initial value. If
@@ -1342,47 +1994,53 @@ class GuiApi:
         ):
             initial_value = tuple(float(x) for x in initial_value)  # type: ignore
 
-        id = _make_unique_id()
+        uuid = _make_uuid()
         order = _apply_default_order(order)
-        return self._create_gui_input(
-            value=initial_value,
-            message=_messages.GuiAddMultiSliderMessage(
-                order=order,
-                id=id,
-                label=label,
-                container_id=self._get_container_id(),
-                hint=hint,
-                min=min,
-                min_range=min_range,
-                max=max,
-                step=step,
+        return GuiMultiSliderHandle(
+            self._create_gui_input(
                 value=initial_value,
-                visible=visible,
-                disabled=disabled,
-                fixed_endpoints=fixed_endpoints,
-                precision=_compute_precision_digits(step),
-                marks=tuple(
-                    {"value": float(x[0]), "label": x[1]}
-                    if isinstance(x, tuple)
-                    else {"value": float(x)}
-                    for x in marks
-                )
-                if marks is not None
-                else None,
-            ),
-            is_button=False,
+                message=_messages.GuiMultiSliderMessage(
+                    value=initial_value,
+                    uuid=uuid,
+                    container_uuid=self._get_container_uuid(),
+                    props=_messages.GuiMultiSliderProps(
+                        order=order,
+                        label=label,
+                        hint=hint,
+                        min=min,
+                        min_range=min_range,
+                        max=max,
+                        step=step,
+                        visible=visible,
+                        disabled=disabled,
+                        fixed_endpoints=fixed_endpoints,
+                        precision=_compute_precision_digits(step),
+                        _marks=tuple(
+                            GuiSliderMark(value=float(x[0]), label=x[1])
+                            if isinstance(x, tuple)
+                            else GuiSliderMark(value=x, label=None)
+                            for x in marks
+                        )
+                        if marks is not None
+                        else None,
+                    ),
+                ),
+                is_button=False,
+            )
         )
 
+    @deprecated_positional_shim
     def add_rgb(
         self,
         label: str,
         initial_value: tuple[int, int, int],
+        *,
         disabled: bool = False,
         visible: bool = True,
         hint: str | None = None,
         order: float | None = None,
-    ) -> GuiInputHandle[tuple[int, int, int]]:
-        """Add an RGB picker to the GUI.
+    ) -> GuiRgbHandle:
+        """Add an RGB picker to the GUI. All values should be in [0, 255].
 
         Args:
             label: Label to display on the RGB picker.
@@ -1397,32 +2055,38 @@ class GuiApi:
         """
 
         value = initial_value
-        id = _make_unique_id()
+        uuid = _make_uuid()
         order = _apply_default_order(order)
-        return self._create_gui_input(
-            value,
-            message=_messages.GuiAddRgbMessage(
-                order=order,
-                id=id,
-                label=label,
-                container_id=self._get_container_id(),
-                hint=hint,
-                value=value,
-                disabled=disabled,
-                visible=visible,
-            ),
+        return GuiRgbHandle(
+            self._create_gui_input(
+                value,
+                message=_messages.GuiRgbMessage(
+                    value=value,
+                    uuid=uuid,
+                    container_uuid=self._get_container_uuid(),
+                    props=_messages.GuiRgbProps(
+                        order=order,
+                        label=label,
+                        hint=hint,
+                        disabled=disabled,
+                        visible=visible,
+                    ),
+                ),
+            )
         )
 
+    @deprecated_positional_shim
     def add_rgba(
         self,
         label: str,
         initial_value: tuple[int, int, int, int],
+        *,
         disabled: bool = False,
         visible: bool = True,
         hint: str | None = None,
         order: float | None = None,
-    ) -> GuiInputHandle[tuple[int, int, int, int]]:
-        """Add an RGBA picker to the GUI.
+    ) -> GuiRgbaHandle:
+        """Add an RGBA picker to the GUI. All values should be in [0, 255].
 
         Args:
             label: Label to display on the RGBA picker.
@@ -1436,49 +2100,53 @@ class GuiApi:
             A handle that can be used to interact with the GUI element.
         """
         value = initial_value
-        id = _make_unique_id()
+        uuid = _make_uuid()
         order = _apply_default_order(order)
-        return self._create_gui_input(
-            value,
-            message=_messages.GuiAddRgbaMessage(
-                order=order,
-                id=id,
-                label=label,
-                container_id=self._get_container_id(),
-                hint=hint,
-                value=value,
-                disabled=disabled,
-                visible=visible,
-            ),
+        return GuiRgbaHandle(
+            self._create_gui_input(
+                value,
+                message=_messages.GuiRgbaMessage(
+                    value=value,
+                    uuid=uuid,
+                    container_uuid=self._get_container_uuid(),
+                    props=_messages.GuiRgbaProps(
+                        order=order,
+                        label=label,
+                        hint=hint,
+                        disabled=disabled,
+                        visible=visible,
+                    ),
+                ),
+            )
         )
+
+    class _GuiMessage(Protocol[GuiInputPropsType]):
+        uuid: str
+        props: GuiInputPropsType
 
     def _create_gui_input(
         self,
         value: T,
-        message: _messages._GuiAddInputBase,
+        message: _GuiMessage,
         is_button: bool = False,
-    ) -> GuiInputHandle[T]:
+    ) -> _GuiHandleState[T]:
         """Private helper for adding a simple GUI element."""
 
         # Send add GUI input message.
+        assert isinstance(message, _messages.Message)
         self._websock_interface.queue_message(message)
 
         # Construct handle.
         handle_state = _GuiHandleState(
-            label=message.label,
-            message_type=type(message),
+            props=message.props,
             gui_api=self,
             value=value,
             update_timestamp=time.time(),
-            parent_container_id=self._get_container_id(),
+            parent_container_id=self._get_container_uuid(),
             update_cb=[],
             is_button=is_button,
             sync_cb=None,
-            disabled=message.disabled,
-            visible=message.visible,
-            id=message.id,
-            order=message.order,
-            hint=message.hint,
+            uuid=message.uuid,
         )
 
         # For broadcasted GUI handles, we should synchronize all clients.
@@ -1488,12 +2156,10 @@ class GuiApi:
             def sync_other_clients(
                 client_id: ClientId, updates: dict[str, Any]
             ) -> None:
-                message = _messages.GuiUpdateMessage(handle_state.id, updates)
+                message = _messages.GuiUpdateMessage(handle_state.uuid, updates)
                 message.excluded_self_client = client_id
                 self._websock_interface.queue_message(message)
 
             handle_state.sync_cb = sync_other_clients
 
-        handle = GuiInputHandle(handle_state)
-
-        return handle
+        return handle_state

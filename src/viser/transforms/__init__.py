@@ -1,5 +1,5 @@
 """Lie group interface for rigid transforms, ported from
-[jaxlie](https://github.com/brentyi/jaxlie). Used by `viser` internally and
+`jaxlie <https://github.com/brentyi/jaxlie>`_. Used by Viser internally and
 in examples.
 
 Implements SO(2), SO(3), SE(2), and SE(3) Lie groups. Rotations are parameterized

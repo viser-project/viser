@@ -1,9 +1,9 @@
 """Helper script for dumping Tabler icon names into a Literal type."""
 
-import tarfile
+import zipfile
 from pathlib import Path
 
-HERE_DIR = Path(__file__).absolute().parent
+HERE_DIR = Path(__file__).resolve().parent
 ICON_DIR = HERE_DIR / "_icons"
 
 
@@ -17,8 +17,10 @@ def enum_name_from_icon(name: str) -> str:
 
 
 if __name__ == "__main__":
-    with tarfile.open(ICON_DIR / "tabler-icons.tar") as tar:
-        icon_names = sorted([name.partition(".svg")[0] for name in tar.getnames()])
+    with zipfile.ZipFile(ICON_DIR / "tabler-icons.zip") as zip_file:
+        icon_names = sorted(
+            [Path(name).stem for name in zip_file.namelist() if name.endswith(".svg")]
+        )
 
     # Generate stub file. This is used by type checkers.
     (HERE_DIR / "_icons_enum.pyi").write_text(

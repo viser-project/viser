@@ -6,11 +6,11 @@
 # full list see the documentation:
 # http://www.sphinx-doc.org/en/stable/config
 
+import os
 from pathlib import Path
 from typing import Dict, List
 
-import m2r2
-import toml
+import viser
 
 # -- Path setup --------------------------------------------------------------
 
@@ -21,14 +21,11 @@ import toml
 
 # -- Project information -----------------------------------------------------
 
-project = "viser"
-copyright = "2024"
+project = "Viser"
+copyright = "2025"
 author = "brentyi"
 
-# The short X.Y version
-version: str = toml.load(
-    Path(__file__).absolute().parent.parent.parent / "pyproject.toml"
-)["project"]["version"]
+version: str = os.environ.get("VISER_VERSION_STR_OVERRIDE", viser.__version__)
 
 # Formatting!
 #     0.1.30 => v0.1.30
@@ -56,15 +53,34 @@ extensions = [
     "sphinx.ext.mathjax",
     "sphinx.ext.githubpages",
     "sphinx.ext.napoleon",
+    "sphinx.ext.intersphinx",
     # "sphinx.ext.inheritance_diagram",
     "sphinx.ext.viewcode",
-    "m2r2",
     "sphinxcontrib.programoutput",
     "sphinxcontrib.ansi",
     "sphinxcontrib.googleanalytics",  # google analytics extension https://github.com/sphinx-contrib/googleanalytics/tree/master
+    "sphinx_copybutton",  # adds copy buttons to code blocks
+    "myst_nb",  # Jupyter notebook support
 ]
+
+# -- Options for myst-nb extension -------------------------------------------
+nb_execution_mode = "auto"  # Execute notebooks without outputs during build.
+nb_execution_timeout = 60  # Timeout for cell execution in seconds.
 programoutput_use_ansi = True
 html_ansi_stylesheet = "black-on-white.css"
+
+# -- Options for sphinx-copybutton extension ---------------------------------
+copybutton_prompt_text = r">>> |\.\.\. |\$ |In \[\d*\]: | {2,5}\.\.\.: | {5,8}: "
+copybutton_prompt_is_regexp = True
+copybutton_only_copy_prompt_lines = True
+copybutton_remove_prompts = True
+copybutton_copy_empty_lines = False
+
+# Intersphinx mapping for cross-references to external documentation
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3", (None, "python-inv.txt"))
+}
+
 html_static_path = ["_static"]
 html_theme_options = {
     "light_css_variables": {
@@ -74,7 +90,7 @@ html_theme_options = {
     "footer_icons": [
         {
             "name": "GitHub",
-            "url": "https://github.com/nerfstudio-project/viser",
+            "url": "https://github.com/viser-project/viser",
             "html": """
             <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 16 16">
                 <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path>
@@ -105,8 +121,11 @@ templates_path = ["_templates"]
 # The suffix(es) of source filenames.
 # You can specify multiple suffix as a list of string:
 #
-source_suffix = [".rst", ".md"]
-# source_suffix = ".rst"
+source_suffix = {
+    ".rst": "restructuredtext",
+    ".ipynb": "myst-nb",
+    ".md": "myst-nb",
+}
 
 # The master toctree document.
 master_doc = "index"
@@ -124,7 +143,7 @@ language: str = "en"
 exclude_patterns: List[str] = []
 
 # The name of the Pygments (syntax highlighting) style to use.
-pygments_style = "monokai"
+pygments_style = "default"
 
 
 # -- Options for HTML output -------------------------------------------------
@@ -237,19 +256,98 @@ googleanalytics_id = "G-RRGY51J5ZH"
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = True
 
-# -- Enable Markdown -> RST conversion ----------------------------------------
+# -- Setup function ----------------------------------------
 
 
-def docstring(app, what, name, obj, options, lines):
-    md = "\n".join(lines)
-    rst = m2r2.convert(md)
-    lines.clear()
-    lines += rst.splitlines()
+def skip_dict_methods(app, what, name, obj, skip, options):
+    """Skip inherited dict methods when documenting TypedDict classes."""
+    # List of dict methods to exclude from TypedDict documentation
+    dict_methods = {
+        "__new__",
+        "__init__",
+        "__delitem__",
+        "__getitem__",
+        "__iter__",
+        "__len__",
+        "__setitem__",
+        "clear",
+        "copy",
+        "fromkeys",
+        "get",
+        "items",
+        "keys",
+        "pop",
+        "popitem",
+        "setdefault",
+        "update",
+        "values",
+        "__contains__",
+        "__delattr__",
+        "__dir__",
+        "__eq__",
+        "__format__",
+        "__ge__",
+        "__getattribute__",
+        "__gt__",
+        "__hash__",
+        "__le__",
+        "__lt__",
+        "__ne__",
+        "__reduce__",
+        "__reduce_ex__",
+        "__repr__",
+        "__setattr__",
+        "__sizeof__",
+        "__str__",
+        "__subclasshook__",
+    }
+
+    if what == "class" and name in dict_methods:
+        return True
+    return skip
+
+
+def process_git_clone_commands():
+    """Replace git clone commands in RST files with version-aware ones when VISER_RELEASE_WORKFLOW_VERSION is set."""
+    version_override = os.environ.get("VISER_RELEASE_WORKFLOW_VERSION", None)
+    if version_override is None:
+        return  # Only process when version override is set.
+
+    # Add 'v' prefix if not already present.
+    tag_version = (
+        version_override if version_override.startswith("v") else f"v{version_override}"
+    )
+    versioned_git_clone = (
+        f"git clone -b {tag_version} https://github.com/viser-project/viser.git"
+    )
+
+    # Find and replace in all RST files under examples.
+    docs_source = Path(__file__).parent
+    examples_dir = docs_source / "examples"
+
+    if examples_dir.exists():
+        for rst_file in examples_dir.rglob("*.rst"):
+            if not rst_file.is_file():
+                continue
+            try:
+                content = rst_file.read_text(encoding="utf-8")
+                if "git clone https://github.com/viser-project/viser.git" in content:
+                    updated_content = content.replace(
+                        "git clone https://github.com/viser-project/viser.git",
+                        versioned_git_clone,
+                    )
+                    rst_file.write_text(updated_content, encoding="utf-8")
+                    print(f"Updated git clone command in {rst_file}")
+            except Exception as e:
+                print(f"Error processing {rst_file}: {e}")
 
 
 def setup(app):
-    app.connect("autodoc-process-docstring", docstring)
     app.add_css_file("css/custom.css")
+    app.connect("autodoc-skip-member", skip_dict_methods)
+
+    # Process git clone commands after the build starts.
+    process_git_clone_commands()
 
 
 # -- Napoleon settings -------------------------------------------------------
@@ -267,6 +365,6 @@ napoleon_use_admonition_for_references = False
 napoleon_use_ivar = False
 napoleon_use_param = True
 napoleon_use_rtype = True
-napoleon_preprocess_types = False
+napoleon_preprocess_types = True
 napoleon_type_aliases = None
 napoleon_attr_annotations = True

@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Callable, Tuple, Type, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Tuple, TypeVar, Union, cast
 
 import numpy as onp
 
@@ -24,29 +24,6 @@ def get_epsilon(dtype: onp.dtype) -> float:
         return 1e-10
     else:
         assert False
-
-
-def register_lie_group(
-    *,
-    matrix_dim: int,
-    parameters_dim: int,
-    tangent_dim: int,
-    space_dim: int,
-) -> Callable[[Type[T]], Type[T]]:
-    """Decorator for registering Lie group dataclasses.
-
-    Sets dimensionality class variables, and marks all methods for JIT compilation.
-    """
-
-    def _wrap(cls: Type[T]) -> Type[T]:
-        # Register dimensions as class attributes.
-        cls.matrix_dim = matrix_dim
-        cls.parameters_dim = parameters_dim
-        cls.tangent_dim = tangent_dim
-        cls.space_dim = space_dim
-        return cls
-
-    return _wrap
 
 
 TupleOfBroadcastable = TypeVar(

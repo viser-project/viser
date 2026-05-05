@@ -6,21 +6,19 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: formatting-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v1
-        with:
-          python-version: 3.12
-      - name: Install dependencies
-        run: |
-          pip install uv
-          uv pip install --system -e ".[dev,examples]"
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
       - name: Run Ruff
-        run: ruff check docs/ src/ examples/
+        run: uvx ruff check docs/ src/ examples/ --output-format github
       - name: Run Ruff format
-        run: ruff format docs/ src/ examples/ --check
+        run: uvx ruff format docs/ src/ examples/ --check

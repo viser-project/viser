@@ -8,6 +8,7 @@ import {
   ActionIcon,
   Button,
   createTheme,
+  Textarea,
 } from "@mantine/core";
 import { themeToVars } from "@mantine/vanilla-extract";
 
@@ -28,6 +29,11 @@ export const theme = createTheme({
     Select: Select.extend({
       defaultProps: {
         radius: "sm",
+      },
+    }),
+    Textarea: Textarea.extend({
+      defaultProps: {
+        radius: "xs",
       },
     }),
     TextInput: TextInput.extend({
@@ -56,7 +62,11 @@ export const theme = createTheme({
     Button: Button.extend({
       defaultProps: {
         radius: "xs",
-        fw: 450,
+        styles: {
+          label: {
+            fontWeight: 450,
+          },
+        },
       },
     }),
   },

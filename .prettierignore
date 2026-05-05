@@ -1,2 +1,4 @@
 *.mjs
 build/
+csm/
+vendor/

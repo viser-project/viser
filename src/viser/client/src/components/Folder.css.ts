@@ -2,14 +2,13 @@ import { style } from "@vanilla-extract/css";
 import { vars } from "../AppTheme";
 
 export const folderWrapper = style({
+  borderWidth: "1px",
   position: "relative",
-  marginTop: vars.spacing.xs,
   marginLeft: vars.spacing.xs,
   marginRight: vars.spacing.xs,
-  marginBottom: vars.spacing.md,
-  ":last-child": {
-    marginBottom: vars.spacing.xs,
-  },
+  marginTop: vars.spacing.xs,
+  marginBottom: vars.spacing.xs,
+  paddingBottom: `calc(${vars.spacing.xs} - 0.5em)`,
 });
 
 export const folderLabel = style({

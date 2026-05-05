@@ -6,17 +6,21 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: typescript-compile-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   typescript-compile:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Use Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
       - name: Run tsc
         run: |
           cd src/viser/client
-          yarn
-          yarn tsc
+          npm install
+          npx tsc

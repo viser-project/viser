@@ -5,68 +5,15 @@
 import * as THREE from "three";
 import * as React from "react";
 import {
-  extend,
   applyProps,
   ReactThreeFiber,
   useThree,
+  ThreeElement,
 } from "@react-three/fiber";
 import { toCreasedNormals } from "three-stdlib";
-import { version } from "@react-three/drei/helpers/constants";
-import { shaderMaterial } from "@react-three/drei";
+import { OutlinesMaterial } from "./OutlinesMaterial";
 
-const OutlinesMaterial = /* @__PURE__ */ shaderMaterial(
-  {
-    screenspace: false,
-    color: /* @__PURE__ */ new THREE.Color("black"),
-    opacity: 1,
-    thickness: 0.05,
-    size: /* @__PURE__ */ new THREE.Vector2(),
-  },
-  `#include <common>
-   #include <morphtarget_pars_vertex>
-   #include <skinning_pars_vertex>
-   uniform float thickness;
-   uniform float screenspace;
-   uniform vec2 size;
-   void main() {
-     #if defined (USE_SKINNING)
-	     #include <beginnormal_vertex>
-       #include <morphnormal_vertex>
-       #include <skinbase_vertex>
-       #include <skinnormal_vertex>
-       #include <defaultnormal_vertex>
-     #endif
-     #include <begin_vertex>
-	   #include <morphtarget_vertex>
-	   #include <skinning_vertex>
-     #include <project_vertex>
-     vec4 tNormal = vec4(normal, 0.0);
-     vec4 tPosition = vec4(transformed, 1.0);
-     #ifdef USE_INSTANCING
-       tNormal = instanceMatrix * tNormal;
-       tPosition = instanceMatrix * tPosition;
-     #endif
-     if (screenspace == 0.0) {
-       vec3 newPosition = tPosition.xyz + tNormal.xyz * thickness;
-       gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
-     } else {
-       vec4 clipPosition = projectionMatrix * modelViewMatrix * tPosition;
-       vec4 clipNormal = projectionMatrix * modelViewMatrix * tNormal;
-       vec2 offset = normalize(clipNormal.xy) * thickness / size * clipPosition.w * 2.0;
-       clipPosition.xy += offset;
-       gl_Position = clipPosition;
-     }
-   }`,
-  `uniform vec3 color;
-   uniform float opacity;
-   void main(){
-     gl_FragColor = vec4(color, opacity);
-     #include <tonemapping_fragment>
-     #include <${version >= 154 ? "colorspace_fragment" : "encodings_fragment"}>
-   }`,
-);
-
-type OutlinesProps = JSX.IntrinsicElements["group"] & {
+type OutlinesProps = ThreeElement<typeof THREE.Group> & {
   /** Outline color, default: black */
   color?: ReactThreeFiber.Color;
   /** Line thickness is independent of zoom, default: false */
@@ -105,11 +52,10 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
     const localRef = React.useRef<THREE.Group | null>(null);
 
     const [material] = React.useState(
-      () => new OutlinesMaterial({ side: THREE.BackSide }),
+      () => new OutlinesMaterial({ side: THREE.BackSide, fog: true }),
     );
     const gl = useThree((state) => state.gl);
     const contextSize = gl.getDrawingBufferSize(new THREE.Vector2());
-    React.useMemo(() => extend({ OutlinesMaterial }), []);
 
     const oldAngle = React.useRef(0);
     const oldGeometry = React.useRef<THREE.BufferGeometry>();
@@ -128,7 +74,7 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
           oldAngle.current = angle;
           oldGeometry.current = parent.geometry;
 
-          // Remove old mesh
+          // Remove old mesh.
           let mesh = group.children[0] as any;
           if (mesh) {
             if (angle) mesh.geometry.dispose();
@@ -186,7 +132,9 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
 
     React.useEffect(() => {
       return () => {
-        // Dispose everything on unmount
+        // Dispose everything on unmount.
+        material.dispose();
+
         const group = localRef.current;
         if (!group) return;
 
@@ -195,6 +143,7 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
           THREE.Material
         >;
         if (mesh) {
+          // Dispose the geometry if it was cloned via toCreasedNormals.
           if (angle) mesh.geometry.dispose();
           group.remove(mesh);
         }

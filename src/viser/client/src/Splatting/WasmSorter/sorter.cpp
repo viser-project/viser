@@ -47,6 +47,14 @@ class Sorter {
     Sorter(
         const emscripten::val &buffer, const emscripten::val &group_indices_val
     ) {
+        setBuffer(buffer, group_indices_val);
+    };
+
+    // Update the buffer and group indices. This allows dynamic updates without
+    // recreating the sorter.
+    void setBuffer(
+        const emscripten::val &buffer, const emscripten::val &group_indices_val
+    ) {
         const std::vector<uint32_t> bufferVec =
             emscripten::convertJSArrayToNumberVector<uint32_t>(buffer);
         const float *floatBuffer =
@@ -65,7 +73,7 @@ class Sorter {
         group_indices =
             emscripten::convertJSArrayToNumberVector<uint32_t>(group_indices_val
             );
-    };
+    }
 
     // Run sorting using the newest view projection matrix. Mutates internal
     // buffers.
@@ -185,5 +193,6 @@ class Sorter {
 EMSCRIPTEN_BINDINGS(c) {
     emscripten::class_<Sorter>("Sorter")
         .constructor<emscripten::val, emscripten::val>()
+        .function("setBuffer", &Sorter::setBuffer)
         .function("sort", &Sorter::sort, emscripten::allow_raw_pointers());
 };

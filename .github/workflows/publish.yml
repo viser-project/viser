@@ -1,4 +1,4 @@
-# This workflows will upload a Python Package using Poetry when a release is created
+# This workflows will upload a Python Package using uv when a release is created
 # For more information see: https://help.github.com/en/actions/language-and-framework-guides/using-python-with-github-actions#publishing-to-package-registries
 
 name: Upload Python Package
@@ -12,33 +12,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+      - uses: ./.github/actions/setup-e2e
         with:
-          python-version: "3.8"
-      - name: Install dependencies and build client
-        run: |
-          pip install uv
-          uv pip install --system -e ".[dev]"
-          uv pip install --system build twine
-          # Build client files.
-          python -c "import viser; viser.ViserServer()"
+          python-version: ${{ matrix.python-version }}
+      - name: Make sure tests pass
+        run: uv run --extra dev --python 3.12 pytest
       - name: Strip unsupported tags in README
         run: |
           sed -i '/<!-- pypi-strip -->/,/<!-- \/pypi-strip -->/d' README.md
       - name: Only bundle client build for PyPI release
         run: |
-          # This sed command finds the line that immediately follows
-          # [tool.setuptools.package-data], then replaces instances of
-          # `client/**/*` with `client/build/**/*`.
-          sed -i=bak '/\[tool\.setuptools\.package-data\]/{n;s/"client\/\*\*\/\*"/"client\/build\/\*\*\/\*"/g;}' pyproject.toml
-          # This sed commands removes `, "client/**/.*"` from the package-data.
-          sed -i=bak '/\[tool\.setuptools\.package-data\]/{n;s/, "client\/\*\*\/\.\*"//g;}' pyproject.toml
+          # This should delete everything in src/viser/client except for the
+          # build folder + original source files. We don't want to package
+          # .nodeenv, node_modules, etc in the release.
+          mv src/viser/client/build ./__built_client
+          rm -rf src/viser/client/*
+          git checkout src/viser/client
+          mv ./__built_client src/viser/client/build
       - name: Build and publish
         env:
-          PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
-          PYPI_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+          UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
         run: |
-          python -m build
-          twine upload --username $PYPI_USERNAME --password $PYPI_PASSWORD dist/*
+          uv build
+          uv publish

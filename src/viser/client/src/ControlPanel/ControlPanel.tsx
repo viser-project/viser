@@ -1,6 +1,6 @@
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 import GeneratedGuiContainer from "./Generated";
-import { ViewerContext } from "../App";
+import { ViewerContext } from "../ViewerContext";
 
 import QRCode from "react-qr-code";
 import ServerControls from "./ServerControls";
@@ -24,6 +24,7 @@ import {
 } from "@mantine/core";
 import {
   IconAdjustments,
+  IconPlayerPause,
   IconCloudCheck,
   IconArrowBack,
   IconShare,
@@ -32,7 +33,10 @@ import {
   IconPlugConnectedX,
   IconQrcode,
   IconQrcodeOff,
+  IconListSearch,
 } from "@tabler/icons-react";
+import { spotlight } from "@mantine/spotlight";
+import { isMac } from "../utils/platform";
 import React from "react";
 import BottomPanel from "./BottomPanel";
 import FloatingPanel from "./FloatingPanel";
@@ -41,6 +45,8 @@ import SidebarPanel from "./SidebarPanel";
 
 // Must match constant in Python.
 const ROOT_CONTAINER_ID = "root";
+
+const MemoizedGeneratedGuiContainer = React.memo(GeneratedGuiContainer);
 
 export default function ControlPanel(props: {
   control_layout: ThemeConfigurationMessage["control_layout"];
@@ -51,7 +57,8 @@ export default function ControlPanel(props: {
   // TODO: will result in unnecessary re-renders.
   const viewer = React.useContext(ViewerContext)!;
   const showGenerated = viewer.useGui(
-    (state) => "root" in state.guiIdSetFromContainerId,
+    (state) =>
+      Object.keys(state.guiUuidSetFromContainerUuid["root"] ?? {}).length > 0,
   );
   const [showSettings, { toggle }] = useDisclosure(false);
 
@@ -62,10 +69,10 @@ export default function ControlPanel(props: {
     controlWidthString == "small"
       ? "16em"
       : controlWidthString == "medium"
-      ? "20em"
-      : controlWidthString == "large"
-      ? "24em"
-      : null
+        ? "20em"
+        : controlWidthString == "large"
+          ? "24em"
+          : null
   )!;
 
   const generatedServerToggleButton = (
@@ -81,7 +88,7 @@ export default function ControlPanel(props: {
     >
       <Tooltip
         zIndex={100}
-        label={showSettings ? "Return to GUI" : "Connection & diagnostics"}
+        label={showSettings ? "Return to GUI" : "Configuration & diagnostics"}
         withinPortal
       >
         {showSettings ? (
@@ -95,11 +102,16 @@ export default function ControlPanel(props: {
 
   const panelContents = (
     <>
-      <Collapse in={!showGenerated || showSettings} p="xs" pt="0.375em">
-        <ServerControls />
+      <Collapse in={!showGenerated || showSettings}>
+        <Box p="xs" pt="0.375em">
+          <ServerControls />
+        </Box>
       </Collapse>
-      <Collapse in={showGenerated && !showSettings}>
-        <GeneratedGuiContainer containerId={ROOT_CONTAINER_ID} />
+      {/*As of Mantine 8.3.3, this `keepMounted` is necessary to prevent some
+      intermittent problems with the initial GUI height being set to 0 when
+      we're under high CPU load.*/}
+      <Collapse in={showGenerated && !showSettings} keepMounted>
+        <MemoizedGeneratedGuiContainer containerUuid={ROOT_CONTAINER_ID} />
       </Collapse>
     </>
   );
@@ -111,6 +123,7 @@ export default function ControlPanel(props: {
         <BottomPanel.Handle>
           <ConnectionStatus />
           <BottomPanel.HideWhenCollapsed>
+            <CommandsButton />
             <ShareButton />
             {generatedServerToggleButton}
           </BottomPanel.HideWhenCollapsed>
@@ -125,6 +138,7 @@ export default function ControlPanel(props: {
         <FloatingPanel.Handle>
           <ConnectionStatus />
           <FloatingPanel.HideWhenCollapsed>
+            <CommandsButton />
             <ShareButton />
             {generatedServerToggleButton}
           </FloatingPanel.HideWhenCollapsed>
@@ -141,6 +155,7 @@ export default function ControlPanel(props: {
       >
         <SidebarPanel.Handle>
           <ConnectionStatus />
+          <CommandsButton />
           <ShareButton />
           {generatedServerToggleButton}
         </SidebarPanel.Handle>
@@ -153,13 +168,13 @@ export default function ControlPanel(props: {
 /* Icon and label telling us the current status of the websocket connection. */
 function ConnectionStatus() {
   const { useGui } = React.useContext(ViewerContext)!;
-  const connected = useGui((state) => state.websocketConnected);
+  const websocketState = useGui((state) => state.websocketState);
   const label = useGui((state) => state.label);
 
   return (
     <>
       <div style={{ width: "1.1em" }} /> {/* Spacer. */}
-      <Transition transition="skew-down" mounted={connected}>
+      <Transition transition="fade" mounted={websocketState === "connected"}>
         {(styles) => (
           <IconCloudCheck
             color={"#0b0"}
@@ -172,7 +187,10 @@ function ConnectionStatus() {
           />
         )}
       </Transition>
-      <Transition transition="skew-down" mounted={!connected}>
+      <Transition
+        transition="skew-down"
+        mounted={websocketState === "reconnecting"}
+      >
         {(styles) => (
           <Loader
             size="xs"
@@ -182,18 +200,72 @@ function ConnectionStatus() {
           />
         )}
       </Transition>
-      <Box px="xs" style={{ flexGrow: 1 }} lts={"-0.5px"} pt="0.1em">
-        {label !== "" ? label : connected ? "Connected" : "Connecting..."}
+      <Transition
+        transition="skew-down"
+        mounted={websocketState === "inactive"}
+      >
+        {(styles) => (
+          <IconPlayerPause
+            color={"var(--mantine-color-red-filled)"}
+            style={{
+              position: "absolute",
+              width: "1.25em",
+              height: "1.25em",
+              ...styles,
+            }}
+          />
+        )}
+      </Transition>
+      <Box px="xs" style={{ flexGrow: 1, letterSpacing: "-0.5px" }} pt="0.1em">
+        {label !== ""
+          ? label
+          : websocketState === "connected"
+            ? "Connected"
+            : websocketState === "reconnecting"
+              ? "Connecting..."
+              : "Inactive"}
       </Box>
     </>
   );
 }
 
+function CommandsButton() {
+  const viewer = React.useContext(ViewerContext)!;
+  const hasCommands = viewer.useGui(
+    (state) => Object.keys(state.commands).length > 0,
+  );
+
+  if (!hasCommands) return null;
+
+  return (
+    <Tooltip
+      zIndex={100}
+      label={`Commands (${isMac ? "Cmd" : "Ctrl"}+K)`}
+      withinPortal
+    >
+      <ActionIcon
+        onClick={(evt) => {
+          evt.stopPropagation();
+          spotlight.open();
+        }}
+        style={{
+          transform: "translateY(0.05em)",
+        }}
+      >
+        <IconListSearch stroke={2} height="1.3em" width="1.3em" />
+      </ActionIcon>
+    </Tooltip>
+  );
+}
+
 function ShareButton() {
   const viewer = React.useContext(ViewerContext)!;
-  const connected = viewer.useGui((state) => state.websocketConnected);
+  const viewerMutable = viewer.mutable.current; // Get mutable once.
+  const connected = viewer.useGui(
+    (state) => state.websocketState === "connected",
+  );
   const shareUrl = viewer.useGui((state) => state.shareUrl);
-  const setShareUrl = viewer.useGui((state) => state.setShareUrl);
+  const setShareUrl = viewer.guiActions.setShareUrl;
 
   const [doingSomething, setDoingSomething] = React.useState(false);
 
@@ -210,12 +282,13 @@ function ShareButton() {
   }, [shareUrl]);
   React.useEffect(() => {
     if (!connected && shareModalOpened) closeShareModal();
-  }, [connected, shareModalOpened]);
+  }, [connected, shareModalOpened, closeShareModal]);
+
+  const colorScheme = useMantineColorScheme().colorScheme;
 
   if (viewer.useGui((state) => state.theme).show_share_button === false)
     return null;
 
-  const colorScheme = useMantineColorScheme().colorScheme;
   return (
     <>
       <Tooltip
@@ -233,7 +306,7 @@ function ShareButton() {
           }}
           disabled={!connected}
         >
-          <IconShare stroke={2} height="1.125em" width="1.125em" />
+          <IconShare stroke={2.25} height="1.125em" width="1.125em" />
         </ActionIcon>
       </Tooltip>
       <Modal
@@ -269,7 +342,7 @@ function ShareButton() {
                 <Button
                   fullWidth
                   onClick={() => {
-                    viewer.sendMessageRef.current({
+                    viewerMutable.sendMessage({
                       type: "ShareUrlRequest",
                     });
                     setDoingSomething(true); // Loader state will help with debouncing.
@@ -315,7 +388,7 @@ function ShareButton() {
                   <Button
                     color="red"
                     onClick={() => {
-                      viewer.sendMessageRef.current({
+                      viewerMutable.sendMessage({
                         type: "ShareUrlDisconnect",
                       });
                       setShareUrl(null);
@@ -342,8 +415,8 @@ function ShareButton() {
           </>
         )}
         <Text size="xs">
-          This feature is experimental. Problems? Consider{" "}
-          <Anchor href="https://github.com/nerfstudio-project/viser/issues">
+          Share links are experimental and bandwidth-limited. Problems? Consider{" "}
+          <Anchor href="https://github.com/viser-project/viser/issues">
             reporting on GitHub
           </Anchor>
           .

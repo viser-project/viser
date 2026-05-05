@@ -1,79 +1,66 @@
 <h1 align="left">
-    <img alt="viser logo" src="https://viser.studio/latest/_static/logo.svg" width="auto" height="30" />
-    viser
-    <img alt="viser logo" src="https://viser.studio/latest/_static/logo.svg" width="auto" height="30" />
+    <img alt="viser logo" src="https://viser.studio/main/_static/logo.svg" width="30" height="auto" />
+    Viser
+    <img alt="viser logo" src="https://viser.studio/main/_static/logo.svg" width="30" height="auto" />
 </h1>
 
 <p align="left">
-    <img alt="pyright" src="https://github.com/nerfstudio-project/viser/workflows/pyright/badge.svg?branch=main" />
-    <img alt="typescript-compile" src="https://github.com/nerfstudio-project/viser/workflows/typescript-compile/badge.svg?branch=main" />
+    <img alt="pyright" src="https://github.com/viser-project/viser/actions/workflows/pyright.yml/badge.svg" />
+    <img alt="typescript-compile" src="https://github.com/viser-project/viser/actions/workflows/typescript-compile.yml/badge.svg" />
     <a href="https://pypi.org/project/viser/">
         <img alt="codecov" src="https://img.shields.io/pypi/pyversions/viser" />
     </a>
+    <a href="https://discord.gg/pnNTkHNUwP">
+        <img alt="Viser Discord"  src="https://img.shields.io/discord/1423204924518432809?logo=discord&label=discord" />
+    </a>
 </p>
 
-`viser` is a library for interactive 3D visualization in Python.
+Viser is a 3D visualization library for computer vision and robotics in Python.
 
 Features include:
 
-- API for visualizing 3D primitives
+- API for visualizing 3D primitives.
 - GUI building blocks: buttons, checkboxes, text inputs, sliders, etc.
-- Scene interaction tools (clicks, selection, transform gizmos)
-- Programmatic camera control and rendering
+- Scene interaction tools (clicks, selection, transform gizmos).
+- Programmatic camera control and rendering.
 - An entirely web-based client, for easy use over SSH!
 
-For usage and API reference, see our <a href="https://viser.studio/latest">documentation</a>.
+The goal is to provide primitives that are (1) easy for simple visualization tasks, but (2) can be composed into more elaborate interfaces. For more about design goals, see the [technical report](https://arxiv.org/abs/2507.22885).
+
+Examples and documentation: https://viser.studio
 
 ## Installation
 
 You can install `viser` with `pip`:
 
 ```bash
-pip install viser
+pip install viser            # Core dependencies only.
+pip install viser[examples]  # To include example dependencies.
 ```
 
-To include example dependencies:
+That's it! To learn more, we recommend looking at the examples in the [documentation](https://viser.studio/).
 
-```bash
-pip install viser[examples]
+## Citation
+
+To cite Viser in your work, you can use the BibTeX for our [technical report](https://arxiv.org/abs/2507.22885):
+
 ```
-
-After an example script is running, you can connect by navigating to the printed
-URL (default: `http://localhost:8080`).
-
-See also: our [development docs](https://viser.studio/latest/development/).
-
-## Examples
-
-**Point cloud visualization**
-
-https://github.com/nerfstudio-project/viser/assets/6992947/df35c6ee-78a3-43ad-a2c7-1dddf83f7458
-
-Source: `./examples/07_record3d_visualizer.py`
-
-**Gaussian splatting visualization**
-
-https://github.com/nerfstudio-project/viser/assets/6992947/c51b4871-6cc8-4987-8751-2bf186bcb1ae
-
-Source:
-[WangFeng18/3d-gaussian-splatting](https://github.com/WangFeng18/3d-gaussian-splatting)
-and
-[heheyas/gaussian_splatting_3d](https://github.com/heheyas/gaussian_splatting_3d).
-
-**SMPLX visualizer**
-
-https://github.com/nerfstudio-project/viser/assets/6992947/78ba0e09-612d-4678-abf3-beaeeffddb01
-
-Source: `./example/08_smpl_visualizer.py`
+@article{yi2025viser,
+  title={Viser: Imperative, web-based 3d visualization in python},
+  author={Yi, Brent and Kim, Chung Min and Kerr, Justin and Wu, Gina and Feng, Rebecca and Zhang, Anthony and Kulhanek, Jonas and Choi, Hongsuk and Ma, Yi and Tancik, Matthew and Kanazawa, Angjoo},
+  journal={arXiv preprint arXiv:2507.22885},
+  year={2025}
+}
+```
 
 ## Acknowledgements
 
 `viser` is heavily inspired by packages like
 [Pangolin](https://github.com/stevenlovegrove/Pangolin),
+[Dear ImGui](https://github.com/ocornut/imgui),
 [rviz](https://wiki.ros.org/rviz/),
 [meshcat](https://github.com/rdeits/meshcat), and
 [Gradio](https://github.com/gradio-app/gradio).
-It's made possible by several open-source projects.
 
 The web client is implemented using [React](https://react.dev/), with:
 
@@ -83,4 +70,4 @@ The web client is implemented using [React](https://react.dev/), with:
 - [zustand](https://github.com/pmndrs/zustand) for state management
 - [vanilla-extract](https://vanilla-extract.style/) for stylesheets
 
-The Python API communicates via [msgpack](https://msgpack.org/index.html) and [websockets](https://websockets.readthedocs.io/en/stable/index.html).
+Thanks to the authors of these projects for open-sourcing their work!

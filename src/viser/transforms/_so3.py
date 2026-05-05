@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Tuple
+from typing import NamedTuple, Tuple
 
 import numpy as onp
 import numpy.typing as onpt
 from typing_extensions import override
 
 from . import _base, hints
-from .utils import broadcast_leading_axes, get_epsilon, register_lie_group
+from .utils import broadcast_leading_axes, get_epsilon
 
 
-@dataclasses.dataclass(frozen=True)
-class RollPitchYaw:
+class RollPitchYaw(NamedTuple):
     """Struct containing roll, pitch, and yaw Euler angles."""
 
     roll: onpt.NDArray[onp.floating]
@@ -20,14 +19,14 @@ class RollPitchYaw:
     yaw: onpt.NDArray[onp.floating]
 
 
-@register_lie_group(
+@dataclasses.dataclass(frozen=True)
+class SO3(
+    _base.SOBase,
     matrix_dim=3,
     parameters_dim=4,
     tangent_dim=3,
     space_dim=3,
-)
-@dataclasses.dataclass(frozen=True)
-class SO3(_base.SOBase):
+):
     """Special orthogonal group for 3D rotations. Broadcasting rules are the same as
     for numpy.
 
@@ -115,7 +114,7 @@ class SO3(_base.SOBase):
         constructor.
 
         Args:
-            xyzw: xyzw quaternion. Shape should be (*, 4).
+            xyzw: xyzw quaternion. Shape should be ``(*, 4)``.
 
         Returns:
             Output.
@@ -131,7 +130,7 @@ class SO3(_base.SOBase):
         """Computes roll, pitch, and yaw angles. Uses the ZYX mobile robot convention.
 
         Returns:
-            Named tuple containing Euler angles in radians.
+            NamedTuple containing Euler angles in radians.
         """
         return RollPitchYaw(
             roll=self.compute_roll_radians(),
@@ -173,9 +172,13 @@ class SO3(_base.SOBase):
 
     @classmethod
     @override
-    def identity(cls, batch_axes: Tuple[int, ...] = ()) -> SO3:
+    def identity(
+        cls, batch_axes: Tuple[int, ...] = (), dtype: onpt.DTypeLike = onp.float64
+    ) -> SO3:
         return SO3(
-            wxyz=onp.broadcast_to(onp.array([1.0, 0.0, 0.0, 0.0]), (*batch_axes, 4))
+            wxyz=onp.broadcast_to(
+                onp.array([1.0, 0.0, 0.0, 0.0], dtype=dtype), (*batch_axes, 4)
+            )
         )
 
     @classmethod
@@ -260,26 +263,7 @@ class SO3(_base.SOBase):
             onp.where(cond1[..., None], case0_q, case1_q),
             onp.where(cond2[..., None], case2_q, case3_q),
         )
-
-        # We can also choose to branch, but this is slower.
-        # t, q = jax.lax.cond(
-        #     matrix[2, 2] < 0,
-        #     true_fun=lambda matrix: jax.lax.cond(
-        #         matrix[0, 0] > matrix[1, 1],
-        #         true_fun=case0,
-        #         false_fun=case1,
-        #         operand=matrix,
-        #     ),
-        #     false_fun=lambda matrix: jax.lax.cond(
-        #         matrix[0, 0] < -matrix[1, 1],
-        #         true_fun=case2,
-        #         false_fun=case3,
-        #         operand=matrix,
-        #     ),
-        #     operand=matrix,
-        # )
-
-        return SO3(wxyz=q * 0.5 / onp.sqrt(t[..., None]))
+        return SO3(wxyz=(q * 0.5 / onp.sqrt(t[..., None])).astype(matrix.dtype))
 
     # Accessors.
 
@@ -288,20 +272,24 @@ class SO3(_base.SOBase):
         norm_sq = onp.sum(onp.square(self.wxyz), axis=-1, keepdims=True)
         q = self.wxyz * onp.sqrt(2.0 / norm_sq)  # (*, 4)
         q_outer = onp.einsum("...i,...j->...ij", q, q)  # (*, 4, 4)
-        return onp.stack(
-            [
-                1.0 - q_outer[..., 2, 2] - q_outer[..., 3, 3],
-                q_outer[..., 1, 2] - q_outer[..., 3, 0],
-                q_outer[..., 1, 3] + q_outer[..., 2, 0],
-                q_outer[..., 1, 2] + q_outer[..., 3, 0],
-                1.0 - q_outer[..., 1, 1] - q_outer[..., 3, 3],
-                q_outer[..., 2, 3] - q_outer[..., 1, 0],
-                q_outer[..., 1, 3] - q_outer[..., 2, 0],
-                q_outer[..., 2, 3] + q_outer[..., 1, 0],
-                1.0 - q_outer[..., 1, 1] - q_outer[..., 2, 2],
-            ],
-            axis=-1,
-        ).reshape(*q.shape[:-1], 3, 3)
+        return (
+            onp.stack(
+                [
+                    1.0 - q_outer[..., 2, 2] - q_outer[..., 3, 3],
+                    q_outer[..., 1, 2] - q_outer[..., 3, 0],
+                    q_outer[..., 1, 3] + q_outer[..., 2, 0],
+                    q_outer[..., 1, 2] + q_outer[..., 3, 0],
+                    1.0 - q_outer[..., 1, 1] - q_outer[..., 3, 3],
+                    q_outer[..., 2, 3] - q_outer[..., 1, 0],
+                    q_outer[..., 1, 3] - q_outer[..., 2, 0],
+                    q_outer[..., 2, 3] + q_outer[..., 1, 0],
+                    1.0 - q_outer[..., 1, 1] - q_outer[..., 2, 2],
+                ],
+                axis=-1,
+            )
+            .reshape(*q.shape[:-1], 3, 3)
+            .astype(self.wxyz.dtype)
+        )
 
     @override
     def parameters(self) -> onpt.NDArray[onp.floating]:
@@ -316,12 +304,13 @@ class SO3(_base.SOBase):
 
         # Compute using quaternion multiplys.
         padded_target = onp.concatenate(
-            [onp.zeros((*self.get_batch_axes(), 1)), target], axis=-1
+            [onp.zeros((*self.get_batch_axes(), 1), dtype=target.dtype), target],
+            axis=-1,
         )
         return (self @ SO3(wxyz=padded_target) @ self.inverse()).wxyz[..., 1:]
 
     @override
-    def multiply(self, other: SO3) -> SO3:
+    def multiply(self, other: SO3) -> SO3:  # type: ignore
         w0, x0, y0, z0 = onp.moveaxis(self.wxyz, -1, 0)
         w1, x1, y1, z1 = onp.moveaxis(other.wxyz, -1, 0)
         return SO3(
@@ -357,14 +346,16 @@ class SO3(_base.SOBase):
                 theta_squared,
             )
         )
-        safe_half_theta = 0.5 * safe_theta
 
+        # Fun fact: when safe_theta is a `float32` _scalar_, this
+        # multiplication will promote `safe_half_theta` to `float64`. We'll
+        # cast at the end to make sure our input/output dtypes match.
+        safe_half_theta = 0.5 * safe_theta
         real_factor = onp.where(
             use_taylor,
             1.0 - theta_squared / 8.0 + theta_pow_4 / 384.0,
             onp.cos(safe_half_theta),
         )
-
         imaginary_factor = onp.where(
             use_taylor,
             0.5 - theta_squared / 48.0 + theta_pow_4 / 3840.0,
@@ -378,7 +369,7 @@ class SO3(_base.SOBase):
                     imaginary_factor[..., None] * tangent,
                 ],
                 axis=-1,
-            )
+            ).astype(tangent.dtype)
         )
 
     @override
@@ -409,12 +400,11 @@ class SO3(_base.SOBase):
             2.0 / w_safe - 2.0 / 3.0 * norm_sq / w_safe**3,
             onp.where(
                 onp.abs(w) < get_epsilon(w.dtype),
-                onp.where(w > 0, 1.0, -1.0) * onp.pi / norm_safe,
+                onp.where(w > 0, 1.0, -1.0).astype(dtype=w.dtype) * onp.pi / norm_safe,
                 2.0 * atan_n_over_w / norm_safe,
             ),
         )
-
-        return atan_factor[..., None] * self.wxyz[..., 1:]  # type: ignore
+        return (atan_factor[..., None] * self.wxyz[..., 1:]).astype(self.wxyz.dtype)
 
     @override
     def adjoint(self) -> onpt.NDArray[onp.floating]:
@@ -423,40 +413,44 @@ class SO3(_base.SOBase):
     @override
     def inverse(self) -> SO3:
         # Negate complex terms.
-        return SO3(wxyz=self.wxyz * onp.array([1, -1, -1, -1]))
+        wxyz = self.wxyz.copy()
+        wxyz[..., 1:] *= -1
+        return SO3(wxyz)
 
     @override
     def normalize(self) -> SO3:
         return SO3(wxyz=self.wxyz / onp.linalg.norm(self.wxyz, axis=-1, keepdims=True))
 
-    # @classmethod
-    # @override
-    # def sample_uniform(
-    #     cls, key: onp.ndarray, batch_axes: jdc.Static[Tuple[int, ...]] = ()
-    # ) -> SO3:
-    #     # Uniformly sample over S^3.
-    #     # > Reference: http://planning.cs.uiuc.edu/node198.html
-    #     u1, u2, u3 = onp.moveaxis(
-    #         jax.random.uniform(
-    #             key=key,
-    #             shape=(*batch_axes, 3),
-    #             minval=onp.zeros(3),
-    #             maxval=onp.array([1.0, 2.0 * onp.pi, 2.0 * onp.pi]),
-    #         ),
-    #         -1,
-    #         0,
-    #     )
-    #     a = onp.sqrt(1.0 - u1)
-    #     b = onp.sqrt(u1)
-    #
-    #     return SO3(
-    #         wxyz=onp.stack(
-    #             [
-    #                 a * onp.sin(u2),
-    #                 a * onp.cos(u2),
-    #                 b * onp.sin(u3),
-    #                 b * onp.cos(u3),
-    #             ],
-    #             axis=-1,
-    #         )
-    #     )
+    @classmethod
+    @override
+    def sample_uniform(
+        cls,
+        rng: onp.random.Generator,
+        batch_axes: Tuple[int, ...] = (),
+        dtype: onpt.DTypeLike = onp.float64,
+    ) -> SO3:
+        # Uniformly sample over S^3.
+        # > Reference: http://planning.cs.uiuc.edu/node198.html
+        u1, u2, u3 = onp.moveaxis(
+            rng.uniform(
+                low=onp.zeros(3),
+                high=onp.array([1.0, 2.0 * onp.pi, 2.0 * onp.pi]),
+                size=(*batch_axes, 3),
+            ),
+            -1,
+            0,
+        )
+        a = onp.sqrt(1.0 - u1)
+        b = onp.sqrt(u1)
+
+        return SO3(
+            wxyz=onp.stack(
+                [
+                    a * onp.sin(u2),
+                    a * onp.cos(u2),
+                    b * onp.sin(u3),
+                    b * onp.cos(u3),
+                ],
+                axis=-1,
+            ).astype(dtype=dtype)
+        )
