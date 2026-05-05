@@ -17,6 +17,8 @@ export interface GuiState {
   websocketState: "connected" | "reconnecting" | "inactive";
   backgroundAvailable: boolean;
   showOrbitOriginTool: boolean;
+  /** When true: pointer-look + WASD-style fly mode. When false: orbit camera. */
+  firstPersonCamera: boolean;
   guiUuidSetFromContainerUuid: {
     [containerUuid: string]: { [uuid: string]: true } | undefined;
   };
@@ -78,6 +80,7 @@ const cleanGuiState: GuiState = {
   websocketState: "inactive",
   backgroundAvailable: false,
   showOrbitOriginTool: false,
+  firstPersonCamera: false,
   guiUuidSetFromContainerUuid: { root: {} },
   modals: [],
   guiOrderFromUuid: {},

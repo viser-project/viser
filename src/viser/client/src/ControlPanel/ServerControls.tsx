@@ -6,6 +6,7 @@ import {
   Checkbox,
   Divider,
   Group,
+  SegmentedControl,
   Stack,
   Text,
   TextInput,
@@ -26,6 +27,7 @@ export default function ServerControls() {
   const viewer = React.useContext(ViewerContext)!;
   const viewerMutable = viewer.mutable.current; // Get mutable once
   const controlWidth = viewer.useGui((state) => state.theme.control_width);
+  const firstPersonCamera = viewer.useGui((state) => state.firstPersonCamera);
   const [showDevSettings, setShowDevSettings] = React.useState(false);
 
   return (
@@ -136,6 +138,43 @@ export default function ServerControls() {
             Reset View
           </Button>
         </Group>
+        <Tooltip
+          label={
+            <>
+              Orbit: drag to rotate and zoom around a target.
+              <br />
+              First person: click the 3D view to capture the mouse, then look
+              <br />
+              with the mouse and move with WASD and the arrow keys. Press Esc to
+              <br />
+              release the mouse. You can also press P to toggle modes.
+            </>
+          }
+          refProp="rootRef"
+          position="top-start"
+        >
+          <Stack gap={6}>
+            <Text size="sm" fw={500}>
+              Camera mode
+            </Text>
+            <SegmentedControl
+              fullWidth
+              size="sm"
+              value={firstPersonCamera ? "first-person" : "orbit"}
+              onChange={(value) => {
+                const next = value === "first-person";
+                viewer.useGui.set({ firstPersonCamera: next });
+                if (!next) {
+                  document.exitPointerLock();
+                }
+              }}
+              data={[
+                { label: "Orbit", value: "orbit" },
+                { label: "First person", value: "first-person" },
+              ]}
+            />
+          </Stack>
+        </Tooltip>
         <Group gap="md">
           <Tooltip
             label={

@@ -6,6 +6,8 @@ type DevSettingsState = {
   fixedDpr: number | null;
   logCamera: boolean;
   enableOrbitCrosshair: boolean;
+  /** First person: flip mouse (and arrow) pitch; default is normal FPS pitch. */
+  firstPersonInvertLookY: boolean;
 };
 
 /** Create a dev settings store with initial values from URL search params for backward compatibility. */
@@ -24,6 +26,7 @@ export function useDevSettingsStore() {
       fixedDpr,
       logCamera,
       enableOrbitCrosshair: true,
+      firstPersonInvertLookY: false,
     });
   })[0];
 }

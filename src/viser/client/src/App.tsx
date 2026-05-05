@@ -455,6 +455,34 @@ function NotificationsPanel() {
   );
 }
 
+/** Read-only label so the active camera mode stays visible on the viewport. */
+function CameraModeIndicator() {
+  const viewer = React.useContext(ViewerContext)!;
+  const firstPerson = viewer.useGui((state) => state.firstPersonCamera);
+  const dark = viewer.useGui((state) => state.theme.dark_mode);
+  return (
+    <Box
+      style={{
+        position: "absolute",
+        bottom: "0.6rem",
+        right: "0.6rem",
+        zIndex: 2,
+        pointerEvents: "none",
+        padding: "0.15rem 0.5rem",
+        borderRadius: "4px",
+        fontSize: "0.7rem",
+        fontWeight: 600,
+        letterSpacing: "0.02em",
+        backgroundColor: dark ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.85)",
+        color: dark ? "#e9ecef" : "#212529",
+        boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
+      }}
+    >
+      {firstPerson ? "First person" : "Orbit"}
+    </Box>
+  );
+}
+
 /**
  * Main 3D canvas component.
  */
@@ -505,7 +533,9 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     pointerInfo.modifierAtDown = modifier;
     pointerInfo.activeEventTypes = activeEventTypes;
     pointerInfo.isDragging = true;
-    mutable.current.cameraControl!.enabled = false;
+    if (!viewer.useGui.get().firstPersonCamera) {
+      mutable.current.cameraControl!.enabled = false;
+    }
 
     const ctx = mutable.current.canvas2d!.getContext("2d")!;
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
@@ -562,12 +592,14 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     // Reset gesture state and erase the rectangle overlay before any
     // early return -- otherwise a server callback removed mid-gesture
     // can leave stale ``isDragging`` or a drawn rectangle behind.
-    mutable.current.cameraControl!.enabled = true;
     pointerInfo.isDragging = false;
     const activeEventTypes = pointerInfo.activeEventTypes;
     pointerInfo.activeEventTypes = new Set();
     const ctx = mutable.current.canvas2d!.getContext("2d")!;
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    if (!viewer.useGui.get().firstPersonCamera) {
+      mutable.current.cameraControl!.enabled = true;
+    }
     if (!wasDragging || activeEventTypes.size === 0) return;
 
     const modifier = pointerInfo.modifierAtDown;
@@ -629,6 +661,7 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
         {!inView && <DisableRender />}
         {sceneContents}
       </Canvas>
+      <CameraModeIndicator />
     </div>
   );
 }

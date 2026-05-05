@@ -1,14 +1,20 @@
 import { ViewerContext } from "./ViewerContext";
-import { CameraControls, Instance, Instances } from "@react-three/drei";
+import {
+  CameraControls,
+  Grid,
+  Instance,
+  Instances,
+  PivotControls,
+  PointerLockControls,
+} from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import * as holdEvent from "hold-event";
-import React, { useContext, useRef, useState } from "react";
+import React, { useContext, useLayoutEffect, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { PerspectiveCamera } from "three";
 import * as THREE from "three";
 import { computeT_threeworld_world } from "./WorldTransformUtils";
 import { useThrottledMessageSender } from "./WebsocketUtils";
-import { Grid, PivotControls } from "@react-three/drei";
 
 function CrosshairVisual({
   visible,
@@ -86,7 +92,7 @@ function OrbitOriginTool({
   crosshairVisible,
 }: {
   forceShow: boolean;
-  pivotRef: React.RefObject<THREE.Group>;
+  pivotRef: React.RefObject<THREE.Group | null>;
   onPivotChange: (matrix: THREE.Matrix4) => void;
   update: () => void;
   crosshairVisible: boolean;
@@ -103,7 +109,7 @@ function OrbitOriginTool({
   const show = showOrbitOriginTool || forceShow;
   return (
     <PivotControls
-      ref={pivotRef}
+      ref={pivotRef as React.RefObject<THREE.Group>}
       scale={200}
       lineWidth={3}
       fixed={true}
@@ -136,6 +142,11 @@ function OrbitOriginTool({
 export function SynchronizedCameraControls() {
   const viewer = useContext(ViewerContext)!;
   const camera = useThree((state) => state.camera as PerspectiveCamera);
+  const gl = useThree((state) => state.gl);
+
+  const isFirstPerson = viewer.useGui((s) => s.firstPersonCamera);
+  const pointerLockRef =
+    useRef<React.ElementRef<typeof PointerLockControls>>(null);
 
   const sendCameraThrottled = useThrottledMessageSender(20).send;
 
@@ -332,38 +343,41 @@ export function SynchronizedCameraControls() {
     initialLookAt.applyMatrix4(T_threeworld_world);
 
     camera.up.set(initialUp.x, initialUp.y, initialUp.z);
-    viewerMutable.cameraControl!.updateCameraUp();
-    if (animate) {
-      viewerMutable.cameraControl!.setLookAt(
-        initialPos.x,
-        initialPos.y,
-        initialPos.z,
-        initialLookAt.x,
-        initialLookAt.y,
-        initialLookAt.z,
-        true,
-      );
+    const cc = viewerMutable.cameraControl;
+    if (cc !== null) {
+      cc.updateCameraUp();
+      if (animate) {
+        cc.setLookAt(
+          initialPos.x,
+          initialPos.y,
+          initialPos.z,
+          initialLookAt.x,
+          initialLookAt.y,
+          initialLookAt.z,
+          true,
+        );
+      } else {
+        cc.setPosition(initialPos.x, initialPos.y, initialPos.z, false);
+        cc.setTarget(
+          initialLookAt.x,
+          initialLookAt.y,
+          initialLookAt.z,
+          false,
+        );
+      }
     } else {
-      // Calling setLookAt with animate = false seems to break future calls to
-      // setLookAt. Possible dpeendency bug.
-      viewerMutable.cameraControl!.setPosition(
-        initialPos.x,
-        initialPos.y,
-        initialPos.z,
-        false,
-      );
-      viewerMutable.cameraControl!.setTarget(
-        initialLookAt.x,
-        initialLookAt.y,
-        initialLookAt.z,
-        false,
-      );
+      camera.position.copy(initialPos);
+      camera.lookAt(initialLookAt);
+      camera.updateMatrixWorld();
     }
   };
 
   const searchParams = new URLSearchParams(window.location.search);
   const forceOrbitOriginTool = searchParams.get("forceOrbitOriginTool") === "1";
   const logCamera = viewer.useDevSettings((state) => state.logCamera);
+  const firstPersonInvertLookY = viewer.useDevSettings(
+    (state) => state.firstPersonInvertLookY,
+  );
 
   // Callback for sending cameras.
   // It makes the code more chaotic, but we preallocate a bunch of things to
@@ -374,6 +388,7 @@ export function SynchronizedCameraControls() {
   const R_world_threeworld = new THREE.Quaternion();
   const tmpMatrix4 = new THREE.Matrix4();
   const lookAt = new THREE.Vector3();
+  const forwardTmp = new THREE.Vector3();
   const R_world_camera = new THREE.Quaternion();
   const t_world_camera = new THREE.Vector3();
   const scale = new THREE.Vector3();
@@ -385,9 +400,10 @@ export function SynchronizedCameraControls() {
     const canvas = viewerMutable.canvas!;
 
     if (camera_control === null) {
-      // Camera controls not yet ready, let's re-try later.
-      setTimeout(sendCamera, 10);
-      return;
+      if (!isFirstPerson) {
+        setTimeout(sendCamera, 10);
+        return;
+      }
     }
 
     // We put Z up to match the scene tree, and convert threejs camera convention
@@ -402,7 +418,13 @@ export function SynchronizedCameraControls() {
       .multiply(tmpMatrix4.makeRotationFromQuaternion(R_threecam_cam));
     R_world_threeworld.setFromRotationMatrix(T_world_threeworld);
 
-    camera_control.getTarget(lookAt).applyQuaternion(R_world_threeworld);
+    if (isFirstPerson) {
+      three_camera.getWorldDirection(forwardTmp);
+      lookAt.copy(three_camera.position).add(forwardTmp);
+    } else {
+      camera_control!.getTarget(lookAt);
+    }
+    lookAt.applyQuaternion(R_world_threeworld);
     const up = three_camera.up.clone().applyQuaternion(R_world_threeworld);
 
     T_world_camera.decompose(t_world_camera, R_world_camera, scale);
@@ -443,7 +465,7 @@ export function SynchronizedCameraControls() {
           `&initialCameraFar=${three_camera.far}`,
       );
     }
-  }, [camera, sendCameraThrottled, logCamera]);
+  }, [camera, sendCameraThrottled, logCamera, isFirstPerson]);
 
   // Send camera for new connections.
   // We add a small delay to give the server time to add a callback.
@@ -492,9 +514,50 @@ export function SynchronizedCameraControls() {
     return () => resizeObserver.disconnect();
   }, [canvas, sendCamera]);
 
-  // Keyboard controls.
+  const wasFirstPerson = useRef(false);
+  useLayoutEffect(() => {
+    if (wasFirstPerson.current && !isFirstPerson) {
+      const cc = viewerMutable.cameraControl;
+      if (cc !== null) {
+        const pos = camera.position;
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        const tgt = dir.add(pos);
+        cc.setLookAt(pos.x, pos.y, pos.z, tgt.x, tgt.y, tgt.z, false);
+      }
+    }
+    wasFirstPerson.current = isFirstPerson;
+  }, [isFirstPerson, camera, viewerMutable.cameraControl]);
+
   React.useEffect(() => {
-    const cameraControls = viewerMutable.cameraControl!;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat) {
+        return;
+      }
+      if (e.key !== "p" && e.key !== "P") {
+        return;
+      }
+      e.preventDefault();
+      viewer.useGui.set((state) => {
+        if (state.firstPersonCamera) {
+          document.exitPointerLock();
+        }
+        return { firstPersonCamera: !state.firstPersonCamera };
+      });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Keyboard controls (orbit mode).
+  React.useEffect(() => {
+    if (isFirstPerson) {
+      return;
+    }
+    const cameraControls = viewerMutable.cameraControl;
+    if (cameraControls === null) {
+      return;
+    }
 
     const keys = {
       w: new holdEvent.KeyboardKeyHold("KeyW", 1000 / 60),
@@ -574,34 +637,151 @@ export function SynchronizedCameraControls() {
     return () => {
       return;
     };
-  }, [viewerMutable.cameraControl]);
+  }, [viewerMutable.cameraControl, isFirstPerson]);
+
+  // Keyboard controls (first-person mode).
+  React.useEffect(() => {
+    if (!isFirstPerson) {
+      return;
+    }
+    const worldY = new THREE.Vector3(0, 1, 0);
+    const keys = {
+      w: new holdEvent.KeyboardKeyHold("KeyW", 1000 / 60),
+      a: new holdEvent.KeyboardKeyHold("KeyA", 1000 / 60),
+      s: new holdEvent.KeyboardKeyHold("KeyS", 1000 / 60),
+      d: new holdEvent.KeyboardKeyHold("KeyD", 1000 / 60),
+      q: new holdEvent.KeyboardKeyHold("KeyQ", 1000 / 60),
+      e: new holdEvent.KeyboardKeyHold("KeyE", 1000 / 60),
+      up: new holdEvent.KeyboardKeyHold("ArrowUp", 1000 / 60),
+      down: new holdEvent.KeyboardKeyHold("ArrowDown", 1000 / 60),
+      left: new holdEvent.KeyboardKeyHold("ArrowLeft", 1000 / 60),
+      right: new holdEvent.KeyboardKeyHold("ArrowRight", 1000 / 60),
+    };
+
+    keys.a.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
+      camera.translateX(-0.002 * (event?.deltaTime ?? 0));
+      sendCamera();
+    });
+    keys.d.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
+      camera.translateX(0.002 * (event?.deltaTime ?? 0));
+      sendCamera();
+    });
+    keys.w.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
+      camera.translateZ(-0.002 * (event?.deltaTime ?? 0));
+      sendCamera();
+    });
+    keys.s.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
+      camera.translateZ(0.002 * (event?.deltaTime ?? 0));
+      sendCamera();
+    });
+    keys.q.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
+      camera.translateY(-0.002 * (event?.deltaTime ?? 0));
+      sendCamera();
+    });
+    keys.e.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
+      camera.translateY(0.002 * (event?.deltaTime ?? 0));
+      sendCamera();
+    });
+    keys.left.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
+      camera.rotateOnWorldAxis(
+        worldY,
+        0.05 * THREE.MathUtils.DEG2RAD * (event?.deltaTime ?? 0),
+      );
+      sendCamera();
+    });
+    keys.right.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
+      camera.rotateOnWorldAxis(
+        worldY,
+        -0.05 * THREE.MathUtils.DEG2RAD * (event?.deltaTime ?? 0),
+      );
+      sendCamera();
+    });
+    const pitchMul = firstPersonInvertLookY ? 1 : -1;
+    keys.up.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
+      camera.rotateX(
+        pitchMul * 0.05 * THREE.MathUtils.DEG2RAD * (event?.deltaTime ?? 0),
+      );
+      sendCamera();
+    });
+    keys.down.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
+      camera.rotateX(
+        -pitchMul * 0.05 * THREE.MathUtils.DEG2RAD * (event?.deltaTime ?? 0),
+      );
+      sendCamera();
+    });
+    for (const key of Object.values(keys)) {
+      key.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLD_START, () => {
+        setKeyboardCrosshairCounter((count) => count + 1);
+      });
+      key.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLD_END, () => {
+        setKeyboardCrosshairCounter((count) => Math.max(0, count - 1));
+      });
+    }
+
+    return () => {
+      return;
+    };
+  }, [isFirstPerson, camera, sendCamera, firstPersonInvertLookY]);
+
+  // Yaw: +movementX matches common FPS feel vs stock three pointer-lock.
+  // Pitch sign: default normal FPS; optional invert via dev settings.
+  useLayoutEffect(() => {
+    if (!isFirstPerson) return;
+    const c = pointerLockRef.current;
+    if (c == null) return;
+    const euler = new THREE.Euler(0, 0, 0, "YXZ");
+    const sens = 2e-3;
+    const pitchMul = firstPersonInvertLookY ? 1 : -1;
+    const pl = c as unknown as { onMouseMove: (e: MouseEvent) => void };
+    pl.onMouseMove = (e) => {
+      if (!c.domElement || !c.isLocked) return;
+      euler.setFromQuaternion(c.camera.quaternion);
+      euler.y += e.movementX * sens * c.pointerSpeed;
+      euler.x += pitchMul * e.movementY * sens * c.pointerSpeed;
+      const h = Math.PI / 2;
+      euler.x = Math.max(h - c.maxPolarAngle, Math.min(h - c.minPolarAngle, euler.x));
+      c.camera.quaternion.setFromEuler(euler);
+      c.dispatchEvent({ type: "change" } as never);
+    };
+  }, [isFirstPerson, firstPersonInvertLookY]);
 
   return (
     <>
-      <CameraControls
-        ref={(controls) => (viewerMutable.cameraControl = controls)}
-        minDistance={0.01}
-        dollySpeed={0.3}
-        smoothTime={0.05}
-        draggingSmoothTime={0.0}
-        onChange={sendCamera}
-        onStart={() => {
-          setPointerInteractionActive(true);
-        }}
-        onEnd={() => {
-          setPointerInteractionActive(false);
-        }}
-        makeDefault
-      />
-      <OrbitOriginTool
-        forceShow={forceOrbitOriginTool}
-        pivotRef={pivotRef}
-        onPivotChange={(matrix) => {
-          updateCameraLookAtAndUpFromPivotControl(matrix);
-        }}
-        update={updatePivotControlFromCameraLookAtAndup}
-        crosshairVisible={crosshairVisible}
-      />
+      {!isFirstPerson ? (
+        <CameraControls
+          ref={(controls) => (viewerMutable.cameraControl = controls)}
+          minDistance={0.01}
+          dollySpeed={0.3}
+          smoothTime={0.05}
+          draggingSmoothTime={0.0}
+          onChange={sendCamera}
+          onStart={() => {
+            setPointerInteractionActive(true);
+          }}
+          onEnd={() => {
+            setPointerInteractionActive(false);
+          }}
+          makeDefault
+        />
+      ) : null}
+      {!isFirstPerson ? (
+        <OrbitOriginTool
+          forceShow={forceOrbitOriginTool}
+          pivotRef={pivotRef}
+          onPivotChange={(matrix) => {
+            updateCameraLookAtAndUpFromPivotControl(matrix);
+          }}
+          update={updatePivotControlFromCameraLookAtAndup}
+          crosshairVisible={crosshairVisible}
+        />
+      ) : null}
+      {isFirstPerson ? (
+        <PointerLockControls
+          ref={pointerLockRef}
+          domElement={gl.domElement}
+          onChange={sendCamera}
+        />
+      ) : null}
       <InitialCameraSetter />
     </>
   );

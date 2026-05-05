@@ -18,6 +18,9 @@ export function DevSettingsPanel({ devSettingsStore }: DevSettingsPanelProps) {
   const enableOrbitCrosshair = devSettingsStore(
     (state) => state.enableOrbitCrosshair,
   );
+  const firstPersonInvertLookY = devSettingsStore(
+    (state) => state.firstPersonInvertLookY,
+  );
 
   const darkMode = viewer.useGui((state) => state.theme.dark_mode);
   const setDarkMode = (dark: boolean) => {
@@ -102,6 +105,28 @@ export function DevSettingsPanel({ devSettingsStore }: DevSettingsPanelProps) {
             onChange={(event) =>
               devSettingsStore.set({
                 enableOrbitCrosshair: event.currentTarget.checked,
+              })
+            }
+            size="xs"
+          />
+        </Tooltip>
+
+        <Tooltip
+          label={
+            <>
+              When on, first-person mouse and arrow-up/down pitch are flipped
+              (flight-sim style).
+            </>
+          }
+          refProp="rootRef"
+        >
+          <Switch
+            radius="xs"
+            label="First person: invert look (vertical)"
+            checked={firstPersonInvertLookY}
+            onChange={(event) =>
+              devSettingsStore.set({
+                firstPersonInvertLookY: event.currentTarget.checked,
               })
             }
             size="xs"
