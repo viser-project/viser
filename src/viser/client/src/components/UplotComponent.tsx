@@ -59,6 +59,10 @@ function transformScales(scales: GuiUplotMessage["props"]["scales"]): {
     return { scales: undefined, hooks: { init: [] }, dblclickBind: undefined };
   }
   const out: { [key: string]: UplotScale } = {};
+  // uPlot's `init` hook is typed `(u: uPlot) => void`, but is actually
+  // invoked as `(u, opts, data)` — see `fire("init", opts, data)` in
+  // uPlot.cjs.js. We accept the third arg via an `as` cast at return.
+  const initHooks: ((u: uPlot) => void)[] = [];
   const resets: ((u: uPlot) => void)[] = [];
   for (const [key, scale] of Object.entries(scales)) {
     if (key !== "x" || !scale || !Array.isArray(scale.range)) {
@@ -66,23 +70,39 @@ function transformScales(scales: GuiUplotMessage["props"]["scales"]): {
       continue;
     }
     const [hardMin, hardMax] = scale.range as [number | null, number | null];
+    // Resolve null sides of a partial-null tuple (e.g. (None, 0)) from
+    // the x-data extrema. uPlot keeps the x-series sorted ascending, so
+    // xs[0] / xs[last] are the data min / max. uPlot's own
+    // array-to-soft-bound conversion (uPlot.cjs.js:3041) is gated to
+    // non-x scales; for x we have to do it ourselves.
+    const resolve = (xs: ArrayLike<number> | undefined) => ({
+      min: hardMin ?? (xs && xs.length > 0 ? xs[0] : null),
+      max: hardMax ?? (xs && xs.length > 0 ? xs[xs.length - 1] : null),
+    });
     out[key] = {
       ...scale,
       auto: false,
-      range: (_u, dataMin, dataMax) => [
-        dataMin ?? hardMin,
-        dataMax ?? hardMax,
-      ],
+      range: (u, dataMin, dataMax) => {
+        const { min, max } = resolve(u.data?.[0] as ArrayLike<number>);
+        return [dataMin ?? min, dataMax ?? max];
+      },
     } as UplotScale;
-    // Cast: uPlot's setScale opts are typed `number`, but null is the
-    // "auto on this side" sentinel for partial-null tuples like (None, 0)
-    // — runtime accepts it.
-    resets.push((u) =>
-      u.setScale(key, { min: hardMin, max: hardMax } as {
-        min: number;
-        max: number;
-      }),
-    );
+    // At init-hook fire time `self.data` is not yet assigned; the third
+    // argument to the hook is the constructor's data tuple.
+    initHooks.push(((
+      u: uPlot,
+      _opts: unknown,
+      data: ArrayLike<ArrayLike<number>>,
+    ) => {
+      const { min, max } = resolve(data?.[0]);
+      if (min == null || max == null) return;
+      u.setScale(key, { min, max });
+    }) as (u: uPlot) => void);
+    resets.push((u) => {
+      const { min, max } = resolve(u.data?.[0] as ArrayLike<number>);
+      if (min == null || max == null) return;
+      u.setScale(key, { min, max });
+    });
   }
   const dblclickBind: DblclickBind | undefined =
     resets.length === 0
@@ -95,7 +115,7 @@ function transformScales(scales: GuiUplotMessage["props"]["scales"]): {
             if (onlyTarg && e.target !== targ) return;
             resets.forEach((r) => r(self));
           };
-  return { scales: out, hooks: { init: resets }, dblclickBind };
+  return { scales: out, hooks: { init: initHooks }, dblclickBind };
 }
 
 // E2E testpoint: lives under the same `__viserTestpoints` namespace as

@@ -23,6 +23,7 @@ from playwright.sync_api import Page
 import viser
 import viser.uplot
 
+
 def _wait_for_chart(page: Page, uuid: str) -> None:
     page.wait_for_function(
         """(uuid) => {
@@ -159,6 +160,49 @@ def test_y_tuple_range_remains_locked(
     assert yrange == [-1.5, 2.5], (
         f"Y-axis fit to data instead of staying locked at (-1.5, 2.5): "
         f"got {yrange}. Smart-range transform leaked into y-scale."
+    )
+
+
+def test_partial_null_x_range_resolves_to_data_extrema(
+    viser_server: viser.ViserServer,
+    viser_page: Page,
+) -> None:
+    """``Scale(range=(None, b))`` and ``Scale(range=(a, None))`` mean
+    "auto on the null side, locked on the other." uPlot's own array-range
+    path skips this conversion for x in mode 1 (uPlot.cjs.js:3041 is
+    gated to non-x), so we resolve the null side ourselves from the data
+    extrema."""
+    x = np.linspace(-50.0, 50.0, 64, dtype=np.float64)
+    y = np.sin(x * 0.1).astype(np.float64)
+
+    none_max = viser_server.gui.add_uplot(
+        data=(x, y),
+        series=(viser.uplot.Series(label="t"), viser.uplot.Series(label="v")),
+        scales={"x": viser.uplot.Scale(time=False, range=(None, 0.0))},
+        aspect=2.0,
+        title="partial-null-min",
+    )
+    _wait_for_chart(viser_page, none_max._impl.uuid)
+    bounds = _eval_uplot(
+        viser_page, none_max._impl.uuid, "[ch.scales.x.min, ch.scales.x.max]"
+    )
+    assert bounds == [-50.0, 0.0], (
+        f"(None, 0) should resolve null-min to data min (-50); got {bounds}"
+    )
+
+    none_min = viser_server.gui.add_uplot(
+        data=(x, y),
+        series=(viser.uplot.Series(label="t"), viser.uplot.Series(label="v")),
+        scales={"x": viser.uplot.Scale(time=False, range=(0.0, None))},
+        aspect=2.0,
+        title="partial-null-max",
+    )
+    _wait_for_chart(viser_page, none_min._impl.uuid)
+    bounds = _eval_uplot(
+        viser_page, none_min._impl.uuid, "[ch.scales.x.min, ch.scales.x.max]"
+    )
+    assert bounds == [0.0, 50.0], (
+        f"(0, None) should resolve null-max to data max (50); got {bounds}"
     )
 
 
