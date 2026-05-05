@@ -25,14 +25,14 @@ export function ndcFromPointerXy(
     : null;
 }
 
-// Module-scoped scratch reused by ``ndcFromPointerXyClamped`` — the
+// Module-scoped scratch reused by ``ndcFromPointerXyClamped`` -- the
 // drag path calls it on every pointermove, and the only consumer is
 // ``Raycaster.setFromCamera``, which reads ``.x``/``.y`` and copies
 // onward, so returning a shared instance is safe.
 const ndcClampedScratch = /*#__PURE__*/ new THREE.Vector2();
 
 /** Like ``ndcFromPointerXy`` but never returns null: when the pointer is
- * outside the canvas the NDC values are clamped to ±2 instead. Used by
+ * outside the canvas the NDC values are clamped to +/-2 instead. Used by
  * drag handling so the gesture keeps tracking when the user pulls the
  * cursor past the canvas edge. The clamp keeps ray/plane intersections
  * finite (without it a near-grazing camera angle could send the
@@ -61,7 +61,7 @@ export function opencvXyFromPointerXy(
   viewer: ViewerContextContents,
   xy: [number, number],
 ): THREE.Vector2 {
-  // Returns a fresh Vector2 — callers like ``App.tsx`` (rect-select)
+  // Returns a fresh Vector2 -- callers like ``App.tsx`` (rect-select)
   // call this twice in a row and use both results, so a shared scratch
   // would alias. The 1 alloc/call is acceptable on the drag path.
   const mouseVector = new THREE.Vector2();

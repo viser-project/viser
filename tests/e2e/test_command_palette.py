@@ -232,7 +232,7 @@ def test_disabled_command_visible_but_not_triggerable(
     # The button should be disabled.
     expect(action).to_be_disabled()
 
-    # Click it anyway — callback should not fire.
+    # Click it anyway -- callback should not fire.
     action.click(force=True)
     assert not triggered.wait(timeout=1.0), (
         "Callback should not fire for disabled action"

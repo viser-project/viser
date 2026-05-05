@@ -70,7 +70,7 @@ def main() -> None:
             "Quality", options=["Low", "Medium", "High"], initial_value="Medium"
         )
 
-    # Add some visual objects to demonstrate the controls
+    # Add some visual objects to demonstrate the controls.
     server.scene.add_icosphere(
         name="demo_sphere",
         radius=sphere_radius.value,

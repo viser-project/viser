@@ -40,7 +40,7 @@ function rehypeCodeblock(): void | Transformer<Root, Root> {
 //
 // ``size="sm"`` (14px) on Text/Anchor/List is a compromise between
 // Mantine's default (16px, too big next to GUI inputs) and the ``xs``
-// (12px) used by input components themselves — paragraphs read cleanly
+// (12px) used by input components themselves -- paragraphs read cleanly
 // without feeling cramped. Titles keep their own order-based sizing so
 // headings still read as headings.
 //
@@ -67,7 +67,7 @@ function MdxList(
   children: React.ComponentPropsWithoutRef<typeof List>["children"],
   type: ListProps["type"],
 ) {
-  // Account for GFM Checkboxes
+  // Account for GFM Checkboxes.
   if (props.className == "contains-task-list") {
     return (
       <List size="sm" type={type} {...props} listStyleType="none">

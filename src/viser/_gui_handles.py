@@ -1068,7 +1068,9 @@ class GuiImageHandle(_GuiHandle[None], GuiImageProps):
         super().__init__(impl=_impl)
         self._image = _image
         self._jpeg_quality = _jpeg_quality
-        self._user_format: Literal["auto", "jpeg", "png"] = "auto"  # Default if not set
+        self._user_format: Literal["auto", "jpeg", "png"] = (
+            "auto"  # Default if not set.
+        )
 
     @property
     def image(self) -> np.ndarray:

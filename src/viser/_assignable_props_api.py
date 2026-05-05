@@ -7,7 +7,7 @@ from typing import Any, Dict, Generic, Protocol, TypeVar, get_type_hints
 import numpy as np
 import numpy.typing as npt
 
-# Type variable for props
+# Type variable for props.
 
 
 class HasProps(Protocol):
@@ -47,7 +47,7 @@ class AssignablePropsBase(Generic[TImpl]):
 
     def _cast_value_recursive(self, hint: Any, value: Any, prop_name: str) -> Any:
         """Recursively cast values to match type hints, handling arrays and tuples."""
-        # Handle numpy arrays
+        # Handle numpy arrays.
         if hint == npt.NDArray[np.float16]:
             return np.asarray(value).astype(np.float16)
         elif hint == npt.NDArray[np.float32]:
@@ -59,7 +59,7 @@ class AssignablePropsBase(Generic[TImpl]):
         if isinstance(value, np.ndarray):
             return value
 
-        # Handle tuple[T, ...] pattern
+        # Handle tuple[T, ...] pattern.
         if (
             isinstance(value, tuple)
             and hasattr(hint, "__origin__")

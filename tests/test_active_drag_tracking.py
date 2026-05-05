@@ -1,8 +1,8 @@
 """Unit tests for the server-side active-drag bookkeeping.
 
 These exercise ``SceneApi._active_drag_handles``, ``_is_drag_active_for``,
-and ``_drop_active_drags_for_client`` directly — no browser, no
-playwright. The full client→server gesture flow is covered by the
+and ``_drop_active_drags_for_client`` directly -- no browser, no
+playwright. The full client->server gesture flow is covered by the
 e2e suite (``tests/e2e/test_scene_node_drag.py``); this file just
 locks down the multi-client + disconnect semantics that the e2e suite
 can't exercise without a two-browser fixture.
@@ -88,16 +88,16 @@ def test_active_drag_keyed_by_client_and_name(server: viser.ViserServer) -> None
     assert (client_b, "/multi_box") in server.scene._active_drag_handles
     assert server.scene._is_drag_active_for("/multi_box")
 
-    # Client A ends — pops only its key.
+    # Client A ends -- pops only its key.
     server.scene._active_drag_handles.pop((client_a, "/multi_box"), None)
     assert (client_a, "/multi_box") not in server.scene._active_drag_handles
     assert (client_b, "/multi_box") in server.scene._active_drag_handles
 
     # B's drag is still live, so the node is still considered
-    # actively dragged — ``handle.remove()`` would preserve drag_cb.
+    # actively dragged -- ``handle.remove()`` would preserve drag_cb.
     assert server.scene._is_drag_active_for("/multi_box")
 
-    # Client B ends — map empty, node no longer "active".
+    # Client B ends -- map empty, node no longer "active".
     server.scene._active_drag_handles.pop((client_b, "/multi_box"), None)
     assert not server.scene._is_drag_active_for("/multi_box")
 
@@ -108,7 +108,7 @@ def test_drop_active_drags_for_client_evicts_only_target_client(
     """``_drop_active_drags_for_client`` clears all entries for one
     client (across all node names) without touching other clients'
     entries. Without this, a client that disconnects mid-drag leaks
-    one entry per dropped drag — pinning ``SceneNodeHandle`` refs
+    one entry per dropped drag -- pinning ``SceneNodeHandle`` refs
     AND making ``_is_drag_active_for`` return spurious-true for
     those node names (which would then prevent a future
     ``handle.remove()`` from clearing its callbacks)."""
@@ -125,7 +125,7 @@ def test_drop_active_drags_for_client_evicts_only_target_client(
     server.scene._active_drag_handles[(client_b, "/leak_box_1")] = (box1, msg1)
     assert len(server.scene._active_drag_handles) == 3
 
-    # A "disconnects" — drop A's entries.
+    # A "disconnects" -- drop A's entries.
     _drop_active_drags(server, client_a)
 
     # Only B's entry remains.
@@ -195,7 +195,7 @@ def test_drop_active_drags_for_client_fires_on_drag_end(
 def test_is_drag_active_for_returns_false_when_empty(
     server: viser.ViserServer,
 ) -> None:
-    """Sanity: empty map ⇒ no drag active for any node."""
+    """Sanity: empty map => no drag active for any node."""
     assert not server.scene._is_drag_active_for("/anything")
     assert not server.scene._is_drag_active_for("")
 
@@ -242,7 +242,7 @@ def test_remove_mid_drag_displaces_stale_binding_in_buffer(
     server.scene._active_drag_handles.pop((client, "/x"), None)
 
     # Recreate same name without drag callbacks. The buffer must still
-    # show empty bindings for /x — a late-joining client must not see
+    # show empty bindings for /x -- a late-joining client must not see
     # the original binding.
     server.scene.add_box("/x", dimensions=(1.0, 1.0, 1.0))
     bindings = _binding_messages_for(server, "/x")

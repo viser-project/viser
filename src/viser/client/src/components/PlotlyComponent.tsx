@@ -35,7 +35,7 @@ const PlotWithAspectInner = React.memo(function PlotWithAspectInner({
 
   // Parse JSON only when ``jsonStr`` changes. Memoizing avoids re-parsing
   // on every render and keeps ``plotJson`` referentially stable across
-  // resizes — the effect below adds ``width`` / ``aspectRatio`` to deps
+  // resizes -- the effect below adds ``width`` / ``aspectRatio`` to deps
   // so it still re-fires on container size changes.
   const plotJson = React.useMemo(() => {
     const parsed = JSON.parse(jsonStr);

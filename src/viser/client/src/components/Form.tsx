@@ -13,7 +13,7 @@ import { shallowObjectKeysEqual } from "../utils/shallowObjectKeysEqual";
  * Children are wrapped in a native `<form>` element so the browser handles
  * implicit Enter submission for single-line inputs. The hidden submit button
  * below is required because HTML only guarantees implicit submission when
- * the form has a submit button or exactly one text input — otherwise
+ * the form has a submit button or exactly one text input -- otherwise
  * multi-input forms would not submit on Enter.
  */
 export default function FormComponent({

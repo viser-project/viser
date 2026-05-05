@@ -49,7 +49,7 @@ ROTATE_COLOR = (120, 220, 120)
 # ----- Physics parameters ----------------------------------------------------
 MASS = 1.0
 # Moment of inertia for a uniform unit cube: m * a^2 / 6. Scalar because
-# the box is cubic — symmetry gives equal principal moments.
+# the box is cubic -- symmetry gives equal principal moments.
 INERTIA = 1.0 / 6.0
 
 # Velocity damping (applied multiplicatively each tick). Equivalent to a
@@ -57,14 +57,14 @@ INERTIA = 1.0 / 6.0
 LINEAR_DAMPING = 4.0  # 1/s
 ANGULAR_DAMPING = 4.0  # 1/s
 
-# Spring stiffness. The same spring is used for both modes — in translate
+# Spring stiffness. The same spring is used for both modes -- in translate
 # it pulls the grab point toward the cursor; in rotate it pins the grab
 # point to the click location so the body can orbit around it.
 SPRING_K = 60.0
 
-# Torque scale for the rotate gesture (world drag vector → torque along
+# Torque scale for the rotate gesture (world drag vector -> torque along
 # the same vector). With a ~1 world-unit drag, this puts the angular
-# acceleration around ~6 rad/s² given the unit-cube inertia, so a
+# acceleration around ~6 rad/s^2 given the unit-cube inertia, so a
 # sustained drag can reach ~1 rev/s before damping cuts in.
 TORQUE_K = 1.5
 
@@ -106,7 +106,7 @@ def main() -> None:
     angular_v = np.zeros(3)
 
     # Active-drag parameters. The spring mechanism drives both
-    # Cmd-modified gestures — the difference is where `spring_target`
+    # Cmd-modified gestures -- the difference is where `spring_target`
     # lives (moving with the cursor vs. locked to the click point) and
     # whether `ext_torque` is nonzero. The teleport path bypasses the
     # spring entirely and directly pins the pose.
@@ -192,7 +192,7 @@ def main() -> None:
         return R_mat.T @ (grab_world - position)
 
     # ==========================================================================
-    # Drag (no modifier): teleport — rigid follow, no physics.
+    # Drag (no modifier): teleport -- rigid follow, no physics.
     # ==========================================================================
 
     @handle.on_drag_start("left")
@@ -255,7 +255,7 @@ def main() -> None:
     # The grab point is pinned in world space (spring_target locked to
     # start.position), and an external torque along the drag vector spins
     # the body around that pin. Geometrically, the rotation axis is the
-    # line through ``start.position`` parallel to the drag arrow — i.e.
+    # line through ``start.position`` parallel to the drag arrow -- i.e.
     # the arrow itself. Drag length scales spin speed.
     # ==========================================================================
 
@@ -267,7 +267,7 @@ def main() -> None:
             grab_world = np.array(event.start_position)
             grab_body = compute_grab_body(grab_world)
             # Pin the grab point to where it was clicked. This stays put
-            # for the duration of the drag — the body rotates around it.
+            # for the duration of the drag -- the body rotates around it.
             spring_target = grab_world
             ext_torque = np.zeros(3)
 
@@ -279,7 +279,7 @@ def main() -> None:
         # visible drag arrow coincides with the instantaneous axis.
         # Use the *frozen* spring_target (the click point at drag-start)
         # rather than ``event.start_position``, which is live and tracks
-        # the body's current pose — making the gesture independent of
+        # the body's current pose -- making the gesture independent of
         # spring stiffness.
         with lock:
             assert spring_target is not None

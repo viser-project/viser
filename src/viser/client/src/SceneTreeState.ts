@@ -101,7 +101,7 @@ function createSceneTreeActions(
           clickable: existingNode?.clickable ?? false,
           dragBindings: existingNode?.dragBindings ?? [],
           labelVisible: existingNode?.labelVisible ?? false,
-          // Default to true, will be updated when visibility is set
+          // Default to true, will be updated when visibility is set.
           effectiveVisibility: existingNode?.effectiveVisibility ?? true,
         },
       };
@@ -163,6 +163,33 @@ function createSceneTreeActions(
         );
         return {};
       }
+      // Skip the store write when nothing actually changed -- the prop editor
+      // auto-submits on every Switch/Select/ColorInput change, and a no-op
+      // write would still notify zustand subscribers and re-render every
+      // useSceneTree consumer of this node.
+      //
+      // Shallow-compare arrays explicitly: ColorInput (and tuple-shaped scale
+      // updates) emit fresh array references on every onChange, so a plain
+      // ``Object.is`` would think every re-click of the same color is a
+      // change.
+      const currentProps = node.message.props as Record<string, any>;
+      let changed = false;
+      for (const key in updates) {
+        const a = currentProps[key];
+        const b = updates[key];
+        if (Object.is(a, b)) continue;
+        if (
+          Array.isArray(a) &&
+          Array.isArray(b) &&
+          a.length === b.length &&
+          a.every((v, i) => Object.is(v, b[i]))
+        ) {
+          continue;
+        }
+        changed = true;
+        break;
+      }
+      if (!changed) return;
       store.set({
         [name]: {
           ...node,
@@ -303,7 +330,7 @@ export function useSceneTreeState(
       nodePoseData,
     );
 
-    // Return both store and helpers
+    // Return both store and helpers.
     return { store, actions };
   })[0];
 }

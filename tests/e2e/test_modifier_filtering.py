@@ -3,8 +3,8 @@
 Exercises the wire round-trip from a real browser keyboard+mouse
 sequence to the registered server-side callback. Verifies that the
 modifier filter is honored on both ends:
-- Matching modifier → callback fires.
-- Non-matching modifier → callback does NOT fire (and for rect-select,
+- Matching modifier -> callback fires.
+- Non-matching modifier -> callback does NOT fire (and for rect-select,
   the selection rectangle is NOT drawn).
 """
 
@@ -44,7 +44,7 @@ def test_node_on_click_modifier_filter_fires_only_on_match(
         color=(255, 0, 0),
     )
 
-    @box.on_click  # modifier=None → "no modifiers held"
+    @box.on_click  # modifier=None -> "no modifiers held"
     def _plain(event: viser.SceneNodePointerEvent[viser.BoxHandle]) -> None:
         del event
         plain_fired.set()

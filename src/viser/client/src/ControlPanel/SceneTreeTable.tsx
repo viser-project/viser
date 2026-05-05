@@ -22,9 +22,16 @@ import { ViewerContext } from "../ViewerContext";
 import { SceneNode } from "../SceneTreeState";
 import { shallowArrayEqual } from "../utils/shallowArrayEqual";
 import {
+  ScenePropDescriptor,
+  SceneNodePropsSchema,
+} from "../WebsocketMessages";
+import { parseToRgb, toMantineColor } from "../components/colorUtils";
+import {
   Box,
+  Checkbox,
   Flex,
   ScrollArea,
+  Select,
   TextInput,
   Tooltip,
   ColorInput,
@@ -32,6 +39,193 @@ import {
   useMantineColorScheme,
   Popover,
 } from "@mantine/core";
+
+// Kept stable across renders so Mantine widgets don't see a fresh styles
+// object every time and re-run their internal style memos.
+const PROP_INPUT_STYLES = {
+  input: { height: "1.625rem", minHeight: "1.625rem", width: "100%" },
+};
+const PROP_INPUT_FILL = { width: "100%" };
+
+// Bumped above the surrounding popover so dropdowns and color pickers
+// don't get clipped. Matches the convention used in components/Rgb.tsx
+// and components/Dropdown.tsx. Offset is tightened so the options list
+// sits closer to the input.
+const PROP_INPUT_DROPDOWN_PROPS = { zIndex: 1000, offset: 4 };
+
+// "FrameMessage" -> "Frame", "Gui3DMessage" -> "Gui 3D", etc. Used both for
+// the popover header and the pencil-button tooltip on each row.
+function messageTypeToLabel(messageType: string): string {
+  return messageType
+    .replace("Message", "")
+    .replace(/([a-z])(\d[A-Z])/g, "$1 $2")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .trim();
+}
+
+function TsTypeTooltip({
+  tsType,
+  children,
+}: {
+  tsType: string;
+  children: React.ReactElement;
+}) {
+  if (!tsType) return children;
+  return (
+    <Tooltip
+      label={tsType}
+      withinPortal
+      zIndex={1000}
+      openDelay={300}
+      multiline
+      style={{ fontFamily: "monospace", maxWidth: "20em" }}
+    >
+      {children}
+    </Tooltip>
+  );
+}
+
+function PropInput({
+  propKey,
+  descriptor,
+  form,
+  initialValues,
+  stringify,
+  parse,
+  submit,
+}: {
+  propKey: string;
+  descriptor: ScenePropDescriptor;
+  form: ReturnType<typeof useForm<Record<string, string>>>;
+  initialValues: Record<string, string>;
+  stringify: (value: any) => string;
+  parse: (value: string) => any;
+  submit: () => void;
+}) {
+  const stringValue = form.values[propKey];
+
+  const tsType = descriptor.tsType;
+  switch (descriptor.kind) {
+    case "boolean": {
+      return (
+        <TsTypeTooltip tsType={tsType}>
+          <Checkbox
+            size="xs"
+            radius="xs"
+            checked={stringValue === "true"}
+            onChange={(evt) => {
+              form.setFieldValue(propKey, stringify(evt.currentTarget.checked));
+              submit();
+            }}
+          />
+        </TsTypeTooltip>
+      );
+    }
+
+    case "stringLiteral": {
+      let current: string | null = null;
+      try {
+        const parsed = parse(stringValue);
+        if (typeof parsed === "string") current = parsed;
+      } catch (e) {
+        // Leave current=null so Select shows a placeholder.
+      }
+      return (
+        <TsTypeTooltip tsType={tsType}>
+          <Select
+            size="xs"
+            radius="xs"
+            data={descriptor.options as unknown as string[]}
+            value={current}
+            allowDeselect={false}
+            styles={PROP_INPUT_STYLES}
+            style={PROP_INPUT_FILL}
+            comboboxProps={PROP_INPUT_DROPDOWN_PROPS}
+            onChange={(next) => {
+              if (next === null) return;
+              form.setFieldValue(propKey, stringify(next));
+              submit();
+            }}
+          />
+        </TsTypeTooltip>
+      );
+    }
+
+    case "color": {
+      // Always render the picker -- even if the current form text is mid-edit
+      // and not a valid 3-tuple, fall back to black so the widget stays usable.
+      let hex = "#000000";
+      try {
+        const parsed = parse(stringValue);
+        if (
+          Array.isArray(parsed) &&
+          parsed.length === 3 &&
+          parsed.every((v) => typeof v === "number")
+        ) {
+          hex = toMantineColor(parsed as [number, number, number]) ?? hex;
+        }
+      } catch (e) {
+        // Keep default hex.
+      }
+      return (
+        <TsTypeTooltip tsType={tsType}>
+          <ColorInput
+            size="xs"
+            styles={PROP_INPUT_STYLES}
+            style={PROP_INPUT_FILL}
+            popoverProps={PROP_INPUT_DROPDOWN_PROPS}
+            value={hex}
+            onChange={(nextHex) => {
+              const rgb = parseToRgb(nextHex);
+              if (rgb === null) return;
+              form.setFieldValue(propKey, stringify(rgb));
+              submit();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                submit();
+              }
+            }}
+          />
+        </TsTypeTooltip>
+      );
+    }
+
+    default: {
+      const isDirty = stringValue !== initialValues[propKey];
+      return (
+        <TsTypeTooltip tsType={tsType}>
+          <TextInput
+            size="xs"
+            styles={PROP_INPUT_STYLES}
+            style={PROP_INPUT_FILL}
+            {...form.getInputProps(propKey)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            rightSection={
+              <IconDeviceFloppy
+                style={{
+                  width: "1rem",
+                  height: "1rem",
+                  opacity: isDirty ? 1.0 : 0.3,
+                  cursor: isDirty ? "pointer" : "default",
+                }}
+                onClick={() => {
+                  if (isDirty) submit();
+                }}
+              />
+            }
+          />
+        </TsTypeTooltip>
+      );
+    }
+  }
+}
 
 function EditNodeProps({
   nodeName,
@@ -122,7 +316,7 @@ function EditNodePropsInner({
         try {
           const parsedValue = parse(value);
           updateSceneNode(nodeName, { [key]: parsedValue });
-          // Update the form value to match the parsed value
+          // Update the form value to match the parsed value.
           form.setFieldValue(key, stringify(parsedValue));
         } catch (e) {
           console.error("Failed to parse JSON:", e);
@@ -135,6 +329,7 @@ function EditNodePropsInner({
     <Box
       className={propsWrapper}
       component="form"
+      data-props-popover-for={nodeName}
       onSubmit={form.onSubmit(handleSubmit)}
       w="15em"
     >
@@ -146,14 +341,7 @@ function EditNodePropsInner({
           }}
         >
           <Box style={{ fontWeight: "500", flexGrow: "1" }} fz="sm">
-            {nodeMessage.type
-              .replace("Message", "")
-              // First, handle patterns like "Gui3D" -> "Gui 3D" (lowercase + digit + uppercase)
-              .replace(/([a-z])(\d[A-Z])/g, "$1 $2")
-              // Then handle remaining camelCase patterns like "DContainer" -> "D Container"
-              .replace(/([a-z])([A-Z])/g, "$1 $2")
-              .trim()}{" "}
-            Props
+            {messageTypeToLabel(nodeMessage.type)} Props
           </Box>
           <Tooltip label={"Close props"}>
             <IconX
@@ -184,152 +372,60 @@ function EditNodePropsInner({
         <Box
           style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}
         >
-          {Object.entries(props).map(([key, value]) => {
-            // Skip properties that start with "_".
-            if (key.startsWith("_")) {
-              return null;
-            }
+          {(() => {
+            const messageDescriptors =
+              SceneNodePropsSchema[nodeMessage.type] ?? {};
+            return Object.entries(props).map(([key, value]) => {
+              if (key.startsWith("_")) return null;
+              if (messageDescriptors[key]?.editorHidden) return null;
 
-            const label =
-              key.charAt(0).toUpperCase() + key.slice(1).split("_").join(" ");
+              const label =
+                key.charAt(0).toUpperCase() + key.slice(1).split("_").join(" ");
 
-            // Show typed arrays as read-only type + length.
-            if (ArrayBuffer.isView(value)) {
-              return (
-                <Flex key={key} align="center">
-                  <Box style={{ flexGrow: "1" }} fz="xs">
-                    {label}
-                  </Box>
-                  <Flex gap="xs" style={{ width: "9em", flexShrink: 0 }}>
-                    <TextInput
-                      size="xs"
-                      disabled
-                      styles={{
-                        input: {
-                          height: "1.625rem",
-                          minHeight: "1.625rem",
-                          width: "100%",
-                        },
-                      }}
-                      value={`${value.constructor.name}[${(value as ArrayBufferView & { length: number }).length}]`}
-                    />
+              if (ArrayBuffer.isView(value)) {
+                return (
+                  <Flex key={key} align="center" data-prop-key={key}>
+                    <Box style={{ flexGrow: "1" }} fz="xs">
+                      {label}
+                    </Box>
+                    <Flex gap="xs" style={{ width: "9em", flexShrink: 0 }}>
+                      <TsTypeTooltip tsType="(typed array)">
+                        <TextInput
+                          size="xs"
+                          disabled
+                          styles={PROP_INPUT_STYLES}
+                          value={`${value.constructor.name}[${(value as ArrayBufferView & { length: number }).length}]`}
+                        />
+                      </TsTypeTooltip>
+                    </Flex>
                   </Flex>
-                </Flex>
-              );
-            }
+                );
+              }
 
-            const isDirty = form.values[key] !== initialValues[key];
+              const descriptor: ScenePropDescriptor = messageDescriptors[
+                key
+              ] ?? { kind: "default", tsType: "" };
 
             return (
-              <Flex key={key} align="center">
+              <Flex key={key} align="center" data-prop-key={key}>
                 <Box style={{ flexGrow: "1" }} fz="xs">
                   {label}
                 </Box>
                 <Flex gap="xs" style={{ width: "9em", flexShrink: 0 }}>
-                  {(() => {
-                    // Check if this is a color property
-                    try {
-                      const parsedValue = parse(form.values[key]);
-                      const isColorProp =
-                        key.toLowerCase().includes("color") &&
-                        Array.isArray(parsedValue) &&
-                        parsedValue.length === 3 &&
-                        parsedValue.every((v) => typeof v === "number");
-
-                      if (isColorProp) {
-                        // Convert RGB array [0-1] to hex color
-                        const rgbToHex = (r: number, g: number, b: number) => {
-                          const toHex = (n: number) => {
-                            const hex = Math.round(n).toString(16);
-                            return hex.length === 1 ? "0" + hex : hex;
-                          };
-                          return "#" + toHex(r) + toHex(g) + toHex(b);
-                        };
-
-                        // Convert hex color to RGB array [0-1]
-                        const hexToRgb = (hex: string) => {
-                          const r = parseInt(hex.slice(1, 3), 16);
-                          const g = parseInt(hex.slice(3, 5), 16);
-                          const b = parseInt(hex.slice(5, 7), 16);
-                          return [r, g, b];
-                        };
-
-                        return (
-                          <ColorInput
-                            size="xs"
-                            styles={{
-                              input: {
-                                height: "1.625rem",
-                                minHeight: "1.625rem",
-                              },
-                              // icon: { transform: "scale(0.8)" },
-                            }}
-                            style={{ width: "100%" }}
-                            value={rgbToHex(
-                              parsedValue[0],
-                              parsedValue[1],
-                              parsedValue[2],
-                            )}
-                            onChange={(hex) => {
-                              const rgb = hexToRgb(hex);
-                              form.setFieldValue(key, stringify(rgb));
-                              form.onSubmit(handleSubmit)();
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                form.onSubmit(handleSubmit)();
-                              }
-                            }}
-                          />
-                        );
-                      }
-                    } catch (e) {
-                      // If parsing fails, fall back to TextInput
-                    }
-
-                    // Default TextInput for non-color properties
-                    return (
-                      <TextInput
-                        size="xs"
-                        styles={{
-                          input: {
-                            height: "1.625rem",
-                            minHeight: "1.625rem",
-                            width: "100%",
-                          },
-                          // icon: { transform: "scale(0.8)" },
-                        }}
-                        style={{ width: "100%" }}
-                        {...form.getInputProps(key)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            form.onSubmit(handleSubmit)();
-                          }
-                        }}
-                        rightSection={
-                          <IconDeviceFloppy
-                            style={{
-                              width: "1rem",
-                              height: "1rem",
-                              opacity: isDirty ? 1.0 : 0.3,
-                              cursor: isDirty ? "pointer" : "default",
-                            }}
-                            onClick={() => {
-                              if (isDirty) {
-                                form.onSubmit(handleSubmit)();
-                              }
-                            }}
-                          />
-                        }
-                      />
-                    );
-                  })()}
+                  <PropInput
+                    propKey={key}
+                    descriptor={descriptor}
+                    form={form}
+                    initialValues={initialValues}
+                    stringify={stringify}
+                    parse={parse}
+                    submit={() => form.onSubmit(handleSubmit)()}
+                  />
                 </Flex>
               </Flex>
-            );
-          })}
+              );
+            });
+          })()}
         </Box>
       </ScrollArea.Autosize>
       <Box style={{ opacity: "0.4", marginTop: "0.25rem" }} fz="xs">
@@ -427,7 +523,7 @@ export function PropsPopoverProvider({
   );
 }
 
-// Modified SceneTreeTableRow
+// Modified SceneTreeTableRow.
 const SceneTreeTableRow = React.memo(function SceneTreeTableRow(props: {
   nodeName: string;
   indentCount: number;
@@ -466,18 +562,22 @@ const SceneTreeTableRow = React.memo(function SceneTreeTableRow(props: {
     (node) => node?.children,
     shallowArrayEqual,
   );
+  const messageType = viewer.useSceneTree(
+    props.nodeName,
+    (node) => node?.message.type,
+  );
   const expandable = (childrenName?.length ?? 0) > 0;
   const [expanded, { toggle: toggleExpanded }] = useDisclosure(false);
 
-  // Label visibility is managed in the scene node itself
+  // Label visibility is managed in the scene node itself.
   const setLabelVisibility = (visible: boolean) => {
     viewer.sceneTreeActions.updateNodeAttributes(props.nodeName, {
       labelVisible: visible,
     });
   };
 
-  // Get server visibility and override visibility separately
-  // These use default equality (===) which is fine for boolean/undefined
+  // Get server visibility and override visibility separately.
+  // These use default equality (===) which is fine for boolean/undefined.
   const serverVisibility =
     viewer.useSceneTree(props.nodeName, (node) => node?.visibility) ?? true;
   const overrideVisibility = viewer.useSceneTree(
@@ -485,16 +585,16 @@ const SceneTreeTableRow = React.memo(function SceneTreeTableRow(props: {
     (node) => node?.overrideVisibility,
   );
 
-  // Compute final visibility: override takes precedence, fallback to server
+  // Compute final visibility: override takes precedence, fallback to server.
   const isVisible =
     overrideVisibility !== undefined ? overrideVisibility : serverVisibility;
 
-  // Get effective visibility (includes parent chain visibility)
+  // Get effective visibility (includes parent chain visibility).
   const isVisibleEffective =
     viewer.useSceneTree(props.nodeName, (node) => node?.effectiveVisibility) ??
     false;
 
-  // Ensure label visibility is cleaned up when component unmounts
+  // Ensure label visibility is cleaned up when component unmounts.
   React.useEffect(() => {
     return () => {
       setLabelVisibility(false);
@@ -521,6 +621,7 @@ const SceneTreeTableRow = React.memo(function SceneTreeTableRow(props: {
     <>
       <Box
         className={tableRow}
+        data-scene-node={props.nodeName}
         style={{
           cursor: expandable ? "pointer" : undefined,
         }}
@@ -650,10 +751,20 @@ const SceneTreeTableRow = React.memo(function SceneTreeTableRow(props: {
                 height: "1.25em",
                 display: "block",
                 transition: "opacity 0.2s",
+                // Stay visible while this row's popover is open even if the
+                // cursor leaves the row.
+                ...(openPopoverNodeName === props.nodeName && { opacity: 1 }),
               }}
             >
-              <Tooltip label={"Local props"}>
+              <Tooltip
+                label={
+                  messageType
+                    ? `${messageTypeToLabel(messageType)} Props`
+                    : "Local Props"
+                }
+              >
                 <IconPencil
+                  aria-label={`Edit props for ${props.nodeName}`}
                   style={{
                     cursor: "pointer",
                     width: "1.25em",
