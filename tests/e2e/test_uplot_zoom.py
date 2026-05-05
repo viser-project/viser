@@ -162,6 +162,58 @@ def test_y_tuple_range_remains_locked(
     )
 
 
+def test_dblclick_resets_x_tuple_range_to_user_bounds(
+    viser_server: viser.ViserServer,
+    viser_page: Page,
+) -> None:
+    """Double-clicking the plot must reset the x-axis to the caller's
+    tuple, not fit-to-data. uPlot's default dblclick handler runs
+    autoScaleX → snaps to data extrema; we override it via
+    ``cursor.bind.dblclick`` so a tuple-range plot still feels "locked"
+    on reset."""
+    x = np.linspace(-50.0, 50.0, 64, dtype=np.float64)
+    y = np.sin(x * 0.1).astype(np.float64)
+
+    handle = viser_server.gui.add_uplot(
+        data=(x, y),
+        series=(viser.uplot.Series(label="t"), viser.uplot.Series(label="v")),
+        scales={
+            "x": viser.uplot.Scale(time=False, auto=False, range=(-100.0, 0.0)),
+            "y": viser.uplot.Scale(auto=True),
+        },
+        aspect=2.0,
+        title="dblclick-resets-to-tuple",
+    )
+    uuid = handle._impl.uuid
+
+    _wait_for_chart(viser_page, uuid)
+    _eval_uplot(viser_page, uuid, "ch.setScale('x', {min: -25, max: -5})")
+    assert _eval_uplot(viser_page, uuid, "[ch.scales.x.min, ch.scales.x.max]") == [
+        -25.0,
+        -5.0,
+    ]
+
+    # Dispatch dblclick on the chart's `over` element (where uPlot binds).
+    _eval_uplot(
+        viser_page,
+        uuid,
+        """(() => {
+            const evt = new MouseEvent('dblclick', {
+                bubbles: true, cancelable: true, button: 0,
+            });
+            ch.over.dispatchEvent(evt);
+            return null;
+        })()""",
+    )
+    viser_page.wait_for_timeout(100)
+
+    after = _eval_uplot(viser_page, uuid, "[ch.scales.x.min, ch.scales.x.max]")
+    assert after == [-100.0, 0.0], (
+        f"Dblclick should reset x to (-100, 0); got {after}. The "
+        "cursor.bind.dblclick override likely isn't installed."
+    )
+
+
 def test_x_tuple_range_without_explicit_auto_locks_initial_bounds(
     viser_server: viser.ViserServer,
     viser_page: Page,

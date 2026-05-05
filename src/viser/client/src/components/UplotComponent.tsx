@@ -20,22 +20,28 @@ import uPlot from "uplot";
 
 type UplotScale = NonNullable<uPlot.Options["scales"]>[string];
 
+type DblclickBind = (
+  self: uPlot,
+  targ: HTMLElement,
+  handle: (e: Event) => void,
+  onlyTarg?: boolean,
+) => (e: MouseEvent) => void;
+
 /**
  * Rewrite x-scales whose `range` is a static [min, max] tuple so user
- * zoom is preserved across data updates, and emit init hooks that pin
- * the initial bounds.
+ * zoom is preserved across data updates, and emit:
+ *   - init hooks that pin the initial bounds, bypassing uPlot's
+ *     unconditional `autoScaleX()` at construction (uPlot.cjs.js:6080);
+ *   - a dblclick `cursor.bind` that resets to the user's tuple instead
+ *     of running uPlot's default fit-to-data autoscale.
  *
  * uPlot's tuple-range path wraps the array via `fnOrSelf` into a function
  * that ignores its inputs and always returns the static bounds. Every
  * redraw — including the one `uplot-react` issues on each data push —
  * re-commits the current scale through that range function, silently
  * reverting any drag-to-zoom. Replacing the array with a callable that
- * honors the explicit min/max uPlot supplies fixes that, but creates a
- * second problem: uPlot's `_init` calls `autoScaleX()` unconditionally
- * when `pendScales[x]` is empty (uPlot.cjs.js:6080), which pushes the
- * data extrema through our callable and drops the caller's tuple at
- * first render. The init hook below pre-populates `pendScales[x]` so
- * uPlot skips the autoscale path on construction.
+ * honors uPlot's explicit min/max fixes the zoom-reverts-on-redraw case;
+ * the init hook covers first render; the dblclick bind covers reset.
  *
  * Non-x tuple ranges are left untouched: `range=(ymin, ymax)` on a
  * y-scale almost always means "lock this axis," and uPlot's existing
@@ -43,19 +49,17 @@ type UplotScale = NonNullable<uPlot.Options["scales"]>[string];
  *
  * We also pin `auto: false` to mirror uPlot's own
  * `sc.auto = fnOrSelf(rangeIsArr ? false : sc.auto)` (uPlot.cjs.js:3070).
- *
- * Trade-off: dblclick now resets to the data range (uPlot's normal
- * `autoScaleX` behavior) rather than the caller's tuple. With the original
- * hard-lock semantic dblclick was a no-op; the new behavior matches every
- * other interactive chart library.
  */
 function transformScales(scales: GuiUplotMessage["props"]["scales"]): {
   scales: { [key: string]: UplotScale } | undefined;
   hooks: { init: ((u: uPlot) => void)[] };
+  dblclickBind: DblclickBind | undefined;
 } {
-  if (!scales) return { scales: undefined, hooks: { init: [] } };
+  if (!scales) {
+    return { scales: undefined, hooks: { init: [] }, dblclickBind: undefined };
+  }
   const out: { [key: string]: UplotScale } = {};
-  const initHooks: ((u: uPlot) => void)[] = [];
+  const resets: ((u: uPlot) => void)[] = [];
   for (const [key, scale] of Object.entries(scales)) {
     if (key !== "x" || !scale || !Array.isArray(scale.range)) {
       out[key] = scale as UplotScale;
@@ -70,14 +74,28 @@ function transformScales(scales: GuiUplotMessage["props"]["scales"]): {
         dataMax ?? hardMax,
       ],
     } as UplotScale;
-    initHooks.push((u) =>
-      // Cast: uPlot's setScale opts are typed `number`, but null is the
-      // "auto on this side" sentinel for partial-null tuples like
-      // (None, 0) — runtime accepts it.
-      u.setScale(key, { min: hardMin, max: hardMax } as { min: number; max: number }),
+    // Cast: uPlot's setScale opts are typed `number`, but null is the
+    // "auto on this side" sentinel for partial-null tuples like (None, 0)
+    // — runtime accepts it.
+    resets.push((u) =>
+      u.setScale(key, { min: hardMin, max: hardMax } as {
+        min: number;
+        max: number;
+      }),
     );
   }
-  return { scales: out, hooks: { init: initHooks } };
+  const dblclickBind: DblclickBind | undefined =
+    resets.length === 0
+      ? undefined
+      : (self, targ, _handle, onlyTarg = true) =>
+          (e) => {
+            // Mirror uPlot's `filtBtn0` filter: left-click only, on-target
+            // only by default.
+            if (e.button !== 0) return;
+            if (onlyTarg && e.target !== targ) return;
+            resets.forEach((r) => r(self));
+          };
+  return { scales: out, hooks: { init: resets }, dblclickBind };
 }
 
 // E2E testpoint: lives under the same `__viserTestpoints` namespace as
@@ -126,13 +144,25 @@ function PlotComponent({
   }, [props.data]);
 
   // Memoized on `props.scales` alone so width / theme re-renders don't
-  // mint fresh `range` / `hooks` references each tick — uplot-react would
-  // diff those as `'create'` and rebuild the chart, dropping user zoom.
-  // See `transformScales` for what the rewrite actually does.
-  const { scales: processedScales, hooks: scaleHooks } = useMemo(
-    () => transformScales(props.scales),
-    [props.scales],
-  );
+  // mint fresh `range` / `hooks` / `cursor.bind` references each tick —
+  // uplot-react would diff those as `'create'` and rebuild the chart,
+  // dropping user zoom. See `transformScales` for what the rewrite does.
+  const {
+    scales: processedScales,
+    hooks: scaleHooks,
+    dblclickBind,
+  } = useMemo(() => transformScales(props.scales), [props.scales]);
+
+  // Merge user-supplied cursor config with our dblclick override (if any).
+  // Stable-ref'd so plotOptions doesn't churn it.
+  const mergedCursor = useMemo(() => {
+    const userCursor = props.cursor as any;
+    if (!dblclickBind) return userCursor || undefined;
+    return {
+      ...userCursor,
+      bind: { ...userCursor?.bind, dblclick: dblclickBind },
+    };
+  }, [props.cursor, dblclickBind]);
 
   // Apply theme-aware defaults to axes. Hoisted so a resize/width change
   // (which churns the outer plotOptions memo) doesn't spawn fresh axes
@@ -181,7 +211,7 @@ function PlotComponent({
       title: props.title || undefined,
       mode: props.mode || undefined,
       series: (props.series as any) || [],
-      cursor: (props.cursor as any) || undefined,
+      cursor: mergedCursor,
       bands: props.bands || undefined,
       scales: processedScales,
       axes: processedAxes,
@@ -199,7 +229,7 @@ function PlotComponent({
     props.title,
     props.mode,
     props.series,
-    props.cursor,
+    mergedCursor,
     props.bands,
     processedScales,
     scaleHooks,
