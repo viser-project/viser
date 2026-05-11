@@ -58,7 +58,6 @@ def main() -> None:
     # Buttons + callbacks will operate on a per-client basis, but will modify the global scene! :)
     @server.on_client_connect
     def _(client: viser.ClientHandle) -> None:
-
         # Tests "click" scenepointerevent.
         click_button_handle = client.gui.add_button(
             "Add sphere", icon=viser.Icon.POINTER

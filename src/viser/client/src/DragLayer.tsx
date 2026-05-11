@@ -281,12 +281,14 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
       activeDrag.cleanup();
       activeDragRef.current = null;
       dragArrow.visible = false;
-      // Re-enable the *same* camera control instance we disabled -- a
-      // camera-type swap during the drag would have replaced
-      // viewerMutable.cameraControl, and restoring the new one would
-      // leave the stashed one disabled forever.
-      if (activeDrag.cameraControl !== null) {
-        activeDrag.cameraControl.enabled = true;
+      // Drop the camera-control lease. The owner reapplies derived
+      // state to the *current* instance, which handles the
+      // camera-type-swap case implicitly: if the perspective<->
+      // orthographic swap fired during the drag, the old instance was
+      // re-enabled by the owner at swap time and the new instance is
+      // the one whose enabled flag now flips back to true.
+      if (activeDrag.cameraLease !== null) {
+        activeDrag.cameraLease.release();
       }
     },
     [
@@ -407,6 +409,12 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
           startWorld,
         );
 
+        // Acquire the camera-control lease *before* installing this
+        // gesture's state. The owner immediately writes
+        // ``enabled=false`` to the current instance and will track
+        // any mid-drag camera-type swap on our behalf.
+        const cameraLease =
+          viewerMutable.cameraControlOwner.acquireLease("node-drag");
         activeDragRef.current = {
           nodeName,
           instanceIndex,
@@ -420,13 +428,10 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
           endPointWorld: startWorld.clone(),
           endPointerXy: [pointerXy[0], pointerXy[1]],
           input,
-          cameraControl: viewerMutable.cameraControl,
+          cameraLease,
           cleanup,
         };
         dragArrow.visible = false;
-        if (viewerMutable.cameraControl !== null) {
-          viewerMutable.cameraControl.enabled = false;
-        }
         window.addEventListener("pointermove", handleWindowPointerMove);
         window.addEventListener("pointerup", handleWindowPointerUp);
         window.addEventListener("pointercancel", handleWindowPointerUp);

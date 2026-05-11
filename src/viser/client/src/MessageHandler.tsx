@@ -230,9 +230,14 @@ function useMessageHandler() {
         } else {
           filters.set(message.event_type, [...message.modifiers]);
         }
-
-        viewerMutable.canvas!.style.cursor =
-          filters.size > 0 ? "pointer" : "auto";
+        // The InputManager owns gesture classification (reads
+        // filters at pointerdown). The CursorController derives the
+        // canvas cursor from the registry. Cursor is no longer
+        // written directly here -- the controller is the sole writer.
+        if (viewerMutable.inputManager !== null) {
+          viewerMutable.inputManager.setScenePointerFilters(filters);
+        }
+        viewerMutable.cursorController.setFilters(filters);
         return;
       }
 
@@ -579,6 +584,20 @@ function useMessageHandler() {
           kind: "sceneNodeAttrUpdate",
           targetNode: message.name,
           updates: { dragBindings: message.bindings },
+        };
+      }
+      // Set the click-binding set for a particular scene node. The
+      // InputManager classifier reads ``clickBindings`` to decide
+      // exact ``(button, modifier)`` eligibility -- a tighter check
+      // than the legacy ``clickable: bool``. Empty tuple means "not
+      // clickable for any input"; the legacy ``clickable`` flag is
+      // still set by ``SetSceneNodeClickableMessage`` for the
+      // hover-cursor path.
+      case "SetSceneNodeClickBindingsMessage": {
+        return {
+          kind: "sceneNodeAttrUpdate",
+          targetNode: message.name,
+          updates: { clickBindings: message.bindings },
         };
       }
       // Update props of a GUI component -- accumulated and applied in batch.

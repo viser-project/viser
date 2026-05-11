@@ -1521,6 +1521,34 @@ export interface SetSceneNodeDragBindingsMessage {
       | null;
   }[];
 }
+/** Declare the click-input combinations a scene node listens for.
+ *
+ * Sent as a full set; empty ``bindings`` means the node is not
+ * clickable. Mirrors :class:`SetSceneNodeDragBindingsMessage` for the
+ * click channel.
+ *
+ * Excluded from scene serialization for the same reason as the drag
+ * sibling -- click callbacks live on the server.
+ *
+ *
+ * (automatically generated)
+ */
+export interface SetSceneNodeClickBindingsMessage {
+  type: "SetSceneNodeClickBindingsMessage";
+  name: string;
+  bindings: {
+    button: "left" | "middle" | "right";
+    modifier:
+      | "cmd/ctrl"
+      | "alt"
+      | "shift"
+      | "cmd/ctrl+alt"
+      | "cmd/ctrl+shift"
+      | "alt+shift"
+      | "cmd/ctrl+alt+shift"
+      | null;
+  }[];
+}
 /** Message for clicked objects.
  *
  * (automatically generated)
@@ -1984,6 +2012,7 @@ export type Message =
   | SetSceneNodeVisibilityMessage
   | SetSceneNodeClickableMessage
   | SetSceneNodeDragBindingsMessage
+  | SetSceneNodeClickBindingsMessage
   | SceneNodeClickMessage
   | SceneNodeDragMessage
   | ResetGuiMessage

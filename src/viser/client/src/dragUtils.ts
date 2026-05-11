@@ -97,6 +97,39 @@ export function anyBindingMatches(
   return bindings.some((b) => matchesDragBinding(b, input));
 }
 
+/** True when the held modifier includes cmd/ctrl. Used to gate browser
+ * context-menu suppression: macOS raises a ``contextmenu`` event on
+ * ctrl+click, and we only want to suppress it when the gesture is a
+ * cmd/ctrl-modified press a binding would consume. */
+export function hasCmdCtrl(modifier: KeyModifier | null): boolean {
+  return modifier !== null && modifier.startsWith("cmd/ctrl");
+}
+
+/** Pixel distance, in canvas-local CSS pixels, that the pointer must
+ * travel between pointerdown and pointermove for the gesture to count
+ * as a drag rather than a stationary click. Used at every pointer
+ * site that disambiguates click vs drag (canvas scene-pointer in
+ * ``App.tsx``, per-node click in ``SceneTree.tsx``, and any future
+ * ``InputManager``). Single source of truth; keep in sync between
+ * sites by reference, not by repeated literal. */
+export const MOTION_THRESHOLD_PX = 3;
+
+/** ``true`` when the L∞ distance between ``start`` and ``end`` exceeds
+ * :data:`MOTION_THRESHOLD_PX`. Equivalent to the duplicated inline
+ * ``Math.abs(end[0] - start[0]) > N || Math.abs(end[1] - start[1]) > N``
+ * checks at the pointer-move sites; centralizes the comparison so
+ * click-vs-drag classification stays consistent across canvas, node,
+ * and (future) coordinator paths. */
+export function motionExceedsThreshold(
+  start: [number, number],
+  end: [number, number],
+): boolean {
+  return (
+    Math.abs(end[0] - start[0]) > MOTION_THRESHOLD_PX ||
+    Math.abs(end[1] - start[1]) > MOTION_THRESHOLD_PX
+  );
+}
+
 
 // ============================================================================
 // Active-drag state shape + batched-pose math.
@@ -135,9 +168,13 @@ export type ActiveDragState = {
    * pointermove. */
   endPointerXy: [number, number];
   input: DragInput;
-  /** Camera-control instance captured at drag-start, so we re-enable the
-   * same instance even if the viewer swaps camera types mid-drag. */
-  cameraControl: ViewerContextContents["mutable"]["current"]["cameraControl"];
+  /** Camera-control lease held for the lifetime of this drag.
+   * Released in ``stopActiveDrag`` (and on every cancel path).
+   * Routing through ``CameraControlOwner`` instead of writing
+   * ``cameraControl.enabled`` directly keeps a concurrent rect-select
+   * (which holds its own lease) from racing this drag's enable/
+   * disable, and reapplies on camera-type swap mid-drag. */
+  cameraLease: import("./inputManager/cameraControlOwner").CameraEnabledLease | null;
   cleanup: () => void;
 };
 

@@ -579,6 +579,12 @@ export function SynchronizedCameraControls() {
   return (
     <>
       <CameraControls
+        // Bare assignment is fine here because React 19 stabilises
+        // function refs even when they're inline expressions of the
+        // same shape (see the docs on ref callbacks). The owner is
+        // synced via a separate effect below so the owner only
+        // observes *real* mount/swap transitions, not transient
+        // ``ref(null)`` flickers from React reconciliation.
         ref={(controls) => (viewerMutable.cameraControl = controls)}
         minDistance={0.01}
         dollySpeed={0.3}

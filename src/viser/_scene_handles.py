@@ -179,6 +179,16 @@ class _SceneNodeHandleState:
         default_factory=lambda: {"start": [], "update": [], "end": []}
     )
     removed: bool = False
+    # Last (clickable, bindings) pair published to the client. Used to
+    # dedup redundant ``SetSceneNodeClickableMessage`` /
+    # ``SetSceneNodeClickBindingsMessage`` emits — without this, every
+    # repeat ``on_click()`` call resends ``clickable=True`` even though
+    # the bool is unchanged, and a no-op ``remove_click_callback("foo")``
+    # for an unregistered callback resends an empty bindings tuple.
+    # ``None`` until the first publish.
+    _last_published_click_state: (
+        tuple[bool, tuple[_messages.ClickBinding, ...]] | None
+    ) = None
 
 
 class _SceneNodeMessage(Protocol):
@@ -312,7 +322,8 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             i += 1
 
         # Clear stale per-node interaction state (click + drag) before
-        # we tear down handles. ``SetSceneNodeClickableMessage`` and
+        # we tear down handles. ``SetSceneNodeClickableMessage``,
+        # ``SetSceneNodeClickBindingsMessage``, and
         # ``SetSceneNodeDragBindingsMessage`` are name-keyed in the
         # persistent buffer and aren't purged by
         # ``RemoveSceneNodeMessage``, so without an empty replacement a
@@ -336,6 +347,13 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             if len(impl.click_cb) > 0:
                 api._websock_interface.queue_message(
                     _messages.SetSceneNodeClickableMessage(node_name, False)
+                )
+                # Empty the per-node click-binding set so a re-created
+                # node with the same name doesn't inherit the prior
+                # node's modifier filters from the persistent buffer.
+                # Mirrors the empty-tuple emit for drag bindings below.
+                api._websock_interface.queue_message(
+                    _messages.SetSceneNodeClickBindingsMessage(node_name, ())
                 )
             if any(entries for entries in impl.drag_cb.values()):
                 if not api._is_drag_active_for(node_name):
@@ -737,12 +755,6 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         normalized_modifier = _messages._normalize_key_modifier(modifier)
 
         def register(callback: Callable) -> Callable:
-            # Mark the node clickable only when a callback actually
-            # lands -- an unapplied decorator factory shouldn't leave
-            # the client thinking the node is clickable.
-            self._impl.api._websock_interface.queue_message(
-                _messages.SetSceneNodeClickableMessage(self._impl.name, True)
-            )
             self._impl.click_cb.append(
                 _ClickCallbackEntry(
                     callback=cast(
@@ -755,6 +767,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
                     modifier=normalized_modifier,
                 )
             )
+            self._publish_click_state()
             return callback
 
         if func is None:
@@ -775,10 +788,48 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
             self._impl.click_cb = [
                 entry for entry in self._impl.click_cb if entry.callback != callback
             ]
-        if len(self._impl.click_cb) == 0:
+        self._publish_click_state()
+
+    def _publish_click_state(self) -> None:
+        """Publish ``SetSceneNodeClickableMessage`` +
+        ``SetSceneNodeClickBindingsMessage`` to the client only when the
+        ``(clickable, bindings)`` pair has changed since the last
+        publish. Without the dedup, every call to ``on_click`` would
+        re-emit ``clickable=True`` (idempotent, but redundant), and a
+        no-op ``remove_click_callback("nonexistent")`` would still
+        emit messages -- N registrations on the same handle would
+        produce 2N wire messages even though only one
+        ``clickable=True`` was needed.
+        """
+        bindings = tuple(
+            _messages.ClickBinding(button="left", modifier=entry.modifier)
+            for entry in self._impl.click_cb
+        )
+        clickable = len(self._impl.click_cb) > 0
+        last = self._impl._last_published_click_state
+        if last is not None and last == (clickable, bindings):
+            return
+        # Queue both messages BEFORE committing the cache. If
+        # ``queue_message`` raises (websocket dropped mid-publish, the
+        # outbound buffer rejected, etc.), the cache stays at its
+        # previous value so the next state change retries the publish
+        # rather than short-circuiting against a state the client
+        # never received.
+        #
+        # ``Clickable`` is the legacy coarse flag, kept for the cursor
+        # / hover path until the InputManager owns hit-testing
+        # end-to-end. ``ClickBindings`` is the exact set the
+        # InputManager classifier consumes -- it carries the
+        # ``(button, modifier)`` filter list per node and is what
+        # context-menu suppression keys off.
+        if last is None or last[0] != clickable:
             self._impl.api._websock_interface.queue_message(
-                _messages.SetSceneNodeClickableMessage(self._impl.name, False)
+                _messages.SetSceneNodeClickableMessage(self._impl.name, clickable)
             )
+        self._impl.api._websock_interface.queue_message(
+            _messages.SetSceneNodeClickBindingsMessage(self._impl.name, bindings)
+        )
+        self._impl._last_published_click_state = (clickable, bindings)
 
 
 class CameraFrustumHandle(

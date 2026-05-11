@@ -2,6 +2,7 @@ import React from "react";
 import * as THREE from "three";
 import { SceneNodeMessage } from "./WebsocketMessages";
 import { DragBinding } from "./dragUtils";
+import type { ClickBinding } from "./inputManager/types";
 import { createKeyedStore, KeyedStore } from "./store";
 import { NodePoseDataMap } from "./ViewerContext";
 
@@ -9,6 +10,14 @@ export type SceneNode = {
   message: SceneNodeMessage;
   children: string[];
   clickable: boolean;
+  /** Per-node click bindings carried over the wire by
+   * ``SetSceneNodeClickBindingsMessage``. ``null`` (the default for
+   * legacy nodes whose server hasn't been upgraded) means "use the
+   * coarse ``clickable`` flag and assume any unmodified left-click
+   * matches"; an array means exact ``(button, modifier)`` matching.
+   * The InputManager classifier consults these at pointerdown.
+   */
+  clickBindings: ClickBinding[] | null;
   dragBindings: DragBinding[];
   labelVisible?: boolean; // Whether to show the label for this node.
   poseUpdateState?: "updated" | "needsUpdate" | "waitForMakeObject";
@@ -41,6 +50,7 @@ function makeRootNodeTemplate(): SceneNode {
     },
     children: ["/WorldAxes"],
     clickable: false,
+    clickBindings: null,
     dragBindings: [],
     visibility: true,
     effectiveVisibility: true,
@@ -65,6 +75,7 @@ function makeWorldAxesNodeTemplate(): SceneNode {
     },
     children: [],
     clickable: false,
+    clickBindings: null,
     dragBindings: [],
     visibility: true,
     effectiveVisibility: true,
@@ -99,6 +110,7 @@ function createSceneTreeActions(
           message: message,
           children: existingNode?.children ?? [],
           clickable: existingNode?.clickable ?? false,
+          clickBindings: existingNode?.clickBindings ?? null,
           dragBindings: existingNode?.dragBindings ?? [],
           labelVisible: existingNode?.labelVisible ?? false,
           // Default to true, will be updated when visibility is set.

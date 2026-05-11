@@ -126,16 +126,13 @@ def test_http_serves_files_through_symlink(tmp_path: Path):
         # ``%2e%2e`` could slip through.
         assert _raw_get_status("127.0.0.1", port, "/%2e%2e/secret.txt") == 404
         assert (
-            _raw_get_status("127.0.0.1", port, "/foo/%2e%2e/%2e%2e/secret.txt")
-            == 404
+            _raw_get_status("127.0.0.1", port, "/foo/%2e%2e/%2e%2e/secret.txt") == 404
         )
 
         # Backslash-encoded traversal must also be rejected. ``pathlib``
         # on Linux treats backslashes as literal filename characters,
         # which would let ``foo\..\bar`` skip a parts-only check.
-        assert (
-            _raw_get_status("127.0.0.1", port, "/foo\\..\\..\\secret.txt") == 404
-        )
+        assert _raw_get_status("127.0.0.1", port, "/foo\\..\\..\\secret.txt") == 404
 
         # Missing file still 404s.
         status, _ = _fetch(f"http://127.0.0.1:{port}/does-not-exist.js")

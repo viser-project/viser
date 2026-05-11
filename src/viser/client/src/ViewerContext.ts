@@ -14,6 +14,9 @@ import { useEnvironmentState } from "./EnvironmentState";
 import { useDevSettingsStore } from "./DevSettingsStore";
 import { GetRenderRequestMessage, Message } from "./WebsocketMessages";
 import { KeyModifier } from "./dragUtils";
+import { CameraControlOwner } from "./inputManager/cameraControlOwner";
+import { CursorController } from "./inputManager/cursorController";
+import type { InputManager } from "./inputManager/InputManager";
 
 export type NodePoseEntry = {
   wxyz: [number, number, number, number];
@@ -39,6 +42,22 @@ export type ViewerMutable = {
   camera: THREE.PerspectiveCamera | null;
   backgroundMaterial: THREE.ShaderMaterial | null;
   cameraControl: CameraControls | null;
+  /** Single writer for ``cameraControl.enabled``. Every disable/
+   * enable site in the client routes through this owner instead of
+   * touching the bool directly; it tracks gesture-derived state plus
+   * any active leases (modal overlays, in-flight drags) and reapplies
+   * to the current instance on camera-type swap. See
+   * ``inputManager/cameraControlOwner.ts``. */
+  cameraControlOwner: CameraControlOwner;
+  /** Runtime owner of canvas scene-pointer input. Constructed at
+   * viewer mount; the canvas React handlers delegate to it. See
+   * ``inputManager/InputManager.ts``. */
+  inputManager: InputManager | null;
+  /** Single writer for ``canvas.style.cursor``. SceneTree's hover
+   * deltas, MessageHandler's filter updates, and the InputManager's
+   * gesture transitions all feed this controller; nothing else
+   * touches cursor state. */
+  cursorController: CursorController;
 
   // Scene management.
   nodeRefFromName: {
@@ -50,32 +69,23 @@ export type ViewerMutable = {
   getRenderRequestState: "ready" | "triggered" | "pause" | "in_progress";
   getRenderRequest: null | GetRenderRequestMessage;
 
-  // Interaction state.
+  // Canvas-level scene-pointer registration. Modifier-filter lists
+  // keyed by event_type; the server pushes updates via
+  // ``ScenePointerEnableMessage``. The InputManager reads this map at
+  // every pointerdown to classify whether the press engages a
+  // canvas-level gesture; the cursor controller reads it to decide
+  // whether the canvas should show the ``pointer`` cursor. All
+  // gesture state (isDragging, modifierAtDown, active pointer id,
+  // camera-control lease) lives on the InputManager and
+  // CameraControlOwner now -- this map is the only legacy field
+  // still in use, and stays here because ``MessageHandler`` mutates
+  // it in place (the InputManager and CursorController hold the
+  // same reference).
   scenePointerInfo: {
-    /** Modifier-filter lists keyed by event_type. Mirrors the
-     * server's per-event-type set: each entry is a registered
-     * callback's filter (``null`` = "no modifiers held"). An
-     * absent/empty entry means the event_type is disabled. Used to
-     * gate gesture engagement and dispatch on
-     * ``modifierAtDown``-vs-filter match. */
     filtersByEventType: Map<
       "click" | "rect-select",
       (KeyModifier | null)[]
     >;
-    dragStart: [number, number]; // First mouse position.
-    dragEnd: [number, number]; // Final mouse position.
-    isDragging: boolean;
-    /** Canonical ``KeyModifier`` string captured at pointerdown.
-     * Frozen for the gesture's lifetime -- we don't want releasing
-     * Shift/Cmd before mouse-up to lose the modifier match (or a
-     * mid-drag press to spuriously add one). Mirrors how drag
-     * callbacks freeze modifiers at drag-start. */
-    modifierAtDown: KeyModifier | null;
-    /** Subset of event_types whose filter list matched
-     * ``modifierAtDown`` at the time of the active gesture's
-     * pointerdown. Drives drawing + dispatch; empty means no gesture
-     * was engaged. */
-    activeEventTypes: Set<"click" | "rect-select">;
   };
 
   // Skinned mesh state.
@@ -94,8 +104,6 @@ export type ViewerMutable = {
   // triggering React re-renders on every pose update.
   nodePoseData: NodePoseDataMap;
 
-  // Global hover state tracking.
-  hoveredElementsCount: number;
 };
 
 export type ViewerContextContents = {
