@@ -557,6 +557,20 @@ were held; otherwise a canonical <code class="xref py py-data docutils literal n
 </dd></dl>
 
 <dl class="py attribute">
+<dt class="sig sig-object py" id="viser.SceneNodeDragEvent.phase">
+<span class="sig-name descname"><span class="pre">phase</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">DragPhase</span></em><a class="headerlink" href="#viser.SceneNodeDragEvent.phase" title="Link to this definition">¶</a></dt>
+<dd><p><code class="docutils literal notranslate"><span class="pre">&quot;start&quot;</span></code> at press, <code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> on
+every throttled pointermove (~20Hz), <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at release. A
+single drag fires exactly one <code class="docutils literal notranslate"><span class="pre">&quot;start&quot;</span></code>, zero or more
+<code class="docutils literal notranslate"><span class="pre">&quot;update&quot;``s,</span> <span class="pre">and</span> <span class="pre">exactly</span> <span class="pre">one</span> <span class="pre">``&quot;end&quot;</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Drag lifecycle phase</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
 <dt class="sig sig-object py" id="viser.SceneNodeDragEvent.instance_index">
 <span class="sig-name descname"><span class="pre">instance_index</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.SceneNodeDragEvent.instance_index" title="Link to this definition">¶</a></dt>
 <dd><p>Instance index within a batched scene node (e.g. batched meshes,
@@ -800,6 +814,21 @@ were held; otherwise a canonical <code class="xref py py-data docutils literal n
 <dd><p>Transform controls handle that was affected.</p>
 </dd></dl>
 
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.TransformControlsEvent.phase">
+<span class="sig-name descname"><span class="pre">phase</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">DragPhase</span></em><a class="headerlink" href="#viser.TransformControlsEvent.phase" title="Link to this definition">¶</a></dt>
+<dd><p><code class="docutils literal notranslate"><span class="pre">&quot;start&quot;</span></code> when the user grabs a handle,
+<code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> on every pose change while dragging, <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at
+release. <code class="docutils literal notranslate"><span class="pre">target.wxyz</span></code> and <code class="docutils literal notranslate"><span class="pre">target.position</span></code> reflect the
+current pose on every phase (start/end fire at the same pose as
+the surrounding update).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Drag lifecycle phase</p>
+</dd>
+</dl>
+</dd></dl>
+
 </dd></dl>
 
 </section>
@@ -892,6 +921,7 @@ were held; otherwise a canonical <code class="xref py py-data docutils literal n
 <li><a class="reference internal" href="#viser.SceneNodeDragEvent.client"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.client</span></code></a></li>
 <li><a class="reference internal" href="#viser.SceneNodeDragEvent.client_id"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.client_id</span></code></a></li>
 <li><a class="reference internal" href="#viser.SceneNodeDragEvent.target"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.target</span></code></a></li>
+<li><a class="reference internal" href="#viser.SceneNodeDragEvent.phase"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.phase</span></code></a></li>
 <li><a class="reference internal" href="#viser.SceneNodeDragEvent.instance_index"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.instance_index</span></code></a></li>
 <li><a class="reference internal" href="#viser.SceneNodeDragEvent.start_position"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.start_position</span></code></a></li>
 <li><a class="reference internal" href="#viser.SceneNodeDragEvent.start_screen_pos"><code class="docutils literal notranslate"><span class="pre">SceneNodeDragEvent.start_screen_pos</span></code></a></li>
@@ -936,6 +966,7 @@ were held; otherwise a canonical <code class="xref py py-data docutils literal n
 <li><a class="reference internal" href="#viser.TransformControlsEvent.client"><code class="docutils literal notranslate"><span class="pre">TransformControlsEvent.client</span></code></a></li>
 <li><a class="reference internal" href="#viser.TransformControlsEvent.client_id"><code class="docutils literal notranslate"><span class="pre">TransformControlsEvent.client_id</span></code></a></li>
 <li><a class="reference internal" href="#viser.TransformControlsEvent.target"><code class="docutils literal notranslate"><span class="pre">TransformControlsEvent.target</span></code></a></li>
+<li><a class="reference internal" href="#viser.TransformControlsEvent.phase"><code class="docutils literal notranslate"><span class="pre">TransformControlsEvent.phase</span></code></a></li>
 </ul>
 </li>
 </ul>

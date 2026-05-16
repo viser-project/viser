@@ -152,7 +152,7 @@ Code
                        & (vertices_proj < np.array(event.screen_max))
                    ).all(axis=1)[..., None]
    
-                   # Update the mesh color based on whether the vertices are inside the box
+                   # Update the mesh color based on whether the vertices are inside the box.
                    mesh.visual.vertex_colors = np.where(  # type: ignore
                        mask, (0.5, 0.0, 0.7, 1.0), (0.9, 0.9, 0.9, 1.0)
                    )

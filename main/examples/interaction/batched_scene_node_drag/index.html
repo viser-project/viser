@@ -593,7 +593,7 @@ along the drag arrow, so the instance rotates around the arrow axis.</p></li>
 <span class="linenos">134</span>    <span class="n">active_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 <span class="linenos">135</span>    <span class="n">grab_body</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># body-frame grab, for translate/rotate</span>
 <span class="linenos">136</span>    <span class="n">spring_target</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># world target for the spring</span>
-<span class="linenos">137</span>    <span class="n">teleport_offset</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># cursor → instance position</span>
+<span class="linenos">137</span>    <span class="n">teleport_offset</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># cursor -&gt; instance position</span>
 <span class="linenos">138</span>    <span class="n">ext_torque</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
 <span class="linenos">139</span>
 <span class="linenos">140</span>    <span class="n">shutdown</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span>
@@ -622,7 +622,7 @@ along the drag arrow, so the instance rotates around the arrow axis.</p></li>
 <span class="linenos">163</span>                        <span class="c1"># Spring acts on the *grab point* (body-frame</span>
 <span class="linenos">164</span>                        <span class="c1"># ``grab_body`` mapped to world via the body&#39;s</span>
 <span class="linenos">165</span>                        <span class="c1"># current pose). Off-center grabs naturally</span>
-<span class="linenos">166</span>                        <span class="c1"># produce a torque (lever × force) on top of</span>
+<span class="linenos">166</span>                        <span class="c1"># produce a torque (lever x force) on top of</span>
 <span class="linenos">167</span>                        <span class="c1"># the linear pull, so dragging an edge yanks</span>
 <span class="linenos">168</span>                        <span class="c1"># AND spins the body. Force is zero at drag</span>
 <span class="linenos">169</span>                        <span class="c1"># start (grab_world == spring_target == click)</span>
@@ -680,143 +680,128 @@ along the drag arrow, so the instance rotates around the arrow axis.</p></li>
 <span class="linenos">221</span>    <span class="c1"># Drag (no modifier): teleport.</span>
 <span class="linenos">222</span>    <span class="c1"># ==========================================================================</span>
 <span class="linenos">223</span>
-<span class="linenos">224</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_start</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">)</span>
+<span class="linenos">224</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">)</span>
 <span class="linenos">225</span>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">BatchedMeshHandle</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="linenos">226</span>        <span class="k">nonlocal</span> <span class="n">active_idx</span><span class="p">,</span> <span class="n">active_mode</span><span class="p">,</span> <span class="n">spring_target</span><span class="p">,</span> <span class="n">teleport_offset</span>
-<span class="linenos">227</span>        <span class="n">i</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">instance_index</span>
-<span class="linenos">228</span>        <span class="k">if</span> <span class="n">i</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">229</span>            <span class="k">return</span>
-<span class="linenos">230</span>        <span class="n">set_instance_color</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">TELEPORT_COLOR</span><span class="p">)</span>
-<span class="linenos">231</span>        <span class="n">active_idx_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
-<span class="linenos">232</span>        <span class="n">active_mode_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;teleport&quot;</span>
-<span class="linenos">233</span>        <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
-<span class="linenos">234</span>            <span class="n">active_idx</span> <span class="o">=</span> <span class="n">i</span>
-<span class="linenos">235</span>            <span class="n">active_mode</span> <span class="o">=</span> <span class="s2">&quot;teleport&quot;</span>
-<span class="linenos">236</span>            <span class="n">cursor</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">start_position</span><span class="p">)</span>
-<span class="linenos">237</span>            <span class="n">teleport_offset</span> <span class="o">=</span> <span class="n">position_arr</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="n">cursor</span>
-<span class="linenos">238</span>            <span class="n">spring_target</span> <span class="o">=</span> <span class="n">cursor</span>
-<span class="linenos">239</span>
-<span class="linenos">240</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_update</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">)</span>
-<span class="linenos">241</span>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">BatchedMeshHandle</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">242</span>        <span class="k">nonlocal</span> <span class="n">spring_target</span>
-<span class="linenos">243</span>        <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
-<span class="linenos">244</span>            <span class="n">spring_target</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">end_position</span><span class="p">)</span>
-<span class="linenos">245</span>
-<span class="linenos">246</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_end</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">)</span>
-<span class="linenos">247</span>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">BatchedMeshHandle</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">248</span>        <span class="k">nonlocal</span> <span class="n">active_idx</span><span class="p">,</span> <span class="n">active_mode</span><span class="p">,</span> <span class="n">spring_target</span><span class="p">,</span> <span class="n">teleport_offset</span>
-<span class="linenos">249</span>        <span class="n">i</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">instance_index</span>
-<span class="linenos">250</span>        <span class="k">if</span> <span class="n">i</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">251</span>            <span class="n">set_instance_color</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">IDLE_COLOR</span><span class="p">)</span>
-<span class="linenos">252</span>        <span class="n">active_idx_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;-&quot;</span>
-<span class="linenos">253</span>        <span class="n">active_mode_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;idle&quot;</span>
-<span class="linenos">254</span>        <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
-<span class="linenos">255</span>            <span class="n">active_idx</span> <span class="o">=</span> <span class="kc">None</span>
-<span class="linenos">256</span>            <span class="n">active_mode</span> <span class="o">=</span> <span class="kc">None</span>
-<span class="linenos">257</span>            <span class="n">spring_target</span> <span class="o">=</span> <span class="kc">None</span>
-<span class="linenos">258</span>            <span class="n">teleport_offset</span> <span class="o">=</span> <span class="kc">None</span>
-<span class="linenos">259</span>
-<span class="linenos">260</span>    <span class="c1"># ==========================================================================</span>
-<span class="linenos">261</span>    <span class="c1"># Cmd/Ctrl + drag: spring-pull that instance (linear velocity).</span>
-<span class="linenos">262</span>    <span class="c1"># ==========================================================================</span>
-<span class="linenos">263</span>
-<span class="linenos">264</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_start</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="o">=</span><span class="s2">&quot;cmd/ctrl&quot;</span><span class="p">)</span>
-<span class="linenos">265</span>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">BatchedMeshHandle</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">266</span>        <span class="k">nonlocal</span> <span class="n">active_idx</span><span class="p">,</span> <span class="n">active_mode</span><span class="p">,</span> <span class="n">grab_body</span><span class="p">,</span> <span class="n">spring_target</span>
-<span class="linenos">267</span>        <span class="n">i</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">instance_index</span>
-<span class="linenos">268</span>        <span class="k">if</span> <span class="n">i</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">269</span>            <span class="k">return</span>
-<span class="linenos">270</span>        <span class="n">set_instance_color</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">TRANSLATE_COLOR</span><span class="p">)</span>
-<span class="linenos">271</span>        <span class="n">active_idx_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
-<span class="linenos">272</span>        <span class="n">active_mode_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;translate&quot;</span>
-<span class="linenos">273</span>        <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
-<span class="linenos">274</span>            <span class="n">active_idx</span> <span class="o">=</span> <span class="n">i</span>
-<span class="linenos">275</span>            <span class="n">active_mode</span> <span class="o">=</span> <span class="s2">&quot;translate&quot;</span>
-<span class="linenos">276</span>            <span class="n">grab_world</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">start_position</span><span class="p">)</span>
-<span class="linenos">277</span>            <span class="n">grab_body</span> <span class="o">=</span> <span class="n">compute_grab_body</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">grab_world</span><span class="p">)</span>
-<span class="linenos">278</span>            <span class="n">spring_target</span> <span class="o">=</span> <span class="n">grab_world</span>
-<span class="linenos">279</span>
-<span class="linenos">280</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_update</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="o">=</span><span class="s2">&quot;cmd/ctrl&quot;</span><span class="p">)</span>
-<span class="linenos">281</span>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">BatchedMeshHandle</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">282</span>        <span class="k">nonlocal</span> <span class="n">spring_target</span>
-<span class="linenos">283</span>        <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
-<span class="linenos">284</span>            <span class="n">spring_target</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">end_position</span><span class="p">)</span>
-<span class="linenos">285</span>
-<span class="linenos">286</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_end</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="o">=</span><span class="s2">&quot;cmd/ctrl&quot;</span><span class="p">)</span>
-<span class="linenos">287</span>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">BatchedMeshHandle</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">288</span>        <span class="k">nonlocal</span> <span class="n">active_idx</span><span class="p">,</span> <span class="n">active_mode</span><span class="p">,</span> <span class="n">grab_body</span><span class="p">,</span> <span class="n">spring_target</span>
-<span class="linenos">289</span>        <span class="n">i</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">instance_index</span>
-<span class="linenos">290</span>        <span class="k">if</span> <span class="n">i</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">291</span>            <span class="n">set_instance_color</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">IDLE_COLOR</span><span class="p">)</span>
-<span class="linenos">292</span>        <span class="n">active_idx_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;-&quot;</span>
-<span class="linenos">293</span>        <span class="n">active_mode_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;idle&quot;</span>
-<span class="linenos">294</span>        <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
-<span class="linenos">295</span>            <span class="n">active_idx</span> <span class="o">=</span> <span class="kc">None</span>
-<span class="linenos">296</span>            <span class="n">active_mode</span> <span class="o">=</span> <span class="kc">None</span>
-<span class="linenos">297</span>            <span class="n">grab_body</span> <span class="o">=</span> <span class="kc">None</span>
-<span class="linenos">298</span>            <span class="n">spring_target</span> <span class="o">=</span> <span class="kc">None</span>
-<span class="linenos">299</span>
-<span class="linenos">300</span>    <span class="c1"># ==========================================================================</span>
-<span class="linenos">301</span>    <span class="c1"># Cmd/Ctrl + Shift + drag: rotate that instance around the drag arrow</span>
-<span class="linenos">302</span>    <span class="c1"># (angular velocity).</span>
-<span class="linenos">303</span>    <span class="c1"># ==========================================================================</span>
-<span class="linenos">304</span>
-<span class="linenos">305</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_start</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="o">=</span><span class="s2">&quot;cmd/ctrl+shift&quot;</span><span class="p">)</span>
-<span class="linenos">306</span>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">BatchedMeshHandle</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">307</span>        <span class="k">nonlocal</span> <span class="n">active_idx</span><span class="p">,</span> <span class="n">active_mode</span><span class="p">,</span> <span class="n">grab_body</span><span class="p">,</span> <span class="n">spring_target</span><span class="p">,</span> <span class="n">ext_torque</span>
-<span class="linenos">308</span>        <span class="n">i</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">instance_index</span>
-<span class="linenos">309</span>        <span class="k">if</span> <span class="n">i</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">310</span>            <span class="k">return</span>
-<span class="linenos">311</span>        <span class="n">set_instance_color</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">ROTATE_COLOR</span><span class="p">)</span>
-<span class="linenos">312</span>        <span class="n">active_idx_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
-<span class="linenos">313</span>        <span class="n">active_mode_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;rotate&quot;</span>
-<span class="linenos">314</span>        <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
-<span class="linenos">315</span>            <span class="n">active_idx</span> <span class="o">=</span> <span class="n">i</span>
-<span class="linenos">316</span>            <span class="n">active_mode</span> <span class="o">=</span> <span class="s2">&quot;rotate&quot;</span>
-<span class="linenos">317</span>            <span class="n">grab_world</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">start_position</span><span class="p">)</span>
-<span class="linenos">318</span>            <span class="n">grab_body</span> <span class="o">=</span> <span class="n">compute_grab_body</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">grab_world</span><span class="p">)</span>
-<span class="linenos">319</span>            <span class="c1"># Pin the grab point to where it was clicked — the instance</span>
-<span class="linenos">320</span>            <span class="c1"># rotates around this point.</span>
-<span class="linenos">321</span>            <span class="n">spring_target</span> <span class="o">=</span> <span class="n">grab_world</span>
-<span class="linenos">322</span>            <span class="n">ext_torque</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
-<span class="linenos">323</span>
-<span class="linenos">324</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_update</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="o">=</span><span class="s2">&quot;cmd/ctrl+shift&quot;</span><span class="p">)</span>
-<span class="linenos">325</span>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">BatchedMeshHandle</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">326</span>        <span class="k">nonlocal</span> <span class="n">ext_torque</span>
-<span class="linenos">327</span>        <span class="c1"># Drag vector = rotation axis (direction) × spin magnitude (length).</span>
-<span class="linenos">328</span>        <span class="c1"># Use the *frozen* spring_target (click point at drag-start) rather</span>
-<span class="linenos">329</span>        <span class="c1"># than ``event.start_position``, which is live and tracks the</span>
-<span class="linenos">330</span>        <span class="c1"># instance&#39;s current pose — keeps the gesture independent of</span>
-<span class="linenos">331</span>        <span class="c1"># spring stiffness.</span>
-<span class="linenos">332</span>        <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
-<span class="linenos">333</span>            <span class="k">assert</span> <span class="n">spring_target</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-<span class="linenos">334</span>            <span class="n">drag_vec</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">end_position</span><span class="p">)</span> <span class="o">-</span> <span class="n">spring_target</span>
-<span class="linenos">335</span>            <span class="n">ext_torque</span> <span class="o">=</span> <span class="n">TORQUE_K</span> <span class="o">*</span> <span class="n">drag_vec</span>
+<span class="linenos">227</span>        <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">phase</span> <span class="o">==</span> <span class="s2">&quot;start&quot;</span><span class="p">:</span>
+<span class="linenos">228</span>            <span class="n">i</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">instance_index</span>
+<span class="linenos">229</span>            <span class="k">if</span> <span class="n">i</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos">230</span>                <span class="k">return</span>
+<span class="linenos">231</span>            <span class="n">set_instance_color</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">TELEPORT_COLOR</span><span class="p">)</span>
+<span class="linenos">232</span>            <span class="n">active_idx_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+<span class="linenos">233</span>            <span class="n">active_mode_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;teleport&quot;</span>
+<span class="linenos">234</span>            <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
+<span class="linenos">235</span>                <span class="n">active_idx</span> <span class="o">=</span> <span class="n">i</span>
+<span class="linenos">236</span>                <span class="n">active_mode</span> <span class="o">=</span> <span class="s2">&quot;teleport&quot;</span>
+<span class="linenos">237</span>                <span class="n">cursor</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">start_position</span><span class="p">)</span>
+<span class="linenos">238</span>                <span class="n">teleport_offset</span> <span class="o">=</span> <span class="n">position_arr</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="n">cursor</span>
+<span class="linenos">239</span>                <span class="n">spring_target</span> <span class="o">=</span> <span class="n">cursor</span>
+<span class="linenos">240</span>        <span class="k">elif</span> <span class="n">event</span><span class="o">.</span><span class="n">phase</span> <span class="o">==</span> <span class="s2">&quot;update&quot;</span><span class="p">:</span>
+<span class="linenos">241</span>            <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
+<span class="linenos">242</span>                <span class="n">spring_target</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">end_position</span><span class="p">)</span>
+<span class="linenos">243</span>        <span class="k">elif</span> <span class="n">event</span><span class="o">.</span><span class="n">phase</span> <span class="o">==</span> <span class="s2">&quot;end&quot;</span><span class="p">:</span>
+<span class="linenos">244</span>            <span class="n">i</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">instance_index</span>
+<span class="linenos">245</span>            <span class="k">if</span> <span class="n">i</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos">246</span>                <span class="n">set_instance_color</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">IDLE_COLOR</span><span class="p">)</span>
+<span class="linenos">247</span>            <span class="n">active_idx_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;-&quot;</span>
+<span class="linenos">248</span>            <span class="n">active_mode_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;idle&quot;</span>
+<span class="linenos">249</span>            <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
+<span class="linenos">250</span>                <span class="n">active_idx</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="linenos">251</span>                <span class="n">active_mode</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="linenos">252</span>                <span class="n">spring_target</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="linenos">253</span>                <span class="n">teleport_offset</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="linenos">254</span>
+<span class="linenos">255</span>    <span class="c1"># ==========================================================================</span>
+<span class="linenos">256</span>    <span class="c1"># Cmd/Ctrl + drag: spring-pull that instance (linear velocity).</span>
+<span class="linenos">257</span>    <span class="c1"># ==========================================================================</span>
+<span class="linenos">258</span>
+<span class="linenos">259</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="o">=</span><span class="s2">&quot;cmd/ctrl&quot;</span><span class="p">)</span>
+<span class="linenos">260</span>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">BatchedMeshHandle</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos">261</span>        <span class="k">nonlocal</span> <span class="n">active_idx</span><span class="p">,</span> <span class="n">active_mode</span><span class="p">,</span> <span class="n">grab_body</span><span class="p">,</span> <span class="n">spring_target</span>
+<span class="linenos">262</span>        <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">phase</span> <span class="o">==</span> <span class="s2">&quot;start&quot;</span><span class="p">:</span>
+<span class="linenos">263</span>            <span class="n">i</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">instance_index</span>
+<span class="linenos">264</span>            <span class="k">if</span> <span class="n">i</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos">265</span>                <span class="k">return</span>
+<span class="linenos">266</span>            <span class="n">set_instance_color</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">TRANSLATE_COLOR</span><span class="p">)</span>
+<span class="linenos">267</span>            <span class="n">active_idx_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+<span class="linenos">268</span>            <span class="n">active_mode_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;translate&quot;</span>
+<span class="linenos">269</span>            <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
+<span class="linenos">270</span>                <span class="n">active_idx</span> <span class="o">=</span> <span class="n">i</span>
+<span class="linenos">271</span>                <span class="n">active_mode</span> <span class="o">=</span> <span class="s2">&quot;translate&quot;</span>
+<span class="linenos">272</span>                <span class="n">grab_world</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">start_position</span><span class="p">)</span>
+<span class="linenos">273</span>                <span class="n">grab_body</span> <span class="o">=</span> <span class="n">compute_grab_body</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">grab_world</span><span class="p">)</span>
+<span class="linenos">274</span>                <span class="n">spring_target</span> <span class="o">=</span> <span class="n">grab_world</span>
+<span class="linenos">275</span>        <span class="k">elif</span> <span class="n">event</span><span class="o">.</span><span class="n">phase</span> <span class="o">==</span> <span class="s2">&quot;update&quot;</span><span class="p">:</span>
+<span class="linenos">276</span>            <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
+<span class="linenos">277</span>                <span class="n">spring_target</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">end_position</span><span class="p">)</span>
+<span class="linenos">278</span>        <span class="k">elif</span> <span class="n">event</span><span class="o">.</span><span class="n">phase</span> <span class="o">==</span> <span class="s2">&quot;end&quot;</span><span class="p">:</span>
+<span class="linenos">279</span>            <span class="n">i</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">instance_index</span>
+<span class="linenos">280</span>            <span class="k">if</span> <span class="n">i</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos">281</span>                <span class="n">set_instance_color</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">IDLE_COLOR</span><span class="p">)</span>
+<span class="linenos">282</span>            <span class="n">active_idx_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;-&quot;</span>
+<span class="linenos">283</span>            <span class="n">active_mode_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;idle&quot;</span>
+<span class="linenos">284</span>            <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
+<span class="linenos">285</span>                <span class="n">active_idx</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="linenos">286</span>                <span class="n">active_mode</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="linenos">287</span>                <span class="n">grab_body</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="linenos">288</span>                <span class="n">spring_target</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="linenos">289</span>
+<span class="linenos">290</span>    <span class="c1"># ==========================================================================</span>
+<span class="linenos">291</span>    <span class="c1"># Cmd/Ctrl + Shift + drag: rotate that instance around the drag arrow</span>
+<span class="linenos">292</span>    <span class="c1"># (angular velocity).</span>
+<span class="linenos">293</span>    <span class="c1"># ==========================================================================</span>
+<span class="linenos">294</span>
+<span class="linenos">295</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="o">=</span><span class="s2">&quot;cmd/ctrl+shift&quot;</span><span class="p">)</span>
+<span class="linenos">296</span>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">BatchedMeshHandle</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos">297</span>        <span class="k">nonlocal</span> <span class="n">active_idx</span><span class="p">,</span> <span class="n">active_mode</span><span class="p">,</span> <span class="n">grab_body</span><span class="p">,</span> <span class="n">spring_target</span><span class="p">,</span> <span class="n">ext_torque</span>
+<span class="linenos">298</span>        <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">phase</span> <span class="o">==</span> <span class="s2">&quot;start&quot;</span><span class="p">:</span>
+<span class="linenos">299</span>            <span class="n">i</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">instance_index</span>
+<span class="linenos">300</span>            <span class="k">if</span> <span class="n">i</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos">301</span>                <span class="k">return</span>
+<span class="linenos">302</span>            <span class="n">set_instance_color</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">ROTATE_COLOR</span><span class="p">)</span>
+<span class="linenos">303</span>            <span class="n">active_idx_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+<span class="linenos">304</span>            <span class="n">active_mode_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;rotate&quot;</span>
+<span class="linenos">305</span>            <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
+<span class="linenos">306</span>                <span class="n">active_idx</span> <span class="o">=</span> <span class="n">i</span>
+<span class="linenos">307</span>                <span class="n">active_mode</span> <span class="o">=</span> <span class="s2">&quot;rotate&quot;</span>
+<span class="linenos">308</span>                <span class="n">grab_world</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">start_position</span><span class="p">)</span>
+<span class="linenos">309</span>                <span class="n">grab_body</span> <span class="o">=</span> <span class="n">compute_grab_body</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">grab_world</span><span class="p">)</span>
+<span class="linenos">310</span>                <span class="c1"># Pin the grab point to where it was clicked -- the instance</span>
+<span class="linenos">311</span>                <span class="c1"># rotates around this point.</span>
+<span class="linenos">312</span>                <span class="n">spring_target</span> <span class="o">=</span> <span class="n">grab_world</span>
+<span class="linenos">313</span>                <span class="n">ext_torque</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+<span class="linenos">314</span>        <span class="k">elif</span> <span class="n">event</span><span class="o">.</span><span class="n">phase</span> <span class="o">==</span> <span class="s2">&quot;update&quot;</span><span class="p">:</span>
+<span class="linenos">315</span>            <span class="c1"># Drag vector = rotation axis (direction) x spin magnitude (length).</span>
+<span class="linenos">316</span>            <span class="c1"># Use the *frozen* spring_target (click point at drag-start) rather</span>
+<span class="linenos">317</span>            <span class="c1"># than ``event.start_position``, which is live and tracks the</span>
+<span class="linenos">318</span>            <span class="c1"># instance&#39;s current pose -- keeps the gesture independent of</span>
+<span class="linenos">319</span>            <span class="c1"># spring stiffness.</span>
+<span class="linenos">320</span>            <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
+<span class="linenos">321</span>                <span class="k">assert</span> <span class="n">spring_target</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<span class="linenos">322</span>                <span class="n">drag_vec</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">end_position</span><span class="p">)</span> <span class="o">-</span> <span class="n">spring_target</span>
+<span class="linenos">323</span>                <span class="n">ext_torque</span> <span class="o">=</span> <span class="n">TORQUE_K</span> <span class="o">*</span> <span class="n">drag_vec</span>
+<span class="linenos">324</span>        <span class="k">elif</span> <span class="n">event</span><span class="o">.</span><span class="n">phase</span> <span class="o">==</span> <span class="s2">&quot;end&quot;</span><span class="p">:</span>
+<span class="linenos">325</span>            <span class="n">i</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">instance_index</span>
+<span class="linenos">326</span>            <span class="k">if</span> <span class="n">i</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos">327</span>                <span class="n">set_instance_color</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">IDLE_COLOR</span><span class="p">)</span>
+<span class="linenos">328</span>            <span class="n">active_idx_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;-&quot;</span>
+<span class="linenos">329</span>            <span class="n">active_mode_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;idle&quot;</span>
+<span class="linenos">330</span>            <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
+<span class="linenos">331</span>                <span class="n">active_idx</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="linenos">332</span>                <span class="n">active_mode</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="linenos">333</span>                <span class="n">grab_body</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="linenos">334</span>                <span class="n">spring_target</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="linenos">335</span>                <span class="n">ext_torque</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
 <span class="linenos">336</span>
-<span class="linenos">337</span>    <span class="nd">@handle</span><span class="o">.</span><span class="n">on_drag_end</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="o">=</span><span class="s2">&quot;cmd/ctrl+shift&quot;</span><span class="p">)</span>
-<span class="linenos">338</span>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">viser</span><span class="o">.</span><span class="n">BatchedMeshHandle</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">339</span>        <span class="k">nonlocal</span> <span class="n">active_idx</span><span class="p">,</span> <span class="n">active_mode</span><span class="p">,</span> <span class="n">grab_body</span><span class="p">,</span> <span class="n">spring_target</span><span class="p">,</span> <span class="n">ext_torque</span>
-<span class="linenos">340</span>        <span class="n">i</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">instance_index</span>
-<span class="linenos">341</span>        <span class="k">if</span> <span class="n">i</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">342</span>            <span class="n">set_instance_color</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">IDLE_COLOR</span><span class="p">)</span>
-<span class="linenos">343</span>        <span class="n">active_idx_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;-&quot;</span>
-<span class="linenos">344</span>        <span class="n">active_mode_gui</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;idle&quot;</span>
-<span class="linenos">345</span>        <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
-<span class="linenos">346</span>            <span class="n">active_idx</span> <span class="o">=</span> <span class="kc">None</span>
-<span class="linenos">347</span>            <span class="n">active_mode</span> <span class="o">=</span> <span class="kc">None</span>
-<span class="linenos">348</span>            <span class="n">grab_body</span> <span class="o">=</span> <span class="kc">None</span>
-<span class="linenos">349</span>            <span class="n">spring_target</span> <span class="o">=</span> <span class="kc">None</span>
-<span class="linenos">350</span>            <span class="n">ext_torque</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
-<span class="linenos">351</span>
-<span class="linenos">352</span>    <span class="k">try</span><span class="p">:</span>
-<span class="linenos">353</span>        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
-<span class="linenos">354</span>            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">10.0</span><span class="p">)</span>
-<span class="linenos">355</span>    <span class="k">finally</span><span class="p">:</span>
-<span class="linenos">356</span>        <span class="n">shutdown</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
-<span class="linenos">357</span>
-<span class="linenos">358</span>
-<span class="linenos">359</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
-<span class="linenos">360</span>    <span class="n">main</span><span class="p">()</span>
+<span class="linenos">337</span>    <span class="k">try</span><span class="p">:</span>
+<span class="linenos">338</span>        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+<span class="linenos">339</span>            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">10.0</span><span class="p">)</span>
+<span class="linenos">340</span>    <span class="k">finally</span><span class="p">:</span>
+<span class="linenos">341</span>        <span class="n">shutdown</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
+<span class="linenos">342</span>
+<span class="linenos">343</span>
+<span class="linenos">344</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="linenos">345</span>    <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>
 </section>

@@ -61,7 +61,7 @@ Code
    # ----- Physics parameters ----------------------------------------------------
    MASS = 1.0
    # Moment of inertia for a uniform unit cube: m * a^2 / 6. Scalar because
-   # the box is cubic — symmetry gives equal principal moments.
+   # the box is cubic -- symmetry gives equal principal moments.
    INERTIA = 1.0 / 6.0
    
    # Velocity damping (applied multiplicatively each tick). Equivalent to a
@@ -69,14 +69,14 @@ Code
    LINEAR_DAMPING = 4.0  # 1/s
    ANGULAR_DAMPING = 4.0  # 1/s
    
-   # Spring stiffness. The same spring is used for both modes — in translate
+   # Spring stiffness. The same spring is used for both modes -- in translate
    # it pulls the grab point toward the cursor; in rotate it pins the grab
    # point to the click location so the body can orbit around it.
    SPRING_K = 60.0
    
-   # Torque scale for the rotate gesture (world drag vector → torque along
+   # Torque scale for the rotate gesture (world drag vector -> torque along
    # the same vector). With a ~1 world-unit drag, this puts the angular
-   # acceleration around ~6 rad/s² given the unit-cube inertia, so a
+   # acceleration around ~6 rad/s^2 given the unit-cube inertia, so a
    # sustained drag can reach ~1 rev/s before damping cuts in.
    TORQUE_K = 1.5
    
@@ -118,7 +118,7 @@ Code
        angular_v = np.zeros(3)
    
        # Active-drag parameters. The spring mechanism drives both
-       # Cmd-modified gestures — the difference is where `spring_target`
+       # Cmd-modified gestures -- the difference is where `spring_target`
        # lives (moving with the cursor vs. locked to the click point) and
        # whether `ext_torque` is nonzero. The teleport path bypasses the
        # spring entirely and directly pins the pose.
@@ -204,109 +204,94 @@ Code
            return R_mat.T @ (grab_world - position)
    
        # ==========================================================================
-       # Drag (no modifier): teleport — rigid follow, no physics.
+       # Drag (no modifier): teleport -- rigid follow, no physics.
        # ==========================================================================
    
-       @handle.on_drag_start("left")
+       @handle.on_drag("left")
        async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
            nonlocal teleport_cursor, teleport_drag_offset
-           handle.color = TELEPORT_COLOR
-           with lock:
-               cursor = np.array(event.start_position)
-               teleport_cursor = cursor
-               # Fixed offset from cursor to box center. Re-adding this each
-               # tick keeps the grab point under the cursor as it moves.
-               teleport_drag_offset = position - cursor
-   
-       @handle.on_drag_update("left")
-       async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
-           nonlocal teleport_cursor
-           with lock:
-               teleport_cursor = np.array(event.end_position)
-   
-       @handle.on_drag_end("left")
-       async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
-           nonlocal teleport_cursor, teleport_drag_offset
-           del event
-           handle.color = IDLE_COLOR
-           with lock:
-               teleport_cursor = None
-               teleport_drag_offset = None
+           if event.phase == "start":
+               handle.color = TELEPORT_COLOR
+               with lock:
+                   cursor = np.array(event.start_position)
+                   teleport_cursor = cursor
+                   # Fixed offset from cursor to box center. Re-adding
+                   # each tick keeps the grab point under the cursor as
+                   # it moves.
+                   teleport_drag_offset = position - cursor
+           elif event.phase == "update":
+               with lock:
+                   teleport_cursor = np.array(event.end_position)
+           else:  # "end"
+               handle.color = IDLE_COLOR
+               with lock:
+                   teleport_cursor = None
+                   teleport_drag_offset = None
    
        # ==========================================================================
        # Cmd/Ctrl + drag: spring pull on the grab point toward the cursor.
        # ==========================================================================
    
-       @handle.on_drag_start("left", modifier="cmd/ctrl")
+       @handle.on_drag("left", modifier="cmd/ctrl")
        async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
            nonlocal grab_body, spring_target
-           handle.color = TRANSLATE_COLOR
-           with lock:
-               grab_world = np.array(event.start_position)
-               grab_body = compute_grab_body(grab_world)
-               spring_target = grab_world
-   
-       @handle.on_drag_update("left", modifier="cmd/ctrl")
-       async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
-           nonlocal spring_target
-           with lock:
-               spring_target = np.array(event.end_position)
-   
-       @handle.on_drag_end("left", modifier="cmd/ctrl")
-       async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
-           nonlocal grab_body, spring_target
-           del event
-           handle.color = IDLE_COLOR
-           with lock:
-               grab_body = None
-               spring_target = None
+           if event.phase == "start":
+               handle.color = TRANSLATE_COLOR
+               with lock:
+                   grab_world = np.array(event.start_position)
+                   grab_body = compute_grab_body(grab_world)
+                   spring_target = grab_world
+           elif event.phase == "update":
+               with lock:
+                   spring_target = np.array(event.end_position)
+           else:  # "end"
+               handle.color = IDLE_COLOR
+               with lock:
+                   grab_body = None
+                   spring_target = None
    
        # ==========================================================================
        # Cmd/Ctrl + Shift + drag: rotate *around* the drag arrow.
        #
-       # The grab point is pinned in world space (spring_target locked to
-       # start.position), and an external torque along the drag vector spins
-       # the body around that pin. Geometrically, the rotation axis is the
-       # line through ``start.position`` parallel to the drag arrow — i.e.
-       # the arrow itself. Drag length scales spin speed.
+       # The grab point is pinned in world space (spring_target locked
+       # to start.position), and an external torque along the drag vector
+       # spins the body around that pin. Geometrically, the rotation axis
+       # is the line through ``start.position`` parallel to the drag
+       # arrow. Drag length scales spin speed.
        # ==========================================================================
    
-       @handle.on_drag_start("left", modifier="cmd/ctrl+shift")
+       @handle.on_drag("left", modifier="cmd/ctrl+shift")
        async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
            nonlocal grab_body, spring_target, ext_torque
-           handle.color = ROTATE_COLOR
-           with lock:
-               grab_world = np.array(event.start_position)
-               grab_body = compute_grab_body(grab_world)
-               # Pin the grab point to where it was clicked. This stays put
-               # for the duration of the drag — the body rotates around it.
-               spring_target = grab_world
-               ext_torque = np.zeros(3)
-   
-       @handle.on_drag_update("left", modifier="cmd/ctrl+shift")
-       async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
-           nonlocal ext_torque
-           # Drag vector (world space) used directly as the torque: its
-           # direction is the rotation axis, its length the magnitude. The
-           # visible drag arrow coincides with the instantaneous axis.
-           # Use the *frozen* spring_target (the click point at drag-start)
-           # rather than ``event.start_position``, which is live and tracks
-           # the body's current pose — making the gesture independent of
-           # spring stiffness.
-           with lock:
-               assert spring_target is not None
-               drag_vec = np.array(event.end_position) - spring_target
-               ext_torque = TORQUE_K * drag_vec
-   
-       @handle.on_drag_end("left", modifier="cmd/ctrl+shift")
-       async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
-           nonlocal grab_body, spring_target, ext_torque
-           del event
-           handle.color = IDLE_COLOR
-           with lock:
-               grab_body = None
-               spring_target = None
-               ext_torque = np.zeros(3)
+           if event.phase == "start":
+               handle.color = ROTATE_COLOR
+               with lock:
+                   grab_world = np.array(event.start_position)
+                   grab_body = compute_grab_body(grab_world)
+                   # Pin the grab point to where it was clicked. This
+                   # stays put for the duration of the drag -- the body
+                   # rotates around it.
+                   spring_target = grab_world
+                   ext_torque = np.zeros(3)
+           elif event.phase == "update":
+               # Drag vector (world space) used directly as torque: its
+               # direction is the rotation axis, its length the
+               # magnitude. The visible drag arrow coincides with the
+               # instantaneous axis. Use the frozen ``spring_target``
+               # (click point at drag-start) rather than
+               # ``event.start_position``, which is live and tracks the
+               # body's current pose -- making the gesture independent
+               # of spring stiffness.
+               with lock:
+                   assert spring_target is not None
+                   drag_vec = np.array(event.end_position) - spring_target
+                   ext_torque = TORQUE_K * drag_vec
+           else:  # "end"
+               handle.color = IDLE_COLOR
+               with lock:
+                   grab_body = None
+                   spring_target = None
+                   ext_torque = np.zeros(3)
    
        try:
            while True:

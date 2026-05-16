@@ -426,6 +426,7 @@
           <h1>Source code for viser._scene_handles</h1><div class="highlight"><pre>
 <span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
@@ -610,10 +611,14 @@
     <span class="p">)</span>
     <span class="n">visible</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="n">click_cb</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">_ClickCallbackEntry</span><span class="p">]</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
-    <span class="n">drag_cb</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="n">DragPhase</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="n">_DragCallbackEntry</span><span class="p">]]</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">field</span><span class="p">(</span>
-        <span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;start&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;update&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;end&quot;</span><span class="p">:</span> <span class="p">[]}</span>
-    <span class="p">)</span>
+    <span class="n">drag_cb</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">_DragCallbackEntry</span><span class="p">]</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
     <span class="n">removed</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="c1"># Last bindings tuple published to the client. Used to dedup</span>
+    <span class="c1"># redundant ``SetSceneNodeClickBindingsMessage`` emits — without</span>
+    <span class="c1"># this, a no-op ``remove_click_callback(&quot;foo&quot;)`` for an</span>
+    <span class="c1"># unregistered callback resends an empty bindings tuple.</span>
+    <span class="c1"># ``None`` until the first publish.</span>
+    <span class="n">_last_published_click_bindings</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">DragBinding</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">_SceneNodeMessage</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
@@ -751,9 +756,8 @@
             <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>
 
         <span class="c1"># Clear stale per-node interaction state (click + drag) before</span>
-        <span class="c1"># we tear down handles. ``SetSceneNodeClickableMessage`` and</span>
-        <span class="c1"># ``SetSceneNodeDragBindingsMessage`` are name-keyed in the</span>
-        <span class="c1"># persistent buffer and aren&#39;t purged by</span>
+        <span class="c1"># we tear down handles. The bindings messages are name-keyed in</span>
+        <span class="c1"># the persistent buffer and aren&#39;t purged by</span>
         <span class="c1"># ``RemoveSceneNodeMessage``, so without an empty replacement a</span>
         <span class="c1"># future node created with the same name would inherit stale</span>
         <span class="c1"># interaction state on late-joining clients. Has to run for</span>
@@ -773,13 +777,15 @@
                 <span class="k">continue</span>
             <span class="n">impl</span> <span class="o">=</span> <span class="n">handle</span><span class="o">.</span><span class="n">_impl</span>
             <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">impl</span><span class="o">.</span><span class="n">click_cb</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="c1"># Empty the per-node click-binding set so a re-created</span>
+                <span class="c1"># node with the same name doesn&#39;t inherit the prior</span>
+                <span class="c1"># node&#39;s modifier filters from the persistent buffer.</span>
                 <span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
-                    <span class="n">_messages</span><span class="o">.</span><span class="n">SetSceneNodeClickableMessage</span><span class="p">(</span><span class="n">node_name</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+                    <span class="n">_messages</span><span class="o">.</span><span class="n">SetSceneNodeClickBindingsMessage</span><span class="p">(</span><span class="n">node_name</span><span class="p">,</span> <span class="p">())</span>
                 <span class="p">)</span>
-            <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">entries</span> <span class="k">for</span> <span class="n">entries</span> <span class="ow">in</span> <span class="n">impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="o">.</span><span class="n">values</span><span class="p">()):</span>
+            <span class="k">if</span> <span class="n">impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="p">:</span>
                 <span class="k">if</span> <span class="ow">not</span> <span class="n">api</span><span class="o">.</span><span class="n">_is_drag_active_for</span><span class="p">(</span><span class="n">node_name</span><span class="p">):</span>
-                    <span class="k">for</span> <span class="n">entries</span> <span class="ow">in</span> <span class="n">impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
-                        <span class="n">entries</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+                    <span class="n">impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
                 <span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
                     <span class="n">_messages</span><span class="o">.</span><span class="n">SetSceneNodeDragBindingsMessage</span><span class="p">(</span><span class="n">node_name</span><span class="p">,</span> <span class="p">())</span>
                 <span class="p">)</span>
@@ -848,7 +854,13 @@
     <span class="n">client_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;ID of client that triggered this event.&quot;&quot;&quot;</span>
     <span class="n">target</span><span class="p">:</span> <span class="n">TransformControlsHandle</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Transform controls handle that was affected.&quot;&quot;&quot;</span></div>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Transform controls handle that was affected.&quot;&quot;&quot;</span>
+    <span class="n">phase</span><span class="p">:</span> <span class="n">DragPhase</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Drag lifecycle phase: ``&quot;start&quot;`` when the user grabs a handle,</span>
+<span class="sd">    ``&quot;update&quot;`` on every pose change while dragging, ``&quot;end&quot;`` at</span>
+<span class="sd">    release. ``target.wxyz`` and ``target.position`` reflect the</span>
+<span class="sd">    current pose on every phase (start/end fire at the same pose as</span>
+<span class="sd">    the surrounding update).&quot;&quot;&quot;</span></div>
 
 
 
@@ -867,6 +879,11 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;ID of client that triggered this event.&quot;&quot;&quot;</span>
     <span class="n">target</span><span class="p">:</span> <span class="n">TSceneNodeHandle</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Scene node that is being dragged.&quot;&quot;&quot;</span>
+    <span class="n">phase</span><span class="p">:</span> <span class="n">DragPhase</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Drag lifecycle phase: ``&quot;start&quot;`` at press, ``&quot;update&quot;`` on</span>
+<span class="sd">    every throttled pointermove (~20Hz), ``&quot;end&quot;`` at release. A</span>
+<span class="sd">    single drag fires exactly one ``&quot;start&quot;``, zero or more</span>
+<span class="sd">    ``&quot;update&quot;``s, and exactly one ``&quot;end&quot;``.&quot;&quot;&quot;</span>
     <span class="n">instance_index</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Instance index within a batched scene node (e.g. batched meshes,</span>
 <span class="sd">    batched GLBs, batched axes); ``None`` for non-batched nodes. Frozen</span>
@@ -898,42 +915,38 @@
 
 <span class="k">class</span><span class="w"> </span><span class="nc">_RaycastSupportedSceneNodeHandle</span><span class="p">(</span><span class="n">SceneNodeHandle</span><span class="p">):</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_sync_drag_bindings</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Recompute the union of registered (button, modifiers) across all</span>
-<span class="sd">        phases and push it to the client as a full binding set.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Recompute the union of registered (button, modifiers) and</span>
+<span class="sd">        push it to the client as a full binding set.&quot;&quot;&quot;</span>
         <span class="n">seen</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">,</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
         <span class="n">bindings</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">DragBinding</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">for</span> <span class="n">entries</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
-            <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">entries</span><span class="p">:</span>
-                <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">entry</span><span class="o">.</span><span class="n">button</span><span class="p">,</span> <span class="n">entry</span><span class="o">.</span><span class="n">modifier</span><span class="p">)</span>
-                <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">seen</span><span class="p">:</span>
-                    <span class="k">continue</span>
-                <span class="n">seen</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
-                <span class="n">bindings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                    <span class="n">_messages</span><span class="o">.</span><span class="n">DragBinding</span><span class="p">(</span><span class="n">button</span><span class="o">=</span><span class="n">entry</span><span class="o">.</span><span class="n">button</span><span class="p">,</span> <span class="n">modifier</span><span class="o">=</span><span class="n">entry</span><span class="o">.</span><span class="n">modifier</span><span class="p">)</span>
-                <span class="p">)</span>
+        <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="p">:</span>
+            <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">entry</span><span class="o">.</span><span class="n">button</span><span class="p">,</span> <span class="n">entry</span><span class="o">.</span><span class="n">modifier</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">seen</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">seen</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+            <span class="n">bindings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">_messages</span><span class="o">.</span><span class="n">DragBinding</span><span class="p">(</span><span class="n">button</span><span class="o">=</span><span class="n">entry</span><span class="o">.</span><span class="n">button</span><span class="p">,</span> <span class="n">modifier</span><span class="o">=</span><span class="n">entry</span><span class="o">.</span><span class="n">modifier</span><span class="p">)</span>
+            <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">SetSceneNodeDragBindingsMessage</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">bindings</span><span class="p">))</span>
         <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_has_any_drag_callbacks</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-        <span class="k">return</span> <span class="nb">any</span><span class="p">(</span><span class="n">entries</span> <span class="k">for</span> <span class="n">entries</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_dispatch_drag</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">phase</span><span class="p">:</span> <span class="n">DragPhase</span><span class="p">,</span> <span class="nb">input</span><span class="p">:</span> <span class="n">_DragInput</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="nb">input</span><span class="p">:</span> <span class="n">_DragInput</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span>
         <span class="n">Callable</span><span class="p">[</span>
             <span class="p">[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">_RaycastSupportedSceneNodeHandle</span><span class="p">]],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span>
         <span class="p">]</span>
     <span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the callbacks whose filter matches this input.</span>
-
-<span class="sd">        Encapsulates ``_impl.drag_cb`` so dispatch doesn&#39;t depend on the</span>
-<span class="sd">        internal storage layout.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the callbacks whose filter matches this input.&quot;&quot;&quot;</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">._scene_api</span><span class="w"> </span><span class="kn">import</span> <span class="n">_drag_input_matches_filter</span>
 
         <span class="k">return</span> <span class="p">[</span>
             <span class="n">entry</span><span class="o">.</span><span class="n">callback</span>
-            <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="p">[</span><span class="n">phase</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span>
             <span class="k">if</span> <span class="n">_drag_input_matches_filter</span><span class="p">(</span><span class="nb">input</span><span class="p">,</span> <span class="n">entry</span><span class="o">.</span><span class="n">button</span><span class="p">,</span> <span class="n">entry</span><span class="o">.</span><span class="n">modifier</span><span class="p">)</span>
         <span class="p">]</span>
 
@@ -947,7 +960,6 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_register_drag_callback</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
-        <span class="n">phase</span><span class="p">:</span> <span class="n">DragPhase</span><span class="p">,</span>
         <span class="n">button</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">,</span>
         <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[</span>
@@ -971,25 +983,24 @@
                 <span class="n">button</span><span class="o">=</span><span class="n">button</span><span class="p">,</span>
                 <span class="n">modifier</span><span class="o">=</span><span class="n">normalized</span><span class="p">,</span>
             <span class="p">)</span>
-            <span class="c1"># Skip if an equivalent entry is already registered --</span>
-            <span class="c1"># otherwise double-registration would fire the callback twice</span>
-            <span class="c1"># per matching event. `_DragCallbackEntry` is a plain</span>
-            <span class="c1"># dataclass so tuple/dataclass equality catches duplicates.</span>
-            <span class="k">if</span> <span class="n">entry</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="p">[</span><span class="n">phase</span><span class="p">]:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="p">[</span><span class="n">phase</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
+            <span class="c1"># Skip duplicate registration -- without this, the same</span>
+            <span class="c1"># callback fires twice per matching event. Equality is by</span>
+            <span class="c1"># tuple/dataclass value.</span>
+            <span class="k">if</span> <span class="n">entry</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_sync_drag_bindings</span><span class="p">()</span>
             <span class="k">return</span> <span class="n">func</span>
 
         <span class="k">return</span> <span class="n">decorator</span>
 
     <span class="nd">@overload</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_start</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_drag</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
         <span class="n">button</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">]:</span> <span class="o">...</span>
 
     <span class="nd">@overload</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_start</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_drag</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
         <span class="n">button</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span> <span class="o">=</span> <span class="o">...</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
@@ -999,20 +1010,24 @@
         <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
     <span class="p">]:</span> <span class="o">...</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_start</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_drag</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
         <span class="n">button</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="s2">&quot;left&quot;</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
         <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a callback for when dragging starts.</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a callback for the full drag lifecycle.</span>
 
-<span class="sd">        (Experimental) Scene-node drag callbacks may change in future</span>
-<span class="sd">        releases.</span>
+<span class="sd">        Fires three times per gesture: once with</span>
+<span class="sd">        ``event.phase == &quot;start&quot;`` at press, zero or more times with</span>
+<span class="sd">        ``&quot;update&quot;`` (throttled pointermove), once with ``&quot;end&quot;`` at</span>
+<span class="sd">        release. ``end`` fires even on cancellation paths (window</span>
+<span class="sd">        blur, pointer cancel, node removed mid-drag) so per-drag</span>
+<span class="sd">        state can be released.</span>
 
-<span class="sd">        Usable as a bare decorator (``@handle.on_drag_start``, defaults</span>
-<span class="sd">        to ``button=&quot;left&quot;`` and no modifiers) or with arguments</span>
-<span class="sd">        (``@handle.on_drag_start(&quot;left&quot;, modifier=&quot;cmd/ctrl&quot;)``).</span>
+<span class="sd">        Usable as a bare decorator (``@handle.on_drag``, defaults to</span>
+<span class="sd">        ``button=&quot;left&quot;`` and no modifiers) or with arguments</span>
+<span class="sd">        (``@handle.on_drag(&quot;left&quot;, modifier=&quot;cmd/ctrl&quot;)``).</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            button: Mouse button that triggers the drag. One of</span>
@@ -1025,123 +1040,36 @@
 <span class="sd">                node intercepts the gesture -- the camera only orbits on</span>
 <span class="sd">                empty-space drags.</span>
 
-<span class="sd">        Note on ordering: drag callbacks fire in three phases per</span>
-<span class="sd">        gesture (start → update* → end). Synchronous (``def``)</span>
-<span class="sd">        callbacks are submitted to a thread pool fire-and-forget and</span>
-<span class="sd">        can run out of order -- an ``update`` may begin before</span>
-<span class="sd">        ``start`` finishes, leaving any state set in ``start`` (e.g.</span>
-<span class="sd">        a captured grab point) ``None`` when ``update`` reads it. To</span>
-<span class="sd">        get strict ordering, define your callbacks as ``async def``;</span>
-<span class="sd">        async callbacks are awaited on the event loop, which preserves</span>
-<span class="sd">        their phase order so long as you don&#39;t ``await`` inside them.</span>
+<span class="sd">        Note on ordering: synchronous (``def``) callbacks are submitted</span>
+<span class="sd">        to a thread pool fire-and-forget and can run out of order -- an</span>
+<span class="sd">        ``&quot;update&quot;`` phase may begin before ``&quot;start&quot;`` finishes,</span>
+<span class="sd">        leaving any state set in ``&quot;start&quot;`` ``None`` when ``&quot;update&quot;``</span>
+<span class="sd">        reads it. To get strict ordering, define your callback as</span>
+<span class="sd">        ``async def``; async callbacks are awaited on the event loop,</span>
+<span class="sd">        which preserves phase order so long as you don&#39;t ``await``</span>
+<span class="sd">        inside them.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dispatch_on_drag</span><span class="p">(</span><span class="s2">&quot;start&quot;</span><span class="p">,</span> <span class="n">button</span><span class="p">,</span> <span class="n">modifier</span><span class="p">)</span>
-
-    <span class="nd">@overload</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_update</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
-        <span class="n">button</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">]:</span> <span class="o">...</span>
-
-    <span class="nd">@overload</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_update</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
-        <span class="n">button</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span> <span class="o">=</span> <span class="o">...</span><span class="p">,</span>
-        <span class="o">*</span><span class="p">,</span>
-        <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="o">...</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[</span>
-        <span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">]],</span>
-        <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
-    <span class="p">]:</span> <span class="o">...</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_update</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
-        <span class="n">button</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="s2">&quot;left&quot;</span><span class="p">,</span>
-        <span class="o">*</span><span class="p">,</span>
-        <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a callback for drag updates. See :meth:`on_drag_start` for argument docs.</span>
-
-<span class="sd">        (Experimental) Scene-node drag callbacks may change in future</span>
-<span class="sd">        releases.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dispatch_on_drag</span><span class="p">(</span><span class="s2">&quot;update&quot;</span><span class="p">,</span> <span class="n">button</span><span class="p">,</span> <span class="n">modifier</span><span class="p">)</span>
-
-    <span class="nd">@overload</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_end</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
-        <span class="n">button</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">]:</span> <span class="o">...</span>
-
-    <span class="nd">@overload</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_end</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
-        <span class="n">button</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span> <span class="o">=</span> <span class="o">...</span><span class="p">,</span>
-        <span class="o">*</span><span class="p">,</span>
-        <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="o">...</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[</span>
-        <span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">]],</span>
-        <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
-    <span class="p">]:</span> <span class="o">...</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_end</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
-        <span class="n">button</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="s2">&quot;left&quot;</span><span class="p">,</span>
-        <span class="o">*</span><span class="p">,</span>
-        <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a callback for when dragging ends. See :meth:`on_drag_start` for argument docs.</span>
-
-<span class="sd">        (Experimental) Scene-node drag callbacks may change in future</span>
-<span class="sd">        releases.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dispatch_on_drag</span><span class="p">(</span><span class="s2">&quot;end&quot;</span><span class="p">,</span> <span class="n">button</span><span class="p">,</span> <span class="n">modifier</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_dispatch_on_drag</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">:</span> <span class="n">Self</span><span class="p">,</span>
-        <span class="n">phase</span><span class="p">:</span> <span class="n">DragPhase</span><span class="p">,</span>
-        <span class="n">button_or_func</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">DragButton</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
-        <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Bare-decorator (a callable in the first slot) registers</span>
-<span class="sd">        immediately with default ``button=&quot;left&quot;``; otherwise</span>
-<span class="sd">        ``button_or_func`` is the button literal.&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">button_or_func</span><span class="p">):</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_register_drag_callback</span><span class="p">(</span><span class="n">phase</span><span class="p">,</span> <span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="p">)(</span>
-                <span class="n">button_or_func</span>  <span class="c1"># type: ignore[arg-type]</span>
+        <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">button</span><span class="p">):</span>
+            <span class="c1"># Bare-decorator form: @handle.on_drag -- defaults to</span>
+            <span class="c1"># button=&quot;left&quot; and no modifiers.</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_register_drag_callback</span><span class="p">(</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="p">)(</span>
+                <span class="n">button</span>  <span class="c1"># type: ignore[arg-type]</span>
             <span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_register_drag_callback</span><span class="p">(</span><span class="n">phase</span><span class="p">,</span> <span class="n">button_or_func</span><span class="p">,</span> <span class="n">modifier</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_register_drag_callback</span><span class="p">(</span><span class="n">button</span><span class="p">,</span> <span class="n">modifier</span><span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_remove_drag_callback</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">phase</span><span class="p">:</span> <span class="n">DragPhase</span><span class="p">,</span>
-        <span class="n">callback</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;all&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="n">Callable</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">remove_drag_callback</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">callback</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;all&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="n">Callable</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove drag callbacks from the scene node.</span>
+
+<span class="sd">        ``callback=&quot;all&quot;`` removes every drag callback; a specific</span>
+<span class="sd">        function removes only entries whose callback identity matches.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">callback</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="p">[</span><span class="n">phase</span><span class="p">]</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="p">[</span><span class="n">phase</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
-                <span class="n">entry</span>
-                <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="p">[</span><span class="n">phase</span><span class="p">]</span>
-                <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">callback</span> <span class="o">!=</span> <span class="n">callback</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">entry</span> <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span> <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">callback</span> <span class="o">!=</span> <span class="n">callback</span>
             <span class="p">]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_sync_drag_bindings</span><span class="p">()</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">remove_drag_start_callback</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">callback</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;all&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="n">Callable</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove drag start callbacks from the scene node.&quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_remove_drag_callback</span><span class="p">(</span><span class="s2">&quot;start&quot;</span><span class="p">,</span> <span class="n">callback</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">remove_drag_update_callback</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">callback</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;all&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="n">Callable</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove drag update callbacks from the scene node.&quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_remove_drag_callback</span><span class="p">(</span><span class="s2">&quot;update&quot;</span><span class="p">,</span> <span class="n">callback</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">remove_drag_end_callback</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">callback</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;all&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="n">Callable</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove drag end callbacks from the scene node.&quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_remove_drag_callback</span><span class="p">(</span><span class="s2">&quot;end&quot;</span><span class="p">,</span> <span class="n">callback</span><span class="p">)</span>
 
     <span class="nd">@overload</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">on_click</span><span class="p">(</span>
@@ -1187,12 +1115,6 @@
         <span class="n">normalized_modifier</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">_normalize_key_modifier</span><span class="p">(</span><span class="n">modifier</span><span class="p">)</span>
 
         <span class="k">def</span><span class="w"> </span><span class="nf">register</span><span class="p">(</span><span class="n">callback</span><span class="p">:</span> <span class="n">Callable</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">:</span>
-            <span class="c1"># Mark the node clickable only when a callback actually</span>
-            <span class="c1"># lands -- an unapplied decorator factory shouldn&#39;t leave</span>
-            <span class="c1"># the client thinking the node is clickable.</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
-                <span class="n">_messages</span><span class="o">.</span><span class="n">SetSceneNodeClickableMessage</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
-            <span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                 <span class="n">_ClickCallbackEntry</span><span class="p">(</span>
                     <span class="n">callback</span><span class="o">=</span><span class="n">cast</span><span class="p">(</span>
@@ -1205,6 +1127,7 @@
                     <span class="n">modifier</span><span class="o">=</span><span class="n">normalized_modifier</span><span class="p">,</span>
                 <span class="p">)</span>
             <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_publish_click_state</span><span class="p">()</span>
             <span class="k">return</span> <span class="n">callback</span>
 
         <span class="k">if</span> <span class="n">func</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -1225,10 +1148,31 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span> <span class="o">=</span> <span class="p">[</span>
                 <span class="n">entry</span> <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span> <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">callback</span> <span class="o">!=</span> <span class="n">callback</span>
             <span class="p">]</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
-                <span class="n">_messages</span><span class="o">.</span><span class="n">SetSceneNodeClickableMessage</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
-            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_publish_click_state</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_publish_click_state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Publish ``SetSceneNodeClickBindingsMessage`` to the client</span>
+<span class="sd">        only when the bindings tuple has changed since the last</span>
+<span class="sd">        publish. Without the dedup, a no-op</span>
+<span class="sd">        ``remove_click_callback(&quot;nonexistent&quot;)`` would still emit an</span>
+<span class="sd">        empty bindings tuple.</span>
+
+<span class="sd">        The client derives `clickable` from `bindings.length &gt; 0`; no</span>
+<span class="sd">        separate flag is sent.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">bindings</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+            <span class="n">_messages</span><span class="o">.</span><span class="n">DragBinding</span><span class="p">(</span><span class="n">button</span><span class="o">=</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">modifier</span><span class="o">=</span><span class="n">entry</span><span class="o">.</span><span class="n">modifier</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">_last_published_click_bindings</span> <span class="o">==</span> <span class="n">bindings</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="c1"># Queue the message BEFORE committing the cache. If</span>
+        <span class="c1"># ``queue_message`` raises, the cache stays at its previous</span>
+        <span class="c1"># value so the next state change retries the publish.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+            <span class="n">_messages</span><span class="o">.</span><span class="n">SetSceneNodeClickBindingsMessage</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">bindings</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">_last_published_click_bindings</span> <span class="o">=</span> <span class="n">bindings</span>
 
 
 <div class="viewcode-block" id="CameraFrustumHandle">
@@ -1886,13 +1830,34 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">_TransformControlsState</span><span class="p">:</span>
     <span class="n">last_updated</span><span class="p">:</span> <span class="nb">float</span>
     <span class="n">update_cb</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">TransformControlsEvent</span><span class="p">],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">]]</span>
-    <span class="n">drag_start_cb</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">TransformControlsEvent</span><span class="p">],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">]]</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">dataclasses</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
-    <span class="p">)</span>
-    <span class="n">drag_end_cb</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">TransformControlsEvent</span><span class="p">],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">]]</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">dataclasses</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
-    <span class="p">)</span>
     <span class="n">sync_cb</span><span class="p">:</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">ClientId</span><span class="p">,</span> <span class="n">TransformControlsHandle</span><span class="p">],</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_phase_filtered_wrapper</span><span class="p">(</span>
+    <span class="n">phase</span><span class="p">:</span> <span class="n">DragPhase</span><span class="p">,</span>
+    <span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">TransformControlsEvent</span><span class="p">],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">TransformControlsEvent</span><span class="p">],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build an ``update_cb`` entry for the deprecated</span>
+<span class="sd">    ``on_drag_start`` / ``on_drag_end`` methods. Tagged so</span>
+<span class="sd">    ``remove_*`` can locate it by the original ``func`` identity.&quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+
+        <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">async_wrapper</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">TransformControlsEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">phase</span> <span class="o">==</span> <span class="n">phase</span><span class="p">:</span>
+                <span class="k">await</span> <span class="n">func</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>  <span class="c1"># type: ignore[misc]</span>
+
+        <span class="n">async_wrapper</span><span class="o">.</span><span class="n">_wraps</span> <span class="o">=</span> <span class="n">func</span>  <span class="c1"># type: ignore[attr-defined]</span>
+        <span class="n">async_wrapper</span><span class="o">.</span><span class="n">_phase_filter</span> <span class="o">=</span> <span class="n">phase</span>  <span class="c1"># type: ignore[attr-defined]</span>
+        <span class="k">return</span> <span class="n">async_wrapper</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">sync_wrapper</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">TransformControlsEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">phase</span> <span class="o">==</span> <span class="n">phase</span><span class="p">:</span>
+            <span class="n">func</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+
+    <span class="n">sync_wrapper</span><span class="o">.</span><span class="n">_wraps</span> <span class="o">=</span> <span class="n">func</span>  <span class="c1"># type: ignore[attr-defined]</span>
+    <span class="n">sync_wrapper</span><span class="o">.</span><span class="n">_phase_filter</span> <span class="o">=</span> <span class="n">phase</span>  <span class="c1"># type: ignore[attr-defined]</span>
+    <span class="k">return</span> <span class="n">sync_wrapper</span>
 
 
 <div class="viewcode-block" id="TransformControlsHandle">
@@ -1916,13 +1881,18 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">on_update</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">TransformControlsEvent</span><span class="p">],</span> <span class="n">NoneOrCoroutine</span><span class="p">]</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">TransformControlsEvent</span><span class="p">],</span> <span class="n">NoneOrCoroutine</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a callback for when the gizmo is moved.</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a callback for the full gizmo drag lifecycle.</span>
 
-<span class="sd">        The callback can be either a standard function or an async function:</span>
-<span class="sd">        - Standard functions (def) will be executed in a threadpool.</span>
-<span class="sd">        - Async functions (async def) will be executed in the event loop.</span>
+<span class="sd">        Fires three times per gesture: once with</span>
+<span class="sd">        ``event.phase == &quot;start&quot;`` when the user grabs a handle, on</span>
+<span class="sd">        every pose change with ``&quot;update&quot;``, and once with ``&quot;end&quot;`` at</span>
+<span class="sd">        release. ``target.wxyz`` and ``target.position`` reflect the</span>
+<span class="sd">        current pose on every phase.</span>
 
-<span class="sd">        Using async functions can be useful for reducing race conditions.</span>
+<span class="sd">        Callbacks may be ``def`` (run in a threadpool) or ``async def``</span>
+<span class="sd">        (awaited on the event loop). Async preserves phase order so</span>
+<span class="sd">        long as you don&#39;t ``await`` inside; threadpool callbacks may</span>
+<span class="sd">        run out of order.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">update_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">func</span></div>
@@ -1935,86 +1905,77 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove update callbacks from the transform controls.</span>
 
-<span class="sd">        Args:</span>
-<span class="sd">            callback: Either &quot;all&quot; to remove all callbacks, or a specific callback function to remove.</span>
+<span class="sd">        ``callback=&quot;all&quot;`` removes every callback regardless of which</span>
+<span class="sd">        method registered it; a specific function removes entries</span>
+<span class="sd">        whose identity matches (including wrappers installed by the</span>
+<span class="sd">        deprecated :meth:`on_drag_start` / :meth:`on_drag_end`).</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">callback</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">update_cb</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">update_cb</span> <span class="o">=</span> <span class="p">[</span>
-                <span class="n">cb</span> <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">update_cb</span> <span class="k">if</span> <span class="n">cb</span> <span class="o">!=</span> <span class="n">callback</span>
+                <span class="n">cb</span>
+                <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">update_cb</span>
+                <span class="k">if</span> <span class="n">cb</span> <span class="o">!=</span> <span class="n">callback</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cb</span><span class="p">,</span> <span class="s2">&quot;_wraps&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">callback</span>
             <span class="p">]</span></div>
 
 
 <div class="viewcode-block" id="TransformControlsHandle.on_drag_start">
 <a class="viewcode-back" href="../../../api/handles/scene_handles/#viser.TransformControlsHandle.on_drag_start">[docs]</a>
+    <span class="nd">@deprecated</span><span class="p">(</span><span class="s2">&quot;Use `on_update` and check `event.phase == &#39;start&#39;`.&quot;</span><span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_start</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">TransformControlsEvent</span><span class="p">],</span> <span class="n">NoneOrCoroutine</span><span class="p">]</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">TransformControlsEvent</span><span class="p">],</span> <span class="n">NoneOrCoroutine</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a callback for when dragging starts (&quot;mouse down&quot;).</span>
-
-<span class="sd">        The callback can be either a standard function or an async function:</span>
-<span class="sd">        - Standard functions (def) will be executed in a threadpool.</span>
-<span class="sd">        - Async functions (async def) will be executed in the event loop.</span>
-
-<span class="sd">        Using async functions can be useful for reducing race conditions.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">drag_start_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Deprecated. Use :meth:`on_update` and gate on</span>
+<span class="sd">        ``event.phase == &quot;start&quot;`` inside the handler.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">update_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_phase_filtered_wrapper</span><span class="p">(</span><span class="s2">&quot;start&quot;</span><span class="p">,</span> <span class="n">func</span><span class="p">))</span>
         <span class="k">return</span> <span class="n">func</span></div>
 
 
 <div class="viewcode-block" id="TransformControlsHandle.on_drag_end">
 <a class="viewcode-back" href="../../../api/handles/scene_handles/#viser.TransformControlsHandle.on_drag_end">[docs]</a>
+    <span class="nd">@deprecated</span><span class="p">(</span><span class="s2">&quot;Use `on_update` and check `event.phase == &#39;end&#39;`.&quot;</span><span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">on_drag_end</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">TransformControlsEvent</span><span class="p">],</span> <span class="n">NoneOrCoroutine</span><span class="p">]</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">TransformControlsEvent</span><span class="p">],</span> <span class="n">NoneOrCoroutine</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a callback for when dragging end (&quot;mouse up&quot;).</span>
-
-<span class="sd">        The callback can be either a standard function or an async function:</span>
-<span class="sd">        - Standard functions (def) will be executed in a threadpool.</span>
-<span class="sd">        - Async functions (async def) will be executed in the event loop.</span>
-
-<span class="sd">        Using async functions can be useful for reducing race conditions.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">drag_end_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Deprecated. Use :meth:`on_update` and gate on</span>
+<span class="sd">        ``event.phase == &quot;end&quot;`` inside the handler.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">update_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_phase_filtered_wrapper</span><span class="p">(</span><span class="s2">&quot;end&quot;</span><span class="p">,</span> <span class="n">func</span><span class="p">))</span>
         <span class="k">return</span> <span class="n">func</span></div>
 
 
 <div class="viewcode-block" id="TransformControlsHandle.remove_drag_start_callback">
 <a class="viewcode-back" href="../../../api/handles/scene_handles/#viser.TransformControlsHandle.remove_drag_start_callback">[docs]</a>
+    <span class="nd">@deprecated</span><span class="p">(</span><span class="s2">&quot;Use `remove_update_callback`.&quot;</span><span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">remove_drag_start_callback</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">callback</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;all&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="n">Callable</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove drag start callbacks from the transform controls.</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            callback: Either &quot;all&quot; to remove all callbacks, or a specific callback function to remove.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="n">callback</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">drag_start_cb</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">drag_start_cb</span> <span class="o">=</span> <span class="p">[</span>
-                <span class="n">cb</span> <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">drag_start_cb</span> <span class="k">if</span> <span class="n">cb</span> <span class="o">!=</span> <span class="n">callback</span>
-            <span class="p">]</span></div>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Deprecated. Use :meth:`remove_update_callback`.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_remove_phase_wrappers</span><span class="p">(</span><span class="s2">&quot;start&quot;</span><span class="p">,</span> <span class="n">callback</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="TransformControlsHandle.remove_drag_end_callback">
 <a class="viewcode-back" href="../../../api/handles/scene_handles/#viser.TransformControlsHandle.remove_drag_end_callback">[docs]</a>
+    <span class="nd">@deprecated</span><span class="p">(</span><span class="s2">&quot;Use `remove_update_callback`.&quot;</span><span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">remove_drag_end_callback</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">callback</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;all&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="n">Callable</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove drag end callbacks from the transform controls.</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Deprecated. Use :meth:`remove_update_callback`.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_remove_phase_wrappers</span><span class="p">(</span><span class="s2">&quot;end&quot;</span><span class="p">,</span> <span class="n">callback</span><span class="p">)</span></div>
 
-<span class="sd">        Args:</span>
-<span class="sd">            callback: Either &quot;all&quot; to remove all callbacks, or a specific callback function to remove.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="n">callback</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">drag_end_cb</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">drag_end_cb</span> <span class="o">=</span> <span class="p">[</span>
-                <span class="n">cb</span> <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">drag_end_cb</span> <span class="k">if</span> <span class="n">cb</span> <span class="o">!=</span> <span class="n">callback</span>
-            <span class="p">]</span></div>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_remove_phase_wrappers</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">phase</span><span class="p">:</span> <span class="n">DragPhase</span><span class="p">,</span> <span class="n">callback</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;all&quot;</span><span class="p">]</span> <span class="o">|</span> <span class="n">Callable</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">keep</span><span class="p">(</span><span class="n">cb</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+            <span class="n">tag</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cb</span><span class="p">,</span> <span class="s2">&quot;_phase_filter&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">tag</span> <span class="o">!=</span> <span class="n">phase</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">True</span>  <span class="c1"># Not one of ours.</span>
+            <span class="k">if</span> <span class="n">callback</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">False</span>
+            <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cb</span><span class="p">,</span> <span class="s2">&quot;_wraps&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">callback</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">update_cb</span> <span class="o">=</span> <span class="p">[</span><span class="n">cb</span> <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">update_cb</span> <span class="k">if</span> <span class="n">keep</span><span class="p">(</span><span class="n">cb</span><span class="p">)]</span>
 
 <div class="viewcode-block" id="TransformControlsHandle.remove">
 <a class="viewcode-back" href="../../../api/handles/scene_handles/#viser.TransformControlsHandle.remove">[docs]</a>

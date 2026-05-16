@@ -484,7 +484,7 @@
 <span class="linenos">36</span>    <span class="n">line_plot</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_plotly</span><span class="p">(</span><span class="n">figure</span><span class="o">=</span><span class="n">create_sinusoidal_wave</span><span class="p">(</span><span class="n">line_plot_time</span><span class="p">))</span>
 <span class="linenos">37</span>
 <span class="linenos">38</span>    <span class="c1"># Plot type 2: Image plot.</span>
-<span class="linenos">39</span>    <span class="c1"># Use Path to handle relative paths correctly from any working directory</span>
+<span class="linenos">39</span>    <span class="c1"># Use Path to handle relative paths correctly from any working directory.</span>
 <span class="linenos">40</span>    <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="linenos">41</span>
 <span class="linenos">42</span>    <span class="n">assets_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">&quot;assets&quot;</span>
