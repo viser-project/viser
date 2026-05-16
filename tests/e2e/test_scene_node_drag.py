@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import inspect
 import math
 import threading
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 import numpy as np
 import pytest
@@ -12,6 +15,8 @@ from playwright.sync_api import Page
 import viser
 
 from .utils import wait_for_connection, wait_for_scene_node
+
+_F = TypeVar("_F", bound=Callable[..., Any])
 
 JS_HAS_VISIBLE_DRAG_ARROW = """
 () => {
@@ -67,6 +72,39 @@ def _perform_modifier_drag(page: Page, modifier_key: str) -> None:
     page.keyboard.up(modifier_key)
 
 
+def _on_drag_phase(
+    handle: Any,
+    phase: str,
+    *args: Any,
+    **kwargs: Any,
+) -> Callable[[_F], _F]:
+    """Register an ``on_drag`` callback filtered to one lifecycle phase.
+
+    The public scene-node API is intentionally unified around
+    ``on_drag``; tests use this helper where they need separate
+    phase-specific events/counters.
+    """
+
+    def decorator(func: _F) -> _F:
+        if inspect.iscoroutinefunction(func):
+
+            async def async_wrapper(event: viser.SceneNodeDragEvent[Any]) -> None:
+                if event.phase == phase:
+                    await func(event)
+
+            handle.on_drag(*args, **kwargs)(async_wrapper)
+        else:
+
+            def sync_wrapper(event: viser.SceneNodeDragEvent[Any]) -> None:
+                if event.phase == phase:
+                    func(event)
+
+            handle.on_drag(*args, **kwargs)(sync_wrapper)
+        return func
+
+    return decorator
+
+
 def test_scene_node_drag_callbacks(
     page: Page,
     viser_server: viser.ViserServer,
@@ -88,19 +126,19 @@ def test_scene_node_drag_callbacks(
         color=(255, 120, 0),
     )
 
-    @box.on_drag_start("left", modifier="cmd/ctrl")
+    @_on_drag_phase(box, "start", "left", modifier="cmd/ctrl")
     def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         with lock:
             drag_events["start"] = event
         drag_started.set()
 
-    @box.on_drag_update("left", modifier="cmd/ctrl")
+    @_on_drag_phase(box, "update", "left", modifier="cmd/ctrl")
     def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         with lock:
             drag_events["update"] = event
         drag_updated.set()
 
-    @box.on_drag_end("left", modifier="cmd/ctrl")
+    @_on_drag_phase(box, "end", "left", modifier="cmd/ctrl")
     def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         with lock:
             drag_events["end"] = event
@@ -181,7 +219,7 @@ def test_scene_node_drag_filter_rejects_wrong_modifier(
         color=(0, 170, 255),
     )
 
-    @box.on_drag_start("left", modifier="cmd/ctrl")
+    @_on_drag_phase(box, "start", "left", modifier="cmd/ctrl")
     def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         del event
         drag_started.set()
@@ -228,19 +266,19 @@ def test_scene_node_drag_modifier_order_insensitive(
     # Two distinct function objects so the registry doesn't dedupe.
     # type: ignore below because "shift+cmd/ctrl" is not in KeyModifier's
     # Literal union -- intentionally exercising runtime leniency.
-    @box.on_drag_start("left", modifier="shift+cmd/ctrl")  # type: ignore[arg-type]
+    @_on_drag_phase(box, "start", "left", modifier="shift+cmd/ctrl")  # type: ignore[arg-type]
     def _cb_noncanonical(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         del event
 
-    @box.on_drag_start("left", modifier="cmd/ctrl+shift")
+    @_on_drag_phase(box, "start", "left", modifier="cmd/ctrl+shift")
     def _cb_canonical(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         del event
 
     del _cb_noncanonical, _cb_canonical  # silence "unused" warnings
 
     # Both registrations should normalize to the same canonical string.
-    entry_a = box._impl.drag_cb["start"][0]
-    entry_b = box._impl.drag_cb["start"][1]
+    entry_a = box._impl.drag_cb[0]
+    entry_b = box._impl.drag_cb[1]
     assert entry_a.modifier == entry_b.modifier, (
         entry_a.modifier,
         entry_b.modifier,
@@ -266,12 +304,12 @@ def test_scene_node_drag_pointer_id_isolation(
         color=(0, 200, 0),
     )
 
-    @box.on_drag_start("left", modifier="cmd/ctrl")
+    @_on_drag_phase(box, "start", "left", modifier="cmd/ctrl")
     def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         del event
         drag_started.set()
 
-    @box.on_drag_end("left", modifier="cmd/ctrl")
+    @_on_drag_phase(box, "end", "left", modifier="cmd/ctrl")
     def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         del event
         drag_ended.set()
@@ -341,17 +379,17 @@ def test_scene_node_drag_continues_outside_canvas(
         color=(255, 200, 0),
     )
 
-    @box.on_drag_start("left", modifier="cmd/ctrl")
+    @_on_drag_phase(box, "start", "left", modifier="cmd/ctrl")
     async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         del event
         drag_started.set()
 
-    @box.on_drag_update("left", modifier="cmd/ctrl")
+    @_on_drag_phase(box, "update", "left", modifier="cmd/ctrl")
     async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         with lock:
             update_positions.append(event.end_position)
 
-    @box.on_drag_end("left", modifier="cmd/ctrl")
+    @_on_drag_phase(box, "end", "left", modifier="cmd/ctrl")
     async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         del event
         drag_ended.set()
@@ -426,7 +464,7 @@ def test_scene_node_drag_batched_axes(
         axes_radius=0.2,
     )
 
-    @handle.on_drag_start("left", modifier="cmd/ctrl")
+    @_on_drag_phase(handle, "start", "left", modifier="cmd/ctrl")
     def _(
         event: viser.SceneNodeDragEvent[viser.BatchedAxesHandle],
     ) -> None:
@@ -434,7 +472,7 @@ def test_scene_node_drag_batched_axes(
             captured["start_index"] = event.instance_index
         drag_started.set()
 
-    @handle.on_drag_end("left", modifier="cmd/ctrl")
+    @_on_drag_phase(handle, "end", "left", modifier="cmd/ctrl")
     def _(
         event: viser.SceneNodeDragEvent[viser.BatchedAxesHandle],
     ) -> None:
@@ -482,12 +520,12 @@ def test_scene_node_drag_start_position_tracks_moving_object(
         color=(80, 200, 255),
     )
 
-    @box.on_drag_start("left", modifier="cmd/ctrl")
+    @_on_drag_phase(box, "start", "left", modifier="cmd/ctrl")
     async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         del event
         drag_started.set()
 
-    @box.on_drag_update("left", modifier="cmd/ctrl")
+    @_on_drag_phase(box, "update", "left", modifier="cmd/ctrl")
     async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         with lock:
             update_events.append(event)
@@ -607,7 +645,7 @@ def test_scene_node_drag_batched_mesh_repeat_after_translate(
     drag_starts: list[viser.SceneNodeDragEvent[viser.BatchedMeshHandle]] = []
     lock = threading.Lock()
 
-    @handle.on_drag_start("left", modifier="cmd/ctrl")
+    @_on_drag_phase(handle, "start", "left", modifier="cmd/ctrl")
     async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
         with lock:
             drag_starts.append(event)
@@ -734,18 +772,18 @@ def test_scene_node_drag_no_spurious_update_before_end(
         color=(120, 200, 255),
     )
 
-    @box.on_drag_start("left", modifier="cmd/ctrl")
+    @_on_drag_phase(box, "start", "left", modifier="cmd/ctrl")
     async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         del event
         drag_started.set()
 
-    @box.on_drag_update("left", modifier="cmd/ctrl")
+    @_on_drag_phase(box, "update", "left", modifier="cmd/ctrl")
     async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         del event
         with lock:
             update_count[0] += 1
 
-    @box.on_drag_end("left", modifier="cmd/ctrl")
+    @_on_drag_phase(box, "end", "left", modifier="cmd/ctrl")
     async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         del event
         drag_ended.set()
@@ -801,12 +839,12 @@ def test_scene_node_drag_end_fires_when_node_removed_midflight(
         color=(255, 100, 100),
     )
 
-    @box.on_drag_start("left", modifier="cmd/ctrl")
+    @_on_drag_phase(box, "start", "left", modifier="cmd/ctrl")
     async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         del event
         drag_started.set()
 
-    @box.on_drag_end("left", modifier="cmd/ctrl")
+    @_on_drag_phase(box, "end", "left", modifier="cmd/ctrl")
     async def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
         del event
         drag_ended.set()
@@ -876,25 +914,16 @@ def test_scene_node_drag_callback_removal(
         color=(0, 120, 255),
     )
 
-    def on_drag_start(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
-        del event
-        drag_started.set()
+    def on_drag(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        if event.phase == "start":
+            drag_started.set()
+        elif event.phase == "update":
+            drag_updated.set()
+        elif event.phase == "end":
+            drag_ended.set()
 
-    def on_drag_update(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
-        del event
-        drag_updated.set()
-
-    def on_drag_end(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
-        del event
-        drag_ended.set()
-
-    box.on_drag_start("left", modifier="cmd/ctrl")(on_drag_start)
-    box.on_drag_update("left", modifier="cmd/ctrl")(on_drag_update)
-    box.on_drag_end("left", modifier="cmd/ctrl")(on_drag_end)
-
-    box.remove_drag_start_callback(on_drag_start)
-    box.remove_drag_update_callback(on_drag_update)
-    box.remove_drag_end_callback(on_drag_end)
+    box.on_drag("left", modifier="cmd/ctrl")(on_drag)
+    box.remove_drag_callback(on_drag)
 
     wait_for_connection(page, viser_server.get_port())
     wait_for_scene_node(page, "/removed_drag_box")

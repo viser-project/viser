@@ -12,9 +12,7 @@ import * as THREE from "three";
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import React, { useEffect, useMemo } from "react";
 import { ViewerMutable } from "./ViewerContext";
-import { CameraControlOwner } from "./inputManager/cameraControlOwner";
-import { CursorController } from "./inputManager/cursorController";
-import { InputManager } from "./inputManager/InputManager";
+import { InteractionController } from "./pointer/interactionController";
 import {
   Anchor,
   Box,
@@ -37,7 +35,6 @@ import {
   KeyModifier,
   hasCmdCtrl,
   keyModifierFromEvent,
-  matchesModifierFilter,
 } from "./dragUtils";
 import { shallowArrayEqual } from "./utils/shallowArrayEqual";
 import {
@@ -214,9 +211,6 @@ function ViewerRoot() {
     camera: null,
     backgroundMaterial: null,
     cameraControl: null,
-    cameraControlOwner: new CameraControlOwner(),
-    inputManager: null,
-    cursorController: new CursorController(),
 
     // Scene management.
     nodeRefFromName,
@@ -226,11 +220,6 @@ function ViewerRoot() {
     getRenderRequestState: "ready",
     getRenderRequest: null,
 
-    // Interaction state.
-    scenePointerInfo: {
-      filtersByEventType: new Map(),
-    },
-
     // Skinned mesh state.
     skinnedMeshState: {},
 
@@ -238,22 +227,14 @@ function ViewerRoot() {
     nodePoseData: {},
   });
 
-  // Wire the camera-control owner's instance getter to the live
-  // ``cameraControl`` field on the same mutable ref, exactly once at
-  // first render. The owner then reads the live instance lazily on
-  // every state application, so we don't have to forward
-  // instance-swap notifications through React state.
-  React.useEffect(() => {
-    mutable.current.cameraControlOwner.setInstanceGetter(
-      () => mutable.current.cameraControl,
-    );
-    mutable.current.cursorController.setCanvasGetter(
-      () => mutable.current.canvas,
-    );
-    // ``mutable`` is a stable ref-object; the empty dep-array means
-    // the getters are installed once for the lifetime of the viewer.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const interaction = React.useMemo(
+    () =>
+      new InteractionController({
+        getCameraControl: () => mutable.current.cameraControl,
+        getCanvas: () => mutable.current.canvas,
+      }),
+    [],
+  );
 
   // Create the scene tree state and extract store and actions.
   const sceneTreeState = useSceneTreeState(
@@ -322,6 +303,7 @@ function ViewerRoot() {
     useInitialCamera: initialCameraState.store,
     initialCameraActions: initialCameraState.actions,
     mutable,
+    interaction,
   };
 
   return (
@@ -476,6 +458,7 @@ function NotificationsPanel() {
  */
 function ViewerCanvas({ children }: { children: React.ReactNode }) {
   const viewer = React.useContext(ViewerContext)!;
+  const interaction = viewer.interaction;
   const sendClickThrottled = useThrottledMessageSender(20).send;
   const theme = useMantineTheme();
   const { ref: inViewRef, inView } = useInView();
@@ -486,125 +469,82 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  // Construct the InputManager exactly once. The hooks object
-  // captures viewer-mutable references that resolve lazily, so the
-  // manager doesn't take a stale handle on canvas2d (which is set
-  // after the first render).
-  if (viewer.mutable.current.inputManager === null) {
-    const mutable = viewer.mutable;
-    viewer.mutable.current.inputManager = new InputManager(
-      mutable.current.cameraControlOwner,
-      mutable.current.cursorController,
-      {
-        drawRectSelectOverlay(rect) {
-          const c2d = mutable.current.canvas2d;
-          if (c2d === null) return;
-          const ctx = c2d.getContext("2d");
-          if (ctx === null) return;
-          ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-          if (rect === null) return;
-          const [sx, sy] = rect.startXy;
-          const [ex, ey] = rect.endXy;
-          ctx.beginPath();
-          ctx.fillStyle = theme.primaryColor;
-          ctx.strokeStyle = "blue";
-          ctx.globalAlpha = 0.2;
-          ctx.fillRect(sx, sy, ex - sx, ey - sy);
-          ctx.globalAlpha = 1.0;
-          ctx.stroke();
-        },
-        dispatch(action) {
-          if (action.kind === "scene-click") {
-            sendClickMessage(viewer, action.xy, action.modifier, sendClickThrottled);
-          } else if (action.kind === "scene-rect-select") {
-            sendRectSelectMessage(
-              viewer,
-              {
-                dragStart: action.startXy,
-                dragEnd: action.endXy,
-              },
-              action.modifier,
-              sendClickThrottled,
-            );
-          }
-        },
-        isInsideViewport(xy) {
-          return ndcFromPointerXy(viewer, xy) !== null;
-        },
-      },
-    );
-  }
-  const inputManager = viewer.mutable.current.inputManager!;
+  // Render the rect-select overlay onto the canvas2d layer. Called
+  // from the pointer handlers when motion in a committed rect-select
+  // gesture should repaint. Theme is read at draw time (not captured)
+  // so a runtime theme change reflects immediately.
+  const drawRectSelectOverlay = React.useCallback(
+    (rect: { startXy: [number, number]; endXy: [number, number] } | null) => {
+      const c2d = viewer.mutable.current.canvas2d;
+      if (c2d === null) return;
+      const ctx = c2d.getContext("2d");
+      if (ctx === null) return;
+      ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      if (rect === null) return;
+      const [sx, sy] = rect.startXy;
+      const [ex, ey] = rect.endXy;
+      ctx.beginPath();
+      ctx.fillStyle = theme.primaryColor;
+      ctx.strokeStyle = "blue";
+      ctx.globalAlpha = 0.2;
+      ctx.fillRect(sx, sy, ex - sx, ey - sy);
+      ctx.globalAlpha = 1.0;
+      ctx.stroke();
+    },
+    [theme, viewer],
+  );
 
-  // Cancel-path cleanup for the canvas scene-pointer gesture. Routes
-  // pointercancel / lostpointercapture / blur / unmount through one
-  // idempotent path so a single dropped event class can no longer
-  // strand the gesture mid-flight (design doc case 3: off-canvas
-  // pointerup leaks state forever). No dispatch -- cancellation
-  // drops the gesture by policy.
   const cancelActiveScenePointer = React.useCallback(() => {
-    inputManager.onCanvasPointerCancel();
-  }, [inputManager]);
+    interaction.cancelAny();
+    drawRectSelectOverlay(null);
+  }, [drawRectSelectOverlay, interaction]);
 
-  // Window-level blur is the only cancellation source the canvas
-  // itself doesn't observe (pointercancel / lostpointercapture are
-  // delivered to the captured target). Tab switch / devtools / OS
-  // takeover all manifest as a blur, so route those through the
-  // same cleanup. Unmount also routes here -- otherwise a viewer
-  // remount mid-gesture would leak ``isDragging=true`` plus a held
-  // camera lease.
-  //
-  // Held-modifier tracking: feed the modifier state into the cursor
-  // controller so modifier-filtered ``on_click`` callbacks only flip
-  // the canvas cursor to pointer while the modifier is actually
-  // held. Window-level keydown/keyup carry the live modifier state;
-  // blur drops the modifier (browser/OS may swallow the matching
-  // keyup if the user releases the key out of focus).
+  // Held-modifier tracking. Three sources keep `hoverSet`'s
+  // `heldModifier` in sync with reality:
+  //   - `keydown`/`keyup`: live updates while the canvas is focused.
+  //   - `blur`: drops the modifier; a release out of focus may not
+  //     deliver `keyup`.
+  //   - `pointermove`: reconciles from the event's modifier flags so
+  //     a focus regain with the modifier still held recovers without
+  //     waiting for the next keypress.
   React.useEffect(() => {
     const onBlur = () => {
       cancelActiveScenePointer();
-      viewer.mutable.current.cursorController.setHeldModifier(null);
+      interaction.hover.setHeldModifier(null);
     };
-    const updateHeldModifier = (e: KeyboardEvent) => {
-      // Skip when the user is typing in a form control: the
-      // window-level listener still fires, but a Shift press inside a
-      // Mantine ``<TextInput>`` (or any focused contenteditable)
-      // shouldn't flicker the canvas cursor between pointer and auto.
-      // We gate on the event target's element type AND on the
-      // currently focused element, since the user can also tab into
-      // a control so subsequent keypresses don't carry the input as
-      // ``e.target``.
-      const target = e.target as Element | null;
-      const active = document.activeElement;
-      const isFormElement = (el: Element | null): boolean => {
-        if (el === null) return false;
-        const tag = el.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
-          return true;
-        }
-        if ((el as HTMLElement).isContentEditable) return true;
-        return false;
-      };
-      if (isFormElement(target) || isFormElement(active)) return;
-      viewer.mutable.current.cursorController.setHeldModifier(
-        keyModifierFromEvent(e),
-      );
+    const isFormElement = (el: Element | null): boolean => {
+      if (el === null) return false;
+      const tag = el.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+        return true;
+      }
+      return (el as HTMLElement).isContentEditable;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      // Skip while typing in form controls so Shift in a TextInput
+      // doesn't flicker the canvas cursor.
+      if (
+        isFormElement(e.target as Element | null) ||
+        isFormElement(document.activeElement)
+      ) {
+        return;
+      }
+      interaction.hover.setHeldModifier(keyModifierFromEvent(e));
     };
     window.addEventListener("blur", onBlur);
-    window.addEventListener("keydown", updateHeldModifier);
-    window.addEventListener("keyup", updateHeldModifier);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
     return () => {
       window.removeEventListener("blur", onBlur);
-      window.removeEventListener("keydown", updateHeldModifier);
-      window.removeEventListener("keyup", updateHeldModifier);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKey);
       cancelActiveScenePointer();
     };
-  }, [cancelActiveScenePointer, viewer]);
+  }, [cancelActiveScenePointer, interaction]);
 
-  // Canvas pointer handlers thin-delegate to the InputManager. The
-  // manager owns gesture classification, camera-control ownership,
-  // rectangle-overlay drawing, and dispatch; here we just convert
-  // React's synthetic event to canvas-local pixel coords and forward.
+  // Canvas pointer handlers thin-delegate to the gestures module.
+  // Side effects (camera lock, overlay draw, wire dispatch) happen
+  // here based on the returned outcome.
   const canvasXyFromEvent = React.useCallback(
     (e: React.PointerEvent): [number, number] => {
       const bbox = viewer.mutable.current.canvas!.getBoundingClientRect();
@@ -615,19 +555,17 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
 
   const handlePointerDown = (e: React.PointerEvent) => {
     const xy = canvasXyFromEvent(e);
-    const next = inputManager.onCanvasPointerDown({
+    const next = interaction.scenePointer.onPointerDown({
       pointerId: e.pointerId,
       button: e.nativeEvent.button,
       modifier: keyModifierFromEvent(e),
       xy,
+      insideViewport: ndcFromPointerXy(viewer, xy) !== null,
     });
-    if (next.kind === "idle" || next.kind === "camera") return;
-    // Capture the pointer on the canvas for engaged scene-pointer
-    // gestures so subsequent move/up/cancel for this pointer id are
-    // delivered to the canvas regardless of where the cursor
-    // travels. Closes the off-canvas release leak (design doc case
-    // 3). Releases automatically on pointerup / pointercancel /
-    // lostpointercapture.
+    if (next.kind !== "scene-rect-select") return;
+    // Capture the pointer so subsequent move/up/cancel for this
+    // pointer id are delivered to the canvas regardless of cursor
+    // travel. Closes the off-canvas release leak.
     try {
       (e.currentTarget as Element).setPointerCapture(e.pointerId);
     } catch {
@@ -636,14 +574,38 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
-    inputManager.onCanvasPointerMove({
+    // Reconcile modifier state on every pointer event -- recovers from
+    // focus-regain with the modifier still held without waiting for a
+    // keypress.
+    interaction.hover.setHeldModifier(keyModifierFromEvent(e));
+    const xy = canvasXyFromEvent(e);
+    const repaint = interaction.scenePointer.onPointerMove({
       pointerId: e.pointerId,
-      xy: canvasXyFromEvent(e),
+      xy,
     });
+    if (repaint) {
+      const g = interaction.scenePointer.getGesture();
+      if (g.kind === "scene-rect-select") {
+        drawRectSelectOverlay({ startXy: g.startXy, endXy: g.endXy });
+      }
+    }
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
-    inputManager.onCanvasPointerUp({ pointerId: e.pointerId });
+    const outcome = interaction.scenePointer.onPointerUp({
+      pointerId: e.pointerId,
+    });
+    drawRectSelectOverlay(null);
+    if (outcome.kind === "scene-click") {
+      sendClickMessage(viewer, outcome.xy, outcome.modifier, sendClickThrottled);
+    } else if (outcome.kind === "scene-rect-select") {
+      sendRectSelectMessage(
+        viewer,
+        { dragStart: outcome.startXy, dragEnd: outcome.endXy },
+        outcome.modifier,
+        sendClickThrottled,
+      );
+    }
   };
 
   const fixedDpr = viewer.useDevSettings((state) => state.fixedDpr);
@@ -676,12 +638,17 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
       <Canvas
         gl={{ preserveDrawingBuffer: true, reversedDepthBuffer: true }}
         style={{ width: "100%", height: "100%" }}
-        ref={(el) => (viewer.mutable.current.canvas = el)}
+        ref={(el) => {
+          viewer.mutable.current.canvas = el;
+          interaction.hover.refresh();
+        }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerCancel={cancelActiveScenePointer}
-        onLostPointerCapture={cancelActiveScenePointer}
+        onPointerCancel={(e) => {
+          interaction.cancelPointer(e.pointerId);
+          drawRectSelectOverlay(null);
+        }}
         onContextMenu={(e) => {
           // Suppress the browser context menu only for ctrl/cmd-modified
           // gestures that match a registered scene-pointer filter. macOS
@@ -695,14 +662,8 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
           // would surprise users who registered an unmodified callback.
           const modifier = keyModifierFromEvent(e);
           if (!hasCmdCtrl(modifier)) return;
-          const { mutable } = viewer;
-          const pointerInfo = mutable.current.scenePointerInfo;
-          if (pointerInfo.filtersByEventType.size === 0) return;
-          for (const filters of pointerInfo.filtersByEventType.values()) {
-            if (filters.some((f) => matchesModifierFilter(modifier, f))) {
-              e.preventDefault();
-              return;
-            }
+          if (interaction.scenePointer.anyFilterMatches(modifier)) {
+            e.preventDefault();
           }
         }}
         shadows="percentage"
@@ -1094,6 +1055,7 @@ function SceneContextSetter() {
   useEffect(() => {
     const w = window as any;
     w.__viserMutable = mutable.current;
+    w.__viserPointer = viewer.interaction.testApi();
     // Expose a shim for E2E tests.
     w.__viserSceneTree = {
       getState: () => viewer.useSceneTree.getAll(),
@@ -1118,6 +1080,7 @@ function SceneContextSetter() {
 
     return () => {
       delete w.__viserMutable;
+      delete w.__viserPointer;
       delete w.__viserSceneTree;
       delete w.__viserTestpoints;
     };

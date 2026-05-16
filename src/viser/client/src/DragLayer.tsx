@@ -5,9 +5,7 @@
  *   - the active-drag state (only one drag active at a time across all nodes)
  *   - the drag-indicator arrow (one ArrowHelper per viewer, not per node)
  *   - the window pointermove / pointerup / pointercancel / blur listeners
- *   - the camera-control disable/re-enable around a drag (stashes the exact
- *     instance so a camera-type swap mid-drag doesn't leave the old one
- *     disabled)
+ *   - the camera-control lease around a drag
  *
  * Scene nodes interact with this layer through the context `useDragLayer()`
  * hook: on pointerdown they match their bindings against the input and
@@ -281,14 +279,12 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
       activeDrag.cleanup();
       activeDragRef.current = null;
       dragArrow.visible = false;
-      // Drop the camera-control lease. The owner reapplies derived
-      // state to the *current* instance, which handles the
-      // camera-type-swap case implicitly: if the perspective<->
-      // orthographic swap fired during the drag, the old instance was
-      // re-enabled by the owner at swap time and the new instance is
-      // the one whose enabled flag now flips back to true.
-      if (activeDrag.cameraLease !== null) {
-        activeDrag.cameraLease.release();
+      // Drop the camera-control lock. `cameraLock` reapplies to the
+      // current instance, which handles a mid-drag camera-type swap
+      // (the old instance was re-enabled at swap time; the new one's
+      // `enabled` flag flips back to true here).
+      if (activeDrag.releaseCameraLock !== null) {
+        activeDrag.releaseCameraLock();
       }
     },
     [
@@ -311,8 +307,8 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
         input,
         bindings,
       }) => {
-        if (activeDragRef.current !== null) return;
-        if (!anyBindingMatches(bindings, input)) return;
+        if (activeDragRef.current !== null) return false;
+        if (!anyBindingMatches(bindings, input)) return false;
 
         // Convert the raycast hit point to world coords. The frame of
         // ``eventPoint`` depends on which raycast produced it:
@@ -352,7 +348,7 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
           instanceWorldStart,
           frameScratches.drag,
         );
-        if (computed === null) return;
+        if (computed === null) return false;
         const startLocalOffset = startWorld
           .clone()
           .applyMatrix4(instanceWorldStart.invert());
@@ -409,12 +405,12 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
           startWorld,
         );
 
-        // Acquire the camera-control lease *before* installing this
-        // gesture's state. The owner immediately writes
-        // ``enabled=false`` to the current instance and will track
-        // any mid-drag camera-type swap on our behalf.
-        const cameraLease =
-          viewerMutable.cameraControlOwner.acquireLease("node-drag");
+        // Assign the active-drag state first, *then* acquire the
+        // camera lock. If lock acquisition throws between the two we
+        // never reach the assignment, so no half-initialised state
+        // strands the lock. Acquire-after-assign also means
+        // `stopActiveDrag` is reachable for any teardown after this
+        // point.
         activeDragRef.current = {
           nodeName,
           instanceIndex,
@@ -428,15 +424,18 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
           endPointWorld: startWorld.clone(),
           endPointerXy: [pointerXy[0], pointerXy[1]],
           input,
-          cameraLease,
+          releaseCameraLock: null,
           cleanup,
         };
+        activeDragRef.current.releaseCameraLock =
+          viewer.interaction.cameraLocks.acquire("node-drag");
         dragArrow.visible = false;
         window.addEventListener("pointermove", handleWindowPointerMove);
         window.addEventListener("pointerup", handleWindowPointerUp);
         window.addEventListener("pointercancel", handleWindowPointerUp);
         window.addEventListener("blur", handleWindowBlur);
         sendDragMessage(activeDragRef.current, "start", false);
+        return true;
       },
       stopIfNodeIs: (nodeName) => {
         if (activeDragRef.current?.nodeName === nodeName) {

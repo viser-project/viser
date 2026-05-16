@@ -371,11 +371,12 @@ def test_on_click_unapplied_decorator_does_not_mark_clickable() -> None:
 
     # Decorator factory; never applied.
     _unused = box.on_click(modifier="shift")
-    clickable_msgs = [
-        m for m in sent if isinstance(m, _messages.SetSceneNodeClickableMessage)
+    bindings_msgs = [
+        m for m in sent if isinstance(m, _messages.SetSceneNodeClickBindingsMessage)
     ]
-    # No SetSceneNodeClickableMessage should have been queued.
-    assert clickable_msgs == []
+    # No SetSceneNodeClickBindingsMessage should have been queued for
+    # an un-applied decorator factory.
+    assert bindings_msgs == []
     assert len(box._impl.click_cb) == 0
 
 
@@ -389,15 +390,15 @@ def test_on_click_rejects_extra_kwargs() -> None:
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_on_drag_start_rejects_extra_positional_args() -> None:
-    """``on_drag_start("left", "right")`` is a typo; should raise.
+def test_on_drag_rejects_extra_positional_args() -> None:
+    """``on_drag("left", "right")`` is a typo; should raise.
 
     The explicit signature ``button: ..., *, modifier=...`` makes
     Python's call-site machinery do this for free."""
     server = viser.ViserServer()
     box = server.scene.add_box("/box", dimensions=(1.0, 1.0, 1.0))
     with pytest.raises(TypeError, match="positional argument"):
-        box.on_drag_start("left", "right")  # type: ignore[call-overload]
+        box.on_drag("left", "right")  # type: ignore[call-overload]
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
@@ -616,13 +617,11 @@ def test_click_dispatch_filters_by_modifier() -> None:
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
 def test_on_click_dedups_redundant_wire_emits() -> None:
-    """Repeated ``box.on_click(...)`` calls must not re-emit
-    ``SetSceneNodeClickableMessage(True)`` on every registration --
-    once the bool flips to True it stays True until the last callback
-    is removed. Per-call ``SetSceneNodeClickBindingsMessage`` is still
-    expected (the bindings tuple grows by one), but a no-op
-    ``remove_click_callback("nonexistent")`` should queue NOTHING
-    because the ``(clickable, bindings)`` pair is unchanged."""
+    """Each ``box.on_click(...)`` call emits exactly one
+    ``SetSceneNodeClickBindingsMessage`` with the growing bindings
+    tuple. A no-op ``remove_click_callback("nonexistent")`` queues
+    NOTHING (the bindings tuple is unchanged).
+    """
     server = viser.ViserServer()
     box = server.scene.add_box("/box", dimensions=(1.0, 1.0, 1.0))
 
@@ -635,31 +634,22 @@ def test_on_click_dedups_redundant_wire_emits() -> None:
 
     server._websock_server.queue_message = capture_queue  # type: ignore[method-assign]
 
-    # Register 5 click callbacks. Expect:
-    #   - exactly ONE SetSceneNodeClickableMessage(True)
-    #   - exactly FIVE SetSceneNodeClickBindingsMessage with growing
-    #     bindings tuples.
+    # Register 5 click callbacks. Expect exactly FIVE
+    # SetSceneNodeClickBindingsMessage with growing bindings tuples.
     for _ in range(5):
 
         @box.on_click()
         def _cb(event: viser.SceneNodePointerEvent) -> None:
             del event
 
-    clickable_msgs = [
-        m for m in sent if isinstance(m, _messages.SetSceneNodeClickableMessage)
-    ]
     bindings_msgs = [
         m for m in sent if isinstance(m, _messages.SetSceneNodeClickBindingsMessage)
     ]
-    assert len(clickable_msgs) == 1, (
-        f"expected exactly 1 clickable emit; got {len(clickable_msgs)}"
-    )
-    assert clickable_msgs[0].clickable is True
     assert len(bindings_msgs) == 5
     assert [len(m.bindings) for m in bindings_msgs] == [1, 2, 3, 4, 5]
 
     # Remove a callback that isn't registered. Should queue nothing
-    # (the (clickable, bindings) pair is unchanged).
+    # (the bindings tuple is unchanged).
     pre = len(sent)
 
     def not_registered(event: viser.SceneNodePointerEvent) -> None:
@@ -670,18 +660,13 @@ def test_on_click_dedups_redundant_wire_emits() -> None:
         "no-op remove of unregistered callback should not queue messages"
     )
 
-    # Remove all. Expect ONE clickable=False emit and ONE empty
-    # bindings emit.
+    # Remove all. Expect ONE empty bindings emit.
     pre = len(sent)
     box.remove_click_callback("all")
     new = sent[pre:]
-    new_clickable = [
-        m for m in new if isinstance(m, _messages.SetSceneNodeClickableMessage)
-    ]
     new_bindings = [
         m for m in new if isinstance(m, _messages.SetSceneNodeClickBindingsMessage)
     ]
-    assert len(new_clickable) == 1 and new_clickable[0].clickable is False
     assert len(new_bindings) == 1 and new_bindings[0].bindings == ()
 
 
@@ -701,17 +686,14 @@ def test_publish_click_state_cache_rolls_back_on_queue_failure() -> None:
     def cb_a(event: viser.SceneNodePointerEvent) -> None:
         del event
 
-    cache_before_failure = box._impl._last_published_click_state
+    cache_before_failure = box._impl._last_published_click_bindings
     assert cache_before_failure == (
-        True,
-        (_messages.ClickBinding(button="left", modifier=None),),
+        _messages.DragBinding(button="left", modifier=None),
     )
 
     # Force the next ``queue_message`` to raise. ``_publish_click_state``
-    # only queues the ``Clickable`` message when the bool transitions,
-    # so for this scenario (already True, adding a second binding) it
-    # only emits the ``ClickBindings`` message -- raise on the first
-    # queue_message call after this point.
+    # emits one ``ClickBindings`` message per state change -- raise on
+    # the first queue_message call after this point.
     original_queue = server._websock_server.queue_message
     raise_armed = {"value": True}
 
@@ -735,7 +717,7 @@ def test_publish_click_state_cache_rolls_back_on_queue_failure() -> None:
     except RuntimeError:
         pass
 
-    cache_after_failure = box._impl._last_published_click_state
+    cache_after_failure = box._impl._last_published_click_bindings
     assert cache_after_failure == cache_before_failure, (
         "cache committed despite queue_message raising -- next legit "
         "state change will short-circuit against unsent state"
@@ -773,9 +755,7 @@ def test_publish_click_state_cache_rolls_back_on_queue_failure() -> None:
     # the cb_a + cb_c bindings, missing cb_b.
     assert len(bindings_msgs) >= 1
     last_bindings = bindings_msgs[-1].bindings
-    assert (
-        _messages.ClickBinding(button="left", modifier="cmd/ctrl") in last_bindings
-    ), (
+    assert _messages.DragBinding(button="left", modifier="cmd/ctrl") in last_bindings, (
         f"catch-up emit missing the cmd/ctrl binding that was lost to "
         f"the simulated failure; got {last_bindings}"
     )
@@ -807,13 +787,6 @@ def test_remove_node_purges_click_bindings_in_persistent_buffer() -> None:
 
     box.remove()
 
-    clickable_off = [
-        m
-        for m in sent
-        if isinstance(m, _messages.SetSceneNodeClickableMessage)
-        and m.clickable is False
-        and m.name == "/box"
-    ]
     bindings_purge = [
         m
         for m in sent
@@ -821,10 +794,6 @@ def test_remove_node_purges_click_bindings_in_persistent_buffer() -> None:
         and m.bindings == ()
         and m.name == "/box"
     ]
-    assert len(clickable_off) == 1, (
-        f"expected exactly 1 SetSceneNodeClickableMessage(False) for "
-        f"/box on remove(); got {clickable_off}"
-    )
     assert len(bindings_purge) == 1, (
         f"expected exactly 1 SetSceneNodeClickBindingsMessage(()) for "
         f"/box on remove() to purge the persistent buffer; got "

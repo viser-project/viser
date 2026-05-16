@@ -1,14 +1,13 @@
-"""E2E coverage for the focus-aware ``heldModifier`` gate.
+"""E2E coverage for the focus-aware held-modifier gate.
 
-The CursorController's ``heldModifier`` is fed by window-level
-``keydown`` / ``keyup`` listeners in ``App.tsx``. Without filtering,
-a Shift press inside a focused Mantine ``<TextInput>`` would flip
-the canvas cursor to pointer mid-typing whenever a click filter is
-registered.
+The canvas cursor reflects modifier state for registered click filters.
+Without filtering, a Shift press inside a focused Mantine `<TextInput>`
+would flip the canvas cursor to "pointer" mid-typing. The keydown
+listener in `App.tsx` checks both the event's target *and*
+`document.activeElement` and skips the update when either is a form
+control.
 
-These tests assert the gate is honoured: keydowns dispatched while a
-form control is focused (or whose target is a form control) do NOT
-update the cursor controller's ``heldModifier``.
+These tests assert the observable behavior: `canvas.style.cursor`.
 """
 
 from __future__ import annotations
@@ -21,16 +20,19 @@ import viser
 def test_keydown_with_input_target_is_ignored(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
-    """A keydown whose ``target`` is an ``<input>`` should not update
-    the cursor controller's held modifier, even if dispatched on
-    ``window`` (the listener is window-level)."""
-    del viser_server
+    """A keydown whose ``target`` is an ``<input>`` must not update the
+    held modifier. Without a registered click filter the cursor stays
+    "auto" regardless; this test asserts the filter-active case below."""
+
+    @viser_server.scene.on_click(modifier="shift")
+    def _(event: viser.SceneClickEvent) -> None:
+        del event
+
+    viser_page.wait_for_function("() => window.__viserPointer != null", timeout=10_000)
     out = viser_page.evaluate(
         """
         () => {
-            const owner = window.__viserMutable.cursorController;
-            // Reset to a known state.
-            owner.setHeldModifier(null);
+            window.__viserPointer.setHeldModifier(null);
             const input = document.createElement("input");
             document.body.appendChild(input);
             input.focus();
@@ -41,95 +43,80 @@ def test_keydown_with_input_target_is_ignored(
                     bubbles: true,
                     target: input,
                 }));
-                // Shift press while input is focused: the gate should
-                // skip this update.
-                return owner.derive();
+                return window.__viserMutable.canvas.style.cursor || "auto";
             } finally {
                 input.remove();
             }
         }
         """
     )
-    # No registered click filter, no hover, no held modifier => "auto".
+    # Shift press while input is focused: held modifier stays null,
+    # shift-only filter doesn't match, cursor stays "auto".
     assert out == "auto"
 
 
 def test_keydown_outside_form_control_updates_modifier(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
-    """Keydowns dispatched while no form control is focused must
-    still update the controller, otherwise the cursor never reflects
-    held modifiers at all. With a click filter registered for shift,
-    pressing shift should flip ``derive()`` to ``"pointer"``."""
+    """Keydowns outside form controls must update held modifier. With
+    a shift-filtered click registered, pressing shift flips the cursor
+    to "pointer"."""
 
     @viser_server.scene.on_click(modifier="shift")
     def _(event: viser.SceneClickEvent) -> None:
         del event
 
-    viser_page.wait_for_timeout(300)
+    viser_page.wait_for_function("() => window.__viserPointer != null", timeout=10_000)
     out = viser_page.evaluate(
         """
         () => {
-            const owner = window.__viserMutable.cursorController;
-            owner.setHeldModifier(null);
-            // Make sure no form control is focused; clicking the
-            // canvas dispatches focus there but our keydown is
-            // dispatched directly on window, with no element target.
+            window.__viserPointer.setHeldModifier(null);
             document.body.focus();
-            const before = owner.derive();
+            const canvas = window.__viserMutable.canvas;
+            const before = canvas.style.cursor || "auto";
             window.dispatchEvent(new KeyboardEvent("keydown", {
                 key: "Shift",
                 shiftKey: true,
                 bubbles: true,
             }));
-            const after = owner.derive();
+            const after = canvas.style.cursor || "auto";
             return { before, after };
         }
         """
     )
-    # Before: no modifier held; shift-only filter doesn't match null;
-    # rect-select isn't registered -> "auto".
     assert out["before"] == "auto"
-    # After shift press: filter matches shift -> "pointer".
     assert out["after"] == "pointer"
 
 
 def test_focused_textarea_blocks_modifier_update(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
-    """Same gate but for a ``<textarea>`` (Mantine multiline input
-    renders as one). The gate also checks ``document.activeElement``,
-    so a keydown without an explicit target still bypasses the
-    update when a form control has focus."""
+    """`<textarea>` is also gated (via the `document.activeElement`
+    check on listeners without an explicit target)."""
 
     @viser_server.scene.on_click(modifier="shift")
     def _(event: viser.SceneClickEvent) -> None:
         del event
 
-    viser_page.wait_for_timeout(300)
+    viser_page.wait_for_function("() => window.__viserPointer != null", timeout=10_000)
     out = viser_page.evaluate(
         """
         () => {
-            const owner = window.__viserMutable.cursorController;
-            owner.setHeldModifier(null);
+            window.__viserPointer.setHeldModifier(null);
             const textarea = document.createElement("textarea");
             document.body.appendChild(textarea);
             textarea.focus();
             try {
-                // Dispatch on window with no target -- gate should
-                // still skip via document.activeElement check.
                 window.dispatchEvent(new KeyboardEvent("keydown", {
                     key: "Shift",
                     shiftKey: true,
                     bubbles: true,
                 }));
-                return owner.derive();
+                return window.__viserMutable.canvas.style.cursor || "auto";
             } finally {
                 textarea.remove();
             }
         }
         """
     )
-    # Modifier wasn't updated; shift-only filter doesn't match null
-    # -> "auto".
     assert out == "auto"

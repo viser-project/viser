@@ -22,7 +22,8 @@ export const BatchedGlbAsset = React.forwardRef<
 >(function BatchedGlbAsset({ children, ...message }, ref) {
   const viewer = React.useContext(ViewerContext)!;
   const clickable =
-    viewer.useSceneTree(message.name, (node) => node?.clickable) ?? false;
+    (viewer.useSceneTree(message.name, (node) => node?.clickBindings?.length)
+      ?? 0) > 0;
   const draggable =
     (viewer.useSceneTree(
       message.name,

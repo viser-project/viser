@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import copy
 import dataclasses
 import warnings
@@ -175,20 +176,14 @@ class _SceneNodeHandleState:
     )
     visible: bool = True
     click_cb: list[_ClickCallbackEntry] = dataclasses.field(default_factory=list)
-    drag_cb: dict[DragPhase, list[_DragCallbackEntry]] = dataclasses.field(
-        default_factory=lambda: {"start": [], "update": [], "end": []}
-    )
+    drag_cb: list[_DragCallbackEntry] = dataclasses.field(default_factory=list)
     removed: bool = False
-    # Last (clickable, bindings) pair published to the client. Used to
-    # dedup redundant ``SetSceneNodeClickableMessage`` /
-    # ``SetSceneNodeClickBindingsMessage`` emits — without this, every
-    # repeat ``on_click()`` call resends ``clickable=True`` even though
-    # the bool is unchanged, and a no-op ``remove_click_callback("foo")``
-    # for an unregistered callback resends an empty bindings tuple.
+    # Last bindings tuple published to the client. Used to dedup
+    # redundant ``SetSceneNodeClickBindingsMessage`` emits — without
+    # this, a no-op ``remove_click_callback("foo")`` for an
+    # unregistered callback resends an empty bindings tuple.
     # ``None`` until the first publish.
-    _last_published_click_state: (
-        tuple[bool, tuple[_messages.ClickBinding, ...]] | None
-    ) = None
+    _last_published_click_bindings: tuple[_messages.DragBinding, ...] | None = None
 
 
 class _SceneNodeMessage(Protocol):
@@ -322,10 +317,8 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             i += 1
 
         # Clear stale per-node interaction state (click + drag) before
-        # we tear down handles. ``SetSceneNodeClickableMessage``,
-        # ``SetSceneNodeClickBindingsMessage``, and
-        # ``SetSceneNodeDragBindingsMessage`` are name-keyed in the
-        # persistent buffer and aren't purged by
+        # we tear down handles. The bindings messages are name-keyed in
+        # the persistent buffer and aren't purged by
         # ``RemoveSceneNodeMessage``, so without an empty replacement a
         # future node created with the same name would inherit stale
         # interaction state on late-joining clients. Has to run for
@@ -345,20 +338,15 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
                 continue
             impl = handle._impl
             if len(impl.click_cb) > 0:
-                api._websock_interface.queue_message(
-                    _messages.SetSceneNodeClickableMessage(node_name, False)
-                )
                 # Empty the per-node click-binding set so a re-created
                 # node with the same name doesn't inherit the prior
                 # node's modifier filters from the persistent buffer.
-                # Mirrors the empty-tuple emit for drag bindings below.
                 api._websock_interface.queue_message(
                     _messages.SetSceneNodeClickBindingsMessage(node_name, ())
                 )
-            if any(entries for entries in impl.drag_cb.values()):
+            if impl.drag_cb:
                 if not api._is_drag_active_for(node_name):
-                    for entries in impl.drag_cb.values():
-                        entries.clear()
+                    impl.drag_cb.clear()
                 api._websock_interface.queue_message(
                     _messages.SetSceneNodeDragBindingsMessage(node_name, ())
                 )
@@ -421,6 +409,12 @@ class TransformControlsEvent:
     """ID of client that triggered this event."""
     target: TransformControlsHandle
     """Transform controls handle that was affected."""
+    phase: DragPhase
+    """Drag lifecycle phase: ``"start"`` when the user grabs a handle,
+    ``"update"`` on every pose change while dragging, ``"end"`` at
+    release. ``target.wxyz`` and ``target.position`` reflect the
+    current pose on every phase (start/end fire at the same pose as
+    the surrounding update)."""
 
 
 NoneOrCoroutine = TypeVar("NoneOrCoroutine", None, Coroutine)
@@ -436,6 +430,11 @@ class SceneNodeDragEvent(Generic[TSceneNodeHandle]):
     """ID of client that triggered this event."""
     target: TSceneNodeHandle
     """Scene node that is being dragged."""
+    phase: DragPhase
+    """Drag lifecycle phase: ``"start"`` at press, ``"update"`` on
+    every throttled pointermove (~20Hz), ``"end"`` at release. A
+    single drag fires exactly one ``"start"``, zero or more
+    ``"update"``s, and exactly one ``"end"``."""
     instance_index: int | None
     """Instance index within a batched scene node (e.g. batched meshes,
     batched GLBs, batched axes); ``None`` for non-batched nodes. Frozen
@@ -466,42 +465,38 @@ _VALID_DRAG_BUTTONS: Tuple[_messages.DragButton, ...] = get_args(_messages.DragB
 
 class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
     def _sync_drag_bindings(self) -> None:
-        """Recompute the union of registered (button, modifiers) across all
-        phases and push it to the client as a full binding set."""
+        """Recompute the union of registered (button, modifiers) and
+        push it to the client as a full binding set."""
         seen: set[Tuple[_messages.DragButton, _messages.KeyModifier | None]] = set()
         bindings: list[_messages.DragBinding] = []
-        for entries in self._impl.drag_cb.values():
-            for entry in entries:
-                key = (entry.button, entry.modifier)
-                if key in seen:
-                    continue
-                seen.add(key)
-                bindings.append(
-                    _messages.DragBinding(button=entry.button, modifier=entry.modifier)
-                )
+        for entry in self._impl.drag_cb:
+            key = (entry.button, entry.modifier)
+            if key in seen:
+                continue
+            seen.add(key)
+            bindings.append(
+                _messages.DragBinding(button=entry.button, modifier=entry.modifier)
+            )
         self._impl.api._websock_interface.queue_message(
             _messages.SetSceneNodeDragBindingsMessage(self._impl.name, tuple(bindings))
         )
 
     def _has_any_drag_callbacks(self) -> bool:
-        return any(entries for entries in self._impl.drag_cb.values())
+        return bool(self._impl.drag_cb)
 
     def _dispatch_drag(
-        self, phase: DragPhase, input: _DragInput
+        self, input: _DragInput
     ) -> list[
         Callable[
             [SceneNodeDragEvent[_RaycastSupportedSceneNodeHandle]], None | Coroutine
         ]
     ]:
-        """Return the callbacks whose filter matches this input.
-
-        Encapsulates ``_impl.drag_cb`` so dispatch doesn't depend on the
-        internal storage layout."""
+        """Return the callbacks whose filter matches this input."""
         from ._scene_api import _drag_input_matches_filter
 
         return [
             entry.callback
-            for entry in self._impl.drag_cb[phase]
+            for entry in self._impl.drag_cb
             if _drag_input_matches_filter(input, entry.button, entry.modifier)
         ]
 
@@ -515,7 +510,6 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
 
     def _register_drag_callback(
         self: Self,
-        phase: DragPhase,
         button: _messages.DragButton,
         modifier: _messages.KeyModifier | None = None,
     ) -> Callable[
@@ -539,25 +533,24 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
                 button=button,
                 modifier=normalized,
             )
-            # Skip if an equivalent entry is already registered --
-            # otherwise double-registration would fire the callback twice
-            # per matching event. `_DragCallbackEntry` is a plain
-            # dataclass so tuple/dataclass equality catches duplicates.
-            if entry not in self._impl.drag_cb[phase]:
-                self._impl.drag_cb[phase].append(entry)
+            # Skip duplicate registration -- without this, the same
+            # callback fires twice per matching event. Equality is by
+            # tuple/dataclass value.
+            if entry not in self._impl.drag_cb:
+                self._impl.drag_cb.append(entry)
                 self._sync_drag_bindings()
             return func
 
         return decorator
 
     @overload
-    def on_drag_start(
+    def on_drag(
         self: Self,
         button: Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
     ) -> Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine]: ...
 
     @overload
-    def on_drag_start(
+    def on_drag(
         self: Self,
         button: _messages.DragButton = ...,
         *,
@@ -567,20 +560,24 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
     ]: ...
 
-    def on_drag_start(
+    def on_drag(
         self: Self,
         button: Union[_messages.DragButton, Callable[..., Any]] = "left",
         *,
         modifier: _messages.KeyModifier | None = None,
     ) -> Any:
-        """Attach a callback for when dragging starts.
+        """Attach a callback for the full drag lifecycle.
 
-        (Experimental) Scene-node drag callbacks may change in future
-        releases.
+        Fires three times per gesture: once with
+        ``event.phase == "start"`` at press, zero or more times with
+        ``"update"`` (throttled pointermove), once with ``"end"`` at
+        release. ``end`` fires even on cancellation paths (window
+        blur, pointer cancel, node removed mid-drag) so per-drag
+        state can be released.
 
-        Usable as a bare decorator (``@handle.on_drag_start``, defaults
-        to ``button="left"`` and no modifiers) or with arguments
-        (``@handle.on_drag_start("left", modifier="cmd/ctrl")``).
+        Usable as a bare decorator (``@handle.on_drag``, defaults to
+        ``button="left"`` and no modifiers) or with arguments
+        (``@handle.on_drag("left", modifier="cmd/ctrl")``).
 
         Args:
             button: Mouse button that triggers the drag. One of
@@ -593,123 +590,36 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
                 node intercepts the gesture -- the camera only orbits on
                 empty-space drags.
 
-        Note on ordering: drag callbacks fire in three phases per
-        gesture (start → update* → end). Synchronous (``def``)
-        callbacks are submitted to a thread pool fire-and-forget and
-        can run out of order -- an ``update`` may begin before
-        ``start`` finishes, leaving any state set in ``start`` (e.g.
-        a captured grab point) ``None`` when ``update`` reads it. To
-        get strict ordering, define your callbacks as ``async def``;
-        async callbacks are awaited on the event loop, which preserves
-        their phase order so long as you don't ``await`` inside them.
+        Note on ordering: synchronous (``def``) callbacks are submitted
+        to a thread pool fire-and-forget and can run out of order -- an
+        ``"update"`` phase may begin before ``"start"`` finishes,
+        leaving any state set in ``"start"`` ``None`` when ``"update"``
+        reads it. To get strict ordering, define your callback as
+        ``async def``; async callbacks are awaited on the event loop,
+        which preserves phase order so long as you don't ``await``
+        inside them.
         """
-        return self._dispatch_on_drag("start", button, modifier)
-
-    @overload
-    def on_drag_update(
-        self: Self,
-        button: Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
-    ) -> Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine]: ...
-
-    @overload
-    def on_drag_update(
-        self: Self,
-        button: _messages.DragButton = ...,
-        *,
-        modifier: _messages.KeyModifier | None = ...,
-    ) -> Callable[
-        [Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine]],
-        Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
-    ]: ...
-
-    def on_drag_update(
-        self: Self,
-        button: Union[_messages.DragButton, Callable[..., Any]] = "left",
-        *,
-        modifier: _messages.KeyModifier | None = None,
-    ) -> Any:
-        """Attach a callback for drag updates. See :meth:`on_drag_start` for argument docs.
-
-        (Experimental) Scene-node drag callbacks may change in future
-        releases."""
-        return self._dispatch_on_drag("update", button, modifier)
-
-    @overload
-    def on_drag_end(
-        self: Self,
-        button: Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
-    ) -> Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine]: ...
-
-    @overload
-    def on_drag_end(
-        self: Self,
-        button: _messages.DragButton = ...,
-        *,
-        modifier: _messages.KeyModifier | None = ...,
-    ) -> Callable[
-        [Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine]],
-        Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
-    ]: ...
-
-    def on_drag_end(
-        self: Self,
-        button: Union[_messages.DragButton, Callable[..., Any]] = "left",
-        *,
-        modifier: _messages.KeyModifier | None = None,
-    ) -> Any:
-        """Attach a callback for when dragging ends. See :meth:`on_drag_start` for argument docs.
-
-        (Experimental) Scene-node drag callbacks may change in future
-        releases."""
-        return self._dispatch_on_drag("end", button, modifier)
-
-    def _dispatch_on_drag(
-        self: Self,
-        phase: DragPhase,
-        button_or_func: Union[_messages.DragButton, Callable[..., Any]],
-        modifier: _messages.KeyModifier | None,
-    ) -> Any:
-        """Bare-decorator (a callable in the first slot) registers
-        immediately with default ``button="left"``; otherwise
-        ``button_or_func`` is the button literal."""
-        if callable(button_or_func):
-            return self._register_drag_callback(phase, "left", modifier)(
-                button_or_func  # type: ignore[arg-type]
+        if callable(button):
+            # Bare-decorator form: @handle.on_drag -- defaults to
+            # button="left" and no modifiers.
+            return self._register_drag_callback("left", modifier)(
+                button  # type: ignore[arg-type]
             )
-        return self._register_drag_callback(phase, button_or_func, modifier)
+        return self._register_drag_callback(button, modifier)
 
-    def _remove_drag_callback(
-        self,
-        phase: DragPhase,
-        callback: Literal["all"] | Callable,
-    ) -> None:
+    def remove_drag_callback(self, callback: Literal["all"] | Callable = "all") -> None:
+        """Remove drag callbacks from the scene node.
+
+        ``callback="all"`` removes every drag callback; a specific
+        function removes only entries whose callback identity matches.
+        """
         if callback == "all":
-            self._impl.drag_cb[phase].clear()
+            self._impl.drag_cb.clear()
         else:
-            self._impl.drag_cb[phase] = [
-                entry
-                for entry in self._impl.drag_cb[phase]
-                if entry.callback != callback
+            self._impl.drag_cb = [
+                entry for entry in self._impl.drag_cb if entry.callback != callback
             ]
         self._sync_drag_bindings()
-
-    def remove_drag_start_callback(
-        self, callback: Literal["all"] | Callable = "all"
-    ) -> None:
-        """Remove drag start callbacks from the scene node."""
-        self._remove_drag_callback("start", callback)
-
-    def remove_drag_update_callback(
-        self, callback: Literal["all"] | Callable = "all"
-    ) -> None:
-        """Remove drag update callbacks from the scene node."""
-        self._remove_drag_callback("update", callback)
-
-    def remove_drag_end_callback(
-        self, callback: Literal["all"] | Callable = "all"
-    ) -> None:
-        """Remove drag end callbacks from the scene node."""
-        self._remove_drag_callback("end", callback)
 
     @overload
     def on_click(
@@ -791,45 +701,28 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         self._publish_click_state()
 
     def _publish_click_state(self) -> None:
-        """Publish ``SetSceneNodeClickableMessage`` +
-        ``SetSceneNodeClickBindingsMessage`` to the client only when the
-        ``(clickable, bindings)`` pair has changed since the last
-        publish. Without the dedup, every call to ``on_click`` would
-        re-emit ``clickable=True`` (idempotent, but redundant), and a
-        no-op ``remove_click_callback("nonexistent")`` would still
-        emit messages -- N registrations on the same handle would
-        produce 2N wire messages even though only one
-        ``clickable=True`` was needed.
+        """Publish ``SetSceneNodeClickBindingsMessage`` to the client
+        only when the bindings tuple has changed since the last
+        publish. Without the dedup, a no-op
+        ``remove_click_callback("nonexistent")`` would still emit an
+        empty bindings tuple.
+
+        The client derives `clickable` from `bindings.length > 0`; no
+        separate flag is sent.
         """
         bindings = tuple(
-            _messages.ClickBinding(button="left", modifier=entry.modifier)
+            _messages.DragBinding(button="left", modifier=entry.modifier)
             for entry in self._impl.click_cb
         )
-        clickable = len(self._impl.click_cb) > 0
-        last = self._impl._last_published_click_state
-        if last is not None and last == (clickable, bindings):
+        if self._impl._last_published_click_bindings == bindings:
             return
-        # Queue both messages BEFORE committing the cache. If
-        # ``queue_message`` raises (websocket dropped mid-publish, the
-        # outbound buffer rejected, etc.), the cache stays at its
-        # previous value so the next state change retries the publish
-        # rather than short-circuiting against a state the client
-        # never received.
-        #
-        # ``Clickable`` is the legacy coarse flag, kept for the cursor
-        # / hover path until the InputManager owns hit-testing
-        # end-to-end. ``ClickBindings`` is the exact set the
-        # InputManager classifier consumes -- it carries the
-        # ``(button, modifier)`` filter list per node and is what
-        # context-menu suppression keys off.
-        if last is None or last[0] != clickable:
-            self._impl.api._websock_interface.queue_message(
-                _messages.SetSceneNodeClickableMessage(self._impl.name, clickable)
-            )
+        # Queue the message BEFORE committing the cache. If
+        # ``queue_message`` raises, the cache stays at its previous
+        # value so the next state change retries the publish.
         self._impl.api._websock_interface.queue_message(
             _messages.SetSceneNodeClickBindingsMessage(self._impl.name, bindings)
         )
-        self._impl._last_published_click_state = (clickable, bindings)
+        self._impl._last_published_click_bindings = bindings
 
 
 class CameraFrustumHandle(
@@ -1403,13 +1296,34 @@ class LabelHandle(
 class _TransformControlsState:
     last_updated: float
     update_cb: list[Callable[[TransformControlsEvent], None | Coroutine]]
-    drag_start_cb: list[Callable[[TransformControlsEvent], None | Coroutine]] = (
-        dataclasses.field(default_factory=list)
-    )
-    drag_end_cb: list[Callable[[TransformControlsEvent], None | Coroutine]] = (
-        dataclasses.field(default_factory=list)
-    )
     sync_cb: None | Callable[[ClientId, TransformControlsHandle], None] = None
+
+
+def _phase_filtered_wrapper(
+    phase: DragPhase,
+    func: Callable[[TransformControlsEvent], NoneOrCoroutine],
+) -> Callable[[TransformControlsEvent], None | Coroutine]:
+    """Build an ``update_cb`` entry for the deprecated
+    ``on_drag_start`` / ``on_drag_end`` methods. Tagged so
+    ``remove_*`` can locate it by the original ``func`` identity."""
+
+    if asyncio.iscoroutinefunction(func):
+
+        async def async_wrapper(event: TransformControlsEvent) -> None:
+            if event.phase == phase:
+                await func(event)  # type: ignore[misc]
+
+        async_wrapper._wraps = func  # type: ignore[attr-defined]
+        async_wrapper._phase_filter = phase  # type: ignore[attr-defined]
+        return async_wrapper
+
+    def sync_wrapper(event: TransformControlsEvent) -> None:
+        if event.phase == phase:
+            func(event)
+
+    sync_wrapper._wraps = func  # type: ignore[attr-defined]
+    sync_wrapper._phase_filter = phase  # type: ignore[attr-defined]
+    return sync_wrapper
 
 
 class TransformControlsHandle(
@@ -1429,13 +1343,18 @@ class TransformControlsHandle(
     def on_update(
         self, func: Callable[[TransformControlsEvent], NoneOrCoroutine]
     ) -> Callable[[TransformControlsEvent], NoneOrCoroutine]:
-        """Attach a callback for when the gizmo is moved.
+        """Attach a callback for the full gizmo drag lifecycle.
 
-        The callback can be either a standard function or an async function:
-        - Standard functions (def) will be executed in a threadpool.
-        - Async functions (async def) will be executed in the event loop.
+        Fires three times per gesture: once with
+        ``event.phase == "start"`` when the user grabs a handle, on
+        every pose change with ``"update"``, and once with ``"end"`` at
+        release. ``target.wxyz`` and ``target.position`` reflect the
+        current pose on every phase.
 
-        Using async functions can be useful for reducing race conditions.
+        Callbacks may be ``def`` (run in a threadpool) or ``async def``
+        (awaited on the event loop). Async preserves phase order so
+        long as you don't ``await`` inside; threadpool callbacks may
+        run out of order.
         """
         self._impl_aux.update_cb.append(func)
         return func
@@ -1445,73 +1364,64 @@ class TransformControlsHandle(
     ) -> None:
         """Remove update callbacks from the transform controls.
 
-        Args:
-            callback: Either "all" to remove all callbacks, or a specific callback function to remove.
+        ``callback="all"`` removes every callback regardless of which
+        method registered it; a specific function removes entries
+        whose identity matches (including wrappers installed by the
+        deprecated :meth:`on_drag_start` / :meth:`on_drag_end`).
         """
         if callback == "all":
             self._impl_aux.update_cb.clear()
         else:
             self._impl_aux.update_cb = [
-                cb for cb in self._impl_aux.update_cb if cb != callback
+                cb
+                for cb in self._impl_aux.update_cb
+                if cb != callback and getattr(cb, "_wraps", None) is not callback
             ]
 
+    @deprecated("Use `on_update` and check `event.phase == 'start'`.")
     def on_drag_start(
         self, func: Callable[[TransformControlsEvent], NoneOrCoroutine]
     ) -> Callable[[TransformControlsEvent], NoneOrCoroutine]:
-        """Attach a callback for when dragging starts ("mouse down").
-
-        The callback can be either a standard function or an async function:
-        - Standard functions (def) will be executed in a threadpool.
-        - Async functions (async def) will be executed in the event loop.
-
-        Using async functions can be useful for reducing race conditions.
-        """
-        self._impl_aux.drag_start_cb.append(func)
+        """Deprecated. Use :meth:`on_update` and gate on
+        ``event.phase == "start"`` inside the handler."""
+        self._impl_aux.update_cb.append(_phase_filtered_wrapper("start", func))
         return func
 
+    @deprecated("Use `on_update` and check `event.phase == 'end'`.")
     def on_drag_end(
         self, func: Callable[[TransformControlsEvent], NoneOrCoroutine]
     ) -> Callable[[TransformControlsEvent], NoneOrCoroutine]:
-        """Attach a callback for when dragging end ("mouse up").
-
-        The callback can be either a standard function or an async function:
-        - Standard functions (def) will be executed in a threadpool.
-        - Async functions (async def) will be executed in the event loop.
-
-        Using async functions can be useful for reducing race conditions.
-        """
-        self._impl_aux.drag_end_cb.append(func)
+        """Deprecated. Use :meth:`on_update` and gate on
+        ``event.phase == "end"`` inside the handler."""
+        self._impl_aux.update_cb.append(_phase_filtered_wrapper("end", func))
         return func
 
+    @deprecated("Use `remove_update_callback`.")
     def remove_drag_start_callback(
         self, callback: Literal["all"] | Callable = "all"
     ) -> None:
-        """Remove drag start callbacks from the transform controls.
+        """Deprecated. Use :meth:`remove_update_callback`."""
+        self._remove_phase_wrappers("start", callback)
 
-        Args:
-            callback: Either "all" to remove all callbacks, or a specific callback function to remove.
-        """
-        if callback == "all":
-            self._impl_aux.drag_start_cb.clear()
-        else:
-            self._impl_aux.drag_start_cb = [
-                cb for cb in self._impl_aux.drag_start_cb if cb != callback
-            ]
-
+    @deprecated("Use `remove_update_callback`.")
     def remove_drag_end_callback(
         self, callback: Literal["all"] | Callable = "all"
     ) -> None:
-        """Remove drag end callbacks from the transform controls.
+        """Deprecated. Use :meth:`remove_update_callback`."""
+        self._remove_phase_wrappers("end", callback)
 
-        Args:
-            callback: Either "all" to remove all callbacks, or a specific callback function to remove.
-        """
-        if callback == "all":
-            self._impl_aux.drag_end_cb.clear()
-        else:
-            self._impl_aux.drag_end_cb = [
-                cb for cb in self._impl_aux.drag_end_cb if cb != callback
-            ]
+    def _remove_phase_wrappers(
+        self, phase: DragPhase, callback: Literal["all"] | Callable
+    ) -> None:
+        def keep(cb: Callable[..., Any]) -> bool:
+            tag = getattr(cb, "_phase_filter", None)
+            if tag != phase:
+                return True  # Not one of ours.
+            if callback == "all":
+                return False
+            return getattr(cb, "_wraps", None) is not callback
+
+        self._impl_aux.update_cb = [cb for cb in self._impl_aux.update_cb if keep(cb)]
 
     def remove(self) -> None:
         """Remove the node from the scene."""

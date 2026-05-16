@@ -1,6 +1,6 @@
 """E2E tests for the per-node tap-vs-drag rule.
 
-A node with BOTH ``on_click`` and ``on_drag_*`` bound on the same input
+A node with BOTH ``on_click`` and ``on_drag`` bound on the same input
 must:
 
   - Fire ``on_click`` (and NOT ``drag_start``/``drag_end``) when the
@@ -75,26 +75,16 @@ def _add_click_and_drag_box(
             counters["click"] += 1
         click_evt.set()
 
-    @box.on_drag_start("left")
+    @box.on_drag("left")
     def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
-        del event
         with lock:
-            counters["start"] += 1
-        drag_start_evt.set()
-
-    @box.on_drag_update("left")
-    def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
-        del event
-        with lock:
-            counters["update"] += 1
-        drag_update_evt.set()
-
-    @box.on_drag_end("left")
-    def _(event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
-        del event
-        with lock:
-            counters["end"] += 1
-        drag_end_evt.set()
+            counters[event.phase] += 1
+        if event.phase == "start":
+            drag_start_evt.set()
+        elif event.phase == "update":
+            drag_update_evt.set()
+        elif event.phase == "end":
+            drag_end_evt.set()
 
     return (box, click_evt, drag_start_evt, drag_update_evt, drag_end_evt, counters)
 
@@ -275,6 +265,41 @@ def test_pointercancel_during_candidate_releases_lease(
     viser_page.mouse.up()
 
 
+def test_click_only_motion_does_not_fire_click_or_lock_camera(
+    viser_server: viser.ViserServer, viser_page: Page
+) -> None:
+    """A click-only node still uses the motion threshold for click
+    dispatch, but does not acquire a camera lease because there is no
+    drag promotion to protect."""
+    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    box = viser_server.scene.add_box(
+        "/click_only_box",
+        dimensions=(4.0, 4.0, 0.2),
+        color=(60, 160, 240),
+    )
+    click_evt = threading.Event()
+
+    @box.on_click
+    def _(event: viser.SceneNodePointerEvent[viser.BoxHandle]) -> None:
+        del event
+        click_evt.set()
+
+    wait_for_scene_node(viser_page, "/click_only_box")
+
+    cx, cy = canvas_center(viser_page)
+    viser_page.mouse.move(cx, cy)
+    viser_page.mouse.down()
+    assert viser_page.evaluate(JS_CAMERA_ENABLED) is True
+    assert viser_page.evaluate(JS_LEASE_REASONS) == []
+    viser_page.mouse.move(cx + 80, cy + 40, steps=12)
+    viser_page.mouse.up()
+    time.sleep(0.2)
+
+    assert not click_evt.is_set(), (
+        "click-only node fired on_click after drag-sized pointer motion"
+    )
+
+
 def test_separate_tap_after_drag_does_not_double_fire(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
@@ -348,9 +373,7 @@ def test_rapid_second_pointerdown_does_not_leak_lease(
         [cx, cy],
     )
     time.sleep(0.05)
-    leases_first = viser_page.evaluate(
-        "() => window.__viserMutable.cameraControlOwner.leaseReasonsList()"
-    )
+    leases_first = viser_page.evaluate(JS_LEASE_REASONS)
 
     # Synthetic pointer #2 begins on the same node before #1 releases.
     # The fix releases #1's lease before installing #2's. Without the
@@ -369,9 +392,7 @@ def test_rapid_second_pointerdown_does_not_leak_lease(
         [cx, cy],
     )
     time.sleep(0.05)
-    leases_after_second = viser_page.evaluate(
-        "() => window.__viserMutable.cameraControlOwner.leaseReasonsList()"
-    )
+    leases_after_second = viser_page.evaluate(JS_LEASE_REASONS)
 
     # Release pointer #2.
     viser_page.evaluate(
@@ -388,9 +409,7 @@ def test_rapid_second_pointerdown_does_not_leak_lease(
         [cx, cy],
     )
     time.sleep(0.2)
-    leases_final = viser_page.evaluate(
-        "() => window.__viserMutable.cameraControlOwner.leaseReasonsList()"
-    )
+    leases_final = viser_page.evaluate(JS_LEASE_REASONS)
 
     # After pointer #1: exactly one candidate lease.
     assert leases_first.count("node-click-or-drag-candidate") == 1, (

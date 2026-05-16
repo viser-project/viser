@@ -23,9 +23,7 @@ import { DragBinding } from "./dragUtils";
 import { useDragLayer } from "./dragLayerContext";
 import {
   DragInput,
-  MOTION_THRESHOLD_PX,
   anyBindingMatches,
-  hasCmdCtrl,
   keyModifierFromEvent,
   pointerButtonFromNative,
 } from "./dragUtils";
@@ -707,28 +705,22 @@ export function SceneNodeThreeObject(props: { name: string }) {
   );
 
   const [unmount, setUnmount] = React.useState(false);
-  const clickable =
-    viewer.useSceneTree(props.name, (node) => node?.clickable) ?? false;
-  // Exact click bindings carried over the wire by
-  // ``SetSceneNodeClickBindingsMessage`` (step 6 of the InputManager
-  // migration). ``null`` is the legacy sentinel for nodes whose
-  // server hasn't been upgraded; ``onContextMenu`` falls back to the
-  // conservative ``clickable && hasCmdCtrl`` rule in that case.
+  // shallowArrayEqual: the server echoes a fresh `bindings` array on
+  // every binding update even if the content is unchanged; this
+  // prevents spurious re-renders when the binding set is identical.
   const clickBindings =
     viewer.useSceneTree(
       props.name,
       (node) => node?.clickBindings,
-      (a, b) => a === b || (a !== null && b !== null && shallowArrayEqual(a, b)),
-    ) ?? null;
-  // shallowArrayEqual: the server echoes a fresh `bindings` array on every
-  // `SetSceneNodeDragBindingsMessage` even if the content is unchanged; this
-  // prevents spurious re-renders when the binding set is identical.
+      shallowArrayEqual,
+    ) ?? EMPTY_DRAG_BINDINGS;
   const dragBindings =
     viewer.useSceneTree(
       props.name,
       (node) => node?.dragBindings,
       shallowArrayEqual,
     ) ?? EMPTY_DRAG_BINDINGS;
+  const clickable = clickBindings.length > 0;
   const draggable = dragBindings.length > 0;
   const interactive = clickable || draggable;
   const objRef = React.useRef<THREE.Object3D | null>(null);
@@ -808,6 +800,7 @@ export function SceneNodeThreeObject(props: { name: string }) {
   // Drag state lives in the viewer-level DragLayer -- this component only
   // dispatches pointer events into it and reads bindings for matching.
   const dragLayer = useDragLayer();
+  const interaction = viewer.interaction;
 
   const getPointerXy = React.useCallback(
     (clientX: number, clientY: number): [number, number] => {
@@ -849,7 +842,7 @@ export function SceneNodeThreeObject(props: { name: string }) {
               // Pointer is no longer over this mesh, reset hover state.
               hoveredRef.current.isHovered = false;
               hoveredRef.current.instanceId = null;
-              viewerMutable.cursorController.adjustHoveredClickable(-1);
+              interaction.hover.setHovered(props.name, false);
             }
           }
         }
@@ -896,7 +889,7 @@ export function SceneNodeThreeObject(props: { name: string }) {
       ) {
         hoveredRef.current.isHovered = false;
         hoveredRef.current.instanceId = null;
-        viewerMutable.cursorController.adjustHoveredClickable(-1);
+        interaction.hover.setHovered(props.name, false);
       }
 
       // If a node disappears mid-drag, end the drag cleanly.
@@ -938,7 +931,8 @@ export function SceneNodeThreeObject(props: { name: string }) {
   // Handle case where interactivity is toggled off while still hovered.
   if (!interactive && hoveredRef.current.isHovered) {
     hoveredRef.current.isHovered = false;
-    viewerMutable.cursorController.adjustHoveredClickable(-1);
+    interaction.hover.setHovered(props.name, false);
+    interaction.nodeGestures.cancelNode(props.name);
   }
 
   // End the active drag if this node's draggability is revoked (bindings
@@ -947,8 +941,9 @@ export function SceneNodeThreeObject(props: { name: string }) {
   React.useEffect(() => {
     if (!draggable && dragLayer !== null) {
       dragLayer.stopIfNodeIs(props.name);
+      interaction.nodeGestures.cancelNode(props.name);
     }
-  }, [draggable, dragLayer, props.name]);
+  }, [draggable, dragLayer, interaction, props.name]);
 
   // Reset hover state on true unmount, and tell DragLayer to end the
   // drag if it targets this node.
@@ -958,81 +953,12 @@ export function SceneNodeThreeObject(props: { name: string }) {
     return () => {
       if (hoveredRef.current.isHovered) {
         hoveredRef.current.isHovered = false;
-        viewerMutable.cursorController.adjustHoveredClickable(-1);
+        interaction.hover.setHovered(props.name, false);
       }
       dragLayerRef.current?.stopIfNodeIs(props.name);
-      // Release any in-flight click-or-drag candidate lease so a
-      // node that unmounts mid-press doesn't strand the camera
-      // disabled.
-      if (dragInfo.current.pendingDragCameraLease !== null) {
-        dragInfo.current.pendingDragCameraLease.release();
-        dragInfo.current.pendingDragCameraLease = null;
-        dragInfo.current.pendingDrag = null;
-      }
-      if (dragInfo.current.pendingDragTeardown !== null) {
-        dragInfo.current.pendingDragTeardown();
-      }
+      interaction.nodeGestures.cancelNode(props.name);
     };
-  }, []);
-
-  const dragInfo = React.useRef<{
-    dragging: boolean;
-    startClientX: number;
-    startClientY: number;
-    /** Resolved DragInput from the most recent pointerdown on this
-     * node. Consulted by ``onContextMenu`` so we only suppress the OS
-     * menu when the actual button+modifier that fired pointerdown would
-     * have been consumed. The native ``contextmenu`` event has no
-     * reliable button code (browsers disagree -- e.g. Chromium reports
-     * button=0 for macOS ctrl+left-click and button=2 for plain
-     * right-click), so we read the button from the preceding pointerdown
-     * instead. */
-    lastPointerDownInput: DragInput | null;
-    /** Deferred drag-start payload for nodes that are *both* clickable
-     * and draggable on the same input. We delay calling
-     * ``dragLayer.beginDrag`` until motion crosses
-     * :data:`MOTION_THRESHOLD_PX` so a stationary tap can still fire
-     * the click handler. ``null`` outside the candidate window, or
-     * for drag-only nodes (which commit immediately at pointerdown).
-     * Mirrors the InputManager classifier's ``dragBindingsToCommit``
-     * field; this is the SceneTree-side backport of that rule for
-     * step-1-7 builds. */
-    pendingDrag:
-      | {
-          nodeName: string;
-          instanceIndex: number | null;
-          targetObj: THREE.Object3D;
-          eventPoint: THREE.Vector3;
-          pointerXy: [number, number];
-          pointerId: number;
-          input: DragInput;
-          bindings: DragBinding[];
-        }
-      | null;
-    /** Camera-control lease held while the click-vs-drag decision is
-     * pending, so the first ``MOTION_THRESHOLD_PX`` of motion don't
-     * trickle into camera-controls as a tiny orbit. Released on
-     * stationary release (click fires), pointercancel, or as a
-     * no-op once ``DragLayer.beginDrag`` acquires its own
-     * (overlapping) drag-lifetime lease on threshold crossing. */
-    pendingDragCameraLease:
-      | import("./inputManager/cameraControlOwner").CameraEnabledLease
-      | null;
-    /** Removes the window-level pointercancel/lostpointercapture/blur
-     * listeners installed at pointerdown for the click-or-drag
-     * candidate. Called from every termination path (stationary
-     * click, drag promotion, R3F onPointerCancel, the listeners
-     * themselves). ``null`` when no candidate is in flight. */
-    pendingDragTeardown: (() => void) | null;
-  }>({
-    dragging: false,
-    startClientX: 0,
-    startClientY: 0,
-    lastPointerDownInput: null,
-    pendingDrag: null,
-    pendingDragCameraLease: null,
-    pendingDragTeardown: null,
-  });
+  }, [interaction, props.name]);
 
   if (objNode === undefined || unmount) {
     return null;
@@ -1053,131 +979,77 @@ export function SceneNodeThreeObject(props: { name: string }) {
               : (e) => {
                   if (!isDisplayed()) return;
                   e.stopPropagation();
-                  const state = dragInfo.current;
-                  const [pointerX, pointerY] = getPointerXy(
-                    e.clientX,
-                    e.clientY,
-                  );
-                  state.startClientX = pointerX;
-                  state.startClientY = pointerY;
-                  state.dragging = false;
                   const buttonName = pointerButtonFromNative(
                     e.nativeEvent.button,
                   );
-                  state.lastPointerDownInput =
+                  const input: DragInput | null =
                     buttonName === null
                       ? null
                       : {
                           button: buttonName,
                           modifier: keyModifierFromEvent(e),
                         };
+                  interaction.nodeGestures.recordPointerDown(input);
 
-                  // Drop any pending click-or-drag candidate state from
-                  // a *previous* pointerdown that hasn't terminated.
-                  // Without this, a rapid second pointerdown on the
-                  // same node (multi-touch tap, double-tap, or a
-                  // pointerdown that races a still-resolving prior
-                  // press) overwrites ``state.pendingDragTeardown``
-                  // with the new closure -- the previous press's
-                  // window listeners (pointercancel /
-                  // lostpointercapture / blur) and its
-                  // ``cameraControlOwner`` lease are unreachable
-                  // through the dragInfo slot and leak indefinitely.
-                  // Calling the previous teardown + lease release
-                  // first restores the single-press-at-a-time
-                  // invariant.
-                  if (state.pendingDragCameraLease !== null) {
-                    state.pendingDragCameraLease.release();
-                    state.pendingDragCameraLease = null;
-                  }
-                  if (state.pendingDragTeardown !== null) {
-                    state.pendingDragTeardown();
-                  }
-                  state.pendingDrag = null;
+                  const clickMatches =
+                    input !== null && anyBindingMatches(clickBindings, input);
+                  const targetObj = objRef.current;
+                  const dragMatches =
+                    input !== null &&
+                    draggable &&
+                    dragLayer !== null &&
+                    targetObj !== null &&
+                    anyBindingMatches(dragBindings, input);
+                  if (!clickMatches && !dragMatches) return;
 
-                  // Hand off to DragLayer. It no-ops if any drag is already
-                  // active (mutex) or if no binding matches the input.
-                  if (!draggable || dragLayer === null) return;
-                  if (objRef.current === null) return;
-                  if (state.lastPointerDownInput === null) return;
-                  const input = state.lastPointerDownInput;
-                  if (!anyBindingMatches(dragBindings, input)) return;
+                  const beginDragArgs =
+                    dragMatches &&
+                    input !== null &&
+                    dragLayer !== null &&
+                    targetObj !== null
+                      ? {
+                          nodeName: props.name,
+                          // Batched handles (meshes/GLBs/axes) set
+                          // computeClickInstanceIndexFromInstanceId; plain
+                          // handles leave it undefined and instance_index
+                          // is null on the wire.
+                          instanceIndex:
+                            computeClickInstanceIndexFromInstanceId ===
+                            undefined
+                              ? null
+                              : computeClickInstanceIndexFromInstanceId(
+                                  e.instanceId,
+                                ),
+                          targetObj,
+                          eventPoint: e.point,
+                          pointerXy: getPointerXy(e.clientX, e.clientY),
+                          pointerId: e.nativeEvent.pointerId,
+                          input,
+                          bindings: dragBindings,
+                        }
+                      : null;
 
-                  e.nativeEvent.preventDefault();
-
-                  // Tap-vs-drag rule: if this node is also clickable
-                  // for the same input, defer ``beginDrag`` until
-                  // motion crosses :data:`MOTION_THRESHOLD_PX`. A
-                  // stationary release fires the click; motion past
-                  // threshold fires the drag. Drag-only nodes
-                  // (``!clickable``) commit immediately as before --
-                  // there's no click candidate to preserve.
-                  const beginDragArgs = {
-                    nodeName: props.name,
-                    // Batched handles (meshes/GLBs/axes) set
-                    // computeClickInstanceIndexFromInstanceId; plain
-                    // handles leave it undefined and instance_index is
-                    // null on the wire.
-                    instanceIndex:
-                      computeClickInstanceIndexFromInstanceId === undefined
-                        ? null
-                        : computeClickInstanceIndexFromInstanceId(e.instanceId),
-                    targetObj: objRef.current,
-                    eventPoint: e.point,
-                    pointerXy: [pointerX, pointerY] as [number, number],
-                    pointerId: e.nativeEvent.pointerId,
-                    input,
-                    bindings: dragBindings,
-                  };
-                  if (clickable) {
-                    state.pendingDrag = beginDragArgs;
-                    // Disable camera-controls eagerly so a stationary
-                    // tap that becomes a click doesn't trickle 3 px
-                    // of orbit into the camera between pointerdown
-                    // and pointerup. The lease is released on every
-                    // termination path: stationary release fires the
-                    // click and drops the lease; threshold-crossing
-                    // promotion calls ``beginDrag`` which acquires
-                    // its own (overlapping) drag-lifetime lease, and
-                    // we drop ours immediately after.
-                    state.pendingDragCameraLease =
-                      viewerMutable.cameraControlOwner.acquireLease(
-                        "node-click-or-drag-candidate",
-                      );
-                    // Window-level safety net: R3F's onPointerCancel
-                    // only fires when its raycast routes the cancel
-                    // to *this* node, which doesn't happen for OS
-                    // takeover (palm rejection, devtools open
-                    // mid-press, browser blur). Subscribe once and
-                    // tear down on every termination path.
-                    const releasePending = () => {
-                      const s = dragInfo.current;
-                      if (s.pendingDragCameraLease !== null) {
-                        s.pendingDragCameraLease.release();
-                        s.pendingDragCameraLease = null;
-                      }
-                      s.pendingDrag = null;
-                      s.lastPointerDownInput = null;
-                      teardown();
-                    };
-                    const onCancel = (ev: PointerEvent) => {
-                      if (ev.pointerId !== beginDragArgs.pointerId) return;
-                      releasePending();
-                    };
-                    const onBlur = () => releasePending();
-                    const teardown = () => {
-                      window.removeEventListener("pointercancel", onCancel);
-                      window.removeEventListener("lostpointercapture", onCancel);
-                      window.removeEventListener("blur", onBlur);
-                      dragInfo.current.pendingDragTeardown = null;
-                    };
-                    state.pendingDragTeardown = teardown;
-                    window.addEventListener("pointercancel", onCancel);
-                    window.addEventListener("lostpointercapture", onCancel);
-                    window.addEventListener("blur", onBlur);
-                  } else {
-                    state.dragging = true;
-                    dragLayer.beginDrag(beginDragArgs);
+                  if (clickMatches || dragMatches) {
+                    // Every interactive node runs through the
+                    // motion-threshold candidate: a stationary press on
+                    // a clickable node fires the click without a
+                    // spurious drag start/end pair, and a stationary
+                    // press on a drag-only node fires nothing at all
+                    // (vs. the prior behavior, where dragstart fired
+                    // immediately and dragend followed on release with
+                    // no motion between -- a degenerate gesture user
+                    // code had to special-case).
+                    interaction.nodeGestures.beginCandidate({
+                      pointerId: e.nativeEvent.pointerId,
+                      nodeKey: props.name,
+                      startClientXy: [e.clientX, e.clientY],
+                      lockCamera: dragMatches,
+                      onPromote:
+                        beginDragArgs === null || dragLayer === null
+                          ? null
+                          : () => dragLayer.beginDrag(beginDragArgs),
+                    });
+                    if (dragMatches) e.nativeEvent.preventDefault();
                   }
                 }
           }
@@ -1198,27 +1070,13 @@ export function SceneNodeThreeObject(props: { name: string }) {
                   // menu was triggered by the keyboard menu key), use a
                   // plain right-button input -- preserves the original
                   // "right-click on a right-bound node" behavior.
-                  const input: DragInput = dragInfo.current
-                    .lastPointerDownInput ?? {
-                    button: "right",
-                    modifier: keyModifierFromEvent(e),
-                  };
+                  const input: DragInput =
+                    interaction.nodeGestures.getLastPointerDownInput() ?? {
+                      button: "right",
+                      modifier: keyModifierFromEvent(e),
+                    };
                   const dragMatches = anyBindingMatches(dragBindings, input);
-                  // When per-node click bindings are available
-                  // (``clickBindings !== null`` once
-                  // ``SetSceneNodeClickBindingsMessage`` has shipped
-                  // for this node), suppress the OS menu only when
-                  // the actual ``(button, modifier)`` would be
-                  // consumed by a registered click. Falls back to
-                  // the conservative ``clickable && hasCmdCtrl``
-                  // rule for legacy nodes.
-                  const clickMatches =
-                    clickBindings !== null
-                      ? anyBindingMatches(
-                          clickBindings as DragBinding[],
-                          input,
-                        )
-                      : clickable && hasCmdCtrl(input.modifier);
+                  const clickMatches = anyBindingMatches(clickBindings, input);
                   if (!dragMatches && !clickMatches) return;
                   e.nativeEvent.preventDefault();
                   e.stopPropagation();
@@ -1231,59 +1089,12 @@ export function SceneNodeThreeObject(props: { name: string }) {
                   if (!isDisplayed()) return;
                   e.stopPropagation();
 
-                  // Update pointer position for re-raycasting when mesh changes.
+                  // Track pointer position for the useFrame hover
+                  // recheck (mesh geometry update / visibility loss).
                   lastPointerPos.current = {
                     clientX: e.clientX,
                     clientY: e.clientY,
                   };
-
-                  // If a drag has been initiated, DragLayer's window
-                  // pointermove handler owns the gesture -- skip local
-                  // click-vs-drag bookkeeping.
-                  const state = dragInfo.current;
-                  if (state.dragging) return;
-
-                  const [pointerX, pointerY] = getPointerXy(
-                    e.clientX,
-                    e.clientY,
-                  );
-                  const deltaX = pointerX - state.startClientX;
-                  const deltaY = pointerY - state.startClientY;
-                  // Minimum motion. Shared threshold with App.tsx's
-                  // canvas-level click-vs-rect-select check; see
-                  // ``MOTION_THRESHOLD_PX`` in dragUtils.ts.
-                  if (
-                    Math.abs(deltaX) <= MOTION_THRESHOLD_PX &&
-                    Math.abs(deltaY) <= MOTION_THRESHOLD_PX
-                  )
-                    return;
-                  state.dragging = true;
-                  // Promote a deferred click+drag candidate into a
-                  // real drag now that motion has crossed threshold.
-                  // ``DragLayer.beginDrag`` installs window-level
-                  // pointermove/pointerup listeners that drive the
-                  // rest of the gesture; the pixel "jump" between the
-                  // pointerdown position (recorded as the drag origin)
-                  // and the threshold-crossing position (current
-                  // cursor) is bounded by MOTION_THRESHOLD_PX.
-                  if (state.pendingDrag !== null && dragLayer !== null) {
-                    const pending = state.pendingDrag;
-                    state.pendingDrag = null;
-                    dragLayer.beginDrag(pending);
-                    // ``beginDrag`` acquires its own drag-lifetime
-                    // camera lease; drop ours so we don't leak it
-                    // past drag end. Tear down the window-level
-                    // safety listeners now that the drag's own
-                    // window listeners (installed by beginDrag) own
-                    // cancellation.
-                    if (state.pendingDragCameraLease !== null) {
-                      state.pendingDragCameraLease.release();
-                      state.pendingDragCameraLease = null;
-                    }
-                    if (state.pendingDragTeardown !== null) {
-                      state.pendingDragTeardown();
-                    }
-                  }
                 }
           }
           onPointerUp={
@@ -1293,34 +1104,22 @@ export function SceneNodeThreeObject(props: { name: string }) {
                   if (!isDisplayed()) return;
                   e.stopPropagation();
 
-                  // If a drag was active, DragLayer's window pointerup
-                  // handler ends it and sends the end message. Here we just
-                  // need to suppress the local click path.
-                  const state = dragInfo.current;
                   // Drop the recorded pointerdown input now that the
-                  // gesture is over. Prevents stale state from confusing
-                  // a later keyboard-triggered contextmenu (Shift+F10 /
-                  // Menu key), which otherwise would read input from a
-                  // long-finished click. macOS ctrl+click fires
+                  // gesture is over. Prevents stale state from
+                  // confusing a later keyboard-triggered contextmenu
+                  // (Shift+F10 / Menu key). macOS ctrl+click fires
                   // contextmenu BEFORE pointerup, so the suppression
-                  // path has already consumed the value by the time we
-                  // clear it.
-                  state.lastPointerDownInput = null;
-                  // Stationary release: a deferred drag candidate
-                  // becomes a click. Drop the pending-drag payload
-                  // and release the camera lease before dispatching
-                  // so any racing window event can't promote it
-                  // after the fact.
-                  state.pendingDrag = null;
-                  if (state.pendingDragCameraLease !== null) {
-                    state.pendingDragCameraLease.release();
-                    state.pendingDragCameraLease = null;
-                  }
-                  if (state.pendingDragTeardown !== null) {
-                    state.pendingDragTeardown();
-                  }
-                  if (state.dragging) return;
-                  if (!clickable) return;
+                  // path has already consumed the value by the time
+                  // we clear it.
+                  interaction.nodeGestures.clearLastPointerDownInput();
+                  // Settle any node-click-candidate. "click" means the
+                  // press stayed stationary; "none" means it
+                  // promoted to drag, was cancelled, or no candidate
+                  // was ever started (for example, a drag-only node).
+                  const outcome = interaction.nodeGestures.settlePointerUp({
+                    pointerId: e.nativeEvent.pointerId,
+                  });
+                  if (!clickable || outcome !== "click") return;
                   // Convert ray to viser coordinates.
                   const ray = rayToViserCoords(viewer, e.ray);
 
@@ -1352,21 +1151,8 @@ export function SceneNodeThreeObject(props: { name: string }) {
           onPointerCancel={
             !interactive
               ? undefined
-              : () => {
-                  // Mirror the pointerup clear: if the gesture is
-                  // interrupted (touch palm rejection, OS takeover,
-                  // dev-tools open mid-press) we still need to drop the
-                  // recorded input so a later keyboard-triggered
-                  // contextmenu doesn't read stale state.
-                  dragInfo.current.lastPointerDownInput = null;
-                  dragInfo.current.pendingDrag = null;
-                  if (dragInfo.current.pendingDragCameraLease !== null) {
-                    dragInfo.current.pendingDragCameraLease.release();
-                    dragInfo.current.pendingDragCameraLease = null;
-                  }
-                  if (dragInfo.current.pendingDragTeardown !== null) {
-                    dragInfo.current.pendingDragTeardown();
-                  }
+              : (e) => {
+                  interaction.cancelPointer(e.nativeEvent.pointerId);
                 }
           }
           onPointerOver={
@@ -1389,11 +1175,7 @@ export function SceneNodeThreeObject(props: { name: string }) {
                   hoveredRef.current.isHovered = true;
                   // Store the instanceId in the hover ref.
                   hoveredRef.current.instanceId = e.instanceId ?? null;
-                  // Cursor is owned by ``CursorController.adjustHoveredClickable``
-                  // -- it derives ``"pointer"`` once any clickable
-                  // node is hovered (and on pointermove transitions
-                  // back to ``"auto"`` when count returns to 0).
-                  viewerMutable.cursorController.adjustHoveredClickable(+1);
+                  interaction.hover.setHovered(props.name, true);
                 }
           }
           onPointerOut={
@@ -1408,7 +1190,7 @@ export function SceneNodeThreeObject(props: { name: string }) {
                   hoveredRef.current.isHovered = false;
                   // Clear the instanceId when no longer hovering.
                   hoveredRef.current.instanceId = null;
-                  viewerMutable.cursorController.adjustHoveredClickable(-1);
+                  interaction.hover.setHovered(props.name, false);
                 }
           }
         >

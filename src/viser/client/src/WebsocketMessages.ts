@@ -1483,15 +1483,6 @@ export interface SetSceneNodeVisibilityMessage {
   name: string;
   visible: boolean;
 }
-/** Set the clickability of a particular node in the scene.
- *
- * (automatically generated)
- */
-export interface SetSceneNodeClickableMessage {
-  type: "SetSceneNodeClickableMessage";
-  name: string;
-  clickable: boolean;
-}
 /** Declare the drag-input combinations a scene node listens for.
  *
  * Sent as a full set; empty ``bindings`` means the node is not draggable.
@@ -1525,7 +1516,8 @@ export interface SetSceneNodeDragBindingsMessage {
  *
  * Sent as a full set; empty ``bindings`` means the node is not
  * clickable. Mirrors :class:`SetSceneNodeDragBindingsMessage` for the
- * click channel.
+ * click channel. Click and drag share the same `DragBinding` shape --
+ * button + exact-match modifier.
  *
  * Excluded from scene serialization for the same reason as the drag
  * sibling -- click callbacks live on the server.
@@ -2010,7 +2002,6 @@ export type Message =
   | TransformControlsDragEndMessage
   | BackgroundImageMessage
   | SetSceneNodeVisibilityMessage
-  | SetSceneNodeClickableMessage
   | SetSceneNodeDragBindingsMessage
   | SetSceneNodeClickBindingsMessage
   | SceneNodeClickMessage

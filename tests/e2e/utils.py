@@ -184,13 +184,15 @@ def canvas_center(page: Page) -> tuple[float, float]:
     return (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
 
 
-JS_LEASE_REASONS = "() => window.__viserMutable.cameraControlOwner.leaseReasonsList()"
-"""Returns the array of currently-held camera-control lease reasons.
-Used by tests that assert which gesture is suppressing camera input."""
+JS_LEASE_REASONS = "() => window.__viserPointer.cameraLockReasons()"
+"""Returns the array of currently-held camera-control lock reason
+strings. Used by tests that assert which gesture is suppressing camera
+input."""
 
 JS_CAMERA_ENABLED = "() => window.__viserMutable.cameraControl.enabled"
 """Returns ``cameraControl.enabled`` -- ``true`` when no gesture or
-lease is suppressing camera input."""
+lock is suppressing camera input."""
 
-JS_GESTURE = "() => window.__viserMutable.inputManager.getGesture()"
-"""Returns the InputManager's typed canvas-level gesture struct."""
+JS_GESTURE = "() => window.__viserPointer.getGesture()"
+"""Returns the typed canvas-level gesture struct from
+``pointer/gestures.ts``."""

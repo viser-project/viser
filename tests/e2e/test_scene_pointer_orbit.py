@@ -41,6 +41,14 @@ def _positions_differ(a: list[float], b: list[float], eps: float = 1e-3) -> bool
     return any(abs(x - y) > eps for x, y in zip(a, b))
 
 
+# Off-axis camera pose used by every test in this file. Viser's default up
+# direction is +Z, so a position on the +Z axis (e.g. (0, 0, 4)) parks the
+# camera at the spherical-orbit pole -- azimuthal mouse drag rotates around
+# the up axis without moving the camera, and the orbit asserts below would
+# false-negative even though camera-controls IS receiving the input.
+_OFF_POLE_POSITION = (3.0, 3.0, 3.0)
+
+
 def test_scene_on_click_does_not_disable_orbit(
     viser_server: viser.ViserServer,
     viser_page: Page,
@@ -49,7 +57,7 @@ def test_scene_on_click_does_not_disable_orbit(
     still orbit the camera. Pre-fix, ``handlePointerDown`` disabled
     camera controls whenever any click filter matched -- so registering
     a no-modifier click handler broke orbit for the entire canvas."""
-    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.position = _OFF_POLE_POSITION
     viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
 
     click_fired = threading.Event()
@@ -97,7 +105,7 @@ def test_scene_on_click_stationary_press_still_fires_click(
     press-release must still send the click message. The click path
     goes through ``handlePointerUp``'s no-motion branch -- which
     doesn't depend on whether camera controls were disabled."""
-    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.position = _OFF_POLE_POSITION
     viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
 
     click_fired = threading.Event()
@@ -137,7 +145,7 @@ def test_scene_on_rect_select_still_disables_orbit(
     so the rubber-band rectangle can be drawn cleanly. This is the
     pre-existing behavior the fix preserves: orbit-suppression is
     conditional on rect-select, not on click."""
-    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.position = _OFF_POLE_POSITION
     viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
 
     rect_fired = threading.Event()
@@ -184,7 +192,7 @@ def test_scene_click_and_rect_select_coexist(
     included) disabled orbit -- a plain drag with both filters
     registered would have stayed put even though only click was active.
     """
-    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.position = _OFF_POLE_POSITION
     viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
 
     click_fired = threading.Event()
@@ -260,7 +268,7 @@ def test_modifier_filtered_click_does_not_block_plain_orbit(
     Sibling sanity check to the click-disables-orbit regression: makes
     sure the modifier-gating early-return path (which the fix didn't
     touch) still works."""
-    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.position = _OFF_POLE_POSITION
     viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
 
     cmd_click_fired = threading.Event()
@@ -303,7 +311,7 @@ def test_camera_control_enabled_after_click_only_pointerdown(
     tests are downstream of this flag, so failure here pinpoints the
     regression to ``handlePointerDown`` rather than to the camera-
     controls integration or the lerp timing."""
-    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.position = _OFF_POLE_POSITION
     viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
 
     @viser_server.scene.on_click()
@@ -339,7 +347,7 @@ def test_camera_control_disabled_during_rect_select_drag(
     fix didn't over-broaden -- rect-select still steals the gesture
     from the camera, which is required for the rubber-band rectangle
     to render against a stationary background."""
-    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.position = _OFF_POLE_POSITION
     viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
 
     @viser_server.scene.on_rect_select()

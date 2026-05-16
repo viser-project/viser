@@ -136,8 +136,8 @@ export function motionExceedsThreshold(
 // ============================================================================
 
 /** State of an in-progress drag, owned by ``DragLayer``. Refs into
- * scene/three.js objects (targetObj, cameraControl) are captured at
- * drag-start; mutable fields (``endPointWorld``, ``endPointerXy``)
+ * scene/three.js objects are captured at drag-start; mutable fields
+ * (``endPointWorld``, ``endPointerXy``)
  * are updated in place on every pointermove. */
 export type ActiveDragState = {
   nodeName: string;
@@ -168,13 +168,12 @@ export type ActiveDragState = {
    * pointermove. */
   endPointerXy: [number, number];
   input: DragInput;
-  /** Camera-control lease held for the lifetime of this drag.
-   * Released in ``stopActiveDrag`` (and on every cancel path).
-   * Routing through ``CameraControlOwner`` instead of writing
-   * ``cameraControl.enabled`` directly keeps a concurrent rect-select
-   * (which holds its own lease) from racing this drag's enable/
-   * disable, and reapplies on camera-type swap mid-drag. */
-  cameraLease: import("./inputManager/cameraControlOwner").CameraEnabledLease | null;
+  /** Release for the camera-control lock held for the lifetime of
+   * this drag. Called in `stopActiveDrag` (and on every cancel
+   * path). Routing through `cameraLock` keeps a concurrent
+   * rect-select (which holds its own lock) from racing this drag's
+   * enable/disable, and reapplies on camera-type swap mid-drag. */
+  releaseCameraLock: (() => void) | null;
   cleanup: () => void;
 };
 

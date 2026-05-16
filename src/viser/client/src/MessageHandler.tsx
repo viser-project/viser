@@ -224,20 +224,10 @@ function useMessageHandler() {
       // filters to gate gesture engagement (no rectangle drawn for a
       // modifier that no callback matches).
       case "ScenePointerEnableMessage": {
-        const filters = viewerMutable.scenePointerInfo.filtersByEventType;
-        if (message.modifiers.length === 0) {
-          filters.delete(message.event_type);
-        } else {
-          filters.set(message.event_type, [...message.modifiers]);
-        }
-        // The InputManager owns gesture classification (reads
-        // filters at pointerdown). The CursorController derives the
-        // canvas cursor from the registry. Cursor is no longer
-        // written directly here -- the controller is the sole writer.
-        if (viewerMutable.inputManager !== null) {
-          viewerMutable.inputManager.setScenePointerFilters(filters);
-        }
-        viewerMutable.cursorController.setFilters(filters);
+        viewer.interaction.scenePointer.applyFiltersDelta(
+          message.event_type,
+          message.modifiers,
+        );
         return;
       }
 
@@ -570,14 +560,6 @@ function useMessageHandler() {
           delete viewerMutable.skinnedMeshState[message.name];
         return;
       }
-      // Set the clickability of a particular scene node.
-      case "SetSceneNodeClickableMessage": {
-        return {
-          kind: "sceneNodeAttrUpdate",
-          targetNode: message.name,
-          updates: { clickable: message.clickable },
-        };
-      }
       // Set the drag-binding set for a particular scene node.
       case "SetSceneNodeDragBindingsMessage": {
         return {
@@ -586,13 +568,6 @@ function useMessageHandler() {
           updates: { dragBindings: message.bindings },
         };
       }
-      // Set the click-binding set for a particular scene node. The
-      // InputManager classifier reads ``clickBindings`` to decide
-      // exact ``(button, modifier)`` eligibility -- a tighter check
-      // than the legacy ``clickable: bool``. Empty tuple means "not
-      // clickable for any input"; the legacy ``clickable`` flag is
-      // still set by ``SetSceneNodeClickableMessage`` for the
-      // hover-cursor path.
       case "SetSceneNodeClickBindingsMessage": {
         return {
           kind: "sceneNodeAttrUpdate",

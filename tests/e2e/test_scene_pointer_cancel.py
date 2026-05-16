@@ -1,15 +1,12 @@
 """E2E coverage for unified scene-pointer cancellation paths.
 
-Step 4 of the InputManager migration: ``pointercancel`` /
-``lostpointercapture`` / ``blur`` / canvas unmount all route through
-one idempotent cleanup function so a single dropped event class can
-no longer strand ``scenePointerInfo`` mid-gesture (case 3 of the
-design doc: off-canvas release leaks ``isDragging=true`` forever).
+`pointercancel`, `lostpointercapture`, window `blur`, and canvas
+unmount all route through one idempotent cleanup so no single dropped
+event class can strand the gesture mid-flight (off-canvas release
+leaks).
 
-These tests poke ``window.__viserMutable.scenePointerInfo`` directly
-so they can verify cleanup without depending on camera-controls
-side-effects (which are independently flaky under Playwright's
-synthetic mouse events).
+Tests assert via `window.__viserPointer.getGesture()` and
+`window.__viserMutable.cameraControl.enabled`.
 """
 
 from __future__ import annotations

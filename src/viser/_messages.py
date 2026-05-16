@@ -1369,14 +1369,6 @@ class SetSceneNodeVisibilityMessage(Message, include_in_scene_serialization=True
     visible: bool
 
 
-@dataclasses.dataclass
-class SetSceneNodeClickableMessage(Message, include_in_scene_serialization=True):
-    """Set the clickability of a particular node in the scene."""
-
-    name: str
-    clickable: bool
-
-
 @dataclasses.dataclass(frozen=True)
 class DragBinding:
     """A drag input combination: button + exact-match modifier set.
@@ -1406,36 +1398,21 @@ class SetSceneNodeDragBindingsMessage(Message, include_in_scene_serialization=Fa
     bindings: Tuple[DragBinding, ...]
 
 
-@dataclasses.dataclass(frozen=True)
-class ClickBinding:
-    """A click input combination: button + exact-match modifier set.
-
-    Mirrors :class:`DragBinding` for the click channel. The client's
-    InputManager classifier consults the per-node click-binding list at
-    pointerdown to decide whether a press is eligible to dispatch a
-    :class:`SceneNodeClickMessage` on stationary release. ``None``
-    modifier means "no modifiers held"; the list semantics are the
-    same as :data:`SetSceneNodeDragBindingsMessage.bindings`.
-    """
-
-    button: DragButton
-    modifier: Optional[KeyModifier]
-
-
 @dataclasses.dataclass
 class SetSceneNodeClickBindingsMessage(Message, include_in_scene_serialization=False):
     """Declare the click-input combinations a scene node listens for.
 
     Sent as a full set; empty ``bindings`` means the node is not
     clickable. Mirrors :class:`SetSceneNodeDragBindingsMessage` for the
-    click channel.
+    click channel. Click and drag share the same `DragBinding` shape --
+    button + exact-match modifier.
 
     Excluded from scene serialization for the same reason as the drag
     sibling -- click callbacks live on the server.
     """
 
     name: str
-    bindings: Tuple[ClickBinding, ...]
+    bindings: Tuple[DragBinding, ...]
 
 
 @dataclasses.dataclass
