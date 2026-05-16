@@ -154,9 +154,11 @@ def test_scene_node_drag_callbacks(
     page.keyboard.down("Control")
     page.mouse.move(*start)
     page.mouse.down()
-    assert drag_started.wait(timeout=5.0), "Drag start callback was not triggered"
-
+    # `mouse.down()` alone no longer fires `start` -- node candidates
+    # require >3 px of motion before promoting to a drag. Do the
+    # gesture motion, then assert.
     page.mouse.move(*end, steps=12)
+    assert drag_started.wait(timeout=5.0), "Drag start callback was not triggered"
     assert drag_updated.wait(timeout=5.0), "Drag update callback was not triggered"
     page.wait_for_function(JS_HAS_VISIBLE_DRAG_ARROW, timeout=5_000)
 
@@ -322,8 +324,8 @@ def test_scene_node_drag_pointer_id_isolation(
     page.keyboard.down("Control")
     page.mouse.move(*start)
     page.mouse.down()
-    assert drag_started.wait(timeout=5.0), "drag start didn't fire"
     page.mouse.move(*end, steps=4)
+    assert drag_started.wait(timeout=5.0), "drag start didn't fire"
 
     # Synthesize a stray pointerup carrying a *different* pointerId.
     # If our DragLayer doesn't filter by pointerId, this would tear the
@@ -412,10 +414,12 @@ def test_scene_node_drag_continues_outside_canvas(
     page.keyboard.down("Control")
     page.mouse.move(center_x, center_y)
     page.mouse.down()
-    assert drag_started.wait(timeout=5.0), "drag_start didn't fire"
 
     # Step out of the canvas -- every step should produce a drag_update.
+    # The first ~3 px of motion promote the candidate to a real drag,
+    # so `drag_started` fires here rather than at `mouse.down()`.
     page.mouse.move(outside_x, outside_y, steps=20)
+    assert drag_started.wait(timeout=5.0), "drag_start didn't fire"
     page.wait_for_timeout(200)
 
     with lock:
@@ -547,8 +551,8 @@ def test_scene_node_drag_start_position_tracks_moving_object(
     page.keyboard.down("Control")
     page.mouse.move(cx, cy)
     page.mouse.down()
-    assert drag_started.wait(timeout=5.0)
     page.mouse.move(cx + 200, cy + 80, steps=24)
+    assert drag_started.wait(timeout=5.0)
     page.wait_for_timeout(300)
     page.mouse.up()
     page.keyboard.up("Control")
@@ -797,11 +801,19 @@ def test_scene_node_drag_no_spurious_update_before_end(
     cx = canvas_box["x"] + canvas_box["width"] / 2
     cy = canvas_box["y"] + canvas_box["height"] / 2
 
-    # Mouse down at center, then immediately up -- no motion in between,
-    # so no pointermove -> no throttled update queued.
+    # The node-candidate motion gate (3 px) means we need at least one
+    # pointermove before the drag promotes -- so do a single tiny
+    # threshold-crossing nudge, then immediately release. The nudge
+    # produces a single pointermove that promotes the candidate (no
+    # `update` from this -- candidate's handler runs, beginDrag takes
+    # over for *subsequent* pointermoves). No further motion follows,
+    # so `update_count` should stay at 0; any nonzero count would mean
+    # `flush()` re-emitted the last sent message even though nothing
+    # was throttled.
     page.keyboard.down("Control")
     page.mouse.move(cx, cy)
     page.mouse.down()
+    page.mouse.move(cx + 5, cy, steps=1)
     assert drag_started.wait(timeout=5.0), "drag_start didn't fire"
     page.mouse.up()
     page.keyboard.up("Control")
@@ -868,9 +880,9 @@ def test_scene_node_drag_end_fires_when_node_removed_midflight(
     page.keyboard.down("Control")
     page.mouse.move(cx, cy)
     page.mouse.down()
+    page.mouse.move(cx + 50, cy + 20, steps=5)
     assert drag_started.wait(timeout=5.0)
 
-    page.mouse.move(cx + 50, cy + 20, steps=5)
     page.wait_for_timeout(150)
     box.remove()
 
