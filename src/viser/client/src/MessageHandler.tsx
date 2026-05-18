@@ -224,15 +224,10 @@ function useMessageHandler() {
       // filters to gate gesture engagement (no rectangle drawn for a
       // modifier that no callback matches).
       case "ScenePointerEnableMessage": {
-        const filters = viewerMutable.scenePointerInfo.filtersByEventType;
-        if (message.modifiers.length === 0) {
-          filters.delete(message.event_type);
-        } else {
-          filters.set(message.event_type, [...message.modifiers]);
-        }
-
-        viewerMutable.canvas!.style.cursor =
-          filters.size > 0 ? "pointer" : "auto";
+        viewer.interaction.scenePointer.applyFiltersDelta(
+          message.event_type,
+          message.modifiers,
+        );
         return;
       }
 
@@ -565,20 +560,19 @@ function useMessageHandler() {
           delete viewerMutable.skinnedMeshState[message.name];
         return;
       }
-      // Set the clickability of a particular scene node.
-      case "SetSceneNodeClickableMessage": {
-        return {
-          kind: "sceneNodeAttrUpdate",
-          targetNode: message.name,
-          updates: { clickable: message.clickable },
-        };
-      }
       // Set the drag-binding set for a particular scene node.
       case "SetSceneNodeDragBindingsMessage": {
         return {
           kind: "sceneNodeAttrUpdate",
           targetNode: message.name,
           updates: { dragBindings: message.bindings },
+        };
+      }
+      case "SetSceneNodeClickBindingsMessage": {
+        return {
+          kind: "sceneNodeAttrUpdate",
+          targetNode: message.name,
+          updates: { clickBindings: message.bindings },
         };
       }
       // Update props of a GUI component -- accumulated and applied in batch.

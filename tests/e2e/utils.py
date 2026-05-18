@@ -167,3 +167,32 @@ def wait_for_scene_node_hidden(
 ) -> None:
     """Wait until a scene node's ``visible`` flag is ``false``."""
     page.wait_for_function(JS_SCENE_NODE_HIDDEN, arg=node_name, timeout=timeout)
+
+
+# ---------------------------------------------------------------------------
+# Canvas helpers shared across input-handling e2e tests.
+# ---------------------------------------------------------------------------
+
+
+def canvas_center(page: Page) -> tuple[float, float]:
+    """Return the page-space center of the first ``<canvas>`` element.
+    Used by every input-handling e2e test that synthesises pointer
+    events at the viewer's canvas."""
+    canvas = page.locator("canvas").first
+    box = canvas.bounding_box()
+    assert box is not None, "canvas bounding box not found"
+    return (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+
+
+JS_LEASE_REASONS = "() => window.__viserPointer.cameraLockReasons()"
+"""Returns the array of currently-held camera-control lock reason
+strings. Used by tests that assert which gesture is suppressing camera
+input."""
+
+JS_CAMERA_ENABLED = "() => window.__viserMutable.cameraControl.enabled"
+"""Returns ``cameraControl.enabled`` -- ``true`` when no gesture or
+lock is suppressing camera input."""
+
+JS_GESTURE = "() => window.__viserPointer.getGesture()"
+"""Returns the typed canvas-level gesture struct from
+``pointer/gestures.ts``."""

@@ -44,7 +44,6 @@ dependencies = [
     "tqdm>=4.0.0,<5.0.0",
     "rich>=13.3.3,<15.0.0",
     "trimesh>=3.21.7,<5.0.0",
-    "yourdfpy>=0.0.53,<1.0.0",
     "typing_extensions>=4.0.0",
     # TODO: migrate to backports.zstd when we drop Python 3.8 support.
     # https://pypi.org/project/backports.zstd/
@@ -54,13 +53,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+urdf = [
+    "yourdfpy>=0.0.53,<1.0.0",
+]
 dev = [
+    "viser[examples]",
     "pyright>=1.1.308",
     "ruff>=0.9.3",
     "pre-commit==3.3.2",
     "pytest",
     "hypothesis[numpy]",
-    "opencv-python>=4.0.0.21,<5.0.0",
     "psutil>=5.9.5,<8.0.0",
     "nodeenv>=1.9.1,<2.0.0",
     "playwright>=1.40.0",
@@ -68,6 +70,7 @@ dev = [
     "pytest-xdist>=3.0.0",
 ]
 examples = [
+    "viser[urdf]",
     "torch>=1.13.1",
     "torch<2.5.0; python_version<'3.9'",  # Last torch with cp38 wheels.
     "matplotlib>=3.7.1",
@@ -78,7 +81,7 @@ examples = [
     "opencv-python",
     "pyliblzfse>=0.4.1; platform_system!='Windows'",
     "pandas",  # https://github.com/viser-project/viser/issues/457
-    "tyro>=0.2.0,<1.0.0",
+    "tyro>=1.0.0",
 ]
 
 [project.urls]

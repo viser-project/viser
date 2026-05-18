@@ -5,9 +5,7 @@
  *   - the active-drag state (only one drag active at a time across all nodes)
  *   - the drag-indicator arrow (one ArrowHelper per viewer, not per node)
  *   - the window pointermove / pointerup / pointercancel / blur listeners
- *   - the camera-control disable/re-enable around a drag (stashes the exact
- *     instance so a camera-type swap mid-drag doesn't leave the old one
- *     disabled)
+ *   - the camera-control lease around a drag
  *
  * Scene nodes interact with this layer through the context `useDragLayer()`
  * hook: on pointerdown they match their bindings against the input and
@@ -281,12 +279,12 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
       activeDrag.cleanup();
       activeDragRef.current = null;
       dragArrow.visible = false;
-      // Re-enable the *same* camera control instance we disabled -- a
-      // camera-type swap during the drag would have replaced
-      // viewerMutable.cameraControl, and restoring the new one would
-      // leave the stashed one disabled forever.
-      if (activeDrag.cameraControl !== null) {
-        activeDrag.cameraControl.enabled = true;
+      // Drop the camera-control lock. `cameraLock` reapplies to the
+      // current instance, which handles a mid-drag camera-type swap
+      // (the old instance was re-enabled at swap time; the new one's
+      // `enabled` flag flips back to true here).
+      if (activeDrag.releaseCameraLock !== null) {
+        activeDrag.releaseCameraLock();
       }
     },
     [
@@ -309,8 +307,8 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
         input,
         bindings,
       }) => {
-        if (activeDragRef.current !== null) return;
-        if (!anyBindingMatches(bindings, input)) return;
+        if (activeDragRef.current !== null) return false;
+        if (!anyBindingMatches(bindings, input)) return false;
 
         // Convert the raycast hit point to world coords. The frame of
         // ``eventPoint`` depends on which raycast produced it:
@@ -350,7 +348,7 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
           instanceWorldStart,
           frameScratches.drag,
         );
-        if (computed === null) return;
+        if (computed === null) return false;
         const startLocalOffset = startWorld
           .clone()
           .applyMatrix4(instanceWorldStart.invert());
@@ -407,6 +405,12 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
           startWorld,
         );
 
+        // Assign the active-drag state first, *then* acquire the
+        // camera lock. If lock acquisition throws between the two we
+        // never reach the assignment, so no half-initialised state
+        // strands the lock. Acquire-after-assign also means
+        // `stopActiveDrag` is reachable for any teardown after this
+        // point.
         activeDragRef.current = {
           nodeName,
           instanceIndex,
@@ -420,18 +424,18 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
           endPointWorld: startWorld.clone(),
           endPointerXy: [pointerXy[0], pointerXy[1]],
           input,
-          cameraControl: viewerMutable.cameraControl,
+          releaseCameraLock: null,
           cleanup,
         };
+        activeDragRef.current.releaseCameraLock =
+          viewer.interaction.cameraLocks.acquire("node-drag");
         dragArrow.visible = false;
-        if (viewerMutable.cameraControl !== null) {
-          viewerMutable.cameraControl.enabled = false;
-        }
         window.addEventListener("pointermove", handleWindowPointerMove);
         window.addEventListener("pointerup", handleWindowPointerUp);
         window.addEventListener("pointercancel", handleWindowPointerUp);
         window.addEventListener("blur", handleWindowBlur);
         sendDragMessage(activeDragRef.current, "start", false);
+        return true;
       },
       stopIfNodeIs: (nodeName) => {
         if (activeDragRef.current?.nodeName === nodeName) {
