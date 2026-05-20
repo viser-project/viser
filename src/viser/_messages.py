@@ -1369,14 +1369,6 @@ class SetSceneNodeVisibilityMessage(Message, include_in_scene_serialization=True
     visible: bool
 
 
-@dataclasses.dataclass
-class SetSceneNodeClickableMessage(Message, include_in_scene_serialization=True):
-    """Set the clickability of a particular node in the scene."""
-
-    name: str
-    clickable: bool
-
-
 @dataclasses.dataclass(frozen=True)
 class DragBinding:
     """A drag input combination: button + exact-match modifier set.
@@ -1400,6 +1392,23 @@ class SetSceneNodeDragBindingsMessage(Message, include_in_scene_serialization=Fa
     static/embed/playback mode), so persisting them into ``.viser`` files
     would just make exported nodes look draggable while no callback can
     ever fire.
+    """
+
+    name: str
+    bindings: Tuple[DragBinding, ...]
+
+
+@dataclasses.dataclass
+class SetSceneNodeClickBindingsMessage(Message, include_in_scene_serialization=False):
+    """Declare the click-input combinations a scene node listens for.
+
+    Sent as a full set; empty ``bindings`` means the node is not
+    clickable. Mirrors :class:`SetSceneNodeDragBindingsMessage` for the
+    click channel. Click and drag share the same `DragBinding` shape --
+    button + exact-match modifier.
+
+    Excluded from scene serialization for the same reason as the drag
+    sibling -- click callbacks live on the server.
     """
 
     name: str

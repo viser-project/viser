@@ -156,9 +156,10 @@ def test_drop_active_drags_for_client_fires_on_drag_end(
     box = server.scene.add_box("/disco_box", dimensions=(1.0, 1.0, 1.0))
     received: list[viser.SceneNodeDragEvent] = []
 
-    @box.on_drag_end("left")
+    @box.on_drag("left")
     def _(event: viser.SceneNodeDragEvent) -> None:
-        received.append(event)
+        if event.phase == "end":
+            received.append(event)
 
     client = cast(ClientId, 600)
     # ``_drop_active_drags_for_client`` is only called from the
@@ -222,7 +223,7 @@ def test_remove_mid_drag_displaces_stale_binding_in_buffer(
     redundancy map, so emitting an empty replacement at remove() time
     overwrites the prior non-empty entry."""
     box = server.scene.add_box("/x", dimensions=(1.0, 1.0, 1.0))
-    box.on_drag_start("left")(lambda _: None)
+    box.on_drag("left")(lambda _: None)
 
     bindings = _binding_messages_for(server, "/x")
     assert len(bindings) == 1
@@ -259,7 +260,7 @@ def test_remove_without_active_drag_clears_binding_in_buffer(
     ``_sync_drag_bindings`` clearing ``drag_cb`` and re-emitting; this
     test pins it so a future refactor doesn't regress it)."""
     box = server.scene.add_box("/y", dimensions=(1.0, 1.0, 1.0))
-    box.on_drag_start("left")(lambda _: None)
+    box.on_drag("left")(lambda _: None)
 
     box.remove()
 
@@ -273,13 +274,13 @@ def test_cascade_remove_clears_descendant_interaction_state(
 ) -> None:
     """Removing a parent must also clear stale click/drag state for
     its descendants. The persistent buffer keys
-    ``SetSceneNodeClickableMessage`` / ``SetSceneNodeDragBindingsMessage``
+    ``SetSceneNodeClickBindingsMessage`` / ``SetSceneNodeDragBindingsMessage``
     by name; without descendant cleanup, a same-name child recreated
-    after parent removal would inherit stale interaction flags on
+    after parent removal would inherit stale interaction state on
     late-joining clients."""
     server.scene.add_frame("/parent")
     child = server.scene.add_box("/parent/child", dimensions=(1.0, 1.0, 1.0))
-    child.on_drag_start("left")(lambda _: None)
+    child.on_drag("left")(lambda _: None)
     child.on_click(lambda _: None)
 
     bindings = _binding_messages_for(server, "/parent/child")
@@ -292,13 +293,13 @@ def test_cascade_remove_clears_descendant_interaction_state(
     assert bindings[0].bindings == ()
 
     buffer = server._websock_server._broadcast_buffer.message_from_id
-    clickable = [
+    click_bindings = [
         m
         for m in buffer.values()
-        if isinstance(m, _messages.SetSceneNodeClickableMessage)
+        if isinstance(m, _messages.SetSceneNodeClickBindingsMessage)
         and m.name == "/parent/child"
     ]
-    assert len(clickable) == 1
-    assert clickable[0].clickable is False, (
-        "cascade remove must displace descendant clickable=true"
+    assert len(click_bindings) == 1
+    assert click_bindings[0].bindings == (), (
+        "cascade remove must displace descendant click bindings"
     )

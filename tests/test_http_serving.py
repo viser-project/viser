@@ -6,6 +6,7 @@ incompatibilities (e.g. methods that only exist on newer Pythons) would raise
 inside ``process_request`` and surface as a 500 with the websockets library's
 default failure message."""
 
+import http.client
 import time
 import urllib.error
 import urllib.request
@@ -16,6 +17,17 @@ from unittest.mock import patch
 import viser
 import viser._client_autobuild
 from viser import infra
+
+
+def _raw_get_status(host: str, port: int, raw_target: str) -> int:
+    """Send GET with a literal request-line target so percent-escapes
+    aren't normalized client-side."""
+    conn = http.client.HTTPConnection(host, port, timeout=5)
+    try:
+        conn.request("GET", raw_target)
+        return conn.getresponse().status
+    finally:
+        conn.close()
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
@@ -77,6 +89,14 @@ def test_http_serves_files_through_symlink(tmp_path: Path):
     real_asset.write_bytes(b"console.log('via symlink');")
     (served_root / "asset.js").symlink_to(real_asset)
 
+    # A real file one level above served_root. Any traversal that
+    # successfully escapes would resolve to this file and return its
+    # contents -- so a 200 here is a clean indicator that the check
+    # leaks, even on platforms where percent-encoded names happen to
+    # not exist on disk.
+    secret_file = tmp_path / "secret.txt"
+    secret_file.write_bytes(b"SECRET")
+
     server = infra.WebsockServer(
         host="127.0.0.1",
         port=18900,
@@ -97,8 +117,22 @@ def test_http_serves_files_through_symlink(tmp_path: Path):
         assert b"console.log('via symlink');" in body
 
         # Traversal still rejected even though we no longer use resolve().
-        status, _ = _fetch(f"http://127.0.0.1:{port}/../../etc/passwd")
+        status, body = _fetch(f"http://127.0.0.1:{port}/../secret.txt")
         assert status == 404
+        assert b"SECRET" not in body
+
+        # Percent-encoded traversal must also be rejected -- the check
+        # has to URL-decode before splitting URL segments, otherwise
+        # ``%2e%2e`` could slip through.
+        assert _raw_get_status("127.0.0.1", port, "/%2e%2e/secret.txt") == 404
+        assert (
+            _raw_get_status("127.0.0.1", port, "/foo/%2e%2e/%2e%2e/secret.txt") == 404
+        )
+
+        # Backslash-encoded traversal must also be rejected. ``pathlib``
+        # on Linux treats backslashes as literal filename characters,
+        # which would let ``foo\..\bar`` skip a parts-only check.
+        assert _raw_get_status("127.0.0.1", port, "/foo\\..\\..\\secret.txt") == 404
 
         # Missing file still 404s.
         status, _ = _fetch(f"http://127.0.0.1:{port}/does-not-exist.js")

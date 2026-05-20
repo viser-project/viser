@@ -13,7 +13,7 @@ import { useInitialCameraState } from "./InitialCameraState";
 import { useEnvironmentState } from "./EnvironmentState";
 import { useDevSettingsStore } from "./DevSettingsStore";
 import { GetRenderRequestMessage, Message } from "./WebsocketMessages";
-import { KeyModifier } from "./dragUtils";
+import { InteractionController } from "./pointer/interactionController";
 
 export type NodePoseEntry = {
   wxyz: [number, number, number, number];
@@ -50,34 +50,6 @@ export type ViewerMutable = {
   getRenderRequestState: "ready" | "triggered" | "pause" | "in_progress";
   getRenderRequest: null | GetRenderRequestMessage;
 
-  // Interaction state.
-  scenePointerInfo: {
-    /** Modifier-filter lists keyed by event_type. Mirrors the
-     * server's per-event-type set: each entry is a registered
-     * callback's filter (``null`` = "no modifiers held"). An
-     * absent/empty entry means the event_type is disabled. Used to
-     * gate gesture engagement and dispatch on
-     * ``modifierAtDown``-vs-filter match. */
-    filtersByEventType: Map<
-      "click" | "rect-select",
-      (KeyModifier | null)[]
-    >;
-    dragStart: [number, number]; // First mouse position.
-    dragEnd: [number, number]; // Final mouse position.
-    isDragging: boolean;
-    /** Canonical ``KeyModifier`` string captured at pointerdown.
-     * Frozen for the gesture's lifetime -- we don't want releasing
-     * Shift/Cmd before mouse-up to lose the modifier match (or a
-     * mid-drag press to spuriously add one). Mirrors how drag
-     * callbacks freeze modifiers at drag-start. */
-    modifierAtDown: KeyModifier | null;
-    /** Subset of event_types whose filter list matched
-     * ``modifierAtDown`` at the time of the active gesture's
-     * pointerdown. Drives drawing + dispatch; empty means no gesture
-     * was engaged. */
-    activeEventTypes: Set<"click" | "rect-select">;
-  };
-
   // Skinned mesh state.
   skinnedMeshState: {
     [name: string]: {
@@ -93,9 +65,6 @@ export type ViewerMutable = {
   // Per-node pose data. Stored outside the reactive store to avoid
   // triggering React re-renders on every pose update.
   nodePoseData: NodePoseDataMap;
-
-  // Global hover state tracking.
-  hoveredElementsCount: number;
 };
 
 export type ViewerContextContents = {
@@ -115,6 +84,9 @@ export type ViewerContextContents = {
 
   // Single reference to all mutable state.
   mutable: React.MutableRefObject<ViewerMutable>;
+
+  // Per-viewer pointer/hover/camera interaction coordinator.
+  interaction: InteractionController;
 };
 
 export const ViewerContext = React.createContext<null | ViewerContextContents>(

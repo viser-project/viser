@@ -54,6 +54,44 @@ globalStyle(
   },
 );
 
+// Disabled text inputs (TextInput, Textarea, NumberInput, etc.).
+//
+// Mantine's default disabled style fades the value text to ~50% opacity
+// against a light gray background, which is hard to read for fields the
+// server uses as read-only displays (status text, gesture state, the
+// acceptance-fixture diagnostics, etc.). We keep the field visually
+// distinct (default cursor, muted background, softer text) but restore
+// full opacity so the value stays legible. Text color is set per
+// scheme below: a touch softer than the regular body text so a disabled
+// field still reads as non-interactive at a glance.
+globalStyle(".mantine-Input-input[data-disabled]", {
+  opacity: 1,
+  cursor: "default",
+});
+
+// Light mode: gray-9 text (≈ #212529, very dark gray) sits one notch
+// below full black for a softer feel. Background gray-1 + border
+// gray-3 differentiate the field from active inputs.
+globalStyle(
+  '[data-mantine-color-scheme="light"] .mantine-Input-input[data-disabled]',
+  {
+    color: "var(--mantine-color-gray-7)",
+    backgroundColor: "var(--mantine-color-gray-1)",
+    borderColor: "var(--mantine-color-gray-3)",
+  },
+);
+
+// Dark mode: dark-1 (≈ #A6A7AB) is mid-light gray, clearly visible
+// against the dark-6 disabled background.
+globalStyle(
+  '[data-mantine-color-scheme="dark"] .mantine-Input-input[data-disabled]',
+  {
+    color: "var(--mantine-color-dark-1)",
+    backgroundColor: "var(--mantine-color-dark-6)",
+    borderColor: "var(--mantine-color-dark-4)",
+  },
+);
+
 // Tab group: when tabs wrap onto multiple rows, the default Mantine underline
 // (drawn via ::before on the list) only appears below the last row. Replace
 // it with a per-tab strategy: each tab gets its own bottom border, plus a

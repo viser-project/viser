@@ -1506,15 +1506,6 @@ export interface SetSceneNodeVisibilityMessage {
   name: string;
   visible: boolean;
 }
-/** Set the clickability of a particular node in the scene.
- *
- * (automatically generated)
- */
-export interface SetSceneNodeClickableMessage {
-  type: "SetSceneNodeClickableMessage";
-  name: string;
-  clickable: boolean;
-}
 /** Declare the drag-input combinations a scene node listens for.
  *
  * Sent as a full set; empty ``bindings`` means the node is not draggable.
@@ -1530,6 +1521,35 @@ export interface SetSceneNodeClickableMessage {
  */
 export interface SetSceneNodeDragBindingsMessage {
   type: "SetSceneNodeDragBindingsMessage";
+  name: string;
+  bindings: {
+    button: "left" | "middle" | "right";
+    modifier:
+      | "cmd/ctrl"
+      | "alt"
+      | "shift"
+      | "cmd/ctrl+alt"
+      | "cmd/ctrl+shift"
+      | "alt+shift"
+      | "cmd/ctrl+alt+shift"
+      | null;
+  }[];
+}
+/** Declare the click-input combinations a scene node listens for.
+ *
+ * Sent as a full set; empty ``bindings`` means the node is not
+ * clickable. Mirrors :class:`SetSceneNodeDragBindingsMessage` for the
+ * click channel. Click and drag share the same `DragBinding` shape --
+ * button + exact-match modifier.
+ *
+ * Excluded from scene serialization for the same reason as the drag
+ * sibling -- click callbacks live on the server.
+ *
+ *
+ * (automatically generated)
+ */
+export interface SetSceneNodeClickBindingsMessage {
+  type: "SetSceneNodeClickBindingsMessage";
   name: string;
   bindings: {
     button: "left" | "middle" | "right";
@@ -2006,8 +2026,8 @@ export type Message =
   | TransformControlsDragEndMessage
   | BackgroundImageMessage
   | SetSceneNodeVisibilityMessage
-  | SetSceneNodeClickableMessage
   | SetSceneNodeDragBindingsMessage
+  | SetSceneNodeClickBindingsMessage
   | SceneNodeClickMessage
   | SceneNodeDragMessage
   | ResetGuiMessage

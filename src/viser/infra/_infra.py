@@ -18,6 +18,7 @@ from asyncio.events import AbstractEventLoop
 from collections.abc import Coroutine
 from pathlib import Path
 from typing import Any, Callable, Generator, NewType, TypeVar
+from urllib.parse import unquote as _url_unquote
 
 import msgspec.msgpack
 import websockets.asyncio.server
@@ -590,28 +591,34 @@ class WebsockServer(WebsockMessageHandler):
             if request.headers.get("Upgrade") == "websocket":
                 return None
 
-            # Strip out search params, get relative path.
+            # Strip out search params, get relative path. URL-decode so
+            # percent-encoded traversal sequences (e.g. ``%2e%2e/``)
+            # can't slip past the segment check below; normalize
+            # backslashes to forward slashes so a Windows-style path
+            # like ``foo\..\bar`` is also caught on Linux, where
+            # ``pathlib`` would otherwise treat the whole thing as a
+            # single literal filename.
             path = request.path
             path = path.partition("?")[0]
-            relpath = str(Path(path).relative_to("/"))
-            if relpath == ".":
-                relpath = "index.html"
-            assert http_server_root is not None
+            path = _url_unquote(path).replace("\\", "/")
 
-            # Reject path traversal by checking the URL parts, not
-            # by comparing resolved paths. Under Bazel/uv runfile
-            # trees, http_server_root and the files inside it can
-            # pass through independent symlinks (e.g. uv hardlinks
-            # individual files from a shared cache), so Path.resolve()
-            # places a legitimate child outside the resolved root.
+            # Reject path traversal by checking URL segments, not by
+            # comparing resolved paths. Under Bazel/uv runfile trees,
+            # http_server_root and the files inside it can pass through
+            # independent symlinks (e.g. uv hardlinks individual files
+            # from a shared cache), so Path.resolve() places a
+            # legitimate child outside the resolved root.
             #
             # Skipping the resolved-path check means we no longer
             # validate that symlinks inside http_server_root stay
             # within it. That is fine here: http_server_root is set
             # by the application, not by user input, so the only
             # attacker-controlled component is the URL path.
-            if ".." in Path(relpath).parts:
+            segments = [s for s in path.split("/") if s and s != "."]
+            if any(s == ".." for s in segments):
                 return Response(http.HTTPStatus.NOT_FOUND, "NOT FOUND", Headers())
+            relpath = "/".join(segments) if segments else "index.html"
+            assert http_server_root is not None
             source_path = http_server_root / relpath
             if not source_path.exists():
                 return Response(http.HTTPStatus.NOT_FOUND, "NOT FOUND", Headers())

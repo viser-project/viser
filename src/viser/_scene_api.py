@@ -40,6 +40,7 @@ from ._scene_handles import (
     CameraFrustumHandle,
     CylinderHandle,
     DirectionalLightHandle,
+    DragPhase,
     FrameHandle,
     GaussianSplatHandle,
     GlbHandle,
@@ -2671,71 +2672,48 @@ class SceneApi:
     async def _handle_transform_controls_updates(
         self, client_id: ClientId, message: _messages.TransformControlsUpdateMessage
     ) -> None:
-        """Callback for handling transform gizmo messages."""
+        """Apply pose update and fire `update_cb` with phase="update"."""
         handle = self._handle_from_transform_controls_name.get(message.name, None)
         if handle is None:
             return
 
-        # Update state.
-        wxyz = np.array(message.wxyz)
-        position = np.array(message.position)
-        handle._impl.wxyz = wxyz
-        handle._impl.position = position
+        handle._impl.wxyz = np.array(message.wxyz)
+        handle._impl.position = np.array(message.position)
         handle._impl_aux.last_updated = time.time()
 
-        # Trigger callbacks.
-        event = TransformControlsEvent(
-            client=self._get_client_handle(client_id),
-            client_id=client_id,
-            target=handle,
-        )
-        for cb in handle._impl_aux.update_cb:
-            if asyncio.iscoroutinefunction(cb):
-                await cb(event)
-            else:
-                self._thread_executor.submit(cb, event).add_done_callback(
-                    print_threadpool_errors
-                )
+        await self._fire_transform_controls_callbacks(client_id, handle, "update")
         if handle._impl_aux.sync_cb is not None:
             handle._impl_aux.sync_cb(client_id, handle)
 
     async def _handle_transform_controls_drag_start(
         self, client_id: ClientId, message: _messages.TransformControlsDragStartMessage
     ) -> None:
-        """Callback for handling transform control drag start messages."""
         handle = self._handle_from_transform_controls_name.get(message.name, None)
         if handle is None:
             return
-
-        # Trigger callbacks.
-        event = TransformControlsEvent(
-            client=self._get_client_handle(client_id),
-            client_id=client_id,
-            target=handle,
-        )
-        for cb in handle._impl_aux.drag_start_cb:
-            if asyncio.iscoroutinefunction(cb):
-                await cb(event)
-            else:
-                self._thread_executor.submit(cb, event).add_done_callback(
-                    print_threadpool_errors
-                )
+        await self._fire_transform_controls_callbacks(client_id, handle, "start")
 
     async def _handle_transform_controls_drag_end(
         self, client_id: ClientId, message: _messages.TransformControlsDragEndMessage
     ) -> None:
-        """Callback for handling transform control drag end messages."""
         handle = self._handle_from_transform_controls_name.get(message.name, None)
         if handle is None:
             return
+        await self._fire_transform_controls_callbacks(client_id, handle, "end")
 
-        # Trigger callbacks.
+    async def _fire_transform_controls_callbacks(
+        self,
+        client_id: ClientId,
+        handle: TransformControlsHandle,
+        phase: DragPhase,
+    ) -> None:
         event = TransformControlsEvent(
             client=self._get_client_handle(client_id),
             client_id=client_id,
             target=handle,
+            phase=phase,
         )
-        for cb in handle._impl_aux.drag_end_cb:
+        for cb in handle._impl_aux.update_cb:
             if asyncio.iscoroutinefunction(cb):
                 await cb(event)
             else:
@@ -2840,7 +2818,7 @@ class SceneApi:
         Shared by ``_handle_node_drag`` (live messages) and
         ``_drop_active_drags_for_client`` (synthetic end on disconnect)."""
         input = _DragInput(button=message.button, modifier=message.modifier)
-        matching = handle._dispatch_drag(message.phase, input)
+        matching = handle._dispatch_drag(input)
         if not matching:
             return
 
@@ -2848,6 +2826,7 @@ class SceneApi:
             client=self._get_client_handle(client_id),
             client_id=client_id,
             target=cast(_RaycastSupportedSceneNodeHandle, handle),
+            phase=message.phase,
             instance_index=message.instance_index,
             start_position=message.start_position,
             start_screen_pos=message.start_screen_pos,

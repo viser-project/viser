@@ -705,17 +705,22 @@ export function SceneNodeThreeObject(props: { name: string }) {
   );
 
   const [unmount, setUnmount] = React.useState(false);
-  const clickable =
-    viewer.useSceneTree(props.name, (node) => node?.clickable) ?? false;
-  // shallowArrayEqual: the server echoes a fresh `bindings` array on every
-  // `SetSceneNodeDragBindingsMessage` even if the content is unchanged; this
+  // shallowArrayEqual: the server echoes a fresh `bindings` array on
+  // every binding update even if the content is unchanged; this
   // prevents spurious re-renders when the binding set is identical.
+  const clickBindings =
+    viewer.useSceneTree(
+      props.name,
+      (node) => node?.clickBindings,
+      shallowArrayEqual,
+    ) ?? EMPTY_DRAG_BINDINGS;
   const dragBindings =
     viewer.useSceneTree(
       props.name,
       (node) => node?.dragBindings,
       shallowArrayEqual,
     ) ?? EMPTY_DRAG_BINDINGS;
+  const clickable = clickBindings.length > 0;
   const draggable = dragBindings.length > 0;
   const interactive = clickable || draggable;
   const objRef = React.useRef<THREE.Object3D | null>(null);
@@ -795,6 +800,7 @@ export function SceneNodeThreeObject(props: { name: string }) {
   // Drag state lives in the viewer-level DragLayer -- this component only
   // dispatches pointer events into it and reads bindings for matching.
   const dragLayer = useDragLayer();
+  const interaction = viewer.interaction;
 
   const getPointerXy = React.useCallback(
     (clientX: number, clientY: number): [number, number] => {
@@ -836,10 +842,7 @@ export function SceneNodeThreeObject(props: { name: string }) {
               // Pointer is no longer over this mesh, reset hover state.
               hoveredRef.current.isHovered = false;
               hoveredRef.current.instanceId = null;
-              viewerMutable.hoveredElementsCount--;
-              if (viewerMutable.hoveredElementsCount === 0) {
-                document.body.style.cursor = "auto";
-              }
+              interaction.hover.setHovered(props.name, false);
             }
           }
         }
@@ -886,10 +889,7 @@ export function SceneNodeThreeObject(props: { name: string }) {
       ) {
         hoveredRef.current.isHovered = false;
         hoveredRef.current.instanceId = null;
-        viewerMutable.hoveredElementsCount--;
-        if (viewerMutable.hoveredElementsCount === 0) {
-          document.body.style.cursor = "auto";
-        }
+        interaction.hover.setHovered(props.name, false);
       }
 
       // If a node disappears mid-drag, end the drag cleanly.
@@ -931,10 +931,8 @@ export function SceneNodeThreeObject(props: { name: string }) {
   // Handle case where interactivity is toggled off while still hovered.
   if (!interactive && hoveredRef.current.isHovered) {
     hoveredRef.current.isHovered = false;
-    viewerMutable.hoveredElementsCount--;
-    if (viewerMutable.hoveredElementsCount === 0) {
-      document.body.style.cursor = "auto";
-    }
+    interaction.hover.setHovered(props.name, false);
+    interaction.nodeGestures.cancelNode(props.name);
   }
 
   // End the active drag if this node's draggability is revoked (bindings
@@ -943,8 +941,9 @@ export function SceneNodeThreeObject(props: { name: string }) {
   React.useEffect(() => {
     if (!draggable && dragLayer !== null) {
       dragLayer.stopIfNodeIs(props.name);
+      interaction.nodeGestures.cancelNode(props.name);
     }
-  }, [draggable, dragLayer, props.name]);
+  }, [draggable, dragLayer, interaction, props.name]);
 
   // Reset hover state on true unmount, and tell DragLayer to end the
   // drag if it targets this node.
@@ -954,20 +953,12 @@ export function SceneNodeThreeObject(props: { name: string }) {
     return () => {
       if (hoveredRef.current.isHovered) {
         hoveredRef.current.isHovered = false;
-        viewerMutable.hoveredElementsCount--;
-        if (viewerMutable.hoveredElementsCount === 0) {
-          document.body.style.cursor = "auto";
-        }
+        interaction.hover.setHovered(props.name, false);
       }
       dragLayerRef.current?.stopIfNodeIs(props.name);
+      interaction.nodeGestures.cancelNode(props.name);
     };
-  }, []);
-
-  const dragInfo = React.useRef({
-    dragging: false,
-    startClientX: 0,
-    startClientY: 0,
-  });
+  }, [interaction, props.name]);
 
   if (objNode === undefined || unmount) {
     return null;
@@ -988,64 +979,105 @@ export function SceneNodeThreeObject(props: { name: string }) {
               : (e) => {
                   if (!isDisplayed()) return;
                   e.stopPropagation();
-                  const state = dragInfo.current;
-                  const [pointerX, pointerY] = getPointerXy(
-                    e.clientX,
-                    e.clientY,
-                  );
-                  state.startClientX = pointerX;
-                  state.startClientY = pointerY;
-                  state.dragging = false;
-
-                  // Hand off to DragLayer. It no-ops if any drag is already
-                  // active (mutex) or if no binding matches the input.
-                  if (!draggable || dragLayer === null) return;
-                  if (objRef.current === null) return;
                   const buttonName = pointerButtonFromNative(
                     e.nativeEvent.button,
                   );
-                  if (buttonName === null) return;
-                  const input: DragInput = {
-                    button: buttonName,
-                    modifier: keyModifierFromEvent(e),
-                  };
-                  if (!anyBindingMatches(dragBindings, input)) return;
+                  const input: DragInput | null =
+                    buttonName === null
+                      ? null
+                      : {
+                          button: buttonName,
+                          modifier: keyModifierFromEvent(e),
+                        };
+                  interaction.nodeGestures.recordPointerDown(input);
 
-                  e.nativeEvent.preventDefault();
-                  state.dragging = true;
-                  dragLayer.beginDrag({
-                    nodeName: props.name,
-                    // Batched handles (meshes/GLBs/axes) set
-                    // computeClickInstanceIndexFromInstanceId; plain
-                    // handles leave it undefined and instance_index is
-                    // null on the wire.
-                    instanceIndex:
-                      computeClickInstanceIndexFromInstanceId === undefined
-                        ? null
-                        : computeClickInstanceIndexFromInstanceId(e.instanceId),
-                    targetObj: objRef.current,
-                    eventPoint: e.point,
-                    pointerXy: [pointerX, pointerY],
-                    pointerId: e.nativeEvent.pointerId,
-                    input,
-                    bindings: dragBindings,
-                  });
+                  const clickMatches =
+                    input !== null && anyBindingMatches(clickBindings, input);
+                  const targetObj = objRef.current;
+                  const dragMatches =
+                    input !== null &&
+                    draggable &&
+                    dragLayer !== null &&
+                    targetObj !== null &&
+                    anyBindingMatches(dragBindings, input);
+                  if (!clickMatches && !dragMatches) return;
+
+                  const beginDragArgs =
+                    dragMatches &&
+                    input !== null &&
+                    dragLayer !== null &&
+                    targetObj !== null
+                      ? {
+                          nodeName: props.name,
+                          // Batched handles (meshes/GLBs/axes) set
+                          // computeClickInstanceIndexFromInstanceId; plain
+                          // handles leave it undefined and instance_index
+                          // is null on the wire.
+                          instanceIndex:
+                            computeClickInstanceIndexFromInstanceId ===
+                            undefined
+                              ? null
+                              : computeClickInstanceIndexFromInstanceId(
+                                  e.instanceId,
+                                ),
+                          targetObj,
+                          eventPoint: e.point,
+                          pointerXy: getPointerXy(e.clientX, e.clientY),
+                          pointerId: e.nativeEvent.pointerId,
+                          input,
+                          bindings: dragBindings,
+                        }
+                      : null;
+
+                  if (clickMatches || dragMatches) {
+                    // Every interactive node runs through the
+                    // motion-threshold candidate: a stationary press on
+                    // a clickable node fires the click without a
+                    // spurious drag start/end pair, and a stationary
+                    // press on a drag-only node fires nothing at all
+                    // (vs. the prior behavior, where dragstart fired
+                    // immediately and dragend followed on release with
+                    // no motion between -- a degenerate gesture user
+                    // code had to special-case).
+                    interaction.nodeGestures.beginCandidate({
+                      pointerId: e.nativeEvent.pointerId,
+                      nodeKey: props.name,
+                      startClientXy: [e.clientX, e.clientY],
+                      lockCamera: dragMatches,
+                      onPromote:
+                        beginDragArgs === null || dragLayer === null
+                          ? null
+                          : () => dragLayer.beginDrag(beginDragArgs),
+                    });
+                    if (dragMatches) e.nativeEvent.preventDefault();
+                  }
                 }
           }
           onContextMenu={
-            !draggable
+            !interactive
               ? undefined
               : (e) => {
                   if (!isDisplayed()) return;
-                  // Only suppress the browser context menu if a right-button
-                  // binding matches the current modifier state. A node
-                  // registered for shift+right-drag shouldn't eat plain
-                  // right-clicks.
-                  const input: DragInput = {
-                    button: "right",
-                    modifier: keyModifierFromEvent(e),
-                  };
-                  if (!anyBindingMatches(dragBindings, input)) return;
+                  // Suppress the browser context menu only when the
+                  // gesture that fired this contextmenu would actually
+                  // be consumed by this node. The native contextmenu
+                  // event's button code is not reliable across browsers,
+                  // so we consult the input recorded by the most recent
+                  // pointerdown -- which on macOS includes the
+                  // pointerdown that ctrl+left-click raises alongside
+                  // the contextmenu event.
+                  // Fallback: if no pointerdown was recorded (e.g. the
+                  // menu was triggered by the keyboard menu key), use a
+                  // plain right-button input -- preserves the original
+                  // "right-click on a right-bound node" behavior.
+                  const input: DragInput =
+                    interaction.nodeGestures.getLastPointerDownInput() ?? {
+                      button: "right",
+                      modifier: keyModifierFromEvent(e),
+                    };
+                  const dragMatches = anyBindingMatches(dragBindings, input);
+                  const clickMatches = anyBindingMatches(clickBindings, input);
+                  if (!dragMatches && !clickMatches) return;
                   e.nativeEvent.preventDefault();
                   e.stopPropagation();
                 }
@@ -1057,27 +1089,12 @@ export function SceneNodeThreeObject(props: { name: string }) {
                   if (!isDisplayed()) return;
                   e.stopPropagation();
 
-                  // Update pointer position for re-raycasting when mesh changes.
+                  // Track pointer position for the useFrame hover
+                  // recheck (mesh geometry update / visibility loss).
                   lastPointerPos.current = {
                     clientX: e.clientX,
                     clientY: e.clientY,
                   };
-
-                  // If a drag has been initiated, DragLayer's window
-                  // pointermove handler owns the gesture -- skip local
-                  // click-vs-drag bookkeeping.
-                  const state = dragInfo.current;
-                  if (state.dragging) return;
-
-                  const [pointerX, pointerY] = getPointerXy(
-                    e.clientX,
-                    e.clientY,
-                  );
-                  const deltaX = pointerX - state.startClientX;
-                  const deltaY = pointerY - state.startClientY;
-                  // Minimum motion.
-                  if (Math.abs(deltaX) <= 3 && Math.abs(deltaY) <= 3) return;
-                  state.dragging = true;
                 }
           }
           onPointerUp={
@@ -1087,12 +1104,22 @@ export function SceneNodeThreeObject(props: { name: string }) {
                   if (!isDisplayed()) return;
                   e.stopPropagation();
 
-                  // If a drag was active, DragLayer's window pointerup
-                  // handler ends it and sends the end message. Here we just
-                  // need to suppress the local click path.
-                  const state = dragInfo.current;
-                  if (state.dragging) return;
-                  if (!clickable) return;
+                  // Drop the recorded pointerdown input now that the
+                  // gesture is over. Prevents stale state from
+                  // confusing a later keyboard-triggered contextmenu
+                  // (Shift+F10 / Menu key). macOS ctrl+click fires
+                  // contextmenu BEFORE pointerup, so the suppression
+                  // path has already consumed the value by the time
+                  // we clear it.
+                  interaction.nodeGestures.clearLastPointerDownInput();
+                  // Settle any node-click-candidate. "click" means the
+                  // press stayed stationary; "none" means it
+                  // promoted to drag, was cancelled, or no candidate
+                  // was ever started (for example, a drag-only node).
+                  const outcome = interaction.nodeGestures.settlePointerUp({
+                    pointerId: e.nativeEvent.pointerId,
+                  });
+                  if (!clickable || outcome !== "click") return;
                   // Convert ray to viser coordinates.
                   const ray = rayToViserCoords(viewer, e.ray);
 
@@ -1121,6 +1148,13 @@ export function SceneNodeThreeObject(props: { name: string }) {
                   });
                 }
           }
+          onPointerCancel={
+            !interactive
+              ? undefined
+              : (e) => {
+                  interaction.cancelPointer(e.nativeEvent.pointerId);
+                }
+          }
           onPointerOver={
             !interactive
               ? undefined
@@ -1141,12 +1175,7 @@ export function SceneNodeThreeObject(props: { name: string }) {
                   hoveredRef.current.isHovered = true;
                   // Store the instanceId in the hover ref.
                   hoveredRef.current.instanceId = e.instanceId ?? null;
-
-                  // Increment global hover count and update cursor.
-                  viewerMutable.hoveredElementsCount++;
-                  if (viewerMutable.hoveredElementsCount === 1) {
-                    document.body.style.cursor = "pointer";
-                  }
+                  interaction.hover.setHovered(props.name, true);
                 }
           }
           onPointerOut={
@@ -1161,12 +1190,7 @@ export function SceneNodeThreeObject(props: { name: string }) {
                   hoveredRef.current.isHovered = false;
                   // Clear the instanceId when no longer hovering.
                   hoveredRef.current.instanceId = null;
-
-                  // Decrement global hover count and update cursor if needed.
-                  viewerMutable.hoveredElementsCount--;
-                  if (viewerMutable.hoveredElementsCount === 0) {
-                    document.body.style.cursor = "auto";
-                  }
+                  interaction.hover.setHovered(props.name, false);
                 }
           }
         >

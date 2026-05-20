@@ -26,7 +26,7 @@ export type BeginDragArgs = {
 export interface DragLayerApi {
   /** Attempt to start a drag on the given scene node. No-op if any drag
    * is already active, or if no binding matches the current input. */
-  beginDrag(args: BeginDragArgs): void;
+  beginDrag(args: BeginDragArgs): boolean;
   /** End the active drag if (and only if) it targets the given node. */
   stopIfNodeIs(nodeName: string): void;
 }

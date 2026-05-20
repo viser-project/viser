@@ -8,7 +8,11 @@ import { NodePoseDataMap } from "./ViewerContext";
 export type SceneNode = {
   message: SceneNodeMessage;
   children: string[];
-  clickable: boolean;
+  /** Per-node click bindings carried over the wire by
+   * `SetSceneNodeClickBindingsMessage`. Empty array means "not
+   * clickable for any input"; structurally identical to
+   * `DragBinding`. */
+  clickBindings: DragBinding[];
   dragBindings: DragBinding[];
   labelVisible?: boolean; // Whether to show the label for this node.
   poseUpdateState?: "updated" | "needsUpdate" | "waitForMakeObject";
@@ -40,7 +44,7 @@ function makeRootNodeTemplate(): SceneNode {
       },
     },
     children: ["/WorldAxes"],
-    clickable: false,
+    clickBindings: [],
     dragBindings: [],
     visibility: true,
     effectiveVisibility: true,
@@ -64,7 +68,7 @@ function makeWorldAxesNodeTemplate(): SceneNode {
       },
     },
     children: [],
-    clickable: false,
+    clickBindings: [],
     dragBindings: [],
     visibility: true,
     effectiveVisibility: true,
@@ -98,7 +102,7 @@ function createSceneTreeActions(
           ...existingNode,
           message: message,
           children: existingNode?.children ?? [],
-          clickable: existingNode?.clickable ?? false,
+          clickBindings: existingNode?.clickBindings ?? [],
           dragBindings: existingNode?.dragBindings ?? [],
           labelVisible: existingNode?.labelVisible ?? false,
           // Default to true, will be updated when visibility is set.

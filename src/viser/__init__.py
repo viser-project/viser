@@ -80,4 +80,4 @@ from ._viser import ViserServer as ViserServer
 if not _TYPE_CHECKING:
     from ._scene_handles import ScenePointerEvent as ScenePointerEvent
 
-__version__ = "1.0.26"
+__version__ = "1.0.28"

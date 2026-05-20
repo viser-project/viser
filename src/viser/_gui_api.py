@@ -598,7 +598,13 @@ class GuiApi:
         icon: IconName | None = None,
         disabled: bool = False,
     ) -> CommandHandle:
-        """Register a command that can be triggered from the client's command palette.
+        """Register a command for the command palette.
+
+        Scope follows the owner of this :class:`GuiApi`, matching the
+        rest of the GUI API: ``server.gui.add_command(...)`` registers
+        the command for every connected client (and any that connect
+        later), while ``client.gui.add_command(...)`` registers it only
+        for that client.
 
         (Experimental) The command palette API may change in future
         releases.

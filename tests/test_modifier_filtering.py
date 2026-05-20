@@ -28,13 +28,31 @@ def _run_coro(coro: Coroutine[Any, Any, Any]) -> Any:
 
     Some test fixtures (e.g. pytest-playwright's sync API) leave a running
     event loop attached to the main thread, which breaks ``asyncio.run``
-    when these unit tests run in the same process.
+    -- and even ``loop.run_until_complete`` -- when these unit tests run in
+    the same process. ``run_until_complete`` checks ``_get_running_loop()``
+    on the calling thread, so we run the loop on a worker thread to bypass
+    that check.
     """
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+    import threading
+
+    result: list[Any] = []
+    error: list[BaseException] = []
+
+    def _target() -> None:
+        loop = asyncio.new_event_loop()
+        try:
+            result.append(loop.run_until_complete(coro))
+        except BaseException as e:
+            error.append(e)
+        finally:
+            loop.close()
+
+    t = threading.Thread(target=_target)
+    t.start()
+    t.join()
+    if error:
+        raise error[0]
+    return result[0]
 
 
 def _wait_until(
@@ -353,11 +371,12 @@ def test_on_click_unapplied_decorator_does_not_mark_clickable() -> None:
 
     # Decorator factory; never applied.
     _unused = box.on_click(modifier="shift")
-    clickable_msgs = [
-        m for m in sent if isinstance(m, _messages.SetSceneNodeClickableMessage)
+    bindings_msgs = [
+        m for m in sent if isinstance(m, _messages.SetSceneNodeClickBindingsMessage)
     ]
-    # No SetSceneNodeClickableMessage should have been queued.
-    assert clickable_msgs == []
+    # No SetSceneNodeClickBindingsMessage should have been queued for
+    # an un-applied decorator factory.
+    assert bindings_msgs == []
     assert len(box._impl.click_cb) == 0
 
 
@@ -371,15 +390,15 @@ def test_on_click_rejects_extra_kwargs() -> None:
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_on_drag_start_rejects_extra_positional_args() -> None:
-    """``on_drag_start("left", "right")`` is a typo; should raise.
+def test_on_drag_rejects_extra_positional_args() -> None:
+    """``on_drag("left", "right")`` is a typo; should raise.
 
     The explicit signature ``button: ..., *, modifier=...`` makes
     Python's call-site machinery do this for free."""
     server = viser.ViserServer()
     box = server.scene.add_box("/box", dimensions=(1.0, 1.0, 1.0))
     with pytest.raises(TypeError, match="positional argument"):
-        box.on_drag_start("left", "right")  # type: ignore[call-overload]
+        box.on_drag("left", "right")  # type: ignore[call-overload]
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
@@ -594,3 +613,189 @@ def test_click_dispatch_filters_by_modifier() -> None:
     _run_coro(server.scene._handle_node_click_updates(ClientId(0), make_msg("shift")))
     _wait_until(lambda: "shift" in fired)
     assert fired == ["shift"]
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_on_click_dedups_redundant_wire_emits() -> None:
+    """Each ``box.on_click(...)`` call emits exactly one
+    ``SetSceneNodeClickBindingsMessage`` with the growing bindings
+    tuple. A no-op ``remove_click_callback("nonexistent")`` queues
+    NOTHING (the bindings tuple is unchanged).
+    """
+    server = viser.ViserServer()
+    box = server.scene.add_box("/box", dimensions=(1.0, 1.0, 1.0))
+
+    sent: list[_messages.Message] = []
+    original_queue = server._websock_server.queue_message
+
+    def capture_queue(message: _messages.Message) -> None:
+        sent.append(message)
+        original_queue(message)
+
+    server._websock_server.queue_message = capture_queue  # type: ignore[method-assign]
+
+    # Register 5 click callbacks. Expect exactly FIVE
+    # SetSceneNodeClickBindingsMessage with growing bindings tuples.
+    for _ in range(5):
+
+        @box.on_click()
+        def _cb(event: viser.SceneNodePointerEvent) -> None:
+            del event
+
+    bindings_msgs = [
+        m for m in sent if isinstance(m, _messages.SetSceneNodeClickBindingsMessage)
+    ]
+    assert len(bindings_msgs) == 5
+    assert [len(m.bindings) for m in bindings_msgs] == [1, 2, 3, 4, 5]
+
+    # Remove a callback that isn't registered. Should queue nothing
+    # (the bindings tuple is unchanged).
+    pre = len(sent)
+
+    def not_registered(event: viser.SceneNodePointerEvent) -> None:
+        del event
+
+    box.remove_click_callback(not_registered)
+    assert len(sent) == pre, (
+        "no-op remove of unregistered callback should not queue messages"
+    )
+
+    # Remove all. Expect ONE empty bindings emit.
+    pre = len(sent)
+    box.remove_click_callback("all")
+    new = sent[pre:]
+    new_bindings = [
+        m for m in new if isinstance(m, _messages.SetSceneNodeClickBindingsMessage)
+    ]
+    assert len(new_bindings) == 1 and new_bindings[0].bindings == ()
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_publish_click_state_cache_rolls_back_on_queue_failure() -> None:
+    """If ``queue_message`` raises mid-publish (e.g. websocket dropped),
+    the dedup cache must NOT have been updated -- otherwise the next
+    legitimate state change against the same handle would
+    short-circuit against a state the client never received,
+    permanently desyncing the registration."""
+    server = viser.ViserServer()
+    box = server.scene.add_box("/box", dimensions=(1.0, 1.0, 1.0))
+
+    # Seed the cache with a no-modifier click. Cache is now
+    # ``(True, [(left, None)])``.
+    @box.on_click()
+    def cb_a(event: viser.SceneNodePointerEvent) -> None:
+        del event
+
+    cache_before_failure = box._impl._last_published_click_bindings
+    assert cache_before_failure == (
+        _messages.DragBinding(button="left", modifier=None),
+    )
+
+    # Force the next ``queue_message`` to raise. ``_publish_click_state``
+    # emits one ``ClickBindings`` message per state change -- raise on
+    # the first queue_message call after this point.
+    original_queue = server._websock_server.queue_message
+    raise_armed = {"value": True}
+
+    def raising_queue(message: _messages.Message) -> None:
+        if raise_armed["value"]:
+            raise_armed["value"] = False
+            raise RuntimeError("simulated websocket failure")
+        original_queue(message)
+
+    server._websock_server.queue_message = raising_queue  # type: ignore[method-assign]
+
+    # Register a second click *with a different modifier* so the
+    # post-recovery bindings genuinely differ from the pre-failure
+    # cache. Without this, a no-op cache rollback would still happen
+    # to look correct.
+    try:
+
+        @box.on_click(modifier="cmd/ctrl")
+        def cb_b(event: viser.SceneNodePointerEvent) -> None:
+            del event
+    except RuntimeError:
+        pass
+
+    cache_after_failure = box._impl._last_published_click_bindings
+    assert cache_after_failure == cache_before_failure, (
+        "cache committed despite queue_message raising -- next legit "
+        "state change will short-circuit against unsent state"
+    )
+
+    # Restore the queue. The next publish must NOT short-circuit -- the
+    # current bindings (cb_a no-mod + cb_b cmd/ctrl) differ from the
+    # pre-failure cache, so the catch-up emit is required.
+    server._websock_server.queue_message = original_queue  # type: ignore[method-assign]
+    sent_after_recovery: list[_messages.Message] = []
+    original_queue2 = server._websock_server.queue_message
+
+    def capture_queue(message: _messages.Message) -> None:
+        sent_after_recovery.append(message)
+        original_queue2(message)
+
+    server._websock_server.queue_message = capture_queue  # type: ignore[method-assign]
+
+    # Force another publish via a no-op-style call -- registering a
+    # third callback genuinely changes the bindings list and triggers
+    # ``_publish_click_state``.
+    @box.on_click(modifier="shift")
+    def _cb_c(event: viser.SceneNodePointerEvent) -> None:
+        del event
+
+    bindings_msgs = [
+        m
+        for m in sent_after_recovery
+        if isinstance(m, _messages.SetSceneNodeClickBindingsMessage)
+    ]
+    # The catch-up emit must include cb_b's cmd/ctrl binding -- the
+    # exact entry whose initial publish was lost to the simulated
+    # failure. Pre-fix, the cache would have committed before the
+    # failed queue_message call and the catch-up would carry only
+    # the cb_a + cb_c bindings, missing cb_b.
+    assert len(bindings_msgs) >= 1
+    last_bindings = bindings_msgs[-1].bindings
+    assert _messages.DragBinding(button="left", modifier="cmd/ctrl") in last_bindings, (
+        f"catch-up emit missing the cmd/ctrl binding that was lost to "
+        f"the simulated failure; got {last_bindings}"
+    )
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_remove_node_purges_click_bindings_in_persistent_buffer() -> None:
+    """When a node is removed, both the legacy ``Clickable`` flag and
+    the new ``ClickBindings`` set must be cleared in the persistent
+    message buffer. Without the bindings purge, a future node created
+    with the same name would inherit the prior node's modifier
+    filters on late-joining clients (the persistent buffer is keyed
+    by node name, not by handle identity)."""
+    server = viser.ViserServer()
+    box = server.scene.add_box("/box", dimensions=(1.0, 1.0, 1.0))
+
+    @box.on_click(modifier="cmd/ctrl")
+    def _(event: viser.SceneNodePointerEvent) -> None:
+        del event
+
+    sent: list[_messages.Message] = []
+    original_queue = server._websock_server.queue_message
+
+    def capture_queue(message: _messages.Message) -> None:
+        sent.append(message)
+        original_queue(message)
+
+    server._websock_server.queue_message = capture_queue  # type: ignore[method-assign]
+
+    box.remove()
+
+    bindings_purge = [
+        m
+        for m in sent
+        if isinstance(m, _messages.SetSceneNodeClickBindingsMessage)
+        and m.bindings == ()
+        and m.name == "/box"
+    ]
+    assert len(bindings_purge) == 1, (
+        f"expected exactly 1 SetSceneNodeClickBindingsMessage(()) for "
+        f"/box on remove() to purge the persistent buffer; got "
+        f"{bindings_purge}"
+    )
