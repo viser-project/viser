@@ -1499,6 +1499,14 @@ class GuiFolderMessage(_CreateGuiComponentMessage):
 
 
 @dataclasses.dataclass
+class GuiRowMessage(_CreateGuiComponentMessage):
+    """A row lays out its children horizontally."""
+
+    container_uuid: str
+    props: GuiFolderProps
+
+
+@dataclasses.dataclass
 class GuiFormMessage(_CreateGuiComponentMessage):
     """A form is a folder whose children's values can be committed together.
 
