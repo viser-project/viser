@@ -77,7 +77,7 @@ Code
            position=np.array([0.0, 0.0, -2.0]),
        )
    
-       # adding controls to custom lights in the scene
+       # adding controls to custom lights in the scene.
        server.scene.add_transform_controls(
            "/control0", position=(0.0, 10.0, 5.0), scale=2.0
        )
@@ -116,7 +116,7 @@ Code
        )
    
        with server.gui.add_folder("Grid Shadows"):
-           # Create grid shadows toggle
+           # Create grid shadows toggle.
            grid_shadows = server.gui.add_slider(
                "Intensity",
                min=0.0,

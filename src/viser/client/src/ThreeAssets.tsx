@@ -39,7 +39,9 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
   varying vec3 vOuterSqCol;
   uniform float scale;
   uniform vec3 uniformColor;
-  uniform float point_shading_enabled;
+  // Explicit precision qualifier required: must match the fragment shader
+  // declaration for Firefox to link the program.
+  uniform mediump float point_shading_enabled;
 
   #include <fog_pars_vertex>
 
@@ -67,7 +69,7 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
   varying vec3 vInnerSqCol;
   varying vec3 vOuterSqCol;
   uniform float point_ball_norm;
-  uniform float point_shading_enabled;
+  uniform mediump float point_shading_enabled;
 
   #include <fog_pars_fragment>
 

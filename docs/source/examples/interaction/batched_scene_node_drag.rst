@@ -170,7 +170,7 @@ Code
        active_mode: str | None = None
        grab_body: np.ndarray | None = None  # body-frame grab, for translate/rotate
        spring_target: np.ndarray | None = None  # world target for the spring
-       teleport_offset: np.ndarray | None = None  # cursor → instance position
+       teleport_offset: np.ndarray | None = None  # cursor -> instance position
        ext_torque = np.zeros(3)
    
        shutdown = threading.Event()
@@ -199,7 +199,7 @@ Code
                            # Spring acts on the *grab point* (body-frame
                            # ``grab_body`` mapped to world via the body's
                            # current pose). Off-center grabs naturally
-                           # produce a torque (lever × force) on top of
+                           # produce a torque (lever x force) on top of
                            # the linear pull, so dragging an edge yanks
                            # AND spins the body. Force is zero at drag
                            # start (grab_world == spring_target == click)
@@ -257,133 +257,118 @@ Code
        # Drag (no modifier): teleport.
        # ==========================================================================
    
-       @handle.on_drag_start("left")
+       @handle.on_drag("left")
        async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
            nonlocal active_idx, active_mode, spring_target, teleport_offset
-           i = event.instance_index
-           if i is None:
-               return
-           set_instance_color(i, TELEPORT_COLOR)
-           active_idx_gui.value = str(i)
-           active_mode_gui.value = "teleport"
-           with lock:
-               active_idx = i
-               active_mode = "teleport"
-               cursor = np.array(event.start_position)
-               teleport_offset = position_arr[i] - cursor
-               spring_target = cursor
-   
-       @handle.on_drag_update("left")
-       async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
-           nonlocal spring_target
-           with lock:
-               spring_target = np.array(event.end_position)
-   
-       @handle.on_drag_end("left")
-       async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
-           nonlocal active_idx, active_mode, spring_target, teleport_offset
-           i = event.instance_index
-           if i is not None:
-               set_instance_color(i, IDLE_COLOR)
-           active_idx_gui.value = "-"
-           active_mode_gui.value = "idle"
-           with lock:
-               active_idx = None
-               active_mode = None
-               spring_target = None
-               teleport_offset = None
+           if event.phase == "start":
+               i = event.instance_index
+               if i is None:
+                   return
+               set_instance_color(i, TELEPORT_COLOR)
+               active_idx_gui.value = str(i)
+               active_mode_gui.value = "teleport"
+               with lock:
+                   active_idx = i
+                   active_mode = "teleport"
+                   cursor = np.array(event.start_position)
+                   teleport_offset = position_arr[i] - cursor
+                   spring_target = cursor
+           elif event.phase == "update":
+               with lock:
+                   spring_target = np.array(event.end_position)
+           elif event.phase == "end":
+               i = event.instance_index
+               if i is not None:
+                   set_instance_color(i, IDLE_COLOR)
+               active_idx_gui.value = "-"
+               active_mode_gui.value = "idle"
+               with lock:
+                   active_idx = None
+                   active_mode = None
+                   spring_target = None
+                   teleport_offset = None
    
        # ==========================================================================
        # Cmd/Ctrl + drag: spring-pull that instance (linear velocity).
        # ==========================================================================
    
-       @handle.on_drag_start("left", modifier="cmd/ctrl")
+       @handle.on_drag("left", modifier="cmd/ctrl")
        async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
            nonlocal active_idx, active_mode, grab_body, spring_target
-           i = event.instance_index
-           if i is None:
-               return
-           set_instance_color(i, TRANSLATE_COLOR)
-           active_idx_gui.value = str(i)
-           active_mode_gui.value = "translate"
-           with lock:
-               active_idx = i
-               active_mode = "translate"
-               grab_world = np.array(event.start_position)
-               grab_body = compute_grab_body(i, grab_world)
-               spring_target = grab_world
-   
-       @handle.on_drag_update("left", modifier="cmd/ctrl")
-       async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
-           nonlocal spring_target
-           with lock:
-               spring_target = np.array(event.end_position)
-   
-       @handle.on_drag_end("left", modifier="cmd/ctrl")
-       async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
-           nonlocal active_idx, active_mode, grab_body, spring_target
-           i = event.instance_index
-           if i is not None:
-               set_instance_color(i, IDLE_COLOR)
-           active_idx_gui.value = "-"
-           active_mode_gui.value = "idle"
-           with lock:
-               active_idx = None
-               active_mode = None
-               grab_body = None
-               spring_target = None
+           if event.phase == "start":
+               i = event.instance_index
+               if i is None:
+                   return
+               set_instance_color(i, TRANSLATE_COLOR)
+               active_idx_gui.value = str(i)
+               active_mode_gui.value = "translate"
+               with lock:
+                   active_idx = i
+                   active_mode = "translate"
+                   grab_world = np.array(event.start_position)
+                   grab_body = compute_grab_body(i, grab_world)
+                   spring_target = grab_world
+           elif event.phase == "update":
+               with lock:
+                   spring_target = np.array(event.end_position)
+           elif event.phase == "end":
+               i = event.instance_index
+               if i is not None:
+                   set_instance_color(i, IDLE_COLOR)
+               active_idx_gui.value = "-"
+               active_mode_gui.value = "idle"
+               with lock:
+                   active_idx = None
+                   active_mode = None
+                   grab_body = None
+                   spring_target = None
    
        # ==========================================================================
        # Cmd/Ctrl + Shift + drag: rotate that instance around the drag arrow
        # (angular velocity).
        # ==========================================================================
    
-       @handle.on_drag_start("left", modifier="cmd/ctrl+shift")
+       @handle.on_drag("left", modifier="cmd/ctrl+shift")
        async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
            nonlocal active_idx, active_mode, grab_body, spring_target, ext_torque
-           i = event.instance_index
-           if i is None:
-               return
-           set_instance_color(i, ROTATE_COLOR)
-           active_idx_gui.value = str(i)
-           active_mode_gui.value = "rotate"
-           with lock:
-               active_idx = i
-               active_mode = "rotate"
-               grab_world = np.array(event.start_position)
-               grab_body = compute_grab_body(i, grab_world)
-               # Pin the grab point to where it was clicked — the instance
-               # rotates around this point.
-               spring_target = grab_world
-               ext_torque = np.zeros(3)
-   
-       @handle.on_drag_update("left", modifier="cmd/ctrl+shift")
-       async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
-           nonlocal ext_torque
-           # Drag vector = rotation axis (direction) × spin magnitude (length).
-           # Use the *frozen* spring_target (click point at drag-start) rather
-           # than ``event.start_position``, which is live and tracks the
-           # instance's current pose — keeps the gesture independent of
-           # spring stiffness.
-           with lock:
-               assert spring_target is not None
-               drag_vec = np.array(event.end_position) - spring_target
-               ext_torque = TORQUE_K * drag_vec
-   
-       @handle.on_drag_end("left", modifier="cmd/ctrl+shift")
-       async def _(event: viser.SceneNodeDragEvent[viser.BatchedMeshHandle]) -> None:
-           nonlocal active_idx, active_mode, grab_body, spring_target, ext_torque
-           i = event.instance_index
-           if i is not None:
-               set_instance_color(i, IDLE_COLOR)
-           active_idx_gui.value = "-"
-           active_mode_gui.value = "idle"
-           with lock:
-               active_idx = None
-               active_mode = None
-               grab_body = None
-               spring_target = None
-               ext_torque = np.zeros(3)
+           if event.phase == "start":
+               i = event.instance_index
+               if i is None:
+                   return
+               set_instance_color(i, ROTATE_COLOR)
+               active_idx_gui.value = str(i)
+               active_mode_gui.value = "rotate"
+               with lock:
+                   active_idx = i
+                   active_mode = "rotate"
+                   grab_world = np.array(event.start_position)
+                   grab_body = compute_grab_body(i, grab_world)
+                   # Pin the grab point to where it was clicked -- the instance
+                   # rotates around this point.
+                   spring_target = grab_world
+                   ext_torque = np.zeros(3)
+           elif event.phase == "update":
+               # Drag vector = rotation axis (direction) x spin magnitude (length).
+               # Use the *frozen* spring_target (click point at drag-start) rather
+               # than ``event.start_position``, which is live and tracks the
+               # instance's current pose -- keeps the gesture independent of
+               # spring stiffness.
+               with lock:
+                   assert spring_target is not None
+                   drag_vec = np.array(event.end_position) - spring_target
+                   ext_torque = TORQUE_K * drag_vec
+           elif event.phase == "end":
+               i = event.instance_index
+               if i is not None:
+                   set_instance_color(i, IDLE_COLOR)
+               active_idx_gui.value = "-"
+               active_mode_gui.value = "idle"
+               with lock:
+                   active_idx = None
+                   active_mode = None
+                   grab_body = None
+                   spring_target = None
+                   ext_torque = np.zeros(3)
    
        try:
            while True:

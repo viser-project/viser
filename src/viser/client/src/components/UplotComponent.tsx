@@ -18,8 +18,129 @@ import { GuiUplotMessage } from "../WebsocketMessages";
 import { folderWrapper } from "./Folder.css";
 import uPlot from "uplot";
 
-// Individual plot component.
+type UplotScale = NonNullable<uPlot.Options["scales"]>[string];
+
+type DblclickBind = (
+  self: uPlot,
+  targ: HTMLElement,
+  handle: (e: Event) => void,
+  onlyTarg?: boolean,
+) => (e: MouseEvent) => void;
+
+/**
+ * Rewrite x-scales whose `range` is a static [min, max] tuple so user
+ * zoom is preserved across data updates, and emit:
+ *   - init hooks that pin the initial bounds, bypassing uPlot's
+ *     unconditional `autoScaleX()` at construction (uPlot.cjs.js:6080);
+ *   - a dblclick `cursor.bind` that resets to the user's tuple instead
+ *     of running uPlot's default fit-to-data autoscale.
+ *
+ * uPlot's tuple-range path wraps the array via `fnOrSelf` into a function
+ * that ignores its inputs and always returns the static bounds. Every
+ * redraw — including the one `uplot-react` issues on each data push —
+ * re-commits the current scale through that range function, silently
+ * reverting any drag-to-zoom. Replacing the array with a callable that
+ * honors uPlot's explicit min/max fixes the zoom-reverts-on-redraw case;
+ * the init hook covers first render; the dblclick bind covers reset.
+ *
+ * Non-x tuple ranges are left untouched: `range=(ymin, ymax)` on a
+ * y-scale almost always means "lock this axis," and uPlot's existing
+ * tuple-range semantic is exactly that. See `examples/02_gui/08_uplot.py`.
+ *
+ * We also pin `auto: false` to mirror uPlot's own
+ * `sc.auto = fnOrSelf(rangeIsArr ? false : sc.auto)` (uPlot.cjs.js:3070).
+ */
+function transformScales(scales: GuiUplotMessage["props"]["scales"]): {
+  scales: { [key: string]: UplotScale } | undefined;
+  hooks: { init: ((u: uPlot) => void)[] };
+  dblclickBind: DblclickBind | undefined;
+} {
+  if (!scales) {
+    return { scales: undefined, hooks: { init: [] }, dblclickBind: undefined };
+  }
+  const out: { [key: string]: UplotScale } = {};
+  // uPlot's `init` hook is typed `(u: uPlot) => void`, but is actually
+  // invoked as `(u, opts, data)` — see `fire("init", opts, data)` in
+  // uPlot.cjs.js. We accept the third arg via an `as` cast at return.
+  const initHooks: ((u: uPlot) => void)[] = [];
+  const resets: ((u: uPlot) => void)[] = [];
+  for (const [key, scale] of Object.entries(scales)) {
+    if (key !== "x" || !scale || !Array.isArray(scale.range)) {
+      out[key] = scale as UplotScale;
+      continue;
+    }
+    const [hardMin, hardMax] = scale.range as [number | null, number | null];
+    // Resolve null sides of a partial-null tuple (e.g. (None, 0)) from
+    // the x-data extrema. uPlot keeps the x-series sorted ascending, so
+    // xs[0] / xs[last] are the data min / max. uPlot's own
+    // array-to-soft-bound conversion (uPlot.cjs.js:3041) is gated to
+    // non-x scales; for x we have to do it ourselves.
+    const resolve = (xs: ArrayLike<number> | undefined) => ({
+      min: hardMin ?? (xs && xs.length > 0 ? xs[0] : null),
+      max: hardMax ?? (xs && xs.length > 0 ? xs[xs.length - 1] : null),
+    });
+    out[key] = {
+      ...scale,
+      auto: false,
+      range: (u, dataMin, dataMax) => {
+        const { min, max } = resolve(u.data?.[0] as ArrayLike<number>);
+        return [dataMin ?? min, dataMax ?? max];
+      },
+    } as UplotScale;
+    // At init-hook fire time `self.data` is not yet assigned; the third
+    // argument to the hook is the constructor's data tuple.
+    initHooks.push(((
+      u: uPlot,
+      _opts: unknown,
+      data: ArrayLike<ArrayLike<number>>,
+    ) => {
+      const { min, max } = resolve(data?.[0]);
+      if (min == null || max == null) return;
+      u.setScale(key, { min, max });
+    }) as (u: uPlot) => void);
+    resets.push((u) => {
+      const { min, max } = resolve(u.data?.[0] as ArrayLike<number>);
+      if (min == null || max == null) return;
+      u.setScale(key, { min, max });
+    });
+  }
+  const dblclickBind: DblclickBind | undefined =
+    resets.length === 0
+      ? undefined
+      : (self, targ, _handle, onlyTarg = true) =>
+          (e) => {
+            // Mirror uPlot's `filtBtn0` filter: left-click only, on-target
+            // only by default.
+            if (e.button !== 0) return;
+            if (onlyTarg && e.target !== targ) return;
+            resets.forEach((r) => r(self));
+          };
+  return { scales: out, hooks: { init: initHooks }, dblclickBind };
+}
+
+// E2E testpoint: lives under the same `__viserTestpoints` namespace as
+// `rendererInfo` and `devSettings` (App.tsx). `createCount` lets tests
+// assert the chart was not torn down and rebuilt across resize / data
+// pushes — silent destroy/create would lose the user's zoom.
+type UplotTestpoint = { chart: uPlot; createCount: number };
+function registerUplotTestpoint(uuid: string, chart: uPlot): void {
+  const w = window as unknown as {
+    __viserTestpoints?: { uplots?: Record<string, UplotTestpoint> };
+  };
+  const tp = (w.__viserTestpoints ??= {});
+  const reg = (tp.uplots ??= {});
+  const prev = reg[uuid];
+  reg[uuid] = { chart, createCount: (prev?.createCount ?? 0) + 1 };
+}
+function unregisterUplotTestpoint(uuid: string): void {
+  const reg = (window as unknown as {
+    __viserTestpoints?: { uplots?: Record<string, UplotTestpoint> };
+  }).__viserTestpoints?.uplots;
+  if (reg) delete reg[uuid];
+}
+
 function PlotComponent({
+  uuid,
   props,
   onExpand,
 }: GuiUplotMessage & {
@@ -42,12 +163,32 @@ function PlotComponent({
     return [convertedData, xMin, xMax];
   }, [props.data]);
 
-  // Build uPlot options from the props.
-  //
-  // There are some `any` casts because the types here come through multiple
-  // transpiler layers, which are imperfect: TS=>Python=>TS.
-  const plotOptions = useMemo(() => {
-    // Get theme-aware default colors.
+  // Memoized on `props.scales` alone so width / theme re-renders don't
+  // mint fresh `range` / `hooks` / `cursor.bind` references each tick —
+  // uplot-react would diff those as `'create'` and rebuild the chart,
+  // dropping user zoom. See `transformScales` for what the rewrite does.
+  const {
+    scales: processedScales,
+    hooks: scaleHooks,
+    dblclickBind,
+  } = useMemo(() => transformScales(props.scales), [props.scales]);
+
+  // Merge user-supplied cursor config with our dblclick override (if any).
+  // Stable-ref'd so plotOptions doesn't churn it.
+  const mergedCursor = useMemo(() => {
+    const userCursor = props.cursor as any;
+    if (!dblclickBind) return userCursor || undefined;
+    return {
+      ...userCursor,
+      bind: { ...userCursor?.bind, dblclick: dblclickBind },
+    };
+  }, [props.cursor, dblclickBind]);
+
+  // Apply theme-aware defaults to axes. Hoisted so a resize/width change
+  // (which churns the outer plotOptions memo) doesn't spawn fresh axes
+  // object identities — uplot-react would diff them as `'create'` and
+  // tear the chart down, dropping the user's zoom.
+  const processedAxes = useMemo(() => {
     const textColor =
       colorScheme === "dark" ? theme.colors.gray[5] : theme.colors.gray[7];
     const gridColor =
@@ -55,55 +196,46 @@ function PlotComponent({
         ? "rgba(255, 255, 255, 0.03)"
         : theme.colors.gray[2];
 
-    // Process axes to add theme-aware defaults if not specified by user.
-    // If axes are not provided, create default axes with theme colors.
-    let processedAxes = props.axes as any;
-    if (processedAxes === undefined || processedAxes === null) {
-      // Create default axes if none provided.
-      processedAxes = [
+    if (props.axes === undefined || props.axes === null) {
+      return [
         { stroke: textColor, grid: { stroke: gridColor, show: true } }, // x-axis
         { stroke: textColor, grid: { stroke: gridColor, show: true } }, // y-axis
       ];
-    } else {
-      processedAxes = processedAxes.map((axis: any) => {
-        if (axis === undefined || axis === null) return axis;
-
-        // Only set defaults if user hasn't specified values.
-        const result = { ...axis };
-
-        // Set axis line color default.
-        if (result.stroke === undefined) {
-          result.stroke = textColor;
-        }
-
-        // Set grid color default.
-        if (result.grid === undefined) {
-          result.grid = { stroke: gridColor };
-        } else if (result.grid !== null && result.grid.stroke === undefined) {
-          result.grid = { ...result.grid, stroke: gridColor };
-        }
-
-        // Set tick color default.
-        if (result.ticks === undefined) {
-          result.ticks = { stroke: textColor };
-        } else if (result.ticks !== null && result.ticks.stroke === undefined) {
-          result.ticks = { ...result.ticks, stroke: textColor };
-        }
-
-        return result;
-      });
     }
+    return (props.axes as any).map((axis: any) => {
+      if (axis === undefined || axis === null) return axis;
+      const result = { ...axis };
+      if (result.stroke === undefined) result.stroke = textColor;
+      if (result.grid === undefined) {
+        result.grid = { stroke: gridColor };
+      } else if (result.grid !== null && result.grid.stroke === undefined) {
+        result.grid = { ...result.grid, stroke: gridColor };
+      }
+      if (result.ticks === undefined) {
+        result.ticks = { stroke: textColor };
+      } else if (result.ticks !== null && result.ticks.stroke === undefined) {
+        result.ticks = { ...result.ticks, stroke: textColor };
+      }
+      return result;
+    });
+  }, [props.axes, colorScheme, theme.colors.gray]);
 
+  // Build uPlot options from the props.
+  //
+  // There are some `any` casts because the types here come through multiple
+  // transpiler layers, which are imperfect: TS=>Python=>TS.
+  const plotOptions = useMemo(() => {
     return {
       width: containerWidth,
       height: (props.height ?? containerWidth / props.aspect) as any,
       title: props.title || undefined,
       mode: props.mode || undefined,
       series: (props.series as any) || [],
-      cursor: (props.cursor as any) || undefined,
+      cursor: mergedCursor,
       bands: props.bands || undefined,
-      scales: props.scales || undefined,
+      scales: processedScales,
       axes: processedAxes,
+      hooks: scaleHooks,
       legend: (props.legend as any) || undefined,
       focus: props.focus || undefined,
       // Set tighter default padding [top, right, bottom, left].
@@ -117,14 +249,13 @@ function PlotComponent({
     props.title,
     props.mode,
     props.series,
-    props.cursor,
+    mergedCursor,
     props.bands,
-    props.scales,
-    props.axes,
+    processedScales,
+    scaleHooks,
+    processedAxes,
     props.legend,
     props.focus,
-    colorScheme,
-    theme.colors.gray,
   ]);
 
   // Somewhat experimental: manual scale reset logic. When the plot data is
@@ -146,10 +277,14 @@ function PlotComponent({
     if (!plotObj) return;
     const xScaleKey = Object.keys(plotObj.scales)[0];
     const xScale = plotObj.scales[xScaleKey];
-    if (xScale.auto === false) {
-      // If the x-axis is manually scaled, we don't need to reset it.
-      return;
-    }
+    // uPlot wraps `sc.auto` via `fnOrSelf` at init, so it is always a
+    // callable here — `=== false` would never match.
+    const autoFn = xScale.auto as
+      | boolean
+      | ((u: uPlot, viaAutoScaleX: boolean) => boolean);
+    const isAuto =
+      typeof autoFn === "function" ? autoFn(plotObj, false) : autoFn;
+    if (isAuto === false) return;
     const span = xMax - xMin;
     if (span === 0) {
       // Avoid degenerate spans.
@@ -183,9 +318,11 @@ function PlotComponent({
           resetScales={false}
           onCreate={(chart) => {
             setPlotObj(chart);
+            registerUplotTestpoint(uuid, chart);
           }}
           onDelete={() => {
             setPlotObj(undefined);
+            unregisterUplotTestpoint(uuid);
           }}
           options={plotOptions}
           data={data}

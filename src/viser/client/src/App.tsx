@@ -12,6 +12,7 @@ import * as THREE from "three";
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import React, { useEffect, useMemo } from "react";
 import { ViewerMutable } from "./ViewerContext";
+import { InteractionController } from "./pointer/interactionController";
 import {
   Anchor,
   Box,
@@ -32,8 +33,8 @@ import { SceneNodeThreeObject } from "./SceneTree";
 import { DragLayer } from "./DragLayer";
 import {
   KeyModifier,
+  hasCmdCtrl,
   keyModifierFromEvent,
-  matchesModifierFilter,
 } from "./dragUtils";
 import { shallowArrayEqual } from "./utils/shallowArrayEqual";
 import {
@@ -220,25 +221,21 @@ function ViewerRoot() {
     getRenderRequestState: "ready",
     getRenderRequest: null,
 
-    // Interaction state.
-    scenePointerInfo: {
-      filtersByEventType: new Map(),
-      dragStart: [0, 0],
-      dragEnd: [0, 0],
-      isDragging: false,
-      modifierAtDown: null,
-      activeEventTypes: new Set(),
-    },
-
     // Skinned mesh state.
     skinnedMeshState: {},
 
     // Per-node pose data (non-reactive, read in useFrame).
     nodePoseData: {},
-
-    // Global hover state tracking.
-    hoveredElementsCount: 0,
   });
+
+  const interaction = React.useMemo(
+    () =>
+      new InteractionController({
+        getCameraControl: () => mutable.current.cameraControl,
+        getCanvas: () => mutable.current.canvas,
+      }),
+    [],
+  );
 
   // Create the scene tree state and extract store and actions.
   const sceneTreeState = useSceneTreeState(
@@ -307,6 +304,7 @@ function ViewerRoot() {
     useInitialCamera: initialCameraState.store,
     initialCameraActions: initialCameraState.actions,
     mutable,
+    interaction,
   };
 
   return (
@@ -464,6 +462,7 @@ function NotificationsPanel() {
  */
 function ViewerCanvas({ children }: { children: React.ReactNode }) {
   const viewer = React.useContext(ViewerContext)!;
+  const interaction = viewer.interaction;
   const sendClickThrottled = useThrottledMessageSender(20).send;
   const theme = useMantineTheme();
   const { ref: inViewRef, inView } = useInView();
@@ -474,122 +473,142 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  // Handle pointer down event. I don't think we need useCallback here, since
-  // remounts should be very rare.
-  const handlePointerDown = (e: React.PointerEvent) => {
-    const { mutable } = viewer;
-    const pointerInfo = mutable.current.scenePointerInfo;
-    if (pointerInfo.filtersByEventType.size === 0) return;
-
-    const canvasBbox = mutable.current.canvas!.getBoundingClientRect();
-    pointerInfo.dragStart = [
-      e.clientX - canvasBbox.left,
-      e.clientY - canvasBbox.top,
-    ];
-    pointerInfo.dragEnd = pointerInfo.dragStart;
-
-    if (ndcFromPointerXy(viewer, pointerInfo.dragEnd) === null) return;
-    if (pointerInfo.isDragging) return;
-
-    // Capture modifier state at gesture start; mid-gesture changes
-    // shouldn't perturb dispatch (matches drag-callback semantics).
-    const modifier = keyModifierFromEvent(e);
-
-    // Gate engagement on modifier match. If no registered filter for
-    // any enabled event_type matches the held modifiers, this isn't a
-    // scene-pointer gesture -- let camera controls handle it.
-    const activeEventTypes = new Set<"click" | "rect-select">();
-    for (const [eventType, filters] of pointerInfo.filtersByEventType) {
-      if (filters.some((f) => matchesModifierFilter(modifier, f))) {
-        activeEventTypes.add(eventType);
-      }
-    }
-    if (activeEventTypes.size === 0) return;
-
-    pointerInfo.modifierAtDown = modifier;
-    pointerInfo.activeEventTypes = activeEventTypes;
-    pointerInfo.isDragging = true;
-    mutable.current.cameraControl!.enabled = false;
-
-    const ctx = mutable.current.canvas2d!.getContext("2d")!;
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-  };
-
-  // Handle pointer move event.
-  const handlePointerMove = (e: React.PointerEvent) => {
-    const { mutable } = viewer;
-    const pointerInfo = mutable.current.scenePointerInfo;
-    if (!pointerInfo.isDragging) return;
-
-    const canvasBbox = mutable.current.canvas!.getBoundingClientRect();
-    const pointerXy: [number, number] = [
-      e.clientX - canvasBbox.left,
-      e.clientY - canvasBbox.top,
-    ];
-
-    if (ndcFromPointerXy(viewer, pointerXy) === null) return;
-    pointerInfo.dragEnd = pointerXy;
-
-    // Check if pointer moved enough to be considered a drag.
-    if (
-      Math.abs(pointerInfo.dragEnd[0] - pointerInfo.dragStart[0]) <= 3 &&
-      Math.abs(pointerInfo.dragEnd[1] - pointerInfo.dragStart[1]) <= 3
-    )
-      return;
-
-    // Draw selection rectangle only if rect-select was active for
-    // this gesture's modifier state at pointerdown.
-    if (pointerInfo.activeEventTypes.has("rect-select")) {
-      const ctx = mutable.current.canvas2d!.getContext("2d")!;
+  // Render the rect-select overlay onto the canvas2d layer. Called
+  // from the pointer handlers when motion in a committed rect-select
+  // gesture should repaint. Theme is read at draw time (not captured)
+  // so a runtime theme change reflects immediately.
+  const drawRectSelectOverlay = React.useCallback(
+    (rect: { startXy: [number, number]; endXy: [number, number] } | null) => {
+      const c2d = viewer.mutable.current.canvas2d;
+      if (c2d === null) return;
+      const ctx = c2d.getContext("2d");
+      if (ctx === null) return;
       ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      if (rect === null) return;
+      const [sx, sy] = rect.startXy;
+      const [ex, ey] = rect.endXy;
       ctx.beginPath();
       ctx.fillStyle = theme.primaryColor;
       ctx.strokeStyle = "blue";
       ctx.globalAlpha = 0.2;
-      ctx.fillRect(
-        pointerInfo.dragStart[0],
-        pointerInfo.dragStart[1],
-        pointerInfo.dragEnd[0] - pointerInfo.dragStart[0],
-        pointerInfo.dragEnd[1] - pointerInfo.dragStart[1],
-      );
+      ctx.fillRect(sx, sy, ex - sx, ey - sy);
       ctx.globalAlpha = 1.0;
       ctx.stroke();
+    },
+    [theme, viewer],
+  );
+
+  const cancelActiveScenePointer = React.useCallback(() => {
+    interaction.cancelAny();
+    drawRectSelectOverlay(null);
+  }, [drawRectSelectOverlay, interaction]);
+
+  // Held-modifier tracking. Three sources keep `hoverSet`'s
+  // `heldModifier` in sync with reality:
+  //   - `keydown`/`keyup`: live updates while the canvas is focused.
+  //   - `blur`: drops the modifier; a release out of focus may not
+  //     deliver `keyup`.
+  //   - `pointermove`: reconciles from the event's modifier flags so
+  //     a focus regain with the modifier still held recovers without
+  //     waiting for the next keypress.
+  React.useEffect(() => {
+    const onBlur = () => {
+      cancelActiveScenePointer();
+      interaction.hover.setHeldModifier(null);
+    };
+    const isFormElement = (el: Element | null): boolean => {
+      if (el === null) return false;
+      const tag = el.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+        return true;
+      }
+      return (el as HTMLElement).isContentEditable;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      // Skip while typing in form controls so Shift in a TextInput
+      // doesn't flicker the canvas cursor.
+      if (
+        isFormElement(e.target as Element | null) ||
+        isFormElement(document.activeElement)
+      ) {
+        return;
+      }
+      interaction.hover.setHeldModifier(keyModifierFromEvent(e));
+    };
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
+    return () => {
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKey);
+      cancelActiveScenePointer();
+    };
+  }, [cancelActiveScenePointer, interaction]);
+
+  // Canvas pointer handlers thin-delegate to the gestures module.
+  // Side effects (camera lock, overlay draw, wire dispatch) happen
+  // here based on the returned outcome.
+  const canvasXyFromEvent = React.useCallback(
+    (e: React.PointerEvent): [number, number] => {
+      const bbox = viewer.mutable.current.canvas!.getBoundingClientRect();
+      return [e.clientX - bbox.left, e.clientY - bbox.top];
+    },
+    [viewer],
+  );
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    const xy = canvasXyFromEvent(e);
+    const next = interaction.scenePointer.onPointerDown({
+      pointerId: e.pointerId,
+      button: e.nativeEvent.button,
+      modifier: keyModifierFromEvent(e),
+      xy,
+      insideViewport: ndcFromPointerXy(viewer, xy) !== null,
+    });
+    if (next.kind !== "scene-rect-select") return;
+    // Capture the pointer so subsequent move/up/cancel for this
+    // pointer id are delivered to the canvas regardless of cursor
+    // travel. Closes the off-canvas release leak.
+    try {
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    } catch {
+      /* setPointerCapture may throw on some legacy paths; harmless. */
     }
   };
 
-  // Handle pointer up event.
-  const handlePointerUp = () => {
-    const { mutable } = viewer;
-    const pointerInfo = mutable.current.scenePointerInfo;
-    const wasDragging = pointerInfo.isDragging;
+  const handlePointerMove = (e: React.PointerEvent) => {
+    // Reconcile modifier state on every pointer event -- recovers from
+    // focus-regain with the modifier still held without waiting for a
+    // keypress.
+    interaction.hover.setHeldModifier(keyModifierFromEvent(e));
+    const xy = canvasXyFromEvent(e);
+    const repaint = interaction.scenePointer.onPointerMove({
+      pointerId: e.pointerId,
+      xy,
+    });
+    if (repaint) {
+      const g = interaction.scenePointer.getGesture();
+      if (g.kind === "scene-rect-select") {
+        drawRectSelectOverlay({ startXy: g.startXy, endXy: g.endXy });
+      }
+    }
+  };
 
-    // Reset gesture state and erase the rectangle overlay before any
-    // early return -- otherwise a server callback removed mid-gesture
-    // can leave stale ``isDragging`` or a drawn rectangle behind.
-    mutable.current.cameraControl!.enabled = true;
-    pointerInfo.isDragging = false;
-    const activeEventTypes = pointerInfo.activeEventTypes;
-    pointerInfo.activeEventTypes = new Set();
-    const ctx = mutable.current.canvas2d!.getContext("2d")!;
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    if (!wasDragging || activeEventTypes.size === 0) return;
-
-    const modifier = pointerInfo.modifierAtDown;
-
-    // Disambiguate click vs rect-select by displacement (same 3-pixel
-    // threshold as handlePointerMove uses for drawing the rectangle).
-    const moved =
-      Math.abs(pointerInfo.dragEnd[0] - pointerInfo.dragStart[0]) > 3 ||
-      Math.abs(pointerInfo.dragEnd[1] - pointerInfo.dragStart[1]) > 3;
-    if (!moved && activeEventTypes.has("click")) {
-      sendClickMessage(
+  const handlePointerUp = (e: React.PointerEvent) => {
+    const outcome = interaction.scenePointer.onPointerUp({
+      pointerId: e.pointerId,
+    });
+    drawRectSelectOverlay(null);
+    if (outcome.kind === "scene-click") {
+      sendClickMessage(viewer, outcome.xy, outcome.modifier, sendClickThrottled);
+    } else if (outcome.kind === "scene-rect-select") {
+      sendRectSelectMessage(
         viewer,
-        pointerInfo.dragEnd,
-        modifier,
+        { dragStart: outcome.startXy, dragEnd: outcome.endXy },
+        outcome.modifier,
         sendClickThrottled,
       );
-    } else if (moved && activeEventTypes.has("rect-select")) {
-      sendRectSelectMessage(viewer, pointerInfo, modifier, sendClickThrottled);
     }
   };
 
@@ -623,10 +642,34 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
       <Canvas
         gl={{ preserveDrawingBuffer: true, reversedDepthBuffer: true }}
         style={{ width: "100%", height: "100%" }}
-        ref={(el) => (viewer.mutable.current.canvas = el)}
+        ref={(el) => {
+          viewer.mutable.current.canvas = el;
+          interaction.hover.refresh();
+        }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onPointerCancel={(e) => {
+          interaction.cancelPointer(e.pointerId);
+          drawRectSelectOverlay(null);
+        }}
+        onContextMenu={(e) => {
+          // Suppress the browser context menu only for ctrl/cmd-modified
+          // gestures that match a registered scene-pointer filter. macOS
+          // fires contextmenu on ctrl+click, so without this a ctrl+click
+          // scene-pointer callback would also pop the OS menu.
+          //
+          // We deliberately do NOT suppress plain right-clicks even when
+          // a ``modifier=None`` filter is registered: scene-pointer click
+          // callbacks are conventionally left-click, and stealing the
+          // canvas's right-click menu wholesale (losing the inspector)
+          // would surprise users who registered an unmodified callback.
+          const modifier = keyModifierFromEvent(e);
+          if (!hasCmdCtrl(modifier)) return;
+          if (interaction.scenePointer.anyFilterMatches(modifier)) {
+            e.preventDefault();
+          }
+        }}
         shadows="percentage"
         dpr={fixedDpr ?? undefined}
       >
@@ -1016,6 +1059,7 @@ function SceneContextSetter() {
   useEffect(() => {
     const w = window as any;
     w.__viserMutable = mutable.current;
+    w.__viserPointer = viewer.interaction.testApi();
     // Expose a shim for E2E tests.
     w.__viserSceneTree = {
       getState: () => viewer.useSceneTree.getAll(),
@@ -1040,6 +1084,7 @@ function SceneContextSetter() {
 
     return () => {
       delete w.__viserMutable;
+      delete w.__viserPointer;
       delete w.__viserSceneTree;
       delete w.__viserTestpoints;
     };

@@ -579,7 +579,10 @@ export function SynchronizedCameraControls() {
   return (
     <>
       <CameraControls
-        ref={(controls) => (viewerMutable.cameraControl = controls)}
+        ref={(controls) => {
+          viewerMutable.cameraControl = controls;
+          viewer.interaction.cameraLocks.apply();
+        }}
         minDistance={0.01}
         dollySpeed={0.3}
         smoothTime={0.05}

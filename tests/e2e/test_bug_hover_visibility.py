@@ -1,7 +1,7 @@
-"""E2E test for hover count resetting when visibility is toggled.
+"""E2E test for hover cleanup when visibility is toggled.
 
-This test verifies that when a clickable node is hidden while hovered,
-the hoveredElementsCount properly resets to 0 and the cursor returns to "auto".
+When a clickable node is hidden while hovered, the per-viewer hover set
+must drop it and return the canvas cursor to ``auto``.
 """
 
 from __future__ import annotations
@@ -17,12 +17,7 @@ def test_hover_count_resets_on_visibility_toggle(
     viser_server: viser.ViserServer,
     viser_page: Page,
 ) -> None:
-    """Test that hoveredElementsCount resets to 0 when a hovered clickable node is hidden.
-
-    This test verifies the fix for the bug where the onPointerOut handler would return
-    early without decrementing hoveredElementsCount when the node is not displayed.
-    The fix ensures hover state is properly cleaned up when visibility changes.
-    """
+    """Hiding a hovered clickable node must clear the pointer cursor."""
     # Create a clickable box with an on_click callback.
     click_counter = {"count": 0}
 
@@ -43,9 +38,9 @@ def test_hover_count_resets_on_visibility_toggle(
     # Wait for the box to appear in the scene.
     wait_for_scene_node(viser_page, "/test_clickable_box")
 
-    # Wait for hoveredElementsCount to be initialized (confirms mutable state is ready).
+    # Wait for the canvas test surface to be initialized.
     viser_page.wait_for_function(
-        "() => window.__viserMutable && window.__viserMutable.hoveredElementsCount === 0",
+        "() => window.__viserMutable?.canvas != null",
         timeout=5_000,
     )
 
@@ -62,15 +57,9 @@ def test_hover_count_resets_on_visibility_toggle(
     # Move mouse to the center of the canvas to hover over the box.
     viser_page.mouse.move(center_x, center_y)
 
-    # Poll until hoveredElementsCount becomes > 0 (hover event processed).
+    # Poll until hover state makes the canvas cursor a pointer.
     viser_page.wait_for_function(
-        "() => window.__viserMutable.hoveredElementsCount > 0",
-        timeout=5_000,
-    )
-
-    # Also verify cursor changed to pointer.
-    viser_page.wait_for_function(
-        "() => document.body.style.cursor === 'pointer'",
+        "() => window.__viserMutable.canvas.style.cursor === 'pointer'",
         timeout=5_000,
     )
 
@@ -80,14 +69,8 @@ def test_hover_count_resets_on_visibility_toggle(
     # Wait for the visibility change to propagate to the Three.js scene.
     wait_for_scene_node_hidden(viser_page, "/test_clickable_box")
 
-    # Verify that hoveredElementsCount resets to 0 when the node is hidden.
-    viser_page.wait_for_function(
-        "() => window.__viserMutable.hoveredElementsCount === 0",
-        timeout=5_000,
-    )
-
     # Verify that cursor returns to auto.
     viser_page.wait_for_function(
-        "() => document.body.style.cursor === 'auto'",
+        "() => window.__viserMutable.canvas.style.cursor === 'auto'",
         timeout=5_000,
     )
