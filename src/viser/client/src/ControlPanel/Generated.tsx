@@ -117,6 +117,9 @@ function GeneratedInput(props: {
   switch (conf.type) {
     case "GuiFolderMessage":
       return <FolderComponent {...conf} nextGuiUuid={props.nextGuiUuid} />;
+    case "GuiPanelMessage":
+      // Rendered by PanelHost via Dockview, not inline.
+      return null;
     case "GuiFormMessage":
       return <FormComponent {...conf} nextGuiUuid={props.nextGuiUuid} />;
     case "GuiTabGroupMessage":

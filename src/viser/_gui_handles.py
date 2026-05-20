@@ -39,6 +39,7 @@ from ._messages import (
     GuiDropdownProps,
     GuiFolderProps,
     GuiFormSubmitMessage,
+    GuiPanelProps,
     GuiHtmlProps,
     GuiImageProps,
     GuiMarkdownProps,
@@ -783,6 +784,50 @@ class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):
         self._impl.removed = True
 
         # Remove children, then self.
+        gui_api = self._impl.gui_api
+        gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
+        for child in tuple(self._children.values()):
+            child.remove()
+        parent = gui_api._container_handle_from_uuid[self._impl.parent_container_id]
+        parent._children.pop(self._impl.uuid)
+        gui_api._container_handle_from_uuid.pop(self._impl.uuid)
+
+
+class GuiPanelHandle(_GuiHandle[None], GuiPanelProps):
+    """Use as a context to place GUI elements into a floating, dockable panel.
+
+    Panels render as Dockview floating windows on desktop; on mobile they're
+    rendered inline. They can be dragged, resized, and tabbed together."""
+
+    def __init__(self, _impl: _GuiHandleState[None]) -> None:
+        super().__init__(impl=_impl)
+        self._impl.gui_api._container_handle_from_uuid[self._impl.uuid] = self
+        self._children = {}
+        parent = self._impl.gui_api._container_handle_from_uuid[
+            self._impl.parent_container_id
+        ]
+        parent._children[self._impl.uuid] = self
+
+    def __enter__(self) -> Self:
+        self._container_id_restore = self._impl.gui_api._get_container_uuid()
+        self._impl.gui_api._set_container_uuid(self._impl.uuid)
+        return self
+
+    def __exit__(self, *args) -> None:
+        del args
+        assert self._container_id_restore is not None
+        self._impl.gui_api._set_container_uuid(self._container_id_restore)
+        self._container_id_restore = None
+
+    def remove(self) -> None:
+        """Permanently remove this panel and all contained GUI elements."""
+        if self._impl.removed:
+            warnings.warn(
+                f"Attempted to remove an already removed {self.__class__.__name__}.",
+                stacklevel=2,
+            )
+            return
+        self._impl.removed = True
         gui_api = self._impl.gui_api
         gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
         for child in tuple(self._children.values()):

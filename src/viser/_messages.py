@@ -1499,6 +1499,31 @@ class GuiFolderMessage(_CreateGuiComponentMessage):
 
 
 @dataclasses.dataclass
+class GuiPanelProps:
+    order: float
+    """Order value for arranging GUI elements."""
+    title: str
+    """Title displayed in the panel's tab strip."""
+    visible: bool
+    """Visibility state of the panel."""
+    dock: Literal["left", "right", "top", "bottom", "floating"]
+    """Initial dock location relative to the 3D canvas. ``"floating"`` opens
+    the panel as a free window; the other values dock it to that edge of the
+    canvas. Multiple panels docked to the same edge tab together."""
+
+
+@dataclasses.dataclass
+class GuiPanelMessage(_CreateGuiComponentMessage):
+    """A free-floating, dockable panel. Children added with this panel's UUID
+    as their container_uuid are rendered inside it; the panel itself is
+    invisible to the in-tree GUI renderer and is picked up separately by the
+    Dockview-backed PanelHost on the client."""
+
+    container_uuid: str
+    props: GuiPanelProps
+
+
+@dataclasses.dataclass
 class GuiFormMessage(_CreateGuiComponentMessage):
     """A form is a folder whose children's values can be committed together.
 

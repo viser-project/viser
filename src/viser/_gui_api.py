@@ -47,6 +47,7 @@ from ._gui_handles import (
     GuiDropdownHandle,
     GuiEvent,
     GuiFolderHandle,
+    GuiPanelHandle,
     GuiFormHandle,
     GuiHtmlHandle,
     GuiImageHandle,
@@ -850,6 +851,61 @@ class GuiApi:
                 value=None,
                 props=message.props,
                 parent_container_id=message.container_uuid,
+            )
+        )
+
+    def add_panel(
+        self,
+        title: str,
+        *,
+        dock: Literal["left", "right", "top", "bottom", "floating"] = "floating",
+        order: float | None = None,
+        visible: bool = True,
+    ) -> GuiPanelHandle:
+        """Add a dockable panel.
+
+        Panels are rendered as their own windows on the client. They can be
+        dragged, resized, and tabbed together with other panels. The ``dock``
+        argument sets where the panel starts:
+
+        * ``"floating"`` (default): opens as a free window over the canvas.
+        * ``"left"`` / ``"right"`` / ``"top"`` / ``"bottom"``: starts docked
+          to that edge of the 3D canvas, shrinking the canvas to make room.
+          Multiple panels docked to the same edge tab together.
+
+        On mobile, panels always render inline in the main GUI panel.
+
+        Args:
+            title: Title displayed in the panel's tab strip.
+            dock: Initial dock location relative to the canvas.
+            order: Optional ordering, smallest values come first.
+            visible: Whether the panel is visible.
+
+        Returns:
+            A handle that can be used as a context manager to populate the
+            panel with GUI elements.
+        """
+        panel_uuid = _make_uuid()
+        order = _apply_default_order(order)
+        props = _messages.GuiPanelProps(
+            order=order, title=title, visible=visible, dock=dock
+        )
+        # Panels are always top-level (parented to root) since they're rendered
+        # as standalone windows, not in the inline tree.
+        self._websock_interface.queue_message(
+            _messages.GuiPanelMessage(
+                uuid=panel_uuid,
+                container_uuid="root",
+                props=props,
+            )
+        )
+        return GuiPanelHandle(
+            _GuiHandleState(
+                panel_uuid,
+                self,
+                None,
+                props=props,
+                parent_container_id="root",
             )
         )
 

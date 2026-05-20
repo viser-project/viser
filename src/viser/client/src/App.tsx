@@ -43,7 +43,10 @@ import {
 } from "./utils/pointerCoords";
 import { ViewerContext, ViewerContextContents } from "./ViewerContext";
 import ControlPanel from "./ControlPanel/ControlPanel";
+import DockHost from "./DockHost";
 import { useGuiState } from "./ControlPanel/GuiState";
+import { useMediaQuery } from "@mantine/hooks";
+import { ThemeConfigurationMessage } from "./WebsocketMessages";
 import { searchParamKey } from "./SearchParamsUtils";
 import { WebsocketMessageProducer } from "./WebsocketInterface";
 import { Titlebar } from "./Titlebar";
@@ -396,24 +399,74 @@ function ViewerContents({ children }: { children: React.ReactNode }) {
             }}
           >
             <NotificationsPanel />
-            <Box
-              style={(theme) => ({
-                backgroundColor: darkMode ? theme.colors.dark[9] : "#fff",
-                flexGrow: 1,
-                overflow: "hidden",
-                height: "100%",
-              })}
-            >
-              {canvases}
-              {showLogo && messageSource === "websocket" && <ViserLogo />}
-            </Box>
-            {messageSource === "websocket" && (
-              <ControlPanel control_layout={controlLayout} />
-            )}
+            <ViewerBody
+              canvases={canvases}
+              darkMode={darkMode}
+              showLogo={showLogo}
+              messageSource={messageSource}
+              controlLayout={controlLayout}
+            />
           </Box>
         </Box>
         {showStats && <Stats className="stats-panel" />}
       </MantineProvider>
+    </>
+  );
+}
+
+/**
+ * Body of the viewer area (everything except the title bar and notifications).
+ * On desktop, the canvas lives inside a DockHost (which lets server-added
+ * panels dock to its edges); the controls panel overlays on top as its own
+ * FloatingPanel. On mobile, no DockHost — just the canvas and BottomPanel.
+ */
+function ViewerBody({
+  canvases,
+  darkMode,
+  showLogo,
+  messageSource,
+  controlLayout,
+}: {
+  canvases: React.ReactNode;
+  darkMode: boolean;
+  showLogo: boolean;
+  messageSource: string;
+  controlLayout: ThemeConfigurationMessage["control_layout"];
+}) {
+  const theme = useMantineTheme();
+  const isMobile = useMediaQuery(`(max-width: ${theme.breakpoints.xs})`);
+
+  const canvasArea = (
+    <Box
+      style={(t) => ({
+        backgroundColor: darkMode ? t.colors.dark[9] : "#fff",
+        flexGrow: 1,
+        overflow: "hidden",
+        height: "100%",
+        width: "100%",
+        position: "relative",
+      })}
+    >
+      {canvases}
+      {showLogo && messageSource === "websocket" && <ViserLogo />}
+    </Box>
+  );
+
+  if (isMobile || messageSource !== "websocket") {
+    return (
+      <>
+        {canvasArea}
+        {messageSource === "websocket" && (
+          <ControlPanel control_layout={controlLayout} />
+        )}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <DockHost canvas={canvasArea} />
+      <ControlPanel control_layout={controlLayout} />
     </>
   );
 }

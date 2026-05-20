@@ -526,6 +526,24 @@ export interface GuiFolderMessage {
     expand_by_default: boolean;
   };
 }
+/** A free-floating, dockable panel. Children added with this panel's UUID
+ * as their container_uuid are rendered inside it; the panel itself is
+ * invisible to the in-tree GUI renderer and is picked up separately by the
+ * Dockview-backed PanelHost on the client.
+ *
+ * (automatically generated)
+ */
+export interface GuiPanelMessage {
+  type: "GuiPanelMessage";
+  uuid: string;
+  container_uuid: string;
+  props: {
+    order: number;
+    title: string;
+    visible: boolean;
+    dock: "left" | "right" | "top" | "bottom" | "floating";
+  };
+}
 /** A form is a folder whose children's values can be committed together.
  *
  * Reuses ``GuiFolderProps`` because the visual shape is identical to a
@@ -1954,6 +1972,7 @@ export type Message =
   | GaussianSplatsMessage
   | RemoveSceneNodeMessage
   | GuiFolderMessage
+  | GuiPanelMessage
   | GuiFormMessage
   | GuiMarkdownMessage
   | GuiHtmlMessage
@@ -2060,6 +2079,7 @@ export type SceneNodeMessage =
   | GaussianSplatsMessage;
 export type GuiComponentMessage =
   | GuiFolderMessage
+  | GuiPanelMessage
   | GuiFormMessage
   | GuiMarkdownMessage
   | GuiHtmlMessage
@@ -2119,6 +2139,7 @@ export function isSceneNodeMessage(
 }
 const typeSetGuiComponentMessage = new Set([
   "GuiFolderMessage",
+  "GuiPanelMessage",
   "GuiFormMessage",
   "GuiMarkdownMessage",
   "GuiHtmlMessage",

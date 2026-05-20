@@ -1,0 +1,107 @@
+/* Viser overrides for dockview-react. Bind dockview's color variables to
+   Mantine tokens so the look stays in sync with Viser's color scheme. */
+
+.viser-dock-host {
+  --dv-group-view-background-color: var(--mantine-color-body);
+  --dv-tabs-and-actions-container-background-color: var(--mantine-color-body);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--mantine-color-body);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--mantine-color-default);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--mantine-color-body);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--mantine-color-default);
+
+  --dv-activegroup-visiblepanel-tab-color: var(--mantine-color-text);
+  --dv-activegroup-hiddenpanel-tab-color: var(--mantine-color-dimmed);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--mantine-color-text);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--mantine-color-dimmed);
+
+  --dv-tab-divider-color: transparent;
+  --dv-separator-border: var(--mantine-color-default-border);
+
+  /* Floating group shadow: soft, Mantine-Paper-like. */
+  --dv-floating-box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 12px rgba(0, 0, 0, 0.08),
+    0 0 0 1px rgba(0, 0, 0, 0.04);
+  --dv-floating-border: none;
+
+  --dv-border-radius: 6px;
+  --dv-tab-border-radius: 0px;
+
+  /* Drop-target overlay accent matches Mantine primary. */
+  --dv-drag-over-background-color: color-mix(
+    in srgb,
+    var(--mantine-primary-color-filled) 25%,
+    transparent
+  );
+  --dv-drag-over-border-color: var(--mantine-primary-color-filled);
+}
+
+/* Splitters (sashes) between docked groups: 1px line, thicker hit target,
+   primary-colored on hover. */
+.viser-dock-host .dv-sash-container .dv-sash {
+  background: var(--mantine-color-default-border);
+  transition: background 120ms ease;
+}
+.viser-dock-host .dv-sash-container .dv-sash:hover,
+.viser-dock-host .dv-sash-container .dv-sash.dv-sash-active {
+  background: var(--mantine-primary-color-filled);
+}
+
+/* Floating group chrome — Mantine Paper-like. */
+.viser-dock-host .dv-resize-container {
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--mantine-color-body) !important;
+}
+.viser-dock-host .dv-groupview {
+  background: var(--mantine-color-body) !important;
+}
+
+/* Tab strip styled like Mantine <Tabs.List>: bottom border, no per-tab
+   background, active tab gets primary-colored underline + text. */
+.viser-dock-host .dv-tabs-and-actions-container {
+  height: 2.5em;
+  background: var(--mantine-color-body) !important;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+.viser-dock-host .dv-tab {
+  background: transparent !important;
+  color: var(--mantine-color-dimmed) !important;
+  padding: 0 0.85em;
+  font-size: 0.875em;
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+.viser-dock-host .dv-tab:hover {
+  color: var(--mantine-color-text) !important;
+  background: color-mix(
+    in srgb,
+    var(--mantine-primary-color-filled) 6%,
+    transparent
+  ) !important;
+}
+.viser-dock-host .dv-groupview.dv-active-group .dv-tab.dv-active-tab,
+.viser-dock-host .dv-groupview.dv-inactive-group .dv-tab.dv-active-tab {
+  color: var(--mantine-primary-color-filled) !important;
+  border-bottom-color: var(--mantine-primary-color-filled);
+  background: transparent !important;
+}
+
+/* Hide the per-tab close (X) button — closing not supported. */
+.viser-dock-host .dv-tab .dv-default-tab-action,
+.viser-dock-host .dv-tab-action {
+  display: none !important;
+}
+
+/* Drop indicators during drag: soften default heavy fill. */
+.viser-dock-host .dv-drop-target-anchor {
+  background: var(--dv-drag-over-background-color);
+  border-color: var(--dv-drag-over-border-color);
+}
+
+/* Watermark (shown if all groups are removed) — keep transparent so the
+   canvas (which is in its own group) keeps painting. */
+.viser-dock-host .dv-watermark-container {
+  background: transparent;
+}

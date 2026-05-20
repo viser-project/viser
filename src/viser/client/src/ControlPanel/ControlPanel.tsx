@@ -56,10 +56,18 @@ export default function ControlPanel(props: {
 
   // TODO: will result in unnecessary re-renders.
   const viewer = React.useContext(ViewerContext)!;
-  const showGenerated = viewer.useGui(
-    (state) =>
-      Object.keys(state.guiUuidSetFromContainerUuid["root"] ?? {}).length > 0,
-  );
+  // Count root children, ignoring panels added with add_panel (those render
+  // in DockHost as their own Dockview windows, not inline here).
+  const showGenerated = viewer.useGui((state) => {
+    const ids = Object.keys(state.guiUuidSetFromContainerUuid["root"] ?? {});
+    for (const id of ids) {
+      const conf = viewer.useGuiConfig.get(id);
+      if (!conf) continue;
+      if (conf.type === "GuiPanelMessage") continue;
+      return true;
+    }
+    return false;
+  });
   const [showSettings, { toggle }] = useDisclosure(false);
 
   const controlWidthString = viewer.useGui(
