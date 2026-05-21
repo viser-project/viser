@@ -56,9 +56,19 @@ export default function ControlPanel(props: {
 
   // TODO: will result in unnecessary re-renders.
   const viewer = React.useContext(ViewerContext)!;
-  const showGenerated = viewer.useGui(
-    (state) =>
-      Object.keys(state.guiUuidSetFromContainerUuid["root"] ?? {}).length > 0,
+  const rootUuids = viewer.useGui(
+    (state) => state.guiUuidSetFromContainerUuid["root"] ?? {},
+  );
+  // Panels live in `root` for add/remove bookkeeping but render as their
+  // own floating windows — exclude them when deciding whether the main
+  // panel has generated content to show.
+  const useGuiConfig = viewer.useGuiConfig;
+  const showGenerated = React.useMemo(
+    () =>
+      Object.keys(rootUuids).some(
+        (uuid) => useGuiConfig.get(uuid)?.type !== "GuiPanelMessage",
+      ),
+    [rootUuids, useGuiConfig],
   );
   const [showSettings, { toggle }] = useDisclosure(false);
 

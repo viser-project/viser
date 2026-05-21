@@ -17,6 +17,7 @@ from ._gui_handles import GuiInputHandle as GuiInputHandle
 from ._gui_handles import GuiMarkdownHandle as GuiMarkdownHandle
 from ._gui_handles import GuiMultiSliderHandle as GuiMultiSliderHandle
 from ._gui_handles import GuiNumberHandle as GuiNumberHandle
+from ._gui_handles import GuiPanelHandle as GuiPanelHandle
 from ._gui_handles import GuiPlotlyHandle as GuiPlotlyHandle
 from ._gui_handles import GuiRgbaHandle as GuiRgbaHandle
 from ._gui_handles import GuiRgbHandle as GuiRgbHandle

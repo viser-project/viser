@@ -792,6 +792,27 @@ class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):
         gui_api._container_handle_from_uuid.pop(self._impl.uuid)
 
 
+class GuiPanelHandle(GuiFolderHandle):
+    """Context handle for a floating, draggable, resizable panel.
+
+    Shares folder semantics for nesting: GUI elements added inside the
+    handle's ``with`` block become children of the panel. The panel itself
+    renders as its own floating window, not inline in the main panel."""
+
+    # GuiFolderHandle inherits from GuiFolderProps for `.label` etc.; we
+    # override the prop class at the instance level via _impl.props.
+    def __init__(self, _impl: _GuiHandleState[None]) -> None:
+        # Skip GuiFolderHandle.__init__ because it types self as GuiFolderProps;
+        # wire up the container machinery directly.
+        _GuiHandle.__init__(self, impl=_impl)
+        self._impl.gui_api._container_handle_from_uuid[self._impl.uuid] = self
+        self._children = {}
+        parent = self._impl.gui_api._container_handle_from_uuid[
+            self._impl.parent_container_id
+        ]
+        parent._children[self._impl.uuid] = self
+
+
 class GuiFormHandle(GuiFolderHandle):
     """Use as a context to place GUI elements into a form.
 

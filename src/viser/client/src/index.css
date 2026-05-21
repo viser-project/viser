@@ -49,6 +49,23 @@ code {
   position: absolute !important;
 }
 
+/* Horizontal layout for user panels with layout="row". The inner <div> is
+ * the wrapper Generated.tsx renders around the children. We intentionally
+ * don't wrap — children always shrink proportionally so the panel's height
+ * stays bounded by a single row. */
+.viser-panel-row > div {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 0.25rem;
+  padding: 0.25rem;
+}
+.viser-panel-row > div > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 /* Styling for color chips in markdown */
 .gfm-color-chip {
   margin-left: 0.125rem;

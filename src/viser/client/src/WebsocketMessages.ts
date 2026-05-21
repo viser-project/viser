@@ -545,6 +545,29 @@ export interface GuiFormMessage {
     expand_by_default: boolean;
   };
 }
+/** Floating, draggable, resizable panel rendered alongside the main
+ * control panel. ``container_uuid`` is always ``"root"``; child GUI
+ * elements use the panel's ``uuid`` as their container.
+ *
+ * (automatically generated)
+ */
+export interface GuiPanelMessage {
+  type: "GuiPanelMessage";
+  uuid: string;
+  container_uuid: string;
+  props: {
+    order: number;
+    title: string;
+    visible: boolean;
+    initial_x: number | "center";
+    initial_y: number | "center";
+    initial_width_px: number;
+    min_width_px: number;
+    max_width_px: number;
+    resizable: boolean;
+    layout: "column" | "row";
+  };
+}
 /** GuiMarkdownMessage(uuid: 'str', container_uuid: 'str', props: 'GuiMarkdownProps')
  *
  * (automatically generated)
@@ -1955,6 +1978,7 @@ export type Message =
   | RemoveSceneNodeMessage
   | GuiFolderMessage
   | GuiFormMessage
+  | GuiPanelMessage
   | GuiMarkdownMessage
   | GuiHtmlMessage
   | GuiDividerMessage
@@ -2061,6 +2085,7 @@ export type SceneNodeMessage =
 export type GuiComponentMessage =
   | GuiFolderMessage
   | GuiFormMessage
+  | GuiPanelMessage
   | GuiMarkdownMessage
   | GuiHtmlMessage
   | GuiDividerMessage
@@ -2120,6 +2145,7 @@ export function isSceneNodeMessage(
 const typeSetGuiComponentMessage = new Set([
   "GuiFolderMessage",
   "GuiFormMessage",
+  "GuiPanelMessage",
   "GuiMarkdownMessage",
   "GuiHtmlMessage",
   "GuiDividerMessage",

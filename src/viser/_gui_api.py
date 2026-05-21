@@ -54,6 +54,7 @@ from ._gui_handles import (
     GuiModalHandle,
     GuiMultiSliderHandle,
     GuiNumberHandle,
+    GuiPanelHandle,
     GuiPlotlyHandle,
     GuiProgressBarHandle,
     GuiRgbaHandle,
@@ -706,6 +707,76 @@ class GuiApi:
                 None,
                 props=props,
                 parent_container_id=self._get_container_uuid(),
+            )
+        )
+
+    def add_panel(
+        self,
+        title: str,
+        *,
+        order: float | None = None,
+        initial_position: tuple[int | Literal["center"], int | Literal["center"]] = (
+            -340,
+            20,
+        ),
+        initial_width_px: int = 320,
+        min_width_px: int = 220,
+        max_width_px: int = 960,
+        resizable: bool = True,
+        visible: bool = True,
+        layout: Literal["column", "row"] = "column",
+    ) -> GuiPanelHandle:
+        """Add a floating, draggable, resizable panel that renders as a
+        sibling of the main control panel, and return a handle that can be
+        used as a context manager to populate it.
+
+        Useful when the default single-panel layout gets too tall or too
+        narrow — panels can be placed side-by-side and sized independently.
+
+        Args:
+            title: Text shown in the panel header.
+            order: Optional ordering.
+            initial_position: Initial ``(x, y)`` pixel offset. Negative
+                integers anchor to the right (``x``) or bottom (``y``)
+                edge, so e.g. ``(-340, 20)`` places the panel near the
+                top-right. Pass ``"center"`` for either component to
+                center along that axis.
+            initial_width_px: Initial width in pixels.
+            min_width_px: Minimum width when dragging the resize handle.
+            max_width_px: Maximum width when dragging the resize handle.
+            resizable: If True, show a drag handle on the right edge.
+            visible: Whether the panel is visible.
+            layout: ``"column"`` stacks children vertically like a folder;
+                ``"row"`` renders them side-by-side with equal flex share.
+        """
+        panel_uuid = _make_uuid()
+        order = _apply_default_order(order)
+        props = _messages.GuiPanelProps(
+            order=order,
+            title=title,
+            visible=visible,
+            initial_x=initial_position[0],
+            initial_y=initial_position[1],
+            initial_width_px=initial_width_px,
+            min_width_px=min_width_px,
+            max_width_px=max_width_px,
+            resizable=resizable,
+            layout=layout,
+        )
+        self._websock_interface.queue_message(
+            _messages.GuiPanelMessage(
+                uuid=panel_uuid,
+                container_uuid="root",
+                props=props,
+            )
+        )
+        return GuiPanelHandle(
+            _GuiHandleState(
+                panel_uuid,
+                self,
+                None,
+                props=props,
+                parent_container_id="root",
             )
         )
 

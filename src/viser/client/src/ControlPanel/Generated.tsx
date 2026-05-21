@@ -119,6 +119,9 @@ function GeneratedInput(props: {
       return <FolderComponent {...conf} nextGuiUuid={props.nextGuiUuid} />;
     case "GuiFormMessage":
       return <FormComponent {...conf} nextGuiUuid={props.nextGuiUuid} />;
+    case "GuiPanelMessage":
+      // Rendered by UserPanels as a separate floating window.
+      return null;
     case "GuiTabGroupMessage":
       return <TabGroupComponent {...conf} />;
     case "GuiMarkdownMessage":
