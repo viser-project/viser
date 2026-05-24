@@ -738,7 +738,7 @@ export function SynchronizedCameraControls() {
     pl.onMouseMove = (e) => {
       if (!c.domElement || !c.isLocked) return;
       yawAxis.copy(c.camera.up).normalize();
-      c.camera.rotateOnWorldAxis(yawAxis, e.movementX * sens * c.pointerSpeed);
+      c.camera.rotateOnWorldAxis(yawAxis, -e.movementX * sens * c.pointerSpeed);
       c.camera.rotateX(pitchMul * e.movementY * sens * c.pointerSpeed);
       c.dispatchEvent({ type: "change" } as never);
     };
