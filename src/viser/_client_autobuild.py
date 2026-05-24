@@ -136,10 +136,10 @@ def _build_viser_client(out_dir: Path, cached: bool = True) -> None:
         npm_path = npm_path.with_suffix(".cmd")
 
     subprocess.run(
-        args=[str(npm_path), "install"],
+        args=[str(npm_path), "ci"],
         env=subprocess_env,
         cwd=client_dir,
-        check=False,
+        check=True,
     )
     subprocess.run(
         args=[
@@ -154,7 +154,7 @@ def _build_viser_client(out_dir: Path, cached: bool = True) -> None:
         ],
         env=subprocess_env,
         cwd=client_dir,
-        check=False,
+        check=True,
     )
 
 

@@ -1,11 +1,13 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "nodeenv>=1.9.1,<2.0.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build]
 exclude = ["src/viser/client/.nodeenv", "src/viser/client/node_modules", "**/__pycache__/**"]
 # Client build is in the gitignore, but we still want it in the distribution.
 ignore-vcs = true
+
+[tool.hatch.build.hooks.custom]
 
 [tool.hatch.version]
 path = "src/viser/__init__.py"
