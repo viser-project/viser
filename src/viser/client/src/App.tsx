@@ -14,6 +14,7 @@ import React, { useEffect, useMemo } from "react";
 import { ViewerMutable } from "./ViewerContext";
 import {
   Anchor,
+  ActionIcon,
   Box,
   Divider,
   Image,
@@ -24,6 +25,7 @@ import {
   useMantineColorScheme,
   useMantineTheme,
 } from "@mantine/core";
+import { IconCamera, IconView360 } from "@tabler/icons-react";
 import { useDisclosure } from "@mantine/hooks";
 
 // Local imports.
@@ -455,31 +457,46 @@ function NotificationsPanel() {
   );
 }
 
-/** Read-only label so the active camera mode stays visible on the viewport. */
+/** Viewport camera-mode control. */
 function CameraModeIndicator() {
   const viewer = React.useContext(ViewerContext)!;
   const firstPerson = viewer.useGui((state) => state.firstPersonCamera);
   const dark = viewer.useGui((state) => state.theme.dark_mode);
+  const label = firstPerson ? "First person mode" : "Orbit mode";
+  const nextLabel = firstPerson ? "orbit mode" : "first-person mode";
+  const Icon = firstPerson ? IconCamera : IconView360;
+
+  const toggleMode = () => {
+    viewer.useGui.set({ firstPersonCamera: !firstPerson });
+    if (firstPerson) {
+      document.exitPointerLock();
+    }
+  };
+
   return (
-    <Box
-      style={{
-        position: "absolute",
-        bottom: "0.6rem",
-        right: "0.6rem",
-        zIndex: 2,
-        pointerEvents: "none",
-        padding: "0.15rem 0.5rem",
-        borderRadius: "4px",
-        fontSize: "0.7rem",
-        fontWeight: 600,
-        letterSpacing: "0.02em",
-        backgroundColor: dark ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.85)",
-        color: dark ? "#e9ecef" : "#212529",
-        boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
-      }}
+    <Tooltip
+      label={`${label}. Click to switch to ${nextLabel}, or press P.`}
+      position="left"
+      withArrow
     >
-      {firstPerson ? "First person" : "Orbit"}
-    </Box>
+      <ActionIcon
+        aria-label={`${label}. Switch to ${nextLabel}.`}
+        onClick={toggleMode}
+        variant="subtle"
+        color="gray"
+        style={{
+          position: "absolute",
+          bottom: "0.6rem",
+          right: "0.6rem",
+          zIndex: 2,
+          backgroundColor: dark ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.85)",
+          color: dark ? "#e9ecef" : "#212529",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
+        }}
+      >
+        <Icon size="1rem" />
+      </ActionIcon>
+    </Tooltip>
   );
 }
 
