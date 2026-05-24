@@ -644,7 +644,7 @@ export function SynchronizedCameraControls() {
     if (!isFirstPerson) {
       return;
     }
-    const worldY = new THREE.Vector3(0, 1, 0);
+    const yawAxis = new THREE.Vector3();
     const keys = {
       w: new holdEvent.KeyboardKeyHold("KeyW", 1000 / 60),
       a: new holdEvent.KeyboardKeyHold("KeyA", 1000 / 60),
@@ -683,15 +683,17 @@ export function SynchronizedCameraControls() {
       sendCamera();
     });
     keys.left.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
+      yawAxis.copy(camera.up).normalize();
       camera.rotateOnWorldAxis(
-        worldY,
+        yawAxis,
         0.05 * THREE.MathUtils.DEG2RAD * (event?.deltaTime ?? 0),
       );
       sendCamera();
     });
     keys.right.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
+      yawAxis.copy(camera.up).normalize();
       camera.rotateOnWorldAxis(
-        worldY,
+        yawAxis,
         -0.05 * THREE.MathUtils.DEG2RAD * (event?.deltaTime ?? 0),
       );
       sendCamera();
@@ -729,18 +731,15 @@ export function SynchronizedCameraControls() {
     if (!isFirstPerson) return;
     const c = pointerLockRef.current;
     if (c == null) return;
-    const euler = new THREE.Euler(0, 0, 0, "YXZ");
     const sens = 2e-3;
     const pitchMul = firstPersonInvertLookY ? 1 : -1;
+    const yawAxis = new THREE.Vector3();
     const pl = c as unknown as { onMouseMove: (e: MouseEvent) => void };
     pl.onMouseMove = (e) => {
       if (!c.domElement || !c.isLocked) return;
-      euler.setFromQuaternion(c.camera.quaternion);
-      euler.y += e.movementX * sens * c.pointerSpeed;
-      euler.x += pitchMul * e.movementY * sens * c.pointerSpeed;
-      const h = Math.PI / 2;
-      euler.x = Math.max(h - c.maxPolarAngle, Math.min(h - c.minPolarAngle, euler.x));
-      c.camera.quaternion.setFromEuler(euler);
+      yawAxis.copy(c.camera.up).normalize();
+      c.camera.rotateOnWorldAxis(yawAxis, e.movementX * sens * c.pointerSpeed);
+      c.camera.rotateX(pitchMul * e.movementY * sens * c.pointerSpeed);
       c.dispatchEvent({ type: "change" } as never);
     };
   }, [isFirstPerson, firstPersonInvertLookY]);
