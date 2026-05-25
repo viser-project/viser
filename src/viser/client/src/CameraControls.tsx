@@ -8,13 +8,35 @@ import {
   PointerLockControls,
 } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
-import * as holdEvent from "hold-event";
 import React, { useContext, useLayoutEffect, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { PerspectiveCamera } from "three";
 import * as THREE from "three";
 import { computeT_threeworld_world } from "./WorldTransformUtils";
 import { useThrottledMessageSender } from "./WebsocketUtils";
+
+const CAMERA_KEY_CODES = new Set([
+  "KeyW",
+  "KeyA",
+  "KeyS",
+  "KeyD",
+  "KeyQ",
+  "KeyE",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+]);
+
+function isInputEvent(event: KeyboardEvent) {
+  const target = event.target;
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLSelectElement ||
+    target instanceof HTMLTextAreaElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  );
+}
 
 function CrosshairVisual({
   visible,
@@ -154,14 +176,13 @@ export function SynchronizedCameraControls() {
 
   const viewerMutable = viewer.mutable.current;
 
-  // Crosshair visibility state: separate counter for keyboard and flag for pointer interactions.
-  const [keyboardCrosshairCounter, setKeyboardCrosshairCounter] = useState(0);
+  // Crosshair visibility state: separate keyboard and pointer interaction flags.
+  const [keyboardInputActive, setKeyboardInputActive] = useState(false);
   const [pointerInteractionActive, setPointerInteractionActive] =
     useState(false);
 
   // Crosshair is visible if either keyboard keys are held or pointer interaction is active.
-  const crosshairVisible =
-    keyboardCrosshairCounter > 0 || pointerInteractionActive;
+  const crosshairVisible = keyboardInputActive || pointerInteractionActive;
 
   // Animation state interface.
   interface CameraAnimation {
@@ -529,201 +550,220 @@ export function SynchronizedCameraControls() {
     wasFirstPerson.current = isFirstPerson;
   }, [isFirstPerson, camera, viewerMutable.cameraControl]);
 
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.repeat) {
-        return;
-      }
-      if (e.key !== "p" && e.key !== "P") {
-        return;
-      }
-      e.preventDefault();
-      viewer.useGui.set((state) => {
-        if (state.firstPersonCamera) {
-          document.exitPointerLock();
-        }
-        return { firstPersonCamera: !state.firstPersonCamera };
-      });
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+  const activeCameraKeysRef = useRef(new Set<string>());
+  const keyboardYawAxis = useRef(new THREE.Vector3()).current;
+  const clearCameraKeys = React.useCallback(() => {
+    activeCameraKeysRef.current.clear();
+    setKeyboardInputActive(false);
   }, []);
+  const requestPointerLock = React.useCallback(() => {
+    try {
+      const request = gl.domElement.requestPointerLock() as
+        | Promise<void>
+        | undefined;
+      void request?.catch(() => {
+        viewer.useGui.set({ firstPersonCamera: false });
+      });
+    } catch {
+      viewer.useGui.set({ firstPersonCamera: false });
+    }
+  }, [gl.domElement, viewer.useGui]);
+  const exitFirstPerson = React.useCallback(() => {
+    clearCameraKeys();
+    viewer.useGui.set({ firstPersonCamera: false });
+    if (document.pointerLockElement === gl.domElement) {
+      document.exitPointerLock();
+    }
+  }, [clearCameraKeys, gl.domElement, viewer.useGui]);
+  const enterFirstPerson = React.useCallback(() => {
+    clearCameraKeys();
+    viewer.useGui.set({ firstPersonCamera: true });
+    requestPointerLock();
+  }, [clearCameraKeys, requestPointerLock, viewer.useGui]);
 
-  // Keyboard controls (orbit mode).
   React.useEffect(() => {
-    if (isFirstPerson) {
+    clearCameraKeys();
+  }, [clearCameraKeys, isFirstPerson]);
+
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isInputEvent(event)) {
+        return;
+      }
+      if (event.key === "p" || event.key === "P") {
+        if (event.repeat) {
+          return;
+        }
+        event.preventDefault();
+        if (isFirstPerson) {
+          exitFirstPerson();
+        } else {
+          enterFirstPerson();
+        }
+        return;
+      }
+      if (!CAMERA_KEY_CODES.has(event.code)) {
+        return;
+      }
+      event.preventDefault();
+      activeCameraKeysRef.current.add(event.code);
+      setKeyboardInputActive(true);
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (isInputEvent(event)) {
+        return;
+      }
+      if (!CAMERA_KEY_CODES.has(event.code)) {
+        return;
+      }
+      event.preventDefault();
+      activeCameraKeysRef.current.delete(event.code);
+      setKeyboardInputActive(activeCameraKeysRef.current.size > 0);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        clearCameraKeys();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", clearCameraKeys);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", clearCameraKeys);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [clearCameraKeys, enterFirstPerson, exitFirstPerson, isFirstPerson]);
+
+  React.useEffect(() => {
+    const onPointerLockChange = () => {
+      if (
+        document.pointerLockElement !== gl.domElement &&
+        viewer.useGui.get().firstPersonCamera
+      ) {
+        clearCameraKeys();
+        viewer.useGui.set({ firstPersonCamera: false });
+      }
+    };
+    document.addEventListener("pointerlockchange", onPointerLockChange);
+    return () => {
+      document.removeEventListener("pointerlockchange", onPointerLockChange);
+    };
+  }, [clearCameraKeys, gl.domElement, viewer.useGui]);
+
+  // Keyboard controls.
+  useFrame((_, deltaSeconds) => {
+    const activeCameraKeys = activeCameraKeysRef.current;
+    if (activeCameraKeys.size === 0) {
       return;
     }
+
+    const milliseconds = deltaSeconds * 1000.0;
+    const moveScale = 0.002 * milliseconds;
+    const rotateScale = 0.05 * THREE.MathUtils.DEG2RAD * milliseconds;
+
+    if (isFirstPerson) {
+      let changed = false;
+      if (activeCameraKeys.has("KeyA")) {
+        camera.translateX(-moveScale);
+        changed = true;
+      }
+      if (activeCameraKeys.has("KeyD")) {
+        camera.translateX(moveScale);
+        changed = true;
+      }
+      if (activeCameraKeys.has("KeyW")) {
+        camera.translateZ(-moveScale);
+        changed = true;
+      }
+      if (activeCameraKeys.has("KeyS")) {
+        camera.translateZ(moveScale);
+        changed = true;
+      }
+      if (activeCameraKeys.has("KeyQ")) {
+        camera.translateY(-moveScale);
+        changed = true;
+      }
+      if (activeCameraKeys.has("KeyE")) {
+        camera.translateY(moveScale);
+        changed = true;
+      }
+      if (activeCameraKeys.has("ArrowLeft")) {
+        keyboardYawAxis.copy(camera.up).normalize();
+        camera.rotateOnWorldAxis(keyboardYawAxis, rotateScale);
+        changed = true;
+      }
+      if (activeCameraKeys.has("ArrowRight")) {
+        keyboardYawAxis.copy(camera.up).normalize();
+        camera.rotateOnWorldAxis(keyboardYawAxis, -rotateScale);
+        changed = true;
+      }
+      const pitchMul = firstPersonInvertLookY ? 1 : -1;
+      if (activeCameraKeys.has("ArrowUp")) {
+        camera.rotateX(pitchMul * rotateScale);
+        changed = true;
+      }
+      if (activeCameraKeys.has("ArrowDown")) {
+        camera.rotateX(-pitchMul * rotateScale);
+        changed = true;
+      }
+      if (changed) {
+        sendCamera();
+      }
+      return;
+    }
+
     const cameraControls = viewerMutable.cameraControl;
     if (cameraControls === null) {
       return;
     }
-
-    const keys = {
-      w: new holdEvent.KeyboardKeyHold("KeyW", 1000 / 60),
-      a: new holdEvent.KeyboardKeyHold("KeyA", 1000 / 60),
-      s: new holdEvent.KeyboardKeyHold("KeyS", 1000 / 60),
-      d: new holdEvent.KeyboardKeyHold("KeyD", 1000 / 60),
-      q: new holdEvent.KeyboardKeyHold("KeyQ", 1000 / 60),
-      e: new holdEvent.KeyboardKeyHold("KeyE", 1000 / 60),
-      up: new holdEvent.KeyboardKeyHold("ArrowUp", 1000 / 60),
-      down: new holdEvent.KeyboardKeyHold("ArrowDown", 1000 / 60),
-      left: new holdEvent.KeyboardKeyHold("ArrowLeft", 1000 / 60),
-      right: new holdEvent.KeyboardKeyHold("ArrowRight", 1000 / 60),
-    };
-
-    // TODO: these event listeners are currently never removed, even if this
-    // component gets unmounted.
-    keys.a.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.truck(-0.002 * event?.deltaTime, 0, false);
-    });
-    keys.d.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.truck(0.002 * event?.deltaTime, 0, false);
-    });
-    keys.w.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.forward(0.002 * event?.deltaTime, false);
-    });
-    keys.s.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.forward(-0.002 * event?.deltaTime, false);
-    });
-    keys.q.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.elevate(-0.002 * event?.deltaTime, false);
-    });
-    keys.e.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.elevate(0.002 * event?.deltaTime, false);
-    });
-    keys.left.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.rotate(
-        -0.05 * THREE.MathUtils.DEG2RAD * event?.deltaTime,
-        0,
-        true,
-      );
-    });
-    keys.right.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.rotate(
-        0.05 * THREE.MathUtils.DEG2RAD * event?.deltaTime,
-        0,
-        true,
-      );
-    });
-    keys.up.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.rotate(
-        0,
-        -0.05 * THREE.MathUtils.DEG2RAD * event?.deltaTime,
-        true,
-      );
-    });
-    keys.down.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.rotate(
-        0,
-        0.05 * THREE.MathUtils.DEG2RAD * event?.deltaTime,
-        true,
-      );
-    });
-    for (const key of Object.values(keys)) {
-      key.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLD_START, () => {
-        // Keyboard inputs can overlap, so increment counter.
-        setKeyboardCrosshairCounter((count) => count + 1);
-      });
-      key.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLD_END, () => {
-        // Decrement counter when key is released.
-        setKeyboardCrosshairCounter((count) => Math.max(0, count - 1));
-      });
+    let changed = false;
+    if (activeCameraKeys.has("KeyA")) {
+      cameraControls.truck(-moveScale, 0, false);
+      changed = true;
     }
-
-    // TODO: we currently don't remove any event listeners. This is a bit messy
-    // because KeyboardKeyHold attaches listeners directly to the
-    // document/window; it's unclear if we can remove these.
-    return () => {
-      return;
-    };
-  }, [viewerMutable.cameraControl, isFirstPerson]);
-
-  // Keyboard controls (first-person mode).
-  React.useEffect(() => {
-    if (!isFirstPerson) {
-      return;
+    if (activeCameraKeys.has("KeyD")) {
+      cameraControls.truck(moveScale, 0, false);
+      changed = true;
     }
-    const yawAxis = new THREE.Vector3();
-    const keys = {
-      w: new holdEvent.KeyboardKeyHold("KeyW", 1000 / 60),
-      a: new holdEvent.KeyboardKeyHold("KeyA", 1000 / 60),
-      s: new holdEvent.KeyboardKeyHold("KeyS", 1000 / 60),
-      d: new holdEvent.KeyboardKeyHold("KeyD", 1000 / 60),
-      q: new holdEvent.KeyboardKeyHold("KeyQ", 1000 / 60),
-      e: new holdEvent.KeyboardKeyHold("KeyE", 1000 / 60),
-      up: new holdEvent.KeyboardKeyHold("ArrowUp", 1000 / 60),
-      down: new holdEvent.KeyboardKeyHold("ArrowDown", 1000 / 60),
-      left: new holdEvent.KeyboardKeyHold("ArrowLeft", 1000 / 60),
-      right: new holdEvent.KeyboardKeyHold("ArrowRight", 1000 / 60),
-    };
-
-    keys.a.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      camera.translateX(-0.002 * (event?.deltaTime ?? 0));
-      sendCamera();
-    });
-    keys.d.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      camera.translateX(0.002 * (event?.deltaTime ?? 0));
-      sendCamera();
-    });
-    keys.w.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      camera.translateZ(-0.002 * (event?.deltaTime ?? 0));
-      sendCamera();
-    });
-    keys.s.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      camera.translateZ(0.002 * (event?.deltaTime ?? 0));
-      sendCamera();
-    });
-    keys.q.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      camera.translateY(-0.002 * (event?.deltaTime ?? 0));
-      sendCamera();
-    });
-    keys.e.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      camera.translateY(0.002 * (event?.deltaTime ?? 0));
-      sendCamera();
-    });
-    keys.left.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      yawAxis.copy(camera.up).normalize();
-      camera.rotateOnWorldAxis(
-        yawAxis,
-        0.05 * THREE.MathUtils.DEG2RAD * (event?.deltaTime ?? 0),
-      );
-      sendCamera();
-    });
-    keys.right.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      yawAxis.copy(camera.up).normalize();
-      camera.rotateOnWorldAxis(
-        yawAxis,
-        -0.05 * THREE.MathUtils.DEG2RAD * (event?.deltaTime ?? 0),
-      );
-      sendCamera();
-    });
-    const pitchMul = firstPersonInvertLookY ? 1 : -1;
-    keys.up.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      camera.rotateX(
-        pitchMul * 0.05 * THREE.MathUtils.DEG2RAD * (event?.deltaTime ?? 0),
-      );
-      sendCamera();
-    });
-    keys.down.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      camera.rotateX(
-        -pitchMul * 0.05 * THREE.MathUtils.DEG2RAD * (event?.deltaTime ?? 0),
-      );
-      sendCamera();
-    });
-    for (const key of Object.values(keys)) {
-      key.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLD_START, () => {
-        setKeyboardCrosshairCounter((count) => count + 1);
-      });
-      key.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLD_END, () => {
-        setKeyboardCrosshairCounter((count) => Math.max(0, count - 1));
-      });
+    if (activeCameraKeys.has("KeyW")) {
+      cameraControls.forward(moveScale, false);
+      changed = true;
     }
-
-    return () => {
-      return;
-    };
-  }, [isFirstPerson, camera, sendCamera, firstPersonInvertLookY]);
+    if (activeCameraKeys.has("KeyS")) {
+      cameraControls.forward(-moveScale, false);
+      changed = true;
+    }
+    if (activeCameraKeys.has("KeyQ")) {
+      cameraControls.elevate(-moveScale, false);
+      changed = true;
+    }
+    if (activeCameraKeys.has("KeyE")) {
+      cameraControls.elevate(moveScale, false);
+      changed = true;
+    }
+    if (activeCameraKeys.has("ArrowLeft")) {
+      cameraControls.rotate(-rotateScale, 0, true);
+      changed = true;
+    }
+    if (activeCameraKeys.has("ArrowRight")) {
+      cameraControls.rotate(rotateScale, 0, true);
+      changed = true;
+    }
+    if (activeCameraKeys.has("ArrowUp")) {
+      cameraControls.rotate(0, -rotateScale, true);
+      changed = true;
+    }
+    if (activeCameraKeys.has("ArrowDown")) {
+      cameraControls.rotate(0, rotateScale, true);
+      changed = true;
+    }
+    if (changed) {
+      sendCamera();
+    }
+  });
 
   // Yaw: +movementX matches common FPS feel vs stock three pointer-lock.
   // Pitch sign: default normal FPS; optional invert via dev settings.
@@ -731,6 +771,9 @@ export function SynchronizedCameraControls() {
     if (!isFirstPerson) return;
     const c = pointerLockRef.current;
     if (c == null) return;
+    if (document.pointerLockElement === gl.domElement) {
+      c.isLocked = true;
+    }
     const sens = 2e-3;
     const pitchMul = firstPersonInvertLookY ? 1 : -1;
     const yawAxis = new THREE.Vector3();
@@ -742,7 +785,7 @@ export function SynchronizedCameraControls() {
       c.camera.rotateX(pitchMul * e.movementY * sens * c.pointerSpeed);
       c.dispatchEvent({ type: "change" } as never);
     };
-  }, [isFirstPerson, firstPersonInvertLookY]);
+  }, [gl.domElement, isFirstPerson, firstPersonInvertLookY]);
 
   return (
     <>
@@ -779,6 +822,10 @@ export function SynchronizedCameraControls() {
           ref={pointerLockRef}
           domElement={gl.domElement}
           onChange={sendCamera}
+          onUnlock={() => {
+            clearCameraKeys();
+            viewer.useGui.set({ firstPersonCamera: false });
+          }}
         />
       ) : null}
       <InitialCameraSetter />

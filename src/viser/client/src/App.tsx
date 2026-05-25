@@ -467,9 +467,27 @@ function CameraModeIndicator() {
   const Icon = firstPerson ? IconCamera : IconView360;
 
   const toggleMode = () => {
-    viewer.useGui.set({ firstPersonCamera: !firstPerson });
     if (firstPerson) {
-      document.exitPointerLock();
+      viewer.useGui.set({ firstPersonCamera: false });
+      if (document.pointerLockElement === viewer.mutable.current.canvas) {
+        document.exitPointerLock();
+      }
+      return;
+    }
+
+    viewer.useGui.set({ firstPersonCamera: true });
+    const canvas = viewer.mutable.current.canvas;
+    if (canvas === null) {
+      viewer.useGui.set({ firstPersonCamera: false });
+      return;
+    }
+    try {
+      const request = canvas.requestPointerLock() as Promise<void> | undefined;
+      void request?.catch(() => {
+        viewer.useGui.set({ firstPersonCamera: false });
+      });
+    } catch {
+      viewer.useGui.set({ firstPersonCamera: false });
     }
   };
 

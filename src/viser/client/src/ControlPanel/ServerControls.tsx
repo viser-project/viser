@@ -30,6 +30,31 @@ export default function ServerControls() {
   const firstPersonCamera = viewer.useGui((state) => state.firstPersonCamera);
   const [showDevSettings, setShowDevSettings] = React.useState(false);
 
+  const setFirstPersonMode = (enabled: boolean) => {
+    viewer.useGui.set({ firstPersonCamera: enabled });
+    if (!enabled) {
+      if (document.pointerLockElement === viewerMutable.canvas) {
+        document.exitPointerLock();
+      }
+      return;
+    }
+
+    if (viewerMutable.canvas === null) {
+      viewer.useGui.set({ firstPersonCamera: false });
+      return;
+    }
+    try {
+      const request = viewerMutable.canvas.requestPointerLock() as
+        | Promise<void>
+        | undefined;
+      void request?.catch(() => {
+        viewer.useGui.set({ firstPersonCamera: false });
+      });
+    } catch {
+      viewer.useGui.set({ firstPersonCamera: false });
+    }
+  };
+
   return (
     <>
       <Stack gap="xs" mt="0.3em">
@@ -143,11 +168,11 @@ export default function ServerControls() {
             <>
               Orbit: drag to rotate and zoom around a target.
               <br />
-              First person: click the 3D view to capture the mouse, then look
+              First person: captures the mouse immediately. Look with the mouse
               <br />
-              with the mouse and move with WASD and the arrow keys. Press Esc to
+              and move with WASD and the arrow keys. Press Esc to
               <br />
-              release the mouse. You can also press P to toggle modes.
+              return to orbit mode. You can also press P to toggle modes.
             </>
           }
           refProp="rootRef"
@@ -162,11 +187,7 @@ export default function ServerControls() {
               size="sm"
               value={firstPersonCamera ? "first-person" : "orbit"}
               onChange={(value) => {
-                const next = value === "first-person";
-                viewer.useGui.set({ firstPersonCamera: next });
-                if (!next) {
-                  document.exitPointerLock();
-                }
+                setFirstPersonMode(value === "first-person");
               }}
               data={[
                 { label: "Orbit", value: "orbit" },
