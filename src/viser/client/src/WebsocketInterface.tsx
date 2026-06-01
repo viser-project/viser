@@ -56,6 +56,12 @@ export function WebsocketMessageProducer() {
         isConnected = true;
         resetGui();
         resetScene();
+        // Drop any messages left over from the previous connection and re-arm
+        // the first-batch ordering hack, so the server's fresh scene replay
+        // applies against clean state. The worker/ref persist across reconnects,
+        // so this transient state isn't reset for us.
+        viewerMutable.messageQueue.length = 0;
+        viewerMutable.firstMessageBatch = true;
         viewer.useGui.set({ websocketState: "connected" });
         updateRetryInterval();
         viewerMutable.sendMessage = (message) => {

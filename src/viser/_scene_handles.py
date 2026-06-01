@@ -9,7 +9,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
     Generic,
     Literal,
     Optional,
@@ -864,19 +863,28 @@ class PointCloudHandle(
 ):
     """Handle for point clouds. Does not support click events."""
 
-    @override
-    def _cast_array_dtypes(
-        self,
-        prop_hints: Dict[str, Any],
-        prop_name: str,
-        value: np.ndarray,
-    ) -> np.ndarray:
-        """Casts assigned `points` based on the current value of `precision`."""
-        if prop_name == "points":
-            return value.astype(
-                {"float16": np.float16, "float32": np.float32}[self.precision]
-            )
-        return super()._cast_array_dtypes(prop_hints, prop_name, value)
+    @property
+    def precision(self) -> Literal["float16", "float32"]:
+        return self._impl.props.precision
+
+    @precision.setter
+    def precision(self, precision: Literal["float16", "float32"]) -> None:
+        # Re-cast the stored points to the new precision. The generic prop
+        # setter (see `_assignable_props_api.props_setattr`) forces a reassigned
+        # `points` array back to the *existing* buffer's dtype, so without this
+        # the configured precision could never actually change after
+        # construction. Re-casting here reconverts the cloud immediately and
+        # lets `precision` and `points` be assigned in either order.
+        if precision == self._impl.props.precision:
+            return
+        dtype = {"float16": np.float16, "float32": np.float32}[precision]
+        # Cast first: if `astype` were to fail, the handle stays consistent
+        # (precision and points unchanged) rather than being left mismatched.
+        new_points = self._impl.props.points.astype(dtype)
+        self._impl.props.precision = precision
+        self._impl.props.points = new_points
+        self._queue_update("precision", precision)
+        self._queue_update("points", new_points)
 
 
 class BatchedAxesHandle(

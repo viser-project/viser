@@ -1728,6 +1728,7 @@ export interface GetRenderRequestMessage {
   wxyz: [number, number, number, number];
   position: [number, number, number];
   fov: number;
+  render_uuid: string;
 }
 /** Message from client->server carrying a render.
  *
@@ -1736,6 +1737,7 @@ export interface GetRenderRequestMessage {
 export interface GetRenderResponseMessage {
   type: "GetRenderResponseMessage";
   payload: Uint8Array<ArrayBuffer>;
+  render_uuid: string;
 }
 /** Signal that a file is about to be sent.
  *

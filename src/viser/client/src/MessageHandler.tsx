@@ -506,15 +506,23 @@ function useMessageHandler() {
               type: "image/" + message.format,
             }),
           );
-          new TextureLoader().load(rgb_url, (texture) => {
-            URL.revokeObjectURL(rgb_url);
-            const oldBackgroundTexture =
-              viewerMutable.backgroundMaterial!.uniforms.colorMap.value;
-            viewerMutable.backgroundMaterial!.uniforms.colorMap.value = texture;
+          new TextureLoader().load(
+            rgb_url,
+            (texture) => {
+              URL.revokeObjectURL(rgb_url);
+              const oldBackgroundTexture =
+                viewerMutable.backgroundMaterial!.uniforms.colorMap.value;
+              viewerMutable.backgroundMaterial!.uniforms.colorMap.value =
+                texture;
 
-            // Dispose the old background texture.
-            if (isTexture(oldBackgroundTexture)) oldBackgroundTexture.dispose();
-          });
+              // Dispose the old background texture.
+              if (isTexture(oldBackgroundTexture))
+                oldBackgroundTexture.dispose();
+            },
+            undefined,
+            // Revoke on failure too, otherwise the object URL leaks.
+            () => URL.revokeObjectURL(rgb_url),
+          );
 
           viewerMutable.backgroundMaterial!.uniforms.enabled.value = true;
         } else {
@@ -537,13 +545,28 @@ function useMessageHandler() {
               type: "image/" + message.format,
             }),
           );
-          new TextureLoader().load(depth_url, (texture) => {
-            URL.revokeObjectURL(depth_url);
-            const oldDepthTexture =
-              viewerMutable.backgroundMaterial?.uniforms.depthMap.value;
-            viewerMutable.backgroundMaterial!.uniforms.depthMap.value = texture;
-            if (isTexture(oldDepthTexture)) oldDepthTexture.dispose();
-          });
+          new TextureLoader().load(
+            depth_url,
+            (texture) => {
+              URL.revokeObjectURL(depth_url);
+              const oldDepthTexture =
+                viewerMutable.backgroundMaterial?.uniforms.depthMap.value;
+              viewerMutable.backgroundMaterial!.uniforms.depthMap.value =
+                texture;
+              if (isTexture(oldDepthTexture)) oldDepthTexture.dispose();
+            },
+            undefined,
+            // Revoke on failure too, otherwise the object URL leaks.
+            () => URL.revokeObjectURL(depth_url),
+          );
+        } else {
+          // No depth in this message: free any existing depth texture so it
+          // isn't orphaned on the GPU (kept alive by the uniform but never
+          // disposed), and clear the uniform back to its initial null.
+          const oldDepthTexture =
+            viewerMutable.backgroundMaterial!.uniforms.depthMap.value;
+          if (isTexture(oldDepthTexture)) oldDepthTexture.dispose();
+          viewerMutable.backgroundMaterial!.uniforms.depthMap.value = null;
         }
         return;
       }
@@ -662,6 +685,16 @@ function useFileDownloadHandler(): (
       }
       case "FileTransferPart": {
         const downloadState = downloadStatesRef.current[message.transfer_uuid];
+        if (downloadState === undefined) {
+          // A part for an unknown/cleared transfer (e.g. its start message was
+          // lost). Drop it rather than dereferencing undefined and throwing out
+          // of the per-frame message loop.
+          console.error(
+            "Received FileTransferPart for unknown transfer",
+            message.transfer_uuid,
+          );
+          return;
+        }
         if (message.part_index != downloadState.parts.length) {
           console.error("A file download message was received out of order!");
         }
@@ -755,7 +788,6 @@ export function FrameSynchronizedMessageHandler() {
   const messageQueue = viewerMutable.messageQueue;
   const splatContext = React.useContext(GaussianSplatsContext)!;
   const gl = useThree((state) => state.gl);
-  const isFirstBatchRef = React.useRef(true);
 
   useFrame(
     () => {
@@ -763,105 +795,146 @@ export function FrameSynchronizedMessageHandler() {
       if (viewerMutable.getRenderRequestState === "triggered") {
         viewerMutable.getRenderRequestState = "pause";
       } else if (viewerMutable.getRenderRequestState === "pause") {
-        const cameraPosition = viewerMutable.getRenderRequest!.position;
-        const cameraWxyz = viewerMutable.getRenderRequest!.wxyz;
-        const cameraFov = viewerMutable.getRenderRequest!.fov;
-
         const targetWidth = viewerMutable.getRenderRequest!.width;
         const targetHeight = viewerMutable.getRenderRequest!.height;
+        const format = viewerMutable.getRenderRequest!.format;
+        // Captured now so the response can be correlated to its request even
+        // after the async toBlob below.
+        const renderUuid = viewerMutable.getRenderRequest!.render_uuid;
 
-        // Render the scene using the virtual camera.
-        const T_threeworld_world = computeT_threeworld_world(viewer);
+        // Snapshot renderer state up front so the `finally` below can always
+        // restore it, even if rendering throws partway through.
+        const originalSize = gl.getSize(new THREE.Vector2());
+        const originalClearColor = gl.getClearColor(new THREE.Color());
+        const originalClearAlpha = gl.getClearAlpha();
 
-        // Create a new perspective camera.
-        const camera = new THREE.PerspectiveCamera(
-          THREE.MathUtils.radToDeg(cameraFov),
-          targetWidth / targetHeight,
-          0.01, // Near.
-          1000.0, // Far.
-        );
-
-        // Set camera pose.
-        camera.position.set(...cameraPosition).applyMatrix4(T_threeworld_world);
-        camera.setRotationFromQuaternion(
-          new THREE.Quaternion(
-            cameraWxyz[1],
-            cameraWxyz[2],
-            cameraWxyz[3],
-            cameraWxyz[0],
-          )
-            .premultiply(
-              new THREE.Quaternion().setFromRotationMatrix(T_threeworld_world),
-            )
-            .multiply(
-              // OpenCV => OpenGL coordinate system conversion.
-              new THREE.Quaternion().setFromAxisAngle(
-                new THREE.Vector3(1, 0, 0),
-                Math.PI,
-              ),
-            ),
-        );
-
-        // Update splatting camera if needed.
-        // We'll back up the current sorted indices, and restore them after rendering.
+        // Splat sorted-index backup, restored in `finally`.
         const splatMeshProps = splatContext.meshPropsRef.current;
         const sortedIndicesOrig =
           splatMeshProps !== null
             ? splatMeshProps.sortedIndexAttribute.array.slice()
             : null;
-        if (splatContext.updateCamera.current !== null)
-          splatContext.updateCamera.current!(
-            camera,
-            targetWidth,
-            targetHeight,
-            true,
-          );
 
-        // Save current renderer state.
-        const originalSize = gl.getSize(new THREE.Vector2());
-        const originalClearColor = gl.getClearColor(new THREE.Color());
-        const originalClearAlpha = gl.getClearAlpha();
-
-        // Configure for capture.
-        gl.setSize(targetWidth, targetHeight);
-        gl.setClearColor(0xffffff);
-        gl.setClearAlpha(
-          viewerMutable.getRenderRequest!.format == "image/png" ? 0.0 : 1.0,
-        );
-
-        // Render the scene.
-        gl.render(viewerMutable.scene!, camera);
-
-        // Temporary canvas for saving the rendered image. This is needed to
-        // prevent flickers: we need context from the original canvas for
-        // rendering, but we want to revert the renderer state immediately.
-        const canvas = gl.domElement;
-        const bufferCanvas = document.createElement("canvas");
-        bufferCanvas.width = targetWidth;
-        bufferCanvas.height = targetHeight;
-        const ctx = bufferCanvas.getContext("2d")!;
-        ctx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
-
-        // Restore the original renderer state.
-        gl.setSize(originalSize.x, originalSize.y);
-        gl.setClearColor(originalClearColor);
-        gl.setClearAlpha(originalClearAlpha);
-
-        // Restore splatting indices.
-        if (sortedIndicesOrig !== null && splatMeshProps !== null) {
-          splatMeshProps.sortedIndexAttribute.array = sortedIndicesOrig;
-          splatMeshProps.sortedIndexAttribute.needsUpdate = true;
-        }
-
-        // Get the rendered image from our temp canvas.
-        viewerMutable.getRenderRequestState = "in_progress";
-        bufferCanvas.toBlob(async (blob) => {
+        // An empty payload is the failure sentinel: it lets the server's
+        // pending get_render() resolve instead of blocking forever.
+        const sendRenderResponse = (payload: Uint8Array<ArrayBuffer>) =>
           viewerMutable.sendMessage({
             type: "GetRenderResponseMessage",
-            payload: new Uint8Array(await blob!.arrayBuffer()),
+            payload,
+            render_uuid: renderUuid,
           });
+
+        // Once we enter capture we must always return to "ready" -- otherwise
+        // an exception (or a null toBlob) would wedge the render state machine
+        // and block all further message handling, which is gated on "ready".
+        try {
+          const cameraPosition = viewerMutable.getRenderRequest!.position;
+          const cameraWxyz = viewerMutable.getRenderRequest!.wxyz;
+          const cameraFov = viewerMutable.getRenderRequest!.fov;
+
+          // Render the scene using the virtual camera.
+          const T_threeworld_world = computeT_threeworld_world(viewer);
+
+          // Create a new perspective camera.
+          const camera = new THREE.PerspectiveCamera(
+            THREE.MathUtils.radToDeg(cameraFov),
+            targetWidth / targetHeight,
+            0.01, // Near.
+            1000.0, // Far.
+          );
+
+          // Set camera pose.
+          camera.position
+            .set(...cameraPosition)
+            .applyMatrix4(T_threeworld_world);
+          camera.setRotationFromQuaternion(
+            new THREE.Quaternion(
+              cameraWxyz[1],
+              cameraWxyz[2],
+              cameraWxyz[3],
+              cameraWxyz[0],
+            )
+              .premultiply(
+                new THREE.Quaternion().setFromRotationMatrix(
+                  T_threeworld_world,
+                ),
+              )
+              .multiply(
+                // OpenCV => OpenGL coordinate system conversion.
+                new THREE.Quaternion().setFromAxisAngle(
+                  new THREE.Vector3(1, 0, 0),
+                  Math.PI,
+                ),
+              ),
+          );
+
+          // Update splatting camera if needed.
+          if (splatContext.updateCamera.current !== null)
+            splatContext.updateCamera.current!(
+              camera,
+              targetWidth,
+              targetHeight,
+              true,
+            );
+
+          // Configure for capture.
+          gl.setSize(targetWidth, targetHeight);
+          gl.setClearColor(0xffffff);
+          gl.setClearAlpha(format == "image/png" ? 0.0 : 1.0);
+
+          // Render the scene.
+          gl.render(viewerMutable.scene!, camera);
+
+          // Temporary canvas for saving the rendered image. This is needed to
+          // prevent flickers: we need context from the original canvas for
+          // rendering, but we want to revert the renderer state immediately.
+          const canvas = gl.domElement;
+          const bufferCanvas = document.createElement("canvas");
+          bufferCanvas.width = targetWidth;
+          bufferCanvas.height = targetHeight;
+          const ctx = bufferCanvas.getContext("2d")!;
+          ctx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
+
+          // Get the rendered image from our temp canvas.
+          viewerMutable.getRenderRequestState = "in_progress";
+          bufferCanvas.toBlob((blob) => {
+            void (async () => {
+              try {
+                // `toBlob` can hand back null (e.g. canvas too large / OOM);
+                // fall back to an empty payload so the server's pending
+                // request resolves instead of hanging forever.
+                sendRenderResponse(
+                  blob === null
+                    ? new Uint8Array(0)
+                    : new Uint8Array(await blob.arrayBuffer()),
+                );
+              } catch (e) {
+                console.error("Failed to read rendered image:", e);
+                sendRenderResponse(new Uint8Array(0));
+              } finally {
+                viewerMutable.getRenderRequestState = "ready";
+              }
+            })();
+          }, format);
+        } catch (e) {
+          console.error("Render request failed:", e);
+          // The toBlob callback won't run, so send the failure sentinel now --
+          // otherwise the server's get_render() blocks forever waiting for a
+          // response. Then resume message handling.
+          sendRenderResponse(new Uint8Array(0));
           viewerMutable.getRenderRequestState = "ready";
-        }, viewerMutable.getRenderRequest!.format);
+        } finally {
+          // Restore the original renderer state.
+          gl.setSize(originalSize.x, originalSize.y);
+          gl.setClearColor(originalClearColor);
+          gl.setClearAlpha(originalClearAlpha);
+
+          // Restore splatting indices.
+          if (sortedIndicesOrig !== null && splatMeshProps !== null) {
+            splatMeshProps.sortedIndexAttribute.array = sortedIndicesOrig;
+            splatMeshProps.sortedIndexAttribute.needsUpdate = true;
+          }
+        }
       }
 
       // Handle messages, but only if we're not trying to render something.
@@ -886,8 +959,8 @@ export function FrameSynchronizedMessageHandler() {
         // Hack: On the very first batch, handle any root node SetOrientationMessage
         // (from set_up_direction()) before all other messages. This ensures
         // T_threeworld_world is up-to-date when initial camera messages are processed.
-        if (isFirstBatchRef.current) {
-          isFirstBatchRef.current = false;
+        if (viewerMutable.firstMessageBatch) {
+          viewerMutable.firstMessageBatch = false;
           const rootOrientationIndex = processBatch.findIndex(
             (msg) => msg.type === "SetOrientationMessage" && msg.name === "",
           );

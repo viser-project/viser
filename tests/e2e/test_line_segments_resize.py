@@ -19,15 +19,11 @@ from .utils import wait_for_scene_node
 def _count_red_pixels(page: Page) -> int:
     canvas = page.locator("canvas").first
     img = np.array(Image.open(BytesIO(canvas.screenshot())).convert("RGB"))
-    return int(
-        ((img[:, :, 0] > 200) & (img[:, :, 1] < 80) & (img[:, :, 2] < 80)).sum()
-    )
+    return int(((img[:, :, 0] > 200) & (img[:, :, 1] < 80) & (img[:, :, 2] < 80)).sum())
 
 
 def _segments_along_x(half_extent: float, num_points: int) -> np.ndarray:
-    pts = np.linspace(
-        [-half_extent, 0.0, 0.0], [half_extent, 0.0, 0.0], num=num_points
-    )
+    pts = np.linspace([-half_extent, 0.0, 0.0], [half_extent, 0.0, 0.0], num=num_points)
     return np.stack([pts[:-1], pts[1:]], axis=1)
 
 

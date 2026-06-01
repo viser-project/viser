@@ -15,7 +15,6 @@ export type SceneNode = {
   clickBindings: DragBinding[];
   dragBindings: DragBinding[];
   labelVisible?: boolean; // Whether to show the label for this node.
-  poseUpdateState?: "updated" | "needsUpdate" | "waitForMakeObject";
   wxyz?: [number, number, number, number];
   position?: [number, number, number];
   visibility?: boolean; // Visibility state from the server.
@@ -169,7 +168,7 @@ function createSceneTreeActions(
       }
       // Skip the store write when nothing actually changed -- the prop editor
       // auto-submits on every Switch/Select/ColorInput change, and a no-op
-      // write would still notify zustand subscribers and re-render every
+      // write would still notify store subscribers and re-render every
       // useSceneTree consumer of this node.
       //
       // Shallow-compare arrays explicitly: ColorInput (and tuple-shaped scale
@@ -333,6 +332,13 @@ export function useSceneTreeState(
       nodeRefFromName,
       nodePoseData,
     );
+
+    // Establish the default state up front via the same path used on
+    // (re)connect. This seeds the root node's pose into nodePoseData -- which
+    // the pose sync needs in order to orient the root frame (and the
+    // /WorldAxes gizmo under it). Without it, the root renders at identity (the
+    // three.js Y-up frame) until the first connection.
+    actions.resetScene();
 
     // Return both store and helpers.
     return { store, actions };

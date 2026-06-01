@@ -31,16 +31,10 @@ import { useDisclosure } from "@mantine/hooks";
 import { SynchronizedCameraControls } from "./CameraControls";
 import { SceneNodeThreeObject } from "./SceneTree";
 import { DragLayer } from "./DragLayer";
-import {
-  KeyModifier,
-  hasCmdCtrl,
-  keyModifierFromEvent,
-} from "./dragUtils";
+import { KeyModifier, hasCmdCtrl, keyModifierFromEvent } from "./dragUtils";
 import { shallowArrayEqual } from "./utils/shallowArrayEqual";
-import {
-  ndcFromPointerXy,
-  opencvXyFromPointerXy,
-} from "./utils/pointerCoords";
+import { isFormElement } from "./utils/isFormElement";
+import { ndcFromPointerXy, opencvXyFromPointerXy } from "./utils/pointerCoords";
 import { ViewerContext, ViewerContextContents } from "./ViewerContext";
 import ControlPanel from "./ControlPanel/ControlPanel";
 import { useGuiState } from "./ControlPanel/GuiState";
@@ -217,8 +211,10 @@ function ViewerRoot() {
 
     // Message and rendering state.
     messageQueue: [],
+    firstMessageBatch: true,
     getRenderRequestState: "ready",
     getRenderRequest: null,
+    initialCameraDiagnostic: null,
 
     // Skinned mesh state.
     skinnedMeshState: {},
@@ -512,21 +508,10 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
       cancelActiveScenePointer();
       interaction.hover.setHeldModifier(null);
     };
-    const isFormElement = (el: Element | null): boolean => {
-      if (el === null) return false;
-      const tag = el.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
-        return true;
-      }
-      return (el as HTMLElement).isContentEditable;
-    };
     const onKey = (e: KeyboardEvent) => {
       // Skip while typing in form controls so Shift in a TextInput
       // doesn't flicker the canvas cursor.
-      if (
-        isFormElement(e.target as Element | null) ||
-        isFormElement(document.activeElement)
-      ) {
+      if (isFormElement(e.target) || isFormElement(document.activeElement)) {
         return;
       }
       interaction.hover.setHeldModifier(keyModifierFromEvent(e));
@@ -554,6 +539,14 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
   );
 
   const handlePointerDown = (e: React.PointerEvent) => {
+    // If a 3D handle already captured this pointer (drei's orbit-origin /
+    // transform gizmos call setPointerCapture on the canvas in their own
+    // pointerdown, which runs before this bubbles up), it owns the gesture.
+    // Engaging the canvas-level scene-pointer path here would, for a
+    // rect-select gesture, call setPointerCapture on a *different* element and
+    // steal the gizmo's capture -- R3F then drops it and the gizmo's pointerup
+    // is missed, leaving it stuck mid-drag.
+    if (viewer.mutable.current.canvas?.hasPointerCapture(e.pointerId)) return;
     const xy = canvasXyFromEvent(e);
     const next = interaction.scenePointer.onPointerDown({
       pointerId: e.pointerId,
@@ -597,7 +590,12 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     });
     drawRectSelectOverlay(null);
     if (outcome.kind === "scene-click") {
-      sendClickMessage(viewer, outcome.xy, outcome.modifier, sendClickThrottled);
+      sendClickMessage(
+        viewer,
+        outcome.xy,
+        outcome.modifier,
+        sendClickThrottled,
+      );
     } else if (outcome.kind === "scene-rect-select") {
       sendRectSelectMessage(
         viewer,
@@ -606,6 +604,13 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
         sendClickThrottled,
       );
     }
+    // Reconcile `cameraControl.enabled` with the held leases once the gesture
+    // ends. drei's PivotControls (orbit-origin gizmo, transform controls)
+    // disables the camera directly during a drag and only re-enables it in its
+    // own pointerup -- which is skipped on a pointercancel or a release where
+    // pointer capture was lost. Without this the camera would be left disabled
+    // (no lease held) and orbit/pan would silently stop working.
+    interaction.cameraLocks.apply();
   };
 
   const fixedDpr = viewer.useDevSettings((state) => state.fixedDpr);
@@ -637,7 +642,14 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     >
       <Canvas
         gl={{ preserveDrawingBuffer: true, reversedDepthBuffer: true }}
-        style={{ width: "100%", height: "100%" }}
+        // `touchAction: none` opts the canvas out of native touch actions.
+        // Without it the browser can reinterpret a curved/multi-touch drag
+        // (e.g. dragging the orbit gizmo's rotation ring, especially on
+        // trackpads) as a scroll/zoom gesture and fire `pointercancel`
+        // mid-drag. drei's PivotControls has no cancel handler, so the gizmo
+        // would be left stuck following the cursor. camera-controls handles
+        // all viewport gestures itself, so there is nothing to lose.
+        style={{ width: "100%", height: "100%", touchAction: "none" }}
         ref={(el) => {
           viewer.mutable.current.canvas = el;
           interaction.hover.refresh();
@@ -648,6 +660,12 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
         onPointerCancel={(e) => {
           interaction.cancelPointer(e.pointerId);
           drawRectSelectOverlay(null);
+          // drei's PivotControls disables the camera on pointerdown and only
+          // re-enables it in its own pointerup -- it has no pointercancel
+          // handler. A canceled gizmo drag (common for the curved rotation-ring
+          // gesture) would otherwise leave the camera disabled. Reconcile to
+          // the lease state here so it recovers.
+          interaction.cameraLocks.apply();
         }}
         onContextMenu={(e) => {
           // Suppress the browser context menu only for ctrl/cmd-modified

@@ -914,7 +914,6 @@ export function SceneNodeThreeObject(props: { name: string }) {
         if (!objRef.current.matrixWorldAutoUpdate)
           objRef.current.updateMatrixWorld();
       }
-
     },
     // Other useFrame hooks may depend on transforms + visibility. So it's best
     // to call this hook early.

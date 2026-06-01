@@ -73,24 +73,10 @@ export function HDRJPGEnvironment({
         } else {
           fadeProgress.current = 1;
         }
+        // Scene properties (environment/background + intensity, rotation,
+        // blur) are applied reactively in the effect below, keyed on
+        // `texture`, so prop changes take effect without a reload.
         setTexture(tex);
-
-        // Set environment.
-        scene.environment = tex;
-        scene.environmentIntensity = environmentIntensity;
-        if (environmentRotation) {
-          scene.environmentRotation = environmentRotation;
-        }
-
-        // Set background if enabled.
-        if (background) {
-          scene.background = tex;
-          scene.backgroundBlurriness = backgroundBlurriness;
-          scene.backgroundIntensity = backgroundIntensity;
-          if (backgroundRotation) {
-            scene.backgroundRotation = backgroundRotation;
-          }
-        }
       },
       undefined,
       (error) => {
@@ -109,6 +95,38 @@ export function HDRJPGEnvironment({
       texture?.dispose();
     };
   }, [texture]);
+
+  // Apply environment/background scene properties reactively. These used to be
+  // set only inside the load effect (keyed on `files`/`gl`), so changing
+  // intensity, rotation, blur, or the background toggle without changing the
+  // file had no effect until a reload.
+  useEffect(() => {
+    if (!texture) return;
+    scene.environment = texture;
+    scene.environmentIntensity = environmentIntensity;
+    if (environmentRotation) {
+      scene.environmentRotation = environmentRotation;
+    }
+    if (background) {
+      scene.background = texture;
+      scene.backgroundBlurriness = backgroundBlurriness;
+      scene.backgroundIntensity = backgroundIntensity;
+      if (backgroundRotation) {
+        scene.backgroundRotation = backgroundRotation;
+      }
+    } else {
+      scene.background = null;
+    }
+  }, [
+    texture,
+    scene,
+    background,
+    backgroundBlurriness,
+    backgroundIntensity,
+    backgroundRotation,
+    environmentIntensity,
+    environmentRotation,
+  ]);
 
   // Animate fade-in (only runs while fading).
   useFrame(() => {

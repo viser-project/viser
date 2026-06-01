@@ -658,20 +658,34 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
 
         connection = self._websock_connection
 
+        render_uuid = _make_uuid()
+
         def got_render_cb(
             client_id: int, message: _messages.GetRenderResponseMessage
         ) -> None:
             del client_id
+            # Ignore responses for other concurrent get_render() calls on this
+            # client; only ours matches our request's uuid.
+            if message.render_uuid != render_uuid:
+                return
             connection.unregister_handler(
                 _messages.GetRenderResponseMessage, got_render_cb
             )
             nonlocal out
-            import imageio.v3 as iio
+            # An empty payload is the client's failure sentinel (capture threw,
+            # or toBlob() returned null). Leave `out` as None and let the
+            # waiter raise, rather than crashing the decode here (which would
+            # never set the event and hang get_render() forever).
+            if len(message.payload) > 0:
+                import imageio.v3 as iio
 
-            out = iio.imread(
-                io.BytesIO(message.payload),
-                extension=f".{transport_format}",
-            )
+                try:
+                    out = iio.imread(
+                        io.BytesIO(message.payload),
+                        extension=f".{transport_format}",
+                    )
+                except Exception:
+                    out = None
             render_ready_event.set()
 
         connection.register_handler(_messages.GetRenderResponseMessage, got_render_cb)
@@ -689,10 +703,14 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 ),
                 wxyz=cast_vector(wxyz if wxyz is not None else self.camera.wxyz, 4),
                 fov=fov if fov is not None else self.camera.fov,
+                render_uuid=render_uuid,
             )
         )
         render_ready_event.wait()
-        assert out is not None
+        if out is None:
+            raise RuntimeError(
+                "Render request failed: the client could not capture a frame."
+            )
         return out
 
 

@@ -115,12 +115,18 @@ class AsyncMessageBuffer:
 
     def atomic_start(self) -> None:
         """Start an atomic block. No new messages/windows should be sent."""
-        self.atomic_counter += 1
+        # Locked: `atomic()` is public and may be entered from multiple threads,
+        # and `+=`/`-=` are non-atomic read-modify-writes. A lost update would
+        # leave the counter stuck != 0 and stall message delivery permanently.
+        with self.buffer_lock:
+            self.atomic_counter += 1
 
     def atomic_end(self) -> None:
         """End an atomic block."""
-        self.atomic_counter -= 1
-        if self.atomic_counter == 0:
+        with self.buffer_lock:
+            self.atomic_counter -= 1
+            should_flush = self.atomic_counter == 0
+        if should_flush:
             self.event_loop.call_soon_threadsafe(self.message_event.set)
 
     def flush(self) -> None:
