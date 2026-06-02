@@ -64,7 +64,9 @@ def test_points_assignment_coerced_to_precision() -> None:
             colors=(255, 0, 0),
             precision="float32",
         )
-        src64 = np.array([[1 / 3, 2 / 3, 0.1]], dtype=np.float64)
+        src64 = np.array(
+            [[1 / 3, 2 / 3, 0.1], [0.2, 0.3, 0.4], [1.0, 2.0, 3.0]], dtype=np.float64
+        )
         pc.points = src64  # type: ignore
         assert pc.points.dtype == np.float32
         # Values match the float32 downcast (i.e. genuinely re-cast, not stored
@@ -79,7 +81,11 @@ def test_points_assignment_coerced_to_precision() -> None:
             colors=(255, 0, 0),
             precision="float16",
         )
-        pc16.points = np.array([[0.1, 0.2, 0.3]], dtype=np.float32)
+        src32 = np.array(
+            [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9]], dtype=np.float32
+        )
+        pc16.points = src32
         assert pc16.points.dtype == np.float16
+        assert np.array_equal(pc16.points, src32.astype(np.float16))
     finally:
         server.stop()
