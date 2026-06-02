@@ -130,12 +130,11 @@ function OrbitOriginTool({
   }, [show]);
 
   // Keep the gizmo mounted at all times and toggle the handles via the
-  // `disable*` props (like drei's PivotControls was used originally) rather
-  // than unmounting it when hidden. Unmounting meant the gizmo mounted fresh on
-  // enable, so its transform/scale weren't settled for the very first drag
-  // (the pivot is synced to the camera by `sendCamera` on camera *changes*, and
-  // there's been none since enable) -- so the first drag computed from a stale
-  // pose and only the second drag (or any camera move first) worked.
+  // `disable*` props rather than unmounting it when hidden. The pivot's
+  // transform is only synced to the camera by `sendCamera` on camera
+  // *changes*, so a freshly mounted gizmo has a stale pose until the next
+  // camera move -- keeping it mounted means its first drag starts from the
+  // correct pose.
   return (
     <PivotControls
       ref={pivotRef}
@@ -207,14 +206,11 @@ export function SynchronizedCameraControls() {
     duration: number;
   }
 
-  // Held in a ref, not state: this is read inside `sendCamera` (a stable
-  // `useCallback`) and the `updatePivotControlFromCameraLookAtAndup` guard it
-  // calls. As state closed over by that memoized callback it would go stale --
-  // the callback captures the value from the render where its deps last
-  // changed, which is `null` forever -- so the guard would fail to suppress
-  // pivot updates mid-animation and the orbit gizmo would snap back to the old
-  // look-at for a frame. A ref is always read fresh. Nothing renders off this
-  // value; the animation is driven entirely by `useFrame`.
+  // Held in a ref, not state: it's read inside the stable `sendCamera`
+  // callback (and the `updatePivotControlFromCameraLookAtAndup` guard it
+  // calls), which needs the current value rather than the one captured at its
+  // last dependency change. Nothing renders off this value; the animation is
+  // driven entirely by `useFrame`.
   const cameraAnimationRef = useRef<CameraAnimation | null>(null);
 
   // Animation parameters.
@@ -558,12 +554,10 @@ export function SynchronizedCameraControls() {
     return () => resizeObserver.disconnect();
   }, [canvas, sendCamera]);
 
-  // Keyboard controls. We own the document/window listeners directly (and
-  // remove them on unmount) rather than going through a hold-event helper,
-  // which attached listeners with no teardown API and was re-created whenever
-  // the camera-control ref changed (leaking/duplicating listeners). The
-  // listeners only track which keys are held; movement is applied per frame in
-  // the `useFrame` below.
+  // Keyboard controls. The document/window listeners only track which keys are
+  // currently held; movement is applied per frame in the `useFrame` below. The
+  // effect has no dependencies, so the listeners are attached once and removed
+  // on unmount.
   const heldKeysRef = useRef<Set<string>>(new Set());
   React.useEffect(() => {
     const held = heldKeysRef.current;
@@ -596,13 +590,16 @@ export function SynchronizedCameraControls() {
     };
   }, []);
 
-  // Apply held-key camera movement each frame. Rates match the previous
-  // hold-event implementation: linear 0.002/ms == 2.0/s, rotation
-  // 0.05 deg/ms == 50 deg/s (`delta` is in seconds).
+  // Apply held-key camera movement each frame. Rates: linear 2.0/s, rotation
+  // 50 deg/s (`delta` is in seconds).
   useFrame((_, delta) => {
     const cameraControls = viewerMutable.cameraControl;
     const held = heldKeysRef.current;
     if (cameraControls === null || held.size === 0) return;
+    // Respect camera locks: when a lease (or a gizmo drag) has disabled the
+    // controls, keyboard movement must not bypass it. The library's
+    // programmatic truck/forward/rotate ignore `enabled`, so guard here.
+    if (!cameraControls.enabled) return;
     const linear = 2.0 * delta;
     const angular = 50.0 * THREE.MathUtils.DEG2RAD * delta;
     if (held.has("KeyA")) cameraControls.truck(-linear, 0, false);
@@ -617,10 +614,9 @@ export function SynchronizedCameraControls() {
     if (held.has("ArrowDown")) cameraControls.rotate(0, angular, true);
   });
 
-  // Stable ref callback: a fresh inline arrow here would be detached/reattached
-  // by React on every commit, so `cameraLocks.apply()` would run on every
-  // render. Keeping the ref stable means `apply()` only runs when the controls
-  // instance actually attaches/changes, which is its intended purpose.
+  // Stable ref callback so React only invokes it when the controls instance
+  // actually attaches/changes -- `cameraLocks.apply()` should run on attach,
+  // not on every commit (which an inline arrow would cause).
   const setCameraControlRef = React.useCallback(
     (controls: CameraControls | null) => {
       viewerMutable.cameraControl = controls;

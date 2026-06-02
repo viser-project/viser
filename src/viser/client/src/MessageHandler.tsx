@@ -24,6 +24,39 @@ import { rootNodeTemplate, SceneNode } from "./SceneTreeState";
 import { applyGuiConfigUpdate } from "./ControlPanel/GuiState";
 import { GaussianSplatsContext } from "./Splatting/GaussianSplatsHelpers";
 
+/** Swap a background-material uniform to a new texture (or null), disposing the
+ * previous texture if there was one. */
+function swapBackgroundTexture(
+  uniform: THREE.IUniform,
+  next: THREE.Texture | null,
+) {
+  const old = uniform.value;
+  uniform.value = next;
+  if (isTexture(old)) old.dispose();
+}
+
+/** Load image data into a background-material uniform, disposing the previous
+ * texture once the new one is ready. Revokes the object URL on success and on
+ * failure so it never leaks. */
+function loadBackgroundTexture(
+  data: Uint8Array<ArrayBuffer>,
+  format: string,
+  uniform: THREE.IUniform,
+) {
+  const url = URL.createObjectURL(
+    new Blob([data], { type: "image/" + format }),
+  );
+  new TextureLoader().load(
+    url,
+    (texture) => {
+      URL.revokeObjectURL(url);
+      swapBackgroundTexture(uniform, texture);
+    },
+    undefined,
+    () => URL.revokeObjectURL(url),
+  );
+}
+
 /** Returns a handler for all incoming messages. */
 function useMessageHandler() {
   const viewer = useContext(ViewerContext)!;
@@ -501,37 +534,18 @@ function useMessageHandler() {
       // Add a background image.
       case "BackgroundImageMessage": {
         if (message.rgb_data !== null) {
-          const rgb_url = URL.createObjectURL(
-            new Blob([message.rgb_data], {
-              type: "image/" + message.format,
-            }),
+          loadBackgroundTexture(
+            message.rgb_data,
+            message.format,
+            viewerMutable.backgroundMaterial!.uniforms.colorMap,
           );
-          new TextureLoader().load(
-            rgb_url,
-            (texture) => {
-              URL.revokeObjectURL(rgb_url);
-              const oldBackgroundTexture =
-                viewerMutable.backgroundMaterial!.uniforms.colorMap.value;
-              viewerMutable.backgroundMaterial!.uniforms.colorMap.value =
-                texture;
-
-              // Dispose the old background texture.
-              if (isTexture(oldBackgroundTexture))
-                oldBackgroundTexture.dispose();
-            },
-            undefined,
-            // Revoke on failure too, otherwise the object URL leaks.
-            () => URL.revokeObjectURL(rgb_url),
-          );
-
           viewerMutable.backgroundMaterial!.uniforms.enabled.value = true;
         } else {
-          // Dispose the old background texture.
-          const oldBackgroundTexture =
-            viewerMutable.backgroundMaterial!.uniforms.colorMap.value;
-          if (isTexture(oldBackgroundTexture)) oldBackgroundTexture.dispose();
-
-          // Disable the background.
+          // Dispose the old background texture and disable the background.
+          swapBackgroundTexture(
+            viewerMutable.backgroundMaterial!.uniforms.colorMap,
+            null,
+          );
           viewerMutable.backgroundMaterial!.uniforms.enabled.value = false;
         }
 
@@ -540,33 +554,19 @@ function useMessageHandler() {
           message.depth_data !== null;
         if (message.depth_data !== null) {
           // If depth is available set the texture.
-          const depth_url = URL.createObjectURL(
-            new Blob([message.depth_data], {
-              type: "image/" + message.format,
-            }),
-          );
-          new TextureLoader().load(
-            depth_url,
-            (texture) => {
-              URL.revokeObjectURL(depth_url);
-              const oldDepthTexture =
-                viewerMutable.backgroundMaterial?.uniforms.depthMap.value;
-              viewerMutable.backgroundMaterial!.uniforms.depthMap.value =
-                texture;
-              if (isTexture(oldDepthTexture)) oldDepthTexture.dispose();
-            },
-            undefined,
-            // Revoke on failure too, otherwise the object URL leaks.
-            () => URL.revokeObjectURL(depth_url),
+          loadBackgroundTexture(
+            message.depth_data,
+            message.format,
+            viewerMutable.backgroundMaterial!.uniforms.depthMap,
           );
         } else {
           // No depth in this message: free any existing depth texture so it
           // isn't orphaned on the GPU (kept alive by the uniform but never
           // disposed), and clear the uniform back to its initial null.
-          const oldDepthTexture =
-            viewerMutable.backgroundMaterial!.uniforms.depthMap.value;
-          if (isTexture(oldDepthTexture)) oldDepthTexture.dispose();
-          viewerMutable.backgroundMaterial!.uniforms.depthMap.value = null;
+          swapBackgroundTexture(
+            viewerMutable.backgroundMaterial!.uniforms.depthMap,
+            null,
+          );
         }
         return;
       }

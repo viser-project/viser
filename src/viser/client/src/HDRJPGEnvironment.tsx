@@ -96,10 +96,9 @@ export function HDRJPGEnvironment({
     };
   }, [texture]);
 
-  // Apply environment/background scene properties reactively. These used to be
-  // set only inside the load effect (keyed on `files`/`gl`), so changing
-  // intensity, rotation, blur, or the background toggle without changing the
-  // file had no effect until a reload.
+  // Apply environment/background scene properties reactively, keyed on the
+  // properties themselves, so changing intensity, rotation, blur, or the
+  // background toggle takes effect without reloading the file.
   useEffect(() => {
     if (!texture) return;
     scene.environment = texture;

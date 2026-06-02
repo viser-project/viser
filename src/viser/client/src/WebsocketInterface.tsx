@@ -62,6 +62,12 @@ export function WebsocketMessageProducer() {
         // so this transient state isn't reset for us.
         viewerMutable.messageQueue.length = 0;
         viewerMutable.firstMessageBatch = true;
+        // Clear any render request left in flight from the previous connection.
+        // Message handling is gated on this being "ready", and a stale request
+        // would otherwise render once against the fresh scene (its response is
+        // dropped via render_uuid mismatch anyway).
+        viewerMutable.getRenderRequestState = "ready";
+        viewerMutable.getRenderRequest = null;
         viewer.useGui.set({ websocketState: "connected" });
         updateRetryInterval();
         viewerMutable.sendMessage = (message) => {

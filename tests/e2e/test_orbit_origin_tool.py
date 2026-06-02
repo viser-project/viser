@@ -397,8 +397,11 @@ def test_canceled_ring_rotation_does_not_disable_camera(
     and only restores it in its own ``onPointerUp`` -- it has no pointercancel
     handler. A canceled ring drag (common for the curved gesture) therefore
     stranded the camera disabled with no lease held (``cameraLockReasons()``
-    empty), so orbit/pan/zoom silently stopped working. SafePivotControls now
-    treats cancel/lostcapture as drag termination and releases its camera lock.
+    empty), so orbit/pan/zoom silently stopped working. The canvas-level
+    ``pointercancel`` handler now calls ``cameraLocks.apply()``, which
+    reconciles ``cameraControl.enabled`` back to the held leases and recovers
+    the camera. (Note: this does not tear down drei's internal drag state --
+    see the TODO below.)
     """
     viser_server.scene.add_box("/box", dimensions=(0.5, 0.5, 0.5))
     _open_with_orbit_tool(page, viser_server.get_port())
