@@ -863,28 +863,23 @@ class PointCloudHandle(
 ):
     """Handle for point clouds. Does not support click events."""
 
-    @property
-    def precision(self) -> Literal["float16", "float32"]:
-        return self._impl.props.precision
-
-    @precision.setter
-    def precision(self, precision: Literal["float16", "float32"]) -> None:
-        # Re-cast the stored points to the new precision. The generic prop
-        # setter (see `_assignable_props_api.props_setattr`) forces a reassigned
-        # `points` array back to the *existing* buffer's dtype, so without this
-        # the configured precision could never actually change after
-        # construction. Re-casting here reconverts the cloud immediately and
-        # lets `precision` and `points` be assigned in either order.
-        if precision == self._impl.props.precision:
+    @override
+    def _on_prop_assigned(self, name: str) -> None:
+        # `points` is stored at the dtype named by `precision`, so re-cast the
+        # buffer in place whenever `precision` changes. This both keeps the
+        # cloud consistent and means a subsequent `points` assignment won't be
+        # pinned back to the old dtype by the generic setter -- so `precision`
+        # and `points` can be assigned in either order.
+        if name != "precision":
             return
-        dtype = {"float16": np.float16, "float32": np.float32}[precision]
-        # Cast first: if `astype` were to fail, the handle stays consistent
-        # (precision and points unchanged) rather than being left mismatched.
-        new_points = self._impl.props.points.astype(dtype)
-        self._impl.props.precision = precision
-        self._impl.props.points = new_points
-        self._queue_update("precision", precision)
-        self._queue_update("points", new_points)
+        dtype = {"float16": np.float16, "float32": np.float32}[
+            self._impl.props.precision
+        ]
+        points = self._impl.props.points
+        if points.dtype != dtype:
+            new_points = points.astype(dtype)
+            self._impl.props.points = new_points
+            self._queue_update("points", new_points)
 
 
 class BatchedAxesHandle(

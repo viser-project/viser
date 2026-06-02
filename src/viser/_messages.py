@@ -679,9 +679,9 @@ class PointCloudProps:
     point_shape: Literal["square", "diamond", "circle", "rounded", "sparkle"]
     """Shape to draw each point."""
     precision: Annotated[Literal["float16", "float32"], infra.EditorHidden()]
-    """Precision used to store point positions. Changing this re-casts the existing
-    `points` buffer, and assignments to `points` are cast to the current precision, so
-    `precision` and `points` can be updated in either order."""
+    """Precision used to store point positions. Assignments to `points` are cast to
+    the current precision, and changing `precision` re-casts the existing `points`
+    buffer in place, so `precision` and `points` can be assigned in either order."""
     scale: Union[float, Tuple[float, float, float]] = 1.0
     """Scale of the point cloud. A single float for uniform scaling or a
     tuple of (x, y, z) for per-axis scaling."""
