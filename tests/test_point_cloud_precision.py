@@ -48,3 +48,38 @@ def test_point_cloud_precision_roundtrip() -> None:
         assert pc.points.dtype == np.float16
     finally:
         server.stop()
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_points_assignment_coerced_to_precision() -> None:
+    """A ``points`` assignment is always stored at the cloud's current
+    precision, regardless of the input array's dtype."""
+    server = viser.ViserServer()
+    try:
+        # precision="float32": a float64 array (wider, not in the type
+        # annotation) is downcast to float32.
+        pc = server.scene.add_point_cloud(
+            "/pc32",
+            points=np.zeros((3, 3)),
+            colors=(255, 0, 0),
+            precision="float32",
+        )
+        src64 = np.array([[1 / 3, 2 / 3, 0.1]], dtype=np.float64)
+        pc.points = src64  # type: ignore
+        assert pc.points.dtype == np.float32
+        # Values match the float32 downcast (i.e. genuinely re-cast, not stored
+        # as float64).
+        assert np.array_equal(pc.points, src64.astype(np.float32))
+
+        # precision="float16": a float32 array -- which *is* allowed by the
+        # `points` type annotation -- is still coerced down to float16.
+        pc16 = server.scene.add_point_cloud(
+            "/pc16",
+            points=np.zeros((3, 3)),
+            colors=(255, 0, 0),
+            precision="float16",
+        )
+        pc16.points = np.array([[0.1, 0.2, 0.3]], dtype=np.float32)
+        assert pc16.points.dtype == np.float16
+    finally:
+        server.stop()
