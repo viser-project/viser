@@ -178,6 +178,57 @@ def test_line_segments_single_color(
 
 # --- Transform controls ---
 
+JS_FIND_TRANSFORM_HANDLE = """
+() => {
+    const m = window.__viserMutable;
+    const cam = m.camera;
+    const rect = m.canvas.getBoundingClientRect();
+    const Vector3 = cam.position.constructor;
+    const toScreen = (v) => {
+        const n = v.clone().project(cam);
+        return [
+            rect.left + (n.x * 0.5 + 0.5) * rect.width,
+            rect.top + (-n.y * 0.5 + 0.5) * rect.height,
+        ];
+    };
+
+    m.scene.updateWorldMatrix(true, true);
+    let bestRoot = null;
+    let bestHandles = [];
+    m.scene.traverse((root) => {
+        if (root.type !== "Group" || root.matrixAutoUpdate !== false) return;
+        const handles = [];
+        root.traverse((o) => {
+            if (o.isMesh && o.geometry?.type === "CylinderGeometry") {
+                const worldPosition = new Vector3();
+                o.getWorldPosition(worldPosition);
+                handles.push(worldPosition);
+            }
+        });
+        if (handles.length > bestHandles.length) {
+            bestRoot = root;
+            bestHandles = handles;
+        }
+    });
+    if (bestRoot === null || bestHandles.length === 0) return null;
+
+    const centerWorld = new Vector3();
+    bestRoot.getWorldPosition(centerWorld);
+    const center = toScreen(centerWorld);
+    let handle = null;
+    let bestDistance = -1;
+    for (const worldPosition of bestHandles) {
+        const screen = toScreen(worldPosition);
+        const distance = Math.hypot(screen[0] - center[0], screen[1] - center[1]);
+        if (distance > bestDistance) {
+            bestDistance = distance;
+            handle = screen;
+        }
+    }
+    return { center, handle };
+}
+"""
+
 
 def test_transform_controls_in_scene(
     viser_server: viser.ViserServer,
@@ -207,6 +258,46 @@ def test_transform_controls_with_options(
     )
 
     wait_for_scene_node(viser_page, "/test_transform_opts")
+
+
+def test_fixed_transform_controls_first_drag_works(
+    viser_server: viser.ViserServer,
+    viser_page: Page,
+) -> None:
+    """A fixed-size transform control added to an already-open viewer should be
+    draggable on the first attempt, before any prior interaction has forced a
+    render-frame scale update."""
+    handle = viser_server.scene.add_transform_controls(
+        "/first_drag_transform",
+        fixed=True,
+        scale=20.0,
+        disable_sliders=True,
+        disable_rotations=True,
+    )
+    wait_for_scene_node(viser_page, "/first_drag_transform")
+
+    screen_handle = viser_page.evaluate(JS_FIND_TRANSFORM_HANDLE)
+    assert screen_handle is not None, "transform control handle not found"
+    cx, cy = screen_handle["center"]
+    hx, hy = screen_handle["handle"]
+    dx, dy = hx - cx, hy - cy
+    length = math.hypot(dx, dy) or 1.0
+
+    viser_page.mouse.move(hx, hy)
+    viser_page.mouse.down()
+    viser_page.mouse.move(
+        hx + dx / length * 120,
+        hy + dy / length * 120,
+        steps=15,
+    )
+    viser_page.mouse.up()
+    viser_page.wait_for_timeout(500)
+
+    moved = math.sqrt(sum(float(x) ** 2 for x in handle.position))
+    assert moved > 0.1, (
+        "first transform-control drag did not move the control; "
+        "fixed-size handle matrices were likely initialized lazily"
+    )
 
 
 def test_transform_controls_remove(

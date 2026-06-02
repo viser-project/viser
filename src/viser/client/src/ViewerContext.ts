@@ -47,8 +47,23 @@ export type ViewerMutable = {
 
   // Message and rendering state.
   messageQueue: Message[];
+  // True until the first message batch of the current connection is processed.
+  // Reset to true on every (re)connect so the root-orientation-first ordering
+  // hack runs again. Lives here (not a component ref) so WebsocketInterface can
+  // reset it on reconnect.
+  firstMessageBatch: boolean;
   getRenderRequestState: "ready" | "triggered" | "pause" | "in_progress";
   getRenderRequest: null | GetRenderRequestMessage;
+
+  // Diagnostic snapshot for the initial-camera / scene-orientation flow,
+  // exposed via window.__viserMutable for e2e tests + debugging. See
+  // initial_pose_and_scene_orientation.md. `rootWxyzAtCapture` is the root
+  // node's orientation observed when SynchronizedCameraControls captured
+  // `initialT` at mount -- a mount-ordering race would leave this at identity
+  // [1,0,0,0] instead of the +Z-up default [0.5,-0.5,0.5,0.5].
+  initialCameraDiagnostic: {
+    rootWxyzAtCapture: [number, number, number, number];
+  } | null;
 
   // Skinned mesh state.
   skinnedMeshState: {

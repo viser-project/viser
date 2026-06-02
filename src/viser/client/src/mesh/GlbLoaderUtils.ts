@@ -31,25 +31,59 @@ export function disposeNode(node: any) {
  * Custom hook for loading a GLB model.
  */
 export function useGlbLoader(glb_data: Uint8Array) {
-  // State for loaded model and meshes.
-  const [gltf, setGltf] = React.useState<GLTF>();
-  const [meshes, setMeshes] = React.useState<THREE.Mesh[]>([]);
-  // Per-mesh transforms relative to the gltf.scene root. These capture
-  // ancestor node transforms (e.g. translations on glTF nodes) that are not
-  // present in mesh.position/mesh.geometry alone.
-  const [meshMatrices, setMeshMatrices] = React.useState<THREE.Matrix4[]>([]);
+  // State for loaded model and meshes, tagged by the exact input object they
+  // were parsed from. On a `glb_data` change, render must stop returning the
+  // previous scene immediately: the old load's cleanup can dispose it before
+  // the new parse completes.
+  const [loaded, setLoaded] = React.useState<
+    | {
+        source: Uint8Array;
+        gltf: GLTF;
+        meshes: THREE.Mesh[];
+        // Per-mesh transforms relative to the gltf.scene root. These capture
+        // ancestor node transforms (e.g. translations on glTF nodes) that are
+        // not present in mesh.position/mesh.geometry alone.
+        meshMatrices: THREE.Matrix4[];
+      }
+    | undefined
+  >();
 
   // Animation mixer reference.
   const mixerRef = React.useRef<THREE.AnimationMixer | null>(null);
 
   // Load the GLB model.
   React.useEffect(() => {
+    // Tracks teardown so an async parse that resolves after unmount (or after
+    // ``glb_data`` changes) neither updates state nor leaks GPU resources.
+    let cancelled = false;
+    // The parsed scene, captured in effect scope so cleanup disposes the
+    // *actual* loaded resources. (Reading the ``gltf`` state in cleanup would
+    // capture the render-time value, which is always ``undefined`` here since
+    // it's set asynchronously -- so nothing would ever be disposed.)
+    let loadedScene: THREE.Object3D | null = null;
+
+    // Drop the stale result from state as soon as effects run. The return value
+    // below also gates by source identity, so stale data is hidden during the
+    // render that happens before this effect/cleanup pair runs.
+    setLoaded((current) =>
+      current?.source === glb_data ? current : undefined,
+    );
+
     const loader = new GLTFLoader();
     loader.setDRACOLoader(dracoLoader);
     loader.parse(
       new Uint8Array(glb_data).buffer,
       "",
       (gltf) => {
+        if (cancelled) {
+          // Unmounted/changed before the parse finished: dispose the freshly
+          // parsed resources rather than leaking them, and skip the state
+          // updates (which would warn and write into a dead component).
+          gltf.scene.traverse(disposeNode);
+          return;
+        }
+        loadedScene = gltf.scene;
+
         // Setup animations if present.
         if (gltf.animations && gltf.animations.length) {
           mixerRef.current = new THREE.AnimationMixer(gltf.scene);
@@ -83,9 +117,12 @@ export function useGlbLoader(glb_data: Uint8Array) {
           }
         });
 
-        setMeshes(meshes);
-        setMeshMatrices(meshMatrices);
-        setGltf(gltf);
+        setLoaded({
+          source: glb_data,
+          gltf,
+          meshes,
+          meshMatrices,
+        });
       },
       (error) => {
         console.log("Error loading GLB!");
@@ -95,16 +132,26 @@ export function useGlbLoader(glb_data: Uint8Array) {
 
     // Cleanup function.
     return () => {
-      if (mixerRef.current) mixerRef.current.stopAllAction();
-
-      // Attempt to free resources.
-      if (gltf) {
-        gltf.scene.traverse(disposeNode);
+      cancelled = true;
+      if (mixerRef.current) {
+        mixerRef.current.stopAllAction();
+        mixerRef.current = null;
+      }
+      // Free the GPU resources owned by this load. If the parse hasn't
+      // resolved yet, the ``cancelled`` branch above disposes them instead.
+      if (loadedScene) {
+        loadedScene.traverse(disposeNode);
       }
     };
   }, [glb_data]);
 
   // Return the loaded model, meshes, per-mesh matrices, and mixer for
   // animation updates.
-  return { gltf, meshes, meshMatrices, mixerRef };
+  const current = loaded?.source === glb_data ? loaded : undefined;
+  return {
+    gltf: current?.gltf,
+    meshes: current?.meshes ?? [],
+    meshMatrices: current?.meshMatrices ?? [],
+    mixerRef,
+  };
 }

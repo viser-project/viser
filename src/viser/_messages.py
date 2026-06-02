@@ -679,9 +679,9 @@ class PointCloudProps:
     point_shape: Literal["square", "diamond", "circle", "rounded", "sparkle"]
     """Shape to draw each point."""
     precision: Annotated[Literal["float16", "float32"], infra.EditorHidden()]
-    """Precision of the point cloud. Assignments to `points` are automatically casted
-    based on the current precision value. Updates to `points` should therefore happen
-    *after* updates to `precision`."""
+    """Precision used to store point positions. Assignments to `points` are cast to
+    the current precision, and changing `precision` re-casts the existing `points`
+    buffer in place, so `precision` and `points` can be assigned in either order."""
     scale: Union[float, Tuple[float, float, float]] = 1.0
     """Scale of the point cloud. A single float for uniform scaling or a
     tuple of (x, y, z) for per-axis scaling."""
@@ -2135,12 +2135,18 @@ class GetRenderRequestMessage(Message, include_in_scene_serialization=False):
     position: Tuple[float, float, float]
     fov: float
 
+    # Correlation ID echoed back in the response, so concurrent get_render()
+    # calls on the same client can be matched to their responses.
+    render_uuid: str
+
 
 @dataclasses.dataclass
 class GetRenderResponseMessage(Message, include_in_scene_serialization=False):
     """Message from client->server carrying a render."""
 
     payload: bytes
+    # Correlation ID matching the originating GetRenderRequestMessage.
+    render_uuid: str
 
 
 @dataclasses.dataclass

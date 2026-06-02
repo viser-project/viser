@@ -166,64 +166,95 @@ function decodeHybridMessage(
 
       // Try our best to handle messages in order. If this takes more than 10 seconds, we give up. :)
       const jsReceivedMs = performance.now();
-      await orderLock.acquireAsync({ timeout: 10000 }).catch(() => {
-        console.log("Order lock timed out.");
-        orderLock.release();
-      });
-      const data = await dataPromise;
+      let acquiredLock = false;
+      try {
+        await orderLock.acquireAsync({ timeout: 10000 });
+        acquiredLock = true;
+      } catch {
+        // Timed out waiting for the in-order slot. Proceed without the lock
+        // (out of order) rather than calling release() on a lock we never
+        // acquired -- that would release another waiter's hold and corrupt the
+        // ordering state.
+        console.log("Order lock timed out; processing message out of order.");
+      }
+      // Once the lock is acquired the release happens in `sendFn` (which may
+      // be deferred via setTimeout). If anything between here and scheduling
+      // `sendFn` throws -- e.g. decode fails -- we must still release, or the
+      // lock stays held and every subsequent message times out.
+      try {
+        const data = await dataPromise;
 
-      // Compute offset between JavaScript and Python time.
-      state.jsTimeMinusPythonTime = Math.min(
-        jsReceivedMs - data.timestampSec * 1000,
-        state.jsTimeMinusPythonTime,
-      );
+        // Compute offset between JavaScript and Python time.
+        state.jsTimeMinusPythonTime = Math.min(
+          jsReceivedMs - data.timestampSec * 1000,
+          state.jsTimeMinusPythonTime,
+        );
 
-      // Function to send the message and release the order lock.
-      const messages = data.messages;
-      // All typed array views point into the original WebSocket ArrayBuffer.
-      // Transfer just that buffer instead of walking the entire message tree.
-      const sendFn = () => {
-        postOutgoing({ type: "message_batch", messages: messages }, [
-          data.buffer,
-        ]);
-        orderLock.release();
-      };
+        // Function to send the message and release the order lock.
+        const messages = data.messages;
+        // All typed array views point into the original WebSocket ArrayBuffer.
+        // Transfer just that buffer instead of walking the entire message tree.
+        const sendFn = () => {
+          try {
+            postOutgoing({ type: "message_batch", messages: messages }, [
+              data.buffer,
+            ]);
+          } catch (e) {
+            // `sendFn` can run later from setTimeout, outside the catch below.
+            // Log and still release the lock so one bad post cannot wedge all
+            // later message ordering.
+            console.error("Failed to post incoming message batch:", e);
+          } finally {
+            // Only release if we actually acquired the lock above.
+            if (acquiredLock) {
+              orderLock.release();
+              acquiredLock = false;
+            }
+          }
+        };
 
-      // Calculate timing deltas between Python and JavaScript.
-      const jsNowMs = performance.now();
-      const currentPythonTimestampMs = data.timestampSec * 1000;
-      const pythonTimeDeltaMs =
-        currentPythonTimestampMs -
-        (state.prevPythonTimestampMs ?? currentPythonTimestampMs);
-      state.prevPythonTimestampMs = currentPythonTimestampMs;
+        // Calculate timing deltas between Python and JavaScript.
+        const jsNowMs = performance.now();
+        const currentPythonTimestampMs = data.timestampSec * 1000;
+        const pythonTimeDeltaMs =
+          currentPythonTimestampMs -
+          (state.prevPythonTimestampMs ?? currentPythonTimestampMs);
+        state.prevPythonTimestampMs = currentPythonTimestampMs;
 
-      if (
-        // Flush immediately for first message.
-        state.lastIdealJsMs === undefined ||
-        // Flush immediately if the Python delta is large, in this case we're
-        // probably not sensitive to exact timing.
-        pythonTimeDeltaMs > 100 ||
-        // Flush if we're more than 100ms behind real-time.
-        jsNowMs - state.jsTimeMinusPythonTime - currentPythonTimestampMs > 100
-      ) {
-        // First message or no expected delta, send immediately.
-        sendFn();
-        state.lastIdealJsMs = jsNowMs;
-      } else {
-        // For messages that are being sent frequently: smooth out the sending rate.
-        const idealNextSendTimeMs = state.lastIdealJsMs + pythonTimeDeltaMs;
-        const timeUntilIdealJsMs = idealNextSendTimeMs - jsNowMs;
-
-        if (timeUntilIdealJsMs > 3) {
-          // We're early! This means the previous message was processed late...
-          const dampingFactor = 0.95;
-          setTimeout(sendFn, timeUntilIdealJsMs * dampingFactor);
-          state.lastIdealJsMs =
-            state.lastIdealJsMs + pythonTimeDeltaMs * dampingFactor;
-        } else {
-          // Message is on-time or late: send immediately.
+        if (
+          // Flush immediately for first message.
+          state.lastIdealJsMs === undefined ||
+          // Flush immediately if the Python delta is large, in this case we're
+          // probably not sensitive to exact timing.
+          pythonTimeDeltaMs > 100 ||
+          // Flush if we're more than 100ms behind real-time.
+          jsNowMs - state.jsTimeMinusPythonTime - currentPythonTimestampMs > 100
+        ) {
+          // First message or no expected delta, send immediately.
           sendFn();
           state.lastIdealJsMs = jsNowMs;
+        } else {
+          // For messages that are being sent frequently: smooth out the sending rate.
+          const idealNextSendTimeMs = state.lastIdealJsMs + pythonTimeDeltaMs;
+          const timeUntilIdealJsMs = idealNextSendTimeMs - jsNowMs;
+
+          if (timeUntilIdealJsMs > 3) {
+            // We're early! This means the previous message was processed late...
+            const dampingFactor = 0.95;
+            setTimeout(sendFn, timeUntilIdealJsMs * dampingFactor);
+            state.lastIdealJsMs =
+              state.lastIdealJsMs + pythonTimeDeltaMs * dampingFactor;
+          } else {
+            // Message is on-time or late: send immediately.
+            sendFn();
+            state.lastIdealJsMs = jsNowMs;
+          }
+        }
+      } catch (e) {
+        console.error("Failed to process incoming message:", e);
+        if (acquiredLock) {
+          orderLock.release();
+          acquiredLock = false;
         }
       }
     };
@@ -233,7 +264,12 @@ function decodeHybridMessage(
     const data: WsWorkerIncoming = e.data;
 
     if (data.type === "send") {
-      ws!.send(msgpack.encode(data.message));
+      // The socket can be null (not yet connected) or closing/closed by the
+      // time a send arrives; only send when it's actually open, otherwise drop
+      // it rather than throwing in the worker.
+      if (ws !== null && ws.readyState === WebSocket.OPEN) {
+        ws.send(msgpack.encode(data.message));
+      }
     } else if (data.type === "set_server") {
       server = data.server;
       tryConnect();

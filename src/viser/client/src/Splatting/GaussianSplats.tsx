@@ -168,7 +168,7 @@ function SplatRendererImpl() {
   const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
 
   // Consolidate Gaussian groups into a single buffer.
-  // Memoized on groupBufferFromId reference -- zustand returns the same
+  // Memoized on groupBufferFromId reference -- the store returns the same
   // reference when state hasn't changed, so this avoids re-merging every render.
   const merged = React.useMemo(
     () => mergeGaussianGroups(groupBufferFromId),

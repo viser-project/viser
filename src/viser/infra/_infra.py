@@ -250,7 +250,10 @@ class WebsockMessageHandler:
     ) -> None:
         """Handle incoming messages."""
         if type(message) in self._incoming_handlers:
-            for cb in self._incoming_handlers[type(message)]:
+            # Snapshot the list: a handler may unregister itself mid-dispatch
+            # (e.g. get_render's response callback), which would otherwise skip
+            # the next handler in a live iteration.
+            for cb in list(self._incoming_handlers[type(message)]):
                 if asyncio.iscoroutinefunction(cb):
                     await cb(client_id, message)
                 else:
@@ -279,9 +282,16 @@ class WebsockMessageHandler:
             Context manager.
         """
         # If called multiple times in the same thread, we ignore inner calls.
-        self.get_message_buffer().atomic_start()
-        yield
-        self.get_message_buffer().atomic_end()
+        #
+        # try/finally so an exception raised inside the `with` body still
+        # decrements the counter. Otherwise atomic_end() is skipped and the
+        # counter stays stuck != 0, stalling message delivery permanently.
+        buffer = self.get_message_buffer()
+        buffer.atomic_start()
+        try:
+            yield
+        finally:
+            buffer.atomic_end()
 
 
 class WebsockClientConnection(WebsockMessageHandler):
@@ -534,6 +544,12 @@ class WebsockServer(WebsockMessageHandler):
                 websockets.exceptions.ConnectionClosedOK,
                 websockets.exceptions.ConnectionClosedError,
             ):
+                # Expected disconnects -- swallow. Any other exit (CancelledError
+                # on shutdown, an exception from a producer/consumer) still runs
+                # the teardown below via `finally`, so client state can't leak
+                # and disconnect callbacks always fire.
+                pass
+            finally:
                 # We use a sentinel value to signal that the client producer thread
                 # should exit.
                 #
@@ -542,16 +558,19 @@ class WebsockServer(WebsockMessageHandler):
                 # pending" error.
                 client_state.message_buffer.set_done()
 
+                # Remove client state up front, before the disconnect callbacks:
+                # a callback that raises (or a CancelledError delivered at an
+                # `await` inside this finally) must not be able to skip it and
+                # leak the client. `pop(..., None)` keeps this idempotent.
+                self._client_state_from_id.pop(client_id, None)
+                total_connections -= 1
+
                 # Disconnection callbacks.
                 for cb in self._client_disconnect_cb:
                     if asyncio.iscoroutinefunction(cb):
                         await cb(client_connection)
                     else:
                         cb(client_connection)
-
-                # Cleanup.
-                self._client_state_from_id.pop(client_id)
-                total_connections -= 1
                 if self._verbose:
                     rich.print(
                         f"[bold](viser)[/bold] Connection closed ({client_id},"

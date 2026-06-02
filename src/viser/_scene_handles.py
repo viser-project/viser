@@ -9,7 +9,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
     Generic,
     Literal,
     Optional,
@@ -865,18 +864,22 @@ class PointCloudHandle(
     """Handle for point clouds. Does not support click events."""
 
     @override
-    def _cast_array_dtypes(
-        self,
-        prop_hints: Dict[str, Any],
-        prop_name: str,
-        value: np.ndarray,
-    ) -> np.ndarray:
-        """Casts assigned `points` based on the current value of `precision`."""
-        if prop_name == "points":
-            return value.astype(
-                {"float16": np.float16, "float32": np.float32}[self.precision]
-            )
-        return super()._cast_array_dtypes(prop_hints, prop_name, value)
+    def _on_prop_assigned(self, name: str) -> None:
+        # `points` is stored at the dtype named by `precision`, so re-cast the
+        # buffer in place whenever `precision` changes. This both keeps the
+        # cloud consistent and means a subsequent `points` assignment won't be
+        # pinned back to the old dtype by the generic setter -- so `precision`
+        # and `points` can be assigned in either order.
+        if name != "precision":
+            return
+        dtype = {"float16": np.float16, "float32": np.float32}[
+            self._impl.props.precision
+        ]
+        points = self._impl.props.points
+        if points.dtype != dtype:
+            new_points = points.astype(dtype)
+            self._impl.props.points = new_points
+            self._queue_update("points", new_points)
 
 
 class BatchedAxesHandle(

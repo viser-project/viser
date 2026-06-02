@@ -157,7 +157,10 @@ export const BatchedMeshBase = React.forwardRef<
     // Create new InstancedMesh2.
     const instanceCount =
       props.batched_positions.byteLength / (3 * Float32Array.BYTES_PER_ELEMENT);
-    const newMesh = new InstancedMesh2(props.geometry.clone(), props.material, {
+    // We own this clone of the geometry; it must be disposed in cleanup since
+    // InstancedMesh2.dispose() only frees its internal textures, not geometry.
+    const ownedGeometry = props.geometry.clone();
+    const newMesh = new InstancedMesh2(ownedGeometry, props.material, {
       capacity: instanceCount,
       renderer: gl,
     });
@@ -189,6 +192,9 @@ export const BatchedMeshBase = React.forwardRef<
       // Cleanup on unmount or when dependencies change.
       newMesh.disposeBVH();
       newMesh.dispose();
+      // InstancedMesh2.dispose() frees its textures but not its geometry, so
+      // dispose the clone we created.
+      ownedGeometry.dispose();
       // Dispose LOD resources captured via closure.
       lodGeometries.forEach((geometry) => geometry.dispose());
       lodMaterials.forEach((material) => material.dispose());

@@ -22,14 +22,16 @@ export const BatchedGlbAsset = React.forwardRef<
 >(function BatchedGlbAsset({ children, ...message }, ref) {
   const viewer = React.useContext(ViewerContext)!;
   const clickable =
-    (viewer.useSceneTree(message.name, (node) => node?.clickBindings?.length)
-      ?? 0) > 0;
+    (viewer.useSceneTree(message.name, (node) => node?.clickBindings?.length) ??
+      0) > 0;
   const draggable =
-    (viewer.useSceneTree(
-      message.name,
-      (node) => node?.dragBindings,
-      shallowArrayEqual,
-    ) ?? []).length > 0;
+    (
+      viewer.useSceneTree(
+        message.name,
+        (node) => node?.dragBindings,
+        shallowArrayEqual,
+      ) ?? []
+    ).length > 0;
 
   // Note: We don't support animations for batched meshes.
   const { gltf } = useGlbLoader(message.props.glb_data);
@@ -64,6 +66,16 @@ export const BatchedGlbAsset = React.forwardRef<
       material: finalMaterial,
     };
   }, [gltf]);
+
+  // `mergedGeometry` is owned here (a clone/merge of the source geometries);
+  // BatchedMeshBase clones it again rather than taking ownership, so we must
+  // free it when it changes or on unmount. The source materials/geometries are
+  // disposed by useGlbLoader's own cleanup.
+  React.useEffect(() => {
+    return () => {
+      geometry?.dispose();
+    };
+  }, [geometry]);
 
   if (!geometry || !material) return null;
 
