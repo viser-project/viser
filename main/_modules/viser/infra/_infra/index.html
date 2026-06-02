@@ -702,7 +702,10 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Handle incoming messages.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">message</span><span class="p">)</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_incoming_handlers</span><span class="p">:</span>
-            <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_incoming_handlers</span><span class="p">[</span><span class="nb">type</span><span class="p">(</span><span class="n">message</span><span class="p">)]:</span>
+            <span class="c1"># Snapshot the list: a handler may unregister itself mid-dispatch</span>
+            <span class="c1"># (e.g. get_render&#39;s response callback), which would otherwise skip</span>
+            <span class="c1"># the next handler in a live iteration.</span>
+            <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_incoming_handlers</span><span class="p">[</span><span class="nb">type</span><span class="p">(</span><span class="n">message</span><span class="p">)]):</span>
                 <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
                     <span class="k">await</span> <span class="n">cb</span><span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
@@ -739,9 +742,16 @@
 <span class="sd">            Context manager.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># If called multiple times in the same thread, we ignore inner calls.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">get_message_buffer</span><span class="p">()</span><span class="o">.</span><span class="n">atomic_start</span><span class="p">()</span>
-        <span class="k">yield</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">get_message_buffer</span><span class="p">()</span><span class="o">.</span><span class="n">atomic_end</span><span class="p">()</span></div>
+        <span class="c1">#</span>
+        <span class="c1"># try/finally so an exception raised inside the `with` body still</span>
+        <span class="c1"># decrements the counter. Otherwise atomic_end() is skipped and the</span>
+        <span class="c1"># counter stays stuck != 0, stalling message delivery permanently.</span>
+        <span class="n">buffer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_message_buffer</span><span class="p">()</span>
+        <span class="n">buffer</span><span class="o">.</span><span class="n">atomic_start</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">yield</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">buffer</span><span class="o">.</span><span class="n">atomic_end</span><span class="p">()</span></div>
 </div>
 
 
@@ -1025,6 +1035,12 @@
                 <span class="n">websockets</span><span class="o">.</span><span class="n">exceptions</span><span class="o">.</span><span class="n">ConnectionClosedOK</span><span class="p">,</span>
                 <span class="n">websockets</span><span class="o">.</span><span class="n">exceptions</span><span class="o">.</span><span class="n">ConnectionClosedError</span><span class="p">,</span>
             <span class="p">):</span>
+                <span class="c1"># Expected disconnects -- swallow. Any other exit (CancelledError</span>
+                <span class="c1"># on shutdown, an exception from a producer/consumer) still runs</span>
+                <span class="c1"># the teardown below via `finally`, so client state can&#39;t leak</span>
+                <span class="c1"># and disconnect callbacks always fire.</span>
+                <span class="k">pass</span>
+            <span class="k">finally</span><span class="p">:</span>
                 <span class="c1"># We use a sentinel value to signal that the client producer thread</span>
                 <span class="c1"># should exit.</span>
                 <span class="c1">#</span>
@@ -1033,16 +1049,19 @@
                 <span class="c1"># pending&quot; error.</span>
                 <span class="n">client_state</span><span class="o">.</span><span class="n">message_buffer</span><span class="o">.</span><span class="n">set_done</span><span class="p">()</span>
 
+                <span class="c1"># Remove client state up front, before the disconnect callbacks:</span>
+                <span class="c1"># a callback that raises (or a CancelledError delivered at an</span>
+                <span class="c1"># `await` inside this finally) must not be able to skip it and</span>
+                <span class="c1"># leak the client. `pop(..., None)` keeps this idempotent.</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_client_state_from_id</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="n">total_connections</span> <span class="o">-=</span> <span class="mi">1</span>
+
                 <span class="c1"># Disconnection callbacks.</span>
                 <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_client_disconnect_cb</span><span class="p">:</span>
                     <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
                         <span class="k">await</span> <span class="n">cb</span><span class="p">(</span><span class="n">client_connection</span><span class="p">)</span>
                     <span class="k">else</span><span class="p">:</span>
                         <span class="n">cb</span><span class="p">(</span><span class="n">client_connection</span><span class="p">)</span>
-
-                <span class="c1"># Cleanup.</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_client_state_from_id</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">client_id</span><span class="p">)</span>
-                <span class="n">total_connections</span> <span class="o">-=</span> <span class="mi">1</span>
                 <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_verbose</span><span class="p">:</span>
                     <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span>
                         <span class="sa">f</span><span class="s2">&quot;[bold](viser)[/bold] Connection closed (</span><span class="si">{</span><span class="n">client_id</span><span class="si">}</span><span class="s2">,&quot;</span>

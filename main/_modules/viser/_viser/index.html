@@ -1112,20 +1112,34 @@
 
         <span class="n">connection</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_connection</span>
 
+        <span class="n">render_uuid</span> <span class="o">=</span> <span class="n">_make_uuid</span><span class="p">()</span>
+
         <span class="k">def</span><span class="w"> </span><span class="nf">got_render_cb</span><span class="p">(</span>
             <span class="n">client_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">GetRenderResponseMessage</span>
         <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">del</span> <span class="n">client_id</span>
+            <span class="c1"># Ignore responses for other concurrent get_render() calls on this</span>
+            <span class="c1"># client; only ours matches our request&#39;s uuid.</span>
+            <span class="k">if</span> <span class="n">message</span><span class="o">.</span><span class="n">render_uuid</span> <span class="o">!=</span> <span class="n">render_uuid</span><span class="p">:</span>
+                <span class="k">return</span>
             <span class="n">connection</span><span class="o">.</span><span class="n">unregister_handler</span><span class="p">(</span>
                 <span class="n">_messages</span><span class="o">.</span><span class="n">GetRenderResponseMessage</span><span class="p">,</span> <span class="n">got_render_cb</span>
             <span class="p">)</span>
             <span class="k">nonlocal</span> <span class="n">out</span>
-            <span class="kn">import</span><span class="w"> </span><span class="nn">imageio.v3</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">iio</span>
+            <span class="c1"># An empty payload is the client&#39;s failure sentinel (capture threw,</span>
+            <span class="c1"># or toBlob() returned null). Leave `out` as None and let the</span>
+            <span class="c1"># waiter raise, rather than crashing the decode here (which would</span>
+            <span class="c1"># never set the event and hang get_render() forever).</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="kn">import</span><span class="w"> </span><span class="nn">imageio.v3</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">iio</span>
 
-            <span class="n">out</span> <span class="o">=</span> <span class="n">iio</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span>
-                <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
-                <span class="n">extension</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;.</span><span class="si">{</span><span class="n">transport_format</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
-            <span class="p">)</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">out</span> <span class="o">=</span> <span class="n">iio</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span>
+                        <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
+                        <span class="n">extension</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;.</span><span class="si">{</span><span class="n">transport_format</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                    <span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="n">out</span> <span class="o">=</span> <span class="kc">None</span>
             <span class="n">render_ready_event</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
 
         <span class="n">connection</span><span class="o">.</span><span class="n">register_handler</span><span class="p">(</span><span class="n">_messages</span><span class="o">.</span><span class="n">GetRenderResponseMessage</span><span class="p">,</span> <span class="n">got_render_cb</span><span class="p">)</span>
@@ -1143,10 +1157,14 @@
                 <span class="p">),</span>
                 <span class="n">wxyz</span><span class="o">=</span><span class="n">cast_vector</span><span class="p">(</span><span class="n">wxyz</span> <span class="k">if</span> <span class="n">wxyz</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">camera</span><span class="o">.</span><span class="n">wxyz</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
                 <span class="n">fov</span><span class="o">=</span><span class="n">fov</span> <span class="k">if</span> <span class="n">fov</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">camera</span><span class="o">.</span><span class="n">fov</span><span class="p">,</span>
+                <span class="n">render_uuid</span><span class="o">=</span><span class="n">render_uuid</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="p">)</span>
         <span class="n">render_ready_event</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
-        <span class="k">assert</span> <span class="n">out</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">out</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;Render request failed: the client could not capture a frame.&quot;</span>
+            <span class="p">)</span>
         <span class="k">return</span> <span class="n">out</span></div>
 </div>
 

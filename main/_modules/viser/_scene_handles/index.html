@@ -435,7 +435,6 @@
     <span class="n">TYPE_CHECKING</span><span class="p">,</span>
     <span class="n">Any</span><span class="p">,</span>
     <span class="n">Callable</span><span class="p">,</span>
-    <span class="n">Dict</span><span class="p">,</span>
     <span class="n">Generic</span><span class="p">,</span>
     <span class="n">Literal</span><span class="p">,</span>
     <span class="n">Optional</span><span class="p">,</span>
@@ -1341,18 +1340,22 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Handle for point clouds. Does not support click events.&quot;&quot;&quot;</span>
 
     <span class="nd">@override</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">_cast_array_dtypes</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">prop_hints</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
-        <span class="n">prop_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-        <span class="n">value</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Casts assigned `points` based on the current value of `precision`.&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="n">prop_name</span> <span class="o">==</span> <span class="s2">&quot;points&quot;</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">value</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span>
-                <span class="p">{</span><span class="s2">&quot;float16&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">float16</span><span class="p">,</span> <span class="s2">&quot;float32&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">}[</span><span class="bp">self</span><span class="o">.</span><span class="n">precision</span><span class="p">]</span>
-            <span class="p">)</span>
-        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_cast_array_dtypes</span><span class="p">(</span><span class="n">prop_hints</span><span class="p">,</span> <span class="n">prop_name</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span></div>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_on_prop_assigned</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># `points` is stored at the dtype named by `precision`, so re-cast the</span>
+        <span class="c1"># buffer in place whenever `precision` changes. This both keeps the</span>
+        <span class="c1"># cloud consistent and means a subsequent `points` assignment won&#39;t be</span>
+        <span class="c1"># pinned back to the old dtype by the generic setter -- so `precision`</span>
+        <span class="c1"># and `points` can be assigned in either order.</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="o">!=</span> <span class="s2">&quot;precision&quot;</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">dtype</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;float16&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">float16</span><span class="p">,</span> <span class="s2">&quot;float32&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">}[</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">props</span><span class="o">.</span><span class="n">precision</span>
+        <span class="p">]</span>
+        <span class="n">points</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">props</span><span class="o">.</span><span class="n">points</span>
+        <span class="k">if</span> <span class="n">points</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">dtype</span><span class="p">:</span>
+            <span class="n">new_points</span> <span class="o">=</span> <span class="n">points</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">dtype</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">props</span><span class="o">.</span><span class="n">points</span> <span class="o">=</span> <span class="n">new_points</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_queue_update</span><span class="p">(</span><span class="s2">&quot;points&quot;</span><span class="p">,</span> <span class="n">new_points</span><span class="p">)</span></div>
 
 
 
