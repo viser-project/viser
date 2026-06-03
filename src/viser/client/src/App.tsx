@@ -464,6 +464,12 @@ function ColorSchemeSetter(props: { darkMode: boolean }) {
  * Notifications panel with fixed styling.
  */
 function NotificationsPanel() {
+  const { dock, expanded } = React.useContext(DockContext);
+  // Notifications sit at the top-left. When the control panel is docked on the
+  // left (and expanded, so it actually reserves that column), shift them right
+  // by the panel's width so they appear over the canvas instead of covering the
+  // GUI. A right/none dock leaves the top-left clear, so no offset is needed.
+  const dockedLeft = dock.side === "left" && expanded;
   return (
     <Notifications
       position="top-left"
@@ -475,7 +481,7 @@ function NotificationsPanel() {
           boxShadow: "0.1em 0 1em 0 rgba(0,0,0,0.1) !important",
           position: "absolute",
           top: "1em",
-          left: "1em",
+          left: dockedLeft ? `calc(${dock.width} + 1em)` : "1em",
           pointerEvents: "none",
         },
         notification: {

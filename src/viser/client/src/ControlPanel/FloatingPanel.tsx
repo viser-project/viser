@@ -3,10 +3,30 @@
 import { Box, Collapse, Divider, Paper, ScrollArea } from "@mantine/core";
 import React from "react";
 import { DockContext, DockSide } from "./DockContext";
+import { motionExceedsThreshold } from "../dragUtils";
+
+/** Bind a pointer gesture's move/end/cancel listeners on `window` and return a
+ * detach function. Both the drag and resize gestures capture the pointer on an
+ * element but listen on `window` so the gesture survives the cursor leaving it;
+ * they share this move + (up/cancel -> end) wiring. */
+function bindPointerGesture(
+  onMove: (event: PointerEvent) => void,
+  onEnd: () => void,
+): () => void {
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onEnd);
+  window.addEventListener("pointercancel", onEnd);
+  return () => {
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onEnd);
+    window.removeEventListener("pointercancel", onEnd);
+  };
+}
 
 // How close (in px) the pointer needs to get to a parent edge before we offer
-// to dock to that edge.
-const dockThreshold = 48;
+// to dock to that edge. A generous zone makes docking easy to trigger -- you
+// don't have to drag all the way into the edge.
+const dockThreshold = 64;
 
 // Bounds for user resizing of the panel width. The minimum matches the
 // smallest preset control width ("small" = 16em), resolved against the panel's
@@ -15,6 +35,13 @@ const minWidthEm = 16;
 const maxWidthHardCapPx = 600;
 // Keep at least this much of the parent visible next to the panel.
 const resizeParentPad = 100;
+// Invisible resize grip at each edge. It straddles the panel border, sitting
+// mostly *outside* the panel so it doesn't overlap the scrollbar (which stays
+// at the panel's inner edge) -- you grab just at/past the edge to resize.
+const resizeGripWidth = "0.7em";
+// How far the grip pokes past the panel edge (must be <= resizeGripWidth). The
+// small remainder stays inside, so grabbing right on the border still works.
+const resizeGripOutset = "0.55em";
 
 const FloatingPanelContext = React.createContext<null | {
   wrapperRef: React.RefObject<HTMLDivElement>;
@@ -23,13 +50,7 @@ const FloatingPanelContext = React.createContext<null | {
   maxHeight: number;
   toggleExpanded: () => void;
   dragHandler: (event: React.PointerEvent<HTMLDivElement>) => void;
-  dragInfo: React.MutableRefObject<{
-    dragging: boolean;
-    startPosX: number;
-    startPosY: number;
-    startClientX: number;
-    startClientY: number;
-  }>;
+  dragInfo: React.MutableRefObject<{ dragging: boolean }>;
 }>(null);
 
 /** A floating panel for displaying controls. */
@@ -37,7 +58,7 @@ export default function FloatingPanel({
   children,
   width,
 }: {
-  children: string | React.ReactNode;
+  children: React.ReactNode;
   width: string;
 }) {
   const panelWrapperRef = React.useRef<HTMLDivElement>(null);
@@ -55,20 +76,45 @@ export default function FloatingPanel({
 
   // User-set width override (px). Null means "use the theme-provided width".
   const [widthOverride, setWidthOverride] = React.useState<number | null>(null);
-  const effectiveWidth =
-    widthOverride !== null ? `${widthOverride}px` : width;
+  const effectiveWidth = widthOverride !== null ? `${widthOverride}px` : width;
   // Set while actively resizing, so the ResizeObserver below doesn't fight the
   // imperative position/width updates.
   const resizing = React.useRef(false);
 
-  // Things to track for dragging.
-  const dragInfo = React.useRef({
-    dragging: false,
-    startPosX: 0,
-    startPosY: 0,
-    startClientX: 0,
-    startClientY: 0,
-  });
+  // Whether a drag is in progress -- read by the handle's onClick to tell a
+  // drag-release from a click (toggle). Drag start coordinates live as locals
+  // inside the gesture closure below, not here.
+  const dragInfo = React.useRef({ dragging: false });
+
+  // Teardown for an in-flight drag/resize gesture. Gestures normally clean up
+  // their window listeners and animation frame on pointerup/cancel; this is the
+  // safety net for the panel unmounting mid-gesture (e.g. the client
+  // disconnects while dragging), so those side effects don't outlive it.
+  const activeGestureCleanup = React.useRef<(() => void) | null>(null);
+  React.useEffect(
+    () => () => {
+      activeGestureCleanup.current?.();
+    },
+    [],
+  );
+
+  // The dock state lives in App (it insets the canvas) but is only ever set by
+  // this panel. When the floating layout is swapped out -- control_layout
+  // changes to sidebar/collapsible, the mobile breakpoint trips, or the client
+  // disconnects -- this component unmounts; release the dock so the canvas stops
+  // reserving space for a panel that's no longer there (otherwise a left/right
+  // inset gap is left behind). Doing it here, keyed on this panel's own
+  // lifecycle, covers every one of those cases without App having to know which
+  // layout ControlPanel chose. useLayoutEffect (not useEffect) so the reset is
+  // committed in the same frame as the unmount -- otherwise there's a one-frame
+  // flash where the new layout is painted but the canvas is still inset.
+  // `setDock` is a stable state setter, so an empty dep list is correct.
+  React.useLayoutEffect(
+    () => () => {
+      setDock({ side: null, width });
+    },
+    [],
+  );
 
   // Logic for "fixing" panel locations, which keeps the control panel within
   // the bounds of the parent div.
@@ -178,11 +224,13 @@ export default function FloatingPanel({
 
     const observer = new ResizeObserver(() => {
       const newMaxHeight = parent.clientHeight - panelBoundaryPad * 2;
-      maxHeight !== newMaxHeight && setMaxHeight(newMaxHeight);
+      setMaxHeight((prev) => (prev !== newMaxHeight ? newMaxHeight : prev));
 
-      // Don't reposition while the user is actively resizing the panel; the
-      // resize handler is driving width (and, when floating, left) directly.
+      // Don't reposition while the user is actively resizing or dragging the
+      // panel; those handlers drive width/left/top directly (the drag via a
+      // transform), and repositioning here would fight them and jitter.
       if (resizing.current) return;
+      if (dragInfo.current.dragging) return;
 
       // When docked, the panel is pinned via CSS; nothing to re-fix.
       if (dock.side !== null) {
@@ -214,7 +262,11 @@ export default function FloatingPanel({
     return () => {
       observer.disconnect();
     };
-  });
+    // Re-bind only when the dock state changes (the callback closes over
+    // `dock.side` and, via applyDockLayout, `expanded`); `setMaxHeight`'s
+    // functional updater keeps it independent of the latest `maxHeight`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dock.side, expanded]);
 
   const dragHandler = (event: React.PointerEvent<HTMLDivElement>) => {
     // Ignore presses that bubble in from portaled children (e.g. the share
@@ -233,8 +285,11 @@ export default function FloatingPanel({
     const parent = panel.parentElement;
     if (!parent) return;
 
-    state.startClientX = event.clientX;
-    state.startClientY = event.clientY;
+    // Pointer position and panel offset at the start of the gesture. Mutated on
+    // undock (the panel jumps to a floating position and the drag re-bases from
+    // there); `let` so the applyMove closure sees those updates.
+    let startClientX = event.clientX;
+    let startClientY = event.clientY;
 
     // Capture the pointer on the handle. This guarantees we keep receiving
     // pointermove/pointerup even when the cursor passes over (or releases on
@@ -256,19 +311,51 @@ export default function FloatingPanel({
     const startedDockedSide = dock.side;
     let undocked = false;
 
-    state.startPosX = panel.offsetLeft;
-    state.startPosY = panel.offsetTop;
+    let startPosX = panel.offsetLeft;
+    let startPosY = panel.offsetTop;
     pendingDock.current = null;
 
-    function dragListener(event: PointerEvent) {
+    // Cache geometry that doesn't change during a drag. Reading layout
+    // (clientWidth / getBoundingClientRect) on every pointermove forces a
+    // synchronous reflow and is the main source of drag jank, so we snapshot
+    // it once and refresh only on undock (which resizes the panel). `let` for
+    // that refresh.
+    let parentW = parent.clientWidth;
+    let parentH = parent.clientHeight;
+    let panelW = panel.clientWidth;
+    let panelH = panel.clientHeight;
+    let parentRect = parent.getBoundingClientRect();
+
+    // Last clamped position (parent-relative px), baked into left/top on
+    // release. `moved` tracks whether we actually repositioned the panel, so a
+    // click (or a docked panel that was never dragged) doesn't clobber its
+    // resting styles.
+    let lastX = startPosX;
+    let lastY = startPosY;
+    let moved = false;
+
+    // Pointer events can fire several times per frame (and are coalesced); we
+    // stash the latest and apply at most once per animation frame, driving the
+    // position with a GPU-composited transform (no per-frame layout).
+    let latestEvent: PointerEvent | null = null;
+    let rafId: number | null = null;
+
+    function applyMove() {
+      rafId = null;
+      const event = latestEvent;
       const panel = panelWrapperRef.current;
       const parent = panel?.parentElement;
-      if (!panel || !parent) return;
+      if (!event || !panel || !parent) return;
 
-      // Minimum motion.
-      const deltaX = event.clientX - state.startClientX;
-      const deltaY = event.clientY - state.startClientY;
-      if (Math.abs(deltaX) <= 3 && Math.abs(deltaY) <= 3) return;
+      const deltaX = event.clientX - startClientX;
+      const deltaY = event.clientY - startClientY;
+      if (
+        !motionExceedsThreshold(
+          [startClientX, startClientY],
+          [event.clientX, event.clientY],
+        )
+      )
+        return;
 
       state.dragging = true;
 
@@ -278,42 +365,86 @@ export default function FloatingPanel({
       if (startedDockedSide !== null && !undocked) {
         undocked = true;
         const panelRect = panel.getBoundingClientRect();
-        const parentRect = parent.getBoundingClientRect();
-        unfixedOffset.current = {};
+        parentRect = parent.getBoundingClientRect();
         setDock({ side: null, width: effectiveWidth });
         applyDockLayout(null);
         const newLeft = panelRect.left - parentRect.left;
         const newTop = panelRect.top - parentRect.top;
         panel.style.left = `${newLeft}px`;
         panel.style.top = `${newTop}px`;
-        state.startPosX = newLeft;
-        state.startPosY = newTop;
-        state.startClientX = event.clientX;
-        state.startClientY = event.clientY;
+        panel.style.transform = "";
+        // The panel's size changes once it stops filling the docked column;
+        // refresh the cached geometry so clamping stays correct.
+        parentW = parent.clientWidth;
+        parentH = parent.clientHeight;
+        panelW = panel.clientWidth;
+        panelH = panel.clientHeight;
+        // Record the floating offset now. The setDock(null) above re-renders and
+        // fires the placement layout effect, which resets an *unplaced* panel
+        // (unfixedOffset.x === undefined) to the top-right corner -- that's what
+        // made an undock-from-left jump across the screen. Seeding the offset
+        // marks the panel as already placed so the effect leaves it put.
+        unfixedOffset.current = {
+          x: computePanelOffset(newLeft, panelW, parentW),
+          y: computePanelOffset(newTop, panelH, parentH),
+        };
+        startPosX = newLeft;
+        startPosY = newTop;
+        startClientX = event.clientX;
+        startClientY = event.clientY;
+        lastX = newLeft;
+        lastY = newTop;
         return;
       }
 
-      const newX = state.startPosX + deltaX;
-      const newY = state.startPosY + deltaY;
-      [unfixedOffset.current.x, unfixedOffset.current.y] = setPanelLocation(
-        newX,
-        newY,
+      // Clamp the new position to keep the panel within the parent's bounds.
+      lastX = Math.max(
+        panelBoundaryPad,
+        Math.min(startPosX + deltaX, parentW - panelW - panelBoundaryPad),
       );
+      lastY = Math.max(
+        panelBoundaryPad,
+        Math.min(startPosY + deltaY, parentH - panelH - panelBoundaryPad),
+      );
+      moved = true;
+      panel.style.transform = `translate3d(${lastX - startPosX}px, ${
+        lastY - startPosY
+      }px, 0)`;
+      unfixedOffset.current.x = computePanelOffset(lastX, panelW, parentW);
+      unfixedOffset.current.y = computePanelOffset(lastY, panelH, parentH);
 
-      // Offer to dock when the pointer is near a left/right edge of the parent.
-      const parentRect = parent.getBoundingClientRect();
+      // Offer to dock when the pointer is near a left/right edge of the parent
+      // AND has moved toward that edge relative to where the drag started.
+      // Measuring against the initial click (deltaX) rather than the previous
+      // frame means a panel that begins near an edge won't offer to dock there
+      // unless the user actually pushes that way -- e.g. the default top-right
+      // placement won't dock right just because you start dragging it left.
       let hint: DockSide = null;
-      if (event.clientX - parentRect.left < dockThreshold) hint = "left";
-      else if (parentRect.right - event.clientX < dockThreshold) hint = "right";
+      if (event.clientX - parentRect.left < dockThreshold) {
+        if (deltaX < 0) hint = "left";
+      } else if (parentRect.right - event.clientX < dockThreshold) {
+        if (deltaX > 0) hint = "right";
+      }
       if (hint !== pendingDock.current) {
         pendingDock.current = hint;
         setDockHint(hint);
       }
     }
+
+    function dragListener(event: PointerEvent) {
+      latestEvent = event;
+      if (rafId === null) rafId = requestAnimationFrame(applyMove);
+    }
     function endListener() {
-      window.removeEventListener("pointermove", dragListener);
-      window.removeEventListener("pointerup", endListener);
-      window.removeEventListener("pointercancel", endListener);
+      detach();
+      activeGestureCleanup.current = null;
+      if (rafId !== null) {
+        // Flush the latest pointer position so the panel lands exactly where it
+        // was released, then drop the pending frame.
+        cancelAnimationFrame(rafId);
+        rafId = null;
+        applyMove();
+      }
       try {
         handle.releasePointerCapture(pointerId);
       } catch {
@@ -321,6 +452,20 @@ export default function FloatingPanel({
       }
       // For touch/pen, no click follows to reset this; do it here.
       if (pointerType !== "mouse") state.dragging = false;
+
+      // Bake the drag transform back into left/top and clear it, so the resting
+      // panel is a plain offset again (what the ResizeObserver and dock layout
+      // expect). Only when we actually moved and aren't about to dock --
+      // otherwise leave the docked/initial styles untouched.
+      const panel = panelWrapperRef.current;
+      if (panel !== null) {
+        panel.style.transform = "";
+        panel.style.willChange = "";
+        if (moved && pendingDock.current === null) {
+          panel.style.left = `${lastX}px`;
+          panel.style.top = `${lastY}px`;
+        }
+      }
 
       // Commit a pending dock, if any.
       const side = pendingDock.current;
@@ -332,15 +477,21 @@ export default function FloatingPanel({
         applyDockLayout(side);
       }
     }
-    window.addEventListener("pointermove", dragListener);
-    window.addEventListener("pointerup", endListener);
-    window.addEventListener("pointercancel", endListener);
+    // Promote to its own layer up front so the first frame is already smooth.
+    panel.style.willChange = "transform";
+    const detach = bindPointerGesture(dragListener, endListener);
+    activeGestureCleanup.current = () => {
+      detach();
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
   };
 
   // Edges that can be grabbed to resize: when floating, either side; when
   // docked, only the edge facing the canvas.
   const resizeSides: ("left" | "right")[] =
-    dock.side === null ? ["left", "right"] : [dock.side === "left" ? "right" : "left"];
+    dock.side === null
+      ? ["left", "right"]
+      : [dock.side === "left" ? "right" : "left"];
   const resizeHandler =
     (side: "left" | "right") => (event: React.PointerEvent<HTMLDivElement>) => {
       event.stopPropagation();
@@ -360,13 +511,44 @@ export default function FloatingPanel({
       resizing.current = true;
       const startX = event.clientX;
       const startWidth = panel.offsetWidth;
-      // Right edge in parent coordinates; kept fixed when resizing a floating
+      const startParentW = parent.clientWidth;
+      // Right edge in parent coordinates; kept pinned when resizing a floating
       // panel from its left edge.
       const startRight = panel.offsetLeft + startWidth;
-      // Only a floating panel grabbed from its left edge needs its position
-      // moved; docked panels are anchored to an edge by CSS.
+      // Font size is fixed for the gesture; resolve em -> px once (reading it
+      // each move would force a style recalc).
+      const emPx = parseFloat(getComputedStyle(panel).fontSize) || 16;
+      // Only a floating panel grabbed from its left edge needs special
+      // handling; docked panels are anchored to an edge by CSS, and a
+      // right-edge grip already keeps the left edge fixed.
       const adjustLeft = dock.side === null && side === "left";
+      let lastWidth = startWidth;
 
+      // For a left-edge floating resize, pin the panel by its right edge for the
+      // duration of the gesture. The width lands via React state (so the
+      // contents reflow) a frame after any imperative `left` update would, so
+      // driving `left` directly desyncs the two and jitters the right edge.
+      // Anchoring `right` keeps that edge fixed no matter when the width lands;
+      // the left edge then simply follows the width.
+      if (adjustLeft) {
+        panel.style.right = `${startParentW - startRight}px`;
+        panel.style.left = "auto";
+      }
+
+      // Width updates go through React state (so the contents reflow), which
+      // would re-render per pointermove. Coalesce to one update per frame, same
+      // as the drag path -- this also caps the docked-resize setDock() calls
+      // that re-render the canvas inset.
+      let pendingWidth: number | null = null;
+      let rafId: number | null = null;
+      function flushWidth() {
+        rafId = null;
+        if (pendingWidth === null) return;
+        setWidthOverride(pendingWidth);
+        if (dock.side !== null) {
+          setDock({ side: dock.side, width: `${pendingWidth}px` });
+        }
+      }
       function resizeMove(event: PointerEvent) {
         const panel = panelWrapperRef.current;
         const parent = panel?.parentElement;
@@ -374,37 +556,46 @@ export default function FloatingPanel({
         const delta = event.clientX - startX;
         const rawWidth =
           side === "right" ? startWidth + delta : startWidth - delta;
-        const emPx = parseFloat(getComputedStyle(panel).fontSize) || 16;
         const minWidth = minWidthEm * emPx;
         const maxWidth = Math.max(
           minWidth,
           Math.min(maxWidthHardCapPx, parent.clientWidth - resizeParentPad),
         );
         const newWidth = Math.max(minWidth, Math.min(maxWidth, rawWidth));
-        setWidthOverride(newWidth);
-        if (adjustLeft) {
-          panel.style.left = `${startRight - newWidth}px`;
-        }
-        if (dock.side !== null) {
-          setDock({ side: dock.side, width: `${newWidth}px` });
-        }
+        lastWidth = newWidth;
+        pendingWidth = newWidth;
+        if (rafId === null) rafId = requestAnimationFrame(flushWidth);
       }
       function resizeEnd() {
-        window.removeEventListener("pointermove", resizeMove);
-        window.removeEventListener("pointerup", resizeEnd);
-        window.removeEventListener("pointercancel", resizeEnd);
+        detach();
+        activeGestureCleanup.current = null;
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        flushWidth(); // Commit the final width.
         try {
           grip.releasePointerCapture(pointerId);
         } catch {
           // Ignore.
         }
+        // Convert the right-edge anchor back to a left offset so dragging and
+        // the ResizeObserver (which read offsetLeft) keep working. Derived from
+        // the final width so it doesn't depend on React having flushed.
+        const panel = panelWrapperRef.current;
+        if (adjustLeft && panel !== null) {
+          panel.style.left = `${startRight - lastWidth}px`;
+          panel.style.right = "auto";
+        }
         resizing.current = false;
         // Let the ResizeObserver re-derive the anchored offset from the new size.
         unfixedOffset.current = {};
       }
-      window.addEventListener("pointermove", resizeMove);
-      window.addEventListener("pointerup", resizeEnd);
-      window.addEventListener("pointercancel", resizeEnd);
+      const detach = bindPointerGesture(resizeMove, resizeEnd);
+      activeGestureCleanup.current = () => {
+        detach();
+        if (rafId !== null) cancelAnimationFrame(rafId);
+      };
     };
 
   return (
@@ -422,6 +613,8 @@ export default function FloatingPanel({
       {/* Drop-zone hints, shown while dragging near an edge. */}
       <DropZoneHint side={dockHint} width={effectiveWidth} />
       <Paper
+        data-testid="floating-panel"
+        data-dock-side={dock.side ?? "none"}
         radius="xs"
         shadow="0.1em 0 1em 0 rgba(0,0,0,0.1)"
         style={{
@@ -433,15 +626,26 @@ export default function FloatingPanel({
           "& .expandIcon": {
             transform: "rotate(0)",
           },
-          overflow: "hidden",
+          // `visible` (not `hidden`) so the resize grips can poke past the panel
+          // edge; the inner wrapper below clips the actual content to the radius.
+          overflow: "visible",
         }}
         ref={panelWrapperRef}
       >
-        {/* Invisible resize zones; the ew-resize cursor signals them. */}
+        {/* Invisible resize zones; the ew-resize cursor signals them. They
+        straddle the panel edge, so they live outside the clipping wrapper. */}
         {resizeSides.map((side) => (
-          <ResizeGrip key={side} side={side} onPointerDown={resizeHandler(side)} />
+          <ResizeGrip
+            key={side}
+            side={side}
+            onPointerDown={resizeHandler(side)}
+          />
         ))}
-        {children}
+        {/* Clips content to the panel's (possibly docked -> square) radius,
+        which the Paper used to do before it had to let the grips overflow. */}
+        <Box style={{ overflow: "hidden", borderRadius: "inherit" }}>
+          {children}
+        </Box>
       </Paper>
     </FloatingPanelContext.Provider>
   );
@@ -458,15 +662,18 @@ function ResizeGrip({
 }) {
   return (
     <Box
+      data-testid={`floating-panel-resize-${side}`}
       onPointerDown={onPointerDown}
       style={{
         position: "absolute",
         top: 0,
         bottom: 0,
-        [side]: 0,
-        width: "0.5em",
+        // Straddle the border, biased outside the panel, so the grip clears the
+        // scrollbar (which sits just inside) while staying easy to grab.
+        [side]: `-${resizeGripOutset}`,
+        width: resizeGripWidth,
         cursor: "ew-resize",
-        zIndex: 11,
+        zIndex: 12,
         touchAction: "none",
       }}
     />
@@ -488,7 +695,7 @@ function DropZoneHint({ side, width }: { side: DockSide; width: string }) {
         zIndex: 9,
         pointerEvents: "none",
         backgroundColor: "var(--mantine-primary-color-light)",
-        opacity: 0.5,
+        opacity: 0.7,
         borderRadius: 0,
       }}
     />
@@ -499,54 +706,53 @@ function DropZoneHint({ side, width }: { side: DockSide; width: string }) {
 FloatingPanel.Handle = function FloatingPanelHandle({
   children,
 }: {
-  children: string | React.ReactNode;
+  children: React.ReactNode;
 }) {
   const panelContext = React.useContext(FloatingPanelContext)!;
 
   return (
-    <>
-      <Box
-        style={{
-          borderRadius: "0.2em 0.2em 0 0",
-          lineHeight: "1.5em",
-          cursor: "pointer",
-          position: "relative",
-          fontWeight: 400,
-          userSelect: "none",
-          display: "flex",
-          alignItems: "center",
-          padding: "0 0.75em",
-          height: "2.75em",
-          // Prevent touch scrolling from hijacking handle drags.
-          touchAction: "none",
-        }}
-        onClick={(event) => {
-          // Ignore clicks that bubble up from portaled children (e.g. the
-          // share modal's overlay). React routes their events through here
-          // even though they're not in the handle's DOM subtree, which would
-          // otherwise collapse the panel when the modal is dismissed.
-          if (!event.currentTarget.contains(event.target as Node)) return;
-          const state = panelContext.dragInfo.current;
-          if (state.dragging) {
-            state.dragging = false;
-            return;
-          }
-          panelContext.toggleExpanded();
-        }}
-        onPointerDown={(event) => {
-          panelContext.dragHandler(event);
-        }}
-      >
-        {children}
-      </Box>
-    </>
+    <Box
+      data-testid="floating-panel-handle"
+      style={{
+        borderRadius: "0.2em 0.2em 0 0",
+        lineHeight: "1.5em",
+        cursor: "pointer",
+        position: "relative",
+        fontWeight: 400,
+        userSelect: "none",
+        display: "flex",
+        alignItems: "center",
+        padding: "0 0.75em",
+        height: "2.75em",
+        // Prevent touch scrolling from hijacking handle drags.
+        touchAction: "none",
+      }}
+      onClick={(event) => {
+        // Ignore clicks that bubble up from portaled children (e.g. the
+        // share modal's overlay). React routes their events through here
+        // even though they're not in the handle's DOM subtree, which would
+        // otherwise collapse the panel when the modal is dismissed.
+        if (!event.currentTarget.contains(event.target as Node)) return;
+        const state = panelContext.dragInfo.current;
+        if (state.dragging) {
+          state.dragging = false;
+          return;
+        }
+        panelContext.toggleExpanded();
+      }}
+      onPointerDown={(event) => {
+        panelContext.dragHandler(event);
+      }}
+    >
+      {children}
+    </Box>
   );
 };
 /** Contents of a panel. */
 FloatingPanel.Contents = function FloatingPanelContents({
   children,
 }: {
-  children: string | React.ReactNode;
+  children: React.ReactNode;
 }) {
   const context = React.useContext(FloatingPanelContext)!;
   return (
