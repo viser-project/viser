@@ -58,6 +58,9 @@ export default function RgbComponent({
             if (parsed) {
               setValue(uuid, parsed);
             }
+            // Blur to close the color-picker popover, matching the rest of the
+            // GUI inputs where Enter dismisses the editor.
+            e.currentTarget.blur();
           }
         }}
         onBlur={() => {
