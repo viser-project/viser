@@ -3281,9 +3281,7 @@ class SceneApi:
         Returns:
             Scene node handle, or None if no such node exists.
         """
-        if not name.startswith("/"):
-            name = "/" + name
-        return self._handle_from_node_name.get(name, None)
+        return self._handle_from_node_name.get(_normalize_node_name(name), None)
 
     def remove_by_name(self, name: str) -> None:
         """Remove the scene node with the given `name` and any of its children.
@@ -3293,9 +3291,7 @@ class SceneApi:
             ``add_*()`` call and calling :meth:`SceneNodeHandle.remove()`
             directly instead of using this method.
         """
-        name = name.rstrip("/")  # '/parent/' => '/parent'
-        if not name.startswith("/"):
-            name = "/" + name
+        name = _normalize_node_name(name.rstrip("/"))  # '/parent/' => '/parent'
         handle = self._handle_from_node_name.get(name)
         if handle is not None:
             handle.remove()

@@ -25,7 +25,6 @@ export default function RgbaComponent({
     if (!parsedLocal || !rgbaEqual(parsedLocal, value)) {
       setLocalValue(rgbaToString(value));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
   if (!visible) return null;
@@ -61,8 +60,8 @@ export default function RgbaComponent({
             if (parsed) {
               setValue(uuid, parsed);
             }
-            // Blur to close the color-picker popover, matching the rest of the
-            // GUI inputs where Enter dismisses the editor.
+            // Blur to close the color-picker popover on Enter (matches the
+            // server-address input in ServerControls.tsx).
             e.currentTarget.blur();
           }
         }}

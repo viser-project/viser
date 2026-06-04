@@ -451,10 +451,14 @@ export function SynchronizedCameraControls() {
     },
     [],
   );
-  const scheduleSendCamera = React.useCallback((fn: () => void, delayMs: number) => {
-    if (cameraTimeoutRef.current !== null) clearTimeout(cameraTimeoutRef.current);
-    cameraTimeoutRef.current = setTimeout(fn, delayMs);
-  }, []);
+  const scheduleSendCamera = React.useCallback(
+    (fn: () => void, delayMs: number) => {
+      if (cameraTimeoutRef.current !== null)
+        clearTimeout(cameraTimeoutRef.current);
+      cameraTimeoutRef.current = setTimeout(fn, delayMs);
+    },
+    [],
+  );
 
   const t_world_camera = new THREE.Vector3();
   const scale = new THREE.Vector3();

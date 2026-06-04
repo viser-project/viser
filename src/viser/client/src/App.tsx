@@ -542,9 +542,7 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
   // `cancelActiveScenePointer()` in its cleanup -- which would abort an in-flight
   // scene-pointer gesture on every theme update.
   const cancelActiveScenePointerRef = React.useRef(cancelActiveScenePointer);
-  React.useEffect(() => {
-    cancelActiveScenePointerRef.current = cancelActiveScenePointer;
-  }, [cancelActiveScenePointer]);
+  cancelActiveScenePointerRef.current = cancelActiveScenePointer;
 
   // Held-modifier tracking. Three sources keep `hoverSet`'s
   // `heldModifier` in sync with reality:
