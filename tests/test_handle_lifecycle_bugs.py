@@ -360,3 +360,72 @@ def test_add_batched_meshes_validates_color_length() -> None:
         server.scene.add_batched_meshes_simple(
             "/m2", verts, faces, wxyzs, positions, batched_colors=(255, 0, 0)
         )
+
+
+def test_gaussian_splat_subprop_update_does_not_alias_buffer() -> None:
+    """Splat sub-property setters (centers/rgbs/opacities/covariances) must queue
+    a private copy of the buffer, not the live server-owned array -- otherwise a
+    later in-place sub-property write corrupts a still-unsent earlier message."""
+    with _server() as server:
+        n = 5
+        s = server.scene.add_gaussian_splats(
+            "/s",
+            centers=np.zeros((n, 3), np.float32),
+            covariances=np.tile(np.eye(3) * 0.01, (n, 1, 1)).astype(np.float32),
+            rgbs=np.zeros((n, 3), np.uint8),
+            opacities=np.ones((n, 1), np.float32),
+        )
+
+        def latest_buffer_update() -> np.ndarray:
+            buf = server._websock_server._broadcast_buffer.message_from_id
+            return [
+                getattr(m, "updates")["buffer"]
+                for m in buf.values()
+                if type(m).__name__ == "SceneNodeUpdateMessage"
+                and "buffer" in getattr(m, "updates", {})
+            ][-1]
+
+        s.centers = np.ones((n, 3), np.float32)
+        queued = latest_buffer_update()
+        # The queued message must not alias the live server-owned buffer.
+        assert queued is not s._impl.props.buffer
+        before = queued.copy()
+        # A later sub-property write mutates the stored buffer in place; the
+        # already-queued message must stay untouched.
+        s.centers = np.full((n, 3), 7.0, np.float32)
+        assert np.array_equal(queued, before)
+
+
+def test_zero_byte_upload_completes() -> None:
+    """A zero-byte file is sent with part_count == 0 (no parts ever follow), so
+    the upload must be finalized at start -- otherwise on_upload never fires and
+    the transfer state leaks forever."""
+    with _server() as server:
+        btn = server.gui.add_upload_button("up")
+        uuid = btn._impl.uuid
+
+        server.gui._handle_file_transfer_start(
+            ClientId(0),
+            _messages.FileTransferStartUpload(
+                source_component_uuid=uuid,
+                transfer_uuid="t0",
+                filename="empty.bin",
+                mime_type="application/octet-stream",
+                part_count=0,
+                size_bytes=0,
+            ),
+        )
+
+        # State must not leak.
+        assert "t0" not in server.gui._current_file_upload_states
+        # The handle value is updated to the (empty) uploaded file even with no
+        # client connected (the value is set before client resolution).
+        assert btn.value.name == "empty.bin"
+        assert btn.value.content == b""
+        # An ack is queued so the client notification can resolve.
+        buf = server._websock_server._broadcast_buffer.message_from_id
+        assert any(
+            type(m).__name__ == "FileTransferPartAck"
+            and getattr(m, "transfer_uuid", None) == "t0"
+            for m in buf.values()
+        )

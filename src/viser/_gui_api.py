@@ -407,6 +407,61 @@ class GuiApi:
             "lock": threading.Lock(),
         }
 
+        # A zero-byte file is sent with part_count == 0, so no FileTransferPart
+        # messages ever arrive to drive completion. Finish it here -- otherwise
+        # on_upload never fires and the transfer state leaks forever.
+        if message.part_count == 0:
+            self._websock_interface.queue_message(
+                FileTransferPartAck(
+                    source_component_uuid=message.source_component_uuid,
+                    transfer_uuid=message.transfer_uuid,
+                    transferred_bytes=0,
+                    total_bytes=0,
+                )
+            )
+            self._finish_file_upload(
+                client_id, message.transfer_uuid, message.source_component_uuid
+            )
+
+    def _finish_file_upload(
+        self,
+        client_id: ClientId,
+        transfer_uuid: str,
+        source_component_uuid: str,
+    ) -> None:
+        """Finalize a completed upload by assembling the file contents and
+        firing the handle's update callbacks. Shared by the normal multi-part
+        path and the zero-byte path (which has no parts)."""
+        state = self._current_file_upload_states.pop(transfer_uuid, None)
+        if state is None:
+            return
+
+        handle = self._gui_input_handle_from_uuid.get(source_component_uuid, None)
+        if handle is None or handle._impl.removed:
+            return
+        handle_state = handle._impl
+
+        value = UploadedFile(
+            name=state["filename"],
+            content=b"".join(state["parts"][i] for i in range(state["part_count"])),
+        )
+
+        # Update state.
+        handle_state.value = value
+        handle_state.update_timestamp = time.time()
+
+        # Trigger callbacks.
+        client = self._resolve_client(client_id)
+        if client is None:
+            return
+        for cb in handle_state.update_cb:
+            if asyncio.iscoroutinefunction(cb):
+                self._event_loop.create_task(cb(GuiEvent(client, client_id, handle)))
+            else:
+                self._thread_executor.submit(
+                    cb, GuiEvent(client, client_id, handle)
+                ).add_done_callback(print_threadpool_errors)
+
     def _handle_file_transfer_part(
         self, client_id: ClientId, message: _messages.FileTransferPart
     ) -> None:
@@ -436,36 +491,9 @@ class GuiApi:
 
         # Finish the upload.
         assert state["transferred_bytes"] == total_bytes
-        state = self._current_file_upload_states.pop(message.transfer_uuid)
-
-        handle = self._gui_input_handle_from_uuid.get(
-            message.source_component_uuid, None
+        self._finish_file_upload(
+            client_id, message.transfer_uuid, message.source_component_uuid
         )
-        if handle is None or handle._impl.removed:
-            return
-
-        handle_state = handle._impl
-
-        value = UploadedFile(
-            name=state["filename"],
-            content=b"".join(state["parts"][i] for i in range(state["part_count"])),
-        )
-
-        # Update state.
-        handle_state.value = value
-        handle_state.update_timestamp = time.time()
-
-        # Trigger callbacks.
-        client = self._resolve_client(client_id)
-        if client is None:
-            return
-        for cb in handle_state.update_cb:
-            if asyncio.iscoroutinefunction(cb):
-                self._event_loop.create_task(cb(GuiEvent(client, client_id, handle)))
-            else:
-                self._thread_executor.submit(
-                    cb, GuiEvent(client, client_id, handle)
-                ).add_done_callback(print_threadpool_errors)
 
     async def _handle_command_trigger(
         self, client_id: ClientId, message: _messages.CommandTriggerMessage

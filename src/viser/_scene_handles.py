@@ -1021,7 +1021,10 @@ class GaussianSplatHandle(
         )
         self._ensure_buffer_size(centers.shape[0])
         self.buffer[:, 0:3] = centers.astype(np.float32).view(np.uint32)
-        self._queue_update("buffer", self.buffer)
+        # Queue a private snapshot: the stored buffer is mutated in place by
+        # later sub-property assignments, possibly while the event loop is still
+        # serializing this message. Matches the guard in props_setattr.
+        self._queue_update("buffer", self.buffer.copy())
 
     @property
     def rgbs(self) -> npt.NDArray[np.uint8]:
@@ -1040,7 +1043,7 @@ class GaussianSplatHandle(
         rgba = self.buffer[:, 7:8].view(np.uint8).reshape(-1, 4)
         rgba[:, :3] = colors_to_uint8(rgbs)
         self.buffer[:, 7:8] = rgba.view(np.uint32)
-        self._queue_update("buffer", self.buffer)
+        self._queue_update("buffer", self.buffer.copy())
 
     @property
     def opacities(self) -> npt.NDArray[np.uint8]:
@@ -1060,7 +1063,7 @@ class GaussianSplatHandle(
         rgba = self.buffer[:, 7:8].view(np.uint8).reshape(-1, 4)
         rgba[:, 3:4] = colors_to_uint8(opacities)
         self.buffer[:, 7:8] = rgba.view(np.uint32)
-        self._queue_update("buffer", self.buffer)
+        self._queue_update("buffer", self.buffer.copy())
 
     @property
     def covariances(self) -> npt.NDArray[np.float32]:
@@ -1092,7 +1095,7 @@ class GaussianSplatHandle(
         cov_triu = covariances.reshape((-1, 9))[:, np.array([0, 1, 2, 4, 5, 8])]
         cov_triu_f16 = cov_triu.astype(np.float16)
         self.buffer[:, 4:7] = np.ascontiguousarray(cov_triu_f16).view(np.uint32)
-        self._queue_update("buffer", self.buffer)
+        self._queue_update("buffer", self.buffer.copy())
 
 
 class MeshSkinnedHandle(
