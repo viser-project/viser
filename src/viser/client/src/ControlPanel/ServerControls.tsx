@@ -30,31 +30,6 @@ export default function ServerControls() {
   const firstPersonCamera = viewer.useGui((state) => state.firstPersonCamera);
   const [showDevSettings, setShowDevSettings] = React.useState(false);
 
-  const setFirstPersonMode = (enabled: boolean) => {
-    viewer.useGui.set({ firstPersonCamera: enabled });
-    if (!enabled) {
-      if (document.pointerLockElement === viewerMutable.canvas) {
-        document.exitPointerLock();
-      }
-      return;
-    }
-
-    if (viewerMutable.canvas === null) {
-      viewer.useGui.set({ firstPersonCamera: false });
-      return;
-    }
-    try {
-      const request = viewerMutable.canvas.requestPointerLock() as
-        | Promise<void>
-        | undefined;
-      void request?.catch(() => {
-        viewer.useGui.set({ firstPersonCamera: false });
-      });
-    } catch {
-      viewer.useGui.set({ firstPersonCamera: false });
-    }
-  };
-
   return (
     <>
       <Stack gap="xs" mt="0.3em">
@@ -187,7 +162,7 @@ export default function ServerControls() {
               size="sm"
               value={firstPersonCamera ? "first-person" : "orbit"}
               onChange={(value) => {
-                setFirstPersonMode(value === "first-person");
+                viewerMutable.setFirstPersonMode(value === "first-person");
               }}
               data={[
                 { label: "Orbit", value: "orbit" },

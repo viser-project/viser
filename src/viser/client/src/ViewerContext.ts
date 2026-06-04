@@ -31,6 +31,7 @@ export type ViewerMutable = {
   sendMessage: (message: Message) => void;
   sendCamera: (() => void) | null;
   resetCameraPose: ((animate: boolean) => void) | null;
+  setFirstPersonMode: (enabled: boolean) => void;
 
   // DOM/Three.js references.
   canvas: HTMLCanvasElement | null;

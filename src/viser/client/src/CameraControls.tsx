@@ -564,7 +564,20 @@ export function SynchronizedCameraControls() {
     activeCameraKeysRef.current.clear();
     setKeyboardInputActive(false);
   }, []);
-  const requestPointerLock = React.useCallback(() => {
+
+  const setFirstPersonMode = React.useCallback((enabled: boolean) => {
+    clearCameraKeys();
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    viewer.useGui.set({ firstPersonCamera: enabled });
+    if (!enabled) {
+      if (document.pointerLockElement === gl.domElement) {
+        document.exitPointerLock();
+      }
+      return;
+    }
+
     try {
       const request = gl.domElement.requestPointerLock() as
         | Promise<void>
@@ -575,19 +588,16 @@ export function SynchronizedCameraControls() {
     } catch {
       viewer.useGui.set({ firstPersonCamera: false });
     }
-  }, [gl.domElement, viewer.useGui]);
-  const exitFirstPerson = React.useCallback(() => {
-    clearCameraKeys();
-    viewer.useGui.set({ firstPersonCamera: false });
-    if (document.pointerLockElement === gl.domElement) {
-      document.exitPointerLock();
-    }
   }, [clearCameraKeys, gl.domElement, viewer.useGui]);
-  const enterFirstPerson = React.useCallback(() => {
-    clearCameraKeys();
-    viewer.useGui.set({ firstPersonCamera: true });
-    requestPointerLock();
-  }, [clearCameraKeys, requestPointerLock, viewer.useGui]);
+
+  React.useLayoutEffect(() => {
+    viewerMutable.setFirstPersonMode = setFirstPersonMode;
+    return () => {
+      if (viewerMutable.setFirstPersonMode === setFirstPersonMode) {
+        viewerMutable.setFirstPersonMode = () => null;
+      }
+    };
+  }, [setFirstPersonMode, viewerMutable]);
 
   React.useEffect(() => {
     clearCameraKeys();
@@ -604,9 +614,9 @@ export function SynchronizedCameraControls() {
         }
         event.preventDefault();
         if (isFirstPerson) {
-          exitFirstPerson();
+          setFirstPersonMode(false);
         } else {
-          enterFirstPerson();
+          setFirstPersonMode(true);
         }
         return;
       }
@@ -646,7 +656,7 @@ export function SynchronizedCameraControls() {
       window.removeEventListener("blur", clearCameraKeys);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [clearCameraKeys, enterFirstPerson, exitFirstPerson, isFirstPerson]);
+  }, [clearCameraKeys, isFirstPerson, setFirstPersonMode]);
 
   React.useEffect(() => {
     const onPointerLockChange = () => {

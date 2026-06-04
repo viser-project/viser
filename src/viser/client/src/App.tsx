@@ -204,6 +204,7 @@ function ViewerRoot() {
         : () => null,
     sendCamera: null,
     resetCameraPose: null,
+    setFirstPersonMode: () => null,
 
     // DOM/Three.js references.
     canvas: null,
@@ -467,28 +468,7 @@ function CameraModeIndicator() {
   const Icon = firstPerson ? IconCamera : IconView360;
 
   const toggleMode = () => {
-    if (firstPerson) {
-      viewer.useGui.set({ firstPersonCamera: false });
-      if (document.pointerLockElement === viewer.mutable.current.canvas) {
-        document.exitPointerLock();
-      }
-      return;
-    }
-
-    viewer.useGui.set({ firstPersonCamera: true });
-    const canvas = viewer.mutable.current.canvas;
-    if (canvas === null) {
-      viewer.useGui.set({ firstPersonCamera: false });
-      return;
-    }
-    try {
-      const request = canvas.requestPointerLock() as Promise<void> | undefined;
-      void request?.catch(() => {
-        viewer.useGui.set({ firstPersonCamera: false });
-      });
-    } catch {
-      viewer.useGui.set({ firstPersonCamera: false });
-    }
+    viewer.mutable.current.setFirstPersonMode(!firstPerson);
   };
 
   return (
