@@ -535,28 +535,37 @@ export function SynchronizedCameraControls() {
     return () => resizeObserver.disconnect();
   }, [canvas, sendCamera]);
 
-  const wasFirstPerson = useRef(false);
   const orbitTargetDistanceRef = useRef(1.0);
-  useLayoutEffect(() => {
+  const pendingOrbitPoseRef = useRef<{
+    position: THREE.Vector3;
+    target: THREE.Vector3;
+    up: THREE.Vector3;
+  } | null>(null);
+
+  const captureOrbitTargetDistance = React.useCallback(() => {
     const cc = viewerMutable.cameraControl;
-    if (!wasFirstPerson.current && isFirstPerson && cc !== null) {
-      const target = cc.getTarget(new THREE.Vector3());
-      orbitTargetDistanceRef.current = Math.max(
-        0.01,
-        camera.position.distanceTo(target),
-      );
-    } else if (wasFirstPerson.current && !isFirstPerson && cc !== null) {
-        const pos = camera.position;
-        const dir = new THREE.Vector3();
-        camera.getWorldDirection(dir);
-        const tgt = pos
-          .clone()
-          .addScaledVector(dir, orbitTargetDistanceRef.current);
-        cc.updateCameraUp();
-        cc.setLookAt(pos.x, pos.y, pos.z, tgt.x, tgt.y, tgt.z, false);
+    if (cc === null) {
+      return;
     }
-    wasFirstPerson.current = isFirstPerson;
-  }, [isFirstPerson, camera, viewerMutable.cameraControl]);
+    const target = cc.getTarget(new THREE.Vector3());
+    orbitTargetDistanceRef.current = Math.max(
+      0.01,
+      camera.position.distanceTo(target),
+    );
+  }, [camera, viewerMutable]);
+
+  const captureFirstPersonExitPose = React.useCallback(() => {
+    const position = camera.position.clone();
+    const direction = new THREE.Vector3();
+    camera.getWorldDirection(direction);
+    pendingOrbitPoseRef.current = {
+      position,
+      target: position
+        .clone()
+        .addScaledVector(direction, orbitTargetDistanceRef.current),
+      up: camera.up.clone(),
+    };
+  }, [camera]);
 
   const activeCameraKeysRef = useRef(new Set<string>());
   const keyboardYawAxis = useRef(new THREE.Vector3()).current;
@@ -566,7 +575,13 @@ export function SynchronizedCameraControls() {
   }, []);
 
   const setFirstPersonMode = React.useCallback((enabled: boolean) => {
+    const isCurrentlyFirstPerson = viewer.useGui.get().firstPersonCamera;
     clearCameraKeys();
+    if (enabled && !isCurrentlyFirstPerson) {
+      captureOrbitTargetDistance();
+    } else if (!enabled && isCurrentlyFirstPerson) {
+      captureFirstPersonExitPose();
+    }
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
@@ -588,7 +603,13 @@ export function SynchronizedCameraControls() {
     } catch {
       viewer.useGui.set({ firstPersonCamera: false });
     }
-  }, [clearCameraKeys, gl.domElement, viewer.useGui]);
+  }, [
+    captureFirstPersonExitPose,
+    captureOrbitTargetDistance,
+    clearCameraKeys,
+    gl.domElement,
+    viewer.useGui,
+  ]);
 
   React.useLayoutEffect(() => {
     viewerMutable.setFirstPersonMode = setFirstPersonMode;
@@ -664,15 +685,14 @@ export function SynchronizedCameraControls() {
         document.pointerLockElement !== gl.domElement &&
         viewer.useGui.get().firstPersonCamera
       ) {
-        clearCameraKeys();
-        viewer.useGui.set({ firstPersonCamera: false });
+        setFirstPersonMode(false);
       }
     };
     document.addEventListener("pointerlockchange", onPointerLockChange);
     return () => {
       document.removeEventListener("pointerlockchange", onPointerLockChange);
     };
-  }, [clearCameraKeys, gl.domElement, viewer.useGui]);
+  }, [gl.domElement, setFirstPersonMode, viewer.useGui]);
 
   // Keyboard controls.
   useFrame((_, deltaSeconds) => {
@@ -808,24 +828,50 @@ export function SynchronizedCameraControls() {
     };
   }, [gl.domElement, isFirstPerson, firstPersonInvertLookY]);
 
+  const setCameraControlsRef = React.useCallback(
+    (controls: React.ElementRef<typeof CameraControls> | null) => {
+      viewerMutable.cameraControl = controls;
+      const pendingOrbitPose = pendingOrbitPoseRef.current;
+      if (controls === null || pendingOrbitPose === null) {
+        return;
+      }
+      pendingOrbitPoseRef.current = null;
+      camera.position.copy(pendingOrbitPose.position);
+      camera.up.copy(pendingOrbitPose.up);
+      controls.updateCameraUp();
+      controls.setLookAt(
+        pendingOrbitPose.position.x,
+        pendingOrbitPose.position.y,
+        pendingOrbitPose.position.z,
+        pendingOrbitPose.target.x,
+        pendingOrbitPose.target.y,
+        pendingOrbitPose.target.z,
+        false,
+      );
+      sendCamera();
+    },
+    [camera, sendCamera, viewerMutable],
+  );
+
   return (
     <>
-      <CameraControls
-        ref={(controls) => (viewerMutable.cameraControl = controls)}
-        enabled={!isFirstPerson}
-        minDistance={0.01}
-        dollySpeed={0.3}
-        smoothTime={0.05}
-        draggingSmoothTime={0.0}
-        onChange={sendCamera}
-        onStart={() => {
-          setPointerInteractionActive(true);
-        }}
-        onEnd={() => {
-          setPointerInteractionActive(false);
-        }}
-        makeDefault
-      />
+      {!isFirstPerson ? (
+        <CameraControls
+          ref={setCameraControlsRef}
+          minDistance={0.01}
+          dollySpeed={0.3}
+          smoothTime={0.05}
+          draggingSmoothTime={0.0}
+          onChange={sendCamera}
+          onStart={() => {
+            setPointerInteractionActive(true);
+          }}
+          onEnd={() => {
+            setPointerInteractionActive(false);
+          }}
+          makeDefault
+        />
+      ) : null}
       {!isFirstPerson ? (
         <OrbitOriginTool
           forceShow={forceOrbitOriginTool}
@@ -843,8 +889,7 @@ export function SynchronizedCameraControls() {
           domElement={gl.domElement}
           onChange={sendCamera}
           onUnlock={() => {
-            clearCameraKeys();
-            viewer.useGui.set({ firstPersonCamera: false });
+            setFirstPersonMode(false);
           }}
         />
       ) : null}
