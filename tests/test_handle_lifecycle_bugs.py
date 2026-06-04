@@ -296,6 +296,30 @@ def test_numpy_value_assignment_preserves_element_types() -> None:
         assert all(isinstance(x, float) for x in vec.value)
 
 
+def test_rgb_value_normalizes_floats() -> None:
+    """RGB/RGBA channels follow the matplotlib / colors_to_uint8 convention:
+    float channels are [0, 1] (scaled to [0, 255]); int channels are absolute
+    [0, 255]. So 1.0 -> 255 (white) but 1 -> 1. The typed API is int [0, 255];
+    floats are accepted and normalized at runtime (hence the type: ignore)."""
+    with _server() as server:
+        # Creation normalizes float channels.
+        white = server.gui.add_rgb("a", (1.0, 1.0, 1.0))  # type: ignore[arg-type]
+        assert white.value == (255, 255, 255)
+        assert server.gui.add_rgb("b", (255, 0, 0)).value == (255, 0, 0)
+        rgba = server.gui.add_rgba("c", (1.0, 1.0, 1.0, 1.0))  # type: ignore[arg-type]
+        assert rgba.value == (255, 255, 255, 255)
+
+        # Assignment normalizes float numpy arrays.
+        rgb = server.gui.add_rgb("d", (0, 0, 0))
+        rgb.value = np.array([1.0, 0.0, 0.0])
+        assert rgb.value == (255, 0, 0)
+        assert all(isinstance(x, int) for x in rgb.value)
+
+        # Integer channels stay absolute (1 stays 1, not 255).
+        rgb.value = (1, 2, 3)
+        assert rgb.value == (1, 2, 3)
+
+
 def test_gui_container_target_is_per_instance() -> None:
     """A folder context on one GuiApi must not leak its container target into a
     different GuiApi instance (the thread map must be per-instance)."""

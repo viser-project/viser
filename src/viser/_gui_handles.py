@@ -18,6 +18,7 @@ from typing import (
     Literal,
     Tuple,
     TypeVar,
+    cast,
     overload,
 )
 
@@ -186,14 +187,19 @@ class _GuiInputHandle(
         # For the documentation's sake, we'll be manually adding ::attribute directives below.
         return self._impl.value
 
+    def _coerce_assigned_value(self, value: T | np.ndarray) -> T | np.ndarray:
+        """Hook for input-type-specific coercion of an assigned value. The base
+        is identity; rgb/rgba handles override this to normalize colors."""
+        return value
+
     @value.setter
     def value(self, value: T | np.ndarray) -> None:
+        value = self._coerce_assigned_value(value)
         if isinstance(value, np.ndarray):
             assert len(value.shape) <= 1, f"{value.shape} should be at most 1D!"
-            # Preserve each element's expected Python type -- int for rgb/rgba,
-            # float for vectors. Blanket ``float(...)`` would turn an int color
-            # tuple into floats, and the ``tuple(...)`` cast below does not
-            # restore element types.
+            # Preserve each element's expected Python type -- float for vectors,
+            # int for colors. A blanket `float(...)` would turn an int tuple into
+            # floats, and the `tuple(...)` cast below does not restore types.
             elems = value.tolist()
             current = self._impl.value
             if isinstance(current, tuple) and len(current) == len(elems):
@@ -337,6 +343,20 @@ class GuiMultiSliderHandle(
     """
 
 
+def _colors_to_int_tuple(value: Any) -> tuple[int, ...]:
+    """Coerce an RGB/RGBA color to an int tuple in [0, 255].
+
+    Mirrors ``_encode_rgb`` in ``_scene_api`` (the convention for scene-side RGB
+    params, and matplotlib): integer channels are taken as absolute [0, 255],
+    float channels are interpreted as [0, 1] and scaled. So ``1.0`` -> 255
+    (white) but ``1`` -> 1. Generalized to any channel count (RGB and RGBA)."""
+    if isinstance(value, np.ndarray):
+        assert value.ndim == 1, f"Expected a 1D color, got shape {value.shape}."
+    return tuple(
+        int(v) if np.issubdtype(type(v), np.integer) else int(v * 255) for v in value
+    )
+
+
 class GuiRgbHandle(GuiInputHandle[Tuple[int, int, int]], GuiRgbProps):
     """Handle for RGB color inputs.
 
@@ -345,6 +365,13 @@ class GuiRgbHandle(GuiInputHandle[Tuple[int, int, int]], GuiRgbProps):
 
        Value of the input. Synchronized automatically when assigned.
     """
+
+    @override
+    def _coerce_assigned_value(
+        self, value: Tuple[int, int, int] | np.ndarray
+    ) -> Tuple[int, int, int]:
+        # Float channels are [0, 1] (scaled to [0, 255]); int channels absolute.
+        return cast(Tuple[int, int, int], _colors_to_int_tuple(value))
 
 
 class GuiRgbaHandle(GuiInputHandle[Tuple[int, int, int, int]], GuiRgbaProps):
@@ -355,6 +382,13 @@ class GuiRgbaHandle(GuiInputHandle[Tuple[int, int, int, int]], GuiRgbaProps):
 
        Value of the input. Synchronized automatically when assigned.
     """
+
+    @override
+    def _coerce_assigned_value(
+        self, value: Tuple[int, int, int, int] | np.ndarray
+    ) -> Tuple[int, int, int, int]:
+        # Float channels are [0, 1] (scaled to [0, 255]); int channels absolute.
+        return cast(Tuple[int, int, int, int], _colors_to_int_tuple(value))
 
 
 class GuiVector2Handle(GuiInputHandle[Tuple[float, float]], GuiVector2Props):

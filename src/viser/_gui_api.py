@@ -68,6 +68,7 @@ from ._gui_handles import (
     GuiVector3Handle,
     SupportsRemoveProtocol,
     UploadedFile,
+    _colors_to_int_tuple,
     _CommandHandleState,
     _GuiButtonHandleState,
     _GuiHandleState,
@@ -2086,7 +2087,10 @@ class GuiApi:
         hint: str | None = None,
         order: float | None = None,
     ) -> GuiRgbHandle:
-        """Add an RGB picker to the GUI. All values should be in [0, 255].
+        """Add an RGB picker to the GUI.
+
+        Integer channels are in [0, 255]; float channels in [0, 1] are scaled to
+        match (matplotlib convention), so ``1.0`` is white.
 
         Args:
             label: Label to display on the RGB picker.
@@ -2100,7 +2104,7 @@ class GuiApi:
             A handle that can be used to interact with the GUI element.
         """
 
-        value = initial_value
+        value = cast("tuple[int, int, int]", _colors_to_int_tuple(initial_value))
         uuid = _make_uuid()
         order = _apply_default_order(order)
         return GuiRgbHandle(
@@ -2132,7 +2136,10 @@ class GuiApi:
         hint: str | None = None,
         order: float | None = None,
     ) -> GuiRgbaHandle:
-        """Add an RGBA picker to the GUI. All values should be in [0, 255].
+        """Add an RGBA picker to the GUI.
+
+        Integer channels are in [0, 255]; float channels in [0, 1] are scaled to
+        match (matplotlib convention), so ``1.0`` is white/opaque.
 
         Args:
             label: Label to display on the RGBA picker.
@@ -2145,7 +2152,9 @@ class GuiApi:
         Returns:
             A handle that can be used to interact with the GUI element.
         """
-        value = initial_value
+        value = cast(
+            "tuple[int, int, int, int]", _colors_to_int_tuple(initial_value)
+        )
         uuid = _make_uuid()
         order = _apply_default_order(order)
         return GuiRgbaHandle(
