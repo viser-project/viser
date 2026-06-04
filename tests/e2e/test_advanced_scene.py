@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import threading
 
 import numpy as np
 from playwright.sync_api import Page
@@ -298,6 +299,67 @@ def test_fixed_transform_controls_first_drag_works(
         "first transform-control drag did not move the control; "
         "fixed-size handle matrices were likely initialized lazily"
     )
+
+
+def test_transform_controls_drag_end_after_mid_drag_removal(
+    viser_server: viser.ViserServer,
+    viser_page: Page,
+) -> None:
+    """Removing a gizmo's ancestor mid-drag must still deliver ``on_drag_end``.
+
+    Real-browser coverage for the server-side active-drag tracking: the cascade
+    removal pops the gizmo from the live registry, so without the active-drag
+    map the late ``end`` message (sent by the client after the gizmo unmounts)
+    would not resolve a handle and ``on_update(phase="end")`` would be dropped.
+    """
+    viser_server.scene.add_frame("/tc_parent")
+    handle = viser_server.scene.add_transform_controls(
+        "/tc_parent/gizmo",
+        fixed=True,
+        scale=20.0,
+        disable_sliders=True,
+        disable_rotations=True,
+    )
+
+    phases: list[str] = []
+    end_fired = threading.Event()
+
+    @handle.on_update
+    def _(event: viser.TransformControlsEvent) -> None:
+        phases.append(event.phase)
+        if event.phase == "end":
+            end_fired.set()
+
+    wait_for_scene_node(viser_page, "/tc_parent/gizmo")
+
+    screen_handle = viser_page.evaluate(JS_FIND_TRANSFORM_HANDLE)
+    assert screen_handle is not None, "transform control handle not found"
+    cx, cy = screen_handle["center"]
+    hx, hy = screen_handle["handle"]
+    dx, dy = hx - cx, hy - cy
+    length = math.hypot(dx, dy) or 1.0
+
+    # Grab a handle and start dragging (engages the gizmo -> "start").
+    viser_page.mouse.move(hx, hy)
+    viser_page.mouse.down()
+    viser_page.mouse.move(
+        hx + dx / length * 120, hy + dy / length * 120, steps=15
+    )
+
+    # Remove the gizmo's parent WHILE the pointer is still held, then release
+    # immediately -- the gizmo is still mounted client-side, so the browser
+    # sends a final ``end`` message, but the server has already popped it from
+    # the live registry, so delivering ``on_drag_end`` relies on the active-drag
+    # map. (We must NOT wait for the client to unmount first: a fully-unmounted
+    # gizmo never fires drei's onDragEnd, so no end would be sent at all.)
+    viser_server.scene.remove_by_name("/tc_parent")
+    viser_page.mouse.up()
+
+    assert end_fired.wait(timeout=5.0), (
+        f"on_drag_end never fired after mid-drag removal; phases={phases}"
+    )
+    assert "start" in phases, phases
+    wait_for_scene_node_removed(viser_page, "/tc_parent/gizmo")
 
 
 def test_transform_controls_remove(

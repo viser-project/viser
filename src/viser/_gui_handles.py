@@ -655,11 +655,18 @@ class GuiTabGroupHandle(_GuiHandle[None], GuiTabGroupProps):
                 stacklevel=2,
             )
             return
-        self._impl.removed = True
 
-        # Remove tabs, then self.
+        # Remove tabs first. Each tab.remove() writes back to this group's
+        # tab-list props (_tab_labels / _tab_icons_html / _tab_container_ids), so
+        # we must NOT mark the group removed until afterwards -- otherwise the
+        # removed-handle guard in props_setattr raises on those writes, leaving
+        # the group half-removed (still in its parent's _children with
+        # removed=True). A subsequent gui.reset() then spins forever, since its
+        # `while root._children: child.remove()` loop hits that group whose
+        # remove() now no-ops via the already-removed guard.
         for tab in tuple(self._tab_handles):
             tab.remove()
+        self._impl.removed = True
         gui_api = self._impl.gui_api
         gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
         parent = gui_api._container_handle_from_uuid[self._impl.parent_container_id]
@@ -740,6 +747,12 @@ class GuiTabHandle:
         self._parent._tab_handles = (
             self._parent._tab_handles[:found_index]
             + self._parent._tab_handles[found_index + 1 :]
+        )
+        # Keep the container-id list in sync with the handles. Otherwise the
+        # client receives mismatched `_tab_labels` / `_tab_container_ids`
+        # lengths and renders a stale (orphaned) tab panel.
+        self._parent._tab_container_ids = tuple(
+            handle._id for handle in self._parent._tab_handles
         )
 
         for child in tuple(self._children.values()):

@@ -278,14 +278,18 @@ function ViewerRoot() {
   // Create GUI state.
   const guiState = useGuiState(initialServer);
 
-  // Apply dark mode setting if provided via URL or embed config.
+  // Apply dark mode setting if provided via URL or embed config. Done in an
+  // effect rather than during render: writing to the external GUI store during
+  // render synchronously notifies subscribers mid-render (store tearing /
+  // "cannot update a component while rendering" warnings).
   const effectiveDarkMode = darkMode || embedConfig?.darkMode;
-  if (effectiveDarkMode) {
+  React.useEffect(() => {
+    if (!effectiveDarkMode) return;
     const currentTheme = guiState.store.get().theme;
     if (!currentTheme.dark_mode) {
       guiState.store.set({ theme: { ...currentTheme, dark_mode: true } });
     }
-  }
+  }, [effectiveDarkMode, guiState.store]);
 
   // Create the context value with hooks and single ref.
   const viewer: ViewerContextContents = {
@@ -538,6 +542,17 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     drawRectSelectOverlay(null);
   }, [drawRectSelectOverlay, interaction]);
 
+  // Keep a stable handle to the latest cancel callback. The blur/key effect
+  // below must NOT depend on `cancelActiveScenePointer` directly: that callback's
+  // identity changes whenever the Mantine theme changes (via
+  // `drawRectSelectOverlay`'s `[theme]` dep), and re-running the effect calls
+  // `cancelActiveScenePointer()` in its cleanup -- which would abort an in-flight
+  // scene-pointer gesture on every theme update.
+  const cancelActiveScenePointerRef = React.useRef(cancelActiveScenePointer);
+  React.useEffect(() => {
+    cancelActiveScenePointerRef.current = cancelActiveScenePointer;
+  }, [cancelActiveScenePointer]);
+
   // Held-modifier tracking. Three sources keep `hoverSet`'s
   // `heldModifier` in sync with reality:
   //   - `keydown`/`keyup`: live updates while the canvas is focused.
@@ -548,7 +563,7 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
   //     waiting for the next keypress.
   React.useEffect(() => {
     const onBlur = () => {
-      cancelActiveScenePointer();
+      cancelActiveScenePointerRef.current();
       interaction.hover.setHeldModifier(null);
     };
     const onKey = (e: KeyboardEvent) => {
@@ -566,9 +581,9 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
       window.removeEventListener("blur", onBlur);
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onKey);
-      cancelActiveScenePointer();
+      cancelActiveScenePointerRef.current();
     };
-  }, [cancelActiveScenePointer, interaction]);
+  }, [interaction]);
 
   // Canvas pointer handlers thin-delegate to the gestures module.
   // Side effects (camera lock, overlay draw, wire dispatch) happen

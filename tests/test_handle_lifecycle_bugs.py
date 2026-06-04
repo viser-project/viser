@@ -1,0 +1,253 @@
+"""Regression tests for Python server-side handle bugs.
+
+Covers:
+- GuiTabGroupHandle.remove() on a populated group (and gui.reset() with one).
+- add_dropdown initial_value validation.
+- add_mesh_skinned with fewer than 4 bones.
+- CameraFrustumHandle.image = None actually clearing the image.
+- add_transform_controls name normalization + registry cleanup on remove /
+  reset / cascade.
+- add_3d_gui_container re-add dedup + cascade cleanup of contained GUI elements.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import warnings
+from contextlib import contextmanager
+from typing import Generator
+
+import numpy as np
+import pytest
+
+import viser
+from viser import _messages
+from viser.infra import ClientId
+
+
+@contextmanager
+def _server() -> Generator[viser.ViserServer, None, None]:
+    server = viser.ViserServer(port=0, verbose=False)
+    try:
+        yield server
+    finally:
+        server.stop()
+
+
+def _setup_gizmo_recorder(server: viser.ViserServer):
+    """Add ``/parent`` + ``/parent/gizmo``, record ``on_update`` phases, and stub
+    the (headless) client-handle lookup. Returns ``(scene, phases)``."""
+    scene = server.scene
+    scene.add_frame("/parent")
+    tc = scene.add_transform_controls("/parent/gizmo")
+    phases: list[str] = []
+
+    @tc.on_update
+    async def _(event: viser.TransformControlsEvent) -> None:
+        phases.append(event.phase)
+
+    scene._get_client_handle = lambda *_a: None  # type: ignore[assignment, return-value]
+    return scene, phases
+
+
+def test_tab_group_remove_populated() -> None:
+    """Removing a tab group that still has tabs must not raise."""
+    with _server() as server:
+        tg = server.gui.add_tab_group()
+        tg.add_tab("A")
+        tg.add_tab("B")
+        tg.remove()  # Previously raised RuntimeError (removed-handle guard).
+        assert tg._impl.removed
+
+
+def test_gui_reset_with_populated_tab_group() -> None:
+    """gui.reset() must terminate (not infinite-loop) with a populated group."""
+    with _server() as server:
+        tg = server.gui.add_tab_group()
+        tg.add_tab("A")
+        server.gui.reset()
+        # The tab group should be gone from the root container.
+        root = server.gui._container_handle_from_uuid["root"]
+        assert tg._impl.uuid not in root._children
+
+
+def test_dropdown_initial_value_must_be_in_options() -> None:
+    with _server() as server:
+        with pytest.raises(ValueError):
+            server.gui.add_dropdown("d", ("a", "b", "c"), initial_value="zzz")
+        # Valid initial value still works.
+        d = server.gui.add_dropdown("d2", ("a", "b", "c"), initial_value="b")
+        assert d.value == "b"
+
+
+@pytest.mark.parametrize("num_bones", [1, 2, 3, 4, 6])
+def test_add_mesh_skinned_any_bone_count(num_bones: int) -> None:
+    """Skinned meshes with <4 bones must not crash, and the wire payload always
+    carries exactly four influences per vertex."""
+    with _server() as server:
+        v = 5
+        handle = server.scene.add_mesh_skinned(
+            "/m",
+            np.random.rand(v, 3).astype(np.float32),
+            np.array([[0, 1, 2]], np.uint32),
+            bone_wxyzs=np.tile([1.0, 0.0, 0.0, 0.0], (num_bones, 1)),
+            bone_positions=np.zeros((num_bones, 3)),
+            skin_weights=np.random.rand(v, num_bones).astype(np.float32),
+        )
+        assert handle._impl.props.skin_indices.shape == (v, 4)
+        assert handle._impl.props.skin_weights.shape == (v, 4)
+
+
+def test_add_mesh_skinned_zero_bones_rejected() -> None:
+    """A skinned mesh with no bones is degenerate and must raise (not silently
+    emit all-zero skin indices against an empty bone list)."""
+    with _server() as server:
+        v = 5
+        with pytest.raises(ValueError):
+            server.scene.add_mesh_skinned(
+                "/m",
+                np.random.rand(v, 3).astype(np.float32),
+                np.array([[0, 1, 2]], np.uint32),
+                bone_wxyzs=np.zeros((0, 4)),
+                bone_positions=np.zeros((0, 3)),
+                skin_weights=np.zeros((v, 0), np.float32),
+            )
+
+
+def test_camera_frustum_image_clear() -> None:
+    with _server() as server:
+        img = np.zeros((4, 4, 3), np.uint8)
+        f = server.scene.add_camera_frustum("/f", fov=1.0, aspect=1.0, image=img)
+        f.image = None
+        assert f.image is None
+        # A later format change must not resurrect the cleared image.
+        f.format = "png"
+        assert f._image_data is None
+
+
+def test_transform_controls_unnormalized_name() -> None:
+    with _server() as server:
+        tc = server.scene.add_transform_controls("gizmo")  # no leading slash
+        assert list(server.scene._handle_from_transform_controls_name) == ["/gizmo"]
+        tc.remove()  # Previously raised KeyError.
+        assert "/gizmo" not in server.scene._handle_from_transform_controls_name
+        assert "/gizmo" not in server.scene._handle_from_node_name
+
+
+def test_transform_controls_cleanup_on_reset_and_cascade() -> None:
+    with _server() as server:
+        server.scene.add_transform_controls("/giz")
+        server.scene.reset()
+        assert "/giz" not in server.scene._handle_from_transform_controls_name
+
+        server.scene.add_frame("/a")
+        server.scene.add_transform_controls("/a/giz")
+        server.scene.remove_by_name("/a")  # cascade
+        assert "/a/giz" not in server.scene._handle_from_transform_controls_name
+
+
+def test_transform_controls_drag_end_after_mid_drag_removal() -> None:
+    """Removing a gizmo's ancestor mid-drag must still deliver ``phase="end"``.
+
+    Regression: the unified cascade cleanup pops the gizmo from
+    ``_handle_from_transform_controls_name``; without active-drag tracking the
+    later end message can't resolve the handle, so ``on_update(phase="end")`` /
+    ``on_drag_end`` never fire.
+    """
+    cid = ClientId(0)
+    with _server() as server:
+        scene, phases = _setup_gizmo_recorder(server)
+
+        async def drive() -> None:
+            await scene._handle_transform_controls_drag_start(
+                cid, _messages.TransformControlsDragStartMessage(name="/parent/gizmo")
+            )
+            # Remove the parent mid-drag: cascade-removes the gizmo from the live
+            # registry, but the in-flight drag must still be resolvable.
+            scene.remove_by_name("/parent")
+            assert (
+                "/parent/gizmo" not in scene._handle_from_transform_controls_name
+            )
+            await scene._handle_transform_controls_drag_end(
+                cid, _messages.TransformControlsDragEndMessage(name="/parent/gizmo")
+            )
+
+        asyncio.run(drive())
+
+        assert phases == ["start", "end"], phases
+        # The active-drag entry is released on end (no leak).
+        assert scene._active_transform_drag_handles == {}
+
+
+def test_transform_controls_late_update_leaves_no_stale_pose() -> None:
+    """A late ``update`` for a removed gizmo must still fire its callback but
+    must NOT broadcast pose: sync_cb queues persistent Set{Orientation,Position}
+    messages keyed by name, which would linger for the removed name and corrupt
+    a re-added same-name node's pose.
+    """
+    cid = ClientId(0)
+    with _server() as server:
+        scene, phases = _setup_gizmo_recorder(server)
+
+        def stale_pose_messages() -> list[str]:
+            buf = server._websock_server._broadcast_buffer.message_from_id
+            return [
+                type(m).__name__
+                for m in buf.values()
+                if isinstance(
+                    m,
+                    (_messages.SetOrientationMessage, _messages.SetPositionMessage),
+                )
+                and m.name == "/parent/gizmo"
+            ]
+
+        async def drive() -> None:
+            await scene._handle_transform_controls_drag_start(
+                cid, _messages.TransformControlsDragStartMessage(name="/parent/gizmo")
+            )
+            scene.remove_by_name("/parent")
+            await scene._handle_transform_controls_updates(
+                cid,
+                _messages.TransformControlsUpdateMessage(
+                    name="/parent/gizmo",
+                    wxyz=(1.0, 0.0, 0.0, 0.0),
+                    position=(5.0, 5.0, 5.0),
+                ),
+            )
+            await scene._handle_transform_controls_drag_end(
+                cid, _messages.TransformControlsDragEndMessage(name="/parent/gizmo")
+            )
+
+        asyncio.run(drive())
+
+        # The update + end callbacks still fire for the user.
+        assert phases == ["start", "update", "end"], phases
+        # ...but no stale pose-sync messages were left for the removed gizmo.
+        assert stale_pose_messages() == []
+        assert scene._active_transform_drag_handles == {}
+
+        # Re-adding the gizmo at default pose must not inherit a stale pose.
+        scene.add_frame("/parent")
+        scene.add_transform_controls("/parent/gizmo")
+        assert stale_pose_messages() == []
+
+
+def test_3d_gui_container_readd_and_cascade_cleanup() -> None:
+    with _server() as server:
+        # Re-add dedup must free the old container's registry entry.
+        g1 = server.scene.add_3d_gui_container("/gui")
+        old_id = g1._container_id
+        server.scene.add_3d_gui_container("/gui")
+        assert old_id not in server.gui._container_handle_from_uuid
+
+        # Cascade removal of an ancestor must free the container + its GUI kids.
+        server.scene.add_frame("/p")
+        g = server.scene.add_3d_gui_container("/p/c")
+        with g:
+            btn = server.gui.add_button("inside")
+        cid = g._container_id
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            server.scene.remove_by_name("/p")
+        assert cid not in server.gui._container_handle_from_uuid
+        assert btn._impl.removed

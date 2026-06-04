@@ -1790,9 +1790,17 @@ class GuiApi:
         Returns:
             A handle that can be used to interact with the GUI element.
         """
+        # Materialize once so a one-shot iterable isn't consumed by the checks
+        # below and again by the message construction.
+        options_tuple = tuple(options)
         value = initial_value
         if value is None:
-            value = options[0]
+            value = options_tuple[0]
+        elif value not in options_tuple:
+            raise ValueError(
+                f"Dropdown initial_value {value!r} is not one of the options "
+                f"{options_tuple!r}."
+            )
         uuid = _make_uuid()
         order = _apply_default_order(order)
         return GuiDropdownHandle(
@@ -1806,7 +1814,7 @@ class GuiApi:
                         order=order,
                         label=label,
                         hint=hint,
-                        options=tuple(options),
+                        options=options_tuple,
                         disabled=disabled,
                         visible=visible,
                     ),

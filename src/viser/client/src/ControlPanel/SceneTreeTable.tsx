@@ -310,6 +310,27 @@ function EditNodePropsInner({
     },
   });
 
+  // Sync the form when the server changes props (the footer promises "Updates
+  // from the server will overwrite local changes"). Mantine's useForm only
+  // reads initialValues at mount, so we push server-changed fields in here.
+  //
+  // We update ONLY the fields whose server value actually changed -- not a full
+  // form reset / remount -- so an in-progress edit of an unrelated field isn't
+  // discarded, and the popover doesn't churn (lose focus / close dropdowns) on
+  // every prop tick. `nodeMessage` identity changes only on prop updates (pose
+  // and visibility updates don't touch it), so this effect is keyed on it.
+  const prevInitialValuesRef = React.useRef(initialValues);
+  React.useEffect(() => {
+    const prev = prevInitialValuesRef.current;
+    for (const key of Object.keys(initialValues)) {
+      if (initialValues[key] !== prev[key]) {
+        form.setFieldValue(key, initialValues[key]);
+      }
+    }
+    prevInitialValuesRef.current = initialValues;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodeMessage]);
+
   const handleSubmit = (values: Record<string, string>) => {
     Object.entries(values).forEach(([key, value]) => {
       if (value !== initialValues[key]) {

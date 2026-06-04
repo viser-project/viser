@@ -10,8 +10,33 @@ import {
 const zstdDecoder = new ZSTDDecoder();
 const zstdReady = zstdDecoder.init();
 
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  Dispatch,
+  SetStateAction,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { ViewerContext } from "./ViewerContext";
+import { isFormElement } from "./utils/isFormElement";
+
+/** Toggle `paused` on spacebar, unless a form control is focused -- so typing a
+ * space in the playback time/speed inputs doesn't toggle playback. */
+function useSpacebarTogglePause(setPaused: Dispatch<SetStateAction<boolean>>) {
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.code !== "Space") return;
+      if (isFormElement(event.target) || isFormElement(document.activeElement)) {
+        return;
+      }
+      setPaused((prev) => !prev);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [setPaused]);
+}
 import {
   ActionIcon,
   NumberInput,
@@ -262,17 +287,7 @@ export function PlaybackFromFile({ fileUrl }: { fileUrl: string }) {
   ]);
 
   // Pause/play with spacebar.
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.code === "Space") {
-        setPaused(!paused);
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [paused]); // Empty dependency array ensures this runs once on mount and cleanup on unmount
+  useSpacebarTogglePause(setPaused);
 
   const updateCurrentTime = useCallback(
     (value: number) => {
@@ -500,17 +515,8 @@ export function PlaybackFromEmbedData({ base64Data }: { base64Data: string }) {
     setCurrentTime,
   ]);
 
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.code === "Space") {
-        setPaused(!paused);
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [paused]);
+  // Pause/play with spacebar.
+  useSpacebarTogglePause(setPaused);
 
   const updateCurrentTime = useCallback(
     (value: number) => {

@@ -185,6 +185,11 @@ class _SceneNodeHandleState:
     _last_published_click_bindings: tuple[_messages.DragBinding, ...] | None = None
 
 
+def _normalize_node_name(name: str) -> str:
+    """Scene node names are canonicalized to always start with "/"."""
+    return name if name.startswith("/") else "/" + name
+
+
 class _SceneNodeMessage(Protocol):
     name: str
     props: Any
@@ -217,9 +222,8 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
         """Create scene node: send state to client(s) and set up
         server-side state."""
         # Normalize name to always start with "/".
-        if not name.startswith("/"):
-            name = "/" + name
-            message.name = name
+        name = _normalize_node_name(name)
+        message.name = name
 
         # Ensure all ancestor nodes exist (creates intermediate frames as needed).
         api._ensure_ancestors_exist(name)
@@ -350,12 +354,30 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
                     _messages.SetSceneNodeDragBindingsMessage(node_name, ())
                 )
 
-        # Clean up all descendants from both dicts.
+        # Clean up all descendants from both dicts. This runs uniformly for
+        # direct removal, ``reset()``, and cascading parent removal, so
+        # subclass-specific registries (transform controls, 3D GUI containers)
+        # are cleaned here rather than in per-subclass ``remove()`` overrides --
+        # otherwise a gizmo/container removed via an ancestor would leak its
+        # registry entry (its override never runs on cascade).
         for node_name in to_remove:
             handle = api._handle_from_node_name.pop(node_name, None)
-            if handle is not None:
-                handle._impl.removed = True
             api._children_from_node_name.pop(node_name, None)
+            if handle is None:
+                continue
+            handle._impl.removed = True
+
+            # Transform-controls registry (keyed by node name).
+            api._handle_from_transform_controls_name.pop(node_name, None)
+
+            # 3D GUI container: drop its contained GUI elements and its entry in
+            # the container registry (keyed by container UUID).
+            if isinstance(handle, Gui3dContainerHandle):
+                for child in tuple(handle._children.values()):
+                    child.remove()
+                handle._gui_api._container_handle_from_uuid.pop(
+                    handle._container_id, None
+                )
 
         # Remove from parent's children set.
         parent = self._impl.name.rsplit("/", 1)[0]
@@ -744,6 +766,7 @@ class CameraFrustumHandle(
         from ._scene_api import _encode_image_binary
 
         if image is None:
+            self._image = None
             self._image_data = None
             return
 
@@ -1426,10 +1449,6 @@ class TransformControlsHandle(
 
         self._impl_aux.update_cb = [cb for cb in self._impl_aux.update_cb if keep(cb)]
 
-    def remove(self) -> None:
-        """Remove the node from the scene."""
-        self._impl.api._handle_from_transform_controls_name.pop(self.name)
-        super().remove()
 
 
 class Gui3dContainerHandle(
@@ -1456,14 +1475,3 @@ class Gui3dContainerHandle(
         assert self._container_id_restore is not None
         self._gui_api._set_container_uuid(self._container_id_restore)
         self._container_id_restore = None
-
-    def remove(self) -> None:
-        """Permanently remove this GUI container from the visualizer."""
-
-        # Call scene node remove.
-        super().remove()
-
-        # Clean up contained GUI elements.
-        for child in tuple(self._children.values()):
-            child.remove()
-        self._gui_api._container_handle_from_uuid.pop(self._container_id)

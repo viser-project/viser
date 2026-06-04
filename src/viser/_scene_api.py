@@ -69,6 +69,7 @@ from ._scene_handles import (
     TransformControlsEvent,
     TransformControlsHandle,
     _DragInput,
+    _normalize_node_name,
     _RaycastSupportedSceneNodeHandle,
     _TransformControlsState,
 )
@@ -225,6 +226,14 @@ class SceneApi:
             tuple[ClientId, str],
             tuple[_RaycastSupportedSceneNodeHandle, _messages.SceneNodeDragMessage],
         ] = {}
+        # Same idea for transform-control gizmos: track in-flight drags so a
+        # late ``update``/``end`` still dispatches after the gizmo (or an
+        # ancestor) is removed mid-drag -- which pops the handle from
+        # ``_handle_from_transform_controls_name`` -- and so ``on_drag_end``
+        # fires (and the entry is released) on a mid-drag disconnect.
+        self._active_transform_drag_handles: dict[
+            tuple[ClientId, str], TransformControlsHandle
+        ] = {}
 
         # Enable/disable of ``ScenePointerEnableMessage`` is
         # reference-counted per ``event_type``: enable when the first
@@ -292,6 +301,16 @@ class SceneApi:
             # client-reported positions.
             synthetic = dataclasses.replace(last_msg, phase="end")
             await self._dispatch_drag_callbacks(client_id, handle, synthetic)
+
+        # Same for in-flight transform-control gizmo drags.
+        stale_tc_keys = [
+            k for k in self._active_transform_drag_handles if k[0] == client_id
+        ]
+        for k in stale_tc_keys:
+            tc_handle = self._active_transform_drag_handles.pop(k, None)
+            if tc_handle is None:
+                continue
+            await self._fire_transform_controls_callbacks(client_id, tc_handle, "end")
 
     def _ensure_ancestors_exist(self, name: str) -> None:
         """Create intermediate frame nodes for any missing ancestors of `name`."""
@@ -1688,15 +1707,28 @@ class SceneApi:
 
         assert len(bone_wxyzs) == len(bone_positions)
         num_bones = len(bone_wxyzs)
+        if num_bones == 0:
+            raise ValueError("A skinned mesh requires at least one bone.")
         assert skin_weights.shape == (vertices.shape[0], num_bones)
 
-        # Take the four biggest indices.
-        top4_skin_indices = np.argsort(skin_weights, axis=-1)[:, -4:]
-        top4_skin_weights = skin_weights[
-            np.arange(vertices.shape[0])[:, None], top4_skin_indices
+        # Take up to the four biggest weights per vertex. The client expects
+        # exactly four bone indices/weights per vertex, so when the rig has
+        # fewer than four bones we pad with zero-weight (index 0) entries, which
+        # have no effect on the skinning result.
+        num_vertices = vertices.shape[0]
+        num_influences = min(4, num_bones)
+        pad = 4 - num_influences
+        top_skin_indices = np.argsort(skin_weights, axis=-1)[:, -num_influences:]
+        top_skin_weights = skin_weights[
+            np.arange(num_vertices)[:, None], top_skin_indices
         ]
+        if pad > 0:
+            top_skin_indices = np.pad(top_skin_indices, ((0, 0), (0, pad)))
+            top_skin_weights = np.pad(top_skin_weights, ((0, 0), (0, pad)))
+        top4_skin_indices = top_skin_indices
+        top4_skin_weights = top_skin_weights
         assert (
-            top4_skin_weights.shape == top4_skin_indices.shape == (vertices.shape[0], 4)
+            top4_skin_weights.shape == top4_skin_indices.shape == (num_vertices, 4)
         )
 
         bone_wxyzs = np.asarray(bone_wxyzs)
@@ -2591,6 +2623,11 @@ class SceneApi:
         Returns:
             Handle for manipulating (and reading state of) scene node.
         """
+        # Normalize the name up front so the node map, the transform-controls
+        # registry, and the pose-sync messages below all key off the same
+        # (leading-slash) name the client uses.
+        name = _normalize_node_name(name)
+
         message = _messages.TransformControlsMessage(
             name=name,
             props=_messages.TransformControlsProps(
@@ -2633,6 +2670,10 @@ class SceneApi:
         )
         handle = TransformControlsHandle(node_handle._impl, state_aux)
         self._handle_from_transform_controls_name[name] = handle
+        # Store the typed handle (not the plain SceneNodeHandle from `_make`) in
+        # the node map so removal via `reset()` / re-add dedup goes through the
+        # same path that cleans up the transform-controls registry.
+        self._handle_from_node_name[name] = handle
         return handle
 
     def reset(self) -> None:
@@ -2673,7 +2714,11 @@ class SceneApi:
         self, client_id: ClientId, message: _messages.TransformControlsUpdateMessage
     ) -> None:
         """Apply pose update and fire `update_cb` with phase="update"."""
-        handle = self._handle_from_transform_controls_name.get(message.name, None)
+        # Prefer the active-drag map so a late update still resolves after the
+        # gizmo was removed mid-drag (which pops it from the live registry).
+        handle = self._active_transform_drag_handles.get(
+            (client_id, message.name)
+        ) or self._handle_from_transform_controls_name.get(message.name, None)
         if handle is None:
             return
 
@@ -2682,7 +2727,13 @@ class SceneApi:
         handle._impl_aux.last_updated = time.time()
 
         await self._fire_transform_controls_callbacks(client_id, handle, "update")
-        if handle._impl_aux.sync_cb is not None:
+        # Fire the callback even for a removed gizmo (late update during teardown),
+        # but skip the cross-client pose broadcast: sync_cb queues PERSISTENT
+        # Set{Orientation,Position} messages keyed by node name, which would
+        # linger in the broadcast buffer for the removed name (the
+        # RemoveSceneNodeMessage uses a different redundancy key and won't purge
+        # them) and corrupt the pose of a future same-name node.
+        if handle._impl_aux.sync_cb is not None and not handle._impl.removed:
             handle._impl_aux.sync_cb(client_id, handle)
 
     async def _handle_transform_controls_drag_start(
@@ -2691,12 +2742,15 @@ class SceneApi:
         handle = self._handle_from_transform_controls_name.get(message.name, None)
         if handle is None:
             return
+        self._active_transform_drag_handles[(client_id, message.name)] = handle
         await self._fire_transform_controls_callbacks(client_id, handle, "start")
 
     async def _handle_transform_controls_drag_end(
         self, client_id: ClientId, message: _messages.TransformControlsDragEndMessage
     ) -> None:
-        handle = self._handle_from_transform_controls_name.get(message.name, None)
+        handle = self._active_transform_drag_handles.pop(
+            (client_id, message.name), None
+        ) or self._handle_from_transform_controls_name.get(message.name, None)
         if handle is None:
             return
         await self._fire_transform_controls_callbacks(client_id, handle, "end")
@@ -3178,6 +3232,10 @@ class SceneApi:
         # from both GuiApi and MessageApi. The pattern below is unideal.
         gui_api = self._owner.gui
 
+        # Normalize the name so the dedup check below matches the (leading-slash)
+        # key the node map actually uses.
+        name = _normalize_node_name(name)
+
         # Remove the 3D GUI container if it already exists. This will make sure
         # contained GUI elements are removed, preventing potential memory leaks.
         if name in self._handle_from_node_name:
@@ -3194,7 +3252,12 @@ class SceneApi:
         node_handle = SceneNodeHandle._make(
             self, message, name, wxyz, position, visible=visible
         )
-        return Gui3dContainerHandle(node_handle._impl, gui_api, container_id)
+        handle = Gui3dContainerHandle(node_handle._impl, gui_api, container_id)
+        # Store the typed handle (not the plain SceneNodeHandle from `_make`) in
+        # the node map so removal via `reset()` / re-add dedup / cascading parent
+        # removal cleans up the container's GUI children and registry entry.
+        self._handle_from_node_name[name] = handle
+        return handle
 
     def get_handle_by_name(self, name: str) -> SceneNodeHandle | None:
         """Get the scene node handle for the given `name`, if it exists.

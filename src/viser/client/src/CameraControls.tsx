@@ -437,6 +437,25 @@ export function SynchronizedCameraControls() {
   const tmpMatrix4 = new THREE.Matrix4();
   const lookAt = new THREE.Vector3();
   const R_world_camera = new THREE.Quaternion();
+  // Pending camera-send timer (the not-ready retry and the connect delay share
+  // one slot -- at most one is ever pending). Cleared on unmount so the 10ms
+  // retry can't re-schedule itself forever or fire `sendCamera` after teardown.
+  const cameraTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  React.useEffect(
+    () => () => {
+      if (cameraTimeoutRef.current !== null) {
+        clearTimeout(cameraTimeoutRef.current);
+      }
+    },
+    [],
+  );
+  const scheduleSendCamera = React.useCallback((fn: () => void, delayMs: number) => {
+    if (cameraTimeoutRef.current !== null) clearTimeout(cameraTimeoutRef.current);
+    cameraTimeoutRef.current = setTimeout(fn, delayMs);
+  }, []);
+
   const t_world_camera = new THREE.Vector3();
   const scale = new THREE.Vector3();
   const sendCamera = React.useCallback(() => {
@@ -448,7 +467,7 @@ export function SynchronizedCameraControls() {
 
     if (camera_control === null) {
       // Camera controls not yet ready, let's re-try later.
-      setTimeout(sendCamera, 10);
+      scheduleSendCamera(sendCamera, 10);
       return;
     }
 
@@ -505,7 +524,7 @@ export function SynchronizedCameraControls() {
           `&initialCameraFar=${three_camera.far}`,
       );
     }
-  }, [camera, sendCameraThrottled, logCamera]);
+  }, [camera, sendCameraThrottled, logCamera, scheduleSendCamera]);
 
   // Send camera for new connections.
   // We add a small delay to give the server time to add a callback.
@@ -538,8 +557,15 @@ export function SynchronizedCameraControls() {
 
     viewerMutable.sendCamera = sendCamera;
     if (!connected) return;
-    setTimeout(() => sendCamera(), 50);
-  }, [connected, sendCamera, camera, viewer.useInitialCamera, viewerMutable]);
+    scheduleSendCamera(sendCamera, 50);
+  }, [
+    connected,
+    sendCamera,
+    camera,
+    viewer.useInitialCamera,
+    viewerMutable,
+    scheduleSendCamera,
+  ]);
 
   // Send camera for 3D viewport changes.
   const canvas = viewerMutable.canvas!; // R3F canvas.
