@@ -275,21 +275,14 @@ function ViewerRoot() {
     }, []),
   );
 
-  // Create GUI state.
-  const guiState = useGuiState(initialServer);
-
-  // Apply dark mode setting if provided via URL or embed config. Done in an
-  // effect rather than during render: writing to the external GUI store during
-  // render synchronously notifies subscribers mid-render (store tearing /
-  // "cannot update a component while rendering" warnings).
+  // Apply dark mode setting if provided via URL or embed config. Seeded into
+  // the store at creation so the very first paint is already dark -- deferring
+  // this to a post-mount effect caused a one-frame light flash on dark-mode
+  // loads, and writing during render notifies store subscribers mid-render.
   const effectiveDarkMode = darkMode || embedConfig?.darkMode;
-  React.useEffect(() => {
-    if (!effectiveDarkMode) return;
-    const currentTheme = guiState.store.get().theme;
-    if (!currentTheme.dark_mode) {
-      guiState.store.set({ theme: { ...currentTheme, dark_mode: true } });
-    }
-  }, [effectiveDarkMode, guiState.store]);
+
+  // Create GUI state.
+  const guiState = useGuiState(initialServer, effectiveDarkMode);
 
   // Create the context value with hooks and single ref.
   const viewer: ViewerContextContents = {
