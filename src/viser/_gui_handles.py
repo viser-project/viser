@@ -190,7 +190,16 @@ class _GuiInputHandle(
     def value(self, value: T | np.ndarray) -> None:
         if isinstance(value, np.ndarray):
             assert len(value.shape) <= 1, f"{value.shape} should be at most 1D!"
-            value = tuple(map(float, value))  # type: ignore
+            # Preserve each element's expected Python type -- int for rgb/rgba,
+            # float for vectors. Blanket ``float(...)`` would turn an int color
+            # tuple into floats, and the ``tuple(...)`` cast below does not
+            # restore element types.
+            elems = value.tolist()
+            current = self._impl.value
+            if isinstance(current, tuple) and len(current) == len(elems):
+                value = tuple(type(c)(e) for c, e in zip(current, elems))  # type: ignore
+            else:
+                value = tuple(elems)  # type: ignore
 
         # Convert to internal type early so we can compare.
         value = type(self._impl.value)(value)  # type: ignore

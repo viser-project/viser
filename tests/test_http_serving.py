@@ -137,5 +137,11 @@ def test_http_serves_files_through_symlink(tmp_path: Path):
         # Missing file still 404s.
         status, _ = _fetch(f"http://127.0.0.1:{port}/does-not-exist.js")
         assert status == 404
+
+        # A request that resolves to a real *directory* must 404, not raise
+        # IsADirectoryError inside read_bytes() (which surfaces as a 500).
+        (served_root / "subdir").mkdir()
+        assert _fetch(f"http://127.0.0.1:{port}/subdir")[0] == 404
+        assert _fetch(f"http://127.0.0.1:{port}/subdir/")[0] == 404
     finally:
         server.stop()

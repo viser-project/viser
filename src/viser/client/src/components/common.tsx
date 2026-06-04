@@ -130,8 +130,12 @@ export function VectorInput(
           key={i}
           value={props.value[i]}
           onChange={(v) => {
+            // Ignore the transient empty value while the user clears the field
+            // (matches NumberInput/Slider); otherwise clearing to retype would
+            // momentarily commit 0 to the server.
+            if (v === "") return;
             const updated = [...props.value];
-            updated[i] = v === "" ? 0.0 : Number(v);
+            updated[i] = Number(v);
             props.onChange(updated);
           }}
           size="xs"

@@ -415,6 +415,9 @@ export const InstancedAxes = React.forwardRef<
     }
     axesRef.current.instanceMatrix.needsUpdate = true;
     axesRef.current.instanceColor!.needsUpdate = true;
+    // Invalidate the cached bounding sphere so raycasting (clicks/hover) tests
+    // against the new instance positions rather than the stale ones.
+    axesRef.current.boundingSphere = null;
   }, [batched_wxyzs, batched_positions, batched_scales, axesTransformations]);
 
   // Create cylinder geometries for outlines - one for each axis.
@@ -464,6 +467,10 @@ export const InstancedAxes = React.forwardRef<
         <instancedMesh
           ref={axesRef}
           args={[cylinderGeom, material, numInstances]}
+          // Instance matrices are updated imperatively, so the cached bounding
+          // sphere used for frustum culling goes stale; disable culling so the
+          // axes don't pop out of view after a position update.
+          frustumCulled={false}
         />
 
         {/* Create hover outlines for each axis */}

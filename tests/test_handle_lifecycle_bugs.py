@@ -251,3 +251,46 @@ def test_3d_gui_container_readd_and_cascade_cleanup() -> None:
             server.scene.remove_by_name("/p")
         assert cid not in server.gui._container_handle_from_uuid
         assert btn._impl.removed
+
+
+def test_array_prop_update_does_not_alias_caller_array() -> None:
+    """Updating an array prop must queue a server-owned copy, so a caller that
+    mutates its array afterwards can't corrupt the still-unsent message."""
+    with _server() as server:
+        pc = server.scene.add_point_cloud(
+            "/pc",
+            points=np.zeros((4, 3), np.float32),
+            colors=np.zeros((4, 3), np.uint8),
+        )
+        arr = np.ones((4, 3), np.float32)
+        pc.points = arr
+        arr[:] = 7.0  # caller reuses its buffer (e.g. next animation frame)
+
+        buf = server._websock_server._broadcast_buffer.message_from_id
+        msg = next(
+            m
+            for m in buf.values()
+            if type(m).__name__ == "SceneNodeUpdateMessage"
+            and "points" in getattr(m, "updates", {})
+        )
+        assert np.all(pc.points == 1.0)  # prop stays correct
+        # queued message not corrupted by the caller's later mutation
+        assert np.all(getattr(msg, "updates")["points"] == 1.0)
+
+
+def test_numpy_value_assignment_preserves_element_types() -> None:
+    """Assigning a numpy array to a GUI handle must keep int color channels int
+    and vector components float (not blanket-float everything)."""
+    with _server() as server:
+        rgb = server.gui.add_rgb("c", (255, 0, 0))
+        rgb.value = np.array([10, 20, 30])
+        assert rgb.value == (10, 20, 30)
+        assert all(isinstance(x, int) for x in rgb.value)
+
+        rgba = server.gui.add_rgba("c2", (255, 0, 0, 255))
+        rgba.value = np.array([1, 2, 3, 4])
+        assert all(isinstance(x, int) for x in rgba.value)
+
+        vec = server.gui.add_vector3("v", (1.0, 2.0, 3.0))
+        vec.value = np.array([4.0, 5.0, 6.0])
+        assert all(isinstance(x, float) for x in vec.value)

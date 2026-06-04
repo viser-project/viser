@@ -143,13 +143,20 @@ def props_setattr(self, name: str, value: Any) -> None:
                 current_value[:] = value
             else:
                 setattr(self._impl.props, name, value.copy())
+            # Queue a private snapshot for the wire. It must alias NEITHER the
+            # caller's ``value`` (which the caller may mutate after assignment,
+            # e.g. an animation loop reusing one buffer) NOR the server's stored
+            # array (which a later same-shape update mutates in place, possibly
+            # while the event-loop thread is still serializing this message).
+            queued: Any = value.copy()
         else:
-            # Non-array properties
+            # Non-array properties (immutable / already a fresh cast).
             setattr(self._impl.props, name, value)
+            queued = value
     else:
         return object.__setattr__(self, name, value)
 
-    self._queue_update(name, value)
+    self._queue_update(name, queued)
     self._on_prop_assigned(name)
 
 

@@ -902,7 +902,10 @@ class PointCloudHandle(
         if points.dtype != dtype:
             new_points = points.astype(dtype)
             self._impl.props.points = new_points
-            self._queue_update("points", new_points)
+            # Queue a private snapshot, not the stored array (a later same-shape
+            # `points` update mutates the stored buffer in place, which could
+            # corrupt this still-unsent message). Mirrors props_setattr.
+            self._queue_update("points", new_points.copy())
 
 
 class BatchedAxesHandle(

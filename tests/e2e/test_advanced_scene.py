@@ -362,6 +362,64 @@ def test_transform_controls_drag_end_after_mid_drag_removal(
     wait_for_scene_node_removed(viser_page, "/tc_parent/gizmo")
 
 
+# Recompute the instanced mesh's bounding sphere from its *current* instance
+# matrices and report its center -- this is what a raycast would test against.
+JS_BATCHED_AXES_BOUND_CENTER = """
+(name) => {
+    const obj = window.__viserMutable.nodeRefFromName[name];
+    if (!obj) return null;
+    let info = null;
+    obj.traverse((o) => {
+        if (o.isInstancedMesh) {
+            // The cached sphere (what raycast uses if non-null); null means it
+            // will be recomputed fresh on the next raycast.
+            const c = o.boundingSphere ? o.boundingSphere.center : null;
+            info = {
+                frustumCulled: o.frustumCulled,
+                cachedCenterX: c ? c.x : null,
+            };
+        }
+    });
+    return info;
+}
+"""
+
+
+def test_batched_axes_invalidate_bounds_on_position_update(
+    viser_server: viser.ViserServer,
+    viser_page: Page,
+) -> None:
+    """Moving batched axes (same instance count) must not leave a stale bounding
+    sphere -- otherwise raycasting (clicks) and frustum culling use the old
+    positions, so clicks miss and the axes can pop out of view."""
+    p0 = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], np.float32)
+    wxyzs = np.tile([1.0, 0.0, 0.0, 0.0], (2, 1)).astype(np.float32)
+    handle = viser_server.scene.add_batched_axes(
+        "/ax", batched_wxyzs=wxyzs, batched_positions=p0
+    )
+    wait_for_scene_node(viser_page, "/ax")
+    viser_page.wait_for_timeout(500)
+
+    info0 = viser_page.evaluate(JS_BATCHED_AXES_BOUND_CENTER, "/ax")
+    assert info0 is not None, "instanced axes mesh not found"
+    # Culling is disabled so the renderer never caches a stale sphere.
+    assert info0["frustumCulled"] is False
+
+    # Move the axes far away (+10 in x), keeping the same instance count.
+    handle.batched_positions = p0 + np.array([10.0, 0.0, 0.0], np.float32)
+    viser_page.wait_for_timeout(700)
+
+    info1 = viser_page.evaluate(JS_BATCHED_AXES_BOUND_CENTER, "/ax")
+    assert info1["frustumCulled"] is False
+    # The cached bounding sphere must not be left stale at the old position: it
+    # is either invalidated (null -> recomputed fresh on next raycast) or already
+    # recomputed at the new (~+10) location. With the bug it stays near x=0.
+    cx = info1["cachedCenterX"]
+    assert cx is None or cx > 5.0, (
+        f"bounding sphere left stale at the old position (center.x={cx})"
+    )
+
+
 def test_transform_controls_remove(
     viser_server: viser.ViserServer,
     viser_page: Page,

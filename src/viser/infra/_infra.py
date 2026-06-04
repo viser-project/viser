@@ -639,7 +639,10 @@ class WebsockServer(WebsockMessageHandler):
             relpath = "/".join(segments) if segments else "index.html"
             assert http_server_root is not None
             source_path = http_server_root / relpath
-            if not source_path.exists():
+            # ``is_file()`` (not ``exists()``) so a request resolving to a
+            # directory returns a clean 404 instead of raising
+            # ``IsADirectoryError`` on ``read_bytes()`` below (-> a 500).
+            if not source_path.is_file():
                 return Response(http.HTTPStatus.NOT_FOUND, "NOT FOUND", Headers())
 
             use_gzip = "gzip" in request.headers.get("Accept-Encoding", "")

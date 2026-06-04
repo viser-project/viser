@@ -269,12 +269,16 @@ function createSceneTreeActions(
       const node = store.get(name);
       if (!node) return;
 
-      // Compute parent's effective visibility.
+      // Compute parent's effective visibility. The check is on `name` (is this
+      // node the root?), NOT on `parentName`: the root node itself has no
+      // parent, but its *children* (whose parentName is also "") must inherit
+      // the root's actual effectiveVisibility -- otherwise a child recomputed
+      // after `set_global_visibility(False)` would wrongly become visible.
       const parentName = name.split("/").slice(0, -1).join("/");
       const parentNode = store.get(parentName);
       const parentEffective =
-        parentName === ""
-          ? true // Root is always effectively visible
+        name === ""
+          ? true // Root node has no parent.
           : (parentNode?.effectiveVisibility ?? true);
 
       // Compute this node's visibility.
