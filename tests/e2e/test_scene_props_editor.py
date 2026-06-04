@@ -283,3 +283,40 @@ def test_schema_covers_all_scene_node_messages() -> None:
     # Each entry is emitted as `MessageName: {...}` -- presence-check by name.
     missing = {name for name in expected if f"  {name}: {{" not in schema_section}
     assert not missing, f"Missing from schema: {missing}"
+
+
+def test_boolean_submit_not_blocked_by_invalid_text_field(
+    viser_server: viser.ViserServer,
+    viser_page: Page,
+) -> None:
+    """Toggling a boolean prop must submit even if an UNRELATED text field is
+    mid-edit with invalid JSON.
+
+    Regression: the boolean/select/color inputs submitted via the whole-form
+    ``form.onSubmit``, so any invalid field aborted validation and silently
+    dropped the valid toggle. They now submit only the changed field.
+    """
+    viser_server.scene.add_frame("/f", show_axes=True, axes_length=0.5)
+    wait_for_scene_node(viser_page, "/f")
+    assert _read_prop(viser_page, "/f", "show_axes") is True
+
+    popover = _open_props_popover(viser_page, "/f")
+
+    # Leave a different (text) field in an invalid-JSON state.
+    len_input = popover.locator('[data-prop-key="axes_length"] input')
+    len_input.click()
+    len_input.fill("[1, 2,")
+
+    # Toggle the boolean; it must still reach the store.
+    checkbox = popover.locator('[data-prop-key="show_axes"]').get_by_role(
+        "checkbox"
+    )
+    checkbox.dispatch_event("click")
+    viser_page.wait_for_function(
+        """([name]) => {
+            const t = window.__viserSceneTree;
+            return t && t.getState()[name].message.props.show_axes === false;
+        }""",
+        arg=["/f"],
+        timeout=5_000,
+    )

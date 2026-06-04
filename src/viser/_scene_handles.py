@@ -260,8 +260,15 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
     def wxyz(self, wxyz: tuple[float, float, float, float] | np.ndarray) -> None:
         from ._scene_api import cast_vector
 
-        wxyz_cast = cast_vector(wxyz, 4)
-        wxyz_array = np.asarray(wxyz)
+        # Normalize: wxyz must be a unit quaternion (the client applies it to the
+        # object's rotation without normalizing, so a non-unit value would scale/
+        # shear the node). A degenerate zero quaternion is left as-is rather than
+        # producing NaN.
+        wxyz_array = np.asarray(cast_vector(wxyz, 4), dtype=np.float64)
+        norm = float(np.linalg.norm(wxyz_array))
+        if np.isfinite(norm) and norm > 0.0:
+            wxyz_array = wxyz_array / norm
+        wxyz_cast = cast_vector(wxyz_array, 4)
         if np.allclose(wxyz_cast, self._impl.wxyz):
             return
         self._impl.wxyz[:] = wxyz_array
@@ -1127,8 +1134,12 @@ class MeshSkinnedBoneHandle:
     def wxyz(self, wxyz: tuple[float, float, float, float] | np.ndarray) -> None:
         from ._scene_api import cast_vector
 
-        wxyz_cast = cast_vector(wxyz, 4)
-        wxyz_array = np.asarray(wxyz)
+        # Normalize to a unit quaternion (see SceneNodeHandle.wxyz).
+        wxyz_array = np.asarray(cast_vector(wxyz, 4), dtype=np.float64)
+        norm = float(np.linalg.norm(wxyz_array))
+        if np.isfinite(norm) and norm > 0.0:
+            wxyz_array = wxyz_array / norm
+        wxyz_cast = cast_vector(wxyz_array, 4)
         if np.allclose(wxyz_cast, self._impl.wxyz):
             return
         self._impl.wxyz[:] = wxyz_array

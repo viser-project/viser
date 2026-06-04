@@ -93,6 +93,7 @@ function PropInput({
   stringify,
   parse,
   submit,
+  submitField,
 }: {
   propKey: string;
   descriptor: ScenePropDescriptor;
@@ -101,6 +102,7 @@ function PropInput({
   stringify: (value: any) => string;
   parse: (value: string) => any;
   submit: () => void;
+  submitField: (key: string) => void;
 }) {
   const stringValue = form.values[propKey];
 
@@ -115,7 +117,9 @@ function PropInput({
             checked={stringValue === "true"}
             onChange={(evt) => {
               form.setFieldValue(propKey, stringify(evt.currentTarget.checked));
-              submit();
+              // Submit only this field: a whole-form submit would be blocked by
+              // an unrelated text field left mid-edit with invalid JSON.
+              submitField(propKey);
             }}
           />
         </TsTypeTooltip>
@@ -144,7 +148,7 @@ function PropInput({
             onChange={(next) => {
               if (next === null) return;
               form.setFieldValue(propKey, stringify(next));
-              submit();
+              submitField(propKey);
             }}
           />
         </TsTypeTooltip>
@@ -179,12 +183,12 @@ function PropInput({
               const rgb = parseToRgb(nextHex);
               if (rgb === null) return;
               form.setFieldValue(propKey, stringify(rgb));
-              submit();
+              submitField(propKey);
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                submit();
+                submitField(propKey);
               }
             }}
           />
@@ -346,6 +350,21 @@ function EditNodePropsInner({
     });
   };
 
+  // Submit a single field, bypassing Mantine's whole-form validation. Used by
+  // the auto-submitting inputs (boolean/select/color) so a change isn't silently
+  // dropped when an unrelated text field is mid-edit with invalid JSON.
+  const submitField = (key: string) => {
+    try {
+      // getValues() (not the reactive `form.values` snapshot) so we read the
+      // value just set by the caller's setFieldValue in the same handler.
+      const parsedValue = parse(form.getValues()[key]);
+      updateSceneNode(nodeName, { [key]: parsedValue });
+      form.setFieldValue(key, stringify(parsedValue));
+    } catch (e) {
+      console.error("Failed to parse JSON:", e);
+    }
+  };
+
   return (
     <Box
       className={propsWrapper}
@@ -441,6 +460,7 @@ function EditNodePropsInner({
                     stringify={stringify}
                     parse={parse}
                     submit={() => form.onSubmit(handleSubmit)()}
+                    submitField={submitField}
                   />
                 </Flex>
               </Flex>

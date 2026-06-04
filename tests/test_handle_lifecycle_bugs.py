@@ -296,6 +296,28 @@ def test_numpy_value_assignment_preserves_element_types() -> None:
         assert all(isinstance(x, float) for x in vec.value)
 
 
+def test_scene_node_wxyz_is_normalized() -> None:
+    """A non-unit quaternion assigned to a node must be normalized before it is
+    stored and sent (the client applies it without normalizing)."""
+    with _server() as server:
+        f = server.scene.add_frame("/f")
+        sent: list[object] = []
+        orig = f._impl.api._websock_interface.queue_message
+        f._impl.api._websock_interface.queue_message = lambda message: (
+            sent.append(message),
+            orig(message),
+        )[1]
+
+        f.wxyz = (0.0, 3.0, 4.0, 0.0)  # norm 5 -> unit (0, 0.6, 0.8, 0)
+        assert np.isclose(np.linalg.norm(f.wxyz), 1.0), f.wxyz
+        msg = [m for m in sent if type(m).__name__ == "SetOrientationMessage"][-1]
+        assert np.isclose(np.linalg.norm(msg.wxyz), 1.0)  # type: ignore[attr-defined]
+
+        # A unit quaternion is left intact.
+        f.wxyz = (1.0, 0.0, 0.0, 0.0)
+        assert tuple(f.wxyz) == (1.0, 0.0, 0.0, 0.0)
+
+
 def test_gui_container_target_is_per_instance() -> None:
     """A folder context on one GuiApi must not leak its container target into a
     different GuiApi instance (the thread map must be per-instance)."""
