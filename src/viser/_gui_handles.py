@@ -346,14 +346,17 @@ class GuiMultiSliderHandle(
 def _colors_to_int_tuple(value: Any) -> tuple[int, ...]:
     """Coerce an RGB/RGBA color to an int tuple in [0, 255].
 
-    Mirrors ``_encode_rgb`` in ``_scene_api`` (the convention for scene-side RGB
-    params, and matplotlib): integer channels are taken as absolute [0, 255],
-    float channels are interpreted as [0, 1] and scaled. So ``1.0`` -> 255
-    (white) but ``1`` -> 1. Generalized to any channel count (RGB and RGBA)."""
+    Integer channels are taken as absolute [0, 255]; float channels are
+    interpreted as [0, 1] and scaled (the matplotlib convention), so ``1.0`` ->
+    255 (white) but ``1`` -> 1. The result is clamped to [0, 255] -- matching
+    ``colors_to_uint8`` -- so out-of-range inputs (e.g. a float ``255.0`` or a
+    negative value) degrade gracefully instead of producing a wild value.
+    Generalized to any channel count (RGB and RGBA)."""
     if isinstance(value, np.ndarray):
         assert value.ndim == 1, f"Expected a 1D color, got shape {value.shape}."
     return tuple(
-        int(v) if np.issubdtype(type(v), np.integer) else int(v * 255) for v in value
+        max(0, min(255, int(v) if np.issubdtype(type(v), np.integer) else int(v * 255)))
+        for v in value
     )
 
 

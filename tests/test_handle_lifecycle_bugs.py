@@ -317,6 +317,12 @@ def test_rgb_value_normalizes_floats() -> None:
         rgb.value = (1, 2, 3)
         assert rgb.value == (1, 2, 3)
 
+        # Out-of-range channels are clamped to [0, 255] rather than producing a
+        # wild value (e.g. a float 255.0 must not become 65025).
+        assert server.gui.add_rgb("e", (255.0, 1.2, -0.1)).value == (255, 255, 0)  # type: ignore[arg-type]
+        rgb.value = np.array([2.0, -5.0, 0.5])
+        assert rgb.value == (255, 0, 127)
+
 
 def test_gui_container_target_is_per_instance() -> None:
     """A folder context on one GuiApi must not leak its container target into a
