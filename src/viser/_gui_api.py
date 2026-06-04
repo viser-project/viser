@@ -192,8 +192,11 @@ class GuiApi:
     Used by both our global server object, for sharing the same GUI elements
     with all clients, and by individual client handles."""
 
-    _target_container_from_thread_id: dict[int, str] = {}
-    """ID of container to put GUI elements into."""
+    _target_container_from_thread_id: dict[int, str]
+    """ID of container to put GUI elements into. Per-instance (NOT a shared
+    class attribute) -- otherwise a thread inside a ``with some_gui.add_folder()``
+    block would leak that container target into a *different* GuiApi instance
+    (e.g. server.gui vs a client.gui) and raise KeyError on the foreign uuid."""
 
     def __init__(
         self,
@@ -205,6 +208,7 @@ class GuiApi:
 
         self._owner = owner
         """Entity that owns this API."""
+        self._target_container_from_thread_id = {}
         self._thread_executor = thread_executor
         self._event_loop = event_loop
 

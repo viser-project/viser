@@ -420,6 +420,47 @@ def test_batched_axes_invalidate_bounds_on_position_update(
     )
 
 
+JS_NODE_CHILD_COUNT = """
+(name) => {
+    const o = window.__viserMutable.nodeRefFromName[name];
+    return o ? o.children.length : -1;
+}
+"""
+
+
+def test_skinned_mesh_readd_does_not_leak_bones(
+    viser_server: viser.ViserServer,
+    viser_page: Page,
+) -> None:
+    """Re-adding a skinned mesh under the same name must not accumulate stale
+    bones on the parent node (the cleanup must remove the old bones)."""
+    v, b = 4, 4
+    faces = np.array([[0, 1, 2]], np.uint32)
+
+    def add() -> None:
+        viser_server.scene.add_mesh_skinned(
+            "/sk",
+            np.random.rand(v, 3).astype(np.float32),
+            faces,
+            bone_wxyzs=np.tile([1.0, 0.0, 0.0, 0.0], (b, 1)),
+            bone_positions=np.random.rand(b, 3),
+            skin_weights=np.random.rand(v, b).astype(np.float32),
+        )
+
+    add()
+    wait_for_scene_node(viser_page, "/sk")
+    viser_page.wait_for_timeout(900)
+    base = viser_page.evaluate(JS_NODE_CHILD_COUNT, "/sk")
+    assert base > 0
+
+    for _ in range(4):
+        add()  # re-add the same name with fresh buffers
+        viser_page.wait_for_timeout(700)
+
+    after = viser_page.evaluate(JS_NODE_CHILD_COUNT, "/sk")
+    assert after <= base, f"bones leaked on re-add: {base} -> {after}"
+
+
 def test_transform_controls_remove(
     viser_server: viser.ViserServer,
     viser_page: Page,

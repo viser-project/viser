@@ -1994,6 +1994,13 @@ class SceneApi:
         batched_colors_array = None
         if batched_colors is not None:
             batched_colors_array = colors_to_uint8(np.asarray(batched_colors))
+            # Validate length against the instance count (like the other
+            # per-instance arrays above); otherwise a mismatched-length color
+            # array is sent verbatim and the client silently drops all colors.
+            assert batched_colors_array.shape in ((3,), (num_instances, 3)), (
+                f"batched_colors must have shape (3,) or ({num_instances}, 3), "
+                f"got {batched_colors_array.shape}."
+            )
 
         message = _messages.BatchedMeshesMessage(
             name=name,

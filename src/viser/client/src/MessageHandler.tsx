@@ -35,14 +35,28 @@ function swapBackgroundTexture(
   if (isTexture(old)) old.dispose();
 }
 
+// Per-uniform load sequence. Background-image decode is async, so without a
+// token a stale load resolving late could overwrite a newer image AND dispose
+// the newer texture (common when streaming `set_background_image` per frame).
+// Every new load and every synchronous clear bumps the uniform's token; an
+// async callback installs its result only if the token is still current.
+const backgroundTextureSeq = new WeakMap<THREE.IUniform, number>();
+function bumpBackgroundTextureSeq(uniform: THREE.IUniform): number {
+  const next = (backgroundTextureSeq.get(uniform) ?? 0) + 1;
+  backgroundTextureSeq.set(uniform, next);
+  return next;
+}
+
 /** Load image data into a background-material uniform, disposing the previous
  * texture once the new one is ready. Revokes the object URL on success and on
- * failure so it never leaks. */
+ * failure so it never leaks. Stale loads (superseded by a newer load/clear) are
+ * dropped and their decoded texture disposed. */
 function loadBackgroundTexture(
   data: Uint8Array<ArrayBuffer>,
   format: string,
   uniform: THREE.IUniform,
 ) {
+  const seq = bumpBackgroundTextureSeq(uniform);
   const url = URL.createObjectURL(
     new Blob([data], { type: "image/" + format }),
   );
@@ -50,6 +64,11 @@ function loadBackgroundTexture(
     url,
     (texture) => {
       URL.revokeObjectURL(url);
+      if (backgroundTextureSeq.get(uniform) !== seq) {
+        // A newer load/clear superseded this one; don't install the stale image.
+        texture.dispose();
+        return;
+      }
       swapBackgroundTexture(uniform, texture);
     },
     undefined,
@@ -542,6 +561,11 @@ function useMessageHandler() {
           viewerMutable.backgroundMaterial!.uniforms.enabled.value = true;
         } else {
           // Dispose the old background texture and disable the background.
+          // Bump the token so any in-flight load for this uniform is dropped
+          // instead of re-installing a texture after this clear.
+          bumpBackgroundTextureSeq(
+            viewerMutable.backgroundMaterial!.uniforms.colorMap,
+          );
           swapBackgroundTexture(
             viewerMutable.backgroundMaterial!.uniforms.colorMap,
             null,
@@ -562,7 +586,11 @@ function useMessageHandler() {
         } else {
           // No depth in this message: free any existing depth texture so it
           // isn't orphaned on the GPU (kept alive by the uniform but never
-          // disposed), and clear the uniform back to its initial null.
+          // disposed), and clear the uniform back to its initial null. Bump the
+          // token so an in-flight depth load is dropped rather than re-installed.
+          bumpBackgroundTextureSeq(
+            viewerMutable.backgroundMaterial!.uniforms.depthMap,
+          );
           swapBackgroundTexture(
             viewerMutable.backgroundMaterial!.uniforms.depthMap,
             null,

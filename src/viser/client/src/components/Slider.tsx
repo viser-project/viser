@@ -107,7 +107,10 @@ export default function SliderComponent({
         max={max}
         hideControls
         step={step ?? undefined}
-        // precision={precision}
+        // Limit typed decimals to the slider's precision (0 for integer
+        // sliders), so the companion box can't send a fractional/over-precise
+        // value that the slider track itself would never produce.
+        decimalScale={precision}
         style={{ width: "3rem" }}
         styles={{
           input: {

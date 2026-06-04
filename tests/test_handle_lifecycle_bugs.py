@@ -294,3 +294,47 @@ def test_numpy_value_assignment_preserves_element_types() -> None:
         vec = server.gui.add_vector3("v", (1.0, 2.0, 3.0))
         vec.value = np.array([4.0, 5.0, 6.0])
         assert all(isinstance(x, float) for x in vec.value)
+
+
+def test_gui_container_target_is_per_instance() -> None:
+    """A folder context on one GuiApi must not leak its container target into a
+    different GuiApi instance (the thread map must be per-instance)."""
+    with _server() as server:
+        with _server() as server2:
+            # Inside server.gui's folder, adding to server2.gui must target
+            # server2's root, not raise KeyError on the foreign folder uuid.
+            with server.gui.add_folder("F"):
+                server2.gui.add_text("t", "x")
+            # The unrelated instance's container stack is untouched.
+            assert server2.gui._get_container_uuid() == "root"
+        # Same-instance folder nesting still parents correctly.
+        with server.gui.add_folder("G"):
+            assert server.gui._get_container_uuid() != "root"
+        assert server.gui._get_container_uuid() == "root"
+
+
+def test_add_batched_meshes_validates_color_length() -> None:
+    """batched_colors must be validated against the instance count (like the
+    other per-instance arrays), not sent verbatim for the client to drop."""
+    with _server() as server:
+        n = 5
+        verts = np.zeros((3, 3), np.float32)
+        faces = np.array([[0, 1, 2]], np.uint32)
+        wxyzs = np.tile([1.0, 0.0, 0.0, 0.0], (n, 1))
+        positions = np.zeros((n, 3))
+        with pytest.raises(AssertionError):
+            server.scene.add_batched_meshes_simple(
+                "/m",
+                verts,
+                faces,
+                wxyzs,
+                positions,
+                batched_colors=np.zeros((2, 3), np.uint8),  # wrong length
+            )
+        # Valid shapes still accepted.
+        server.scene.add_batched_meshes_simple(
+            "/m1", verts, faces, wxyzs, positions, batched_colors=np.zeros((n, 3), np.uint8)
+        )
+        server.scene.add_batched_meshes_simple(
+            "/m2", verts, faces, wxyzs, positions, batched_colors=(255, 0, 0)
+        )

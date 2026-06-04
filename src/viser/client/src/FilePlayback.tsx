@@ -370,11 +370,12 @@ export function PlaybackFromFile({ fileUrl }: { fileUrl: string }) {
               textAlign: "center",
             },
           }}
-          onChange={(value) =>
-            updateCurrentTime(
-              typeof value === "number" ? value : parseFloat(value),
-            )
-          }
+          onChange={(value) => {
+            // Ignore the transient empty/NaN value while the field is cleared;
+            // committing NaN would freeze playback at NaN.
+            const t = typeof value === "number" ? value : parseFloat(value);
+            if (Number.isFinite(t)) updateCurrentTime(t);
+          }}
         />
         <Slider
           thumbSize={0}
@@ -598,11 +599,12 @@ export function PlaybackFromEmbedData({ base64Data }: { base64Data: string }) {
               textAlign: "center",
             },
           }}
-          onChange={(value) =>
-            updateCurrentTime(
-              typeof value === "number" ? value : parseFloat(value),
-            )
-          }
+          onChange={(value) => {
+            // Ignore the transient empty/NaN value while the field is cleared;
+            // committing NaN would freeze playback at NaN.
+            const t = typeof value === "number" ? value : parseFloat(value);
+            if (Number.isFinite(t)) updateCurrentTime(t);
+          }}
         />
         <Slider
           thumbSize={0}
