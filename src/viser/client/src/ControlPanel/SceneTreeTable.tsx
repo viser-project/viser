@@ -337,7 +337,12 @@ function EditNodePropsInner({
 
   const handleSubmit = (values: Record<string, string>) => {
     Object.entries(values).forEach(([key, value]) => {
-      if (value !== initialValues[key]) {
+      // Only submit keys that belong to the current node's props. If the node
+      // at this name was replaced by a different type, the form may still hold
+      // stale keys from the old schema (the sync effect updates current keys
+      // but doesn't prune removed ones); submitting those would push props the
+      // new node doesn't have.
+      if (key in initialValues && value !== initialValues[key]) {
         try {
           const parsedValue = parse(value);
           updateSceneNode(nodeName, { [key]: parsedValue });
