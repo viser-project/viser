@@ -536,16 +536,24 @@ export function SynchronizedCameraControls() {
   }, [canvas, sendCamera]);
 
   const wasFirstPerson = useRef(false);
+  const orbitTargetDistanceRef = useRef(1.0);
   useLayoutEffect(() => {
-    if (wasFirstPerson.current && !isFirstPerson) {
-      const cc = viewerMutable.cameraControl;
-      if (cc !== null) {
+    const cc = viewerMutable.cameraControl;
+    if (!wasFirstPerson.current && isFirstPerson && cc !== null) {
+      const target = cc.getTarget(new THREE.Vector3());
+      orbitTargetDistanceRef.current = Math.max(
+        0.01,
+        camera.position.distanceTo(target),
+      );
+    } else if (wasFirstPerson.current && !isFirstPerson && cc !== null) {
         const pos = camera.position;
         const dir = new THREE.Vector3();
         camera.getWorldDirection(dir);
-        const tgt = dir.add(pos);
+        const tgt = pos
+          .clone()
+          .addScaledVector(dir, orbitTargetDistanceRef.current);
+        cc.updateCameraUp();
         cc.setLookAt(pos.x, pos.y, pos.z, tgt.x, tgt.y, tgt.z, false);
-      }
     }
     wasFirstPerson.current = isFirstPerson;
   }, [isFirstPerson, camera, viewerMutable.cameraControl]);
@@ -587,10 +595,10 @@ export function SynchronizedCameraControls() {
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isInputEvent(event)) {
-        return;
-      }
       if (event.key === "p" || event.key === "P") {
+        if (isInputEvent(event)) {
+          return;
+        }
         if (event.repeat) {
           return;
         }
@@ -605,15 +613,18 @@ export function SynchronizedCameraControls() {
       if (!CAMERA_KEY_CODES.has(event.code)) {
         return;
       }
+      if (isInputEvent(event) && !isFirstPerson) {
+        return;
+      }
       event.preventDefault();
       activeCameraKeysRef.current.add(event.code);
       setKeyboardInputActive(true);
     };
     const onKeyUp = (event: KeyboardEvent) => {
-      if (isInputEvent(event)) {
+      if (!CAMERA_KEY_CODES.has(event.code)) {
         return;
       }
-      if (!CAMERA_KEY_CODES.has(event.code)) {
+      if (isInputEvent(event) && !isFirstPerson) {
         return;
       }
       event.preventDefault();
@@ -789,23 +800,22 @@ export function SynchronizedCameraControls() {
 
   return (
     <>
-      {!isFirstPerson ? (
-        <CameraControls
-          ref={(controls) => (viewerMutable.cameraControl = controls)}
-          minDistance={0.01}
-          dollySpeed={0.3}
-          smoothTime={0.05}
-          draggingSmoothTime={0.0}
-          onChange={sendCamera}
-          onStart={() => {
-            setPointerInteractionActive(true);
-          }}
-          onEnd={() => {
-            setPointerInteractionActive(false);
-          }}
-          makeDefault
-        />
-      ) : null}
+      <CameraControls
+        ref={(controls) => (viewerMutable.cameraControl = controls)}
+        enabled={!isFirstPerson}
+        minDistance={0.01}
+        dollySpeed={0.3}
+        smoothTime={0.05}
+        draggingSmoothTime={0.0}
+        onChange={sendCamera}
+        onStart={() => {
+          setPointerInteractionActive(true);
+        }}
+        onEnd={() => {
+          setPointerInteractionActive(false);
+        }}
+        makeDefault
+      />
       {!isFirstPerson ? (
         <OrbitOriginTool
           forceShow={forceOrbitOriginTool}
