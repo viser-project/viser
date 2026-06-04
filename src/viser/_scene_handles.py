@@ -1460,7 +1460,6 @@ class TransformControlsHandle(
         self._impl_aux.update_cb = [cb for cb in self._impl_aux.update_cb if keep(cb)]
 
 
-
 class Gui3dContainerHandle(
     SceneNodeHandle,
     _messages.Gui3DProps,

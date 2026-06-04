@@ -165,9 +165,7 @@ def test_transform_controls_drag_end_after_mid_drag_removal() -> None:
             # Remove the parent mid-drag: cascade-removes the gizmo from the live
             # registry, but the in-flight drag must still be resolvable.
             scene.remove_by_name("/parent")
-            assert (
-                "/parent/gizmo" not in scene._handle_from_transform_controls_name
-            )
+            assert "/parent/gizmo" not in scene._handle_from_transform_controls_name
             await scene._handle_transform_controls_drag_end(
                 cid, _messages.TransformControlsDragEndMessage(name="/parent/gizmo")
             )
@@ -357,7 +355,12 @@ def test_add_batched_meshes_validates_color_length() -> None:
             )
         # Valid shapes still accepted.
         server.scene.add_batched_meshes_simple(
-            "/m1", verts, faces, wxyzs, positions, batched_colors=np.zeros((n, 3), np.uint8)
+            "/m1",
+            verts,
+            faces,
+            wxyzs,
+            positions,
+            batched_colors=np.zeros((n, 3), np.uint8),
         )
         server.scene.add_batched_meshes_simple(
             "/m2", verts, faces, wxyzs, positions, batched_colors=(255, 0, 0)

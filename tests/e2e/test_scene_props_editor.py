@@ -308,9 +308,7 @@ def test_boolean_submit_not_blocked_by_invalid_text_field(
     len_input.fill("[1, 2,")
 
     # Toggle the boolean; it must still reach the store.
-    checkbox = popover.locator('[data-prop-key="show_axes"]').get_by_role(
-        "checkbox"
-    )
+    checkbox = popover.locator('[data-prop-key="show_axes"]').get_by_role("checkbox")
     checkbox.dispatch_event("click")
     viser_page.wait_for_function(
         """([name]) => {

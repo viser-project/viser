@@ -20,9 +20,7 @@ def test_integer_slider_box_does_not_send_fractional(
     viser_server: viser.ViserServer,
     viser_page: Page,
 ) -> None:
-    handle = viser_server.gui.add_slider(
-        "n", min=0, max=10, step=1, initial_value=2
-    )
+    handle = viser_server.gui.add_slider("n", min=0, max=10, step=1, initial_value=2)
     seen: list[float] = []
     handle.on_update(lambda _: seen.append(handle.value))
 

@@ -342,9 +342,7 @@ def test_transform_controls_drag_end_after_mid_drag_removal(
     # Grab a handle and start dragging (engages the gizmo -> "start").
     viser_page.mouse.move(hx, hy)
     viser_page.mouse.down()
-    viser_page.mouse.move(
-        hx + dx / length * 120, hy + dy / length * 120, steps=15
-    )
+    viser_page.mouse.move(hx + dx / length * 120, hy + dy / length * 120, steps=15)
 
     # Remove the gizmo's parent WHILE the pointer is still held, then release
     # immediately -- the gizmo is still mounted client-side, so the browser

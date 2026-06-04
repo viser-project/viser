@@ -37,9 +37,7 @@ def test_active_tab_survives_removal_of_earlier_tab(
         viser_server.gui.add_button("beta-content")
 
     # Both tab triggers should render.
-    expect(viser_page.get_by_role("tab", name="AlphaTab")).to_be_visible(
-        timeout=5_000
-    )
+    expect(viser_page.get_by_role("tab", name="AlphaTab")).to_be_visible(timeout=5_000)
 
     # Select the second tab; it should become the active/selected tab.
     beta_tab = viser_page.get_by_role("tab", name="BetaTab")

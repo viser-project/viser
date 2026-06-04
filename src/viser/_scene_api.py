@@ -1727,9 +1727,7 @@ class SceneApi:
             top_skin_weights = np.pad(top_skin_weights, ((0, 0), (0, pad)))
         top4_skin_indices = top_skin_indices
         top4_skin_weights = top_skin_weights
-        assert (
-            top4_skin_weights.shape == top4_skin_indices.shape == (num_vertices, 4)
-        )
+        assert top4_skin_weights.shape == top4_skin_indices.shape == (num_vertices, 4)
 
         bone_wxyzs = np.asarray(bone_wxyzs)
         bone_positions = np.asarray(bone_positions)

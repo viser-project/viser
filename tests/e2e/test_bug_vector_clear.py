@@ -35,7 +35,6 @@ def test_clearing_vector_field_does_not_commit_zero(
     viser_page.wait_for_timeout(400)
 
     assert not any(v[0] == 0.0 for v in seen), (
-        f"clearing the vector field committed an out-of-range 0 to the server: "
-        f"{seen}"
+        f"clearing the vector field committed an out-of-range 0 to the server: {seen}"
     )
     assert handle.value[0] == 3.0, handle.value

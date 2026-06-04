@@ -2152,9 +2152,7 @@ class GuiApi:
         Returns:
             A handle that can be used to interact with the GUI element.
         """
-        value = cast(
-            "tuple[int, int, int, int]", _colors_to_int_tuple(initial_value)
-        )
+        value = cast("tuple[int, int, int, int]", _colors_to_int_tuple(initial_value))
         uuid = _make_uuid()
         order = _apply_default_order(order)
         return GuiRgbaHandle(
