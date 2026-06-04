@@ -222,10 +222,73 @@ def main() -> None:
             )
 
     # ------------------------------------------------------------------
-    # 6. Python server-side bugs -- each runs in an isolated throwaway server
+    # 6. Non-unit quaternion distorts a scene node  (_scene_handles.py)
+    # ------------------------------------------------------------------
+    with server.gui.add_folder("6. Non-unit quaternion distorts a node"):
+        server.gui.add_markdown(
+            "**Steps**\n"
+            "1. Find the axes triad `/quat_demo` in the scene.\n"
+            "2. Click *Set non-unit wxyz = (0, 3, 4, 0)*.\n\n"
+            "**Bug:** the client applied the raw quaternion without normalizing, "
+            "so a non-unit value scaled/sheared the triad (axes grew and skewed).\n\n"
+            "**Expected:** the triad just rotates (undistorted), and reading "
+            "`frame.wxyz` back returns a unit quaternion."
+        )
+        quat_frame = server.scene.add_frame(
+            "/quat_demo", axes_length=0.5, position=(0.0, 0.0, 0.0)
+        )
+
+        set_quat = server.gui.add_button("Set non-unit wxyz = (0, 3, 4, 0)")
+
+        @set_quat.on_click
+        def _(event: viser.GuiEvent) -> None:
+            quat_frame.wxyz = (0.0, 3.0, 4.0, 0.0)
+            stored = tuple(np.round(quat_frame.wxyz, 3))
+            notify(event, "wxyz set", f"stored (normalized) = {stored}", error=False)
+
+    # ------------------------------------------------------------------
+    # 7. Zero-byte file upload  (UploadButton.tsx + _gui_api.py)
+    # ------------------------------------------------------------------
+    with server.gui.add_folder("7. Zero-byte file upload"):
+        server.gui.add_markdown(
+            "**Steps**\n"
+            "1. Make an empty file: `touch empty.bin`.\n"
+            "2. Click the button below and pick `empty.bin`.\n\n"
+            "**Bug:** an empty file sent zero chunks, so the upload notification "
+            "spun forever and `on_upload` never fired.\n\n"
+            "**Expected:** the notification resolves to 'uploaded successfully' "
+            "and the callback reports a 0-byte file."
+        )
+        upload = server.gui.add_upload_button("Upload a (0-byte) file")
+
+        @upload.on_upload
+        def _(event: viser.GuiEvent) -> None:
+            f = upload.value
+            notify(
+                event,
+                "on_upload fired",
+                f"name={f.name!r}, bytes={len(f.content)}",
+                error=False,
+            )
+
+    # ------------------------------------------------------------------
+    # 8. Dark-mode load flashes light  (App.tsx + GuiState.ts)
+    # ------------------------------------------------------------------
+    with server.gui.add_folder("8. Dark-mode load flashes light"):
+        server.gui.add_markdown(
+            "This one needs a reload with a query parameter.\n\n"
+            "**Steps**\n"
+            "1. Append `?darkMode` to the URL and reload the page.\n\n"
+            "**Bug:** dark mode was applied in a post-mount effect, so the first "
+            "paint was light and then flipped to dark -- a one-frame white flash.\n\n"
+            "**Expected:** the page is dark from the very first frame (no flash)."
+        )
+
+    # ------------------------------------------------------------------
+    # 9. Python server-side bugs -- each runs in an isolated throwaway server
     #    and reports the result.
     # ------------------------------------------------------------------
-    with server.gui.add_folder("6. Python server-side bugs"):
+    with server.gui.add_folder("9. Python server-side bugs"):
         server.gui.add_markdown(
             "Each button runs one scenario in a *separate* temporary "
             "`ViserServer` and reports OK (fixed) or the raised error (buggy) as "
@@ -420,6 +483,142 @@ def main() -> None:
 
         b = server.gui.add_button("Gizmo: late update leaves no stale pose")
         b.on_click(lambda e: run_async_check(e, "Gizmo stale pose", _tc_stale_pose))
+
+        # 9i. Non-unit quaternion is normalized before it is stored/sent.
+        def _quat_norm(s: viser.ViserServer) -> str:
+            f = s.scene.add_frame("/f")
+            f.wxyz = (0.0, 3.0, 4.0, 0.0)  # norm 5
+            norm = float(np.linalg.norm(f.wxyz))
+            assert abs(norm - 1.0) < 1e-6, f"not normalized: norm={norm}"
+            return f"Non-unit quaternion normalized on assignment (norm={norm:.6f})."
+
+        b = server.gui.add_button("Quaternion: normalized on assignment")
+        b.on_click(lambda e: run_check(e, "Quaternion normalize", _quat_norm))
+
+        # 9j. Splat sub-property update queues a private copy (no aliasing).
+        def _splat_alias(s: viser.ViserServer) -> str:
+            n = 5
+            g = s.scene.add_gaussian_splats(
+                "/s",
+                centers=np.zeros((n, 3), np.float32),
+                covariances=np.tile(np.eye(3) * 0.01, (n, 1, 1)).astype(np.float32),
+                rgbs=np.zeros((n, 3), np.uint8),
+                opacities=np.ones((n, 1), np.float32),
+            )
+            g.centers = np.ones((n, 3), np.float32)
+            buf = s._websock_server._broadcast_buffer.message_from_id
+
+            def latest() -> np.ndarray:
+                return [
+                    m.updates["buffer"]  # type: ignore[attr-defined]
+                    for m in buf.values()
+                    if type(m).__name__ == "SceneNodeUpdateMessage"
+                    and "buffer" in getattr(m, "updates", {})
+                ][-1]
+
+            queued = latest()
+            assert queued is not g._impl.props.buffer, "queued message aliases live buffer"
+            before = queued.copy()
+            g.centers = np.full((n, 3), 7.0, np.float32)  # mutate the stored buffer
+            assert np.array_equal(queued, before), "earlier queued message corrupted"
+            return "Splat sub-property update queued a private copy (no torn read)."
+
+        b = server.gui.add_button("Gaussian splats: buffer not aliased")
+        b.on_click(lambda e: run_check(e, "Splat buffer alias", _splat_alias))
+
+        # 9k. Array-prop update is decoupled from the caller's array.
+        def _array_alias(s: viser.ViserServer) -> str:
+            pc = s.scene.add_point_cloud(
+                "/pc",
+                points=np.zeros((4, 3), np.float32),
+                colors=np.zeros((4, 3), np.uint8),
+            )
+            arr = np.ones((4, 3), np.float32)
+            pc.points = arr
+            arr[:] = 7.0  # caller reuses its buffer (e.g. next animation frame)
+            buf = s._websock_server._broadcast_buffer.message_from_id
+            msg = next(
+                m
+                for m in buf.values()
+                if type(m).__name__ == "SceneNodeUpdateMessage"
+                and "points" in getattr(m, "updates", {})
+            )
+            assert np.all(msg.updates["points"] == 1.0), "caller mutation corrupted message"  # type: ignore[attr-defined]
+            return "Point-cloud update is decoupled from the caller's array."
+
+        b = server.gui.add_button("Array prop: caller array not aliased")
+        b.on_click(lambda e: run_check(e, "Array prop alias", _array_alias))
+
+        # 9l. numpy assignment to a GUI handle preserves element types.
+        def _numpy_types(s: viser.ViserServer) -> str:
+            rgb = s.gui.add_rgb("c", (255, 0, 0))
+            rgb.value = np.array([10, 20, 30])
+            assert all(isinstance(x, int) for x in rgb.value), "rgb channels not int"
+            vec = s.gui.add_vector3("v", (1.0, 2.0, 3.0))
+            vec.value = np.array([4.0, 5.0, 6.0])
+            assert all(isinstance(x, float) for x in vec.value), "vector comps not float"
+            return "Int color channels stay int; float vector components stay float."
+
+        b = server.gui.add_button("Numpy assignment preserves element types")
+        b.on_click(lambda e: run_check(e, "Numpy element types", _numpy_types))
+
+        # 9m. GUI container target is per-server-instance (no cross-leak).
+        def _container_per_instance(s: viser.ViserServer) -> str:
+            other = viser.ViserServer(port=0, verbose=False)
+            try:
+                with s.gui.add_folder("F"):
+                    # Must target `other`'s root, not raise on the foreign folder.
+                    other.gui.add_text("t", "x")
+                assert other.gui._get_container_uuid() == "root"
+            finally:
+                other.stop()
+            return "A folder context on one server didn't leak into another instance."
+
+        b = server.gui.add_button("GUI container target is per-instance")
+        b.on_click(lambda e: run_check(e, "Container per-instance", _container_per_instance))
+
+        # 9n. Batched-mesh colors validated against the instance count.
+        def _batched_colors(s: viser.ViserServer) -> str:
+            n = 5
+            verts = np.zeros((3, 3), np.float32)
+            faces = np.array([[0, 1, 2]], np.uint32)
+            wxyzs = np.tile([1.0, 0.0, 0.0, 0.0], (n, 1))
+            positions = np.zeros((n, 3))
+            try:
+                s.scene.add_batched_meshes_simple(
+                    "/m", verts, faces, wxyzs, positions,
+                    batched_colors=np.zeros((2, 3), np.uint8),  # wrong length
+                )
+            except AssertionError as e:
+                return f"Correctly rejected mismatched batched_colors ({e})."
+            return "BUG: accepted batched_colors with the wrong length."
+
+        b = server.gui.add_button("Batched mesh: color length validated")
+        b.on_click(lambda e: run_check(e, "Batched colors", _batched_colors))
+
+        # 9o. Zero-byte upload finalizes server-side (no leak; value set).
+        def _zero_upload(s: viser.ViserServer) -> str:
+            from viser import _messages
+            from viser.infra import ClientId
+
+            btn = s.gui.add_upload_button("up")
+            s.gui._handle_file_transfer_start(
+                ClientId(0),
+                _messages.FileTransferStartUpload(
+                    source_component_uuid=btn._impl.uuid,
+                    transfer_uuid="t0",
+                    filename="empty.bin",
+                    mime_type="application/octet-stream",
+                    part_count=0,
+                    size_bytes=0,
+                ),
+            )
+            assert "t0" not in s.gui._current_file_upload_states, "upload state leaked"
+            assert btn.value.name == "empty.bin" and btn.value.content == b"", "value not set"
+            return "Zero-byte upload finalized (no leaked state; handle value set)."
+
+        b = server.gui.add_button("Zero-byte upload completes")
+        b.on_click(lambda e: run_check(e, "Zero-byte upload", _zero_upload))
 
     print("\nViser running. Open the URL above and follow the on-screen folders.")
     print("Press Ctrl+C to stop.\n")
