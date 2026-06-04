@@ -356,30 +356,18 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
                     _messages.SetSceneNodeDragBindingsMessage(node_name, ())
                 )
 
-        # Clean up all descendants from both dicts. This runs uniformly for
-        # direct removal, ``reset()``, and cascading parent removal, so
-        # subclass-specific registries (transform controls, 3D GUI containers)
-        # are cleaned here rather than in per-subclass ``remove()`` overrides --
-        # otherwise a gizmo/container removed via an ancestor would leak its
-        # registry entry (its override never runs on cascade).
+        # Tear down each descendant from both dicts and let it release any
+        # subclass-specific registries via the polymorphic ``_on_remove`` hook.
+        # This runs once per node -- for direct removal, ``reset()``, and
+        # cascading parent removal alike -- because a node removed via an
+        # ancestor never has its own ``remove()`` called.
         for node_name in to_remove:
             handle = api._handle_from_node_name.pop(node_name, None)
             api._children_from_node_name.pop(node_name, None)
             if handle is None:
                 continue
             handle._impl.removed = True
-
-            # Transform-controls registry (keyed by node name).
-            api._handle_from_transform_controls_name.pop(node_name, None)
-
-            # 3D GUI container: drop its contained GUI elements and its entry in
-            # the container registry (keyed by container UUID).
-            if isinstance(handle, Gui3dContainerHandle):
-                for child in tuple(handle._children.values()):
-                    child.remove()
-                handle._gui_api._container_handle_from_uuid.pop(
-                    handle._container_id, None
-                )
+            handle._on_remove()
 
         # Remove from parent's children set.
         parent = self._impl.name.rsplit("/", 1)[0]
@@ -393,6 +381,14 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             api._websock_interface.queue_message(
                 _messages.RemoveSceneNodeMessage(node_name)
             )
+
+    def _on_remove(self) -> None:
+        """Release any subclass-specific registries for this node.
+
+        Called once per node during removal -- including when the node is
+        removed via an ancestor's cascade, where a subclass ``remove()`` would
+        never run. The base node holds no extra registries, so this is a no-op;
+        subclasses override it to clean up their own state."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1371,6 +1367,11 @@ class TransformControlsHandle(
         super().__init__(impl)
         self._impl_aux = impl_aux
 
+    @override
+    def _on_remove(self) -> None:
+        # Drop the name-keyed gizmo registry entry.
+        self._impl.api._handle_from_transform_controls_name.pop(self._impl.name, None)
+
     @property
     def update_timestamp(self) -> float:
         return self._impl_aux.last_updated
@@ -1484,3 +1485,10 @@ class Gui3dContainerHandle(
         assert self._container_id_restore is not None
         self._gui_api._set_container_uuid(self._container_id_restore)
         self._container_id_restore = None
+
+    @override
+    def _on_remove(self) -> None:
+        # Remove contained GUI elements, then drop the UUID-keyed container entry.
+        for child in tuple(self._children.values()):
+            child.remove()
+        self._gui_api._container_handle_from_uuid.pop(self._container_id, None)
