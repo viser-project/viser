@@ -222,34 +222,9 @@ def main() -> None:
             )
 
     # ------------------------------------------------------------------
-    # 6. Non-unit quaternion distorts a scene node  (_scene_handles.py)
+    # 6. Zero-byte file upload  (UploadButton.tsx + _gui_api.py)
     # ------------------------------------------------------------------
-    with server.gui.add_folder("6. Non-unit quaternion distorts a node"):
-        server.gui.add_markdown(
-            "**Steps**\n"
-            "1. Find the axes triad `/quat_demo` in the scene.\n"
-            "2. Click *Set non-unit wxyz = (0, 3, 4, 0)*.\n\n"
-            "**Bug:** the client applied the raw quaternion without normalizing, "
-            "so a non-unit value scaled/sheared the triad (axes grew and skewed).\n\n"
-            "**Expected:** the triad just rotates (undistorted), and reading "
-            "`frame.wxyz` back returns a unit quaternion."
-        )
-        quat_frame = server.scene.add_frame(
-            "/quat_demo", axes_length=0.5, position=(0.0, 0.0, 0.0)
-        )
-
-        set_quat = server.gui.add_button("Set non-unit wxyz = (0, 3, 4, 0)")
-
-        @set_quat.on_click
-        def _(event: viser.GuiEvent) -> None:
-            quat_frame.wxyz = (0.0, 3.0, 4.0, 0.0)
-            stored = tuple(np.round(quat_frame.wxyz, 3))
-            notify(event, "wxyz set", f"stored (normalized) = {stored}", error=False)
-
-    # ------------------------------------------------------------------
-    # 7. Zero-byte file upload  (UploadButton.tsx + _gui_api.py)
-    # ------------------------------------------------------------------
-    with server.gui.add_folder("7. Zero-byte file upload"):
+    with server.gui.add_folder("6. Zero-byte file upload"):
         server.gui.add_markdown(
             "**Steps**\n"
             "1. Make an empty file: `touch empty.bin`.\n"
@@ -272,9 +247,9 @@ def main() -> None:
             )
 
     # ------------------------------------------------------------------
-    # 8. Dark-mode load flashes light  (App.tsx + GuiState.ts)
+    # 7. Dark-mode load flashes light  (App.tsx + GuiState.ts)
     # ------------------------------------------------------------------
-    with server.gui.add_folder("8. Dark-mode load flashes light"):
+    with server.gui.add_folder("7. Dark-mode load flashes light"):
         server.gui.add_markdown(
             "This one needs a reload with a query parameter.\n\n"
             "**Steps**\n"
@@ -285,10 +260,10 @@ def main() -> None:
         )
 
     # ------------------------------------------------------------------
-    # 9. Python server-side bugs -- each runs in an isolated throwaway server
+    # 8. Python server-side bugs -- each runs in an isolated throwaway server
     #    and reports the result.
     # ------------------------------------------------------------------
-    with server.gui.add_folder("9. Python server-side bugs"):
+    with server.gui.add_folder("8. Python server-side bugs"):
         server.gui.add_markdown(
             "Each button runs one scenario in a *separate* temporary "
             "`ViserServer` and reports OK (fixed) or the raised error (buggy) as "
@@ -484,18 +459,7 @@ def main() -> None:
         b = server.gui.add_button("Gizmo: late update leaves no stale pose")
         b.on_click(lambda e: run_async_check(e, "Gizmo stale pose", _tc_stale_pose))
 
-        # 9i. Non-unit quaternion is normalized before it is stored/sent.
-        def _quat_norm(s: viser.ViserServer) -> str:
-            f = s.scene.add_frame("/f")
-            f.wxyz = (0.0, 3.0, 4.0, 0.0)  # norm 5
-            norm = float(np.linalg.norm(f.wxyz))
-            assert abs(norm - 1.0) < 1e-6, f"not normalized: norm={norm}"
-            return f"Non-unit quaternion normalized on assignment (norm={norm:.6f})."
-
-        b = server.gui.add_button("Quaternion: normalized on assignment")
-        b.on_click(lambda e: run_check(e, "Quaternion normalize", _quat_norm))
-
-        # 9j. Splat sub-property update queues a private copy (no aliasing).
+        # 8i. Splat sub-property update queues a private copy (no aliasing).
         def _splat_alias(s: viser.ViserServer) -> str:
             n = 5
             g = s.scene.add_gaussian_splats(
@@ -526,7 +490,7 @@ def main() -> None:
         b = server.gui.add_button("Gaussian splats: buffer not aliased")
         b.on_click(lambda e: run_check(e, "Splat buffer alias", _splat_alias))
 
-        # 9k. Array-prop update is decoupled from the caller's array.
+        # 8j. Array-prop update is decoupled from the caller's array.
         def _array_alias(s: viser.ViserServer) -> str:
             pc = s.scene.add_point_cloud(
                 "/pc",
@@ -549,7 +513,7 @@ def main() -> None:
         b = server.gui.add_button("Array prop: caller array not aliased")
         b.on_click(lambda e: run_check(e, "Array prop alias", _array_alias))
 
-        # 9l. numpy assignment to a GUI handle preserves element types.
+        # 8k. numpy assignment to a GUI handle preserves element types.
         def _numpy_types(s: viser.ViserServer) -> str:
             rgb = s.gui.add_rgb("c", (255, 0, 0))
             rgb.value = np.array([10, 20, 30])
@@ -562,7 +526,7 @@ def main() -> None:
         b = server.gui.add_button("Numpy assignment preserves element types")
         b.on_click(lambda e: run_check(e, "Numpy element types", _numpy_types))
 
-        # 9m. GUI container target is per-server-instance (no cross-leak).
+        # 8l. GUI container target is per-server-instance (no cross-leak).
         def _container_per_instance(s: viser.ViserServer) -> str:
             other = viser.ViserServer(port=0, verbose=False)
             try:
@@ -577,7 +541,7 @@ def main() -> None:
         b = server.gui.add_button("GUI container target is per-instance")
         b.on_click(lambda e: run_check(e, "Container per-instance", _container_per_instance))
 
-        # 9n. Batched-mesh colors validated against the instance count.
+        # 8m. Batched-mesh colors validated against the instance count.
         def _batched_colors(s: viser.ViserServer) -> str:
             n = 5
             verts = np.zeros((3, 3), np.float32)
@@ -596,7 +560,7 @@ def main() -> None:
         b = server.gui.add_button("Batched mesh: color length validated")
         b.on_click(lambda e: run_check(e, "Batched colors", _batched_colors))
 
-        # 9o. Zero-byte upload finalizes server-side (no leak; value set).
+        # 8n. Zero-byte upload finalizes server-side (no leak; value set).
         def _zero_upload(s: viser.ViserServer) -> str:
             from viser import _messages
             from viser.infra import ClientId
