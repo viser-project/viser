@@ -141,14 +141,10 @@ export function applyGuiConfigUpdate(
   return newConfig;
 }
 
-export function useGuiState(initialServer: string, initialDarkMode?: boolean) {
+export function useGuiState(initialServer: string) {
   return React.useState(() => {
     const store = createStore<GuiState>({
       ...cleanGuiState,
-      theme: {
-        ...cleanGuiState.theme,
-        dark_mode: initialDarkMode ?? cleanGuiState.theme.dark_mode,
-      },
       server: initialServer,
     });
 

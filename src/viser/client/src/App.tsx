@@ -275,14 +275,15 @@ function ViewerRoot() {
     }, []),
   );
 
-  // Apply dark mode setting if provided via URL or embed config. Seeded into
-  // the store at creation so the very first paint is already dark -- deferring
-  // this to a post-mount effect caused a one-frame light flash on dark-mode
-  // loads, and writing during render notifies store subscribers mid-render.
-  const effectiveDarkMode = darkMode || embedConfig?.darkMode;
+  // `?darkMode` / embed darkMode forces dark mode. We OR it into the rendered
+  // color scheme in ViewerContents so it (a) wins over a server-sent theme --
+  // configure_theme defaults dark_mode=False, which would otherwise override
+  // the URL -- and (b) is correct on the very first paint, with no render-phase
+  // store write or post-mount flash.
+  const effectiveDarkMode = darkMode || embedConfig?.darkMode || false;
 
   // Create GUI state.
-  const guiState = useGuiState(initialServer, effectiveDarkMode);
+  const guiState = useGuiState(initialServer);
 
   // Create the context value with hooks and single ref.
   const viewer: ViewerContextContents = {
@@ -302,7 +303,7 @@ function ViewerRoot() {
 
   return (
     <ViewerContext.Provider value={viewer}>
-      <ViewerContents>
+      <ViewerContents forceDarkMode={effectiveDarkMode}>
         {messageSource === "websocket" && <WebsocketMessageProducer />}
         {messageSource === "file_playback" && (
           <PlaybackFromFile fileUrl={playbackPath!} />
@@ -318,9 +319,18 @@ function ViewerRoot() {
 /**
  * Main content wrapper with theme and layout.
  */
-function ViewerContents({ children }: { children: React.ReactNode }) {
+function ViewerContents({
+  children,
+  forceDarkMode,
+}: {
+  children: React.ReactNode;
+  forceDarkMode: boolean;
+}) {
   const viewer = React.useContext(ViewerContext)!;
-  const darkMode = viewer.useGui((state) => state.theme.dark_mode);
+  // `?darkMode` / embed darkMode forces dark mode and wins over the server's
+  // theme (configure_theme defaults dark_mode=False).
+  const storeDarkMode = viewer.useGui((state) => state.theme.dark_mode);
+  const darkMode = forceDarkMode || storeDarkMode;
   const colors = viewer.useGui((state) => state.theme.colors);
   const controlLayout = viewer.useGui((state) => state.theme.control_layout);
   const showLogo = viewer.useGui((state) => state.theme.show_logo);
