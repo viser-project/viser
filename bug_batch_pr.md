@@ -47,4 +47,3 @@ against `main`.
 - New Python regression tests (`tests/test_handle_lifecycle_bugs.py`,
   `tests/test_tab_group.py`) and Playwright e2e (`tests/e2e/test_bug_*.py`).
 - Full suite green: pytest (unit + e2e), pyright, ruff, eslint, tsc.
-- `repro_bugs.py` is an optional manual repro/verification script (not CI).
