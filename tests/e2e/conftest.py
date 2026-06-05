@@ -15,6 +15,24 @@ from .utils import find_free_port, wait_for_connection, wait_for_server_ready
 
 TEST_RESULTS_DIR = Path(__file__).resolve().parent.parent.parent / "test-results"
 
+# Smaller-than-default viewport: software WebGL (SwiftShader, used on GPU-less CI
+# runners) rasterizes the 3D scene in software, so per-frame cost scales with the
+# pixel count. Shrinking the canvas from Playwright's 1280x720 default cuts that
+# work substantially on CI. Kept large enough for layout-sensitive tests (text
+# wrapping, panel docking). device_scale_factor is pinned to 1 (already the
+# Linux default, explicit for determinism across hosts).
+_E2E_VIEWPORT = {"width": 960, "height": 600}
+
+
+@pytest.fixture()
+def browser_context_args(browser_context_args: dict) -> dict:
+    """Shrink the viewport to reduce software-WebGL raster cost on CI."""
+    return {
+        **browser_context_args,
+        "viewport": _E2E_VIEWPORT,
+        "device_scale_factor": 1,
+    }
+
 
 def pytest_configure(config: pytest.Config) -> None:
     """Configure Playwright video/trace capture.

@@ -68,6 +68,7 @@ dev = [
     "playwright>=1.40.0",
     "pytest-playwright>=0.4.0",
     "pytest-xdist>=3.0.0",
+    "pytest-split>=0.8.0",
 ]
 examples = [
     "viser[urdf]",
