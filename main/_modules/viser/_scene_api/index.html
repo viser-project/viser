@@ -495,6 +495,7 @@
     <span class="n">TransformControlsEvent</span><span class="p">,</span>
     <span class="n">TransformControlsHandle</span><span class="p">,</span>
     <span class="n">_DragInput</span><span class="p">,</span>
+    <span class="n">_normalize_node_name</span><span class="p">,</span>
     <span class="n">_RaycastSupportedSceneNodeHandle</span><span class="p">,</span>
     <span class="n">_TransformControlsState</span><span class="p">,</span>
 <span class="p">)</span>
@@ -653,6 +654,14 @@
             <span class="nb">tuple</span><span class="p">[</span><span class="n">ClientId</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
             <span class="nb">tuple</span><span class="p">[</span><span class="n">_RaycastSupportedSceneNodeHandle</span><span class="p">,</span> <span class="n">_messages</span><span class="o">.</span><span class="n">SceneNodeDragMessage</span><span class="p">],</span>
         <span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="c1"># Same idea for transform-control gizmos: track in-flight drags so a</span>
+        <span class="c1"># late ``update``/``end`` still dispatches after the gizmo (or an</span>
+        <span class="c1"># ancestor) is removed mid-drag -- which pops the handle from</span>
+        <span class="c1"># ``_handle_from_transform_controls_name`` -- and so ``on_drag_end``</span>
+        <span class="c1"># fires (and the entry is released) on a mid-drag disconnect.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_active_transform_drag_handles</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span>
+            <span class="nb">tuple</span><span class="p">[</span><span class="n">ClientId</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="n">TransformControlsHandle</span>
+        <span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
 
         <span class="c1"># Enable/disable of ``ScenePointerEnableMessage`` is</span>
         <span class="c1"># reference-counted per ``event_type``: enable when the first</span>
@@ -720,6 +729,16 @@
             <span class="c1"># client-reported positions.</span>
             <span class="n">synthetic</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">last_msg</span><span class="p">,</span> <span class="n">phase</span><span class="o">=</span><span class="s2">&quot;end&quot;</span><span class="p">)</span>
             <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dispatch_drag_callbacks</span><span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="n">handle</span><span class="p">,</span> <span class="n">synthetic</span><span class="p">)</span>
+
+        <span class="c1"># Same for in-flight transform-control gizmo drags.</span>
+        <span class="n">stale_tc_keys</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">k</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active_transform_drag_handles</span> <span class="k">if</span> <span class="n">k</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">client_id</span>
+        <span class="p">]</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">stale_tc_keys</span><span class="p">:</span>
+            <span class="n">tc_handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active_transform_drag_handles</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">tc_handle</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fire_transform_controls_callbacks</span><span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="n">tc_handle</span><span class="p">,</span> <span class="s2">&quot;end&quot;</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_ensure_ancestors_exist</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Create intermediate frame nodes for any missing ancestors of `name`.&quot;&quot;&quot;</span>
@@ -2190,16 +2209,27 @@
 
         <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">bone_wxyzs</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">bone_positions</span><span class="p">)</span>
         <span class="n">num_bones</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">bone_wxyzs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">num_bones</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;A skinned mesh requires at least one bone.&quot;</span><span class="p">)</span>
         <span class="k">assert</span> <span class="n">skin_weights</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">vertices</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">num_bones</span><span class="p">)</span>
 
-        <span class="c1"># Take the four biggest indices.</span>
-        <span class="n">top4_skin_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">skin_weights</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)[:,</span> <span class="o">-</span><span class="mi">4</span><span class="p">:]</span>
-        <span class="n">top4_skin_weights</span> <span class="o">=</span> <span class="n">skin_weights</span><span class="p">[</span>
-            <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">vertices</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">top4_skin_indices</span>
+        <span class="c1"># Take up to the four biggest weights per vertex. The client expects</span>
+        <span class="c1"># exactly four bone indices/weights per vertex, so when the rig has</span>
+        <span class="c1"># fewer than four bones we pad with zero-weight (index 0) entries, which</span>
+        <span class="c1"># have no effect on the skinning result.</span>
+        <span class="n">num_vertices</span> <span class="o">=</span> <span class="n">vertices</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">num_influences</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="n">num_bones</span><span class="p">)</span>
+        <span class="n">pad</span> <span class="o">=</span> <span class="mi">4</span> <span class="o">-</span> <span class="n">num_influences</span>
+        <span class="n">top_skin_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">skin_weights</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)[:,</span> <span class="o">-</span><span class="n">num_influences</span><span class="p">:]</span>
+        <span class="n">top_skin_weights</span> <span class="o">=</span> <span class="n">skin_weights</span><span class="p">[</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">num_vertices</span><span class="p">)[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">top_skin_indices</span>
         <span class="p">]</span>
-        <span class="k">assert</span> <span class="p">(</span>
-            <span class="n">top4_skin_weights</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="n">top4_skin_indices</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">vertices</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">4</span><span class="p">)</span>
-        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">pad</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">top_skin_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">pad</span><span class="p">(</span><span class="n">top_skin_indices</span><span class="p">,</span> <span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">pad</span><span class="p">)))</span>
+            <span class="n">top_skin_weights</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">pad</span><span class="p">(</span><span class="n">top_skin_weights</span><span class="p">,</span> <span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">pad</span><span class="p">)))</span>
+        <span class="n">top4_skin_indices</span> <span class="o">=</span> <span class="n">top_skin_indices</span>
+        <span class="n">top4_skin_weights</span> <span class="o">=</span> <span class="n">top_skin_weights</span>
+        <span class="k">assert</span> <span class="n">top4_skin_weights</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="n">top4_skin_indices</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">num_vertices</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
 
         <span class="n">bone_wxyzs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">bone_wxyzs</span><span class="p">)</span>
         <span class="n">bone_positions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">bone_positions</span><span class="p">)</span>
@@ -2473,6 +2503,13 @@
         <span class="n">batched_colors_array</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="n">batched_colors</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">batched_colors_array</span> <span class="o">=</span> <span class="n">colors_to_uint8</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">batched_colors</span><span class="p">))</span>
+            <span class="c1"># Validate length against the instance count (like the other</span>
+            <span class="c1"># per-instance arrays above); otherwise a mismatched-length color</span>
+            <span class="c1"># array is sent verbatim and the client silently drops all colors.</span>
+            <span class="k">assert</span> <span class="n">batched_colors_array</span><span class="o">.</span><span class="n">shape</span> <span class="ow">in</span> <span class="p">((</span><span class="mi">3</span><span class="p">,),</span> <span class="p">(</span><span class="n">num_instances</span><span class="p">,</span> <span class="mi">3</span><span class="p">)),</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;batched_colors must have shape (3,) or (</span><span class="si">{</span><span class="n">num_instances</span><span class="si">}</span><span class="s2">, 3), &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="n">batched_colors_array</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
 
         <span class="n">message</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">BatchedMeshesMessage</span><span class="p">(</span>
             <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
@@ -3129,6 +3166,11 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            Handle for manipulating (and reading state of) scene node.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Normalize the name up front so the node map, the transform-controls</span>
+        <span class="c1"># registry, and the pose-sync messages below all key off the same</span>
+        <span class="c1"># (leading-slash) name the client uses.</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="n">_normalize_node_name</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
         <span class="n">message</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">TransformControlsMessage</span><span class="p">(</span>
             <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
             <span class="n">props</span><span class="o">=</span><span class="n">_messages</span><span class="o">.</span><span class="n">TransformControlsProps</span><span class="p">(</span>
@@ -3171,6 +3213,10 @@
         <span class="p">)</span>
         <span class="n">handle</span> <span class="o">=</span> <span class="n">TransformControlsHandle</span><span class="p">(</span><span class="n">node_handle</span><span class="o">.</span><span class="n">_impl</span><span class="p">,</span> <span class="n">state_aux</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_transform_controls_name</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">handle</span>
+        <span class="c1"># Store the typed handle (not the plain SceneNodeHandle from `_make`) in</span>
+        <span class="c1"># the node map so removal via `reset()` / re-add dedup goes through the</span>
+        <span class="c1"># same path that cleans up the transform-controls registry.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">handle</span>
         <span class="k">return</span> <span class="n">handle</span></div>
 
 
@@ -3215,7 +3261,11 @@
         <span class="bp">self</span><span class="p">,</span> <span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">TransformControlsUpdateMessage</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Apply pose update and fire `update_cb` with phase=&quot;update&quot;.&quot;&quot;&quot;</span>
-        <span class="n">handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_transform_controls_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="c1"># Prefer the active-drag map so a late update still resolves after the</span>
+        <span class="c1"># gizmo was removed mid-drag (which pops it from the live registry).</span>
+        <span class="n">handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active_transform_drag_handles</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="n">message</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="p">)</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_transform_controls_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span>
 
@@ -3224,7 +3274,13 @@
         <span class="n">handle</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">last_updated</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
 
         <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fire_transform_controls_callbacks</span><span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="n">handle</span><span class="p">,</span> <span class="s2">&quot;update&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">handle</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">sync_cb</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Fire the callback even for a removed gizmo (late update during teardown),</span>
+        <span class="c1"># but skip the cross-client pose broadcast: sync_cb queues PERSISTENT</span>
+        <span class="c1"># Set{Orientation,Position} messages keyed by node name, which would</span>
+        <span class="c1"># linger in the broadcast buffer for the removed name (the</span>
+        <span class="c1"># RemoveSceneNodeMessage uses a different redundancy key and won&#39;t purge</span>
+        <span class="c1"># them) and corrupt the pose of a future same-name node.</span>
+        <span class="k">if</span> <span class="n">handle</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">sync_cb</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">handle</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
             <span class="n">handle</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">sync_cb</span><span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="n">handle</span><span class="p">)</span>
 
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_handle_transform_controls_drag_start</span><span class="p">(</span>
@@ -3233,12 +3289,15 @@
         <span class="n">handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_transform_controls_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_active_transform_drag_handles</span><span class="p">[(</span><span class="n">client_id</span><span class="p">,</span> <span class="n">message</span><span class="o">.</span><span class="n">name</span><span class="p">)]</span> <span class="o">=</span> <span class="n">handle</span>
         <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fire_transform_controls_callbacks</span><span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="n">handle</span><span class="p">,</span> <span class="s2">&quot;start&quot;</span><span class="p">)</span>
 
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_handle_transform_controls_drag_end</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">TransformControlsDragEndMessage</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_transform_controls_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active_transform_drag_handles</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="n">message</span><span class="o">.</span><span class="n">name</span><span class="p">),</span> <span class="kc">None</span>
+        <span class="p">)</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_transform_controls_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span>
         <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fire_transform_controls_callbacks</span><span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="n">handle</span><span class="p">,</span> <span class="s2">&quot;end&quot;</span><span class="p">)</span>
@@ -3743,6 +3802,10 @@
         <span class="c1"># from both GuiApi and MessageApi. The pattern below is unideal.</span>
         <span class="n">gui_api</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="o">.</span><span class="n">gui</span>
 
+        <span class="c1"># Normalize the name so the dedup check below matches the (leading-slash)</span>
+        <span class="c1"># key the node map actually uses.</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="n">_normalize_node_name</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
         <span class="c1"># Remove the 3D GUI container if it already exists. This will make sure</span>
         <span class="c1"># contained GUI elements are removed, preventing potential memory leaks.</span>
         <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="p">:</span>
@@ -3759,7 +3822,12 @@
         <span class="n">node_handle</span> <span class="o">=</span> <span class="n">SceneNodeHandle</span><span class="o">.</span><span class="n">_make</span><span class="p">(</span>
             <span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">wxyz</span><span class="p">,</span> <span class="n">position</span><span class="p">,</span> <span class="n">visible</span><span class="o">=</span><span class="n">visible</span>
         <span class="p">)</span>
-        <span class="k">return</span> <span class="n">Gui3dContainerHandle</span><span class="p">(</span><span class="n">node_handle</span><span class="o">.</span><span class="n">_impl</span><span class="p">,</span> <span class="n">gui_api</span><span class="p">,</span> <span class="n">container_id</span><span class="p">)</span></div>
+        <span class="n">handle</span> <span class="o">=</span> <span class="n">Gui3dContainerHandle</span><span class="p">(</span><span class="n">node_handle</span><span class="o">.</span><span class="n">_impl</span><span class="p">,</span> <span class="n">gui_api</span><span class="p">,</span> <span class="n">container_id</span><span class="p">)</span>
+        <span class="c1"># Store the typed handle (not the plain SceneNodeHandle from `_make`) in</span>
+        <span class="c1"># the node map so removal via `reset()` / re-add dedup / cascading parent</span>
+        <span class="c1"># removal cleans up the container&#39;s GUI children and registry entry.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">handle</span>
+        <span class="k">return</span> <span class="n">handle</span></div>
 
 
 <div class="viewcode-block" id="SceneApi.get_handle_by_name">
@@ -3779,9 +3847,7 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            Scene node handle, or None if no such node exists.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">):</span>
-            <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;/&quot;</span> <span class="o">+</span> <span class="n">name</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">_normalize_node_name</span><span class="p">(</span><span class="n">name</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="SceneApi.remove_by_name">
@@ -3794,9 +3860,7 @@
 <span class="sd">            ``add_*()`` call and calling :meth:`SceneNodeHandle.remove()`</span>
 <span class="sd">            directly instead of using this method.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">name</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span>  <span class="c1"># &#39;/parent/&#39; =&gt; &#39;/parent&#39;</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">):</span>
-            <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;/&quot;</span> <span class="o">+</span> <span class="n">name</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="n">_normalize_node_name</span><span class="p">(</span><span class="n">name</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">))</span>  <span class="c1"># &#39;/parent/&#39; =&gt; &#39;/parent&#39;</span>
         <span class="n">handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">handle</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span></div>

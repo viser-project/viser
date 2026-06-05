@@ -620,6 +620,11 @@
     <span class="n">_last_published_click_bindings</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">_messages</span><span class="o">.</span><span class="n">DragBinding</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_normalize_node_name</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Scene node names are canonicalized to always start with &quot;/&quot;.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">name</span> <span class="k">if</span> <span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="s2">&quot;/&quot;</span> <span class="o">+</span> <span class="n">name</span>
+
+
 <span class="k">class</span><span class="w"> </span><span class="nc">_SceneNodeMessage</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
     <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">props</span><span class="p">:</span> <span class="n">Any</span>
@@ -654,9 +659,8 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Create scene node: send state to client(s) and set up</span>
 <span class="sd">        server-side state.&quot;&quot;&quot;</span>
         <span class="c1"># Normalize name to always start with &quot;/&quot;.</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">):</span>
-            <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;/&quot;</span> <span class="o">+</span> <span class="n">name</span>
-            <span class="n">message</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="n">_normalize_node_name</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="n">message</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
 
         <span class="c1"># Ensure all ancestor nodes exist (creates intermediate frames as needed).</span>
         <span class="n">api</span><span class="o">.</span><span class="n">_ensure_ancestors_exist</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
@@ -693,6 +697,8 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">wxyz</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wxyz</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">._scene_api</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast_vector</span>
 
+        <span class="c1"># wxyz is assumed to be a unit quaternion (the client applies it to the</span>
+        <span class="c1"># object&#39;s rotation without normalizing).</span>
         <span class="n">wxyz_cast</span> <span class="o">=</span> <span class="n">cast_vector</span><span class="p">(</span><span class="n">wxyz</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
         <span class="n">wxyz_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">wxyz</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">wxyz_cast</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">wxyz</span><span class="p">):</span>
@@ -789,12 +795,18 @@
                     <span class="n">_messages</span><span class="o">.</span><span class="n">SetSceneNodeDragBindingsMessage</span><span class="p">(</span><span class="n">node_name</span><span class="p">,</span> <span class="p">())</span>
                 <span class="p">)</span>
 
-        <span class="c1"># Clean up all descendants from both dicts.</span>
+        <span class="c1"># Tear down each descendant from both dicts and let it release any</span>
+        <span class="c1"># subclass-specific registries via the polymorphic ``_on_remove`` hook.</span>
+        <span class="c1"># This runs once per node -- for direct removal, ``reset()``, and</span>
+        <span class="c1"># cascading parent removal alike -- because a node removed via an</span>
+        <span class="c1"># ancestor never has its own ``remove()`` called.</span>
         <span class="k">for</span> <span class="n">node_name</span> <span class="ow">in</span> <span class="n">to_remove</span><span class="p">:</span>
             <span class="n">handle</span> <span class="o">=</span> <span class="n">api</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">node_name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">handle</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="n">api</span><span class="o">.</span><span class="n">_children_from_node_name</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">node_name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">handle</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">handle</span><span class="o">.</span><span class="n">_on_remove</span><span class="p">()</span>
 
         <span class="c1"># Remove from parent&#39;s children set.</span>
         <span class="n">parent</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
@@ -808,7 +820,15 @@
             <span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
                 <span class="n">_messages</span><span class="o">.</span><span class="n">RemoveSceneNodeMessage</span><span class="p">(</span><span class="n">node_name</span><span class="p">)</span>
             <span class="p">)</span></div>
-</div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_on_remove</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Release any subclass-specific registries for this node.</span>
+
+<span class="sd">        Called once per node during removal -- including when the node is</span>
+<span class="sd">        removed via an ancestor&#39;s cascade, where a subclass ``remove()`` would</span>
+<span class="sd">        never run. The base node holds no extra registries, so this is a no-op;</span>
+<span class="sd">        subclasses override it to clean up their own state.&quot;&quot;&quot;</span></div>
 
 
 
@@ -1196,6 +1216,7 @@
         <span class="kn">from</span><span class="w"> </span><span class="nn">._scene_api</span><span class="w"> </span><span class="kn">import</span> <span class="n">_encode_image_binary</span>
 
         <span class="k">if</span> <span class="n">image</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_image</span> <span class="o">=</span> <span class="kc">None</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_image_data</span> <span class="o">=</span> <span class="kc">None</span>
             <span class="k">return</span>
 
@@ -1355,7 +1376,10 @@
         <span class="k">if</span> <span class="n">points</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">dtype</span><span class="p">:</span>
             <span class="n">new_points</span> <span class="o">=</span> <span class="n">points</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">dtype</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">props</span><span class="o">.</span><span class="n">points</span> <span class="o">=</span> <span class="n">new_points</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_queue_update</span><span class="p">(</span><span class="s2">&quot;points&quot;</span><span class="p">,</span> <span class="n">new_points</span><span class="p">)</span></div>
+            <span class="c1"># Queue a private snapshot, not the stored array (a later same-shape</span>
+            <span class="c1"># `points` update mutates the stored buffer in place, which could</span>
+            <span class="c1"># corrupt this still-unsent message). Mirrors props_setattr.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_queue_update</span><span class="p">(</span><span class="s2">&quot;points&quot;</span><span class="p">,</span> <span class="n">new_points</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span></div>
 
 
 
@@ -1491,7 +1515,10 @@
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_buffer_size</span><span class="p">(</span><span class="n">centers</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="n">centers</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint32</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_queue_update</span><span class="p">(</span><span class="s2">&quot;buffer&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
+        <span class="c1"># Queue a private snapshot: the stored buffer is mutated in place by</span>
+        <span class="c1"># later sub-property assignments, possibly while the event loop is still</span>
+        <span class="c1"># serializing this message. Matches the guard in props_setattr.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_queue_update</span><span class="p">(</span><span class="s2">&quot;buffer&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">rgbs</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">]:</span>
@@ -1510,7 +1537,7 @@
         <span class="n">rgba</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">[:,</span> <span class="mi">7</span><span class="p">:</span><span class="mi">8</span><span class="p">]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
         <span class="n">rgba</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="n">colors_to_uint8</span><span class="p">(</span><span class="n">rgbs</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">[:,</span> <span class="mi">7</span><span class="p">:</span><span class="mi">8</span><span class="p">]</span> <span class="o">=</span> <span class="n">rgba</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint32</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_queue_update</span><span class="p">(</span><span class="s2">&quot;buffer&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_queue_update</span><span class="p">(</span><span class="s2">&quot;buffer&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">opacities</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">]:</span>
@@ -1530,7 +1557,7 @@
         <span class="n">rgba</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">[:,</span> <span class="mi">7</span><span class="p">:</span><span class="mi">8</span><span class="p">]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
         <span class="n">rgba</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">4</span><span class="p">]</span> <span class="o">=</span> <span class="n">colors_to_uint8</span><span class="p">(</span><span class="n">opacities</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">[:,</span> <span class="mi">7</span><span class="p">:</span><span class="mi">8</span><span class="p">]</span> <span class="o">=</span> <span class="n">rgba</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint32</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_queue_update</span><span class="p">(</span><span class="s2">&quot;buffer&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_queue_update</span><span class="p">(</span><span class="s2">&quot;buffer&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">covariances</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">]:</span>
@@ -1562,7 +1589,7 @@
         <span class="n">cov_triu</span> <span class="o">=</span> <span class="n">covariances</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">9</span><span class="p">))[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">8</span><span class="p">])]</span>
         <span class="n">cov_triu_f16</span> <span class="o">=</span> <span class="n">cov_triu</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float16</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">[:,</span> <span class="mi">4</span><span class="p">:</span><span class="mi">7</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">cov_triu_f16</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint32</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_queue_update</span><span class="p">(</span><span class="s2">&quot;buffer&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_queue_update</span><span class="p">(</span><span class="s2">&quot;buffer&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span></div>
 
 
 
@@ -1610,6 +1637,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">wxyz</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wxyz</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">._scene_api</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast_vector</span>
 
+        <span class="c1"># wxyz is assumed to be a unit quaternion (see SceneNodeHandle.wxyz).</span>
         <span class="n">wxyz_cast</span> <span class="o">=</span> <span class="n">cast_vector</span><span class="p">(</span><span class="n">wxyz</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
         <span class="n">wxyz_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">wxyz</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">wxyz_cast</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">wxyz</span><span class="p">):</span>
@@ -1875,6 +1903,11 @@
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">impl</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span> <span class="o">=</span> <span class="n">impl_aux</span>
 
+    <span class="nd">@override</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_on_remove</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Drop the name-keyed gizmo registry entry.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">_handle_from_transform_controls_name</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">update_timestamp</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">last_updated</span>
@@ -1978,15 +2011,7 @@
                 <span class="k">return</span> <span class="kc">False</span>
             <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cb</span><span class="p">,</span> <span class="s2">&quot;_wraps&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">callback</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">update_cb</span> <span class="o">=</span> <span class="p">[</span><span class="n">cb</span> <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">update_cb</span> <span class="k">if</span> <span class="n">keep</span><span class="p">(</span><span class="n">cb</span><span class="p">)]</span>
-
-<div class="viewcode-block" id="TransformControlsHandle.remove">
-<a class="viewcode-back" href="../../../api/handles/scene_handles/#viser.TransformControlsHandle.remove">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">remove</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove the node from the scene.&quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">_handle_from_transform_controls_name</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span></div>
-</div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">update_cb</span> <span class="o">=</span> <span class="p">[</span><span class="n">cb</span> <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">update_cb</span> <span class="k">if</span> <span class="n">keep</span><span class="p">(</span><span class="n">cb</span><span class="p">)]</span></div>
 
 
 
@@ -2017,19 +2042,12 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_gui_api</span><span class="o">.</span><span class="n">_set_container_uuid</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_container_id_restore</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_container_id_restore</span> <span class="o">=</span> <span class="kc">None</span>
 
-<div class="viewcode-block" id="Gui3dContainerHandle.remove">
-<a class="viewcode-back" href="../../../api/handles/scene_handles/#viser.Gui3dContainerHandle.remove">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">remove</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Permanently remove this GUI container from the visualizer.&quot;&quot;&quot;</span>
-
-        <span class="c1"># Call scene node remove.</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
-
-        <span class="c1"># Clean up contained GUI elements.</span>
+    <span class="nd">@override</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_on_remove</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Remove contained GUI elements, then drop the UUID-keyed container entry.</span>
         <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_children</span><span class="o">.</span><span class="n">values</span><span class="p">()):</span>
             <span class="n">child</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_gui_api</span><span class="o">.</span><span class="n">_container_handle_from_uuid</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_container_id</span><span class="p">)</span></div>
-</div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_gui_api</span><span class="o">.</span><span class="n">_container_handle_from_uuid</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_container_id</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span></div>
 
 </pre></div>
         </article>

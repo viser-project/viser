@@ -494,6 +494,7 @@
     <span class="n">GuiVector3Handle</span><span class="p">,</span>
     <span class="n">SupportsRemoveProtocol</span><span class="p">,</span>
     <span class="n">UploadedFile</span><span class="p">,</span>
+    <span class="n">_colors_to_int_tuple</span><span class="p">,</span>
     <span class="n">_CommandHandleState</span><span class="p">,</span>
     <span class="n">_GuiButtonHandleState</span><span class="p">,</span>
     <span class="n">_GuiHandleState</span><span class="p">,</span>
@@ -620,8 +621,11 @@
 <span class="sd">    Used by both our global server object, for sharing the same GUI elements</span>
 <span class="sd">    with all clients, and by individual client handles.&quot;&quot;&quot;</span>
 
-    <span class="n">_target_container_from_thread_id</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;ID of container to put GUI elements into.&quot;&quot;&quot;</span>
+    <span class="n">_target_container_from_thread_id</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;ID of container to put GUI elements into. Per-instance (NOT a shared</span>
+<span class="sd">    class attribute) -- otherwise a thread inside a ``with some_gui.add_folder()``</span>
+<span class="sd">    block would leak that container target into a *different* GuiApi instance</span>
+<span class="sd">    (e.g. server.gui vs a client.gui) and raise KeyError on the foreign uuid.&quot;&quot;&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -633,6 +637,7 @@
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span> <span class="o">=</span> <span class="n">owner</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Entity that owns this API.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_target_container_from_thread_id</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span> <span class="o">=</span> <span class="n">thread_executor</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_event_loop</span> <span class="o">=</span> <span class="n">event_loop</span>
 
@@ -831,6 +836,61 @@
             <span class="s2">&quot;lock&quot;</span><span class="p">:</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">(),</span>
         <span class="p">}</span>
 
+        <span class="c1"># A zero-byte file is sent with part_count == 0, so no FileTransferPart</span>
+        <span class="c1"># messages ever arrive to drive completion. Finish it here -- otherwise</span>
+        <span class="c1"># on_upload never fires and the transfer state leaks forever.</span>
+        <span class="k">if</span> <span class="n">message</span><span class="o">.</span><span class="n">part_count</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+                <span class="n">FileTransferPartAck</span><span class="p">(</span>
+                    <span class="n">source_component_uuid</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">source_component_uuid</span><span class="p">,</span>
+                    <span class="n">transfer_uuid</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">transfer_uuid</span><span class="p">,</span>
+                    <span class="n">transferred_bytes</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                    <span class="n">total_bytes</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_finish_file_upload</span><span class="p">(</span>
+                <span class="n">client_id</span><span class="p">,</span> <span class="n">message</span><span class="o">.</span><span class="n">transfer_uuid</span><span class="p">,</span> <span class="n">message</span><span class="o">.</span><span class="n">source_component_uuid</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_finish_file_upload</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span><span class="p">,</span>
+        <span class="n">transfer_uuid</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">source_component_uuid</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Finalize a completed upload by assembling the file contents and</span>
+<span class="sd">        firing the handle&#39;s update callbacks. Shared by the normal multi-part</span>
+<span class="sd">        path and the zero-byte path (which has no parts).&quot;&quot;&quot;</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_file_upload_states</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">transfer_uuid</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">state</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+
+        <span class="n">handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_gui_input_handle_from_uuid</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">source_component_uuid</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">handle</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">handle_state</span> <span class="o">=</span> <span class="n">handle</span><span class="o">.</span><span class="n">_impl</span>
+
+        <span class="n">value</span> <span class="o">=</span> <span class="n">UploadedFile</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="n">state</span><span class="p">[</span><span class="s2">&quot;filename&quot;</span><span class="p">],</span>
+            <span class="n">content</span><span class="o">=</span><span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s2">&quot;parts&quot;</span><span class="p">][</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s2">&quot;part_count&quot;</span><span class="p">])),</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Update state.</span>
+        <span class="n">handle_state</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="n">handle_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+
+        <span class="c1"># Trigger callbacks.</span>
+        <span class="n">client</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_client</span><span class="p">(</span><span class="n">client_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">client</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="n">handle_state</span><span class="o">.</span><span class="n">update_cb</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_event_loop</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">cb</span><span class="p">(</span><span class="n">GuiEvent</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">client_id</span><span class="p">,</span> <span class="n">handle</span><span class="p">)))</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span>
+                    <span class="n">cb</span><span class="p">,</span> <span class="n">GuiEvent</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">client_id</span><span class="p">,</span> <span class="n">handle</span><span class="p">)</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span><span class="n">print_threadpool_errors</span><span class="p">)</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_handle_file_transfer_part</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">FileTransferPart</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -860,36 +920,9 @@
 
         <span class="c1"># Finish the upload.</span>
         <span class="k">assert</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;transferred_bytes&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">total_bytes</span>
-        <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_file_upload_states</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">transfer_uuid</span><span class="p">)</span>
-
-        <span class="n">handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_gui_input_handle_from_uuid</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
-            <span class="n">message</span><span class="o">.</span><span class="n">source_component_uuid</span><span class="p">,</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_finish_file_upload</span><span class="p">(</span>
+            <span class="n">client_id</span><span class="p">,</span> <span class="n">message</span><span class="o">.</span><span class="n">transfer_uuid</span><span class="p">,</span> <span class="n">message</span><span class="o">.</span><span class="n">source_component_uuid</span>
         <span class="p">)</span>
-        <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">handle</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
-            <span class="k">return</span>
-
-        <span class="n">handle_state</span> <span class="o">=</span> <span class="n">handle</span><span class="o">.</span><span class="n">_impl</span>
-
-        <span class="n">value</span> <span class="o">=</span> <span class="n">UploadedFile</span><span class="p">(</span>
-            <span class="n">name</span><span class="o">=</span><span class="n">state</span><span class="p">[</span><span class="s2">&quot;filename&quot;</span><span class="p">],</span>
-            <span class="n">content</span><span class="o">=</span><span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s2">&quot;parts&quot;</span><span class="p">][</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s2">&quot;part_count&quot;</span><span class="p">])),</span>
-        <span class="p">)</span>
-
-        <span class="c1"># Update state.</span>
-        <span class="n">handle_state</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">value</span>
-        <span class="n">handle_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-
-        <span class="c1"># Trigger callbacks.</span>
-        <span class="n">client</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_client</span><span class="p">(</span><span class="n">client_id</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">client</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">return</span>
-        <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="n">handle_state</span><span class="o">.</span><span class="n">update_cb</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_event_loop</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">cb</span><span class="p">(</span><span class="n">GuiEvent</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">client_id</span><span class="p">,</span> <span class="n">handle</span><span class="p">)))</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span>
-                    <span class="n">cb</span><span class="p">,</span> <span class="n">GuiEvent</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">client_id</span><span class="p">,</span> <span class="n">handle</span><span class="p">)</span>
-                <span class="p">)</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span><span class="n">print_threadpool_errors</span><span class="p">)</span>
 
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_handle_command_trigger</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">CommandTriggerMessage</span>
@@ -2286,9 +2319,17 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            A handle that can be used to interact with the GUI element.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Materialize once so a one-shot iterable isn&#39;t consumed by the checks</span>
+        <span class="c1"># below and again by the message construction.</span>
+        <span class="n">options_tuple</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
         <span class="n">value</span> <span class="o">=</span> <span class="n">initial_value</span>
         <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">value</span> <span class="o">=</span> <span class="n">options</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">options_tuple</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">elif</span> <span class="n">value</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">options_tuple</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Dropdown initial_value </span><span class="si">{</span><span class="n">value</span><span class="si">!r}</span><span class="s2"> is not one of the options &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">options_tuple</span><span class="si">!r}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
         <span class="n">uuid</span> <span class="o">=</span> <span class="n">_make_uuid</span><span class="p">()</span>
         <span class="n">order</span> <span class="o">=</span> <span class="n">_apply_default_order</span><span class="p">(</span><span class="n">order</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">GuiDropdownHandle</span><span class="p">(</span>
@@ -2302,7 +2343,7 @@
                         <span class="n">order</span><span class="o">=</span><span class="n">order</span><span class="p">,</span>
                         <span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">,</span>
                         <span class="n">hint</span><span class="o">=</span><span class="n">hint</span><span class="p">,</span>
-                        <span class="n">options</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">options</span><span class="p">),</span>
+                        <span class="n">options</span><span class="o">=</span><span class="n">options_tuple</span><span class="p">,</span>
                         <span class="n">disabled</span><span class="o">=</span><span class="n">disabled</span><span class="p">,</span>
                         <span class="n">visible</span><span class="o">=</span><span class="n">visible</span><span class="p">,</span>
                     <span class="p">),</span>
@@ -2554,7 +2595,10 @@
         <span class="n">hint</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">order</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GuiRgbHandle</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add an RGB picker to the GUI. All values should be in [0, 255].</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add an RGB picker to the GUI.</span>
+
+<span class="sd">        Integer channels are in [0, 255]; float channels in [0, 1] are scaled to</span>
+<span class="sd">        match (matplotlib convention), so ``1.0`` is white.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            label: Label to display on the RGB picker.</span>
@@ -2568,7 +2612,7 @@
 <span class="sd">            A handle that can be used to interact with the GUI element.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
 
-        <span class="n">value</span> <span class="o">=</span> <span class="n">initial_value</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="s2">&quot;tuple[int, int, int]&quot;</span><span class="p">,</span> <span class="n">_colors_to_int_tuple</span><span class="p">(</span><span class="n">initial_value</span><span class="p">))</span>
         <span class="n">uuid</span> <span class="o">=</span> <span class="n">_make_uuid</span><span class="p">()</span>
         <span class="n">order</span> <span class="o">=</span> <span class="n">_apply_default_order</span><span class="p">(</span><span class="n">order</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">GuiRgbHandle</span><span class="p">(</span>
@@ -2603,7 +2647,10 @@
         <span class="n">hint</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">order</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GuiRgbaHandle</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add an RGBA picker to the GUI. All values should be in [0, 255].</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add an RGBA picker to the GUI.</span>
+
+<span class="sd">        Integer channels are in [0, 255]; float channels in [0, 1] are scaled to</span>
+<span class="sd">        match (matplotlib convention), so ``1.0`` is white/opaque.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            label: Label to display on the RGBA picker.</span>
@@ -2616,7 +2663,7 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            A handle that can be used to interact with the GUI element.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">value</span> <span class="o">=</span> <span class="n">initial_value</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="s2">&quot;tuple[int, int, int, int]&quot;</span><span class="p">,</span> <span class="n">_colors_to_int_tuple</span><span class="p">(</span><span class="n">initial_value</span><span class="p">))</span>
         <span class="n">uuid</span> <span class="o">=</span> <span class="n">_make_uuid</span><span class="p">()</span>
         <span class="n">order</span> <span class="o">=</span> <span class="n">_apply_default_order</span><span class="p">(</span><span class="n">order</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">GuiRgbaHandle</span><span class="p">(</span>

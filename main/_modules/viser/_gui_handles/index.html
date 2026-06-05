@@ -444,6 +444,7 @@
     <span class="n">Literal</span><span class="p">,</span>
     <span class="n">Tuple</span><span class="p">,</span>
     <span class="n">TypeVar</span><span class="p">,</span>
+    <span class="n">cast</span><span class="p">,</span>
     <span class="n">overload</span><span class="p">,</span>
 <span class="p">)</span>
 
@@ -612,11 +613,25 @@
         <span class="c1"># For the documentation&#39;s sake, we&#39;ll be manually adding ::attribute directives below.</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">value</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_coerce_assigned_value</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">T</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">T</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Hook for input-type-specific coercion of an assigned value. The base</span>
+<span class="sd">        is identity; rgb/rgba handles override this to normalize colors.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">value</span>
+
     <span class="nd">@value</span><span class="o">.</span><span class="n">setter</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">value</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">T</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coerce_assigned_value</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
             <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> should be at most 1D!&quot;</span>
-            <span class="n">value</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">value</span><span class="p">))</span>  <span class="c1"># type: ignore</span>
+            <span class="c1"># Preserve each element&#39;s expected Python type -- float for vectors,</span>
+            <span class="c1"># int for colors. A blanket `float(...)` would turn an int tuple into</span>
+            <span class="c1"># floats, and the `tuple(...)` cast below does not restore types.</span>
+            <span class="n">elems</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="n">current</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">value</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">current</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">current</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">elems</span><span class="p">):</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">c</span><span class="p">)(</span><span class="n">e</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span><span class="p">,</span> <span class="n">e</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">current</span><span class="p">,</span> <span class="n">elems</span><span class="p">))</span>  <span class="c1"># type: ignore</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">elems</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
 
         <span class="c1"># Convert to internal type early so we can compare.</span>
         <span class="n">value</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">value</span><span class="p">)(</span><span class="n">value</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
@@ -778,6 +793,23 @@
 
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_colors_to_int_tuple</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Coerce an RGB/RGBA color to an int tuple in [0, 255].</span>
+
+<span class="sd">    Integer channels are taken as absolute [0, 255]; float channels are</span>
+<span class="sd">    interpreted as [0, 1] and scaled (the matplotlib convention), so ``1.0`` -&gt;</span>
+<span class="sd">    255 (white) but ``1`` -&gt; 1. The result is clamped to [0, 255] -- matching</span>
+<span class="sd">    ``colors_to_uint8`` -- so out-of-range inputs (e.g. a float ``255.0`` or a</span>
+<span class="sd">    negative value) degrade gracefully instead of producing a wild value.</span>
+<span class="sd">    Generalized to any channel count (RGB and RGBA).&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+        <span class="k">assert</span> <span class="n">value</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Expected a 1D color, got shape </span><span class="si">{</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">.&quot;</span>
+    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span>
+        <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">issubdtype</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">v</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">integer</span><span class="p">)</span> <span class="k">else</span> <span class="nb">int</span><span class="p">(</span><span class="n">v</span> <span class="o">*</span> <span class="mi">255</span><span class="p">)))</span>
+        <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">value</span>
+    <span class="p">)</span>
+
+
 <div class="viewcode-block" id="GuiRgbHandle">
 <a class="viewcode-back" href="../../../api/handles/gui_handles/#viser.GuiRgbHandle">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">GuiRgbHandle</span><span class="p">(</span><span class="n">GuiInputHandle</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]],</span> <span class="n">GuiRgbProps</span><span class="p">):</span>
@@ -787,7 +819,14 @@
 <span class="sd">       :type: tuple[int, int, int]</span>
 
 <span class="sd">       Value of the input. Synchronized automatically when assigned.</span>
-<span class="sd">    &quot;&quot;&quot;</span></div>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="nd">@override</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_coerce_assigned_value</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+        <span class="c1"># Float channels are [0, 1] (scaled to [0, 255]); int channels absolute.</span>
+        <span class="k">return</span> <span class="n">cast</span><span class="p">(</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">_colors_to_int_tuple</span><span class="p">(</span><span class="n">value</span><span class="p">))</span></div>
 
 
 
@@ -800,7 +839,14 @@
 <span class="sd">       :type: tuple[int, int, int, int]</span>
 
 <span class="sd">       Value of the input. Synchronized automatically when assigned.</span>
-<span class="sd">    &quot;&quot;&quot;</span></div>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="nd">@override</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_coerce_assigned_value</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+        <span class="c1"># Float channels are [0, 1] (scaled to [0, 255]); int channels absolute.</span>
+        <span class="k">return</span> <span class="n">cast</span><span class="p">(</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">_colors_to_int_tuple</span><span class="p">(</span><span class="n">value</span><span class="p">))</span></div>
 
 
 
@@ -1154,11 +1200,18 @@
                 <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="k">return</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span> <span class="o">=</span> <span class="kc">True</span>
 
-        <span class="c1"># Remove tabs, then self.</span>
+        <span class="c1"># Remove tabs first. Each tab.remove() writes back to this group&#39;s</span>
+        <span class="c1"># tab-list props (_tab_labels / _tab_icons_html / _tab_container_ids), so</span>
+        <span class="c1"># we must NOT mark the group removed until afterwards -- otherwise the</span>
+        <span class="c1"># removed-handle guard in props_setattr raises on those writes, leaving</span>
+        <span class="c1"># the group half-removed (still in its parent&#39;s _children with</span>
+        <span class="c1"># removed=True). A subsequent gui.reset() then spins forever, since its</span>
+        <span class="c1"># `while root._children: child.remove()` loop hits that group whose</span>
+        <span class="c1"># remove() now no-ops via the already-removed guard.</span>
         <span class="k">for</span> <span class="n">tab</span> <span class="ow">in</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tab_handles</span><span class="p">):</span>
             <span class="n">tab</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="n">gui_api</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">gui_api</span>
         <span class="n">gui_api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span><span class="n">GuiRemoveMessage</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">uuid</span><span class="p">))</span>
         <span class="n">parent</span> <span class="o">=</span> <span class="n">gui_api</span><span class="o">.</span><span class="n">_container_handle_from_uuid</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">parent_container_id</span><span class="p">]</span>
@@ -1245,6 +1298,12 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_parent</span><span class="o">.</span><span class="n">_tab_handles</span> <span class="o">=</span> <span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_parent</span><span class="o">.</span><span class="n">_tab_handles</span><span class="p">[:</span><span class="n">found_index</span><span class="p">]</span>
             <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parent</span><span class="o">.</span><span class="n">_tab_handles</span><span class="p">[</span><span class="n">found_index</span> <span class="o">+</span> <span class="mi">1</span> <span class="p">:]</span>
+        <span class="p">)</span>
+        <span class="c1"># Keep the container-id list in sync with the handles. Otherwise the</span>
+        <span class="c1"># client receives mismatched `_tab_labels` / `_tab_container_ids`</span>
+        <span class="c1"># lengths and renders a stale (orphaned) tab panel.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_parent</span><span class="o">.</span><span class="n">_tab_container_ids</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+            <span class="n">handle</span><span class="o">.</span><span class="n">_id</span> <span class="k">for</span> <span class="n">handle</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parent</span><span class="o">.</span><span class="n">_tab_handles</span>
         <span class="p">)</span>
 
         <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_children</span><span class="o">.</span><span class="n">values</span><span class="p">()):</span>
