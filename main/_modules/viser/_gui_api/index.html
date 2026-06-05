@@ -560,6 +560,41 @@
     <span class="k">return</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">x</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="mi">10</span> <span class="o">**</span> <span class="p">(</span><span class="o">-</span><span class="n">_compute_precision_digits</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_slider_marks</span><span class="p">(</span>
+    <span class="n">marks</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">GuiSliderMark</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Normalize a slider&#39;s ``marks`` argument into ``GuiSliderMark`` tuples.</span>
+<span class="sd">    Shared by add_slider and add_multi_slider so the two can&#39;t diverge.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">marks</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span>
+        <span class="n">GuiSliderMark</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">label</span><span class="o">=</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span>
+        <span class="k">else</span> <span class="n">GuiSliderMark</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="n">x</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">marks</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_infer_vector_step</span><span class="p">(</span>
+    <span class="n">value</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+    <span class="nb">min</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="nb">max</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">step</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Pick a default step for a vector input from its value/min/max components</span>
+<span class="sd">    when the caller didn&#39;t pass one. Shared by add_vector2 and add_vector3 so</span>
+<span class="sd">    the inference can&#39;t drift between the two.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">step</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">step</span>
+    <span class="n">possible_steps</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">possible_steps</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">_compute_step</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">value</span><span class="p">])</span>
+    <span class="k">if</span> <span class="nb">min</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">possible_steps</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">_compute_step</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">min</span><span class="p">])</span>
+    <span class="k">if</span> <span class="nb">max</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">possible_steps</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">_compute_step</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">max</span><span class="p">])</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">possible_steps</span><span class="p">))</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_compute_precision_digits</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;For number inputs: compute digits of precision from some number.</span>
 
@@ -1918,6 +1953,8 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            A handle that can be used to interact with the GUI element.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">options</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;add_button_group requires at least one option.&quot;</span><span class="p">)</span>
         <span class="n">value</span> <span class="o">=</span> <span class="n">options</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
         <span class="n">uuid</span> <span class="o">=</span> <span class="n">_make_uuid</span><span class="p">()</span>
         <span class="n">order</span> <span class="o">=</span> <span class="n">_apply_default_order</span><span class="p">(</span><span class="n">order</span><span class="p">)</span>
@@ -2161,14 +2198,7 @@
         <span class="n">uuid</span> <span class="o">=</span> <span class="n">_make_uuid</span><span class="p">()</span>
         <span class="n">order</span> <span class="o">=</span> <span class="n">_apply_default_order</span><span class="p">(</span><span class="n">order</span><span class="p">)</span>
 
-        <span class="k">if</span> <span class="n">step</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">possible_steps</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-            <span class="n">possible_steps</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">_compute_step</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">value</span><span class="p">])</span>
-            <span class="k">if</span> <span class="nb">min</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">possible_steps</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">_compute_step</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">min</span><span class="p">])</span>
-            <span class="k">if</span> <span class="nb">max</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">possible_steps</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">_compute_step</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">max</span><span class="p">])</span>
-            <span class="n">step</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">possible_steps</span><span class="p">))</span>
+        <span class="n">step</span> <span class="o">=</span> <span class="n">_infer_vector_step</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">min</span><span class="p">,</span> <span class="nb">max</span><span class="p">,</span> <span class="n">step</span><span class="p">)</span>
 
         <span class="k">return</span> <span class="n">GuiVector2Handle</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_create_gui_input</span><span class="p">(</span>
@@ -2232,14 +2262,7 @@
         <span class="n">uuid</span> <span class="o">=</span> <span class="n">_make_uuid</span><span class="p">()</span>
         <span class="n">order</span> <span class="o">=</span> <span class="n">_apply_default_order</span><span class="p">(</span><span class="n">order</span><span class="p">)</span>
 
-        <span class="k">if</span> <span class="n">step</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">possible_steps</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-            <span class="n">possible_steps</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">_compute_step</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">value</span><span class="p">])</span>
-            <span class="k">if</span> <span class="nb">min</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">possible_steps</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">_compute_step</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">min</span><span class="p">])</span>
-            <span class="k">if</span> <span class="nb">max</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">possible_steps</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">_compute_step</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">max</span><span class="p">])</span>
-            <span class="n">step</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">possible_steps</span><span class="p">))</span>
+        <span class="n">step</span> <span class="o">=</span> <span class="n">_infer_vector_step</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">min</span><span class="p">,</span> <span class="nb">max</span><span class="p">,</span> <span class="n">step</span><span class="p">)</span>
 
         <span class="k">return</span> <span class="n">GuiVector3Handle</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_create_gui_input</span><span class="p">(</span>
@@ -2322,6 +2345,8 @@
         <span class="c1"># Materialize once so a one-shot iterable isn&#39;t consumed by the checks</span>
         <span class="c1"># below and again by the message construction.</span>
         <span class="n">options_tuple</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">options_tuple</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;add_dropdown requires at least one option.&quot;</span><span class="p">)</span>
         <span class="n">value</span> <span class="o">=</span> <span class="n">initial_value</span>
         <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">value</span> <span class="o">=</span> <span class="n">options_tuple</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
@@ -2475,14 +2500,7 @@
                         <span class="n">precision</span><span class="o">=</span><span class="n">_compute_precision_digits</span><span class="p">(</span><span class="n">step</span><span class="p">),</span>
                         <span class="n">visible</span><span class="o">=</span><span class="n">visible</span><span class="p">,</span>
                         <span class="n">disabled</span><span class="o">=</span><span class="n">disabled</span><span class="p">,</span>
-                        <span class="n">_marks</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span>
-                            <span class="n">GuiSliderMark</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">label</span><span class="o">=</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
-                            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span>
-                            <span class="k">else</span> <span class="n">GuiSliderMark</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="n">x</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
-                            <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">marks</span>
-                        <span class="p">)</span>
-                        <span class="k">if</span> <span class="n">marks</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-                        <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                        <span class="n">_marks</span><span class="o">=</span><span class="n">_build_slider_marks</span><span class="p">(</span><span class="n">marks</span><span class="p">),</span>
                     <span class="p">),</span>
                 <span class="p">),</span>
                 <span class="n">is_button</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
@@ -2567,14 +2585,7 @@
                         <span class="n">disabled</span><span class="o">=</span><span class="n">disabled</span><span class="p">,</span>
                         <span class="n">fixed_endpoints</span><span class="o">=</span><span class="n">fixed_endpoints</span><span class="p">,</span>
                         <span class="n">precision</span><span class="o">=</span><span class="n">_compute_precision_digits</span><span class="p">(</span><span class="n">step</span><span class="p">),</span>
-                        <span class="n">_marks</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span>
-                            <span class="n">GuiSliderMark</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">label</span><span class="o">=</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
-                            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span>
-                            <span class="k">else</span> <span class="n">GuiSliderMark</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="n">x</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
-                            <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">marks</span>
-                        <span class="p">)</span>
-                        <span class="k">if</span> <span class="n">marks</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-                        <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                        <span class="n">_marks</span><span class="o">=</span><span class="n">_build_slider_marks</span><span class="p">(</span><span class="n">marks</span><span class="p">),</span>
                     <span class="p">),</span>
                 <span class="p">),</span>
                 <span class="n">is_button</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>

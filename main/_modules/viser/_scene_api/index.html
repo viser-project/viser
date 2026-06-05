@@ -599,6 +599,45 @@
     <span class="k">return</span> <span class="n">cast</span><span class="p">(</span><span class="n">TVector</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">vector</span><span class="p">)))</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_warn_wireframe_conflicts</span><span class="p">(</span>
+    <span class="n">wireframe</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span> <span class="n">material</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">flat_shading</span><span class="p">:</span> <span class="nb">bool</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Warn about arguments that are ignored when wireframe rendering is on.</span>
+
+<span class="sd">    Called one level below the public ``add_*`` method, so ``stacklevel=3``</span>
+<span class="sd">    points the warning at the user&#39;s call site (warn -&gt; here -&gt; add_* -&gt; user).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">wireframe</span> <span class="ow">and</span> <span class="n">material</span> <span class="o">!=</span> <span class="s2">&quot;standard&quot;</span><span class="p">:</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Invalid combination of </span><span class="si">{</span><span class="n">wireframe</span><span class="si">=}</span><span class="s2"> and </span><span class="si">{</span><span class="n">material</span><span class="si">=}</span><span class="s2">. Material argument will be ignored.&quot;</span><span class="p">,</span>
+            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">wireframe</span> <span class="ow">and</span> <span class="n">flat_shading</span><span class="p">:</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Invalid combination of </span><span class="si">{</span><span class="n">wireframe</span><span class="si">=}</span><span class="s2"> and </span><span class="si">{</span><span class="n">flat_shading</span><span class="si">=}</span><span class="s2">. Flat shading argument will be ignored.&quot;</span><span class="p">,</span>
+            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+        <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_validate_batched_transforms</span><span class="p">(</span>
+    <span class="n">batched_wxyzs</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">batched_positions</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">batched_scales</span><span class="p">:</span> <span class="n">Any</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">],</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Coerce and shape-check the per-instance transform arrays shared by the</span>
+<span class="sd">    batched scene primitives. Returns ``(wxyzs, positions, scales, count)``.</span>
+<span class="sd">    ``wxyzs`` and ``positions`` keep their input dtype (cast to float32 at</span>
+<span class="sd">    message construction); ``scales`` is cast to float32 here.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">batched_wxyzs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">batched_wxyzs</span><span class="p">)</span>
+    <span class="n">batched_positions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">batched_positions</span><span class="p">)</span>
+    <span class="n">count</span> <span class="o">=</span> <span class="n">batched_wxyzs</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">assert</span> <span class="n">batched_wxyzs</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">batched_positions</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">batched_scales</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">batched_scales</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">batched_scales</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">batched_scales</span><span class="o">.</span><span class="n">shape</span> <span class="ow">in</span> <span class="p">((</span><span class="n">count</span><span class="p">,),</span> <span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">batched_wxyzs</span><span class="p">,</span> <span class="n">batched_positions</span><span class="p">,</span> <span class="n">batched_scales</span><span class="p">,</span> <span class="n">count</span>
+
+
 <span class="n">MISSING_SENTINEL</span> <span class="o">=</span> <span class="s2">&quot;MISSING&quot;</span>
 <span class="n">MISSING_SENTINEL_TYPE</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;MISSING&quot;</span><span class="p">]</span>
 
@@ -1889,16 +1928,11 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            Handle for manipulating scene node.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">batched_wxyzs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">batched_wxyzs</span><span class="p">)</span>
-        <span class="n">batched_positions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">batched_positions</span><span class="p">)</span>
-
-        <span class="n">num_axes</span> <span class="o">=</span> <span class="n">batched_wxyzs</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="k">assert</span> <span class="n">batched_wxyzs</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">num_axes</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
-        <span class="k">assert</span> <span class="n">batched_positions</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">num_axes</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
-
-        <span class="k">if</span> <span class="n">batched_scales</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">batched_scales</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">batched_scales</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-            <span class="k">assert</span> <span class="n">batched_scales</span><span class="o">.</span><span class="n">shape</span> <span class="ow">in</span> <span class="p">((</span><span class="n">num_axes</span><span class="p">,),</span> <span class="p">(</span><span class="n">num_axes</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+        <span class="n">batched_wxyzs</span><span class="p">,</span> <span class="n">batched_positions</span><span class="p">,</span> <span class="n">batched_scales</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">_validate_batched_transforms</span><span class="p">(</span>
+                <span class="n">batched_wxyzs</span><span class="p">,</span> <span class="n">batched_positions</span><span class="p">,</span> <span class="n">batched_scales</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
 
         <span class="n">props</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">BatchedAxesProps</span><span class="p">(</span>
             <span class="n">batched_wxyzs</span><span class="o">=</span><span class="n">batched_wxyzs</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span>
@@ -2196,16 +2230,7 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            Handle for manipulating scene node.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="n">wireframe</span> <span class="ow">and</span> <span class="n">material</span> <span class="o">!=</span> <span class="s2">&quot;standard&quot;</span><span class="p">:</span>
-            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Invalid combination of </span><span class="si">{</span><span class="n">wireframe</span><span class="si">=}</span><span class="s2"> and </span><span class="si">{</span><span class="n">material</span><span class="si">=}</span><span class="s2">. Material argument will be ignored.&quot;</span><span class="p">,</span>
-                <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-            <span class="p">)</span>
-        <span class="k">if</span> <span class="n">wireframe</span> <span class="ow">and</span> <span class="n">flat_shading</span><span class="p">:</span>
-            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Invalid combination of </span><span class="si">{</span><span class="n">wireframe</span><span class="si">=}</span><span class="s2"> and </span><span class="si">{</span><span class="n">flat_shading</span><span class="si">=}</span><span class="s2">. Flat shading argument will be ignored.&quot;</span><span class="p">,</span>
-                <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-            <span class="p">)</span>
+        <span class="n">_warn_wireframe_conflicts</span><span class="p">(</span><span class="n">wireframe</span><span class="p">,</span> <span class="n">material</span><span class="p">,</span> <span class="n">flat_shading</span><span class="p">)</span>
 
         <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">bone_wxyzs</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">bone_positions</span><span class="p">)</span>
         <span class="n">num_bones</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">bone_wxyzs</span><span class="p">)</span>
@@ -2227,9 +2252,7 @@
         <span class="k">if</span> <span class="n">pad</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
             <span class="n">top_skin_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">pad</span><span class="p">(</span><span class="n">top_skin_indices</span><span class="p">,</span> <span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">pad</span><span class="p">)))</span>
             <span class="n">top_skin_weights</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">pad</span><span class="p">(</span><span class="n">top_skin_weights</span><span class="p">,</span> <span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">pad</span><span class="p">)))</span>
-        <span class="n">top4_skin_indices</span> <span class="o">=</span> <span class="n">top_skin_indices</span>
-        <span class="n">top4_skin_weights</span> <span class="o">=</span> <span class="n">top_skin_weights</span>
-        <span class="k">assert</span> <span class="n">top4_skin_weights</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="n">top4_skin_indices</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">num_vertices</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">top_skin_weights</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="n">top_skin_indices</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">num_vertices</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
 
         <span class="n">bone_wxyzs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">bone_wxyzs</span><span class="p">)</span>
         <span class="n">bone_positions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">bone_positions</span><span class="p">)</span>
@@ -2249,8 +2272,8 @@
                 <span class="n">scale</span><span class="o">=</span><span class="n">scale</span><span class="p">,</span>
                 <span class="n">bone_wxyzs</span><span class="o">=</span><span class="n">bone_wxyzs</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span>
                 <span class="n">bone_positions</span><span class="o">=</span><span class="n">bone_positions</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span>
-                <span class="n">skin_indices</span><span class="o">=</span><span class="n">top4_skin_indices</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint16</span><span class="p">),</span>
-                <span class="n">skin_weights</span><span class="o">=</span><span class="n">top4_skin_weights</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span>
+                <span class="n">skin_indices</span><span class="o">=</span><span class="n">top_skin_indices</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint16</span><span class="p">),</span>
+                <span class="n">skin_weights</span><span class="o">=</span><span class="n">top_skin_weights</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span>
                 <span class="n">cast_shadow</span><span class="o">=</span><span class="n">cast_shadow</span><span class="p">,</span>
                 <span class="n">receive_shadow</span><span class="o">=</span><span class="n">receive_shadow</span><span class="p">,</span>
             <span class="p">),</span>
@@ -2325,16 +2348,7 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            Handle for manipulating scene node.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="n">wireframe</span> <span class="ow">and</span> <span class="n">material</span> <span class="o">!=</span> <span class="s2">&quot;standard&quot;</span><span class="p">:</span>
-            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Invalid combination of </span><span class="si">{</span><span class="n">wireframe</span><span class="si">=}</span><span class="s2"> and </span><span class="si">{</span><span class="n">material</span><span class="si">=}</span><span class="s2">. Material argument will be ignored.&quot;</span><span class="p">,</span>
-                <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-            <span class="p">)</span>
-        <span class="k">if</span> <span class="n">wireframe</span> <span class="ow">and</span> <span class="n">flat_shading</span><span class="p">:</span>
-            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Invalid combination of </span><span class="si">{</span><span class="n">wireframe</span><span class="si">=}</span><span class="s2"> and </span><span class="si">{</span><span class="n">flat_shading</span><span class="si">=}</span><span class="s2">. Flat shading argument will be ignored.&quot;</span><span class="p">,</span>
-                <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-            <span class="p">)</span>
+        <span class="n">_warn_wireframe_conflicts</span><span class="p">(</span><span class="n">wireframe</span><span class="p">,</span> <span class="n">material</span><span class="p">,</span> <span class="n">flat_shading</span><span class="p">)</span>
         <span class="n">message</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">MeshMessage</span><span class="p">(</span>
             <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
             <span class="n">props</span><span class="o">=</span><span class="n">_messages</span><span class="o">.</span><span class="n">MeshProps</span><span class="p">(</span>
@@ -2472,27 +2486,13 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            Handle for manipulating scene node.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="n">wireframe</span> <span class="ow">and</span> <span class="n">material</span> <span class="o">!=</span> <span class="s2">&quot;standard&quot;</span><span class="p">:</span>
-            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Invalid combination of </span><span class="si">{</span><span class="n">wireframe</span><span class="si">=}</span><span class="s2"> and </span><span class="si">{</span><span class="n">material</span><span class="si">=}</span><span class="s2">. Material argument will be ignored.&quot;</span><span class="p">,</span>
-                <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="n">_warn_wireframe_conflicts</span><span class="p">(</span><span class="n">wireframe</span><span class="p">,</span> <span class="n">material</span><span class="p">,</span> <span class="n">flat_shading</span><span class="p">)</span>
+
+        <span class="n">batched_wxyzs</span><span class="p">,</span> <span class="n">batched_positions</span><span class="p">,</span> <span class="n">batched_scales</span><span class="p">,</span> <span class="n">num_instances</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">_validate_batched_transforms</span><span class="p">(</span>
+                <span class="n">batched_wxyzs</span><span class="p">,</span> <span class="n">batched_positions</span><span class="p">,</span> <span class="n">batched_scales</span>
             <span class="p">)</span>
-        <span class="k">if</span> <span class="n">wireframe</span> <span class="ow">and</span> <span class="n">flat_shading</span><span class="p">:</span>
-            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Invalid combination of </span><span class="si">{</span><span class="n">wireframe</span><span class="si">=}</span><span class="s2"> and </span><span class="si">{</span><span class="n">flat_shading</span><span class="si">=}</span><span class="s2">. Flat shading argument will be ignored.&quot;</span><span class="p">,</span>
-                <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-            <span class="p">)</span>
-
-        <span class="n">batched_wxyzs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">batched_wxyzs</span><span class="p">)</span>
-        <span class="n">batched_positions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">batched_positions</span><span class="p">)</span>
-
-        <span class="n">num_instances</span> <span class="o">=</span> <span class="n">batched_wxyzs</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="k">assert</span> <span class="n">batched_wxyzs</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">num_instances</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
-        <span class="k">assert</span> <span class="n">batched_positions</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">num_instances</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
-
-        <span class="k">if</span> <span class="n">batched_scales</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">batched_scales</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">batched_scales</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-            <span class="k">assert</span> <span class="n">batched_scales</span><span class="o">.</span><span class="n">shape</span> <span class="ow">in</span> <span class="p">((</span><span class="n">num_instances</span><span class="p">,),</span> <span class="p">(</span><span class="n">num_instances</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+        <span class="p">)</span>
 
         <span class="c1"># Handle batched opacities.</span>
         <span class="k">if</span> <span class="n">batched_opacities</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -2580,16 +2580,11 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            Handle for manipulating scene node.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">batched_wxyzs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">batched_wxyzs</span><span class="p">)</span>
-        <span class="n">batched_positions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">batched_positions</span><span class="p">)</span>
-
-        <span class="n">num_instances</span> <span class="o">=</span> <span class="n">batched_wxyzs</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="k">assert</span> <span class="n">batched_wxyzs</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">num_instances</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
-        <span class="k">assert</span> <span class="n">batched_positions</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">num_instances</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
-
-        <span class="k">if</span> <span class="n">batched_scales</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">batched_scales</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">batched_scales</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-            <span class="k">assert</span> <span class="n">batched_scales</span><span class="o">.</span><span class="n">shape</span> <span class="ow">in</span> <span class="p">((</span><span class="n">num_instances</span><span class="p">,),</span> <span class="p">(</span><span class="n">num_instances</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+        <span class="n">batched_wxyzs</span><span class="p">,</span> <span class="n">batched_positions</span><span class="p">,</span> <span class="n">batched_scales</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">_validate_batched_transforms</span><span class="p">(</span>
+                <span class="n">batched_wxyzs</span><span class="p">,</span> <span class="n">batched_positions</span><span class="p">,</span> <span class="n">batched_scales</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
 
         <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">data_buffer</span><span class="p">:</span>
             <span class="n">mesh</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">data_buffer</span><span class="p">,</span> <span class="n">file_type</span><span class="o">=</span><span class="s2">&quot;glb&quot;</span><span class="p">)</span>
@@ -2657,16 +2652,11 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            Handle for manipulating scene node.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">batched_wxyzs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">batched_wxyzs</span><span class="p">)</span>
-        <span class="n">batched_positions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">batched_positions</span><span class="p">)</span>
-
-        <span class="n">num_instances</span> <span class="o">=</span> <span class="n">batched_wxyzs</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="k">assert</span> <span class="n">batched_wxyzs</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">num_instances</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
-        <span class="k">assert</span> <span class="n">batched_positions</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">num_instances</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
-
-        <span class="k">if</span> <span class="n">batched_scales</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">batched_scales</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">batched_scales</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-            <span class="k">assert</span> <span class="n">batched_scales</span><span class="o">.</span><span class="n">shape</span> <span class="ow">in</span> <span class="p">((</span><span class="n">num_instances</span><span class="p">,),</span> <span class="p">(</span><span class="n">num_instances</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+        <span class="n">batched_wxyzs</span><span class="p">,</span> <span class="n">batched_positions</span><span class="p">,</span> <span class="n">batched_scales</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">_validate_batched_transforms</span><span class="p">(</span>
+                <span class="n">batched_wxyzs</span><span class="p">,</span> <span class="n">batched_positions</span><span class="p">,</span> <span class="n">batched_scales</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
 
         <span class="n">message</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">BatchedGlbMessage</span><span class="p">(</span>
             <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
@@ -2810,23 +2800,12 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            Handle for manipulating scene node.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dimensions</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
-            <span class="n">dimensions_list</span> <span class="o">=</span> <span class="n">dimensions</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-            <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">dimensions_list</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span><span class="p">,</span> <span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Expected 3 dimensions, got </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">dimensions_list</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="p">)</span>
-            <span class="n">dimensions_tuple</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="nb">float</span><span class="p">(</span><span class="n">dimensions_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
-                <span class="nb">float</span><span class="p">(</span><span class="n">dimensions_list</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>
-                <span class="nb">float</span><span class="p">(</span><span class="n">dimensions_list</span><span class="p">[</span><span class="mi">2</span><span class="p">]),</span>
-            <span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">dimensions</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Expected 3 dimensions, got </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">dimensions</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="n">dimensions_tuple</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="nb">float</span><span class="p">(</span><span class="n">dimensions</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
-                <span class="nb">float</span><span class="p">(</span><span class="n">dimensions</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>
-                <span class="nb">float</span><span class="p">(</span><span class="n">dimensions</span><span class="p">[</span><span class="mi">2</span><span class="p">]),</span>
-            <span class="p">)</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">dimensions</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Expected 3 dimensions, got </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">dimensions</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="n">dimensions_tuple</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="nb">float</span><span class="p">(</span><span class="n">dimensions</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
+            <span class="nb">float</span><span class="p">(</span><span class="n">dimensions</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>
+            <span class="nb">float</span><span class="p">(</span><span class="n">dimensions</span><span class="p">[</span><span class="mi">2</span><span class="p">]),</span>
+        <span class="p">)</span>
 
         <span class="n">message</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">BoxMessage</span><span class="p">(</span>
             <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>

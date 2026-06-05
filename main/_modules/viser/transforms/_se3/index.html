@@ -435,7 +435,7 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">_base</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">._so3</span><span class="w"> </span><span class="kn">import</span> <span class="n">SO3</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">broadcast_leading_axes</span><span class="p">,</span> <span class="n">get_epsilon</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">broadcast_leading_axes</span><span class="p">,</span> <span class="n">get_epsilon</span><span class="p">,</span> <span class="n">get_taylor_threshold</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_skew</span><span class="p">(</span><span class="n">omega</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">floating</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">floating</span><span class="p">]:</span>
@@ -575,35 +575,42 @@
         <span class="n">rotation</span> <span class="o">=</span> <span class="n">SO3</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">tangent</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">3</span><span class="p">:])</span>
 
         <span class="n">theta_squared</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">square</span><span class="p">(</span><span class="n">tangent</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">3</span><span class="p">:]),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">use_taylor</span> <span class="o">=</span> <span class="n">theta_squared</span> <span class="o">&lt;</span> <span class="n">get_epsilon</span><span class="p">(</span><span class="n">theta_squared</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="c1"># `near_zero` only guards 0/0 in the closed forms; `use_taylor` is the</span>
+        <span class="c1"># wider small-angle band for the cancellation-prone (theta - sin)/theta^3</span>
+        <span class="c1"># coefficient.</span>
+        <span class="n">near_zero</span> <span class="o">=</span> <span class="n">theta_squared</span> <span class="o">&lt;</span> <span class="n">get_epsilon</span><span class="p">(</span><span class="n">theta_squared</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="n">use_taylor</span> <span class="o">=</span> <span class="n">theta_squared</span> <span class="o">&lt;</span> <span class="n">get_taylor_threshold</span><span class="p">(</span><span class="n">theta_squared</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
 
-        <span class="c1"># Shim to avoid NaNs in np.where branches, which cause failures for</span>
-        <span class="c1"># reverse-mode AD in JAX. This isn&#39;t needed for vanilla numpy.</span>
+        <span class="c1"># Safe values to avoid NaNs from 0/0 in np.where branches (also needed</span>
+        <span class="c1"># for reverse-mode AD in JAX).</span>
         <span class="n">theta_squared_safe</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span>
             <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
-            <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
-                <span class="n">use_taylor</span><span class="p">,</span>
-                <span class="n">np</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">theta_squared</span><span class="p">),</span>  <span class="c1"># Any non-zero value should do here.</span>
-                <span class="n">theta_squared</span><span class="p">,</span>
-            <span class="p">),</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">near_zero</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">theta_squared</span><span class="p">),</span> <span class="n">theta_squared</span><span class="p">),</span>
         <span class="p">)</span>
-        <span class="k">del</span> <span class="n">theta_squared</span>
         <span class="n">theta_safe</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">theta_squared_safe</span><span class="p">)</span>
 
         <span class="n">skew_omega</span> <span class="o">=</span> <span class="n">_skew</span><span class="p">(</span><span class="n">tangent</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">3</span><span class="p">:])</span>
-        <span class="n">V</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
-            <span class="n">use_taylor</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">],</span>
-            <span class="n">rotation</span><span class="o">.</span><span class="n">as_matrix</span><span class="p">(),</span>
-            <span class="p">(</span>
-                <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
-                <span class="o">+</span> <span class="p">((</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta_safe</span><span class="p">))</span> <span class="o">/</span> <span class="p">(</span><span class="n">theta_squared_safe</span><span class="p">))[</span><span class="o">...</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span>
-                <span class="o">*</span> <span class="n">skew_omega</span>
-                <span class="o">+</span> <span class="p">(</span>
-                    <span class="p">(</span><span class="n">theta_safe</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta_safe</span><span class="p">))</span>
-                    <span class="o">/</span> <span class="p">(</span><span class="n">theta_squared_safe</span> <span class="o">*</span> <span class="n">theta_safe</span><span class="p">)</span>
-                <span class="p">)[</span><span class="o">...</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span>
-                <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;...ij,...jk-&gt;...ik&quot;</span><span class="p">,</span> <span class="n">skew_omega</span><span class="p">,</span> <span class="n">skew_omega</span><span class="p">)</span>
-            <span class="p">),</span>
+
+        <span class="c1"># coef1 = (1 - cos theta) / theta^2, written as 2 sin^2(theta/2)/theta^2</span>
+        <span class="c1"># to avoid the catastrophic cancellation in (1 - cos theta).</span>
+        <span class="n">coef1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+            <span class="n">near_zero</span><span class="p">,</span>
+            <span class="mf">0.5</span> <span class="o">-</span> <span class="n">theta_squared</span> <span class="o">/</span> <span class="mf">24.0</span><span class="p">,</span>
+            <span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta_safe</span> <span class="o">/</span> <span class="mf">2.0</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">/</span> <span class="n">theta_squared_safe</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="c1"># coef2 = (theta - sin theta) / theta^3. (theta - sin theta) cancels for</span>
+        <span class="c1"># small theta with no clean closed form, so use a Taylor series across a</span>
+        <span class="c1"># wide small-angle band; it&#39;s accurate well past `get_taylor_threshold`.</span>
+        <span class="n">coef2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+            <span class="n">use_taylor</span><span class="p">,</span>
+            <span class="mf">1.0</span> <span class="o">/</span> <span class="mf">6.0</span> <span class="o">-</span> <span class="n">theta_squared</span> <span class="o">/</span> <span class="mf">120.0</span> <span class="o">+</span> <span class="n">theta_squared</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="mf">5040.0</span><span class="p">,</span>
+            <span class="p">(</span><span class="n">theta_safe</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta_safe</span><span class="p">))</span> <span class="o">/</span> <span class="p">(</span><span class="n">theta_squared_safe</span> <span class="o">*</span> <span class="n">theta_safe</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">V</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+            <span class="o">+</span> <span class="n">coef1</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">*</span> <span class="n">skew_omega</span>
+            <span class="o">+</span> <span class="n">coef2</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span>
+            <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;...ij,...jk-&gt;...ik&quot;</span><span class="p">,</span> <span class="n">skew_omega</span><span class="p">,</span> <span class="n">skew_omega</span><span class="p">)</span>
         <span class="p">)</span>
 
         <span class="k">return</span> <span class="n">SE3</span><span class="o">.</span><span class="n">from_rotation_and_translation</span><span class="p">(</span>
@@ -622,40 +629,36 @@
         <span class="c1"># &gt; https://github.com/strasdat/Sophus/blob/a0fe89a323e20c42d3cecb590937eb7a06b8343a/sophus/se3.hpp#L223</span>
         <span class="n">omega</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rotation</span><span class="p">()</span><span class="o">.</span><span class="n">log</span><span class="p">()</span>
         <span class="n">theta_squared</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">square</span><span class="p">(</span><span class="n">omega</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">use_taylor</span> <span class="o">=</span> <span class="n">theta_squared</span> <span class="o">&lt;</span> <span class="n">get_epsilon</span><span class="p">(</span><span class="n">theta_squared</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="c1"># Wide small-angle band for the cancellation-prone skew^2 coefficient.</span>
+        <span class="n">use_taylor</span> <span class="o">=</span> <span class="n">theta_squared</span> <span class="o">&lt;</span> <span class="n">get_taylor_threshold</span><span class="p">(</span><span class="n">theta_squared</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
+        <span class="n">near_zero</span> <span class="o">=</span> <span class="n">theta_squared</span> <span class="o">&lt;</span> <span class="n">get_epsilon</span><span class="p">(</span><span class="n">theta_squared</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
 
         <span class="n">skew_omega</span> <span class="o">=</span> <span class="n">_skew</span><span class="p">(</span><span class="n">omega</span><span class="p">)</span>
 
-        <span class="c1"># Shim to avoid NaNs in np.where branches, which cause failures for</span>
-        <span class="c1"># reverse-mode AD in JAX. This isn&#39;t needed for vanilla numpy.</span>
+        <span class="c1"># Safe values to avoid NaNs from 0/0 in np.where branches (also needed</span>
+        <span class="c1"># for reverse-mode AD in JAX).</span>
         <span class="n">theta_squared_safe</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
-            <span class="n">use_taylor</span><span class="p">,</span>
+            <span class="n">near_zero</span><span class="p">,</span>
             <span class="n">np</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">theta_squared</span><span class="p">),</span>  <span class="c1"># Any non-zero value should do here.</span>
             <span class="n">theta_squared</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="k">del</span> <span class="n">theta_squared</span>
         <span class="n">theta_safe</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">theta_squared_safe</span><span class="p">)</span>
         <span class="n">half_theta_safe</span> <span class="o">=</span> <span class="n">theta_safe</span> <span class="o">/</span> <span class="mf">2.0</span>
 
-        <span class="n">V_inv</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
-            <span class="n">use_taylor</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">],</span>
+        <span class="c1"># skew^2 coefficient: (1 - (theta/2)/tan(theta/2)) / theta^2. The</span>
+        <span class="c1"># closed form cancels for small theta (the textbook</span>
+        <span class="c1"># 1 - theta cos(theta/2)/(2 sin(theta/2)) rewritten via tan), so use a</span>
+        <span class="c1"># Taylor series across the wide small-angle band.</span>
+        <span class="n">skew_sq_coef</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+            <span class="n">use_taylor</span><span class="p">,</span>
+            <span class="mf">1.0</span> <span class="o">/</span> <span class="mf">12.0</span> <span class="o">+</span> <span class="n">theta_squared</span> <span class="o">/</span> <span class="mf">720.0</span> <span class="o">+</span> <span class="n">theta_squared</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="mf">30240.0</span><span class="p">,</span>
+            <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">half_theta_safe</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">tan</span><span class="p">(</span><span class="n">half_theta_safe</span><span class="p">))</span> <span class="o">/</span> <span class="n">theta_squared_safe</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">V_inv</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
             <span class="o">-</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">skew_omega</span>
-            <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;...ij,...jk-&gt;...ik&quot;</span><span class="p">,</span> <span class="n">skew_omega</span><span class="p">,</span> <span class="n">skew_omega</span><span class="p">)</span> <span class="o">/</span> <span class="mf">12.0</span><span class="p">,</span>
-            <span class="p">(</span>
-                <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
-                <span class="o">-</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">skew_omega</span>
-                <span class="o">+</span> <span class="p">(</span>
-                    <span class="p">(</span>
-                        <span class="mf">1.0</span>
-                        <span class="o">-</span> <span class="n">theta_safe</span>
-                        <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">half_theta_safe</span><span class="p">)</span>
-                        <span class="o">/</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">half_theta_safe</span><span class="p">))</span>
-                    <span class="p">)</span>
-                    <span class="o">/</span> <span class="n">theta_squared_safe</span>
-                <span class="p">)[</span><span class="o">...</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span>
-                <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;...ij,...jk-&gt;...ik&quot;</span><span class="p">,</span> <span class="n">skew_omega</span><span class="p">,</span> <span class="n">skew_omega</span><span class="p">)</span>
-            <span class="p">),</span>
+            <span class="o">+</span> <span class="n">skew_sq_coef</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span>
+            <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;...ij,...jk-&gt;...ik&quot;</span><span class="p">,</span> <span class="n">skew_omega</span><span class="p">,</span> <span class="n">skew_omega</span><span class="p">)</span>
         <span class="p">)</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span>
             <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;...ij,...j-&gt;...i&quot;</span><span class="p">,</span> <span class="n">V_inv</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">translation</span><span class="p">()),</span> <span class="n">omega</span><span class="p">],</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span>

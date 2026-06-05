@@ -612,7 +612,9 @@
         <span class="n">one_minus_cos_over_theta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
             <span class="n">use_taylor</span><span class="p">,</span>
             <span class="mf">0.5</span> <span class="o">*</span> <span class="n">theta</span> <span class="o">-</span> <span class="n">theta</span> <span class="o">*</span> <span class="n">theta_sq</span> <span class="o">/</span> <span class="mf">24.0</span><span class="p">,</span>
-            <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">safe_theta</span><span class="p">))</span> <span class="o">/</span> <span class="n">safe_theta</span><span class="p">,</span>
+            <span class="c1"># (1 - cos t) / t, written as 2 sin^2(t/2) / t to avoid the</span>
+            <span class="c1"># catastrophic cancellation in (1 - cos t) for small t.</span>
+            <span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">safe_theta</span> <span class="o">/</span> <span class="mf">2.0</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">/</span> <span class="n">safe_theta</span><span class="p">,</span>
         <span class="p">)</span>
 
         <span class="n">V</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span>
@@ -644,25 +646,25 @@
 
         <span class="n">theta</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rotation</span><span class="p">()</span><span class="o">.</span><span class="n">log</span><span class="p">()[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
 
-        <span class="n">cos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
-        <span class="n">cos_minus_one</span> <span class="o">=</span> <span class="n">cos</span> <span class="o">-</span> <span class="mf">1.0</span>
         <span class="n">half_theta</span> <span class="o">=</span> <span class="n">theta</span> <span class="o">/</span> <span class="mf">2.0</span>
-        <span class="n">use_taylor</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">cos_minus_one</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">get_epsilon</span><span class="p">(</span><span class="n">theta</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="n">use_taylor</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">get_epsilon</span><span class="p">(</span><span class="n">theta</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
 
-        <span class="c1"># Shim to avoid NaNs in np.where branches, which cause failures for</span>
-        <span class="c1"># reverse-mode AD in JAX. This isn&#39;t needed for vanilla numpy.</span>
-        <span class="n">safe_cos_minus_one</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+        <span class="c1"># Shim to avoid NaNs in np.where branches (0/0 at theta == 0), which</span>
+        <span class="c1"># also cause failures for reverse-mode AD in JAX.</span>
+        <span class="n">safe_half_theta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
             <span class="n">use_taylor</span><span class="p">,</span>
-            <span class="n">np</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">cos_minus_one</span><span class="p">),</span>  <span class="c1"># Any non-zero value should do here.</span>
-            <span class="n">cos_minus_one</span><span class="p">,</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">half_theta</span><span class="p">),</span>  <span class="c1"># Any non-zero value should do here.</span>
+            <span class="n">half_theta</span><span class="p">,</span>
         <span class="p">)</span>
 
         <span class="n">half_theta_over_tan_half_theta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
             <span class="n">use_taylor</span><span class="p">,</span>
             <span class="c1"># Taylor approximation.</span>
             <span class="mf">1.0</span> <span class="o">-</span> <span class="n">theta</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="mf">12.0</span><span class="p">,</span>
-            <span class="c1"># Default.</span>
-            <span class="o">-</span><span class="p">(</span><span class="n">half_theta</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">))</span> <span class="o">/</span> <span class="n">safe_cos_minus_one</span><span class="p">,</span>
+            <span class="c1"># (theta / 2) / tan(theta / 2) -- equivalent to the textbook</span>
+            <span class="c1"># -(theta/2) sin(theta) / (cos(theta) - 1), but tan(theta/2) avoids</span>
+            <span class="c1"># the catastrophic cancellation in (cos(theta) - 1) for small theta.</span>
+            <span class="n">half_theta</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">tan</span><span class="p">(</span><span class="n">safe_half_theta</span><span class="p">),</span>
         <span class="p">)</span>
 
         <span class="n">V_inv</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span>

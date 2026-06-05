@@ -1416,14 +1416,14 @@
 <span class="sd">        - Every tombstone message (``lifecycle_phase == &quot;remove&quot;``) for an</span>
 <span class="sd">          entity -- new clients shouldn&#39;t replay removals of entities that</span>
 <span class="sd">          never existed to them.</span>
-<span class="sd">        - Every update message (``lifecycle_phase == &quot;update&quot;``) targeting an</span>
-<span class="sd">          entity that was already removed.</span>
-<span class="sd">        - Scene-node-adjacent ``Set*Message`` variants (SetPosition,</span>
-<span class="sd">          SetOrientation, SetBonePosition, SetBoneOrientation,</span>
-<span class="sd">          SetSceneNodeClickable, SetSceneNodeVisibility) that target a removed</span>
-<span class="sd">          scene node. These aren&#39;t entity-declared because they target the</span>
-<span class="sd">          node-by-name but don&#39;t fit the &quot;updates: dict&quot; shape; a `name`-match</span>
-<span class="sd">          against the tombstone set catches them generically.</span>
+<span class="sd">        - Every update message (``lifecycle_phase`` of ``update_dict`` or</span>
+<span class="sd">          ``update_simple``) targeting an entity that was already removed. This</span>
+<span class="sd">          includes the scene-node ``Set*Message`` pose/visibility variants</span>
+<span class="sd">          (SetPosition, SetOrientation, SetBonePosition, SetBoneOrientation,</span>
+<span class="sd">          SetSceneNodeVisibility), which are declared ``update_simple``.</span>
+<span class="sd">        - Any remaining non-entity message carrying a ``name`` that matches a</span>
+<span class="sd">          removed scene node (e.g. the click/drag binding messages); a</span>
+<span class="sd">          ``name``-match against the tombstone set catches them generically.</span>
 
 <span class="sd">        Two passes so purging is order-independent under concurrent writers:</span>
 <span class="sd">        the first pass collects all tombstone entity ids, the second sweeps</span>
@@ -1461,7 +1461,7 @@
             <span class="k">if</span> <span class="n">removed_ids_by_type</span><span class="p">:</span>
                 <span class="k">for</span> <span class="n">msg_id</span><span class="p">,</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">buffer</span><span class="o">.</span><span class="n">message_from_id</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
                     <span class="n">phase</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">lifecycle_phase</span>
-                    <span class="k">if</span> <span class="n">phase</span> <span class="o">==</span> <span class="s2">&quot;update&quot;</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">phase</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;update_dict&quot;</span><span class="p">,</span> <span class="s2">&quot;update_simple&quot;</span><span class="p">):</span>
                         <span class="k">assert</span> <span class="p">(</span>
                             <span class="n">message</span><span class="o">.</span><span class="n">entity_type</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
                             <span class="ow">and</span> <span class="n">message</span><span class="o">.</span><span class="n">entity_id_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
