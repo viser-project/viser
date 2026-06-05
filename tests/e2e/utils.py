@@ -48,17 +48,22 @@ def wait_for_connection(page: Page, port: int) -> None:
     """Navigate to the viser server and wait for WebSocket connection.
 
     The ConnectionStatus component displays "Connecting..." while disconnected
-    and switches once the WebSocket handshake completes.
+    and switches once the WebSocket handshake completes. We then wait for the
+    R3F scene context to mount -- ``window.__viserMutable`` is published by
+    ``SceneContextSetter`` once the canvas + WebGL scene are live -- which is a
+    real readiness signal rather than a blind settle delay.
     """
     page.goto(f"http://localhost:{port}")
     page.wait_for_function(
         """() => {
             const body = document.body.innerText;
-            return !body.includes('Connecting...');
+            if (body.includes('Connecting...')) return false;
+            // Scene context is live once SceneContextSetter publishes the
+            // mutable handle on window (canvas + WebGL scene mounted).
+            return window.__viserMutable != null;
         }""",
         timeout=15_000,
     )
-    page.wait_for_timeout(500)
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +151,31 @@ JS_GET_SCENE_CHILD_NAMES = """
 def wait_for_scene_node(page: Page, node_name: str, timeout: int = 10_000) -> None:
     """Wait until a scene node with the given name exists in the Three.js graph."""
     page.wait_for_function(JS_SCENE_HAS_NODE, arg=node_name, timeout=timeout)
+
+
+def wait_for_mesh_children(
+    page: Page, node_name: str, min_count: int = 1, timeout: int = 10_000
+) -> None:
+    """Wait until a scene node has at least ``min_count`` mesh descendants.
+
+    ``wait_for_scene_node`` only waits for the node to be *registered*; its
+    geometry (arrows, boxes, GLBs, ...) is built a few frames later, so a
+    synchronous mesh-count read right after races that build -- especially on
+    slow software-WebGL CI runners where the gap between registration and the
+    first rendered mesh is wide. Poll for the mesh instead of reading once."""
+    page.wait_for_function(
+        """([nodeName, minCount]) => {
+            const m = window.__viserMutable;
+            if (!m || !m.nodeRefFromName) return false;
+            const obj = m.nodeRefFromName[nodeName];
+            if (!obj) return false;
+            let count = 0;
+            obj.traverse((child) => { if (child.isMesh) count++; });
+            return count >= minCount;
+        }""",
+        arg=[node_name, min_count],
+        timeout=timeout,
+    )
 
 
 def wait_for_scene_node_removed(

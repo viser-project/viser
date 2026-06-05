@@ -12,6 +12,7 @@ import viser
 
 from .utils import (
     JS_GET_MESH_CHILD_COUNT,
+    wait_for_mesh_children,
     wait_for_scene_node,
     wait_for_scene_node_hidden,
     wait_for_scene_node_removed,
@@ -38,7 +39,7 @@ def test_mesh_simple_in_scene(
         color=(200, 100, 50),
     )
 
-    wait_for_scene_node(viser_page, "/test_mesh")
+    wait_for_mesh_children(viser_page, "/test_mesh")
 
     mesh_count = viser_page.evaluate(JS_GET_MESH_CHILD_COUNT, "/test_mesh")
     assert mesh_count > 0, f"Expected mesh children, got {mesh_count}"
