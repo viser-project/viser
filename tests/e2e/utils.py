@@ -153,6 +153,31 @@ def wait_for_scene_node(page: Page, node_name: str, timeout: int = 10_000) -> No
     page.wait_for_function(JS_SCENE_HAS_NODE, arg=node_name, timeout=timeout)
 
 
+def wait_for_mesh_children(
+    page: Page, node_name: str, min_count: int = 1, timeout: int = 10_000
+) -> None:
+    """Wait until a scene node has at least ``min_count`` mesh descendants.
+
+    ``wait_for_scene_node`` only waits for the node to be *registered*; its
+    geometry (arrows, boxes, GLBs, ...) is built a few frames later, so a
+    synchronous mesh-count read right after races that build -- especially on
+    slow software-WebGL CI runners where the gap between registration and the
+    first rendered mesh is wide. Poll for the mesh instead of reading once."""
+    page.wait_for_function(
+        """([nodeName, minCount]) => {
+            const m = window.__viserMutable;
+            if (!m || !m.nodeRefFromName) return false;
+            const obj = m.nodeRefFromName[nodeName];
+            if (!obj) return false;
+            let count = 0;
+            obj.traverse((child) => { if (child.isMesh) count++; });
+            return count >= minCount;
+        }""",
+        arg=[node_name, min_count],
+        timeout=timeout,
+    )
+
+
 def wait_for_scene_node_removed(
     page: Page, node_name: str, timeout: int = 10_000
 ) -> None:
