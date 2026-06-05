@@ -35,9 +35,7 @@ def test_darkmode_url_overrides_server_theme(
 
     # The rendered color scheme must be dark despite the server theme...
     html = page.locator("html")
-    expect(html).to_have_attribute(
-        "data-mantine-color-scheme", "dark", timeout=5_000
-    )
+    expect(html).to_have_attribute("data-mantine-color-scheme", "dark", timeout=5_000)
     # ...and must stay dark after the server's theme message has applied.
     page.wait_for_timeout(800)
     assert (
