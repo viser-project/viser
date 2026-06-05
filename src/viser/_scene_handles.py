@@ -27,13 +27,43 @@ from typing_extensions import Self, deprecated, override
 
 from . import _messages
 from ._assignable_props_api import AssignablePropsBase
-from .infra._infra import WebsockClientConnection, WebsockServer
+from .infra._infra import (
+    WebsockClientConnection,
+    WebsockMessageHandler,
+    WebsockServer,
+)
 
 if TYPE_CHECKING:
     from ._gui_api import GuiApi
     from ._scene_api import SceneApi
     from ._viser import ClientHandle
     from .infra import ClientId
+
+
+_PoseTupleT = TypeVar("_PoseTupleT", bound=Tuple[float, ...])
+
+
+def _set_pose_vector(
+    current: np.ndarray,
+    value: _PoseTupleT | np.ndarray,
+    length: int,
+    websock: WebsockMessageHandler,
+    make_message: Callable[[_PoseTupleT], _messages.Message],
+) -> None:
+    """Shared write path for the scene-node and skinned-bone pose setters.
+
+    Casts and validates ``value``, no-ops if it is numerically unchanged from
+    ``current``, and otherwise writes it into ``current`` in place and queues the
+    message built from the cast value. Keeping this in one place stops the four
+    near-identical wxyz/position setters from drifting apart.
+    """
+    from ._scene_api import cast_vector
+
+    value_cast: _PoseTupleT = cast_vector(value, length)
+    if np.allclose(value_cast, current):
+        return
+    current[:] = np.asarray(value)
+    websock.queue_message(make_message(value_cast))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -258,17 +288,14 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
 
     @wxyz.setter
     def wxyz(self, wxyz: tuple[float, float, float, float] | np.ndarray) -> None:
-        from ._scene_api import cast_vector
-
         # wxyz is assumed to be a unit quaternion (the client applies it to the
         # object's rotation without normalizing).
-        wxyz_cast = cast_vector(wxyz, 4)
-        wxyz_array = np.asarray(wxyz)
-        if np.allclose(wxyz_cast, self._impl.wxyz):
-            return
-        self._impl.wxyz[:] = wxyz_array
-        self._impl.api._websock_interface.queue_message(
-            _messages.SetOrientationMessage(self._impl.name, wxyz_cast)
+        _set_pose_vector(
+            self._impl.wxyz,
+            wxyz,
+            4,
+            self._impl.api._websock_interface,
+            lambda v: _messages.SetOrientationMessage(self._impl.name, v),
         )
 
     @property
@@ -280,15 +307,12 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
 
     @position.setter
     def position(self, position: tuple[float, float, float] | np.ndarray) -> None:
-        from ._scene_api import cast_vector
-
-        position_cast = cast_vector(position, 3)
-        position_array = np.asarray(position)
-        if np.allclose(position_array, self._impl.position):
-            return
-        self._impl.position[:] = position_array
-        self._impl.api._websock_interface.queue_message(
-            _messages.SetPositionMessage(self._impl.name, position_cast)
+        _set_pose_vector(
+            self._impl.position,
+            position,
+            3,
+            self._impl.api._websock_interface,
+            lambda v: _messages.SetPositionMessage(self._impl.name, v),
         )
 
     @property
@@ -1126,18 +1150,15 @@ class MeshSkinnedBoneHandle:
 
     @wxyz.setter
     def wxyz(self, wxyz: tuple[float, float, float, float] | np.ndarray) -> None:
-        from ._scene_api import cast_vector
-
         # wxyz is assumed to be a unit quaternion (see SceneNodeHandle.wxyz).
-        wxyz_cast = cast_vector(wxyz, 4)
-        wxyz_array = np.asarray(wxyz)
-        if np.allclose(wxyz_cast, self._impl.wxyz):
-            return
-        self._impl.wxyz[:] = wxyz_array
-        self._impl.websock_interface.queue_message(
-            _messages.SetBoneOrientationMessage(
-                self._impl.name, self._impl.bone_index, wxyz_cast
-            )
+        _set_pose_vector(
+            self._impl.wxyz,
+            wxyz,
+            4,
+            self._impl.websock_interface,
+            lambda v: _messages.SetBoneOrientationMessage(
+                self._impl.name, self._impl.bone_index, v
+            ),
         )
 
     @property
@@ -1149,17 +1170,14 @@ class MeshSkinnedBoneHandle:
 
     @position.setter
     def position(self, position: tuple[float, float, float] | np.ndarray) -> None:
-        from ._scene_api import cast_vector
-
-        position_cast = cast_vector(position, 3)
-        position_array = np.asarray(position)
-        if np.allclose(position_array, self._impl.position):
-            return
-        self._impl.position[:] = position_array
-        self._impl.websock_interface.queue_message(
-            _messages.SetBonePositionMessage(
-                self._impl.name, self._impl.bone_index, position_cast
-            )
+        _set_pose_vector(
+            self._impl.position,
+            position,
+            3,
+            self._impl.websock_interface,
+            lambda v: _messages.SetBonePositionMessage(
+                self._impl.name, self._impl.bone_index, v
+            ),
         )
 
 

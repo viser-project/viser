@@ -171,10 +171,20 @@ LabelAnchor = Literal[
 EntityType: TypeAlias = Literal["gui", "scene", "command", "notification", "modal"]
 """Kinds of removable entities in the protocol."""
 
-LifecyclePhase: TypeAlias = Literal["create", "update", "remove"]
+LifecyclePhase: TypeAlias = Literal[
+    "create", "update_dict", "update_simple", "remove"
+]
 """Phase of an entity message. Create and Remove share a redundancy-key
-namespace (so Remove supersedes Create); Update has its own namespace keyed by
-prop-set."""
+namespace (so Remove supersedes Create). There are two update flavors, both
+purged when their entity is removed:
+
+- ``update_dict``: carries an ``updates`` dict; coalesces per prop-set
+  (``{entity}:{id}:update:{props}``), so independent prop changes don't clobber
+  each other.
+- ``update_simple``: a single-purpose update with no ``updates`` dict (e.g.
+  ``SetPositionMessage``); coalesces latest-wins per message *type*
+  (``{entity}:{id}:update:{ClassName}``), so e.g. position and orientation stay
+  in separate slots."""
 
 EntityIdField: TypeAlias = Literal["uuid", "name"]
 """Name of the dataclass field that carries the entity id. ``"uuid"`` for
@@ -228,15 +238,17 @@ class Message(infra.Message):
             entity_id = getattr(self, self.entity_id_field)
             if self.lifecycle_phase in ("create", "remove"):
                 key = f"{self.entity_type}:{entity_id}:create-or-remove"
-            else:
-                # Delta updates coalesce per prop-set; full-props updates
-                # (no `updates` dict) coalesce latest-wins per entity.
-                if hasattr(self, "updates"):
-                    updates: Dict[str, Any] = self.updates  # type: ignore[attr-defined]
-                    prop_suffix = ",".join(sorted(updates.keys()))
-                else:
-                    prop_suffix = "full"
+            elif self.lifecycle_phase == "update_dict":
+                # Delta updates coalesce per prop-set, so independent prop
+                # changes don't clobber each other.
+                updates: Dict[str, Any] = self.updates  # type: ignore[attr-defined]
+                prop_suffix = ",".join(sorted(updates.keys()))
                 key = f"{self.entity_type}:{entity_id}:update:{prop_suffix}"
+            else:
+                # update_simple: single-purpose update, coalesce latest-wins
+                # per message type (so e.g. SetPosition and SetOrientation for
+                # the same node stay in separate slots).
+                key = f"{self.entity_type}:{entity_id}:update:{type(self).__name__}"
         else:
             # Non-entity fallback: ClassName + any incidental name/uuid fields.
             parts = [type(self).__name__]
@@ -362,7 +374,7 @@ class NotificationShowMessage(
 @dataclasses.dataclass
 class NotificationUpdateMessage(
     Message,
-    entity=EntityLifecycle("notification", "update", "uuid"),
+    entity=EntityLifecycle("notification", "update_simple", "uuid"),
     include_in_scene_serialization=False,
 ):
     """Server -> client message to update an existing notification.
@@ -1154,7 +1166,11 @@ class BatchedGlbProps(_BatchedMeshExtraProps):
 
 
 @dataclasses.dataclass
-class SetBoneOrientationMessage(Message, include_in_scene_serialization=True):
+class SetBoneOrientationMessage(
+    Message,
+    entity=EntityLifecycle("scene", "update_simple", "name"),
+    include_in_scene_serialization=True,
+):
     """Server -> client message to set a skinned mesh bone's orientation.
 
     As with all other messages, transforms take the `T_parent_local` convention."""
@@ -1169,7 +1185,11 @@ class SetBoneOrientationMessage(Message, include_in_scene_serialization=True):
 
 
 @dataclasses.dataclass
-class SetBonePositionMessage(Message, include_in_scene_serialization=True):
+class SetBonePositionMessage(
+    Message,
+    entity=EntityLifecycle("scene", "update_simple", "name"),
+    include_in_scene_serialization=True,
+):
     """Server -> client message to set a skinned mesh bone's position.
 
     As with all other messages, transforms take the `T_parent_local` convention."""
@@ -1280,7 +1300,11 @@ class SetCameraFovMessage(Message, include_in_scene_serialization=True):
 
 
 @dataclasses.dataclass
-class SetOrientationMessage(Message, include_in_scene_serialization=True):
+class SetOrientationMessage(
+    Message,
+    entity=EntityLifecycle("scene", "update_simple", "name"),
+    include_in_scene_serialization=True,
+):
     """Server -> client message to set a scene node's orientation.
 
     As with all other messages, transforms take the `T_parent_local` convention."""
@@ -1290,7 +1314,11 @@ class SetOrientationMessage(Message, include_in_scene_serialization=True):
 
 
 @dataclasses.dataclass
-class SetPositionMessage(Message, include_in_scene_serialization=True):
+class SetPositionMessage(
+    Message,
+    entity=EntityLifecycle("scene", "update_simple", "name"),
+    include_in_scene_serialization=True,
+):
     """Server -> client message to set a scene node's position.
 
     As with all other messages, transforms take the `T_parent_local` convention."""
@@ -1362,7 +1390,11 @@ class ImageProps:
 
 
 @dataclasses.dataclass
-class SetSceneNodeVisibilityMessage(Message, include_in_scene_serialization=True):
+class SetSceneNodeVisibilityMessage(
+    Message,
+    entity=EntityLifecycle("scene", "update_simple", "name"),
+    include_in_scene_serialization=True,
+):
     """Set the visibility of a particular node in the scene."""
 
     name: str
@@ -1956,7 +1988,7 @@ class GuiButtonGroupMessage(_CreateGuiComponentMessage):
 @dataclasses.dataclass
 class GuiUpdateMessage(
     Message,
-    entity=EntityLifecycle("gui", "update", "uuid"),
+    entity=EntityLifecycle("gui", "update_dict", "uuid"),
     include_in_scene_serialization=False,
 ):
     """Sent client<->server when any property of a GUI component is changed."""
@@ -1969,7 +2001,7 @@ class GuiUpdateMessage(
 @dataclasses.dataclass
 class SceneNodeUpdateMessage(
     Message,
-    entity=EntityLifecycle("scene", "update", "name"),
+    entity=EntityLifecycle("scene", "update_dict", "name"),
     include_in_scene_serialization=True,
 ):
     """Sent client<->server when any property of a scene node is changed."""
@@ -2281,7 +2313,7 @@ class RegisterCommandMessage(
 @dataclasses.dataclass
 class CommandUpdateMessage(
     Message,
-    entity=EntityLifecycle("command", "update", "uuid"),
+    entity=EntityLifecycle("command", "update_dict", "uuid"),
     include_in_scene_serialization=False,
 ):
     """Message from server->client to update properties of an existing command."""

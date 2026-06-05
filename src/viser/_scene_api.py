@@ -173,6 +173,45 @@ def cast_vector(vector: TVector | np.ndarray, length: int) -> TVector:
     return cast(TVector, tuple(map(float, vector)))
 
 
+def _warn_wireframe_conflicts(
+    wireframe: bool, material: str, flat_shading: bool
+) -> None:
+    """Warn about arguments that are ignored when wireframe rendering is on.
+
+    Called one level below the public ``add_*`` method, so ``stacklevel=3``
+    points the warning at the user's call site (warn -> here -> add_* -> user).
+    """
+    if wireframe and material != "standard":
+        warnings.warn(
+            f"Invalid combination of {wireframe=} and {material=}. Material argument will be ignored.",
+            stacklevel=3,
+        )
+    if wireframe and flat_shading:
+        warnings.warn(
+            f"Invalid combination of {wireframe=} and {flat_shading=}. Flat shading argument will be ignored.",
+            stacklevel=3,
+        )
+
+
+def _validate_batched_transforms(
+    batched_wxyzs: Any, batched_positions: Any, batched_scales: Any
+) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray], int]:
+    """Coerce and shape-check the per-instance transform arrays shared by the
+    batched scene primitives. Returns ``(wxyzs, positions, scales, count)``.
+    ``wxyzs`` and ``positions`` keep their input dtype (cast to float32 at
+    message construction); ``scales`` is cast to float32 here.
+    """
+    batched_wxyzs = np.asarray(batched_wxyzs)
+    batched_positions = np.asarray(batched_positions)
+    count = batched_wxyzs.shape[0]
+    assert batched_wxyzs.shape == (count, 4)
+    assert batched_positions.shape == (count, 3)
+    if batched_scales is not None:
+        batched_scales = np.asarray(batched_scales).astype(np.float32)
+        assert batched_scales.shape in ((count,), (count, 3))
+    return batched_wxyzs, batched_positions, batched_scales, count
+
+
 MISSING_SENTINEL = "MISSING"
 MISSING_SENTINEL_TYPE = Literal["MISSING"]
 
@@ -1399,16 +1438,11 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        batched_wxyzs = np.asarray(batched_wxyzs)
-        batched_positions = np.asarray(batched_positions)
-
-        num_axes = batched_wxyzs.shape[0]
-        assert batched_wxyzs.shape == (num_axes, 4)
-        assert batched_positions.shape == (num_axes, 3)
-
-        if batched_scales is not None:
-            batched_scales = np.asarray(batched_scales).astype(np.float32)
-            assert batched_scales.shape in ((num_axes,), (num_axes, 3))
+        batched_wxyzs, batched_positions, batched_scales, _ = (
+            _validate_batched_transforms(
+                batched_wxyzs, batched_positions, batched_scales
+            )
+        )
 
         props = _messages.BatchedAxesProps(
             batched_wxyzs=batched_wxyzs.astype(np.float32),
@@ -1694,16 +1728,7 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        if wireframe and material != "standard":
-            warnings.warn(
-                f"Invalid combination of {wireframe=} and {material=}. Material argument will be ignored.",
-                stacklevel=2,
-            )
-        if wireframe and flat_shading:
-            warnings.warn(
-                f"Invalid combination of {wireframe=} and {flat_shading=}. Flat shading argument will be ignored.",
-                stacklevel=2,
-            )
+        _warn_wireframe_conflicts(wireframe, material, flat_shading)
 
         assert len(bone_wxyzs) == len(bone_positions)
         num_bones = len(bone_wxyzs)
@@ -1725,9 +1750,7 @@ class SceneApi:
         if pad > 0:
             top_skin_indices = np.pad(top_skin_indices, ((0, 0), (0, pad)))
             top_skin_weights = np.pad(top_skin_weights, ((0, 0), (0, pad)))
-        top4_skin_indices = top_skin_indices
-        top4_skin_weights = top_skin_weights
-        assert top4_skin_weights.shape == top4_skin_indices.shape == (num_vertices, 4)
+        assert top_skin_weights.shape == top_skin_indices.shape == (num_vertices, 4)
 
         bone_wxyzs = np.asarray(bone_wxyzs)
         bone_positions = np.asarray(bone_positions)
@@ -1747,8 +1770,8 @@ class SceneApi:
                 scale=scale,
                 bone_wxyzs=bone_wxyzs.astype(np.float32),
                 bone_positions=bone_positions.astype(np.float32),
-                skin_indices=top4_skin_indices.astype(np.uint16),
-                skin_weights=top4_skin_weights.astype(np.float32),
+                skin_indices=top_skin_indices.astype(np.uint16),
+                skin_weights=top_skin_weights.astype(np.float32),
                 cast_shadow=cast_shadow,
                 receive_shadow=receive_shadow,
             ),
@@ -1820,16 +1843,7 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        if wireframe and material != "standard":
-            warnings.warn(
-                f"Invalid combination of {wireframe=} and {material=}. Material argument will be ignored.",
-                stacklevel=2,
-            )
-        if wireframe and flat_shading:
-            warnings.warn(
-                f"Invalid combination of {wireframe=} and {flat_shading=}. Flat shading argument will be ignored.",
-                stacklevel=2,
-            )
+        _warn_wireframe_conflicts(wireframe, material, flat_shading)
         message = _messages.MeshMessage(
             name=name,
             props=_messages.MeshProps(
@@ -1961,27 +1975,13 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        if wireframe and material != "standard":
-            warnings.warn(
-                f"Invalid combination of {wireframe=} and {material=}. Material argument will be ignored.",
-                stacklevel=2,
+        _warn_wireframe_conflicts(wireframe, material, flat_shading)
+
+        batched_wxyzs, batched_positions, batched_scales, num_instances = (
+            _validate_batched_transforms(
+                batched_wxyzs, batched_positions, batched_scales
             )
-        if wireframe and flat_shading:
-            warnings.warn(
-                f"Invalid combination of {wireframe=} and {flat_shading=}. Flat shading argument will be ignored.",
-                stacklevel=2,
-            )
-
-        batched_wxyzs = np.asarray(batched_wxyzs)
-        batched_positions = np.asarray(batched_positions)
-
-        num_instances = batched_wxyzs.shape[0]
-        assert batched_wxyzs.shape == (num_instances, 4)
-        assert batched_positions.shape == (num_instances, 3)
-
-        if batched_scales is not None:
-            batched_scales = np.asarray(batched_scales).astype(np.float32)
-            assert batched_scales.shape in ((num_instances,), (num_instances, 3))
+        )
 
         # Handle batched opacities.
         if batched_opacities is not None:
@@ -2066,16 +2066,11 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        batched_wxyzs = np.asarray(batched_wxyzs)
-        batched_positions = np.asarray(batched_positions)
-
-        num_instances = batched_wxyzs.shape[0]
-        assert batched_wxyzs.shape == (num_instances, 4)
-        assert batched_positions.shape == (num_instances, 3)
-
-        if batched_scales is not None:
-            batched_scales = np.asarray(batched_scales).astype(np.float32)
-            assert batched_scales.shape in ((num_instances,), (num_instances, 3))
+        batched_wxyzs, batched_positions, batched_scales, _ = (
+            _validate_batched_transforms(
+                batched_wxyzs, batched_positions, batched_scales
+            )
+        )
 
         with io.BytesIO() as data_buffer:
             mesh.export(data_buffer, file_type="glb")
@@ -2140,16 +2135,11 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        batched_wxyzs = np.asarray(batched_wxyzs)
-        batched_positions = np.asarray(batched_positions)
-
-        num_instances = batched_wxyzs.shape[0]
-        assert batched_wxyzs.shape == (num_instances, 4)
-        assert batched_positions.shape == (num_instances, 3)
-
-        if batched_scales is not None:
-            batched_scales = np.asarray(batched_scales).astype(np.float32)
-            assert batched_scales.shape in ((num_instances,), (num_instances, 3))
+        batched_wxyzs, batched_positions, batched_scales, _ = (
+            _validate_batched_transforms(
+                batched_wxyzs, batched_positions, batched_scales
+            )
+        )
 
         message = _messages.BatchedGlbMessage(
             name=name,
@@ -2287,23 +2277,12 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        if isinstance(dimensions, np.ndarray):
-            dimensions_list = dimensions.tolist()
-            assert len(dimensions_list) == 3, (
-                f"Expected 3 dimensions, got {len(dimensions_list)}"
-            )
-            dimensions_tuple = (
-                float(dimensions_list[0]),
-                float(dimensions_list[1]),
-                float(dimensions_list[2]),
-            )
-        else:
-            assert len(dimensions) == 3, f"Expected 3 dimensions, got {len(dimensions)}"
-            dimensions_tuple = (
-                float(dimensions[0]),
-                float(dimensions[1]),
-                float(dimensions[2]),
-            )
+        assert len(dimensions) == 3, f"Expected 3 dimensions, got {len(dimensions)}"
+        dimensions_tuple = (
+            float(dimensions[0]),
+            float(dimensions[1]),
+            float(dimensions[2]),
+        )
 
         message = _messages.BoxMessage(
             name=name,

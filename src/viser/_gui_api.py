@@ -134,6 +134,41 @@ def _compute_step(x: float | None) -> float:  # type: ignore
     return 1 if x is None else 10 ** (-_compute_precision_digits(x))
 
 
+def _build_slider_marks(
+    marks: tuple[float | tuple[float, str], ...] | None,
+) -> tuple[GuiSliderMark, ...] | None:
+    """Normalize a slider's ``marks`` argument into ``GuiSliderMark`` tuples.
+    Shared by add_slider and add_multi_slider so the two can't diverge."""
+    if marks is None:
+        return None
+    return tuple(
+        GuiSliderMark(value=float(x[0]), label=x[1])
+        if isinstance(x, tuple)
+        else GuiSliderMark(value=x, label=None)
+        for x in marks
+    )
+
+
+def _infer_vector_step(
+    value: tuple[float, ...],
+    min: tuple[float, ...] | None,
+    max: tuple[float, ...] | None,
+    step: float | None,
+) -> float:
+    """Pick a default step for a vector input from its value/min/max components
+    when the caller didn't pass one. Shared by add_vector2 and add_vector3 so
+    the inference can't drift between the two."""
+    if step is not None:
+        return step
+    possible_steps: list[float] = []
+    possible_steps.extend([_compute_step(x) for x in value])
+    if min is not None:
+        possible_steps.extend([_compute_step(x) for x in min])
+    if max is not None:
+        possible_steps.extend([_compute_step(x) for x in max])
+    return float(np.min(possible_steps))
+
+
 def _compute_precision_digits(x: float) -> int:
     """For number inputs: compute digits of precision from some number.
 
@@ -1440,6 +1475,8 @@ class GuiApi:
         Returns:
             A handle that can be used to interact with the GUI element.
         """
+        if len(options) == 0:
+            raise ValueError("add_button_group requires at least one option.")
         value = options[0]
         uuid = _make_uuid()
         order = _apply_default_order(order)
@@ -1671,14 +1708,7 @@ class GuiApi:
         uuid = _make_uuid()
         order = _apply_default_order(order)
 
-        if step is None:
-            possible_steps: list[float] = []
-            possible_steps.extend([_compute_step(x) for x in value])
-            if min is not None:
-                possible_steps.extend([_compute_step(x) for x in min])
-            if max is not None:
-                possible_steps.extend([_compute_step(x) for x in max])
-            step = float(np.min(possible_steps))
+        step = _infer_vector_step(value, min, max, step)
 
         return GuiVector2Handle(
             self._create_gui_input(
@@ -1739,14 +1769,7 @@ class GuiApi:
         uuid = _make_uuid()
         order = _apply_default_order(order)
 
-        if step is None:
-            possible_steps: list[float] = []
-            possible_steps.extend([_compute_step(x) for x in value])
-            if min is not None:
-                possible_steps.extend([_compute_step(x) for x in min])
-            if max is not None:
-                possible_steps.extend([_compute_step(x) for x in max])
-            step = float(np.min(possible_steps))
+        step = _infer_vector_step(value, min, max, step)
 
         return GuiVector3Handle(
             self._create_gui_input(
@@ -1826,6 +1849,8 @@ class GuiApi:
         # Materialize once so a one-shot iterable isn't consumed by the checks
         # below and again by the message construction.
         options_tuple = tuple(options)
+        if len(options_tuple) == 0:
+            raise ValueError("add_dropdown requires at least one option.")
         value = initial_value
         if value is None:
             value = options_tuple[0]
@@ -1973,14 +1998,7 @@ class GuiApi:
                         precision=_compute_precision_digits(step),
                         visible=visible,
                         disabled=disabled,
-                        _marks=tuple(
-                            GuiSliderMark(value=float(x[0]), label=x[1])
-                            if isinstance(x, tuple)
-                            else GuiSliderMark(value=x, label=None)
-                            for x in marks
-                        )
-                        if marks is not None
-                        else None,
+                        _marks=_build_slider_marks(marks),
                     ),
                 ),
                 is_button=False,
@@ -2062,14 +2080,7 @@ class GuiApi:
                         disabled=disabled,
                         fixed_endpoints=fixed_endpoints,
                         precision=_compute_precision_digits(step),
-                        _marks=tuple(
-                            GuiSliderMark(value=float(x[0]), label=x[1])
-                            if isinstance(x, tuple)
-                            else GuiSliderMark(value=x, label=None)
-                            for x in marks
-                        )
-                        if marks is not None
-                        else None,
+                        _marks=_build_slider_marks(marks),
                     ),
                 ),
                 is_button=False,

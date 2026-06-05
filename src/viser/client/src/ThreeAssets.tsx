@@ -414,7 +414,10 @@ export const InstancedAxes = React.forwardRef<
       axesRef.current.setColorAt(i * 3 + 2, blue);
     }
     axesRef.current.instanceMatrix.needsUpdate = true;
-    axesRef.current.instanceColor!.needsUpdate = true;
+    // `instanceColor` stays null until the first setColorAt, so it's null when
+    // there are zero instances -- guard the deref.
+    if (axesRef.current.instanceColor !== null)
+      axesRef.current.instanceColor.needsUpdate = true;
     // Invalidate the cached bounding sphere so raycasting (clicks/hover) tests
     // against the new instance positions rather than the stale ones.
     axesRef.current.boundingSphere = null;
@@ -426,35 +429,29 @@ export const InstancedAxes = React.forwardRef<
     [axes_radius, axes_length],
   );
 
-  // Compute transform matrices for each axis.
-  const xAxisTransform = React.useMemo(
-    () => ({
-      position: new THREE.Vector3(0.5 * axes_length, 0, 0),
-      rotation: new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(0, 0, (3 * Math.PI) / 2),
-      ),
-      scale: new THREE.Vector3(1, 1, 1),
-    }),
-    [axes_length],
-  );
-
-  const yAxisTransform = React.useMemo(
-    () => ({
-      position: new THREE.Vector3(0, 0.5 * axes_length, 0),
-      rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0)),
-      scale: new THREE.Vector3(1, 1, 1),
-    }),
-    [axes_length],
-  );
-
-  const zAxisTransform = React.useMemo(
-    () => ({
-      position: new THREE.Vector3(0, 0, 0.5 * axes_length),
-      rotation: new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(Math.PI / 2, 0, 0),
-      ),
-      scale: new THREE.Vector3(1, 1, 1),
-    }),
+  // Compute transform matrices for each axis (x, y, z).
+  const axisTransforms = React.useMemo(
+    () => [
+      {
+        position: new THREE.Vector3(0.5 * axes_length, 0, 0),
+        rotation: new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(0, 0, (3 * Math.PI) / 2),
+        ),
+        scale: new THREE.Vector3(1, 1, 1),
+      },
+      {
+        position: new THREE.Vector3(0, 0.5 * axes_length, 0),
+        rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0)),
+        scale: new THREE.Vector3(1, 1, 1),
+      },
+      {
+        position: new THREE.Vector3(0, 0, 0.5 * axes_length),
+        rotation: new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(Math.PI / 2, 0, 0),
+        ),
+        scale: new THREE.Vector3(1, 1, 1),
+      },
+    ],
     [axes_length],
   );
 
@@ -473,39 +470,20 @@ export const InstancedAxes = React.forwardRef<
           frustumCulled={false}
         />
 
-        {/* Create hover outlines for each axis */}
-        <BatchedMeshHoverOutlines
-          geometry={outlineCylinderGeom}
-          batched_positions={batched_positions}
-          batched_wxyzs={batched_wxyzs}
-          batched_scales={batched_scales}
-          meshTransform={xAxisTransform}
-          computeBatchIndexFromInstanceIndex={(instanceId) =>
-            Math.floor(instanceId / 3)
-          }
-        />
-
-        <BatchedMeshHoverOutlines
-          geometry={outlineCylinderGeom}
-          batched_positions={batched_positions}
-          batched_wxyzs={batched_wxyzs}
-          batched_scales={batched_scales}
-          meshTransform={yAxisTransform}
-          computeBatchIndexFromInstanceIndex={(instanceId) =>
-            Math.floor(instanceId / 3)
-          }
-        />
-
-        <BatchedMeshHoverOutlines
-          geometry={outlineCylinderGeom}
-          batched_positions={batched_positions}
-          batched_wxyzs={batched_wxyzs}
-          batched_scales={batched_scales}
-          meshTransform={zAxisTransform}
-          computeBatchIndexFromInstanceIndex={(instanceId) =>
-            Math.floor(instanceId / 3)
-          }
-        />
+        {/* Create hover outlines for each axis (x, y, z). */}
+        {axisTransforms.map((meshTransform, i) => (
+          <BatchedMeshHoverOutlines
+            key={i}
+            geometry={outlineCylinderGeom}
+            batched_positions={batched_positions}
+            batched_wxyzs={batched_wxyzs}
+            batched_scales={batched_scales}
+            meshTransform={meshTransform}
+            computeBatchIndexFromInstanceIndex={(instanceId) =>
+              Math.floor(instanceId / 3)
+            }
+          />
+        ))}
       </group>
       {children}
     </group>

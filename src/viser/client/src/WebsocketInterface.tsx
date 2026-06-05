@@ -62,6 +62,12 @@ export function WebsocketMessageProducer() {
         // so this transient state isn't reset for us.
         viewerMutable.messageQueue.length = 0;
         viewerMutable.firstMessageBatch = true;
+        // Skinned-mesh pose buffers are keyed by node name on the mutable ref,
+        // which persists across reconnects; drop them so they don't leak (and
+        // so stale bone state doesn't apply to the fresh scene).
+        for (const key of Object.keys(viewerMutable.skinnedMeshState)) {
+          delete viewerMutable.skinnedMeshState[key];
+        }
         // Clear any render request left in flight from the previous connection.
         // Message handling is gated on this being "ready", and a stale request
         // would otherwise render once against the fresh scene (its response is

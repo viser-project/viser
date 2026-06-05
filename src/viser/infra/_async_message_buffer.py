@@ -72,7 +72,7 @@ class AsyncMessageBuffer:
                 stale_ids = [
                     mid
                     for mid, m in self.message_from_id.items()
-                    if m.lifecycle_phase == "update"
+                    if m.lifecycle_phase in ("update_dict", "update_simple")
                     and m.entity_type == purge_entity_type
                     and m.entity_id_field is not None
                     and getattr(m, m.entity_id_field, None) == purge_entity_id

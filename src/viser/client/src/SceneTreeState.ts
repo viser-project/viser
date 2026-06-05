@@ -175,7 +175,7 @@ function createSceneTreeActions(
       // updates) emit fresh array references on every onChange, so a plain
       // ``Object.is`` would think every re-click of the same color is a
       // change.
-      const currentProps = node.message.props as Record<string, any>;
+      const currentProps = node.message.props as Record<string, unknown>;
       let changed = false;
       for (const key in updates) {
         const a = currentProps[key];

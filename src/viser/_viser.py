@@ -958,14 +958,14 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         - Every tombstone message (``lifecycle_phase == "remove"``) for an
           entity -- new clients shouldn't replay removals of entities that
           never existed to them.
-        - Every update message (``lifecycle_phase == "update"``) targeting an
-          entity that was already removed.
-        - Scene-node-adjacent ``Set*Message`` variants (SetPosition,
-          SetOrientation, SetBonePosition, SetBoneOrientation,
-          SetSceneNodeClickable, SetSceneNodeVisibility) that target a removed
-          scene node. These aren't entity-declared because they target the
-          node-by-name but don't fit the "updates: dict" shape; a `name`-match
-          against the tombstone set catches them generically.
+        - Every update message (``lifecycle_phase`` of ``update_dict`` or
+          ``update_simple``) targeting an entity that was already removed. This
+          includes the scene-node ``Set*Message`` pose/visibility variants
+          (SetPosition, SetOrientation, SetBonePosition, SetBoneOrientation,
+          SetSceneNodeVisibility), which are declared ``update_simple``.
+        - Any remaining non-entity message carrying a ``name`` that matches a
+          removed scene node (e.g. the click/drag binding messages); a
+          ``name``-match against the tombstone set catches them generically.
 
         Two passes so purging is order-independent under concurrent writers:
         the first pass collects all tombstone entity ids, the second sweeps
@@ -1003,7 +1003,7 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             if removed_ids_by_type:
                 for msg_id, message in buffer.message_from_id.items():
                     phase = message.lifecycle_phase
-                    if phase == "update":
+                    if phase in ("update_dict", "update_simple"):
                         assert (
                             message.entity_type is not None
                             and message.entity_id_field is not None

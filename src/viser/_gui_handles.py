@@ -651,6 +651,8 @@ class GuiDropdownHandle(
     def options(self, options: Iterable[StringType]) -> None:  # type: ignore
         assert isinstance(self._impl.props, GuiDropdownProps)
         options = tuple(options)
+        if len(options) == 0:
+            raise ValueError("Dropdown requires at least one option.")
         self._impl.props.options = options
 
         self._impl.gui_api._websock_interface.queue_message(

@@ -112,13 +112,15 @@ export function applyGuiConfigUpdate(
 
   for (const [key, value] of Object.entries(updates)) {
     if (key === "value") {
-      if (!Object.is((config as any).value, value)) valueChanged = true;
+      const current = "value" in config ? config.value : undefined;
+      if (!Object.is(current, value)) valueChanged = true;
     } else if (!(key in config.props)) {
       console.error(
         `Tried to update nonexistent property '${key}' of GUI element!`,
       );
     } else {
-      if (!Object.is((config.props as any)[key], value)) propsChanged = true;
+      if (!Object.is((config.props as Record<string, unknown>)[key], value))
+        propsChanged = true;
     }
   }
 
@@ -129,7 +131,7 @@ export function applyGuiConfigUpdate(
     newConfig = { ...newConfig, value: updates.value };
   }
   if (propsChanged) {
-    const newProps = { ...config.props } as any;
+    const newProps = { ...config.props } as Record<string, unknown>;
     for (const [key, value] of Object.entries(updates)) {
       if (key !== "value" && key in config.props) {
         newProps[key] = value;
@@ -191,17 +193,18 @@ export function useGuiState(initialServer: string) {
           console.warn("(OK) Tried to remove non-existent component", id);
           return;
         }
+        const state = store.get();
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { [id]: _2, ...remainingOrders } = store.get().guiOrderFromUuid;
-        const dirtyFormUuids = { ...store.get().dirtyFormUuids };
+        const { [id]: _2, ...remainingOrders } = state.guiOrderFromUuid;
+        const dirtyFormUuids = { ...state.dirtyFormUuids };
         delete dirtyFormUuids[id];
         const containerUuid = guiConfig.container_uuid;
         const containerSet = {
-          ...store.get().guiUuidSetFromContainerUuid[containerUuid],
+          ...state.guiUuidSetFromContainerUuid[containerUuid],
         };
         delete containerSet[id];
         const newContainerMap = {
-          ...store.get().guiUuidSetFromContainerUuid,
+          ...state.guiUuidSetFromContainerUuid,
         };
         if (Object.keys(containerSet).length === 0) {
           delete newContainerMap[containerUuid];
@@ -269,13 +272,9 @@ export function useGuiState(initialServer: string) {
           const existing = state.commands[uuid];
           if (existing === undefined) return state;
           const existingProps = existing.props as Record<string, unknown>;
-          let changed = false;
-          for (const [k, v] of Object.entries(updates)) {
-            if (!Object.is(existingProps[k], v)) {
-              changed = true;
-              break;
-            }
-          }
+          const changed = Object.entries(updates).some(
+            ([k, v]) => !Object.is(existingProps[k], v),
+          );
           if (!changed) return state;
           const merged: RegisterCommandMessage = {
             ...existing,

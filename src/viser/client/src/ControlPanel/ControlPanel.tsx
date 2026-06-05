@@ -65,15 +65,12 @@ export default function ControlPanel(props: {
   const controlWidthString = viewer.useGui(
     (state) => state.theme.control_width,
   );
-  const controlWidth = (
-    controlWidthString == "small"
-      ? "16em"
-      : controlWidthString == "medium"
-        ? "20em"
-        : controlWidthString == "large"
-          ? "24em"
-          : null
-  )!;
+  const controlWidthByName: Record<string, string> = {
+    small: "16em",
+    medium: "20em",
+    large: "24em",
+  };
+  const controlWidth = controlWidthByName[controlWidthString]!;
 
   const generatedServerToggleButton = (
     <ActionIcon

@@ -472,38 +472,36 @@ export const BatchedLabelManager: React.FC<{
   return (
     <BatchedLabelManagerContext.Provider value={contextValue}>
       {group && <primitive object={group} />}
-      {/* Background rectangles with depth test = true */}
-      <Instances frustumCulled={false}>
-        <primitive object={rectGeometry} attach="geometry" />
-        <meshBasicMaterial
-          color={LABEL_BACKGROUND_COLOR}
-          transparent={true}
-          opacity={LABEL_BACKGROUND_OPACITY}
-          depthTest={true}
-          depthWrite={false}
-          toneMapped={false}
-        />
-        {backgroundsByDepthTest.get(true)?.map((instanceId) => {
-          const ref = backgroundInstanceRefsRef.current.get(instanceId);
-          return <Instance key={instanceId} ref={ref} renderOrder={10000} />;
-        })}
-      </Instances>
-      {/* Background rectangles with depth test = false */}
-      <Instances frustumCulled={false} renderOrder={9999}>
-        <primitive object={rectGeometry} attach="geometry" />
-        <meshBasicMaterial
-          color={LABEL_BACKGROUND_COLOR}
-          transparent={true}
-          opacity={LABEL_BACKGROUND_OPACITY}
-          depthTest={false}
-          depthWrite={false}
-          toneMapped={false}
-        />
-        {backgroundsByDepthTest.get(false)?.map((instanceId) => {
-          const ref = backgroundInstanceRefsRef.current.get(instanceId);
-          return <Instance key={instanceId} ref={ref} />;
-        })}
-      </Instances>
+      {/* Background rectangles, split by depth-test setting. The depthTest=true
+          group renders on top (Instance renderOrder 10000); the depthTest=false
+          group sits behind the scene (Instances renderOrder 9999). */}
+      {([true, false] as const).map((depthTest) => (
+        <Instances
+          key={String(depthTest)}
+          frustumCulled={false}
+          renderOrder={depthTest ? undefined : 9999}
+        >
+          <primitive object={rectGeometry} attach="geometry" />
+          <meshBasicMaterial
+            color={LABEL_BACKGROUND_COLOR}
+            transparent={true}
+            opacity={LABEL_BACKGROUND_OPACITY}
+            depthTest={depthTest}
+            depthWrite={false}
+            toneMapped={false}
+          />
+          {backgroundsByDepthTest.get(depthTest)?.map((instanceId) => {
+            const ref = backgroundInstanceRefsRef.current.get(instanceId);
+            return (
+              <Instance
+                key={instanceId}
+                ref={ref}
+                renderOrder={depthTest ? 10000 : undefined}
+              />
+            );
+          })}
+        </Instances>
+      ))}
       {children}
     </BatchedLabelManagerContext.Provider>
   );

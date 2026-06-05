@@ -160,6 +160,27 @@ function useMessageHandler() {
         updates: { [key: string]: any };
       };
 
+  // Shared prologue for the SetCamera{Fov,Near,Far} handlers. When a message
+  // carries initial-camera state, record it (URL params take priority) and
+  // stop unless this is the first initial camera. Returns whether the caller
+  // should still apply the value to the live camera.
+  function applyInitialCameraParam(
+    field: "fov" | "near" | "far",
+    isInitial: boolean,
+    setInitial: () => void,
+  ): boolean {
+    const wasDefault =
+      viewer.useInitialCamera.get()[field].source === "default";
+    if (isInitial) {
+      // URL params take priority, ignore server's initial value.
+      setInitial();
+      // If this is the first initial camera: we'll also move the actual
+      // camera. If not, we return immediately.
+      if (!wasDefault) return false;
+    }
+    return true;
+  }
+
   // Return message handler.
   return (message: Message): HandleMessageResult => {
     if (isGuiComponentMessage(message)) {
@@ -328,18 +349,29 @@ function useMessageHandler() {
         return;
       }
 
-      // Set the bone poses.
+      // Set the bone poses. Guard against a bone message that arrives before
+      // its SkinnedMeshMessage (out-of-order delivery) or after the node was
+      // removed, and against an out-of-range bone index -- otherwise the
+      // dereference throws inside the per-frame batch loop and drops the rest
+      // of the batch.
       case "SetBoneOrientationMessage": {
-        const state = viewerMutable.skinnedMeshState;
-        state[message.name].poses[message.bone_index].wxyz = message.wxyz;
-        state[message.name].dirty = true;
+        const pose =
+          viewerMutable.skinnedMeshState[message.name]?.poses[
+            message.bone_index
+          ];
+        if (pose === undefined) break;
+        pose.wxyz = message.wxyz;
+        viewerMutable.skinnedMeshState[message.name].dirty = true;
         break;
       }
       case "SetBonePositionMessage": {
-        const state = viewerMutable.skinnedMeshState;
-        state[message.name].poses[message.bone_index].position =
-          message.position;
-        state[message.name].dirty = true;
+        const pose =
+          viewerMutable.skinnedMeshState[message.name]?.poses[
+            message.bone_index
+          ];
+        if (pose === undefined) break;
+        pose.position = message.position;
+        viewerMutable.skinnedMeshState[message.name].dirty = true;
         break;
       }
       case "SetCameraLookAtMessage": {
@@ -428,18 +460,12 @@ function useMessageHandler() {
         return;
       }
       case "SetCameraFovMessage": {
-        // Setting initial camera parameters.
-        const wasDefault =
-          viewer.useInitialCamera.get().fov.source === "default";
-        if (message.initial) {
-          // URL params take priority, ignore server's initial value.
-          initialCameraActions.setFov(message.fov, "message");
-
-          // If this is the first initial camera: we'll also move the actual
-          // camera. If not, we return immediately.
-          if (!wasDefault) return;
-        }
-
+        if (
+          !applyInitialCameraParam("fov", message.initial, () =>
+            initialCameraActions.setFov(message.fov, "message"),
+          )
+        )
+          return;
         const camera = viewerMutable.camera!;
         // tan(fov / 2.0) = 0.5 * film height / focal length
         // focal length = 0.5 * film height / tan(fov / 2.0)
@@ -450,36 +476,24 @@ function useMessageHandler() {
         return;
       }
       case "SetCameraNearMessage": {
-        // Setting initial camera parameters.
-        const wasDefault =
-          viewer.useInitialCamera.get().near.source === "default";
-        if (message.initial) {
-          // URL params take priority, ignore server's initial value.
-          initialCameraActions.setNear(message.near, "message");
-
-          // If this is the first initial camera: we'll also move the actual
-          // camera. If not, we return immediately.
-          if (!wasDefault) return;
-        }
-
+        if (
+          !applyInitialCameraParam("near", message.initial, () =>
+            initialCameraActions.setNear(message.near, "message"),
+          )
+        )
+          return;
         const camera = viewerMutable.camera!;
         camera.near = message.near;
         camera.updateProjectionMatrix();
         return;
       }
       case "SetCameraFarMessage": {
-        // Setting initial camera parameters.
-        const wasDefault =
-          viewer.useInitialCamera.get().far.source === "default";
-        if (message.initial) {
-          // URL params take priority, ignore server's initial value.
-          initialCameraActions.setFar(message.far, "message");
-
-          // If this is the first initial camera: we'll also move the actual
-          // camera. If not, we return immediately.
-          if (!wasDefault) return;
-        }
-
+        if (
+          !applyInitialCameraParam("far", message.initial, () =>
+            initialCameraActions.setFar(message.far, "message"),
+          )
+        )
+          return;
         const camera = viewerMutable.camera!;
         camera.far = message.far;
         camera.updateProjectionMatrix();
@@ -600,15 +614,22 @@ function useMessageHandler() {
       }
       // Remove a scene node and its children by name.
       case "RemoveSceneNodeMessage": {
-        console.log("Removing scene node:", message.name);
         if (viewer.useSceneTree.get(message.name) === undefined) {
           console.log("(OK) Skipping scene node removal for " + message.name);
           return;
         }
         removeSceneNode(message.name);
 
-        if (viewerMutable.skinnedMeshState[message.name] !== undefined)
-          delete viewerMutable.skinnedMeshState[message.name];
+        // Clear skinned-mesh state for the removed node AND its descendants.
+        // `removeSceneNode` recurses the subtree, and this map is keyed by node
+        // name, so deleting only the exact name leaks any skinned mesh nested
+        // under a removed ancestor.
+        const subtreePrefix = message.name + "/";
+        for (const key of Object.keys(viewerMutable.skinnedMeshState)) {
+          if (key === message.name || key.startsWith(subtreePrefix)) {
+            delete viewerMutable.skinnedMeshState[key];
+          }
+        }
         return;
       }
       // Set the drag-binding set for a particular scene node.
