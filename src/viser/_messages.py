@@ -171,9 +171,7 @@ LabelAnchor = Literal[
 EntityType: TypeAlias = Literal["gui", "scene", "command", "notification", "modal"]
 """Kinds of removable entities in the protocol."""
 
-LifecyclePhase: TypeAlias = Literal[
-    "create", "update_dict", "update_simple", "remove"
-]
+LifecyclePhase: TypeAlias = Literal["create", "update_dict", "update_simple", "remove"]
 """Phase of an entity message. Create and Remove share a redundancy-key
 namespace (so Remove supersedes Create). There are two update flavors, both
 purged when their entity is removed:
