@@ -48,17 +48,22 @@ def wait_for_connection(page: Page, port: int) -> None:
     """Navigate to the viser server and wait for WebSocket connection.
 
     The ConnectionStatus component displays "Connecting..." while disconnected
-    and switches once the WebSocket handshake completes.
+    and switches once the WebSocket handshake completes. We then wait for the
+    R3F scene context to mount -- ``window.__viserMutable`` is published by
+    ``SceneContextSetter`` once the canvas + WebGL scene are live -- which is a
+    real readiness signal rather than a blind settle delay.
     """
     page.goto(f"http://localhost:{port}")
     page.wait_for_function(
         """() => {
             const body = document.body.innerText;
-            return !body.includes('Connecting...');
+            if (body.includes('Connecting...')) return false;
+            // Scene context is live once SceneContextSetter publishes the
+            // mutable handle on window (canvas + WebGL scene mounted).
+            return window.__viserMutable != null;
         }""",
         timeout=15_000,
     )
-    page.wait_for_timeout(500)
 
 
 # ---------------------------------------------------------------------------

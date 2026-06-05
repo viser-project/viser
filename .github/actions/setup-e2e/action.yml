@@ -1,5 +1,8 @@
-name: Setup E2E environment
-description: Install Python, Node.js, dependencies, Playwright, and build the viser client.
+name: Setup E2E Python environment
+description: >
+  Install Python, uv, project dependencies, and the Playwright browser (all
+  cached). The client build is NOT handled here -- use the separate cached
+  `build-client` action so the build is shared across workflows.
 
 inputs:
   python-version:
@@ -15,25 +18,24 @@ runs:
       with:
         python-version: ${{ inputs.python-version }}
 
-    - name: Use Node.js
-      uses: actions/setup-node@v6
-      with:
-        node-version: 24
-
     - name: Install uv
       uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: true
 
     - name: Install Python dependencies
       shell: bash
       run: uv sync --extra dev
 
+    # Cache the downloaded Playwright browser binaries (keyed on the resolved
+    # dependency set, which pins the Playwright version). On a hit, the install
+    # below skips the ~90MB download and only installs the apt system libs.
+    - name: Cache Playwright browsers
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+
     - name: Install Playwright browsers
       shell: bash
       run: uv run playwright install chromium --with-deps
-
-    - name: Build viser client
-      shell: bash
-      run: |
-        cd src/viser/client
-        npm install
-        npm run build

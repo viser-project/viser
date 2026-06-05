@@ -20,6 +20,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Restores the shared client build from cache; only builds on a cache miss
+      # (i.e. the first job after a client source change). Identical build is
+      # reused across the matrix, other workflows, and subsequent runs.
+      - uses: ./.github/actions/build-client
+
       - uses: ./.github/actions/setup-e2e
         with:
           python-version: ${{ matrix.python-version }}

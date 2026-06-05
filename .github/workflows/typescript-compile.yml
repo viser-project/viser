@@ -19,8 +19,10 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: src/viser/client/package-lock.json
       - name: Run tsc
         run: |
           cd src/viser/client
-          npm install
+          npm ci
           npx tsc

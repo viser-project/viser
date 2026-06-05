@@ -20,7 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          # Separate cache per Python version so each matrix job gets full hits
+          # (the `examples` extra pulls heavy deps like torch).
+          cache-suffix: ${{ matrix.python-version }}
       - name: Run pyright
         run: |
           uv run --extra dev --extra examples --python ${{ matrix.python-version }} pyright ./src

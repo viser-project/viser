@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import threading
+import time
 
 from playwright.sync_api import Page, expect
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 import viser
 
@@ -14,9 +16,40 @@ _SPOTLIGHT_ACTION = "button.mantine-Spotlight-action"
 
 
 def _open_spotlight(page: Page) -> None:
-    """Open the Mantine Spotlight command palette via keyboard shortcut."""
-    page.keyboard.press("Control+K")
-    page.locator(_SPOTLIGHT_SEARCH).wait_for(state="visible", timeout=5_000)
+    """Open the Mantine Spotlight command palette via keyboard shortcut.
+
+    The Spotlight only mounts once at least one command has reached the client,
+    and Ctrl+K is a one-shot event that is lost if pressed before then. Rather
+    than block on a fixed settle delay before every open, we retry the shortcut
+    until the search box appears -- robust against propagation latency and
+    faster when the command is already registered.
+    """
+    search = page.locator(_SPOTLIGHT_SEARCH)
+    for _ in range(50):
+        page.keyboard.press("Control+K")
+        try:
+            search.wait_for(state="visible", timeout=200)
+            return
+        except PlaywrightTimeoutError:
+            continue
+    search.wait_for(state="visible", timeout=2_000)
+
+
+def _press_until(
+    page: Page, key: str, event: threading.Event, timeout: float = 5.0
+) -> bool:
+    """Repeatedly press ``key`` until ``event`` is set or ``timeout`` elapses.
+
+    Hotkeys register client-side only after the command reaches the browser, and
+    a keypress sent before then is dropped. Re-pressing is robust against that
+    propagation latency without a fixed settle delay. Safe only when the
+    callback is idempotent w.r.t. repeated presses (e.g. just sets an event)."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        page.keyboard.press(key)
+        if event.wait(timeout=0.2):
+            return True
+    return False
 
 
 def test_command_palette_opens(
@@ -25,7 +58,6 @@ def test_command_palette_opens(
 ) -> None:
     """Pressing Ctrl+K should open the command palette."""
     viser_server.gui.add_command("Dummy Command")
-    viser_page.wait_for_timeout(500)
 
     _open_spotlight(viser_page)
     expect(viser_page.locator(_SPOTLIGHT_SEARCH)).to_be_visible()
@@ -39,7 +71,6 @@ def test_registered_command_appears(
     viser_server.gui.add_command(
         "My Test Command", description="A test command description"
     )
-    viser_page.wait_for_timeout(500)
 
     _open_spotlight(viser_page)
 
@@ -59,7 +90,6 @@ def test_multiple_commands_appear(
     viser_server.gui.add_command("Command Alpha")
     viser_server.gui.add_command("Command Beta")
     viser_server.gui.add_command("Command Gamma")
-    viser_page.wait_for_timeout(500)
 
     _open_spotlight(viser_page)
 
@@ -81,7 +111,6 @@ def test_command_triggers_callback(
     def _(event: viser.CommandEvent) -> None:
         triggered.set()
 
-    viser_page.wait_for_timeout(500)
     _open_spotlight(viser_page)
 
     action = viser_page.locator(_SPOTLIGHT_ACTION, has_text="Trigger Me")
@@ -106,7 +135,6 @@ def test_command_trigger_receives_client(
         event_holder.append(event)
         triggered.set()
 
-    viser_page.wait_for_timeout(500)
     _open_spotlight(viser_page)
 
     action = viser_page.locator(_SPOTLIGHT_ACTION, has_text="Client Check")
@@ -126,13 +154,11 @@ def test_fuzzy_search_filters_commands(
     viser_server.gui.add_command("Export Data")
     viser_server.gui.add_command("Import Data")
     viser_server.gui.add_command("Delete All")
-    viser_page.wait_for_timeout(500)
 
     _open_spotlight(viser_page)
 
     search_input = viser_page.locator(_SPOTLIGHT_SEARCH)
     search_input.fill("export")
-    viser_page.wait_for_timeout(300)
 
     export_action = viser_page.locator(_SPOTLIGHT_ACTION, has_text="Export Data")
     expect(export_action).to_be_visible(timeout=3_000)
@@ -147,7 +173,6 @@ def test_command_remove_disappears_from_palette(
 ) -> None:
     """Removing a command should remove it from the command palette."""
     handle = viser_server.gui.add_command("Removable Command")
-    viser_page.wait_for_timeout(500)
 
     # Verify it appears.
     _open_spotlight(viser_page)
@@ -174,10 +199,8 @@ def test_command_label_update(
 ) -> None:
     """Updating the label from the server should update it in the palette."""
     handle = viser_server.gui.add_command("Old Name")
-    viser_page.wait_for_timeout(500)
 
     handle.label = "New Name"
-    viser_page.wait_for_timeout(500)
 
     _open_spotlight(viser_page)
 
@@ -198,7 +221,6 @@ def test_command_with_icon(
         description="Save the current file",
         icon=viser.Icon.DEVICE_FLOPPY,
     )
-    viser_page.wait_for_timeout(500)
 
     _open_spotlight(viser_page)
 
@@ -223,7 +245,6 @@ def test_disabled_command_visible_but_not_triggerable(
     def _(event: viser.CommandEvent) -> None:
         triggered.set()
 
-    viser_page.wait_for_timeout(500)
     _open_spotlight(viser_page)
 
     action = viser_page.locator(_SPOTLIGHT_ACTION, has_text="Disabled Command")
@@ -252,11 +273,8 @@ def test_disabled_command_re_enabled(
     def _(event: viser.CommandEvent) -> None:
         triggered.set()
 
-    viser_page.wait_for_timeout(500)
-
     # Re-enable the command.
     handle.disabled = False
-    viser_page.wait_for_timeout(500)
 
     _open_spotlight(viser_page)
 
@@ -292,10 +310,12 @@ def test_command_hotkey_triggers_callback(
     def _(event: viser.CommandEvent) -> None:
         triggered.set()
 
-    viser_page.wait_for_timeout(500)
-
-    viser_page.keyboard.press("Alt+Y")
-    assert triggered.wait(timeout=5.0), "Hotkey did not fire the callback"
+    # The hotkey registers client-side once the command reaches the browser; a
+    # single keypress before then is lost. Retry until it fires rather than
+    # block on a fixed settle delay.
+    assert _press_until(viser_page, "Alt+Y", triggered), (
+        "Hotkey did not fire the callback"
+    )
 
 
 def test_command_hotkey_rebind_loop(
@@ -369,7 +389,6 @@ def test_command_description_update(
 ) -> None:
     """Description updates (set, change, clear) propagate to the palette."""
     handle = viser_server.gui.add_command("Desc Target", description="first")
-    viser_page.wait_for_timeout(500)
 
     _open_spotlight(viser_page)
     action = viser_page.locator(_SPOTLIGHT_ACTION, has_text="Desc Target")
@@ -380,7 +399,7 @@ def test_command_description_update(
 
     # Change to a different description.
     handle.description = "second"
-    viser_page.wait_for_timeout(300)
+    viser_page.wait_for_timeout(300)  # let the update land before reopening
     _open_spotlight(viser_page)
     expect(desc).to_have_text("second", timeout=3_000)
     viser_page.keyboard.press("Escape")
@@ -390,7 +409,7 @@ def test_command_description_update(
     # when empty, so assert the previous text has gone rather than element
     # cardinality.
     handle.description = None
-    viser_page.wait_for_timeout(500)
+    viser_page.wait_for_timeout(300)  # let the update land before reopening
     _open_spotlight(viser_page)
     expect(action).not_to_contain_text("second", timeout=3_000)
     expect(action).not_to_contain_text("first", timeout=1_000)
@@ -403,7 +422,6 @@ def test_command_icon_update(
     """Icon updates (change, clear) propagate to the palette. The rendered
     SVG changes with the icon, and is removed entirely when cleared."""
     handle = viser_server.gui.add_command("Icon Target", icon=viser.Icon.DEVICE_FLOPPY)
-    viser_page.wait_for_timeout(500)
 
     _open_spotlight(viser_page)
     action = viser_page.locator(_SPOTLIGHT_ACTION, has_text="Icon Target")
@@ -415,7 +433,7 @@ def test_command_icon_update(
 
     # Change to a different icon.
     handle.icon = viser.Icon.CHECK
-    viser_page.wait_for_timeout(300)
+    viser_page.wait_for_timeout(300)  # let the icon swap land before reopening
     _open_spotlight(viser_page)
     expect(svg).to_be_visible(timeout=3_000)
     second_svg_html = svg.inner_html()
@@ -427,6 +445,6 @@ def test_command_icon_update(
 
     # Clear the icon.
     handle.icon = None
-    viser_page.wait_for_timeout(300)
+    viser_page.wait_for_timeout(300)  # let the icon removal land before reopening
     _open_spotlight(viser_page)
     expect(svg).to_have_count(0, timeout=3_000)
