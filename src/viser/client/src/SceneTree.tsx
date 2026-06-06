@@ -242,6 +242,14 @@ function createObjectFactory(
                 sectionThickness={message.props.section_thickness}
                 sectionSize={message.props.section_size}
                 infiniteGrid={message.props.infinite_grid}
+                // Slide the grid geometry to track the camera so an infinite
+                // grid never reveals its edge. Only valid when the fade is also
+                // camera-relative; with fade_from="origin" the grid would fade
+                // to nothing once the camera moves past fade_distance.
+                followCamera={
+                  message.props.infinite_grid &&
+                  message.props.fade_from === "camera"
+                }
                 fadeDistance={message.props.fade_distance}
                 fadeStrength={message.props.fade_strength}
                 fadeFrom={message.props.fade_from === "camera" ? 1 : 0}
