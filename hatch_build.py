@@ -1,12 +1,16 @@
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
 
 class CustomBuildHook(BuildHookInterface):
+    generated_build_dir: Path | None = None
+
     def initialize(self, version: str, build_data: dict[str, object]) -> None:
         if os.environ.get("VISER_SKIP_CLIENT_BUILD") == "1":
             return
@@ -16,24 +20,47 @@ class CustomBuildHook(BuildHookInterface):
         if not (client_dir / "package.json").exists():
             return
 
-        node_bin_dir = install_sandboxed_node(client_dir)
-        npm_path = node_bin_dir / "npm"
-        if sys.platform == "win32":
-            npm_path = npm_path.with_suffix(".cmd")
+        with tempfile.TemporaryDirectory(prefix="viser-client-build-") as temp_dir:
+            temp_client_dir = Path(temp_dir) / "client"
+            shutil.copytree(
+                client_dir,
+                temp_client_dir,
+                ignore=shutil.ignore_patterns(".nodeenv", "node_modules", "build"),
+            )
 
-        env = os.environ.copy()
-        env["NODE_VIRTUAL_ENV"] = str(node_bin_dir.parent)
-        env["PATH"] = (
-            str(node_bin_dir) + (";" if sys.platform == "win32" else ":") + env["PATH"]
-        )
+            build_client(temp_client_dir)
 
-        subprocess.run([str(npm_path), "ci"], cwd=client_dir, env=env, check=True)
-        subprocess.run(
-            [str(npm_path), "run", "build"],
-            cwd=client_dir,
-            env=env,
-            check=True,
-        )
+            build_dir = client_dir / "build"
+            shutil.rmtree(build_dir, ignore_errors=True)
+            shutil.copytree(temp_client_dir / "build", build_dir)
+            self.generated_build_dir = build_dir
+
+    def finalize(
+        self, version: str, build_data: dict[str, object], artifact_path: str
+    ) -> None:
+        if self.generated_build_dir is not None:
+            shutil.rmtree(self.generated_build_dir, ignore_errors=True)
+
+
+def build_client(client_dir: Path) -> None:
+    node_bin_dir = install_sandboxed_node(client_dir)
+    npm_path = node_bin_dir / "npm"
+    if sys.platform == "win32":
+        npm_path = npm_path.with_suffix(".cmd")
+
+    env = os.environ.copy()
+    env["NODE_VIRTUAL_ENV"] = str(node_bin_dir.parent)
+    env["PATH"] = (
+        str(node_bin_dir) + (";" if sys.platform == "win32" else ":") + env["PATH"]
+    )
+
+    subprocess.run([str(npm_path), "ci"], cwd=client_dir, env=env, check=True)
+    subprocess.run(
+        [str(npm_path), "run", "build"],
+        cwd=client_dir,
+        env=env,
+        check=True,
+    )
 
 
 def install_sandboxed_node(client_dir: Path) -> Path:
