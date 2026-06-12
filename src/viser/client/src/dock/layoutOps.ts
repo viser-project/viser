@@ -22,6 +22,7 @@ import {
   NodeId,
   PanelId,
   PanelRegistry,
+  regionWidthsOf,
   SPLIT_DIVIDER_PX,
   TabGroup,
   WindowId,
@@ -1212,6 +1213,21 @@ export function setNodeWeights(
     if (node.type === "split") node.children.forEach(apply);
   };
   apply(draft.docked[edge]!);
+  return draft;
+}
+
+/** Set an edge's region width (px) directly -- the region resizer's write
+ * path. The value becomes the carry-over base for width reconciliation on
+ * commit (which still enforces its min/max invariants). */
+export function setRegionWidth(
+  layout: DockLayout,
+  edge: DockEdge,
+  px: number,
+): DockLayout {
+  if (!Number.isFinite(px) || regionWidthsOf(layout)[edge] === px)
+    return layout;
+  const draft = clone(layout);
+  draft.regionWidth = { ...regionWidthsOf(layout), [edge]: px };
   return draft;
 }
 

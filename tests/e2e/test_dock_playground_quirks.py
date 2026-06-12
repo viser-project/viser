@@ -461,3 +461,164 @@ def test_drop_below_strip_restores_region_width(dock_context, vite_server) -> No
     assert all(w >= 200 for w in widths), (
         f"region must restore to a usable width after the drop, got {widths}"
     )
+
+
+# ---------------------------------------------------------------------------
+# 10. Escape after an undock restores the region's NON-DEFAULT width. The
+#     width lives in the layout model (DockLayout.regionWidth), so the
+#     pre-drag snapshot restores it by construction.
+# ---------------------------------------------------------------------------
+def test_escape_after_undock_restores_region_width(dock_context, vite_server) -> None:
+    page = _open(dock_context, vite_server)
+    set_layout(page, dock_layout(docked_right=columns("controls")))
+
+    def leaf_w() -> float:
+        return page.eval_on_selector(
+            '[data-dock-leaf][data-dock-edge="right"]',
+            "e => e.getBoundingClientRect().width",
+        )
+
+    # Widen the region well past the 300px default with the edge resizer.
+    handle = page.eval_on_selector(
+        '[data-dock-region-resize="right"]',
+        "e => { const r = e.getBoundingClientRect(); "
+        "return { x: r.x + r.width/2, y: r.y + r.height/2 }; }",
+    )
+    page.mouse.move(handle["x"], handle["y"])
+    page.mouse.down()
+    page.mouse.move(handle["x"] - 150, handle["y"], steps=10)
+    page.mouse.up()
+    page.wait_for_timeout(120)
+    widened = leaf_w()
+    assert widened > 400, f"setup: resize did not widen the region ({widened})"
+
+    # Drag the group out (commits a float op up front), then Escape.
+    gx, gy = _grip(page, "controls")
+    page.mouse.move(gx, gy)
+    page.mouse.down()
+    page.mouse.move(gx + 6, gy + 6, steps=2)
+    page.mouse.move(600, 400, steps=12)
+    page.wait_for_timeout(120)
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(120)
+    page.mouse.up()
+    page.wait_for_timeout(120)
+
+    assert _layout(page)["docked"]["right"] is not None
+    assert abs(leaf_w() - widened) < 2, (
+        f"Escape must restore the widened region ({widened} -> {leaf_w()})"
+    )
+    page.close()
+
+
+# ---------------------------------------------------------------------------
+# 11. Escape after a drag from the expand (+) button of a MINIMIZED floating
+#     window restores the minimized state (the expand is an up-front commit,
+#     paired with its restore snapshot by dragAfterCommit).
+# ---------------------------------------------------------------------------
+def test_escape_after_expand_on_drag_restores_minimized(
+    dock_context, vite_server
+) -> None:
+    page = _open(dock_context, vite_server)
+    set_layout(
+        page,
+        dock_layout(floating=[window(group("controls", collapsed=True), x=400, y=200)]),
+    )
+    gid = "t-controls"
+    btn = page.eval_on_selector(
+        f'[data-dock-group="{gid}"] [data-dock-minimize]',
+        "e => { const r = e.getBoundingClientRect(); "
+        "return { x: r.x + r.width/2, y: r.y + r.height/2 }; }",
+    )
+    page.mouse.move(btn["x"], btn["y"])
+    page.mouse.down()
+    page.mouse.move(btn["x"] + 6, btn["y"] + 6, steps=2)
+    page.mouse.move(btn["x"] + 80, btn["y"] + 120, steps=10)
+    page.wait_for_timeout(120)  # expand-on-drag has committed by now
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(120)
+    page.mouse.up()
+    page.wait_for_timeout(120)
+    assert page.evaluate(
+        "(gid) => window.__dockLayout.groups[gid].collapsed === true", gid
+    ), "Escape must restore the pre-drag minimized state"
+    page.close()
+
+
+# ---------------------------------------------------------------------------
+# 12. A container resize between PRESS and the drag threshold must not
+#     teleport the window: grab offsets resolve against the window's CURRENT
+#     model position at drag start.
+# ---------------------------------------------------------------------------
+def test_no_teleport_when_viewport_resizes_mid_press(dock_context, vite_server) -> None:
+    page = _open(dock_context, vite_server)
+    set_layout(page, dock_layout(floating=[window("controls", x=700, y=200)]))
+    gx, gy = _grip(page, "controls")
+    page.mouse.move(gx, gy)
+    page.mouse.down()
+    # Mid-press (still under the 3px threshold) the browser narrows; the
+    # ResizeObserver anchors the window left to x=420.
+    page.set_viewport_size({"width": 1000, "height": 800})
+    page.wait_for_timeout(150)
+    moved = _floating_window_for_panel(page, "controls")
+    assert moved is not None and moved["x"] < 500, "setup: anchor did not move it"
+    anchored_x = moved["x"]
+    # Now drag: cursor moves left 100px; the window must track RELATIVE to
+    # its anchored position, not jump back to press-time coordinates.
+    page.mouse.move(gx - 50, gy + 25, steps=6)
+    page.mouse.move(gx - 100, gy + 50, steps=6)
+    page.mouse.up()
+    page.wait_for_timeout(120)
+    win = _floating_window_for_panel(page, "controls")
+    assert win is not None
+    assert abs(win["x"] - (anchored_x - 100)) < 30, (
+        f"window teleported on drag start: expected ~{anchored_x - 100}, got {win['x']}"
+    )
+    page.close()
+
+
+# ---------------------------------------------------------------------------
+# 13. A container resize DURING a drag leaves the dragged window glued to the
+#     cursor (the observer skips the dragged window; the cursor is its source
+#     of truth), and the drop commits the cursor-aligned position.
+# ---------------------------------------------------------------------------
+def test_dragged_window_stays_on_cursor_through_resize(
+    dock_context, vite_server
+) -> None:
+    page = _open(dock_context, vite_server)
+    set_layout(page, dock_layout(floating=[window("controls", x=700, y=200)]))
+    win0 = _floating_window_for_panel(page, "controls")
+    assert win0 is not None
+    gx, gy = _grip(page, "controls")
+    grab_x = gx - win0["x"]  # pointer offset into the window
+
+    page.mouse.move(gx, gy)
+    page.mouse.down()
+    page.mouse.move(gx + 6, gy + 6, steps=2)
+    page.mouse.move(500, 300, steps=10)
+    # Shrink the viewport MID-DRAG: must not move the dragged window's model
+    # position out from under the cursor.
+    page.set_viewport_size({"width": 1100, "height": 700})
+    page.wait_for_timeout(150)
+    page.mouse.move(420, 320, steps=6)
+    page.wait_for_timeout(60)
+    # The RENDERED window must still be glued to the cursor while the button
+    # is held (the old observer write detached it by the resize delta, then
+    # visibly snapped it at release).
+    rendered = page.eval_on_selector(
+        "[data-floating-window]", "e => e.getBoundingClientRect().x"
+    )
+    expected = 420 - grab_x
+    assert abs(rendered - expected) < 30, (
+        f"window detached from the cursor mid-drag: rendered x={rendered}, "
+        f"expected ~{expected}"
+    )
+    page.mouse.up()
+    page.wait_for_timeout(120)
+
+    win = _floating_window_for_panel(page, "controls")
+    assert win is not None
+    assert abs(win["x"] - expected) < 30, (
+        f"drop should commit the cursor-aligned x (~{expected}), got {win['x']}"
+    )
+    page.close()

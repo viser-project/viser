@@ -18,8 +18,10 @@ import {
   WindowId,
 } from "./types";
 
-/** Default width of a freshly-created docked region. */
-export const DEFAULT_REGION_PX = 300;
+// Re-exported for existing consumers; the constant lives in types.ts now that
+// the region width is part of the layout MODEL (DockLayout.regionWidth).
+export { DEFAULT_REGION_PX } from "./types";
+import { DEFAULT_REGION_PX } from "./types";
 // Screen-edge zone width (only active on an empty edge).
 const EDGE_ZONE_PX = 48;
 // Thin band at a docked region's outer top/bottom edge -> full-span row above/

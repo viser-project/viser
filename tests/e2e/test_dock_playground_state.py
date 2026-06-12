@@ -30,6 +30,7 @@ from .dock_helpers import (
     columns,
     dock_layout,
     floating_group_ids,
+    floating_window_for_panel,
     group,
     open_playground,
     real_errors,
@@ -257,6 +258,50 @@ def test_container_resize_keeps_floating_corners_onscreen(page: Page) -> None:
     assert stranded == [], (
         f"floating window(s) stranded off-screen after resize: {stranded}"
     )
+
+
+def test_drag_does_not_resize_pinned_height_window(page: Page) -> None:
+    """Moving a floating window must never change its size: a pinned-height
+    window dragged toward the bottom keeps its full height and overhangs the
+    bottom edge (like auto-height windows do), instead of being squashed to
+    fit above its new y. Regression: the rendered-height cap depended on
+    win.y, so a resize-then-drag visibly shrank the window at drop."""
+    set_layout(
+        page,
+        dock_layout(
+            floating=[window("inspector", x=300, y=160, width=280, height=360)]
+        ),
+    )
+    before = _box(page, "[data-floating-window]")
+    assert before is not None and abs(before["height"] - 360) < 3
+
+    # Drag low enough that y + height overflows the 800px-tall container.
+    _drag_group(page, "t-inspector", (440, 640))
+    win = floating_window_for_panel(page, "inspector")
+    after = _box(page, "[data-floating-window]")
+    assert win is not None and after is not None
+    assert win["y"] > 500, "drag should have moved the window down"
+    assert win["height"] == 360, "model height must be untouched by a move"
+    assert abs(after["height"] - before["height"]) < 2, (
+        f"drag visually resized the window: {before['height']} -> {after['height']}"
+    )
+
+
+def test_width_only_viewport_resize_keeps_bottom_window_y(page: Page) -> None:
+    """Narrowing the browser WITHOUT changing its height must not move a
+    bottom-overhanging floating window vertically. Regression: the on-screen
+    pull ran on both axes whenever either container dimension changed, yanking
+    deliberately bottom-placed windows upward on a width-only resize."""
+    set_layout(
+        page,
+        dock_layout(floating=[window("controls", x=900, y=620, width=280, height=300)]),
+    )
+    page.set_viewport_size({"width": 1000, "height": 800})
+    page.wait_for_timeout(150)  # let ResizeObserver fire + React commit
+    win = floating_window_for_panel(page, "controls")
+    assert win is not None
+    assert win["height"] == 300
+    assert win["y"] == 620, f"width-only resize moved the window up: y={win['y']}"
 
 
 # ===========================================================================
@@ -521,3 +566,72 @@ def test_overlaid_region_divider_tracks_without_jump(page: Page) -> None:
     )
     # The minimized column is still overlaid (not lost).
     assert _is_collapsed(page, inner)
+
+
+def test_width_only_shrink_keeps_collapsed_strip_in_place(page: Page) -> None:
+    """Anchoring/pulling must use the RENDERED height. A collapsed
+    pinned-height window is a ~50px strip on screen; a height shrink that
+    leaves the strip comfortably on-screen must keep its distance to the
+    bottom edge, not yank it up by the hidden content's height."""
+    set_layout(
+        page,
+        dock_layout(
+            floating=[
+                window(
+                    group("controls", collapsed=True),
+                    x=600,
+                    y=700,
+                    width=280,
+                    height=380,
+                )
+            ]
+        ),
+    )
+    page.set_viewport_size({"width": 1280, "height": 750})
+    page.wait_for_timeout(150)
+    win = floating_window_for_panel(page, "controls")
+    assert win is not None
+    # Bottom-half anchor: distance to the bottom edge is preserved (was 100px
+    # in an 800px container -> y=650 in a 750px one). The old model-height
+    # pull would have yanked it to 750 - 380 = 370.
+    assert abs(win["y"] - 650) < 10, f"strip moved wrongly: y={win['y']}"
+
+
+def test_flip_expand_of_pinned_height_window_keeps_height(
+    browser, vite_server: int
+) -> None:
+    """Expanding a pinned-height floating window WITH ANIMATIONS ENABLED must
+    end at the pinned height. Regression: the FLIP animation cleared the
+    inline height on completion, but React's style cache still held it, so
+    the window rendered at 0px and vanished. (The shared dock_context forces
+    reduced motion, which skips the FLIP -- so this test makes its own
+    context.)"""
+    ctx = browser.new_context()  # animations ON: no reduced_motion here.
+    try:
+        pg = open_playground(ctx, vite_server)
+        set_layout(
+            pg,
+            dock_layout(
+                floating=[
+                    window(
+                        group("controls", collapsed=True),
+                        x=300,
+                        y=150,
+                        width=280,
+                        height=360,
+                    )
+                ]
+            ),
+        )
+        pg.eval_on_selector(
+            '[data-dock-group="t-controls"] [data-dock-minimize]',
+            "e => e.click()",
+        )
+        pg.wait_for_timeout(600)  # let the 180ms FLIP finish (or break)
+        box = pg.locator("[data-floating-window]").first.bounding_box()
+        assert box is not None
+        assert abs(box["height"] - 360) < 5, (
+            f"window should settle at its pinned 360px, got {box['height']}"
+        )
+    finally:
+        ctx.close()

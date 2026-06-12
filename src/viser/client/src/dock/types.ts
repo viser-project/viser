@@ -44,6 +44,10 @@ export const MINIMIZED_STRIP_PX = 36;
  * chrome widths, so resize math stays 1:1 with the cursor. */
 export const SPLIT_DIVIDER_PX = 7;
 
+/** Width (px) a docked region starts at (and that a newly docked column gets)
+ * before the user resizes it. */
+export const DEFAULT_REGION_PX = 300;
+
 /** Clamp `v` into [lo, hi]. Shared by every place a size/position is bounded
  * (resize gestures, width reconciliation, hint geometry). */
 export const clamp = (v: number, lo: number, hi: number): number =>
@@ -161,6 +165,17 @@ export interface DockLayout {
   groups: Record<GroupId, TabGroup>;
   /** Docked region pinned to each edge, or null when that edge is empty. */
   docked: Record<DockEdge, DockNode | null>;
+  /** Docked region widths in px per edge: the EXPANDED width-columns' summed
+   * pixels (minimized strips and dividers render on top -- see regionPlan).
+   * THE single source of truth for region width. It travels with the layout
+   * through every op (clones carry it) and is rewritten only by width
+   * reconciliation in applyOp -- so snapshot/restore, persistence, and undo
+   * preserve widths by construction. Kept while an edge is empty or fully
+   * minimized so the width survives for restore.
+   *
+   * Optional so layout literals (e.g. in tests) stay terse; a missing value
+   * reads as DEFAULT_REGION_PX per edge (see regionWidthsOf). */
+  regionWidth?: Record<DockEdge, number>;
   /** Floating windows, painted in array order (last = topmost). */
   floating: FloatingWindow[];
   /** Nested dockable areas, keyed by id. Each is a flat tab group embedded in a
@@ -187,4 +202,13 @@ export const emptyLayout = (): DockLayout => ({
   docked: { left: null, right: null },
   floating: [],
   areas: {},
+});
+
+/** The layout's region widths with defaults filled in (the one place the
+ * missing-field fallback lives). */
+export const regionWidthsOf = (
+  layout: DockLayout,
+): Record<DockEdge, number> => ({
+  left: layout.regionWidth?.left ?? DEFAULT_REGION_PX,
+  right: layout.regionWidth?.right ?? DEFAULT_REGION_PX,
 });

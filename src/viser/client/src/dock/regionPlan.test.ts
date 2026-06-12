@@ -69,17 +69,18 @@ describe("reconcile: dropping an expanded panel below a strip", () => {
     const l = emptyLayout();
     l.groups = groups(["a"], ["b"]);
     l.docked.right = leaf("a", 320);
+    l.regionWidth = { left: 0, right: 320 };
     const prev = toggleCollapsed(l, "a");
-    const w0 = reconcileRegionWidths(l, prev, { left: 0, right: 320 }).widths;
+    reconcileRegionWidths(l, prev);
 
     // Drop b BELOW the strip: tree becomes column[a(collapsed), b].
     const next = structuredClone(prev);
     const a = next.docked.right!;
     next.docked.right = col([a, leaf("b")]);
-    const { widths } = reconcileRegionWidths(prev, next, w0);
-    expect(widths.right).toBe(320);
+    reconcileRegionWidths(prev, next);
+    expect(next.regionWidth!.right).toBe(320);
     // And the rendered region uses that width (no strip chrome).
     const plan = planRegion(next.docked.right!, next.groups);
-    expect(plannedReservedWidth(plan, widths.right)).toBe(320);
+    expect(plannedReservedWidth(plan, next.regionWidth!.right)).toBe(320);
   });
 });
