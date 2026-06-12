@@ -1,0 +1,192 @@
+// Region-width reconciliation across layout ops: keeps docked panels at their
+// pixel widths when the layout's STRUCTURE changes. Pure except for mutating
+// `next`'s top-column weights (the caller owns `next`, a fresh draft).
+//
+// Width model: a region's width-determining columns store their EXPANDED
+// pixel widths as tree weights, and `regionWidth[edge]` is the sum over the
+// EXPANDED columns only. Fully-minimized columns keep their preserved pixel
+// width in their weight (it's what they get back on expand) but render as
+// fixed MINIMIZED_STRIP_PX strips that sit ON TOP of regionWidth -- so resize
+// math and the rendered layout agree, and resizing never touches a strip.
+
+import {
+  collectLeafGroups,
+  maxRegionWidth,
+  minRegionWidth,
+  widthColumns,
+} from "./layoutOps";
+import { planRegion } from "./regionPlan";
+import {
+  clamp,
+  DockEdge,
+  DockLayout,
+  DockNode,
+  MIN_PANEL_WIDTH_PX,
+  SPLIT_DIVIDER_PX,
+} from "./types";
+import { DEFAULT_REGION_PX } from "./hitTest";
+
+export type RegionWidths = { left: number; right: number };
+
+const DIVIDER_PX = SPLIT_DIVIDER_PX;
+
+/** Sum of `cols`' minimum widths (with dividers), for clamping regionWidth. */
+function colsMin(cols: DockNode[]): number {
+  if (cols.length === 0) return 0;
+  return (
+    cols.reduce((s, c) => s + minRegionWidth(c), 0) +
+    DIVIDER_PX * (cols.length - 1)
+  );
+}
+
+/** Sum of `cols`' maximum widths (with dividers), for clamping regionWidth. */
+function colsMax(cols: DockNode[]): number {
+  if (cols.length === 0) return 0;
+  return (
+    cols.reduce((s, c) => s + maxRegionWidth(c), 0) +
+    DIVIDER_PX * (cols.length - 1)
+  );
+}
+
+/** Reconcile docked region widths across a layout transition.
+ *
+ * - When a region's SET of width-determining columns changes (dock/undock/
+ *   merge/unmerge/snap/split), the column weights are rewritten to absolute
+ *   pixel widths -- surviving columns keep their previous pixels, new columns
+ *   get a default -- and regionWidth becomes the EXPANDED columns' sum.
+ * - When only the columns' MINIMIZED pattern changes (collapse/expand
+ *   toggles), regionWidth is recomputed from the expanded columns' stored
+ *   pixel weights: a column entering minimization leaves the sum (its strip
+ *   renders on top); one expanding rejoins at its preserved width.
+ * - Pure-internal changes (resize, reorder, floating moves) leave both the
+ *   column set and the pattern alone, so widths are untouched.
+ *
+ * Mutates `next.docked` column weights in place; returns the next region
+ * widths plus whether any region changed. */
+export function reconcileRegionWidths(
+  prev: DockLayout,
+  next: DockLayout,
+  prevWidths: RegionWidths,
+): { widths: RegionWidths; changed: boolean } {
+  const nextRW = { ...prevWidths };
+  let changed = false;
+
+  (["left", "right"] as DockEdge[]).forEach((edge) => {
+    const nextTree = next.docked[edge];
+    if (nextTree === null) return;
+    const prevTree = prev.docked[edge];
+    // Use the WIDTH-determining horizontal columns, not the literal top-level
+    // columns. They differ when the root is a column (stacked) split -- e.g.
+    // after a top/bottom dock produces column[C, row[A,B]]: topColumns would
+    // see one "column" (the whole stack) and squash the region to a single
+    // column's width, whereas widthColumns surfaces the inner row's [A,B] so
+    // the side-by-side widths are preserved (LEAD 1).
+    const prevCols = prevTree ? widthColumns(prevTree) : [];
+    const nextCols = widthColumns(nextTree);
+    const sameSet =
+      prevCols.length === nextCols.length &&
+      prevCols.every((c, i) => c.id === nextCols[i].id);
+
+    const nextPlan = planRegion(nextTree, next.groups);
+    if (sameSet) {
+      // Same columns: only a STRIP-pattern flip (collapse/expand toggle)
+      // changes regionWidth -- the toggled column leaves or rejoins the
+      // expanded sum at its stored pixel weight. The strip classification is
+      // the render's (planRegion), NOT raw per-column minimized-ness: a
+      // minimized column stacked above expanded content renders full-width
+      // and must stay in the sum.
+      const prevPlan =
+        prevTree !== null ? planRegion(prevTree, prev.groups) : null;
+      const patternChanged =
+        prevPlan === null ||
+        prevPlan.isStrip.length !== nextPlan.isStrip.length ||
+        prevPlan.isStrip.some((s, i) => s !== nextPlan.isStrip[i]);
+      if (!patternChanged || nextPlan.singleColumn) return;
+      const expanded = nextPlan.expandedColumns;
+      if (expanded.length === 0) return; // fully minimized: keep for restore.
+      const sum = expanded.reduce((s, c) => s + c.weight, 0);
+      const clamped = clamp(
+        sum,
+        colsMin(expanded),
+        Math.max(MIN_PANEL_WIDTH_PX, colsMax(expanded)),
+      );
+      if (clamped !== nextRW[edge]) {
+        nextRW[edge] = clamped;
+        changed = true;
+      }
+      return;
+    }
+
+    // Structural column change: rewrite weights to pixels. Match by shared
+    // panel groups (content identity), not node id: a column's root id changes
+    // when it's split internally (leaf -> split) even though it still holds
+    // the same panel, so id matching would wrongly treat it as new and reset
+    // its width. Each prev column matches at most one next column.
+    const prevPlan =
+      prevTree !== null ? planRegion(prevTree, prev.groups) : null;
+    const prevExpanded = prevPlan?.expandedColumns ?? [];
+    const prevInfo = prevCols.map((c) => ({
+      groups: new Set(collectLeafGroups(c)),
+      // Weights ARE pixels once a region has multiple columns (this function
+      // wrote them); a single expanded column's px lives in the regionWidth
+      // state instead (its weight may be a height -- see below).
+      px:
+        prevExpanded.length === 1 && prevExpanded[0] === c
+          ? prevWidths[edge]
+          : c.weight,
+      used: false,
+    }));
+    const intended = nextCols.map((c) => {
+      const groupSet = collectLeafGroups(c);
+      const match = prevInfo.find(
+        (p) => !p.used && groupSet.some((g) => p.groups.has(g)),
+      );
+      if (match !== undefined) {
+        match.used = true;
+        // Clamp the carried-over width to THIS column's own min/max: the
+        // column's contents may have changed shape across the op (e.g. a lone
+        // leaf becoming row-rooted raises its per-panel minimum), so the old
+        // pixel width isn't automatically still legal for it.
+        return clamp(match.px, minRegionWidth(c), maxRegionWidth(c));
+      }
+      // New column: a sensible default, clamped to its panels' min/max.
+      return clamp(DEFAULT_REGION_PX, minRegionWidth(c), maxRegionWidth(c));
+    });
+    // Set the columns' weights to their pixel widths so each renders at
+    // `intended` px within the summed region width. ONLY when there are
+    // genuinely multiple side-by-side columns -- their weights are then widths
+    // (children of a row), safe to rewrite. A single surfaced column is either
+    // the root leaf (its weight is irrelevant -- it fills the region) or a
+    // lone vertical child of a column root (e.g. column[B, A] -> widthColumns
+    // surfaces just [B]); rewriting that would clobber a HEIGHT weight and
+    // collapse the stack. In both single-column cases we only need regionWidth.
+    if (nextCols.length > 1) {
+      nextCols.forEach((c, i) => {
+        c.weight = intended[i];
+      });
+    }
+    // regionWidth = the EXPANDED (non-strip, per the render plan) columns'
+    // pixels. When the whole region is strips, fall back to the full sum so
+    // the preserved total survives until something expands.
+    const expandedIdx = nextCols
+      .map((c, i) => ({ c, i }))
+      .filter(({ i }) => !nextPlan.isStrip[i]);
+    const summed = (
+      expandedIdx.length > 0
+        ? expandedIdx.map(({ i }) => intended[i])
+        : intended
+    ).reduce((s, w) => s + w, 0);
+    const expandedCols = expandedIdx.map(({ c }) => c);
+    nextRW[edge] =
+      expandedCols.length > 0
+        ? clamp(
+            summed,
+            colsMin(expandedCols),
+            Math.max(MIN_PANEL_WIDTH_PX, colsMax(expandedCols)),
+          )
+        : summed;
+    changed = true;
+  });
+
+  return { widths: nextRW, changed };
+}

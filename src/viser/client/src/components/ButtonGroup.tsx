@@ -12,7 +12,10 @@ export default function ButtonGroupComponent({
   if (!visible) return null;
   return (
     <ViserInputComponent {...{ uuid, hint, label }}>
-      <Flex justify="space-between" columnGap="xs">
+      {/* Wrapping flex: buttons share each row's width equally, but never
+      shrink below their label (minWidth fit-content) -- on a narrow panel the
+      overflow wraps onto more rows instead of spilling out of the panel. */}
+      <Flex wrap="wrap" gap="0.375em">
         {options.map((option, index) => (
           <Button
             key={index}
@@ -23,7 +26,11 @@ export default function ButtonGroupComponent({
                 updates: { value: option },
               })
             }
-            style={{ flexGrow: 1, wuuidth: 0 }}
+            style={{
+              flexGrow: 1,
+              flexBasis: 0,
+              minWidth: "fit-content",
+            }}
             disabled={disabled}
             size="compact-xs"
             variant="outline"

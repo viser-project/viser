@@ -256,3 +256,37 @@ def test_switching_layout_releases_dock(
 
     # Canvas no longer carries the (now-defunct) left dock inset.
     assert _canvas_box(viser_page)["x"] < 5
+
+
+def test_minimize_while_docked_keeps_handle(viser_page: Page) -> None:
+    """Minimizing a DOCKED control panel must keep the floating-panel-handle
+    testid reachable (on the minimized strip) and clicking it must expand the
+    panel again -- the original FloatingPanel kept its handle through
+    minimize."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(300)
+
+    # Dock to the right edge.
+    _drag_handle_to(viser_page, (_VIEWPORT["width"] - 8, 300))
+    assert _dock_side(viser_page) == "right"
+    wide = _panel_box(viser_page)["width"]
+
+    # Click the handle (no motion) to minimize: the panel becomes a narrow
+    # vertical strip, and the handle testid must follow it.
+    handle = viser_page.get_by_test_id("floating-panel-handle")
+    handle.click()
+    viser_page.wait_for_timeout(400)
+    handle = viser_page.get_by_test_id("floating-panel-handle")
+    expect(handle).to_be_visible()
+    strip = handle.bounding_box()
+    assert strip is not None and strip["width"] < 60, (
+        f"minimized docked panel should be a narrow strip, got {strip}"
+    )
+
+    # Clicking the strip handle expands it back to a wide docked panel.
+    handle.click()
+    viser_page.wait_for_timeout(400)
+    restored = _panel_box(viser_page)["width"]
+    assert restored > wide - 30, (
+        f"expand should restore the docked width ({wide} -> {restored})"
+    )

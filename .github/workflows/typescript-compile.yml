@@ -26,3 +26,11 @@ jobs:
           cd src/viser/client
           npm ci
           npx tsc
+
+      # Client unit tests (vitest, jsdom): layout ops, hit testing, width
+      # reconciliation, and the dock regression suites. Fast, so they ride
+      # along with the type check rather than needing their own workflow.
+      - name: Run vitest
+        run: |
+          cd src/viser/client
+          npx vitest run

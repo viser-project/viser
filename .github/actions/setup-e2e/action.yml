@@ -39,3 +39,20 @@ runs:
     - name: Install Playwright browsers
       shell: bash
       run: uv run playwright install chromium --with-deps
+
+    # The dock playground e2e tests (test_dock_playground_*) serve the client
+    # SOURCE through a Vite dev server, so they need the client's node_modules
+    # regardless of whether the cached client BUILD was restored. Without this
+    # they skip silently on client-build cache hits. Cheap on a warm npm cache.
+    - name: Use Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: 24
+        cache: npm
+        cache-dependency-path: src/viser/client/package-lock.json
+
+    - name: Install client dependencies (for Vite-served dock tests)
+      shell: bash
+      run: |
+        cd src/viser/client
+        npm ci

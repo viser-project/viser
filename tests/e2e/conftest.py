@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
+import tempfile
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Generator
 
@@ -146,3 +153,90 @@ def viser_page(
         _save_failure_artifacts(page, request.node.nodeid + "__setup")
         raise
     return page
+
+
+# ---------------------------------------------------------------------------
+# Dock playground harness, shared by every test_dock_* module. One Vite dev
+# server (HMR off, serving the client SOURCE at /dock_test.html) per session/
+# xdist worker, instead of one per module: dock tests don't touch the prebuilt
+# client bundle, and a shared server cuts repeated ~5s startups.
+# ---------------------------------------------------------------------------
+DOCK_CLIENT_DIR = Path(__file__).resolve().parents[2] / "src" / "viser" / "client"
+
+# Wrap the client's vite config with HMR disabled: the playground tests drive
+# deterministic DOM interactions, and an HMR websocket reconnect mid-test can
+# reload the page under the pointer.
+_DOCK_HMR_OFF_CONFIG = """\
+import base from "./vite.config.mts";
+export default async (env) => {
+  const resolved = typeof base === "function" ? await base(env) : base;
+  return { ...resolved, server: { ...(resolved.server || {}), hmr: false } };
+};
+"""
+
+
+def _wait_for_http(port: int, path: str, timeout: float = 30.0) -> None:
+    deadline = time.monotonic() + timeout
+    url = f"http://localhost:{port}{path}"
+    last_err: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=1.0) as resp:
+                if resp.status == 200:
+                    return
+        except (urllib.error.URLError, ConnectionError, OSError) as err:
+            last_err = err
+            time.sleep(0.1)
+    raise RuntimeError(f"Vite dev server not ready at {url}: {last_err}")
+
+
+@pytest.fixture(scope="session")
+def vite_server() -> Generator[int, None, None]:
+    """Port of a Vite dev server serving the dock playground (dock_test.html)."""
+    if shutil.which("npx") is None:
+        pytest.skip("npx not on PATH; client toolchain not installed")
+    if not (DOCK_CLIENT_DIR / "node_modules").exists():
+        pytest.skip("client node_modules missing; run `npm install` in the client dir")
+
+    cfg_fd, cfg_name = tempfile.mkstemp(
+        prefix="vite.e2e.hmroff.", suffix=".mts", dir=str(DOCK_CLIENT_DIR)
+    )
+    cfg_path = Path(cfg_name)
+    with os.fdopen(cfg_fd, "w") as f:
+        f.write(_DOCK_HMR_OFF_CONFIG)
+
+    port = find_free_port()
+    proc = subprocess.Popen(
+        ["npx", "vite", "--config", str(cfg_path), "--port", str(port), "--strictPort"],
+        cwd=str(DOCK_CLIENT_DIR),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        _wait_for_http(port, "/dock_test.html")
+        yield port
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        cfg_path.unlink(missing_ok=True)
+
+
+@pytest.fixture(scope="module")
+def dock_context(browser):
+    """Shared per-module browser context for the dock playground tests.
+
+    One context per module keeps the HTTP cache warm, so Vite's unbundled
+    module graph is fetched once instead of per test (a new context starts
+    with a cold cache). Pages are still created per test for isolation;
+    viewports are set per page via set_viewport_size.
+
+    reduced_motion: the dock honors prefers-reduced-motion (animations become
+    instant), which lets tests use short fixed waits instead of padding every
+    interaction with animation-length sleeps -- and exercises the
+    reduced-motion code path in the bargain."""
+    ctx = browser.new_context(reduced_motion="reduce")
+    yield ctx
+    ctx.close()
