@@ -17,6 +17,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { theme } from "../AppTheme";
 import { DockArea } from "./DockArea";
+import { useDock } from "./DockContext";
 import { DockManager } from "./DockManager";
 import { makeGroup } from "./layoutOps";
 import { DockLayout, PanelRegistry, TabGroup } from "./types";
@@ -183,6 +184,31 @@ const initialLayout: DockLayout = {
   },
 };
 
+// Test probe (write side, pairing with the onLayoutChange read probe below):
+// window.__dockSetLayout(layout) replaces the layout MODEL directly, so e2e
+// suites can inject a starting arrangement instead of building it from long
+// chains of setup drags. Rendered inside the DockManager subtree so the
+// injection goes through useDock().api.apply -> the manager's applyOp, which
+// reconciles docked region widths exactly like a real gesture (top-level
+// column weights are rewritten to pixel widths; new columns get the default).
+// Injected layouts should reference the registered panel ids above and use a
+// distinctive prefix (tests use "t-") for node/group/window ids so they never
+// collide with freshId-generated ones. Test-only globals stay confined to
+// this playground; the library itself exposes nothing on window.
+function LayoutInjector() {
+  const { api } = useDock();
+  React.useEffect(() => {
+    const probe = window as unknown as {
+      __dockSetLayout?: (layout: DockLayout) => void;
+    };
+    probe.__dockSetLayout = (layout) => api.apply(() => layout);
+    return () => {
+      delete probe.__dockSetLayout;
+    };
+  }, [api]);
+  return null;
+}
+
 function Playground() {
   // Match the main page: presence of ?darkMode flips to dark.
   const darkMode =
@@ -203,6 +229,7 @@ function Playground() {
             (window as unknown as { __dockLayout: unknown }).__dockLayout = l;
           }}
         >
+          <LayoutInjector />
           {/* Stand-in for the 3D canvas, matching the Viser background. */}
           <Box
             style={{

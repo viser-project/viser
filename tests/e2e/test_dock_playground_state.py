@@ -27,9 +27,15 @@ from playwright.sync_api import Page  # noqa: E402
 
 from .dock_helpers import (
     collect_errors,
+    columns,
+    dock_layout,
     floating_group_ids,
+    group,
     open_playground,
     real_errors,
+    set_layout,
+    stack,
+    window,
 )
 from .dock_helpers import drag_group as _drag_group
 from .dock_helpers import group_box as _gbox
@@ -111,24 +117,20 @@ def test_minimize_click_on_background_overlapping_window(page: Page) -> None:
     """Two floating windows overlapped so one's minimize button sits under the
     other; raise the bottom one (click its handle), then minimize it. The click
     must hit it even though raising changes z-index (DOM order is stable)."""
-    fids = _floating_group_ids(page)
-    assert len(fids) >= 2
-    a, b = fids[0], fids[1]
-
-    # Stack window b's group directly over window a's group by dragging b's grip
-    # to a's position (a move, dropped in free canvas near a).
-    a_box = _box(page, f'[data-dock-group="{a}"]')
-    b_grip = page.locator(f'[data-dock-group="{b}"] [data-dock-griphandle]').first
-    bg = b_grip.bounding_box()
-    assert a_box is not None and bg is not None
-    # Drag b so it overlaps a (offset slightly so both grips are reachable).
-    page.mouse.move(bg["x"] + bg["width"] / 2, bg["y"] + bg["height"] / 2)
-    page.mouse.down()
-    page.mouse.move(bg["x"] + 6, bg["y"] + 6, steps=2)
-    page.mouse.move(a_box["x"] + 30, a_box["y"] + 6, steps=10)
-    page.mouse.move(a_box["x"] + 30, a_box["y"] + 6)
-    page.mouse.up()
-    page.wait_for_timeout(120)
+    # Arrange: window b (inspector) overlapping window a's (controls) left
+    # side, slightly up-left so a's minimize button itself stays reachable
+    # (and clear of b's top resize band); b is later in the floating array,
+    # so it paints on top of a.
+    a, b = "t-controls", "t-inspector"
+    set_layout(
+        page,
+        dock_layout(
+            floating=[
+                window("controls", x=400, y=200),
+                window("inspector", x=300, y=190, width=260),
+            ]
+        ),
+    )
 
     # Both still floating and present.
     assert a in _floating_group_ids(page) and b in _floating_group_ids(page)
@@ -148,46 +150,15 @@ def test_minimize_click_on_background_overlapping_window(page: Page) -> None:
 def test_collapsed_vertical_stack_sibling_expands(page: Page) -> None:
     """In a vertical docked stack, minimizing one panel must shrink it to ~its
     handle+strip and let the sibling expand to fill the freed height."""
-    fids = _floating_group_ids(page)
-    assert len(fids) >= 2
-    a, b = fids[0], fids[1]
-
-    # Dock a to the right screen edge, then snap b BELOW a -> a vertical stack.
-    vw = page.viewport_size["width"]  # type: ignore[index]
-    a_grip = page.locator(f'[data-dock-group="{a}"] [data-dock-griphandle]').first
-    ag = a_grip.bounding_box()
-    assert ag is not None
-    page.mouse.move(ag["x"] + ag["width"] / 2, ag["y"] + ag["height"] / 2)
-    page.mouse.down()
-    page.mouse.move(ag["x"] + 6, ag["y"] + 6, steps=2)
-    page.mouse.move(vw - 10, 400, steps=10)
-    page.mouse.move(vw - 10, 400)
-    page.mouse.up()
-    page.wait_for_timeout(120)
-
-    # Now a is docked right. Snap b below a (drop on a's lower band).
-    a_box = _box(page, f'[data-dock-group="{a}"]')
-    b_grip = page.locator(f'[data-dock-group="{b}"] [data-dock-griphandle]').first
-    bg = b_grip.bounding_box()
-    assert a_box is not None and bg is not None
-    page.mouse.move(bg["x"] + bg["width"] / 2, bg["y"] + bg["height"] / 2)
-    page.mouse.down()
-    page.mouse.move(bg["x"] + 6, bg["y"] + 6, steps=2)
-    page.mouse.move(
-        a_box["x"] + a_box["width"] / 2, a_box["y"] + a_box["height"] - 8, steps=10
-    )
-    page.mouse.move(a_box["x"] + a_box["width"] / 2, a_box["y"] + a_box["height"] - 8)
-    page.mouse.up()
-    page.wait_for_timeout(120)
-
-    # Require both docked in a vertical stack on the right; skip if the drop
-    # didn't produce that (drop-zone geometry can vary).
+    # Arrange: a vertical right-edge stack [a above b] (the minimize toggle and
+    # the resulting heights are the subject).
+    a, b = "t-controls", "t-inspector"
+    set_layout(page, dock_layout(docked_right=stack("controls", "inspector")))
     docked_right = page.eval_on_selector_all(
         '[data-dock-leaf][data-dock-edge="right"] [data-dock-group]',
         "els => els.map(e => e.getAttribute('data-dock-group'))",
     )
-    if not (a in docked_right and b in docked_right):
-        pytest.skip("snap-below did not produce a right-edge vertical stack this run")
+    assert a in docked_right and b in docked_right
 
     b_box_before = _box(page, f'[data-dock-group="{b}"]')
     assert b_box_before is not None
@@ -251,20 +222,17 @@ def _window_selector_for_group(page: Page, group_id: str) -> str | None:
 def test_container_resize_keeps_floating_corners_onscreen(page: Page) -> None:
     """Shrinking the viewport must pull every floating window's top-left corner
     back on-screen (ResizeObserver), so the handle stays reachable."""
-    # Move a floating window near the right/bottom so a shrink would strand it.
-    fids = _floating_group_ids(page)
-    assert fids
-    gid = fids[0]
-    grip = page.locator(f'[data-dock-group="{gid}"] [data-dock-griphandle]').first
-    g = grip.bounding_box()
-    assert g is not None
-    page.mouse.move(g["x"] + g["width"] / 2, g["y"] + g["height"] / 2)
-    page.mouse.down()
-    page.mouse.move(g["x"] + 6, g["y"] + 6, steps=2)
-    page.mouse.move(1180, 720, steps=10)
-    page.mouse.move(1180, 720)
-    page.mouse.up()
-    page.wait_for_timeout(100)
+    # Arrange: one window parked near the right/bottom (a shrink would strand
+    # it) plus one at a normal spot, so "every floating window" is plural.
+    set_layout(
+        page,
+        dock_layout(
+            floating=[
+                window("inspector", x=680, y=120, width=260),
+                window("controls", x=1000, y=700),
+            ]
+        ),
+    )
 
     # Shrink the viewport hard.
     page.set_viewport_size({"width": 640, "height": 460})
@@ -424,17 +392,21 @@ def test_rapid_sequential_tab_reorders_no_stuck_state(page: Page) -> None:
     reorder a different tab. The first reorder's delayed setDraggingTabId(null)
     must not fire mid-second-drag: exactly one tab is 'dragging' during the
     second drag, none after it settles, and no tab is left mid-transform."""
-    # Build a 4-tab group by merging every floater into the docked group.
-    docked = page.locator("[data-dock-leaf] [data-dock-group]").first
-    d = docked.get_attribute("data-dock-group")
-    assert d is not None
-    for g in _floating_group_ids(page):
-        db = _gbox(page, d)
-        _drag_group(page, g, (db["x"] + db["w"] / 2, db["y"] + db["h"] * 0.45))
+    # Arrange: a docked 4-tab group (the rapid reorders are the subject). A
+    # non-scene tab is active so the scene body's nested area (and its
+    # "layers" tab) is hidden, exactly like the old merge-built setup.
+    d = "t-scene"
+    set_layout(
+        page,
+        dock_layout(
+            docked_left=columns(
+                group(["scene", "controls", "inspector", "console"], active="console")
+            )
+        ),
+    )
 
     tabs = _tabs(page, d)
-    if len(tabs) < 3:
-        pytest.skip("did not assemble a >=3-tab group this run")
+    assert len(tabs) == 4
 
     # Reorder #1: drag the first tab right, past the second, and release.
     t0, t1 = tabs[0], tabs[1]

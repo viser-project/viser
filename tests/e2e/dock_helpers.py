@@ -9,7 +9,8 @@ keep local variants.
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+import itertools
+from typing import Any, Mapping, Sequence
 
 from playwright.sync_api import Page
 
@@ -126,20 +127,6 @@ def right_cols(page: Page) -> list[dict]:
     )
 
 
-def park_monitor(page: Page) -> None:
-    """Park the unmergeable monitor window (seeded at x 900-1200, y 60-440; its
-    full-bleed area merges away anything dropped on it) at the lower left, clear
-    of the right side and the drop areas the dock tests use. Dragged by its
-    'Connected' header text -- it has no grip handle."""
-    hdr = page.get_by_text("Connected").bounding_box()
-    assert hdr is not None
-    drag(
-        page,
-        (hdr["x"] + hdr["width"] / 2, hdr["y"] + hdr["height"] / 2),
-        (300, 640),
-    )
-
-
 def setup_side_by_side(page: Page, a: str, b: str) -> bool:
     """Dock `a` to the right screen edge, then drop `b` on a's LEFT split band
     -> side-by-side [b | a]. True if a 2-column right region resulted."""
@@ -218,3 +205,167 @@ def hint_visible(page: Page) -> bool:
             return h !== null && h.style.display !== 'none';
         }"""
     )
+
+
+# ---------------------------------------------------------------------------
+# Direct layout injection (window.__dockSetLayout, a playground-only probe).
+#
+# The dock layout model is serializable by design, so test SETUP -- "two
+# columns docked right, inspector floating here" -- is injected as a literal
+# instead of rebuilt from chains of setup drags (which silently skipped tests
+# whenever a drop missed by a few px). The gesture UNDER TEST stays a real
+# pointer gesture; only the arrange phase is injected.
+#
+# Conventions:
+# * A "panel spec" names one tab group: a panel id string ("controls"), a list
+#   of panel ids for a merged tab strip (["controls", "inspector"]), or a full
+#   group dict from group() when activeId/collapsed matter.
+# * Injected ids are derived from the first panel id with a "t-" prefix
+#   (group "t-controls", leaf "t-n-controls", window "t-w-controls") so tests
+#   can reference them directly and they never collide with the freshId-
+#   generated ids ("group-N", ...) of later real gestures.
+# * dock_layout() always wires the playground's two area fixtures (area-scene
+#   with layers; area-main with props + history). Registered panels the layout
+#   does not reference (e.g. the monitor) simply do not render -- the usual
+#   replacement for "park the monitor out of the way" setup steps.
+# ---------------------------------------------------------------------------
+
+# Split-node id counter (uniqueness within one injected layout is all that
+# matters; the "t-" prefix keeps them clear of freshId-generated ids).
+_split_counter = itertools.count()
+
+
+def group(
+    panels: str | Sequence[str], active: str | None = None, collapsed: bool = False
+) -> dict:
+    """TabGroup literal for a panel spec; id is 't-' + first panel id."""
+    ids = [panels] if isinstance(panels, str) else list(panels)
+    g: dict = {"id": f"t-{ids[0]}", "panelIds": ids, "activeId": active or ids[0]}
+    if collapsed:
+        g["collapsed"] = True
+    return g
+
+
+def _as_group(spec) -> dict:
+    return spec if isinstance(spec, dict) else group(spec)
+
+
+def _leaf(g: dict, weight: float = 1) -> dict:
+    return {
+        "type": "leaf",
+        "id": f"t-n-{g['id'][2:]}",
+        "group": g["id"],
+        "weight": weight,
+    }
+
+
+def columns(*cells) -> dict:
+    """Docked-region spec: side-by-side columns, one tab group each, left to
+    right. A single cell is a plain leaf. Pass to dock_layout(docked_*=...).
+    Cells may also be stack() specs for a column of stacked groups."""
+    return _split("row", cells)
+
+
+def stack(*cells) -> dict:
+    """Docked-region spec: vertically stacked cells (top to bottom)."""
+    return _split("column", cells)
+
+
+def _split(direction: str, cells) -> dict:
+    nodes = []
+    groups: list[dict] = []
+    for cell in cells:
+        if isinstance(cell, dict) and "node" in cell:  # nested columns()/stack()
+            nodes.append(cell["node"])
+            groups.extend(cell["groups"])
+        else:
+            g = _as_group(cell)
+            groups.append(g)
+            nodes.append(_leaf(g))
+    node = (
+        nodes[0]
+        if len(nodes) == 1
+        else {
+            "type": "split",
+            "id": f"t-s-{next(_split_counter)}",
+            "dir": direction,
+            "children": nodes,
+            "weight": 1,
+        }
+    )
+    return {"node": node, "groups": groups}
+
+
+def window(
+    *panel_specs,
+    x: float,
+    y: float,
+    width: float = 280,
+    height: float | None = None,
+) -> dict:
+    """Floating-window spec: one tab group per panel spec; 2+ specs make a
+    snapped stack (top to bottom). Pass to dock_layout(floating=[...])."""
+    groups = [_as_group(s) for s in panel_specs]
+    win: dict = {
+        "id": f"t-w-{groups[0]['id'][2:]}",
+        "x": x,
+        "y": y,
+        "width": width,
+        "stack": [g["id"] for g in groups],
+    }
+    if height is not None:
+        win["height"] = height
+    return {"window": win, "groups": groups}
+
+
+def dock_layout(
+    docked_left: dict | None = None,
+    docked_right: dict | None = None,
+    floating: Sequence[dict] = (),
+) -> dict:
+    """Complete DockLayout literal for set_layout(). Docked specs come from
+    columns()/stack(); floating specs from window(). Region widths need not be
+    given: injection routes through applyOp, whose reconciliation assigns every
+    new top-level column the default width (~300px), same as a real dock."""
+    area_scene = group(["layers"])
+    area_scene["id"] = "t-area-scene"
+    area_main = group(["props", "history"])
+    area_main["id"] = "t-area-main"
+    groups = {area_scene["id"]: area_scene, area_main["id"]: area_main}
+    for spec in (docked_left, docked_right, *floating):
+        if spec is None:
+            continue
+        for g in spec["groups"]:
+            assert g["id"] not in groups, f"duplicate injected group {g['id']}"
+            groups[g["id"]] = g
+    return {
+        "groups": groups,
+        "docked": {
+            "left": docked_left["node"] if docked_left else None,
+            "right": docked_right["node"] if docked_right else None,
+        },
+        "floating": [spec["window"] for spec in floating],
+        "areas": {
+            "area-scene": {"id": "area-scene", "group": area_scene["id"]},
+            "area-main": {"id": "area-main", "group": area_main["id"]},
+        },
+    }
+
+
+def set_layout(page: Page, layout: dict) -> None:
+    """Inject `layout` through the playground's window.__dockSetLayout probe
+    and wait until window.__dockLayout reflects it. Compared by group-id set
+    (not deep equality: applyOp's reconciliation rewrites column weights to
+    pixel widths), then given a beat for the 200ms flex transitions."""
+    page.wait_for_function("() => typeof window.__dockSetLayout === 'function'")
+    page.evaluate("(l) => window.__dockSetLayout(l)", layout)
+    page.wait_for_function(
+        """(ids) => {
+            const l = window.__dockLayout;
+            if (!l) return false;
+            const got = Object.keys(l.groups);
+            return got.length === ids.length && ids.every((g) => got.includes(g));
+        }""",
+        arg=sorted(layout["groups"].keys()),
+    )
+    page.wait_for_timeout(300)

@@ -34,7 +34,15 @@ import pytest
 from playwright.sync_api import Page  # noqa: E402
 
 from .dock_helpers import center as _center
-from .dock_helpers import collect_errors, drag, real_errors
+from .dock_helpers import (
+    collect_errors,
+    columns,
+    dock_layout,
+    drag,
+    real_errors,
+    set_layout,
+    window,
+)
 from .dock_helpers import group_grip_center as _grip
 from .dock_helpers import open_playground as _open
 
@@ -214,41 +222,25 @@ def test_drag_snapped_stack_into_area_collapses_to_tabs(
 ) -> None:
     page = _open(dock_context, vite_server, 1500, 900)
     try:
-        insp_win = _floating_window_id_for_panel(page, "inspector")
-        cons_win = _floating_window_id_for_panel(page, "console")
-        if insp_win is None or cons_win is None:
-            pytest.skip("inspector/console floating panels not found this run")
-        insp_gid = page.eval_on_selector(
-            f'[data-floating-window="{insp_win}"] [data-dock-group]',
-            "e => e.getAttribute('data-dock-group')",
-        )
-        cons_gid = page.eval_on_selector(
-            f'[data-floating-window="{cons_win}"] [data-dock-group]',
-            "e => e.getAttribute('data-dock-group')",
-        )
-
-        # Snap console BELOW inspector: drag console's grip to just inside the
-        # inspector window's bottom (the snap-below band).
-        insp_box = _box(page, f'[data-floating-window="{insp_win}"]')
-        if insp_box is None:
-            pytest.skip("inspector window not laid out this run")
-        _drag(
+        # Arrange: scene docked left (hosting area-scene) + console already
+        # snapped below inspector in one stacked window (dragging the whole
+        # stack INTO the area is the subject).
+        set_layout(
             page,
-            _grip(page, cons_gid),
-            (insp_box["x"] + insp_box["w"] / 2, insp_box["y"] + insp_box["h"] - 8),
+            dock_layout(
+                docked_left=columns("scene"),
+                floating=[window("inspector", "console", x=700, y=120, width=300)],
+            ),
         )
-
-        # The two groups should now share one floating window (a vertical stack).
+        insp_gid, cons_gid = "t-inspector", "t-console"
         stacked_win = _floating_window_id_for_panel(page, "inspector")
-        cons_win_after = _floating_window_id_for_panel(page, "console")
-        if stacked_win is None or stacked_win != cons_win_after:
-            pytest.skip("console did not snap below inspector this run")
+        assert stacked_win is not None
+        assert _floating_window_id_for_panel(page, "console") == stacked_win
         n_groups = page.eval_on_selector_all(
             f'[data-floating-window="{stacked_win}"] [data-dock-group]',
             "els => els.length",
         )
-        if n_groups != 2:
-            pytest.skip("snapped window is not a 2-group stack this run")
+        assert n_groups == 2
 
         area_before = _area_panel_ids(page, "area-scene")
         assert "inspector" not in area_before and "console" not in area_before
@@ -289,16 +281,15 @@ def test_drag_window_over_own_area_no_self_merge(
     page = _open(dock_context, vite_server, 1280, 800)
     errors = collect_errors(page)
     try:
-        # Float the docked Scene panel (host of area-scene) into free space
-        # (bottom-left: clear of every seeded floating window AND of the edge
-        # drop zones, so the release is a plain move -- a drop on another
-        # window would merge the scene group away).
-        gid = _docked_scene_group_id(page)
-        assert gid is not None
-        _drag(page, _grip(page, gid), (150, 520))
+        # Arrange: the Scene panel (host of area-scene) FLOATING at the bottom
+        # left, on an otherwise empty canvas (the drag over its own area's
+        # stale rect is the subject).
+        set_layout(
+            page, dock_layout(floating=[window("scene", x=20, y=510, width=300)])
+        )
+        gid = "t-scene"
         win = _floating_window_id_for_panel(page, "scene")
-        if win is None:
-            pytest.skip("scene did not float this run")
+        assert win is not None
         area_before = _area_panel_ids(page, "area-scene")
 
         # Drag the floating window by its grip DOWN into where its own nested

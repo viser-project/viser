@@ -31,6 +31,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import Page  # noqa: E402
 
+from .dock_helpers import columns, dock_layout, group, set_layout, window
 from .dock_helpers import drag as _drag
 from .dock_helpers import open_playground as _open
 
@@ -38,10 +39,6 @@ from .dock_helpers import open_playground as _open
 # ---------------------------------------------------------------------------
 # Helpers.
 # ---------------------------------------------------------------------------
-def _center(box: dict) -> tuple[float, float]:
-    return box["x"] + box["w"] / 2, box["y"] + box["h"] / 2
-
-
 def _box(page: Page, selector: str) -> dict | None:
     return page.eval_on_selector(
         selector,
@@ -63,14 +60,6 @@ def _grip(page: Page, gid: str) -> dict:
         f'[data-dock-group="{gid}"] [data-dock-griphandle]',
         "e => { const r = e.getBoundingClientRect(); "
         "return { x: r.x + r.width/2, y: r.y + r.height/2 }; }",
-    )
-
-
-def _floating_ids(page: Page) -> list[str]:
-    return page.eval_on_selector_all(
-        "[data-dock-group]",
-        """els => els.filter(e => !e.closest('[data-dock-leaf]'))
-            .map(e => e.getAttribute('data-dock-group'))""",
     )
 
 
@@ -256,24 +245,19 @@ def test_main_panel_click_header_toggles_collapsed(
 def test_snap_below_minimized_keeps_top_panel(dock_context, vite_server: int) -> None:
     page = _open(dock_context, vite_server, 1500, 900)
     try:
-        ctrl_win = _floating_window_id_for_panel(page, "controls")
-        insp_win = _floating_window_id_for_panel(page, "inspector")
-        if ctrl_win is None or insp_win is None:
-            pytest.skip("controls/inspector floating panels not found this run")
-        ctrl_gid = page.eval_on_selector(
-            f'[data-floating-window="{ctrl_win}"] [data-dock-group]',
-            "e => e.getAttribute('data-dock-group')",
+        # Arrange: controls floating ALREADY MINIMIZED, inspector floating
+        # apart from it (the snap-below gesture is the subject).
+        set_layout(
+            page,
+            dock_layout(
+                floating=[
+                    window(group("controls", collapsed=True), x=500, y=150),
+                    window("inspector", x=900, y=150, width=260),
+                ]
+            ),
         )
-        insp_gid = page.eval_on_selector(
-            f'[data-floating-window="{insp_win}"] [data-dock-group]',
-            "e => e.getAttribute('data-dock-group')",
-        )
-
-        # Minimize the floating controls panel.
-        page.locator(
-            f'[data-dock-group="{ctrl_gid}"] [data-dock-minimize]'
-        ).first.click()
-        page.wait_for_timeout(120)
+        ctrl_win = "t-w-controls"
+        ctrl_gid, insp_gid = "t-controls", "t-inspector"
 
         # Snap inspector BELOW the (minimized) controls window.
         ctrl_box = _box(page, f'[data-floating-window="{ctrl_win}"]')
@@ -314,33 +298,18 @@ def test_floating_stack_divider_resizes_both_directions(
 ) -> None:
     page = _open(dock_context, vite_server, 1500, 950)
     try:
-        insp_win = _floating_window_id_for_panel(page, "inspector")
-        cons_win = _floating_window_id_for_panel(page, "console")
-        if insp_win is None or cons_win is None:
-            pytest.skip("inspector/console floating panels not found this run")
-        insp_gid = page.eval_on_selector(
-            f'[data-floating-window="{insp_win}"] [data-dock-group]',
-            "e => e.getAttribute('data-dock-group')",
-        )
-        cons_gid = page.eval_on_selector(
-            f'[data-floating-window="{cons_win}"] [data-dock-group]',
-            "e => e.getAttribute('data-dock-group')",
-        )
-
-        # Snap console BELOW inspector.
-        insp_box = _box(page, f'[data-floating-window="{insp_win}"]')
-        if insp_box is None:
-            pytest.skip("inspector window not laid out this run")
-        cgrip = _grip(page, cons_gid)
-        _drag(
+        # Arrange: console already snapped below inspector in one stacked
+        # window (the divider drags are the subject).
+        set_layout(
             page,
-            (cgrip["x"], cgrip["y"]),
-            (insp_box["x"] + insp_box["w"] / 2, insp_box["y"] + insp_box["h"] - 6),
+            dock_layout(
+                floating=[window("inspector", "console", x=700, y=120, width=300)]
+            ),
         )
-
+        insp_gid, cons_gid = "t-inspector", "t-console"
         stacked = _floating_window_id_for_panel(page, "inspector")
-        if stacked is None or _floating_window_id_for_panel(page, "console") != stacked:
-            pytest.skip("console did not snap below inspector this run")
+        assert stacked is not None
+        assert _floating_window_id_for_panel(page, "console") == stacked
 
         divider = page.query_selector(
             f'[data-floating-window="{stacked}"] [data-floating-divider]'
@@ -383,7 +352,7 @@ def test_floating_stack_divider_resizes_both_directions(
         assert db2 is not None
         dx2, dy2 = db2["x"] + db2["width"] / 2, db2["y"] + db2["height"] / 2
         _drag(page, (dx2, dy2), (dx2, dy2 - 100))
-        top2, _bot2 = _heights()
+        top2, _ = _heights()
         assert top2 < top1 - 5, (
             f"dragging the divider back up should shrink the top group "
             f"({top1} -> {top2})"
@@ -401,27 +370,13 @@ def test_undock_fullbleed_main_panel_keeps_height(
 ) -> None:
     page = _open(dock_context, vite_server, 1500, 900)
     try:
+        # Arrange: the unmergeable main panel docked on the right edge (the
+        # undock drag is the subject).
+        set_layout(page, dock_layout(docked_right=columns("monitor")))
         main_gid = _main_group_id(page)
-        if main_gid is None or _main_window_id(page) is None:
-            pytest.skip("main panel not present as a floater this run")
-
-        # Dock the main panel to the right edge (drag its header to the far right).
-        header = page.query_selector(f'[data-dock-header="{main_gid}"]')
-        if header is None:
-            pytest.skip("main panel header not found this run")
-        hb = header.bounding_box()
-        assert hb is not None
-        vw = page.viewport_size["width"]  # type: ignore[index]
-        _drag(
-            page,
-            (hb["x"] + hb["width"] / 2, hb["y"] + hb["height"] / 2),
-            (vw - 8, 400),
-        )
-
-        # If it didn't dock (geometry finicky), skip.
+        assert main_gid == "t-monitor"
         docked = page.query_selector(f'[data-dock-leaf] [data-dock-group="{main_gid}"]')
-        if docked is None:
-            pytest.skip("main panel did not dock to the right edge this run")
+        assert docked is not None
 
         # Now drag it back OUT into the canvas (undock).
         header2 = page.query_selector(f'[data-dock-header="{main_gid}"]')
@@ -459,25 +414,19 @@ def test_dock_beside_fullbleed_main_panel_does_not_merge_into_area(
 ) -> None:
     page = _open(dock_context, vite_server, 1500, 900)
     try:
-        main_gid = _main_group_id(page)
-        if main_gid is None or _main_window_id(page) is None:
-            pytest.skip("main panel not present as a floater this run")
-
-        # Dock the main panel to the right edge first so it's a docked region.
-        header = page.query_selector(f'[data-dock-header="{main_gid}"]')
-        if header is None:
-            pytest.skip("main panel header not found this run")
-        hb = header.bounding_box()
-        assert hb is not None
-        vw = page.viewport_size["width"]  # type: ignore[index]
-        _drag(
+        # Arrange: the unmergeable main panel docked right + controls floating
+        # (the outer-band drop is the subject).
+        set_layout(
             page,
-            (hb["x"] + hb["width"] / 2, hb["y"] + hb["height"] / 2),
-            (vw - 8, 400),
+            dock_layout(
+                docked_right=columns("monitor"),
+                floating=[window("controls", x=500, y=150)],
+            ),
         )
+        main_gid = _main_group_id(page)
+        assert main_gid == "t-monitor"
         docked = page.query_selector(f'[data-dock-leaf] [data-dock-group="{main_gid}"]')
-        if docked is None:
-            pytest.skip("main panel did not dock this run")
+        assert docked is not None
 
         area_main_before = page.evaluate(
             """() => {

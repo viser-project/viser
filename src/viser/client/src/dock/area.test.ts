@@ -131,7 +131,7 @@ describe("(b) tearOutPanel from a multi-panel area keeps activeId valid", () => 
 
 // ===========================================================================
 // (c) findGroupLocation returns {kind:"area"}. (The detach-is-a-no-op behavior
-//     on the area group is pinned by layoutOps.regression.test.ts (dockToEdge)
+//     on the area group is pinned by layoutOps.test.ts (dockToEdge area guard)
 //     and layoutOps.lifecycle.test.ts (floatGroup).)
 // ===========================================================================
 describe("(c) findGroupLocation is area-aware", () => {

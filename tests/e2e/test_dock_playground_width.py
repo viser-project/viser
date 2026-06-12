@@ -1,10 +1,10 @@
-"""E2E width-preservation tests for the docking layer (measures rendered px).
+"""E2E tests for the docking layer's region width/height model (measures
+rendered px): width reconciliation, the cascading divider resize, and
+dock-ABOVE sizing.
 
-Verifies the centralized width-reconciliation model: when a docked region's SET
-of top-level columns changes, surviving columns keep their exact pixel widths and
-new columns get a default; pure-internal changes leave widths untouched.
-
-Characterized behavior (see individual tests):
+Width reconciliation -- when a docked region's SET of top-level columns
+changes, surviving columns keep their exact pixel widths and new columns get a
+default; pure-internal changes leave widths untouched:
 * Removing one of two side-by-side docked panels leaves the OTHER's width
   unchanged (within the ~divider tolerance). The float-out removal path is the
   single e2e wiring proof here; the merge-away/snap-away paths and the
@@ -18,19 +18,35 @@ Characterized behavior (see individual tests):
 * M1: with one column of a multi-column region minimized (partially overlaid),
   dragging the reserved divider resizes (no longer a silent no-op).
 
+Divider cascade ("push" resize in SplitView) -- dragging a divider grows the
+pane on the drag side and shrinks the panes on the OTHER side in order: when
+the immediate neighbor bottoms out at its min, the next sibling gives space
+(the boundary pushes through). Total is conserved (region size unchanged) and
+it cascades backward on reverse drag. The vertical (column) gesture wiring is
+pinned end to end here; the cascade math itself (including the horizontal/row
+axis, which shares the same SplitView code path) is unit-pinned in
+layoutOps.regression.test.ts.
+
+Dock-ABOVE sizing -- regression tests for the dock-above height bug (fixed in
+DockManager.tsx applyOp reconciliation): docking a panel ABOVE a docked panel
+collapsed the ORIGINAL panel to ~3px, because the reconciliation wrote a
+width-px value into a vertical child's height weight. These drive real pointer
+drags and assert the *rendered* heights/widths via getBoundingClientRect, so a
+regression fails loudly. (Grip-bar drop = per-panel "above this one"; thin
+region-top band = span-all-columns above.)
+
 ACCEPTABLE exceptions (asserted as such, not bugs):
 * A single floating panel docked to an EMPTY edge adopts the region width (a sole
   docked column == the whole region), so its prior float width is not preserved.
 * Deeply-nested left/right splits may not preserve exact widths.
 
-Geometry note: the playground starts with floating panels clustered upper-center
-and a docked panel on the left, so "empty canvas" drop points are scarce. These
-tests park unused floaters at the bottom to clear a clean drop area, and park
-the seeded unmergeable monitor window (x 900-1200, y 60-440) out of the way
-before docking side-by-side: its full-bleed area would otherwise merge away the
-panel dropped on it.
+Geometry note: starting arrangements are INJECTED via dock_helpers.set_layout
+(window.__dockSetLayout), so each test begins from exactly the layout literal it
+states -- only panels the test references exist (no monitor window to park, no
+floaters to clear), and the gesture under test runs on a clean canvas.
 
-Skips cleanly if the client toolchain (``npx`` + ``node_modules``) is missing.
+Skips cleanly if the client toolchain (``npx`` + ``node_modules``) is missing,
+or if a drop didn't produce the expected structure this run.
 """
 
 from __future__ import annotations
@@ -40,12 +56,20 @@ from typing import Generator
 import pytest
 from playwright.sync_api import Page  # noqa: E402
 
+from .dock_helpers import (
+    MIN_CELL_HEIGHT_PX,
+    columns,
+    dock_layout,
+    open_playground,
+    set_layout,
+    stack,
+    window,
+)
 from .dock_helpers import drag_group as _drag_group
-from .dock_helpers import floating_group_ids, open_playground
 from .dock_helpers import group_box as _box
 from .dock_helpers import group_grip_center as _grip
 from .dock_helpers import leaf_box as _leaf_box
-from .dock_helpers import park_monitor as _park_monitor
+from .dock_helpers import right_cols as _right_cols
 
 
 @pytest.fixture()
@@ -60,10 +84,6 @@ def page(dock_context, vite_server: int) -> Generator[Page, None, None]:
 # ---------------------------------------------------------------------------
 # Helpers.
 # ---------------------------------------------------------------------------
-def _floating_ids(page: Page) -> list[str]:
-    return floating_group_ids(page, require_grip=True)
-
-
 def _has(page: Page, gid: str) -> bool:
     return (
         page.query_selector(f'[data-dock-group="{gid}"] [data-dock-griphandle]')
@@ -94,24 +114,18 @@ def _win_rect(page: Page, gid: str) -> dict:
     )
 
 
-# Unlike dock_helpers.drag, arms with a small HORIZONTAL nudge (used for
-# divider/edge grabs, where a diagonal nudge could slip off the handle).
+# Unlike dock_helpers.drag, the arming nudge tracks the drag AXIS (divider and
+# window-edge grabs would slip off the handle with a fixed diagonal nudge).
 def _raw_drag(page: Page, start: tuple[float, float], end: tuple[float, float]) -> None:
+    nx = 2 if end[0] > start[0] else (-2 if end[0] < start[0] else 0)
+    ny = 2 if end[1] > start[1] else (-2 if end[1] < start[1] else 0)
     page.mouse.move(*start)
     page.mouse.down()
-    page.mouse.move(start[0] + 4, start[1], steps=2)
-    page.mouse.move(*end, steps=10)
+    page.mouse.move(start[0] + nx, start[1] + ny, steps=2)
+    page.mouse.move(*end, steps=14)
     page.mouse.move(*end)
     page.mouse.up()
     page.wait_for_timeout(120)
-
-
-def _park_others(page: Page, keep: str) -> None:
-    """Move every floating group except `keep` to the bottom strip, clearing the
-    canvas center so undock drops land in free space."""
-    others = [g for g in _floating_ids(page) if g != keep]
-    for i, g in enumerate(others):
-        _drag_group(page, g, (120 + i * 70, 700))
 
 
 # Unlike dock_helpers.right_cols (leaf rects), this measures the GROUP rects.
@@ -133,22 +147,27 @@ def _minimize(page: Page, gid: str) -> None:
     page.wait_for_timeout(120)
 
 
-def _setup_two_side_by_side(page: Page, a: str, b: str) -> None:
-    """Dock `a` to the right edge, then `b` to a's LEFT band -> side-by-side
-    [b | a]. Parks the unmergeable monitor window FIRST: b's drop point (8px
-    inside a's left edge, mid-height) would otherwise land inside the monitor
-    (x 900-1200, y 60-440), whose full-bleed area merges b away. Asserts the
-    2-column right region formed (deterministic after parking). (Differs from
-    dock_helpers.setup_side_by_side: drops b 8px inside a's edge, not at 10%.)"""
-    _park_monitor(page)
-    vw = page.viewport_size["width"]  # type: ignore[index]
-    _drag_group(page, a, (vw - 10, 400))
-    ab = _box(page, a)
-    _drag_group(page, b, (ab["x"] + 8, ab["y"] + ab["h"] / 2))
+def _setup_two_side_by_side(page: Page) -> tuple[str, str]:
+    """Inject a 2-column right region [inspector | controls] and return the
+    group ids as (a, b) where `a` is the rightmost (kept) column and `b` the
+    canvas-adjacent one -- matching the old gesture-built [b | a] shape."""
+    set_layout(page, dock_layout(docked_right=columns("inspector", "controls")))
     cols = _right_group_ids(page)
-    assert a in cols and b in cols and len(cols) == 2, (
-        f"side-by-side right region did not form: {cols}"
+    assert cols == ["t-inspector", "t-controls"], (
+        f"injected side-by-side right region wrong: {cols}"
     )
+    return "t-controls", "t-inspector"
+
+
+def _build_three_vertical(page: Page) -> list[dict]:
+    """Inject a FLAT vertical (column) stack of 3 panels on the right edge and
+    return the 3 leaf boxes top-to-bottom (equal height weights)."""
+    set_layout(
+        page, dock_layout(docked_right=stack("controls", "inspector", "console"))
+    )
+    cols = _right_cols(page)
+    assert len(cols) == 3, f"injected 3-way column wrong: {cols}"
+    return cols
 
 
 # The ~7px split divider is reclaimed when a sibling column leaves, so a kept
@@ -164,10 +183,7 @@ _DIVIDER_TOL = 10
 #     layoutOps.test.ts, surviving-column px in widthReconciliation.test.ts).
 # ===========================================================================
 def test_removal_float_out_preserves_sibling_width(page: Page) -> None:
-    ids = _floating_ids(page)
-    assert len(ids) >= 2
-    a, b = ids[0], ids[1]
-    _setup_two_side_by_side(page, a, b)
+    a, b = _setup_two_side_by_side(page)
 
     kept_before = _width(page, a)
     # Remove b by tearing it out to clear space (float-out path).
@@ -186,16 +202,17 @@ def test_removal_float_out_preserves_sibling_width(page: Page) -> None:
 # (2) Docking a new column keeps existing columns' widths; new one = default.
 # ===========================================================================
 def test_dock_new_column_keeps_existing_and_defaults_new(page: Page) -> None:
-    ids = _floating_ids(page)
-    assert len(ids) >= 2
-    a, b = ids[0], ids[1]
-    # Park the monitor first: b's drop point below would land inside it and
-    # merge b away instead of forming a new column.
-    _park_monitor(page)
-    vw = page.viewport_size["width"]  # type: ignore[index]
-
-    _drag_group(page, a, (vw - 10, 400))
-    assert not _is_float(page, a), "first dock did not take"
+    # Arrange: controls docked right alone; inspector floating clear of the
+    # region (the dock-b-beside-a gesture is the thing under test).
+    a, b = "t-controls", "t-inspector"
+    set_layout(
+        page,
+        dock_layout(
+            docked_right=columns("controls"),
+            floating=[window("inspector", x=500, y=200, width=260)],
+        ),
+    )
+    assert not _is_float(page, a)
     a_alone = _width(page, a)
 
     # Dock b beside a (new column).
@@ -221,9 +238,10 @@ def test_dock_new_column_keeps_existing_and_defaults_new(page: Page) -> None:
 #     round-trip is unit-pinned; see the module docstring.)
 # ===========================================================================
 def test_dock_then_undock_roundtrips_docked_width(page: Page) -> None:
-    ids = _floating_ids(page)
-    f = ids[0]
-    _park_others(page, f)
+    # Arrange: a single floating panel on an otherwise empty canvas (both the
+    # dock and the undock drops are the gestures under test).
+    f = "t-controls"
+    set_layout(page, dock_layout(floating=[window("controls", x=400, y=150)]))
     vw = page.viewport_size["width"]  # type: ignore[index]
 
     _drag_group(page, f, (vw - 10, 400))
@@ -249,10 +267,7 @@ def test_no_width_jump_at_drag_start(page: Page) -> None:
     """Dragging a column out must not jolt the survivor's width beyond the ~7px
     divider it reclaims when the sibling leaves (guards the stale-regionWidth /
     flushSync race that M2 fixed)."""
-    ids = _floating_ids(page)
-    assert len(ids) >= 2
-    a, b = ids[0], ids[1]
-    _setup_two_side_by_side(page, a, b)
+    a, b = _setup_two_side_by_side(page)
 
     kept_before = _width(page, a)
     sx, sy = _grip(page, b)
@@ -286,21 +301,12 @@ def test_reserved_divider_resizes_with_minimized_column(page: Page) -> None:
     then drag the divider between the two reserved columns. Previously this was a
     silent no-op (the reserved subtree reused the full split's id); now it must
     actually resize."""
-    ids = _floating_ids(page)
-    assert len(ids) >= 3
-    a, b, c = ids[0], ids[1], ids[2]
-    # Park the monitor first: the b/c drop points below would land inside it
-    # and merge the panels away instead of forming new columns.
-    _park_monitor(page)
-    vw = page.viewport_size["width"]  # type: ignore[index]
-
-    _drag_group(page, a, (vw - 10, 400))
-    abox = _box(page, a)
-    _drag_group(page, b, (abox["x"] + 8, abox["y"] + abox["h"] / 2))
-    abox = _box(page, a)
-    _drag_group(page, c, (abox["x"] + 8, abox["y"] + abox["h"] / 2))
+    # Arrange: a 3-column right region (the divider drag is the subject).
+    set_layout(
+        page, dock_layout(docked_right=columns("controls", "inspector", "console"))
+    )
     cols = _right_group_ids(page)
-    assert len(cols) == 3, f"did not produce a 3-column right region: {cols}"
+    assert len(cols) == 3, f"injected 3-column right region wrong: {cols}"
 
     # Minimize the outermost (last, farthest from canvas) so it overlays and the
     # reserved subtree keeps two columns + a divider between them.
@@ -334,9 +340,9 @@ def test_reserved_divider_resizes_with_minimized_column(page: Page) -> None:
 # (its prior float width is NOT preserved). Documented as acceptable.
 # ===========================================================================
 def test_sole_dock_adopts_region_width_not_float_width(page: Page) -> None:
-    ids = _floating_ids(page)
-    f = ids[0]
-    _park_others(page, f)
+    # Arrange: a single floating panel; the widen + dock gestures follow.
+    f = "t-controls"
+    set_layout(page, dock_layout(floating=[window("controls", x=400, y=150)]))
     vw = page.viewport_size["width"]  # type: ignore[index]
 
     wr = _win_rect(page, f)
@@ -359,3 +365,186 @@ def test_sole_dock_adopts_region_width_not_float_width(page: Page) -> None:
         f"expected sole-dock to adopt the (narrower) region width; "
         f"float={float_w} docked={docked_w}"
     )
+
+
+# ===========================================================================
+# Cascading ("push") divider resize in SplitView: vertical 3-way column.
+# ===========================================================================
+def test_vertical_cascade_pushes_through(dock_context, vite_server: int) -> None:
+    page = open_playground(dock_context, vite_server, 1280, 900)
+    try:
+        cols = _build_three_vertical(page)
+
+        sum0 = sum(c["h"] for c in cols)
+        # Top boundary: grab the 7px divider below the first leaf at its center
+        # (+3px past the leaf bottom, like the reserved-divider grabs above).
+        cx = cols[0]["x"] + cols[0]["w"] / 2
+        top_boundary_y = cols[0]["y"] + cols[0]["h"] + 3
+
+        # Drag the 1|2 boundary DOWN by a large amount.
+        _raw_drag(page, (cx, top_boundary_y), (cx, top_boundary_y + 300))
+        after = _right_cols(page)
+        assert len(after) == 3
+        p1, p2, p3 = after
+
+        # Panel 1 grew; panel 2 floored at its min height; panel 3 shrank to
+        # absorb the remainder (the 2|3 boundary moved down too); sum conserved.
+        assert p1["h"] > cols[0]["h"] + 40, (
+            f"panel1 did not grow: {cols[0]['h']} -> {p1['h']}"
+        )
+        assert p2["h"] <= MIN_CELL_HEIGHT_PX + 12, (
+            f"panel2 did not floor at min: {p2['h']}"
+        )
+        assert p3["h"] < cols[2]["h"] - 40, (
+            f"panel3 did not shrink (push-through failed): {cols[2]['h']} -> {p3['h']}"
+        )
+        assert abs(sum(c["h"] for c in after) - sum0) <= 6, (
+            f"total height changed: {sum0} -> {sum(c['h'] for c in after)}"
+        )
+
+        # Drag the SAME (now-lower) boundary back UP by a large amount. Panel 1
+        # is topmost, so on reverse it just floors at its own min; the pane below
+        # reclaims the freed space; total stays conserved. The drag delta must
+        # exceed panel1's grown height minus its min for it to fully floor, so we
+        # over-drag well past that.
+        cur = _right_cols(page)
+        cx2 = cur[0]["x"] + cur[0]["w"] / 2
+        boundary2 = cur[0]["y"] + cur[0]["h"] + 3
+        _raw_drag(page, (cx2, boundary2), (cx2, boundary2 - (cur[0]["h"] + 120)))
+        up = _right_cols(page)
+        assert len(up) == 3
+        assert up[0]["h"] <= MIN_CELL_HEIGHT_PX + 12, (
+            f"panel1 did not floor at min on reverse drag: {up[0]['h']}"
+        )
+        assert up[1]["h"] > p2["h"] + 40, "panel2 did not reclaim space on reverse drag"
+        assert abs(sum(c["h"] for c in up) - sum0) <= 6, (
+            "total height changed on reverse drag"
+        )
+    finally:
+        page.close()
+
+
+# ===========================================================================
+# Dock a panel ABOVE a single docked panel (grip bar) -> both ~50% height.
+# Regression: the original used to collapse to ~3px.
+# ===========================================================================
+def test_dock_above_single_panel_splits_height_evenly(
+    dock_context, vite_server: int
+) -> None:
+    vh = 900
+    page = open_playground(dock_context, vite_server, 1400, vh)
+    try:
+        # Arrange: controls docked right (single full-height column), inspector
+        # floating; the dock-ABOVE drop is the gesture under test.
+        a, c = "t-controls", "t-inspector"
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=columns("controls"),
+                floating=[window("inspector", x=500, y=200, width=260)],
+            ),
+        )
+        leaves = _right_cols(page)
+        assert len(leaves) == 1 and leaves[0]["g"] == a
+        region_h = leaves[0]["h"]
+
+        # Dock `c` ABOVE `a` via a's grip bar (per-panel "above this one").
+        _drag_group(page, c, _grip(page, a), steps=14)
+
+        after = _right_cols(page)
+        if len(after) != 2:
+            pytest.skip("did not produce a 2-row vertical stack this run")
+
+        # Both leaves must render at roughly half the region height. The bug
+        # collapsed the original to ~3px; guard hard against that.
+        heights = sorted(leaf["h"] for leaf in after)
+        assert heights[0] >= 50, (
+            f"a docked leaf collapsed (heights={heights}); the dock-above bug regressed"
+        )
+        half = region_h / 2
+        for leaf in after:
+            # Each within ~40% of the region height of the even split.
+            assert abs(leaf["h"] - half) <= region_h * 0.40, (
+                f"leaf {leaf['g']} height {leaf['h']} not ~half of {region_h}"
+            )
+        # And they actually stack (distinct y), not overlap.
+        ys = sorted(leaf["y"] for leaf in after)
+        assert ys[1] - ys[0] >= 50, f"leaves did not stack vertically: {after}"
+    finally:
+        page.close()
+
+
+# ===========================================================================
+# Dock a panel ABOVE two side-by-side columns (thin region-top span band) ->
+# full-width top panel gets substantial height; the two columns keep their
+# side-by-side widths (region width preserved, not collapsed to one column).
+# ===========================================================================
+def test_dock_above_two_columns_spans_and_preserves_widths(
+    dock_context, vite_server: int
+) -> None:
+    page = open_playground(dock_context, vite_server, 1500, 800)
+    try:
+        # Arrange: two side-by-side right columns + a floating console; the
+        # dock-ABOVE-the-region drop is the gesture under test.
+        c = "t-console"
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=columns("controls", "inspector"),
+                floating=[window("console", x=500, y=200, width=300)],
+            ),
+        )
+        cols = _right_cols(page)
+        assert len(cols) == 2
+
+        region_left = min(leaf["x"] for leaf in cols)
+        region_right = max(leaf["x"] + leaf["w"] for leaf in cols)
+        region_width_before = region_right - region_left
+        col_widths_before = sorted(leaf["w"] for leaf in cols)
+        region_cx = (region_left + region_right) / 2
+
+        # Dock `c` ABOVE BOTH via the thin region-top span band: horizontally
+        # centered over the region, within ~4px of the very top.
+        _drag_group(page, c, (region_cx, 4), steps=14)
+
+        after = _right_cols(page)
+        if len(after) != 3:
+            pytest.skip("did not produce a top band + two columns this run")
+
+        # The new top band spans both columns: find the widest leaf (full width)
+        # -- it must get a substantial height (roughly half), not a sliver.
+        top = max(after, key=lambda leaf: leaf["w"])
+        bottom_cols = [leaf for leaf in after if leaf is not top]
+        assert top["h"] > 100, (
+            f"the full-width top band got too little height ({top['h']}px); "
+            "dock-above height regressed"
+        )
+        assert top["w"] >= region_width_before * 0.9, (
+            f"the top band did not span the region width "
+            f"({top['w']} vs region {region_width_before})"
+        )
+        # It sits above the two columns.
+        assert top["y"] <= min(leaf["y"] for leaf in bottom_cols), (
+            "the span band is not above the two columns"
+        )
+
+        # The two original columns keep their side-by-side widths: region width
+        # preserved (not shrunk to one column), and two distinct columns remain.
+        bottom_left = min(leaf["x"] for leaf in bottom_cols)
+        bottom_right = max(leaf["x"] + leaf["w"] for leaf in bottom_cols)
+        assert abs((bottom_right - bottom_left) - region_width_before) <= 12, (
+            f"region width changed: was {region_width_before}, now "
+            f"{bottom_right - bottom_left}"
+        )
+        col_widths_after = sorted(leaf["w"] for leaf in bottom_cols)
+        for w_before, w_after in zip(col_widths_before, col_widths_after):
+            assert abs(w_before - w_after) <= 12, (
+                f"a column width changed: {col_widths_before} -> {col_widths_after}"
+            )
+        # Still two distinct side-by-side columns (different x positions).
+        xs = sorted(leaf["x"] for leaf in bottom_cols)
+        assert xs[1] - xs[0] >= 100, (
+            f"the two columns collapsed onto one another: {bottom_cols}"
+        )
+    finally:
+        page.close()

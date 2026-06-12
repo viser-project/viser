@@ -30,6 +30,14 @@ from __future__ import annotations
 import pytest
 
 from .dock_helpers import (
+    columns,
+    dock_layout,
+    group,
+    set_layout,
+    stack,
+    window,
+)
+from .dock_helpers import (
     drag as _drag,
 )
 from .dock_helpers import (
@@ -49,9 +57,6 @@ from .dock_helpers import (
 )
 from .dock_helpers import (
     open_playground as _open,
-)
-from .dock_helpers import (
-    park_monitor as _park_monitor,
 )
 
 
@@ -116,25 +121,22 @@ def test_minimize_button_keyboard(dock_context, vite_server) -> None:
 def test_tab_title_and_keyboard_activation(dock_context, vite_server) -> None:
     page = _open(dock_context, vite_server)
 
-    # Merge Inspector into Controls' tab strip (drop on the tab itself).
-    gx, gy = _grip(page, "inspector")
-    tab = page.eval_on_selector(
-        '[data-dock-tab="controls"]',
-        "e => { const r = e.getBoundingClientRect(); "
-        "return { x: r.x + r.width/2, y: r.y + r.height/2 }; }",
+    # Arrange: Inspector already merged into Controls' tab strip, with the
+    # merged-in tab active (the post-merge state the old setup drag produced).
+    # The tab tooltips + keyboard activation below are the subject.
+    set_layout(
+        page,
+        dock_layout(
+            floating=[
+                window(
+                    group(["controls", "inspector"], active="inspector"), x=400, y=100
+                )
+            ]
+        ),
     )
-    page.mouse.move(gx, gy)
-    page.mouse.down()
-    page.mouse.move(gx + 6, gy + 6, steps=2)
-    page.mouse.move(tab["x"], tab["y"], steps=12)
-    page.mouse.move(tab["x"], tab["y"])
-    page.mouse.up()
-    page.wait_for_timeout(120)
-
     gid = _group_id_for_panel(page, "controls")
     merged = page.evaluate("(gid) => window.__dockLayout.groups[gid].panelIds", gid)
-    if "inspector" not in merged:
-        pytest.skip("tab merge didn't land this run; geometry off by a few px")
+    assert "inspector" in merged
 
     # The merged-in tab is active; both tabs carry their full label as a title
     # attribute (labels ellipsize at maxWidth).
@@ -171,10 +173,10 @@ def test_tab_title_and_keyboard_activation(dock_context, vite_server) -> None:
 # ---------------------------------------------------------------------------
 def test_escape_restores_docked_group_drag(dock_context, vite_server) -> None:
     page = _open(dock_context, vite_server)
-    _drag(page, _grip(page, "controls"), (1274, 400))
+    # Arrange: controls docked right (the drag-out + Escape is the subject).
+    set_layout(page, dock_layout(docked_right=columns("controls")))
     before = _layout(page)
-    if before["docked"]["right"] is None:
-        pytest.skip("edge dock didn't land this run")
+    assert before["docked"]["right"] is not None
 
     # Drag the docked group's grip out over the canvas (this floats it
     # immediately), then Escape: the group must dock back where it was.
@@ -233,10 +235,9 @@ def test_drop_on_minimized_group_expands(dock_context, vite_server) -> None:
 # ---------------------------------------------------------------------------
 def test_escape_reverts_region_resize(dock_context, vite_server) -> None:
     page = _open(dock_context, vite_server)
-    _drag(page, _grip(page, "controls"), (1274, 400))
-    layout = _layout(page)
-    if layout["docked"]["right"] is None:
-        pytest.skip("edge dock didn't land this run")
+    # Arrange: controls docked right (the resize + Escape is the subject).
+    set_layout(page, dock_layout(docked_right=columns("controls")))
+    assert _layout(page)["docked"]["right"] is not None
 
     handle = page.eval_on_selector(
         '[data-dock-region-resize="right"]',
@@ -272,21 +273,15 @@ def test_escape_reverts_region_resize(dock_context, vite_server) -> None:
 # ---------------------------------------------------------------------------
 def test_region_resize_ignores_minimized_columns(dock_context, vite_server) -> None:
     page = _open(dock_context, vite_server)
-    _park_monitor(page)
 
-    # Build three side-by-side right-docked columns: controls at the edge,
-    # then inspector and console docked to its left in turn.
-    _drag(page, _grip(page, "controls"), (1274, 400))
-    for panel in ["inspector", "console"]:
-        region_left = page.evaluate(
-            """() => Math.min(...[...document.querySelectorAll(
-                '[data-dock-leaf][data-dock-edge="right"]')]
-                .map(l => l.getBoundingClientRect().left))"""
-        )
-        _drag(page, _grip(page, panel), (region_left + 8, 400))
+    # Arrange: three side-by-side right-docked columns, controls at the edge
+    # and console canvas-adjacent (the minimize clicks + region resize below
+    # are the subject).
+    set_layout(
+        page, dock_layout(docked_right=columns("console", "inspector", "controls"))
+    )
     tree = _layout(page)["docked"]["right"]
-    if tree is None or tree.get("type") != "split" or len(tree["children"]) != 3:
-        pytest.skip("3-column dock didn't land this run")
+    assert tree is not None and tree["type"] == "split" and len(tree["children"]) == 3
 
     def leaf_width(panel: str) -> float:
         gid = _group_id_for_panel(page, panel)
@@ -360,10 +355,9 @@ def test_minus_button_drag_moves_panel(dock_context, vite_server) -> None:
 
 def test_plus_drag_tears_out_expanded(dock_context, vite_server) -> None:
     page = _open(dock_context, vite_server)
-    _park_monitor(page)
-    _drag(page, _grip(page, "controls"), (1274, 400))
-    if _layout(page)["docked"]["right"] is None:
-        pytest.skip("edge dock didn't land this run")
+    # Arrange: controls docked right (the minimize + drag-from-+ below are the
+    # subject; the canvas is otherwise empty so the drop floats).
+    set_layout(page, dock_layout(docked_right=columns("controls")))
     gid = _group_id_for_panel(page, "controls")
     page.eval_on_selector(
         f'[data-dock-group="{gid}"] [data-dock-minimize]', "e => e.click()"
@@ -399,12 +393,10 @@ def test_plus_drag_tears_out_expanded(dock_context, vite_server) -> None:
 # ---------------------------------------------------------------------------
 def test_column_handle_persists_fully_minimized(dock_context, vite_server) -> None:
     page = _open(dock_context, vite_server)
-    _drag(page, _grip(page, "controls"), (1274, 400))
-    if _layout(page)["docked"]["right"] is None:
-        pytest.skip("edge dock didn't land this run")
-    _drag(page, _grip(page, "inspector"), _grip(page, "controls"))
-    if page.query_selector("[data-dock-column-handle]") is None:
-        pytest.skip("column stack didn't land this run")
+    # Arrange: a 2-leaf vertical column docked right (the minimize-all clicks
+    # on its column handle are the subject).
+    set_layout(page, dock_layout(docked_right=stack("inspector", "controls")))
+    assert page.query_selector("[data-dock-column-handle]") is not None
     a = _group_id_for_panel(page, "controls")
     b = _group_id_for_panel(page, "inspector")
 
@@ -437,10 +429,15 @@ def test_column_handle_persists_fully_minimized(dock_context, vite_server) -> No
 # ---------------------------------------------------------------------------
 def test_drop_below_strip_restores_region_width(dock_context, vite_server) -> None:
     page = _open(dock_context, vite_server)
-    _park_monitor(page)
-    _drag(page, _grip(page, "controls"), (1274, 400))
-    if _layout(page)["docked"]["right"] is None:
-        pytest.skip("edge dock didn't land this run")
+    # Arrange: controls docked right + inspector floating (the minimize and the
+    # drop-below-the-strip gesture are the subject).
+    set_layout(
+        page,
+        dock_layout(
+            docked_right=columns("controls"),
+            floating=[window("inspector", x=680, y=120, width=260)],
+        ),
+    )
     gid = _group_id_for_panel(page, "controls")
     page.eval_on_selector(
         f'[data-dock-group="{gid}"] [data-dock-minimize]', "e => e.click()"
