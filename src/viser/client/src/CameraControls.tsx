@@ -733,12 +733,12 @@ export function SynchronizedCameraControls() {
       }
       if (activeCameraKeys.has("ArrowLeft")) {
         keyboardYawAxis.copy(camera.up).normalize();
-        camera.rotateOnWorldAxis(keyboardYawAxis, -rotateScale);
+        camera.rotateOnWorldAxis(keyboardYawAxis, rotateScale);
         changed = true;
       }
       if (activeCameraKeys.has("ArrowRight")) {
         keyboardYawAxis.copy(camera.up).normalize();
-        camera.rotateOnWorldAxis(keyboardYawAxis, rotateScale);
+        camera.rotateOnWorldAxis(keyboardYawAxis, -rotateScale);
         changed = true;
       }
       const pitchMul = firstPersonInvertLookY ? 1 : -1;
