@@ -101,8 +101,9 @@ function createSceneTreeActions(
         };
       }
 
-      // Clear the node ref if updating existing node.
-      if (existingNode) {
+      // Preserve refs when playback replays the same creation message; React
+      // may reuse the mounted object instead of remounting it.
+      if (existingNode && existingNode.message !== message) {
         delete nodeRefFromName[message.name];
       }
       store.setState(partial);
