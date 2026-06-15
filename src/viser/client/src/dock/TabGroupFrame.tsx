@@ -13,7 +13,68 @@ import {
 } from "./DockStyles.css";
 import { keyActivate, prefersReducedMotion } from "./gestures";
 import { GripPill, HandleIconButton } from "./handles";
-import { TabGroup } from "./types";
+import { PanelSpec, TabGroup } from "./types";
+
+// The active panel's BODY, memoized so it is rebuilt/reconciled only when its
+// OWN inputs change -- not on every unrelated dock op. A tab switch or a
+// dock/undock elsewhere busts the dock context, so every TabGroupFrame
+// re-renders; without this, each one would re-invoke `panel.render()` and
+// re-reconcile the whole ScrollArea/Box wrapper chain. The memo holds because
+// panel specs are referentially STABLE across layout ops (the registry keys
+// content by id -- see ControlPanelDock), so an unrelated op leaves
+// (panel, fill, maxContentHeight) untouched and React skips the subtree. The
+// live content inside still updates via its own state subscriptions.
+const PanelBody = React.memo(function PanelBody({
+  panel,
+  fill,
+  maxContentHeight,
+}: {
+  panel: PanelSpec | undefined;
+  fill: boolean;
+  maxContentHeight?: number;
+}) {
+  if (panel?.fullBleed === true) {
+    // Full-bleed: render the content directly with no padding and no ScrollArea
+    // wrapper -- the content (e.g. a nested DockArea) fills the body and manages
+    // its own scrolling. (Wrapping a fill-height child in ScrollArea.Autosize,
+    // which sizes to content, would collapse it to 0 height.)
+    return (
+      <Box
+        style={{
+          width: "100%",
+          ...(fill
+            ? {
+                flexGrow: 1,
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column" as const,
+              }
+            : {}),
+        }}
+      >
+        {panel.render()}
+      </Box>
+    );
+  }
+  return (
+    <ScrollArea.Autosize
+      mah={fill ? undefined : maxContentHeight}
+      className={dockBodyScroll}
+      style={
+        fill ? { flexGrow: 1, minHeight: 0, width: "100%" } : { width: "100%" }
+      }
+    >
+      <Box
+        style={{
+          padding: panel?.unpadded === true ? undefined : "0.6em 0.75em",
+          width: "100%",
+        }}
+      >
+        {panel?.render() ?? null}
+      </Box>
+    </ScrollArea.Autosize>
+  );
+});
 
 // Tab handle height, also the band height for the strip's repeating bottom-rule
 // gradient. In em relative to the strip's own font-size so the two stay aligned.
@@ -184,42 +245,12 @@ export function TabGroupFrame({
   //   Collapse would fight the flex sizing. Instead we render the body plainly
   //   and let the leaf's flex-grow transition (see the outer Box / DockLeafView
   //   column Paper) animate the height; when collapsed we just hide the body.
-  const fullBleed = panels[group.activeId]?.fullBleed === true;
-  const body = fullBleed ? (
-    // Full-bleed: render the content directly with no padding and no ScrollArea
-    // wrapper -- the content (e.g. a nested DockArea) fills the body and manages
-    // its own scrolling. (Wrapping a fill-height child in ScrollArea.Autosize,
-    // which sizes to content, would collapse it to 0 height.)
-    <Box
-      style={{
-        width: "100%",
-        ...(fill
-          ? { flexGrow: 1, minHeight: 0, display: "flex", flexDirection: "column" as const }
-          : {}),
-      }}
-    >
-      {panels[group.activeId]?.render() ?? null}
-    </Box>
-  ) : (
-    <ScrollArea.Autosize
-      mah={fill ? undefined : maxContentHeight}
-      className={dockBodyScroll}
-      style={
-        fill ? { flexGrow: 1, minHeight: 0, width: "100%" } : { width: "100%" }
-      }
-    >
-      <Box
-        style={{
-          padding:
-            panels[group.activeId]?.unpadded === true
-              ? undefined
-              : "0.6em 0.75em",
-          width: "100%",
-        }}
-      >
-        {panels[group.activeId]?.render() ?? null}
-      </Box>
-    </ScrollArea.Autosize>
+  const body = (
+    <PanelBody
+      panel={panels[group.activeId]}
+      fill={fill}
+      maxContentHeight={maxContentHeight}
+    />
   );
   const contents = fill ? (
     // Docked: the body stays mounted and fills the group's flexible area

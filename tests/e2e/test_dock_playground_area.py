@@ -308,3 +308,44 @@ def test_drag_window_over_own_area_no_self_merge(
         )
     finally:
         page.close()
+
+
+# ===========================================================================
+# (e) REGRESSION: dropping a panel as the LEFTMOST tab of a full-bleed nested
+#     area (the docked "Connected" main panel hosts area-main). The area's
+#     hit rect is inset on the left/right/bottom so its frame falls through to
+#     the host's edge zones -- but the tab STRIP spans the full width, so the
+#     leftmost tab's "insert before" zone (flush at the left edge, inside the
+#     inset band) must still be droppable. It used to fall through to the host.
+# ===========================================================================
+def test_drop_as_leftmost_tab_in_fullbleed_area(dock_context, vite_server: int) -> None:
+    page = _open(dock_context, vite_server, 1500, 900)
+    try:
+        # Dock the unmergeable main panel (hosts the full-bleed area-main, which
+        # starts with [props, history]) on the right; a floating panel to drag.
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=columns("monitor"),
+                floating=[window("controls", x=300, y=200)],
+            ),
+        )
+        assert _area_panel_ids(page, "area-main") == ["props", "history"]
+
+        # The leftmost area tab ("props") sits flush at the area's left edge,
+        # inside the left inset band. Drop controls on its LEFT half -> index 0.
+        props = _box(page, '[data-dock-area="area-main"] [data-dock-tab="props"]')
+        if props is None:
+            pytest.skip("area-main props tab not laid out this run")
+        target = (props["x"] + props["w"] * 0.2, props["y"] + props["h"] / 2)
+        _drag(page, _grip(page, "t-controls"), target)
+
+        # Hard assertion (no skip): on the bug, the drop fell through to the
+        # host and controls never reached the area -- which a skip would hide.
+        after = _area_panel_ids(page, "area-main")
+        assert after == ["controls", "props", "history"], (
+            f"controls should be the LEFTMOST tab; area order is {after}"
+        )
+        assert _floating_window_id_for_panel(page, "controls") is None
+    finally:
+        page.close()
