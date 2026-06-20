@@ -52,9 +52,9 @@ import {
   MAX_PANEL_WIDTH_PX,
   MIN_PANEL_WIDTH_PX,
   NodeId,
-  SPLIT_DIVIDER_PX,
   PanelId,
   PanelRegistry,
+  regionWidthsOf,
   WindowId,
 } from "./types";
 
@@ -112,14 +112,11 @@ export function DockManager({
     onLayoutChangeRef.current?.(layout);
   }, [layout]);
 
-  const [regionWidth, setRegionWidth] = React.useState({
-    left: DEFAULT_REGION_PX,
-    right: DEFAULT_REGION_PX,
-  });
-  // Mirror of regionWidth for synchronous reads inside gesture closures (which
-  // run right after a setRegionWidth and would otherwise see a stale value).
-  const regionWidthRef = React.useRef(regionWidth);
-  regionWidthRef.current = regionWidth;
+  // Region widths are part of the layout MODEL (DockLayout.regionWidth, the
+  // single source of truth -- see widthReconciliation.ts); this is just the
+  // defaults-filled view of it. Gesture closures read the synchronous truth
+  // via regionWidthsOf(layoutRef.current).
+  const regionWidth = React.useMemo(() => regionWidthsOf(layout), [layout]);
   // Rendered region widths per edge (assigned after the region plans below).
   const reservedWidthRef = React.useRef({ left: 0, right: 0 });
   const [draggingGroupId, setDraggingGroupId] = React.useState<GroupId | null>(
@@ -156,6 +153,11 @@ export function DockManager({
   };
 
   const containerRef = React.useRef<HTMLDivElement>(null);
+  // The window currently being dragged, if any. The container ResizeObserver
+  // skips it: during a drag the CURSOR is the source of truth for that
+  // window's position, and an anchor/pull write mid-drag would detach the
+  // window from the cursor (the drop commits the final position anyway).
+  const draggingWindowIdRef = React.useRef<WindowId | null>(null);
   // Cleanup for an in-flight gesture, run if the manager unmounts mid-drag.
   const activeCleanup = React.useRef<(() => void) | null>(null);
   // Pending tab-reorder "settle" timer, so it can be cancelled on unmount.
@@ -185,42 +187,27 @@ export function DockManager({
     [layout],
   );
 
-  // Auto-grow a docked region when its contents need more width than the
-  // current region width (e.g. after docking a second column side by side), so
-  // the per-panel minimum is honored rather than splitting one region's worth.
-  // Only EXPANDED columns count (per the region plan): minimized strips render
-  // at a fixed width on top of regionWidth and impose no minimum.
-  React.useEffect(() => {
-    setRegionWidth((prev) => {
-      let changed = false;
-      const next = { ...prev };
-      (["left", "right"] as DockEdge[]).forEach((edge) => {
-        const expanded = plans[edge]?.expandedColumns ?? [];
-        if (expanded.length === 0) return;
-        const min =
-          expanded.reduce((s, c) => s + ops.minRegionWidth(c), 0) +
-          SPLIT_DIVIDER_PX * (expanded.length - 1);
-        if (next[edge] < min) {
-          next[edge] = min;
-          changed = true;
-        }
-      });
-      return changed ? next : prev;
-    });
-  }, [plans]);
-
-  // Apply a layout op, reconciling docked region widths so panels keep their
-  // pixel widths across structural changes (see widthReconciliation.ts).
+  // Apply a layout op, reconciling docked region widths (written into
+  // next.regionWidth) so panels keep their pixel widths across structural
+  // changes (see widthReconciliation.ts). The old auto-grow effect is gone:
+  // the reconciler enforces the min-width floor on every commit, so a
+  // too-narrow region is unrepresentable in committed state.
   const applyOp = React.useCallback((next: DockLayout) => {
-    const { widths, changed } = reconcileRegionWidths(
-      layoutRef.current,
-      next,
-      regionWidthRef.current,
-    );
+    if (next === layoutRef.current) return; // no-op op: nothing to commit.
+    reconcileRegionWidths(layoutRef.current, next);
     layoutRef.current = next;
-    regionWidthRef.current = widths;
     setLayout(next);
-    if (changed) setRegionWidth(widths);
+  }, []);
+
+  // Restore a previously COMMITTED layout exactly (Escape after a drag that
+  // committed an op up front). No reconciliation: the snapshot already
+  // carries valid widths -- regionWidth lives in the layout, so "put the
+  // pre-drag layout back" restores geometry by construction, where the
+  // reconciler's content-matching would treat restored columns as new and
+  // reset them to defaults.
+  const restoreLayout = React.useCallback((snapshot: DockLayout) => {
+    layoutRef.current = snapshot;
+    setLayout(snapshot);
   }, []);
 
   // Imperative panel lifecycle API (exposed via context). Stable identity so
@@ -284,20 +271,30 @@ export function DockManager({
       setLayout((prev) => {
         let changed = false;
         const floating = prev.floating.map((w) => {
+          if (w.id === draggingWindowIdRef.current) return w;
           let x = w.x;
           let y = w.y;
-          const wh = w.height ?? heights.get(w.id) ?? 0;
+          // Anchoring and pulling operate on what the user SEES: the RENDERED
+          // height, which the map above just measured. The model height is
+          // only a fallback for a window with no DOM yet. (Using the model
+          // height first yanked collapsed pinned-height windows around by the
+          // height of their hidden content.)
+          const wh = heights.get(w.id) ?? w.height ?? 0;
           if (prevSize !== null && (deltaW !== 0 || deltaH !== 0)) {
             if (w.x + w.width / 2 > prevSize.w / 2) x += deltaW;
             if (w.y + wh / 2 > prevSize.h / 2) y += deltaH;
-            // A REAL container resize pulls windows fully on-screen when they
-            // fit (overhang from a drag is the user's choice; losing the far
-            // edge -- and its minimize/resize controls -- to a browser resize
+            // A container SHRINK pulls windows fully on-screen when they fit
+            // (overhang from a drag is the user's choice; losing the far edge
+            // -- and its minimize/resize controls -- to a browser resize
             // isn't). A window larger than the container pins to the
-            // top/left. NOT applied on the observer's initial fire, which
-            // would second-guess deliberate placement.
-            x = Math.min(x, Math.max(0, rect.width - w.width));
-            if (wh > 0) y = Math.min(y, Math.max(0, rect.height - wh));
+            // top/left. Per axis, shrink only: a width-only resize must not
+            // yank a bottom-overhanging window upward, and a GROW loses
+            // nothing, so it must not cancel deliberate overhang either. NOT
+            // applied on the observer's initial fire, which would
+            // second-guess deliberate placement.
+            if (deltaW < 0) x = Math.min(x, Math.max(0, rect.width - w.width));
+            if (deltaH < 0 && wh > 0)
+              y = Math.min(y, Math.max(0, rect.height - wh));
           }
           [x, y] = clampCorner(x, y, rect.width, rect.height);
           if (x === w.x && y === w.y) return w;
@@ -552,6 +549,7 @@ export function DockManager({
     let el: HTMLElement = el0;
 
     setDraggingGroupId(groupIdForDim);
+    draggingWindowIdRef.current = windowId;
     const restoreCursor = grabbingCursor();
     let crect = container.getBoundingClientRect();
     let targets = collectTargets(windowId);
@@ -565,8 +563,8 @@ export function DockManager({
     const draggingUnmergeable = (
       layoutRef.current.floating.find((w) => w.id === windowId)?.stack ?? []
     ).some((gid) => ops.isGroupUnmergeable(layoutRef.current, panels, gid));
-    const restingLeft = el.offsetLeft;
-    const restingTop = el.offsetTop;
+    let restingLeft = el.offsetLeft;
+    let restingTop = el.offsetTop;
 
     let latest: PointerEvent | null = null;
     let raf: number | null = null;
@@ -582,15 +580,22 @@ export function DockManager({
         targetsLayout = layoutRef.current;
         targets = collectTargets(windowId);
         crect = container.getBoundingClientRect();
-      }
-      if (!el.isConnected) {
-        // Reconciliation recreated the window's DOM node mid-drag; without
-        // re-resolving, the per-frame transform would land on the detached
-        // node and the window would snap back to rest until release.
-        el =
-          container.querySelector<HTMLElement>(
-            `[data-floating-window="${windowId}"]`,
-          ) ?? el;
+        if (!el.isConnected) {
+          // Reconciliation recreated the window's DOM node mid-drag; without
+          // re-resolving, the per-frame transform would land on the detached
+          // node and the window would snap back to rest until release.
+          el =
+            container.querySelector<HTMLElement>(
+              `[data-floating-window="${windowId}"]`,
+            ) ?? el;
+        }
+        // A mid-drag layout change may have moved the dragged window's
+        // RESTING position (e.g. a server update). The transform is relative
+        // to rest, so re-baseline against the freshly rendered offsets --
+        // otherwise the window rides at a stale offset from the cursor for
+        // the remainder of the drag. (offsetLeft/Top ignore the transform.)
+        restingLeft = el.offsetLeft;
+        restingTop = el.offsetTop;
       }
       // Off-screen panels are allowed (the body may overflow the right/bottom),
       // but we keep the top-left corner within the container so the handle is
@@ -644,11 +649,13 @@ export function DockManager({
         restoreCursor();
         showHint(null);
         setDraggingGroupId(null);
+        draggingWindowIdRef.current = null;
         resetLeafPreview();
         if (cancelled) {
           // A deferred-float drag already committed its float op; put the
-          // pre-drag layout back so Escape really means "never mind".
-          if (restoreOnCancel !== undefined) applyOp(restoreOnCancel);
+          // pre-drag layout back so Escape really means "never mind" --
+          // including region widths, which the snapshot carries.
+          if (restoreOnCancel !== undefined) restoreLayout(restoreOnCancel);
           return;
         }
 
@@ -719,8 +726,38 @@ export function DockManager({
       el.style.opacity = "";
       restoreSelect();
       restoreCursor();
+      draggingWindowIdRef.current = null;
       if (raf !== null) cancelAnimationFrame(raf);
     };
+  };
+
+  /** Run a drag whose gesture COMMITS layout ops up front (float a group or
+   * column, tear out a tab, expand-then-drag). Pairs the commit with its
+   * Escape-restore snapshot BY CONSTRUCTION: the snapshot is taken here,
+   * before `commit` runs, so no call site can commit without one. `commit`
+   * applies its ops (flushed where the new window's DOM must exist) and
+   * returns the drag parameters, or null to abort (nothing committed). */
+  const dragAfterCommit = (
+    e: PointerEvent,
+    commit: () => {
+      windowId: WindowId;
+      groupIdForDim: GroupId | null;
+      grabX: number;
+      grabY: number;
+    } | null,
+  ) => {
+    const before = layoutRef.current;
+    const params = commit();
+    if (params === null) return;
+    beginWindowDrag(
+      params.windowId,
+      params.groupIdForDim,
+      e.pointerId,
+      e.pointerType,
+      params.grabX,
+      params.grabY,
+      before,
+    );
   };
 
   // --- Deferred drags (float/tear, then drag the new window) -------------
@@ -810,19 +847,24 @@ export function DockManager({
     event,
     windowId,
   ) => {
-    const win = layoutRef.current.floating.find((w) => w.id === windowId);
-    if (win === undefined) return;
-    const crect = containerRect();
-    const grabX = event.clientX - crect.left - win.x;
-    const grabY = event.clientY - crect.top - win.y;
+    if (layoutRef.current.floating.every((w) => w.id !== windowId)) return;
+    // Press-time POINTER coordinates, but the window's CURRENT model position
+    // at drag start: the window may move between press and the drag threshold
+    // (container-resize anchoring), and offsets frozen against the press-time
+    // position would teleport it back on the first drag frame.
+    const pressX = event.clientX;
+    const pressY = event.clientY;
     armPress(event, (e) => {
+      const win = layoutRef.current.floating.find((w) => w.id === windowId);
+      if (win === undefined) return;
+      const crect = containerRect();
       beginWindowDrag(
         windowId,
         null,
         e.pointerId,
         e.pointerType,
-        grabX,
-        grabY,
+        pressX - crect.left - win.x,
+        pressY - crect.top - win.y,
       );
     });
   };
@@ -839,21 +881,45 @@ export function DockManager({
     const loc = ops.findGroupLocation(layoutRef.current, groupId);
     // A group alone in its floating window just moves that window on drag.
     if (loc?.kind === "floating") {
-      const win = layoutRef.current.floating.find((w) => w.id === loc.windowId);
-      if (win !== undefined && win.stack.length === 1) {
-        const crect = containerRect();
-        const grabX = event.clientX - crect.left - win.x;
-        const grabY = event.clientY - crect.top - win.y;
+      const win0 = layoutRef.current.floating.find(
+        (w) => w.id === loc.windowId,
+      );
+      if (win0 !== undefined && win0.stack.length === 1) {
+        const windowId = win0.id;
+        // Press-time pointer, drag-start model position (see startWindowDrag).
+        const pressX = event.clientX;
+        const pressY = event.clientY;
         armPress(
           event,
           (e) => {
-            // A drag from the expand (+) button tears out the FULL panel:
-            // expand first (flushed so the window height renders), then drag.
-            if (expandOnDrag)
-              flushSync(() =>
-                applyOp(ops.expandGroup(layoutRef.current, groupId)),
+            const win = layoutRef.current.floating.find(
+              (w) => w.id === windowId,
+            );
+            if (win === undefined) return;
+            const crect = containerRect();
+            const grabX = pressX - crect.left - win.x;
+            const grabY = pressY - crect.top - win.y;
+            if (expandOnDrag) {
+              // A drag from the expand (+) button tears out the FULL panel:
+              // expand first (flushed so the window height renders), then
+              // drag. The expand is an up-front COMMIT, so it goes through
+              // dragAfterCommit and Escape restores the minimized state.
+              dragAfterCommit(e, () => {
+                flushSync(() =>
+                  applyOp(ops.expandGroup(layoutRef.current, groupId)),
+                );
+                return { windowId, groupIdForDim: null, grabX, grabY };
+              });
+            } else {
+              beginWindowDrag(
+                windowId,
+                null,
+                e.pointerId,
+                e.pointerType,
+                grabX,
+                grabY,
               );
-            beginWindowDrag(win.id, null, e.pointerId, e.pointerType, grabX, grabY);
+            }
           },
           onClick,
         );
@@ -861,48 +927,44 @@ export function DockManager({
       }
     }
     armPress(event, (e) => {
-      const rect = floatRectFor(`[data-dock-group="${groupId}"]`);
-      // A panel whose body is a full-bleed nested area needs a definite height
-      // to fill (it collapses to 0 in an auto-height window). Give the undocked
-      // window the panel's current rendered height in that case; ordinary panels
-      // keep auto-height (content-sized) as before.
-      const needsHeight = (
-        layoutRef.current.groups[groupId]?.panelIds ?? []
-      ).some((p) => panels[p]?.fullBleed === true);
-      const before = layoutRef.current;
-      const res = ops.floatGroup(
-        layoutRef.current,
-        groupId,
-        rect.x,
-        rect.y,
-        rect.width,
-        needsHeight ? rect.height : undefined,
-      );
-      // Null only for an area's backing group, which no UI surface offers a
-      // group-drag for; bail rather than drag a window that doesn't exist.
-      if (res.windowId === null) return;
-      // applyOp reconciles region widths: undocking this column removes it from
-      // the region's column set, so siblings keep their widths and the region
-      // shrinks by the removed column's width. A drag from the expand (+)
-      // button floats the panel EXPANDED -- dragging it should produce a full
-      // panel, not a minimized stub.
-      flushSync(() =>
-        applyOp(
-          expandOnDrag
-            ? ops.expandGroup(res.layout, groupId)
-            : res.layout,
-        ),
-      );
-      const crect = containerRect();
-      beginWindowDrag(
-        res.windowId,
-        groupId,
-        e.pointerId,
-        e.pointerType,
-        e.clientX - crect.left - rect.x,
-        e.clientY - crect.top - rect.y,
-        before,
-      );
+      dragAfterCommit(e, () => {
+        const rect = floatRectFor(`[data-dock-group="${groupId}"]`);
+        // A panel whose body is a full-bleed nested area needs a definite
+        // height to fill (it collapses to 0 in an auto-height window). Give
+        // the undocked window the panel's current rendered height in that
+        // case; ordinary panels keep auto-height (content-sized) as before.
+        const needsHeight = (
+          layoutRef.current.groups[groupId]?.panelIds ?? []
+        ).some((p) => panels[p]?.fullBleed === true);
+        const res = ops.floatGroup(
+          layoutRef.current,
+          groupId,
+          rect.x,
+          rect.y,
+          rect.width,
+          needsHeight ? rect.height : undefined,
+        );
+        // Null only for an area's backing group, which no UI surface offers a
+        // group-drag for; bail rather than drag a window that doesn't exist.
+        if (res.windowId === null) return null;
+        // applyOp reconciles region widths: undocking this column removes it
+        // from the region's column set, so siblings keep their widths and the
+        // region shrinks by the removed column's width. A drag from the
+        // expand (+) button floats the panel EXPANDED -- dragging it should
+        // produce a full panel, not a minimized stub.
+        flushSync(() =>
+          applyOp(
+            expandOnDrag ? ops.expandGroup(res.layout, groupId) : res.layout,
+          ),
+        );
+        const crect = containerRect();
+        return {
+          windowId: res.windowId,
+          groupIdForDim: groupId,
+          grabX: e.clientX - crect.left - rect.x,
+          grabY: e.clientY - crect.top - rect.y,
+        };
+      });
     }, onClick);
   };
 
@@ -912,35 +974,35 @@ export function DockManager({
     columnNodeId,
   ) => {
     armPress(event, (e) => {
-      // Measure the COLUMN wrapper (not the 1em handle): floatRectFor clamps
-      // width/height into sane floating ranges, same as a group undock.
-      const rect = floatRectFor(`[data-dock-column="${columnNodeId}"]`);
-      const before = layoutRef.current;
-      const res = ops.floatColumn(
-        layoutRef.current,
-        edge,
-        columnNodeId,
-        rect.x,
-        rect.y,
-        rect.width,
-        rect.height,
-      );
-      // Null when the column was restructured under us or isn't a pure
-      // column anymore; just don't drag.
-      if (res.windowId === null) return;
-      // applyOp reconciles region widths: removing this column from the
-      // edge's column set lets survivors keep their px and shrinks the region.
-      flushSync(() => applyOp(res.layout));
-      const crect = containerRect();
-      beginWindowDrag(
-        res.windowId,
-        null, // no single origin group to dim; the whole column left the tree.
-        e.pointerId,
-        e.pointerType,
-        e.clientX - crect.left - rect.x,
-        e.clientY - crect.top - rect.y,
-        before,
-      );
+      dragAfterCommit(e, () => {
+        // Measure the COLUMN wrapper (not the 1em handle): floatRectFor clamps
+        // width/height into sane floating ranges, same as a group undock.
+        const rect = floatRectFor(`[data-dock-column="${columnNodeId}"]`);
+        const res = ops.floatColumn(
+          layoutRef.current,
+          edge,
+          columnNodeId,
+          rect.x,
+          rect.y,
+          rect.width,
+          rect.height,
+        );
+        // Null when the column was restructured under us or isn't a pure
+        // column anymore; just don't drag.
+        if (res.windowId === null) return null;
+        // applyOp reconciles region widths: removing this column from the
+        // edge's column set lets survivors keep their px and shrinks the
+        // region.
+        flushSync(() => applyOp(res.layout));
+        const crect = containerRect();
+        return {
+          // No single origin group to dim; the whole column left the tree.
+          windowId: res.windowId,
+          groupIdForDim: null,
+          grabX: e.clientX - crect.left - rect.x,
+          grabY: e.clientY - crect.top - rect.y,
+        };
+      });
     });
   };
 
@@ -1035,55 +1097,56 @@ export function DockManager({
 
     const tearOut = (e: PointerEvent) => {
       cleanup();
-      const src = floatRectFor(`[data-dock-group="${groupId}"]`);
-      const before = layoutRef.current;
-      const res = ops.tearOutPanel(
-        layoutRef.current,
-        groupId,
-        panelId,
-        src.x,
-        src.y,
-        src.width,
-      );
-      flushSync(() => applyOp(res.layout));
+      dragAfterCommit(e, () => {
+        const src = floatRectFor(`[data-dock-group="${groupId}"]`);
+        const res = ops.tearOutPanel(
+          layoutRef.current,
+          groupId,
+          panelId,
+          src.x,
+          src.y,
+          src.width,
+        );
+        flushSync(() => applyOp(res.layout));
 
-      // Anchor the new window so the cursor lands on its tab strip. Unlike a
-      // group drag (which floats on the first 3px of motion), a tear-out only
-      // triggers after the pointer has left the strip, so we can't reuse the
-      // accumulated offset -- re-measure the new window's strip and reposition.
-      const crect = containerRect();
-      const winEl = containerRef.current?.querySelector<HTMLElement>(
-        `[data-floating-window="${res.windowId}"]`,
-      );
-      let grabX = 40;
-      let grabY = 18;
-      if (winEl != null) {
-        const winRect = winEl.getBoundingClientRect();
-        grabX = Math.min(40, winRect.width / 2);
-        const stripEl2 = winEl.querySelector<HTMLElement>("[data-dock-strip]");
-        if (stripEl2 != null) {
-          const sRect = stripEl2.getBoundingClientRect();
-          grabY = sRect.top - winRect.top + sRect.height / 2;
-        } else {
-          // Strip not found (defensive): anchor within the window's actual
-          // height rather than a fixed 18px that may overshoot a short window.
-          grabY = Math.min(18, winRect.height / 2);
+        // Anchor the new window so the cursor lands on its tab strip. Unlike
+        // a group drag (which floats on the first 3px of motion), a tear-out
+        // only triggers after the pointer has left the strip, so we can't
+        // reuse the accumulated offset -- re-measure the new window's strip
+        // and reposition.
+        const crect = containerRect();
+        const winEl = containerRef.current?.querySelector<HTMLElement>(
+          `[data-floating-window="${res.windowId}"]`,
+        );
+        let grabX = 40;
+        let grabY = 18;
+        if (winEl != null) {
+          const winRect = winEl.getBoundingClientRect();
+          grabX = Math.min(40, winRect.width / 2);
+          const stripEl2 =
+            winEl.querySelector<HTMLElement>("[data-dock-strip]");
+          if (stripEl2 != null) {
+            const sRect = stripEl2.getBoundingClientRect();
+            grabY = sRect.top - winRect.top + sRect.height / 2;
+          } else {
+            // Strip not found (defensive): anchor within the window's actual
+            // height rather than a fixed 18px that may overshoot a short
+            // window.
+            grabY = Math.min(18, winRect.height / 2);
+          }
         }
-      }
-      const newX = e.clientX - crect.left - grabX;
-      const newY = e.clientY - crect.top - grabY;
-      flushSync(() =>
-        applyOp(ops.moveWindow(layoutRef.current, res.windowId, newX, newY)),
-      );
-      beginWindowDrag(
-        res.windowId,
-        res.floatingGroupId,
-        e.pointerId,
-        e.pointerType,
-        grabX,
-        grabY,
-        before,
-      );
+        const newX = e.clientX - crect.left - grabX;
+        const newY = e.clientY - crect.top - grabY;
+        flushSync(() =>
+          applyOp(ops.moveWindow(layoutRef.current, res.windowId, newX, newY)),
+        );
+        return {
+          windowId: res.windowId,
+          groupIdForDim: res.floatingGroupId,
+          grabX,
+          grabY,
+        };
+      });
     };
 
     const apply = () => {
@@ -1412,7 +1475,9 @@ export function DockManager({
                     const plan = planRegion(tree0, layout0.groups);
                     const cols = plan.expandedColumns;
                     if (cols.length === 0) return () => {};
-                    const startRegion = regionWidthRef.current[edge];
+                    const startRegion = regionWidthsOf(layoutRef.current)[
+                      edge
+                    ];
                     // Weights are pixels for side-by-side columns (the
                     // reconciler wrote them); a single surfaced column's px
                     // is the regionWidth itself (its weight may be a height).
@@ -1435,17 +1500,18 @@ export function DockManager({
                       const total = widths.reduce((a, b) => a + b, 0);
                       // Only rewrite weights for genuinely side-by-side
                       // columns; a single surfaced column may be a vertical
-                      // child whose weight is a HEIGHT (see applyOp).
+                      // child whose weight is a HEIGHT (see applyOp). The
+                      // total goes through the setRegionWidth op so the model
+                      // stays the single source of truth for the width.
+                      let next = layoutRef.current;
                       if (!plan.singleColumn) {
                         const byId: Record<string, number> = {};
                         ids.forEach((id, i) => {
                           byId[id] = widths[i];
                         });
-                        applyOp(
-                          ops.setNodeWeights(layoutRef.current, edge, byId),
-                        );
+                        next = ops.setNodeWeights(next, edge, byId);
                       }
-                      setRegionWidth((prev) => ({ ...prev, [edge]: total }));
+                      applyOp(ops.setRegionWidth(next, edge, total));
                     };
                   }}
                 />

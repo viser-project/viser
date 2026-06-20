@@ -63,15 +63,15 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     (id) => dock.groups[id]?.collapsed === true,
   );
   const fixedHeight = win.height !== undefined && !collapsed;
-  // A pinned height is capped to the container so the bottom resize grip stays
-  // reachable when the browser window shrinks below the saved height (the
-  // groups inside scroll). Floored at MIN_HEIGHT_PX for tiny containers.
+  // A pinned height is capped to the container so the window stays usable when
+  // the browser shrinks below the saved height (the groups inside scroll).
+  // Deliberately independent of win.y: moving a window must never change its
+  // size, so a pinned-height window dragged low simply overhangs the bottom
+  // edge -- exactly like an auto-height window does. Floored at MIN_HEIGHT_PX
+  // for tiny containers.
   const renderedHeight =
     win.height !== undefined && containerHeight > 0
-      ? Math.min(
-          win.height,
-          Math.max(MIN_HEIGHT_PX, containerHeight - win.y - 8),
-        )
+      ? Math.min(win.height, Math.max(MIN_HEIGHT_PX, containerHeight - 8))
       : win.height;
 
   // Animate collapse/expand by FLIP-ing the window height: each render notes
@@ -119,20 +119,32 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     prevHeightRef.current = target;
     if (start === null || Math.abs(start - target) < 1) return;
     if (prefersReducedMotion()) return;
+    // ONE WRITER PER STYLE PROPERTY: React owns `height` (it renders the
+    // pinned renderedHeight), so the animation drives min-height/max-height
+    // -- properties React never writes on the Paper. Pinning both forces the
+    // box through the transition in either direction, and clearing them on
+    // cancel hands control back cleanly BY CONSTRUCTION: there is no React
+    // style-cache entry for them to disagree with. (Animating `height` here
+    // and "handing it back" by clearing the inline value left the window at
+    // 0px: React's cache still held the old height, so it never re-wrote it.)
     p.style.transition = "none";
-    p.style.height = `${start}px`;
+    p.style.minHeight = `${start}px`;
+    p.style.maxHeight = `${start}px`;
     void p.offsetHeight; // force a reflow so the start height takes effect
-    p.style.transition = "height 180ms ease";
-    p.style.height = `${target}px`;
+    p.style.transition = "min-height 180ms ease, max-height 180ms ease";
+    p.style.minHeight = `${target}px`;
+    p.style.maxHeight = `${target}px`;
     const cancel = () => {
       flipCancelRef.current = null;
       p.style.transition = "";
-      p.style.height = ""; // hand height back to React (matches `target`)
+      p.style.minHeight = "";
+      p.style.maxHeight = "";
       p.removeEventListener("transitionend", onEnd);
     };
     const onEnd = (e: TransitionEvent) => {
-      // Child transitions bubble; only our own height transition ends the FLIP.
-      if (e.target === p) cancel();
+      // Child transitions bubble; only our own animation ends the FLIP (both
+      // pinned properties finish together -- listen for one of them).
+      if (e.target === p && e.propertyName === "max-height") cancel();
     };
     flipCancelRef.current = cancel;
     p.addEventListener("transitionend", onEnd);

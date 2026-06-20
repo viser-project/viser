@@ -18,8 +18,10 @@ import {
   WindowId,
 } from "./types";
 
-/** Default width of a freshly-created docked region. */
-export const DEFAULT_REGION_PX = 300;
+// Re-exported for existing consumers; the constant lives in types.ts now that
+// the region width is part of the layout MODEL (DockLayout.regionWidth).
+export { DEFAULT_REGION_PX } from "./types";
+import { DEFAULT_REGION_PX } from "./types";
 // Screen-edge zone width (only active on an empty edge).
 const EDGE_ZONE_PX = 48;
 // Thin band at a docked region's outer top/bottom edge -> full-span row above/
@@ -120,6 +122,31 @@ export interface ContainerRect {
 
 export const inside = (r: DOMRect, x: number, y: number) =>
   x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+
+/** Whether a pointer hits a drop target.
+ *
+ * Normally just `inside(hitRect ?? rect)`. The one wrinkle is a nested area's
+ * inset `hitRect`: a full-bleed area's body is inset on the left/right/bottom
+ * so its frame falls through to the HOST panel's edge zones -- but the area's
+ * tab STRIP spans the area's full width, with the first/last tabs flush at the
+ * left/right edges. So the strip band must use the FULL width: otherwise the
+ * horizontal inset slices the leftmost/rightmost tabs' insert zones at the top
+ * corners and they become undroppable (the drop falls through to the host).
+ * The body keeps the inset. */
+export const hitsTarget = (t: GroupTarget, x: number, y: number): boolean => {
+  if (
+    t.hitRect !== undefined &&
+    t.ctx.kind === "area" &&
+    t.stripRect !== null &&
+    y >= t.stripRect.top &&
+    y <= t.stripRect.bottom &&
+    x >= t.rect.left &&
+    x <= t.rect.right
+  ) {
+    return true;
+  }
+  return inside(t.hitRect ?? t.rect, x, y);
+};
 
 /** Resolve a tab insertion for a pointer over a strip. Uses the nearest tab
  * (2D), not just horizontal position, so it works when the tabs wrap onto
@@ -306,9 +333,7 @@ export function hitTest(
   // the one painted underneath).
   let g: GroupTarget | undefined;
   for (const t of targets.groups) {
-    // Hit-test against hitRect (an inset frame for full-bleed areas) when given,
-    // but everything below still sizes hints from the full `rect`.
-    if (inside(t.hitRect ?? t.rect, clientX, clientY)) g = t;
+    if (hitsTarget(t, clientX, clientY)) g = t;
   }
   if (g === undefined) return null;
   const r = g.rect;

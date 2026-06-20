@@ -172,13 +172,15 @@ def group_id_for_panel(page: Page, panel_id: str) -> str:
 
 
 def floating_window_for_panel(page: Page, panel_id: str) -> dict | None:
+    """The full FloatingWindow model object holding `panel_id`, or None.
+    (Note: a `height` key is absent for auto-height windows.)"""
     return page.evaluate(
         """(pid) => {
             const l = window.__dockLayout;
             for (const win of l.floating) {
                 for (const gid of win.stack) {
                     if (l.groups[gid]?.panelIds.includes(pid))
-                        return { id: win.id, x: win.x, y: win.y };
+                        return { ...win };
                 }
             }
             return null;

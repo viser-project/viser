@@ -628,6 +628,38 @@ describe("area target", () => {
     expect(out.result).toEqual({ kind: "merge", targetGroupId: "area" });
   });
 
+  it("inset hitRect: the leftmost tab is still droppable over the strip", () => {
+    // regression: a full-bleed area's hitRect is inset on the left/right/bottom
+    // (so its frame falls through to the host). The left inset used to slice
+    // the leftmost tab's "insert before" zone, so dropping as the FIRST tab was
+    // impossible (it fell through to the host). The strip must use full width.
+    const INSET = 40;
+    const t = areaTarget();
+    t.hitRect = rect(
+      frame.left + INSET,
+      frame.top,
+      frame.width - 2 * INSET,
+      frame.height - INSET,
+    );
+    // Pointer over the LEFT half of tab 0, inside the inset band (x < left+40).
+    const out = run(layout, [t], frame.left + 10, frame.top + STRIP_OFFSET + 15)!;
+    expect(out.result).toEqual({
+      kind: "insertTab",
+      targetGroupId: "area",
+      index: 0,
+    });
+    // And the rightmost edge of the strip (after the last tab) still inserts.
+    const right = run(layout, [t], frame.right - 5, frame.top + STRIP_OFFSET + 15)!;
+    expect(right.result).toEqual({
+      kind: "insertTab",
+      targetGroupId: "area",
+      index: 2,
+    });
+    // The BODY keeps the inset: a far-left point below the strip is NOT the
+    // area (falls through -- here there's no other target, so null).
+    expect(run(layout, [t], frame.left + 10, 400)).toBeNull();
+  });
+
   it("an EMPTY area (stripRect null, no tabs) -> merge anywhere in the frame", () => {
     const empty = areaTarget({ stripRect: null, tabs: [] });
     // Anywhere inside the frame resolves to merge -- the empty area is one big

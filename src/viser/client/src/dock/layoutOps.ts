@@ -2,9 +2,9 @@
 //
 // Every exported op takes a layout and returns a *new* layout, leaving the
 // input untouched. The layout is plain serializable data (no React nodes), so
-// we clone with structuredClone and mutate the copy -- simpler and less
-// error-prone than threading immutable updates through the split tree, and
-// cheap because layouts are small.
+// we deep-clone and mutate the copy -- simpler and less error-prone than
+// threading immutable updates through the split tree, and cheap because
+// layouts are small.
 
 import {
   AreaId,
@@ -22,13 +22,36 @@ import {
   NodeId,
   PanelId,
   PanelRegistry,
+  regionWidthsOf,
   SPLIT_DIVIDER_PX,
   TabGroup,
   WindowId,
 } from "./types";
 import { freshId } from "./gestures";
 
-const clone = <T>(value: T): T => structuredClone(value);
+// A typed recursive deep-clone, ~10x faster than structuredClone for the
+// layout's plain JSON-ish shape (objects/arrays/numbers/strings/booleans --
+// no Dates/Maps/Sets/functions/RegExp, guaranteed by DockLayout being the
+// serialization contract). Copies only present own-enumerable keys, so an
+// absent optional field (height, regionWidth, stackWeights, collapsed, ...)
+// stays absent rather than materializing as `undefined` -- the same
+// absent-vs-undefined semantics structuredClone preserves and that width
+// reconciliation / persistence rely on.
+const clone = <T>(value: T): T => {
+  if (Array.isArray(value)) {
+    return (value as unknown[]).map(clone) as unknown as T;
+  }
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const key in value as Record<string, unknown>) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        out[key] = clone((value as Record<string, unknown>)[key]);
+      }
+    }
+    return out as T;
+  }
+  return value;
+};
 
 // ---------------------------------------------------------------------------
 // Tree helpers (operate on cloned nodes; return new nodes).
@@ -1212,6 +1235,21 @@ export function setNodeWeights(
     if (node.type === "split") node.children.forEach(apply);
   };
   apply(draft.docked[edge]!);
+  return draft;
+}
+
+/** Set an edge's region width (px) directly -- the region resizer's write
+ * path. The value becomes the carry-over base for width reconciliation on
+ * commit (which still enforces its min/max invariants). */
+export function setRegionWidth(
+  layout: DockLayout,
+  edge: DockEdge,
+  px: number,
+): DockLayout {
+  if (!Number.isFinite(px) || regionWidthsOf(layout)[edge] === px)
+    return layout;
+  const draft = clone(layout);
+  draft.regionWidth = { ...regionWidthsOf(layout), [edge]: px };
   return draft;
 }
 

@@ -1,13 +1,21 @@
 // Region-width reconciliation across layout ops: keeps docked panels at their
 // pixel widths when the layout's STRUCTURE changes. Pure except for mutating
-// `next`'s top-column weights (the caller owns `next`, a fresh draft).
+// `next` (the caller owns it, a fresh draft): top-column weights may be
+// rewritten to pixels, and `next.regionWidth` is always (re)written.
 //
 // Width model: a region's width-determining columns store their EXPANDED
-// pixel widths as tree weights, and `regionWidth[edge]` is the sum over the
-// EXPANDED columns only. Fully-minimized columns keep their preserved pixel
-// width in their weight (it's what they get back on expand) but render as
-// fixed MINIMIZED_STRIP_PX strips that sit ON TOP of regionWidth -- so resize
-// math and the rendered layout agree, and resizing never touches a strip.
+// pixel widths as tree weights, and `layout.regionWidth[edge]` is the sum
+// over the EXPANDED columns only. Fully-minimized columns keep their
+// preserved pixel width in their weight (it's what they get back on expand)
+// but render as fixed MINIMIZED_STRIP_PX strips that sit ON TOP of
+// regionWidth -- so resize math and the rendered layout agree, and resizing
+// never touches a strip.
+//
+// The width lives IN the layout (DockLayout.regionWidth), so it has one
+// source of truth: clones carry it through every op, snapshots restore it,
+// and this reconciliation -- run on every applyOp commit -- is the only
+// writer. Layouts that bypassed the ops (test literals, injected layouts)
+// simply lack the field and get defaults here.
 
 import {
   collectLeafGroups,
@@ -15,18 +23,17 @@ import {
   minRegionWidth,
   widthColumns,
 } from "./layoutOps";
-import { planRegion } from "./regionPlan";
+import { planRegion, RegionPlan } from "./regionPlan";
 import {
   clamp,
+  DEFAULT_REGION_PX,
   DockEdge,
   DockLayout,
   DockNode,
   MIN_PANEL_WIDTH_PX,
+  regionWidthsOf,
   SPLIT_DIVIDER_PX,
 } from "./types";
-import { DEFAULT_REGION_PX } from "./hitTest";
-
-export type RegionWidths = { left: number; right: number };
 
 const DIVIDER_PX = SPLIT_DIVIDER_PX;
 
@@ -48,7 +55,9 @@ function colsMax(cols: DockNode[]): number {
   );
 }
 
-/** Reconcile docked region widths across a layout transition.
+/** Reconcile docked region widths across a layout transition, writing the
+ * result into `next.regionWidth` (and, for structural changes, into the
+ * top columns' weights).
  *
  * - When a region's SET of width-determining columns changes (dock/undock/
  *   merge/unmerge/snap/split), the column weights are rewritten to absolute
@@ -59,21 +68,21 @@ function colsMax(cols: DockNode[]): number {
  *   pixel weights: a column entering minimization leaves the sum (its strip
  *   renders on top); one expanding rejoins at its preserved width.
  * - Pure-internal changes (resize, reorder, floating moves) leave both the
- *   column set and the pattern alone, so widths are untouched.
- *
- * Mutates `next.docked` column weights in place; returns the next region
- * widths plus whether any region changed. */
-export function reconcileRegionWidths(
-  prev: DockLayout,
-  next: DockLayout,
-  prevWidths: RegionWidths,
-): { widths: RegionWidths; changed: boolean } {
-  const nextRW = { ...prevWidths };
-  let changed = false;
+ *   column set and the pattern alone, so widths carry over untouched. An op
+ *   that deliberately wrote `next.regionWidth` (setRegionWidth) is trusted:
+ *   its value is the carry-over base.
+ * - INVARIANT, enforced on every commit: regionWidth is never below the
+ *   expanded columns' summed minimum (so docking a panel into a region grows
+ *   it instead of squeezing panels below their per-panel minimum). */
+export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void {
+  // Carry-over base: the op's own value when it set one (clones inherit
+  // prev's, so a differing value is a deliberate write), else prev's.
+  const nextRW = regionWidthsOf(next.regionWidth !== undefined ? next : prev);
+  const prevRW = regionWidthsOf(prev);
 
   (["left", "right"] as DockEdge[]).forEach((edge) => {
     const nextTree = next.docked[edge];
-    if (nextTree === null) return;
+    if (nextTree === null) return; // empty edge: keep the width for restore.
     const prevTree = prev.docked[edge];
     // Use the WIDTH-determining horizontal columns, not the literal top-level
     // columns. They differ when the root is a column (stacked) split -- e.g.
@@ -101,19 +110,19 @@ export function reconcileRegionWidths(
         prevPlan === null ||
         prevPlan.isStrip.length !== nextPlan.isStrip.length ||
         prevPlan.isStrip.some((s, i) => s !== nextPlan.isStrip[i]);
-      if (!patternChanged || nextPlan.singleColumn) return;
-      const expanded = nextPlan.expandedColumns;
-      if (expanded.length === 0) return; // fully minimized: keep for restore.
-      const sum = expanded.reduce((s, c) => s + c.weight, 0);
-      const clamped = clamp(
-        sum,
-        colsMin(expanded),
-        Math.max(MIN_PANEL_WIDTH_PX, colsMax(expanded)),
-      );
-      if (clamped !== nextRW[edge]) {
-        nextRW[edge] = clamped;
-        changed = true;
+      if (patternChanged && !nextPlan.singleColumn) {
+        const expanded = nextPlan.expandedColumns;
+        if (expanded.length > 0) {
+          // Fully minimized would keep the width for restore; otherwise:
+          const sum = expanded.reduce((s, c) => s + c.weight, 0);
+          nextRW[edge] = clamp(
+            sum,
+            colsMin(expanded),
+            Math.max(MIN_PANEL_WIDTH_PX, colsMax(expanded)),
+          );
+        }
       }
+      applyMinFloor(nextRW, edge, nextPlan);
       return;
     }
 
@@ -128,11 +137,11 @@ export function reconcileRegionWidths(
     const prevInfo = prevCols.map((c) => ({
       groups: new Set(collectLeafGroups(c)),
       // Weights ARE pixels once a region has multiple columns (this function
-      // wrote them); a single expanded column's px lives in the regionWidth
-      // state instead (its weight may be a height -- see below).
+      // wrote them); a single expanded column's px lives in regionWidth
+      // instead (its weight may be a height -- see below).
       px:
         prevExpanded.length === 1 && prevExpanded[0] === c
-          ? prevWidths[edge]
+          ? prevRW[edge]
           : c.weight,
       used: false,
     }));
@@ -149,7 +158,15 @@ export function reconcileRegionWidths(
         // pixel width isn't automatically still legal for it.
         return clamp(match.px, minRegionWidth(c), maxRegionWidth(c));
       }
-      // New column: a sensible default, clamped to its panels' min/max.
+      // New column, previously EMPTY edge: the edge's preserved regionWidth
+      // IS this content's width -- e.g. a layout snapshot being restored
+      // (Escape after an undock), where the carried width must round-trip
+      // exactly rather than reset to the default.
+      if (prevCols.length === 0 && nextCols.length === 1) {
+        return clamp(nextRW[edge], minRegionWidth(c), maxRegionWidth(c));
+      }
+      // New column joining existing content: a sensible default, clamped to
+      // its panels' min/max.
       return clamp(DEFAULT_REGION_PX, minRegionWidth(c), maxRegionWidth(c));
     });
     // Set the columns' weights to their pixel widths so each renders at
@@ -185,8 +202,23 @@ export function reconcileRegionWidths(
             Math.max(MIN_PANEL_WIDTH_PX, colsMax(expandedCols)),
           )
         : summed;
-    changed = true;
+    applyMinFloor(nextRW, edge, nextPlan);
   });
 
-  return { widths: nextRW, changed };
+  next.regionWidth = nextRW;
+}
+
+/** The on-every-commit invariant: an edge's width is never below its expanded
+ * columns' summed minimum. Subsumes the old auto-grow effect (which watched
+ * for this after the fact) -- with the floor applied here, a too-narrow
+ * region is unrepresentable in committed state. */
+function applyMinFloor(
+  rw: Record<DockEdge, number>,
+  edge: DockEdge,
+  plan: RegionPlan,
+): void {
+  const expanded = plan.expandedColumns;
+  if (expanded.length === 0) return; // fully minimized: width kept for restore.
+  const min = colsMin(expanded);
+  if (rw[edge] < min) rw[edge] = min;
 }
