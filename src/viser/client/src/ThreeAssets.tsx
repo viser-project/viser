@@ -12,6 +12,7 @@ import {
 import { BatchedMeshHoverOutlines } from "./mesh/BatchedMeshHoverOutlines";
 import { MeshBasicMaterial } from "three";
 import { normalizeScale } from "./utils/normalizeScale";
+import { syncPointCloudGeometry } from "./utils/pointCloudGeometry";
 // @ts-ignore - troika-three-text doesn't have type definitions
 import { Text as TroikaText } from "troika-three-text";
 import { BatchedLabelManagerContext } from "./BatchedLabelManagerContext";
@@ -108,28 +109,11 @@ export const PointCloud = React.forwardRef<
   React.useLayoutEffect(() => {
     const geom = geomRef.current;
     if (!geom) return;
-
-    if (props.points instanceof Float32Array) {
-      geom.setAttribute(
-        "position",
-        new THREE.Float32BufferAttribute(props.points, 3),
-      );
-    } else {
-      geom.setAttribute(
-        "position",
-        new THREE.Float16BufferAttribute(props.points, 3),
-      );
-    }
-
-    // Add color attribute if needed. Colors arrive as Uint8Array.
-    if (props.colors.length > 3) {
-      geom.setAttribute(
-        "color",
-        new THREE.BufferAttribute(props.colors, 3, true),
-      );
-    } else if (props.colors.length < 3) {
-      console.error(`Invalid color buffer length, got ${props.colors.length}`);
-    }
+    // Reuse the existing GPU buffers in place across updates. Replacing
+    // attributes with `setAttribute(new ...)` every update leaks the old buffer;
+    // a same-size swap reuses it; a point-count change reallocates safely. See
+    // syncPointCloudGeometry / syncBufferGeometry.
+    syncPointCloudGeometry(geom, props.points, props.colors);
   }, [props.points, props.colors]);
 
   // Material needs heavy per-frame uniform updates, so kept imperative.
@@ -427,6 +411,13 @@ export const InstancedAxes = React.forwardRef<
   const outlineCylinderGeom = React.useMemo(
     () => new THREE.CylinderGeometry(axes_radius, axes_radius, axes_length, 16),
     [axes_radius, axes_length],
+  );
+  // Dispose the outline geometry when it's replaced (axis dimensions change) or
+  // on unmount. It's consumed by BatchedMeshHoverOutlines, which clones it, so
+  // this original is ours to free.
+  React.useEffect(
+    () => () => outlineCylinderGeom.dispose(),
+    [outlineCylinderGeom],
   );
 
   // Compute transform matrices for each axis (x, y, z).
