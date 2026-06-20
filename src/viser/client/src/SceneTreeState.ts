@@ -85,7 +85,7 @@ function makeDefaultSceneTreeState(): Record<string, SceneNode> {
 export const rootNodeTemplate: SceneNode = makeRootNodeTemplate();
 
 /** Helper functions that operate on the scene tree store */
-function createSceneTreeActions(
+export function createSceneTreeActions(
   store: KeyedStore<SceneNode>,
   nodeRefFromName: { [name: string]: undefined | THREE.Object3D },
   nodePoseData: NodePoseDataMap,
