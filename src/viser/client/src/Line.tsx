@@ -3,6 +3,7 @@
  * But takes typed arrays as input instead of vanilla arrays.
  */
 
+import "./r3f-extend";
 import * as React from "react";
 import * as THREE from "three";
 import { ColorRepresentation } from "three";
@@ -46,67 +47,114 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
       ref,
     ) {
       const size = useThree((state) => state.size);
-      const line2 = React.useMemo(
-        () => (segments ? new LineSegments2() : new Line2()),
-        [segments],
-      );
-      const [lineMaterial] = React.useState(() => new LineMaterial());
-      const itemSize = 3; // We're now always using RGB colors (3 components)
+      const lineRef = React.useRef<Line2 | LineSegments2>(null);
+      const matRef = React.useRef<LineMaterial>(null);
+
+      // Build a fresh geometry per change: reusing one instance and calling
+      // setPositions() in a layout effect intermittently truncates the draw
+      // on LineSegments2. See:
+      //   https://github.com/nerfstudio-project/viser/issues/719
       const lineGeom = React.useMemo(() => {
         const geom = segments ? new LineSegmentsGeometry() : new LineGeometry();
-
-        // points is already a Float32Array of [x,y,z] values
         geom.setPositions(points);
-
         if (vertexColors) {
-          // Convert Uint8Array (0-255) to Float32Array (0-1)
           const normalizedColors = new Float32Array(vertexColors).map(
             (c) => c / 255,
           );
-          color = 0xffffff;
-          geom.setColors(normalizedColors, itemSize);
+          geom.setColors(normalizedColors, 3);
         }
-
         return geom;
-      }, [points, segments, vertexColors, itemSize]);
-
-      React.useLayoutEffect(() => {
-        line2.computeLineDistances();
-      }, [points, line2]);
-
-      React.useLayoutEffect(() => {
-        if (dashed) {
-          lineMaterial.defines.USE_DASH = "";
-        } else {
-          // Setting lineMaterial.defines.USE_DASH to undefined is apparently not sufficient.
-          delete lineMaterial.defines.USE_DASH;
-        }
-        lineMaterial.needsUpdate = true;
-      }, [dashed, lineMaterial]);
+      }, [points, vertexColors, segments]);
 
       React.useEffect(() => {
         return () => {
           lineGeom.dispose();
-          lineMaterial.dispose();
         };
       }, [lineGeom]);
 
-      return (
-        <primitive object={line2} ref={ref} {...rest}>
-          <primitive object={lineGeom} attach="geometry" />
-          <primitive
-            object={lineMaterial}
-            attach="material"
-            color={color}
-            vertexColors={Boolean(vertexColors)}
-            resolution={[size.width, size.height]}
-            linewidth={linewidth ?? lineWidth ?? 1}
-            dashed={dashed}
-            transparent={false} /*need to set to true if itemSize === 4*/
-            {...rest}
-          />
-        </primitive>
+      React.useLayoutEffect(() => {
+        lineRef.current?.computeLineDistances();
+      }, [lineGeom]);
+
+      // Handle dashed defines via ref (can't be expressed as a prop).
+      React.useLayoutEffect(() => {
+        const mat = matRef.current;
+        if (!mat) return;
+        if (dashed) {
+          mat.defines.USE_DASH = "";
+        } else {
+          // Setting lineMaterial.defines.USE_DASH to undefined is apparently not sufficient.
+          delete mat.defines.USE_DASH;
+        }
+        mat.needsUpdate = true;
+      }, [dashed]);
+
+      const effectiveColor = vertexColors ? 0xffffff : color;
+
+      // Merge forwarded ref with internal ref.
+      const setLineRef = React.useCallback(
+        (instance: Line2 | LineSegments2 | null) => {
+          (
+            lineRef as React.MutableRefObject<Line2 | LineSegments2 | null>
+          ).current = instance;
+          if (typeof ref === "function") ref(instance);
+          else if (ref)
+            (ref as { current: Line2 | LineSegments2 | null }).current =
+              instance;
+        },
+        [ref],
       );
+
+      // LineMaterial's trimSegment near-plane estimate assumes standard
+      // depth; under reversed depth (App.tsx) it explodes and lines smear
+      // when the camera is close. Switch the formula on sign(a). Three.js
+      // has an equivalent fix queued for r185
+      // (https://github.com/mrdoob/three.js/pull/33572); drop this patch
+      // once we upgrade to three@>=0.185.
+      const patchLineMaterialShader = React.useCallback(
+        (mat: LineMaterial | null) => {
+          (matRef as React.MutableRefObject<LineMaterial | null>).current = mat;
+          if (!mat) return;
+          mat.onBeforeCompile = (shader) => {
+            shader.vertexShader = shader.vertexShader.replace(
+              "float nearEstimate = - 0.5 * b / a;",
+              "float nearEstimate = ( a > 0.0 ) ? ( - b / ( 1.0 + a ) ) : ( - 0.5 * b / a );",
+            );
+          };
+          mat.needsUpdate = true;
+        },
+        [],
+      );
+
+      // R3F manages lifecycle for all declarative children -- no manual disposal.
+      const materialJsx = (
+        <lineMaterial
+          ref={patchLineMaterialShader}
+          color={effectiveColor}
+          vertexColors={Boolean(vertexColors)}
+          resolution={[size.width, size.height]}
+          linewidth={linewidth ?? lineWidth ?? 1}
+          dashed={dashed ?? false}
+          transparent={false}
+          fog={true}
+        />
+      );
+
+      if (segments) {
+        return (
+          <lineSegments2 ref={setLineRef} {...rest}>
+            <primitive object={lineGeom} attach="geometry" />
+            {materialJsx}
+          </lineSegments2>
+        );
+      } else {
+        return (
+          <line2 ref={setLineRef} {...rest}>
+            <primitive object={lineGeom} attach="geometry" />
+            {materialJsx}
+          </line2>
+        );
+      }
     },
   );
 
@@ -115,28 +163,9 @@ export const LineSegments = React.forwardRef<
   THREE.Group,
   LineSegmentsMessage & { children?: React.ReactNode }
 >(function LineSegments({ props, children }, ref) {
-  // Convert buffer views to typed arrays.
-  const pointsArray = React.useMemo(
-    () =>
-      new Float32Array(
-        props.points.buffer.slice(
-          props.points.byteOffset,
-          props.points.byteOffset + props.points.byteLength,
-        ),
-      ),
-    [props.points],
-  );
-
-  const colorArray = React.useMemo(
-    () =>
-      new Uint8Array(
-        props.colors.buffer.slice(
-          props.colors.byteOffset,
-          props.colors.byteOffset + props.colors.byteLength,
-        ),
-      ),
-    [props.colors],
-  );
+  // Binary arrays arrive as typed views. Use directly, zero copy.
+  const pointsArray = props.points;
+  const colorArray = props.colors;
 
   // Handle uniform color vs per-vertex colors.
   const { color, vertexColors } = React.useMemo(() => {

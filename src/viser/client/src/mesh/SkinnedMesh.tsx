@@ -1,6 +1,6 @@
 import React from "react";
 import * as THREE from "three";
-import { createStandardMaterial } from "./MeshUtils";
+import { ViserStandardMeshMaterial, ShadowSkinnedMesh } from "./MeshUtils";
 import { SkinnedMeshMessage } from "../WebsocketMessages";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
 import { ViewerContext } from "../ViewerContext";
@@ -19,18 +19,6 @@ export const SkinnedMesh = React.forwardRef<
 ) {
   const viewer = React.useContext(ViewerContext)!;
 
-  // Create material based on props.
-  const material = React.useMemo(() => {
-    return createStandardMaterial(message.props);
-  }, [
-    message.props.material,
-    message.props.color,
-    message.props.wireframe,
-    message.props.opacity,
-    message.props.flat_shading,
-    message.props.side,
-  ]);
-
   // Reference to bones for animation updates.
   const bonesRef = React.useRef<THREE.Bone[]>();
 
@@ -38,48 +26,18 @@ export const SkinnedMesh = React.forwardRef<
   const { geometry, skeleton } = React.useMemo(() => {
     // Setup geometry.
     const geometry = new THREE.BufferGeometry();
+    // Vertices and faces arrive as Float32Array / Uint32Array views.
     geometry.setAttribute(
       "position",
-      new THREE.BufferAttribute(
-        new Float32Array(
-          message.props.vertices.buffer.slice(
-            message.props.vertices.byteOffset,
-            message.props.vertices.byteOffset +
-              message.props.vertices.byteLength,
-          ),
-        ),
-        3,
-      ),
+      new THREE.BufferAttribute(message.props.vertices, 3),
     );
-    geometry.setIndex(
-      new THREE.BufferAttribute(
-        new Uint32Array(
-          message.props.faces.buffer.slice(
-            message.props.faces.byteOffset,
-            message.props.faces.byteOffset + message.props.faces.byteLength,
-          ),
-        ),
-        1,
-      ),
-    );
+    geometry.setIndex(new THREE.BufferAttribute(message.props.faces, 1));
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
 
-    // Setup skinned mesh bones.
-    const bone_wxyzs = new Float32Array(
-      message.props.bone_wxyzs.buffer.slice(
-        message.props.bone_wxyzs.byteOffset,
-        message.props.bone_wxyzs.byteOffset +
-          message.props.bone_wxyzs.byteLength,
-      ),
-    );
-    const bone_positions = new Float32Array(
-      message.props.bone_positions.buffer.slice(
-        message.props.bone_positions.byteOffset,
-        message.props.bone_positions.byteOffset +
-          message.props.bone_positions.byteLength,
-      ),
-    );
+    // Bone data arrives as Float32Array views. Use directly.
+    const bone_wxyzs = message.props.bone_wxyzs;
+    const bone_positions = message.props.bone_positions;
 
     const bones: THREE.Bone[] = [];
     bonesRef.current = bones;
@@ -115,31 +73,14 @@ export const SkinnedMesh = React.forwardRef<
     });
     const skeleton = new THREE.Skeleton(bones, boneInverses);
 
+    // skin_indices (Uint16Array) and skin_weights (Float32Array). Zero copy.
     geometry.setAttribute(
       "skinIndex",
-      new THREE.BufferAttribute(
-        new Uint16Array(
-          message.props.skin_indices.buffer.slice(
-            message.props.skin_indices.byteOffset,
-            message.props.skin_indices.byteOffset +
-              message.props.skin_indices.byteLength,
-          ),
-        ),
-        4,
-      ),
+      new THREE.BufferAttribute(message.props.skin_indices, 4),
     );
     geometry.setAttribute(
       "skinWeight",
-      new THREE.BufferAttribute(
-        new Float32Array(
-          message.props.skin_weights!.buffer.slice(
-            message.props.skin_weights!.byteOffset,
-            message.props.skin_weights!.byteOffset +
-              message.props.skin_weights!.byteLength,
-          ),
-        ),
-        4,
-      ),
+      new THREE.BufferAttribute(message.props.skin_weights!, 4),
     );
 
     skeleton.init();
@@ -161,34 +102,26 @@ export const SkinnedMesh = React.forwardRef<
   React.useEffect(() => {
     const state = viewerMutable.skinnedMeshState[message.name];
     state.initialized = false;
+    // The bones for this skeleton (added to the parent node imperatively in
+    // useFrame below). Captured here so the cleanup can remove exactly these on
+    // a skeleton change / unmount -- otherwise a re-added skinned mesh leaks its
+    // old bones into the parent (its child count grows by numBones each update).
+    const addedBones = bonesRef.current;
     return () => {
+      const parentNode = viewerMutable.nodeRefFromName[message.name];
+      if (parentNode !== undefined && addedBones !== undefined) {
+        addedBones.forEach((bone) => parentNode.remove(bone));
+      }
       if (skeleton) skeleton.dispose();
       if (geometry) geometry.dispose();
     };
   }, [skeleton, geometry, message.name, viewerMutable.skinnedMeshState]);
-
-  // Clean up material when it changes.
-  React.useEffect(() => {
-    return () => {
-      if (material) material.dispose();
-    };
-  }, [material]);
 
   // Check if we should render a shadow mesh.
   const shadowOpacity =
     typeof message.props.receive_shadow === "number"
       ? message.props.receive_shadow
       : 0.0;
-
-  // Create shadow material for shadow mesh.
-  const shadowMaterial = React.useMemo(() => {
-    if (shadowOpacity === 0.0) return null;
-    return new THREE.ShadowMaterial({
-      opacity: shadowOpacity,
-      color: 0x000000,
-      depthWrite: false,
-    });
-  }, [shadowOpacity]);
 
   // Update bone transforms for animation.
   useFrame(() => {
@@ -221,26 +154,23 @@ export const SkinnedMesh = React.forwardRef<
     <group ref={ref}>
       <skinnedMesh
         geometry={geometry}
-        material={material}
         skeleton={skeleton}
         scale={normalizeScale(message.props.scale)}
         castShadow={message.props.cast_shadow}
         receiveShadow={message.props.receive_shadow === true}
         frustumCulled={false}
       >
+        <ViserStandardMeshMaterial {...message.props} />
         <OutlinesIfHovered
           enableCreaseAngle={geometry.attributes.position.count < 1024}
         />
-        {shadowMaterial && shadowOpacity > 0 ? (
-          <skinnedMesh
-            geometry={geometry}
-            material={shadowMaterial}
-            skeleton={skeleton}
-            receiveShadow
-            frustumCulled={false}
-          />
-        ) : null}
       </skinnedMesh>
+      <ShadowSkinnedMesh
+        opacity={shadowOpacity}
+        geometry={geometry}
+        skeleton={skeleton}
+        scale={normalizeScale(message.props.scale)}
+      />
       {children}
     </group>
   );

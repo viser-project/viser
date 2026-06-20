@@ -9,7 +9,7 @@ from typing_extensions import override
 
 from . import _base
 from ._so3 import SO3
-from .utils import broadcast_leading_axes, get_epsilon
+from .utils import broadcast_leading_axes, get_epsilon, get_taylor_threshold
 
 
 def _skew(omega: npt.NDArray[np.floating]) -> npt.NDArray[np.floating]:
@@ -124,35 +124,42 @@ class SE3(
         rotation = SO3.exp(tangent[..., 3:])
 
         theta_squared = np.sum(np.square(tangent[..., 3:]), axis=-1)
-        use_taylor = theta_squared < get_epsilon(theta_squared.dtype)
+        # `near_zero` only guards 0/0 in the closed forms; `use_taylor` is the
+        # wider small-angle band for the cancellation-prone (theta - sin)/theta^3
+        # coefficient.
+        near_zero = theta_squared < get_epsilon(theta_squared.dtype)
+        use_taylor = theta_squared < get_taylor_threshold(theta_squared.dtype) ** 2
 
-        # Shim to avoid NaNs in np.where branches, which cause failures for
-        # reverse-mode AD in JAX. This isn't needed for vanilla numpy.
+        # Safe values to avoid NaNs from 0/0 in np.where branches (also needed
+        # for reverse-mode AD in JAX).
         theta_squared_safe = cast(
             np.ndarray,
-            np.where(
-                use_taylor,
-                np.ones_like(theta_squared),  # Any non-zero value should do here.
-                theta_squared,
-            ),
+            np.where(near_zero, np.ones_like(theta_squared), theta_squared),
         )
-        del theta_squared
         theta_safe = np.sqrt(theta_squared_safe)
 
         skew_omega = _skew(tangent[..., 3:])
-        V = np.where(
-            use_taylor[..., None, None],
-            rotation.as_matrix(),
-            (
-                np.eye(3)
-                + ((1.0 - np.cos(theta_safe)) / (theta_squared_safe))[..., None, None]
-                * skew_omega
-                + (
-                    (theta_safe - np.sin(theta_safe))
-                    / (theta_squared_safe * theta_safe)
-                )[..., None, None]
-                * np.einsum("...ij,...jk->...ik", skew_omega, skew_omega)
-            ),
+
+        # coef1 = (1 - cos theta) / theta^2, written as 2 sin^2(theta/2)/theta^2
+        # to avoid the catastrophic cancellation in (1 - cos theta).
+        coef1 = np.where(
+            near_zero,
+            0.5 - theta_squared / 24.0,
+            2.0 * np.sin(theta_safe / 2.0) ** 2 / theta_squared_safe,
+        )
+        # coef2 = (theta - sin theta) / theta^3. (theta - sin theta) cancels for
+        # small theta with no clean closed form, so use a Taylor series across a
+        # wide small-angle band; it's accurate well past `get_taylor_threshold`.
+        coef2 = np.where(
+            use_taylor,
+            1.0 / 6.0 - theta_squared / 120.0 + theta_squared**2 / 5040.0,
+            (theta_safe - np.sin(theta_safe)) / (theta_squared_safe * theta_safe),
+        )
+        V = (
+            np.eye(3)
+            + coef1[..., None, None] * skew_omega
+            + coef2[..., None, None]
+            * np.einsum("...ij,...jk->...ik", skew_omega, skew_omega)
         )
 
         return SE3.from_rotation_and_translation(
@@ -168,40 +175,36 @@ class SE3(
         # > https://github.com/strasdat/Sophus/blob/a0fe89a323e20c42d3cecb590937eb7a06b8343a/sophus/se3.hpp#L223
         omega = self.rotation().log()
         theta_squared = np.sum(np.square(omega), axis=-1)
-        use_taylor = theta_squared < get_epsilon(theta_squared.dtype)
+        # Wide small-angle band for the cancellation-prone skew^2 coefficient.
+        use_taylor = theta_squared < get_taylor_threshold(theta_squared.dtype) ** 2
+        near_zero = theta_squared < get_epsilon(theta_squared.dtype)
 
         skew_omega = _skew(omega)
 
-        # Shim to avoid NaNs in np.where branches, which cause failures for
-        # reverse-mode AD in JAX. This isn't needed for vanilla numpy.
+        # Safe values to avoid NaNs from 0/0 in np.where branches (also needed
+        # for reverse-mode AD in JAX).
         theta_squared_safe = np.where(
-            use_taylor,
+            near_zero,
             np.ones_like(theta_squared),  # Any non-zero value should do here.
             theta_squared,
         )
-        del theta_squared
         theta_safe = np.sqrt(theta_squared_safe)
         half_theta_safe = theta_safe / 2.0
 
-        V_inv = np.where(
-            use_taylor[..., None, None],
+        # skew^2 coefficient: (1 - (theta/2)/tan(theta/2)) / theta^2. The
+        # closed form cancels for small theta (the textbook
+        # 1 - theta cos(theta/2)/(2 sin(theta/2)) rewritten via tan), so use a
+        # Taylor series across the wide small-angle band.
+        skew_sq_coef = np.where(
+            use_taylor,
+            1.0 / 12.0 + theta_squared / 720.0 + theta_squared**2 / 30240.0,
+            (1.0 - half_theta_safe / np.tan(half_theta_safe)) / theta_squared_safe,
+        )
+        V_inv = (
             np.eye(3)
             - 0.5 * skew_omega
-            + np.einsum("...ij,...jk->...ik", skew_omega, skew_omega) / 12.0,
-            (
-                np.eye(3)
-                - 0.5 * skew_omega
-                + (
-                    (
-                        1.0
-                        - theta_safe
-                        * np.cos(half_theta_safe)
-                        / (2.0 * np.sin(half_theta_safe))
-                    )
-                    / theta_squared_safe
-                )[..., None, None]
-                * np.einsum("...ij,...jk->...ik", skew_omega, skew_omega)
-            ),
+            + skew_sq_coef[..., None, None]
+            * np.einsum("...ij,...jk->...ik", skew_omega, skew_omega)
         )
         return np.concatenate(
             [np.einsum("...ij,...j->...i", V_inv, self.translation()), omega], axis=-1

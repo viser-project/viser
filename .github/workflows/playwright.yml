@@ -1,0 +1,48 @@
+name: playwright-e2e
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: playwright-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      # Don't cancel the other shards/versions when one fails -- we want the
+      # full failure picture.
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.12"]
+        # Shard the suite across runners (pytest-split, balanced by
+        # .test_durations) so wall-clock is ~tests/3. Keep `group` count in sync
+        # with `--splits` below.
+        group: [1, 2, 3]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Restores the shared client build from cache; only builds on a cache miss
+      # (i.e. the first job after a client source change). Identical build is
+      # reused across the matrix, other workflows, and subsequent runs.
+      - uses: ./.github/actions/build-client
+
+      - uses: ./.github/actions/setup-e2e
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run E2E tests
+        run: uv run pytest tests/e2e/ --splits 3 --group ${{ matrix.group }} -n auto
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-py${{ matrix.python-version }}-group${{ matrix.group }}
+          path: test-results/
+          retention-days: 30

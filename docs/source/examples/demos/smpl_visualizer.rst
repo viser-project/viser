@@ -106,6 +106,7 @@ Code
    ) -> None:
        server = viser.ViserServer()
        server.scene.set_up_direction("+y")
+       server.initial_camera.position = (2.5, 1.0, 2.5)
        server.scene.add_grid("/grid", position=(0.0, -1.3, 0.0), plane="xz")
    
        # Main loop. We'll read pose/shape from the GUI elements, compute the mesh,
@@ -141,7 +142,7 @@ Code
            event.client.add_notification(
                f"Clicked on vertex {event.instance_index}",
                body="",
-               auto_close=3000,
+               auto_close_seconds=3.0,
            )
    
        while True:

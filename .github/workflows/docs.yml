@@ -9,6 +9,10 @@ on:
     types: [created]
   workflow_dispatch:
 
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
@@ -22,7 +26,9 @@ jobs:
           fetch-depth: 0 # This ensures the entire history is fetched so we can switch branches
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
 
       # Get version from pyproject.toml.
       - name: Get version + subdirectory

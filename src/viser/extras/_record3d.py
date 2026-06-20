@@ -3,8 +3,9 @@ from __future__ import annotations
 import dataclasses
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Tuple, cast
+from typing import Generator, Sequence, Tuple, cast
 
 import imageio.v3 as iio
 import numpy as np
@@ -62,6 +63,7 @@ class Record3dLoader:
         )
         T_world_cameras = (T_world_cameras @ np.diag([1, -1, -1, 1])).astype(np.float32)
 
+        self._data_dir = data_dir
         self.K = K
         self.fps = fps
         self.T_world_cameras = T_world_cameras
@@ -75,6 +77,27 @@ class Record3dLoader:
 
     def num_frames(self) -> int:
         return len(self.rgb_paths)
+
+    def get_frames(
+        self,
+        indices: Sequence[int],
+        *,
+        max_workers: int | None = None,
+    ) -> Generator[Record3dFrame, None, None]:
+        """Load multiple frames in parallel.
+
+        Args:
+            indices: Sequence of frame indices to load.
+            max_workers: Maximum number of worker threads. Defaults to
+                None (lets ThreadPoolExecutor choose).
+
+        Returns:
+            Generator of Record3dFrame objects, in the same order as indices.
+        """
+        # Threads are fine here because pyliblzfse should release the GIL, we
+        # can overlap with IO, etc.
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            yield from executor.map(self.get_frame, indices)
 
     def get_frame(self, index: int) -> Record3dFrame:
         # `pyliblzfse` can be hard to install on some Windows systems and is
@@ -90,9 +113,9 @@ class Record3dLoader:
             liblzfse.decompress(self.conf_paths[index].read_bytes()), dtype=np.uint8
         )
         if conf.shape[0] == 640 * 480:
-            conf = conf.reshape((640, 480))  # For a FaceID camera 3D Video
+            conf = conf.reshape((640, 480))  # For a FaceID camera 3D Video.
         elif conf.shape[0] == 256 * 192:
-            conf = conf.reshape((256, 192))  # For a LiDAR 3D Video
+            conf = conf.reshape((256, 192))  # For a LiDAR 3D Video.
         else:
             assert False, f"Unexpected conf shape {conf.shape}"
 
@@ -101,9 +124,9 @@ class Record3dLoader:
             liblzfse.decompress(self.depth_paths[index].read_bytes()), dtype=np.float32
         ).copy()
         if depth.shape[0] == 640 * 480:
-            depth = depth.reshape((640, 480))  # For a FaceID camera 3D Video
+            depth = depth.reshape((640, 480))  # For a FaceID camera 3D Video.
         elif depth.shape[0] == 256 * 192:
-            depth = depth.reshape((256, 192))  # For a LiDAR 3D Video
+            depth = depth.reshape((256, 192))  # For a LiDAR 3D Video.
         else:
             assert False, f"Unexpected depth shape {depth.shape}"
 

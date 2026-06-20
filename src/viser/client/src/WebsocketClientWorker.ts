@@ -24,20 +24,67 @@ export type WsWorkerOutgoing =
     }
   | { type: "message_batch"; messages: Message[] };
 
-// Helper function to collect all ArrayBuffer objects. This is used for postMessage() move semantics.
-function collectArrayBuffers(obj: any, buffers: Set<ArrayBufferLike>) {
-  if (obj instanceof ArrayBuffer) {
-    buffers.add(obj);
-  } else if (obj instanceof Uint8Array) {
-    buffers.add(obj.buffer);
-  } else if (obj && typeof obj === "object") {
-    for (const key in obj) {
-      if (Object.prototype.hasOwnProperty.call(obj, key)) {
-        collectArrayBuffers(obj[key], buffers);
-      }
-    }
+import {
+  replaceBinaryPlaceholders,
+  computeBinaryOffsets,
+} from "./BinaryMessageDecode";
+
+type SerializedStruct = {
+  messages: Message[];
+  timestampSec: number;
+  binaryBufferLengths?: number[];
+};
+
+/**
+ * Decode a hybrid wire format message: zstd-compressed msgpack metadata,
+ * followed by raw (uncompressed) aligned binary buffers.
+ *
+ * Wire format:
+ *   [8 bytes] decompressed size of msgpack (little-endian uint64)
+ *   [8 bytes] compressed size of msgpack (little-endian uint64)
+ *   [N bytes] zstd-compressed msgpack payload
+ *   [P bytes] padding to 8-byte alignment
+ *   [M bytes] concatenated binary buffers (each 8-byte aligned)
+ *
+ * Binary arrays in the msgpack are replaced with tagged placeholder objects.
+ * These are reconstructed as typed array views directly into the WebSocket's
+ * ArrayBuffer -- zero-copy for the binary array data.
+ */
+function decodeHybridMessage(
+  buffer: ArrayBuffer,
+  zstdDecoder: { decode: (data: Uint8Array, size: number) => Uint8Array },
+): SerializedStruct & { buffer: ArrayBuffer } {
+  const headerView = new DataView(buffer);
+  const decompressedSize = Number(headerView.getBigUint64(0, true));
+  const compressedSize = Number(headerView.getBigUint64(8, true));
+
+  // Decompress msgpack portion only. Binary data is raw/uncompressed.
+  const compressedData = new Uint8Array(buffer, 16, compressedSize);
+  const decompressed = zstdDecoder.decode(compressedData, decompressedSize);
+  const data = msgpack.decode(decompressed) as SerializedStruct;
+
+  // Attach the raw buffer for postMessage transfer semantics.
+  // Mutate instead of spreading ({ ...data, buffer }) to avoid an extra
+  // object allocation on every incoming message.
+  const result = data as SerializedStruct & { buffer: ArrayBuffer };
+  result.buffer = buffer;
+
+  // If no binary buffers, return as-is. Message had no arrays.
+  const bufferLengths = data.binaryBufferLengths;
+  if (!bufferLengths || bufferLengths.length === 0) {
+    return result;
   }
-  return buffers;
+
+  // Compute binary section offsets and replace placeholders with typed array views.
+  const binaryOffsets = computeBinaryOffsets(
+    bufferLengths,
+    16 + compressedSize,
+  );
+  for (const message of data.messages) {
+    replaceBinaryPlaceholders(message, buffer, binaryOffsets, bufferLengths);
+  }
+
+  return result;
 }
 
 {
@@ -60,6 +107,7 @@ function collectArrayBuffers(obj: any, buffers: Set<ArrayBufferLike>) {
     const protocol = `viser-v${VISER_VERSION}`;
     console.log(`Connecting to: ${server!} with protocol: ${protocol}`);
     ws = new WebSocket(server!, [protocol]);
+    ws.binaryType = "arraybuffer";
 
     // Timeout is necessary when we're connecting to an SSH/tunneled port.
     const retryTimeout = setTimeout(() => {
@@ -107,90 +155,106 @@ function collectArrayBuffers(obj: any, buffers: Set<ArrayBufferLike>) {
       lastIdealJsMs?: number;
       jsTimeMinusPythonTime: number;
     } = { jsTimeMinusPythonTime: Infinity };
-    type SerializedStruct = {
-      messages: Message[];
-      timestampSec: number;
-    };
-
     ws.onmessage = async (event) => {
       const dataPromise = (async () => {
-        const buffer = await (event.data.arrayBuffer() as Promise<ArrayBuffer>);
-        const bytes = new Uint8Array(buffer);
-
-        // Read decompressed size from 8-byte little-endian header.
-        const view = new DataView(buffer);
-        const decompressedSize = Number(view.getBigUint64(0, true));
-        const compressedData = bytes.slice(8);
-
-        // Decompress and decode.
+        // binaryType="arraybuffer" ensures event.data is an ArrayBuffer directly
+        // (skips the default Blob->ArrayBuffer async conversion).
+        const buffer = event.data as ArrayBuffer;
         await zstdReady;
-        const decompressed = zstdDecoder.decode(
-          compressedData,
-          decompressedSize,
-        );
-        return msgpack.decode(decompressed) as SerializedStruct;
+        return decodeHybridMessage(buffer, zstdDecoder);
       })();
 
       // Try our best to handle messages in order. If this takes more than 10 seconds, we give up. :)
       const jsReceivedMs = performance.now();
-      await orderLock.acquireAsync({ timeout: 10000 }).catch(() => {
-        console.log("Order lock timed out.");
-        orderLock.release();
-      });
-      const data = await dataPromise;
+      let acquiredLock = false;
+      try {
+        await orderLock.acquireAsync({ timeout: 10000 });
+        acquiredLock = true;
+      } catch {
+        // Timed out waiting for the in-order slot. Proceed without the lock
+        // (out of order) rather than calling release() on a lock we never
+        // acquired -- that would release another waiter's hold and corrupt the
+        // ordering state.
+        console.log("Order lock timed out; processing message out of order.");
+      }
+      // Once the lock is acquired the release happens in `sendFn` (which may
+      // be deferred via setTimeout). If anything between here and scheduling
+      // `sendFn` throws -- e.g. decode fails -- we must still release, or the
+      // lock stays held and every subsequent message times out.
+      try {
+        const data = await dataPromise;
 
-      // Compute offset between JavaScript and Python time.
-      state.jsTimeMinusPythonTime = Math.min(
-        jsReceivedMs - data.timestampSec * 1000,
-        state.jsTimeMinusPythonTime,
-      );
-
-      // Function to send the message and release the order lock.
-      const messages = data.messages;
-      const arrayBuffers = collectArrayBuffers(messages, new Set());
-      const sendFn = () => {
-        postOutgoing(
-          { type: "message_batch", messages: messages },
-          Array.from(arrayBuffers),
+        // Compute offset between JavaScript and Python time.
+        state.jsTimeMinusPythonTime = Math.min(
+          jsReceivedMs - data.timestampSec * 1000,
+          state.jsTimeMinusPythonTime,
         );
-        orderLock.release();
-      };
 
-      // Calculate timing deltas between Python and JavaScript.
-      const jsNowMs = performance.now();
-      const currentPythonTimestampMs = data.timestampSec * 1000;
-      const pythonTimeDeltaMs =
-        currentPythonTimestampMs -
-        (state.prevPythonTimestampMs ?? currentPythonTimestampMs);
-      state.prevPythonTimestampMs = currentPythonTimestampMs;
+        // Function to send the message and release the order lock.
+        const messages = data.messages;
+        // All typed array views point into the original WebSocket ArrayBuffer.
+        // Transfer just that buffer instead of walking the entire message tree.
+        const sendFn = () => {
+          try {
+            postOutgoing({ type: "message_batch", messages: messages }, [
+              data.buffer,
+            ]);
+          } catch (e) {
+            // `sendFn` can run later from setTimeout, outside the catch below.
+            // Log and still release the lock so one bad post cannot wedge all
+            // later message ordering.
+            console.error("Failed to post incoming message batch:", e);
+          } finally {
+            // Only release if we actually acquired the lock above.
+            if (acquiredLock) {
+              orderLock.release();
+              acquiredLock = false;
+            }
+          }
+        };
 
-      if (
-        // Flush immediately for first message.
-        state.lastIdealJsMs === undefined ||
-        // Flush immediately if the Python delta is large, in this case we're
-        // probably not sensitive to exact timing.
-        pythonTimeDeltaMs > 100 ||
-        // Flush if we're more than 100ms behind real-time.
-        jsNowMs - state.jsTimeMinusPythonTime - currentPythonTimestampMs > 100
-      ) {
-        // First message or no expected delta, send immediately.
-        sendFn();
-        state.lastIdealJsMs = jsNowMs;
-      } else {
-        // For messages that are being sent frequently: smooth out the sending rate.
-        const idealNextSendTimeMs = state.lastIdealJsMs + pythonTimeDeltaMs;
-        const timeUntilIdealJsMs = idealNextSendTimeMs - jsNowMs;
+        // Calculate timing deltas between Python and JavaScript.
+        const jsNowMs = performance.now();
+        const currentPythonTimestampMs = data.timestampSec * 1000;
+        const pythonTimeDeltaMs =
+          currentPythonTimestampMs -
+          (state.prevPythonTimestampMs ?? currentPythonTimestampMs);
+        state.prevPythonTimestampMs = currentPythonTimestampMs;
 
-        if (timeUntilIdealJsMs > 3) {
-          // We're early! This means the previous message was processed late...
-          const dampingFactor = 0.95;
-          setTimeout(sendFn, timeUntilIdealJsMs * dampingFactor);
-          state.lastIdealJsMs =
-            state.lastIdealJsMs + pythonTimeDeltaMs * dampingFactor;
-        } else {
-          // Message is on-time or late: send immediately.
+        if (
+          // Flush immediately for first message.
+          state.lastIdealJsMs === undefined ||
+          // Flush immediately if the Python delta is large, in this case we're
+          // probably not sensitive to exact timing.
+          pythonTimeDeltaMs > 100 ||
+          // Flush if we're more than 100ms behind real-time.
+          jsNowMs - state.jsTimeMinusPythonTime - currentPythonTimestampMs > 100
+        ) {
+          // First message or no expected delta, send immediately.
           sendFn();
           state.lastIdealJsMs = jsNowMs;
+        } else {
+          // For messages that are being sent frequently: smooth out the sending rate.
+          const idealNextSendTimeMs = state.lastIdealJsMs + pythonTimeDeltaMs;
+          const timeUntilIdealJsMs = idealNextSendTimeMs - jsNowMs;
+
+          if (timeUntilIdealJsMs > 3) {
+            // We're early! This means the previous message was processed late...
+            const dampingFactor = 0.95;
+            setTimeout(sendFn, timeUntilIdealJsMs * dampingFactor);
+            state.lastIdealJsMs =
+              state.lastIdealJsMs + pythonTimeDeltaMs * dampingFactor;
+          } else {
+            // Message is on-time or late: send immediately.
+            sendFn();
+            state.lastIdealJsMs = jsNowMs;
+          }
+        }
+      } catch (e) {
+        console.error("Failed to process incoming message:", e);
+        if (acquiredLock) {
+          orderLock.release();
+          acquiredLock = false;
         }
       }
     };
@@ -200,7 +264,12 @@ function collectArrayBuffers(obj: any, buffers: Set<ArrayBufferLike>) {
     const data: WsWorkerIncoming = e.data;
 
     if (data.type === "send") {
-      ws!.send(msgpack.encode(data.message));
+      // The socket can be null (not yet connected) or closing/closed by the
+      // time a send arrives; only send when it's actually open, otherwise drop
+      // it rather than throwing in the worker.
+      if (ws !== null && ws.readyState === WebSocket.OPEN) {
+        ws.send(msgpack.encode(data.message));
+      }
     } else if (data.type === "set_server") {
       server = data.server;
       tryConnect();

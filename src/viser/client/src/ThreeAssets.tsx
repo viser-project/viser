@@ -3,6 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { OutlinesIfHovered } from "./OutlinesIfHovered";
 import React from "react";
 import * as THREE from "three";
+import { useAsyncTexture } from "./utils/useAsyncTexture";
 import {
   ImageMessage,
   LabelMessage,
@@ -11,6 +12,7 @@ import {
 import { BatchedMeshHoverOutlines } from "./mesh/BatchedMeshHoverOutlines";
 import { MeshBasicMaterial } from "three";
 import { normalizeScale } from "./utils/normalizeScale";
+import { syncPointCloudGeometry } from "./utils/pointCloudGeometry";
 // @ts-ignore - troika-three-text doesn't have type definitions
 import { Text as TroikaText } from "troika-three-text";
 import { BatchedLabelManagerContext } from "./BatchedLabelManagerContext";
@@ -23,6 +25,7 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
   {
     scale: 1.0,
     point_ball_norm: 0.0,
+    point_shading_enabled: 0.0,
     uniformColor: new THREE.Color(1, 1, 1),
     fogColor: new THREE.Color(1, 1, 1),
     fogNear: 0.0,
@@ -33,14 +36,15 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
 
   varying vec3 vPosition;
   varying vec3 vColor; // in the vertex shader
+  varying vec3 vInnerSqCol;
+  varying vec3 vOuterSqCol;
   uniform float scale;
   uniform vec3 uniformColor;
+  // Explicit precision qualifier required: must match the fragment shader
+  // declaration for Firefox to link the program.
+  uniform mediump float point_shading_enabled;
 
   #include <fog_pars_vertex>
-  #include <logdepthbuf_pars_vertex>
-  #ifdef USE_LOGDEPTHBUF
-  bool isPerspectiveMatrix( mat4 m ) { return m[ 2 ][ 3 ] == -1.0; }
-  #endif
 
   void main() {
       vPosition = position;
@@ -49,10 +53,13 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
       #else
       vColor = uniformColor;
       #endif
+      // Pre-compute per-vertex shading bounds (constant across all fragments of a point).
+      vec3 sq_col = vColor * vColor;
+      vInnerSqCol = max(sq_col - 0.02, 0.0);
+      vOuterSqCol = min(sq_col + 0.01, 1.0);
       vec4 world_pos = modelViewMatrix * vec4(position, 1.0);
       gl_Position = projectionMatrix * world_pos;
       gl_PointSize = (scale / -world_pos.z);
-      #include <logdepthbuf_vertex>
       #ifdef USE_FOG
         vFogDepth = -world_pos.z;
       #endif
@@ -60,10 +67,12 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
    `,
   `varying vec3 vPosition;
   varying vec3 vColor;
+  varying vec3 vInnerSqCol;
+  varying vec3 vOuterSqCol;
   uniform float point_ball_norm;
+  uniform mediump float point_shading_enabled;
 
   #include <fog_pars_fragment>
-  #include <logdepthbuf_pars_fragment>
 
   void main() {
       if (point_ball_norm < 1000.0) {
@@ -73,8 +82,15 @@ const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
               1.0 / point_ball_norm);
           if (r > 0.5) discard;
       }
-      gl_FragColor = vec4(vColor, 1.0);
-      #include <logdepthbuf_fragment>
+      vec3 col = vColor;
+      if (point_shading_enabled > 0.5) {
+          // Interpolation in approximate linear space (gamma 2.0) for
+          // perceptually smoother gradients.
+          // t: 0 at center, 1 at edge.
+          float t = min(length(gl_PointCoord - vec2(0.5)), 0.5) * 2.0;
+          col = sqrt(t * vInnerSqCol + (1.0 - t) * vOuterSqCol);
+      }
+      gl_FragColor = vec4(col, 1.0);
       #include <fog_fragment>
   }
    `,
@@ -88,52 +104,19 @@ export const PointCloud = React.forwardRef<
 
   const props = message.props;
 
-  // Create geometry using useMemo for better performance.
-  const geometry = React.useMemo(() => {
-    const geometry = new THREE.BufferGeometry();
-
-    if (message.props.precision === "float16") {
-      geometry.setAttribute(
-        "position",
-        new THREE.Float16BufferAttribute(
-          new Uint16Array(
-            props.points.buffer.slice(
-              props.points.byteOffset,
-              props.points.byteOffset + props.points.byteLength,
-            ),
-          ),
-          3,
-        ),
-      );
-    } else {
-      geometry.setAttribute(
-        "position",
-        new THREE.Float32BufferAttribute(
-          new Float32Array(
-            props.points.buffer.slice(
-              props.points.byteOffset,
-              props.points.byteOffset + props.points.byteLength,
-            ),
-          ),
-          3,
-        ),
-      );
-    }
-
-    // Add color attribute if needed.
-    if (props.colors.length > 3) {
-      geometry.setAttribute(
-        "color",
-        new THREE.BufferAttribute(new Uint8Array(props.colors), 3, true),
-      );
-    } else if (props.colors.length < 3) {
-      console.error(`Invalid color buffer length, got ${props.colors.length}`);
-    }
-
-    return geometry;
+  // Geometry populated via ref -- R3F auto-disposes on unmount.
+  const geomRef = React.useRef<THREE.BufferGeometry>(null);
+  React.useLayoutEffect(() => {
+    const geom = geomRef.current;
+    if (!geom) return;
+    // Reuse the existing GPU buffers in place across updates. Replacing
+    // attributes with `setAttribute(new ...)` every update leaks the old buffer;
+    // a same-size swap reuses it; a point-count change reallocates safely. See
+    // syncPointCloudGeometry / syncBufferGeometry.
+    syncPointCloudGeometry(geom, props.points, props.colors);
   }, [props.points, props.colors]);
 
-  // Create material using useMemo for better performance.
+  // Material needs heavy per-frame uniform updates, so kept imperative.
   const material = React.useMemo(() => {
     const material = new PointCloudMaterial();
     material.fog = true;
@@ -152,15 +135,11 @@ export const PointCloud = React.forwardRef<
     return material;
   }, [props.colors]);
 
-  // Clean up resources when component unmounts.
   React.useEffect(() => {
-    return () => {
-      geometry.dispose();
-      material.dispose();
-    };
-  }, [geometry, material]);
+    return () => material.dispose();
+  }, [material]);
 
-  // Update material properties with point_ball_norm
+  // Update material properties with point_ball_norm.
   React.useEffect(() => {
     material.uniforms.scale.value = 10.0;
     material.uniforms.point_ball_norm.value = {
@@ -170,7 +149,9 @@ export const PointCloud = React.forwardRef<
       rounded: 3.0,
       sparkle: 0.6,
     }[props.point_shape];
-  }, [props.point_shape, material]);
+    material.uniforms.point_shading_enabled.value =
+      props.point_shading === "gradient" ? 1.0 : 0.0;
+  }, [props.point_shape, props.point_shading, material]);
 
   // Compute a scalar scale factor for point size. For non-uniform scale,
   // use geometric mean since points are rendered as circles.
@@ -196,7 +177,9 @@ export const PointCloud = React.forwardRef<
   return (
     <group ref={ref}>
       <group scale={normalizeScale(message.props.scale)}>
-        <points frustumCulled={false} geometry={geometry} material={material} />
+        <points frustumCulled={false} material={material}>
+          <bufferGeometry ref={geomRef} />
+        </points>
       </group>
       {children}
     </group>
@@ -281,12 +264,12 @@ export const CoordinateFrame = React.forwardRef<
 export const InstancedAxes = React.forwardRef<
   THREE.Group,
   {
-    /** Raw bytes containing float32 quaternion values (wxyz) */
-    batched_wxyzs: Uint8Array;
-    /** Raw bytes containing float32 position values (xyz) */
-    batched_positions: Uint8Array;
-    /** Raw bytes containing float32 scale values (uniform or per-axis XYZ) */
-    batched_scales: Uint8Array | null;
+    /** Float32 quaternion values (wxyz) */
+    batched_wxyzs: Float32Array;
+    /** Float32 position values (xyz) */
+    batched_positions: Float32Array;
+    /** Float32 scale values (uniform or per-axis XYZ) */
+    batched_scales: Float32Array | null;
     axes_length?: number;
     axes_radius?: number;
     scale?: number | [number, number, number];
@@ -355,75 +338,51 @@ export const InstancedAxes = React.forwardRef<
     const { T_frame_framex, T_frame_framey, T_frame_framez, red, green, blue } =
       axesTransformations;
 
-    // Create DataViews to read float values directly.
-    const positionsView = new DataView(
-      batched_positions.buffer,
-      batched_positions.byteOffset,
-      batched_positions.byteLength,
-    );
-
-    const wxyzsView = new DataView(
-      batched_wxyzs.buffer,
-      batched_wxyzs.byteOffset,
-      batched_wxyzs.byteLength,
-    );
-
-    const scalesView = batched_scales
-      ? new DataView(
-          batched_scales.buffer,
-          batched_scales.byteOffset,
-          batched_scales.byteLength,
-        )
-      : null;
-
     // Calculate number of instances.
-    const numInstances = batched_wxyzs.byteLength / (4 * 4); // 4 floats, 4 bytes per float
+    const numInstances = batched_wxyzs.length / 4;
+
+    // Determine scaling mode.
+    const perAxisScaling =
+      batched_scales !== null &&
+      batched_scales.length === (batched_wxyzs.length / 4) * 3;
 
     for (let i = 0; i < numInstances; i++) {
-      // Calculate byte offsets for reading float values.
       // Use modulo as a defensive check to prevent out-of-bounds reads when
       // array lengths don't match.
-      const posOffset = (i * 3 * 4) % batched_positions.byteLength;
-      const wxyzOffset = (i * 4 * 4) % batched_wxyzs.byteLength;
-      const scaleOffset =
-        batched_scales &&
-        batched_scales.byteLength === (batched_wxyzs.byteLength / 4) * 3
-          ? (i * 3 * 4) % batched_scales.byteLength // Per-axis scaling: 3 floats, 4 bytes per float
-          : (i * 4) % (batched_scales?.byteLength ?? 4); // Uniform scaling: 1 float, 4 bytes per float
+      const posIdx = (i * 3) % batched_positions.length;
+      const wxyzIdx = (i * 4) % batched_wxyzs.length;
 
       // Read scale value if available.
-      if (scalesView && batched_scales) {
-        // Check if we have per-axis scaling (N,3) or uniform scaling (N,).
-        if (batched_scales.byteLength === (batched_wxyzs.byteLength / 4) * 3) {
-          // Per-axis scaling: read 3 floats.
+      if (batched_scales !== null) {
+        if (perAxisScaling) {
+          const scaleIdx = (i * 3) % batched_scales.length;
           tmpScale.set(
-            scalesView.getFloat32(scaleOffset, true), // x scale
-            scalesView.getFloat32(scaleOffset + 4, true), // y scale
-            scalesView.getFloat32(scaleOffset + 8, true), // z scale
+            batched_scales[scaleIdx], // x scale
+            batched_scales[scaleIdx + 1], // y scale
+            batched_scales[scaleIdx + 2], // z scale
           );
         } else {
-          // Uniform scaling: read 1 float and apply to all axes.
-          const scale = scalesView.getFloat32(scaleOffset, true);
+          const scale = batched_scales[i % batched_scales.length];
           tmpScale.set(scale, scale, scale);
         }
       } else {
         tmpScale.set(1, 1, 1);
       }
 
-      // Set position from DataView.
+      // Set transform from Float32Array values directly.
       T_world_frame.makeRotationFromQuaternion(
         tmpQuat.set(
-          wxyzsView.getFloat32(wxyzOffset + 4, true), // x
-          wxyzsView.getFloat32(wxyzOffset + 8, true), // y
-          wxyzsView.getFloat32(wxyzOffset + 12, true), // z
-          wxyzsView.getFloat32(wxyzOffset, true), // w (first value)
+          batched_wxyzs[wxyzIdx + 1], // x
+          batched_wxyzs[wxyzIdx + 2], // y
+          batched_wxyzs[wxyzIdx + 3], // z
+          batched_wxyzs[wxyzIdx], // w (first value)
         ),
       )
         .scale(tmpScale)
         .setPosition(
-          positionsView.getFloat32(posOffset, true), // x
-          positionsView.getFloat32(posOffset + 4, true), // y
-          positionsView.getFloat32(posOffset + 8, true), // z
+          batched_positions[posIdx], // x
+          batched_positions[posIdx + 1], // y
+          batched_positions[posIdx + 2], // z
         );
 
       T_world_framex.copy(T_world_frame).multiply(T_frame_framex);
@@ -439,7 +398,13 @@ export const InstancedAxes = React.forwardRef<
       axesRef.current.setColorAt(i * 3 + 2, blue);
     }
     axesRef.current.instanceMatrix.needsUpdate = true;
-    axesRef.current.instanceColor!.needsUpdate = true;
+    // `instanceColor` stays null until the first setColorAt, so it's null when
+    // there are zero instances -- guard the deref.
+    if (axesRef.current.instanceColor !== null)
+      axesRef.current.instanceColor.needsUpdate = true;
+    // Invalidate the cached bounding sphere so raycasting (clicks/hover) tests
+    // against the new instance positions rather than the stale ones.
+    axesRef.current.boundingSphere = null;
   }, [batched_wxyzs, batched_positions, batched_scales, axesTransformations]);
 
   // Create cylinder geometries for outlines - one for each axis.
@@ -447,36 +412,37 @@ export const InstancedAxes = React.forwardRef<
     () => new THREE.CylinderGeometry(axes_radius, axes_radius, axes_length, 16),
     [axes_radius, axes_length],
   );
-
-  // Compute transform matrices for each axis.
-  const xAxisTransform = React.useMemo(
-    () => ({
-      position: new THREE.Vector3(0.5 * axes_length, 0, 0),
-      rotation: new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(0, 0, (3 * Math.PI) / 2),
-      ),
-      scale: new THREE.Vector3(1, 1, 1),
-    }),
-    [axes_length],
+  // Dispose the outline geometry when it's replaced (axis dimensions change) or
+  // on unmount. It's consumed by BatchedMeshHoverOutlines, which clones it, so
+  // this original is ours to free.
+  React.useEffect(
+    () => () => outlineCylinderGeom.dispose(),
+    [outlineCylinderGeom],
   );
 
-  const yAxisTransform = React.useMemo(
-    () => ({
-      position: new THREE.Vector3(0, 0.5 * axes_length, 0),
-      rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0)),
-      scale: new THREE.Vector3(1, 1, 1),
-    }),
-    [axes_length],
-  );
-
-  const zAxisTransform = React.useMemo(
-    () => ({
-      position: new THREE.Vector3(0, 0, 0.5 * axes_length),
-      rotation: new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(Math.PI / 2, 0, 0),
-      ),
-      scale: new THREE.Vector3(1, 1, 1),
-    }),
+  // Compute transform matrices for each axis (x, y, z).
+  const axisTransforms = React.useMemo(
+    () => [
+      {
+        position: new THREE.Vector3(0.5 * axes_length, 0, 0),
+        rotation: new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(0, 0, (3 * Math.PI) / 2),
+        ),
+        scale: new THREE.Vector3(1, 1, 1),
+      },
+      {
+        position: new THREE.Vector3(0, 0.5 * axes_length, 0),
+        rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0)),
+        scale: new THREE.Vector3(1, 1, 1),
+      },
+      {
+        position: new THREE.Vector3(0, 0, 0.5 * axes_length),
+        rotation: new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(Math.PI / 2, 0, 0),
+        ),
+        scale: new THREE.Vector3(1, 1, 1),
+      },
+    ],
     [axes_length],
   );
 
@@ -489,41 +455,26 @@ export const InstancedAxes = React.forwardRef<
         <instancedMesh
           ref={axesRef}
           args={[cylinderGeom, material, numInstances]}
+          // Instance matrices are updated imperatively, so the cached bounding
+          // sphere used for frustum culling goes stale; disable culling so the
+          // axes don't pop out of view after a position update.
+          frustumCulled={false}
         />
 
-        {/* Create hover outlines for each axis */}
-        <BatchedMeshHoverOutlines
-          geometry={outlineCylinderGeom}
-          batched_positions={batched_positions}
-          batched_wxyzs={batched_wxyzs}
-          batched_scales={batched_scales}
-          meshTransform={xAxisTransform}
-          computeBatchIndexFromInstanceIndex={(instanceId) =>
-            Math.floor(instanceId / 3)
-          }
-        />
-
-        <BatchedMeshHoverOutlines
-          geometry={outlineCylinderGeom}
-          batched_positions={batched_positions}
-          batched_wxyzs={batched_wxyzs}
-          batched_scales={batched_scales}
-          meshTransform={yAxisTransform}
-          computeBatchIndexFromInstanceIndex={(instanceId) =>
-            Math.floor(instanceId / 3)
-          }
-        />
-
-        <BatchedMeshHoverOutlines
-          geometry={outlineCylinderGeom}
-          batched_positions={batched_positions}
-          batched_wxyzs={batched_wxyzs}
-          batched_scales={batched_scales}
-          meshTransform={zAxisTransform}
-          computeBatchIndexFromInstanceIndex={(instanceId) =>
-            Math.floor(instanceId / 3)
-          }
-        />
+        {/* Create hover outlines for each axis (x, y, z). */}
+        {axisTransforms.map((meshTransform, i) => (
+          <BatchedMeshHoverOutlines
+            key={i}
+            geometry={outlineCylinderGeom}
+            batched_positions={batched_positions}
+            batched_wxyzs={batched_wxyzs}
+            batched_scales={batched_scales}
+            meshTransform={meshTransform}
+            computeBatchIndexFromInstanceIndex={(instanceId) =>
+              Math.floor(instanceId / 3)
+            }
+          />
+        ))}
       </group>
       {children}
     </group>
@@ -534,23 +485,10 @@ export const ViserImage = React.forwardRef<
   THREE.Group,
   ImageMessage & { children?: React.ReactNode }
 >(function ViserImage({ children, ...message }, ref) {
-  // We can't use useMemo here because TextureLoader.load is asynchronous.
-  // And we need to use setState to update the texture after loading.
-  const [imageTexture, setImageTexture] = React.useState<THREE.Texture>();
-
-  React.useEffect(() => {
-    if (message.props._format !== null && message.props._data !== null) {
-      const image_url = URL.createObjectURL(
-        new Blob([message.props._data], {
-          type: "image/" + message.props._format,
-        }),
-      );
-      new THREE.TextureLoader().load(image_url, (texture) => {
-        setImageTexture(texture);
-        URL.revokeObjectURL(image_url);
-      });
-    }
-  }, [message.props._format, message.props._data]);
+  const imageTexture = useAsyncTexture(
+    message.props._format,
+    message.props._data,
+  );
   return (
     <group ref={ref}>
       <group scale={normalizeScale(message.props.scale)}>
@@ -657,7 +595,7 @@ export const ViserLabel = React.forwardRef<
       manager.unregisterText(text);
       text.dispose();
     };
-  }, []); // Only create once.
+  }, []);
 
   // Update text content when it changes.
   React.useEffect(() => {
@@ -696,8 +634,7 @@ export const ViserLabel = React.forwardRef<
   React.useImperativeHandle(ref, () => groupRef.current, []);
 
   // Use a selector to subscribe only to this node's children.
-  const hasChildren = viewer.useSceneTree((state) => {
-    const node = state[message.name];
+  const hasChildren = viewer.useSceneTree(message.name, (node) => {
     return node?.children && node.children.length > 0;
   });
 

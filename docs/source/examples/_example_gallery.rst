@@ -139,6 +139,15 @@ Scene Visualization
                </div>
            </a>
        </div>
+       <div class="example-card" style="border-radius: 3px; overflow: hidden; background: white; transition: transform 0.2s;">
+           <a href="examples/scene/arrows/" style="text-decoration: none; color: inherit; display: block;">
+               <img src="_static/examples/thumbs/01_scene_11_arrows.png" alt="Arrow visualization" style="width: 100%; height: auto; aspect-ratio: 16/9; object-fit: cover; display: block;">
+               <div style="padding: 15px;">
+                   <h4 style="margin: 0; padding: 0; font-size: 16px; font-weight: 600; color: #333; margin-bottom: 8px;">Arrow visualization</h4>
+                   <p style="margin: 0; padding: 0; color: #666; font-size: 13px; line-height: 1.4;">Create arrows for visualizing vectors, directions, and quantities in 3D space.</p>
+               </div>
+           </a>
+       </div>
    </div>
 
 GUI Controls
@@ -173,7 +182,7 @@ GUI Controls
                <img src="_static/examples/thumbs/02_gui_02_layouts.png" alt="GUI layouts" style="width: 100%; height: auto; aspect-ratio: 16/9; object-fit: cover; display: block;">
                <div style="padding: 15px;">
                    <h4 style="margin: 0; padding: 0; font-size: 16px; font-weight: 600; color: #333; margin-bottom: 8px;">GUI layouts</h4>
-                   <p style="margin: 0; padding: 0; color: #666; font-size: 13px; line-height: 1.4;">Organize GUI controls using folders, tabs, and nested structures for better user experience.</p>
+                   <p style="margin: 0; padding: 0; color: #666; font-size: 13px; line-height: 1.4;">Organize GUI controls using folders, forms, tabs, and nested structures for better user experience.</p>
                </div>
            </a>
        </div>
@@ -240,6 +249,15 @@ GUI Controls
                </div>
            </a>
        </div>
+       <div class="example-card" style="border-radius: 3px; overflow: hidden; background: white; transition: transform 0.2s;">
+           <a href="examples/gui/commands/" style="text-decoration: none; color: inherit; display: block;">
+               <img src="_static/examples/thumbs/02_gui_10_commands.png" alt="Commands" style="width: 100%; height: auto; aspect-ratio: 16/9; object-fit: cover; display: block;">
+               <div style="padding: 15px;">
+                   <h4 style="margin: 0; padding: 0; font-size: 16px; font-weight: 600; color: #333; margin-bottom: 8px;">Commands</h4>
+                   <p style="margin: 0; padding: 0; color: #666; font-size: 13px; line-height: 1.4;">Register commands that users can discover and trigger from a command palette.</p>
+               </div>
+           </a>
+       </div>
    </div>
 
 User Interaction
@@ -302,6 +320,24 @@ User Interaction
                <div style="padding: 15px;">
                    <h4 style="margin: 0; padding: 0; font-size: 16px; font-weight: 600; color: #333; margin-bottom: 8px;">3D GUI elements</h4>
                    <p style="margin: 0; padding: 0; color: #666; font-size: 13px; line-height: 1.4;">Embed GUI controls directly in the 3D scene positioned relative to scene objects.</p>
+               </div>
+           </a>
+       </div>
+       <div class="example-card" style="border-radius: 3px; overflow: hidden; background: white; transition: transform 0.2s;">
+           <a href="examples/interaction/scene_node_drag/" style="text-decoration: none; color: inherit; display: block;">
+               <img src="_static/examples/thumbs/03_interaction_06_scene_node_drag.png" alt="Scene-node drag events with rigid-body physics" style="width: 100%; height: auto; aspect-ratio: 16/9; object-fit: cover; display: block;">
+               <div style="padding: 15px;">
+                   <h4 style="margin: 0; padding: 0; font-size: 16px; font-weight: 600; color: #333; margin-bottom: 8px;">Scene-node drag events with rigid-body physics</h4>
+                   <p style="margin: 0; padding: 0; color: #666; font-size: 13px; line-height: 1.4;">The box carries linear and angular velocity (both R^3), both damped.</p>
+               </div>
+           </a>
+       </div>
+       <div class="example-card" style="border-radius: 3px; overflow: hidden; background: white; transition: transform 0.2s;">
+           <a href="examples/interaction/batched_scene_node_drag/" style="text-decoration: none; color: inherit; display: block;">
+               <img src="_static/examples/thumbs/03_interaction_07_batched_scene_node_drag.png" alt="Drag events on batched scene nodes" style="width: 100%; height: auto; aspect-ratio: 16/9; object-fit: cover; display: block;">
+               <div style="padding: 15px;">
+                   <h4 style="margin: 0; padding: 0; font-size: 16px; font-weight: 600; color: #333; margin-bottom: 8px;">Drag events on batched scene nodes</h4>
+                   <p style="margin: 0; padding: 0; color: #666; font-size: 13px; line-height: 1.4;">Batched meshes, batched GLBs, and batched axes render many instances of the same geometry from a single scene node.</p>
                </div>
            </a>
        </div>

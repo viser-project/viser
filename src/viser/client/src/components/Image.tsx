@@ -65,9 +65,12 @@ const ImageWithExpand = React.memo(function ImageWithExpand({
 // Mantine's "xl" modal size in pixels.
 const XL_SIZE_PX = 880;
 
-function ImageComponent({ props }: GuiImageMessage) {
-  if (!props.visible) return null;
+function ImageComponent(message: GuiImageMessage) {
+  if (!message.props.visible) return null;
+  return <ImageComponentInner {...message} />;
+}
 
+function ImageComponentInner({ props }: GuiImageMessage) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageWidth, setImageWidth] = useState<number | null>(null);
   const [opened, { open, close }] = useDisclosure(false);
@@ -76,21 +79,21 @@ function ImageComponent({ props }: GuiImageMessage) {
     if (props._data === null) {
       setImageUrl(null);
       setImageWidth(null);
-    } else {
-      const image_url = URL.createObjectURL(
-        new Blob([props._data], { type: "image/" + props._format }),
-      );
-      setImageUrl(image_url);
-
-      // Load image to get natural dimensions.
-      const img = new Image();
-      img.onload = () => setImageWidth(img.naturalWidth);
-      img.src = image_url;
-
-      return () => {
-        URL.revokeObjectURL(image_url);
-      };
+      return;
     }
+    const image_url = URL.createObjectURL(
+      new Blob([props._data], { type: "image/" + props._format }),
+    );
+    setImageUrl(image_url);
+
+    // Load image to get natural dimensions.
+    const img = new Image();
+    img.onload = () => setImageWidth(img.naturalWidth);
+    img.src = image_url;
+
+    return () => {
+      URL.revokeObjectURL(image_url);
+    };
   }, [props._data, props._format]);
 
   if (imageUrl === null) return null;

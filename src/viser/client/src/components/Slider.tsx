@@ -3,6 +3,7 @@ import { GuiSliderMessage } from "../WebsocketMessages";
 import { Slider, Flex, NumberInput } from "@mantine/core";
 import { GuiComponentContext } from "../ControlPanel/GuiComponentContext";
 import { ViserInputComponent } from "./common";
+import { finiteNumberOrNull } from "./numberInputUtils";
 import { sliderDefaultMarks } from "./ComponentStyles.css";
 
 export default function SliderComponent({
@@ -21,6 +22,19 @@ export default function SliderComponent({
   },
 }: GuiSliderMessage) {
   const { setValue } = React.useContext(GuiComponentContext)!;
+  const [dragging, setDragging] = React.useState(false);
+  React.useEffect(() => {
+    if (!dragging) return;
+    const stop = () => setDragging(false);
+    window.addEventListener("mouseup", stop);
+    window.addEventListener("touchend", stop);
+    window.addEventListener("touchcancel", stop);
+    return () => {
+      window.removeEventListener("mouseup", stop);
+      window.removeEventListener("touchend", stop);
+      window.removeEventListener("touchcancel", stop);
+    };
+  }, [dragging]);
   if (!visible) return null;
   const updateValue = (value: number) => setValue(uuid, value);
   const input = (
@@ -32,6 +46,9 @@ export default function SliderComponent({
         thumbSize={0}
         radius="xs"
         style={{ flexGrow: 1 }}
+        onMouseDown={() => setDragging(true)}
+        onTouchStart={() => setDragging(true)}
+        onChangeEnd={() => setDragging(false)}
         styles={(theme) => ({
           thumb: {
             height: "0.75rem",
@@ -83,15 +100,20 @@ export default function SliderComponent({
       <NumberInput
         value={value}
         onChange={(newValue) => {
-          // Ignore empty values.
-          newValue !== "" && updateValue(Number(newValue));
+          // Ignore empty / partial input (e.g. "-", "1e"); committing those
+          // would push NaN into the slider and send it to the server.
+          const parsed = finiteNumberOrNull(newValue);
+          if (parsed !== null) updateValue(parsed);
         }}
         size="xs"
         min={min}
         max={max}
         hideControls
         step={step ?? undefined}
-        // precision={precision}
+        // Limit typed decimals to the slider's precision (0 for integer
+        // sliders), so the companion box can't send a fractional/over-precise
+        // value that the slider track itself would never produce.
+        decimalScale={precision}
         style={{ width: "3rem" }}
         styles={{
           input: {
@@ -107,7 +129,12 @@ export default function SliderComponent({
   );
 
   return (
-    <ViserInputComponent {...{ uuid, hint, label }}>
+    <ViserInputComponent
+      uuid={uuid}
+      hint={hint}
+      label={label}
+      hintDisabled={dragging}
+    >
       {input}
     </ViserInputComponent>
   );

@@ -39,12 +39,12 @@
   margin: -1em 0 0 0;
 }
 
-/* Override border color only */
+/* Override border color only. */
 .uplot-container {
   border-color: var(--mantine-color-gray-2) !important;
 }
 
-/* Make border even lighter in dark mode */
+/* Make border even lighter in dark mode. */
 [data-mantine-color-scheme="dark"] .uplot-container {
   border-color: var(--mantine-color-dark-6) !important;
 }

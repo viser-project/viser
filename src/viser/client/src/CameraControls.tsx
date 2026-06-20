@@ -1,14 +1,38 @@
 import { ViewerContext } from "./ViewerContext";
-import { CameraControls, Instance, Instances } from "@react-three/drei";
-import { useThree } from "@react-three/fiber";
-import * as holdEvent from "hold-event";
+import {
+  CameraControls,
+  Grid,
+  Instance,
+  Instances,
+  PivotControls,
+} from "@react-three/drei";
+import { useFrame, useThree } from "@react-three/fiber";
 import React, { useContext, useRef, useState } from "react";
-import { useFrame } from "@react-three/fiber";
 import { PerspectiveCamera } from "three";
 import * as THREE from "three";
 import { computeT_threeworld_world } from "./WorldTransformUtils";
 import { useThrottledMessageSender } from "./WebsocketUtils";
-import { Grid, PivotControls } from "@react-three/drei";
+import { isFormElement } from "./utils/isFormElement";
+
+// Rotation from the three.js camera convention to the OpenCV one. Constant, so
+// it lives at module scope instead of being rebuilt every render.
+const R_threecam_cam = new THREE.Quaternion().setFromEuler(
+  new THREE.Euler(Math.PI, 0.0, 0.0),
+);
+
+// `event.code`s that drive keyboard camera movement.
+const CAMERA_MOVEMENT_KEYS = new Set([
+  "KeyW",
+  "KeyA",
+  "KeyS",
+  "KeyD",
+  "KeyQ",
+  "KeyE",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+]);
 
 function CrosshairVisual({
   visible,
@@ -81,12 +105,14 @@ function CrosshairVisual({
 function OrbitOriginTool({
   forceShow,
   pivotRef,
+  onDragStart,
   onPivotChange,
   update,
   crosshairVisible,
 }: {
   forceShow: boolean;
   pivotRef: React.RefObject<THREE.Group>;
+  onDragStart: () => void;
   onPivotChange: (matrix: THREE.Matrix4) => void;
   update: () => void;
   crosshairVisible: boolean;
@@ -98,9 +124,17 @@ function OrbitOriginTool({
   const enableOrbitCrosshair = viewer.useDevSettings(
     (state) => state.enableOrbitCrosshair,
   );
-  React.useEffect(update, [showOrbitOriginTool]);
-
   const show = showOrbitOriginTool || forceShow;
+  React.useLayoutEffect(() => {
+    if (show) update();
+  }, [show]);
+
+  // Keep the gizmo mounted at all times and toggle the handles via the
+  // `disable*` props rather than unmounting it when hidden. The pivot's
+  // transform is only synced to the camera by `sendCamera` on camera
+  // *changes*, so a freshly mounted gizmo has a stale pose until the next
+  // camera move -- keeping it mounted means its first drag starts from the
+  // correct pose.
   return (
     <PivotControls
       ref={pivotRef}
@@ -112,8 +146,9 @@ function OrbitOriginTool({
       disableAxes={!show}
       disableRotations={!show}
       disableSliders={!show}
+      onDragStart={onDragStart}
       onDragEnd={() => {
-        onPivotChange(pivotRef.current!.matrix);
+        if (pivotRef.current !== null) onPivotChange(pivotRef.current.matrix);
       }}
     >
       <Grid
@@ -141,6 +176,15 @@ export function SynchronizedCameraControls() {
 
   const pivotRef = useRef<THREE.Group>(null);
 
+  // True while the user is actively dragging the orbit-origin gizmo. The
+  // per-frame `updatePivotControlFromCameraLookAtAndup` sync must stand down
+  // for the duration: it rewrites `pivotRef.current.matrix` to the camera's
+  // look-at every time `sendCamera` runs, so if the camera happens to be
+  // moving during the drag (e.g. damping still settling from a prior gesture)
+  // it stomps the drag every frame -- the gizmo can't be moved and the
+  // release looks like it did nothing.
+  const pivotDraggingRef = useRef(false);
+
   const viewerMutable = viewer.mutable.current;
 
   // Crosshair visibility state: separate counter for keyboard and flag for pointer interactions.
@@ -162,13 +206,18 @@ export function SynchronizedCameraControls() {
     duration: number;
   }
 
-  const [cameraAnimation, setCameraAnimation] =
-    useState<CameraAnimation | null>(null);
+  // Held in a ref, not state: it's read inside the stable `sendCamera`
+  // callback (and the `updatePivotControlFromCameraLookAtAndup` guard it
+  // calls), which needs the current value rather than the one captured at its
+  // last dependency change. Nothing renders off this value; the animation is
+  // driven entirely by `useFrame`.
+  const cameraAnimationRef = useRef<CameraAnimation | null>(null);
 
   // Animation parameters.
   const ANIMATION_DURATION = 0.5; // seconds
 
   useFrame((state) => {
+    const cameraAnimation = cameraAnimationRef.current;
     if (cameraAnimation && viewerMutable.cameraControl) {
       const cameraControls = viewerMutable.cameraControl;
       const camera = cameraControls.camera;
@@ -218,12 +267,12 @@ export function SynchronizedCameraControls() {
 
       // Clear animation when complete.
       if (progress >= 1) {
-        setCameraAnimation(null);
+        cameraAnimationRef.current = null;
       }
     }
   });
 
-  const { clock } = useThree();
+  const clock = useThree((state) => state.clock);
 
   const updateCameraLookAtAndUpFromPivotControl = (matrix: THREE.Matrix4) => {
     if (!viewerMutable.cameraControl) return;
@@ -241,22 +290,27 @@ export function SynchronizedCameraControls() {
     const currentLookAt = cameraControls.getTarget(new THREE.Vector3());
 
     // Start new animation.
-    setCameraAnimation({
+    cameraAnimationRef.current = {
       startUp: camera.up.clone(),
       targetUp: targetUp,
       startLookAt: currentLookAt,
       targetLookAt: targetPosition,
       startTime: clock.getElapsedTime(),
       duration: ANIMATION_DURATION,
-    });
+    };
   };
 
   const updatePivotControlFromCameraLookAtAndup = () => {
-    if (cameraAnimation !== null) return;
+    if (cameraAnimationRef.current !== null) return;
     if (!viewerMutable.cameraControl) return;
     if (!pivotRef.current) return;
 
     const cameraControls = viewerMutable.cameraControl;
+    // Suppress the sync only while a gizmo drag is genuinely in progress -- drei
+    // disables the camera for the whole drag, so a set flag with the camera
+    // *enabled* is stale (e.g. a pointercancel skipped the drag-end that would
+    // clear it). Ignoring it then keeps the gizmo tracking instead of freezing.
+    if (pivotDraggingRef.current && !cameraControls.enabled) return;
     const lookAt = cameraControls.getTarget(new THREE.Vector3());
 
     // Rotate matrix s.t. it's y-axis aligns with the camera's up vector.
@@ -280,7 +334,6 @@ export function SynchronizedCameraControls() {
       // Check if cross product is valid.
       rotationMatrix.makeRotationAxis(axis, angle);
     }
-    // rotationMatrix.premultiply(origRotation);
 
     // Combine rotation with position.
     const matrix = new THREE.Matrix4();
@@ -292,16 +345,47 @@ export function SynchronizedCameraControls() {
     pivotRef.current.updateMatrixWorld(true);
   };
 
+  // Capture the T_threeworld_world used for the initial camera setup, so
+  // "Reset View" returns to the same position even if set_up_direction()
+  // later changes the root orientation. Updated when InitialCameraSetter
+  // re-applies the camera for non-default sources.
+  const initialT = React.useRef<THREE.Matrix4>(
+    computeT_threeworld_world(viewer),
+  );
+
+  // Diagnostic (see initial_pose_and_scene_orientation.md): record the root
+  // orientation at the instant `initialT` was captured, so e2e/debugging can
+  // detect a mount-ordering race that would leave the root at identity here
+  // (which would place the initial camera with T=identity -> wrong pre-connect
+  // view). Set once, on the first render.
+  if (viewerMutable.initialCameraDiagnostic === null) {
+    const w = viewer.useSceneTree.get("")?.wxyz ?? [1, 0, 0, 0];
+    viewerMutable.initialCameraDiagnostic = {
+      rootWxyzAtCapture: [w[0], w[1], w[2], w[3]],
+    };
+  }
+
   viewerMutable.resetCameraPose = (animate: boolean) => {
-    // Read initial camera state from the Zustand store.
-    const initialCameraState = viewer.useInitialCamera.getState();
-    const T_threeworld_world = computeT_threeworld_world(viewer);
+    // Read initial camera state from the store.
+    const initialCameraState = viewer.useInitialCamera.get();
+    const hasNonDefault =
+      initialCameraState.position.source !== "default" ||
+      initialCameraState.lookAt.source !== "default" ||
+      initialCameraState.up.source !== "default";
+
+    // For default sources, use the captured T from mount time so that
+    // "Reset View" matches the initial camera position. For non-default
+    // sources (server initial_camera), use the current T so that
+    // set_up_direction changes are reflected.
+    const T_threeworld_world = hasNonDefault
+      ? computeT_threeworld_world(viewer)
+      : initialT.current;
 
     // Skip the up direction transform for the default up direction. This makes
     // it so the initial camera up always matches the initial scene up, except
     // in the case where the up direction was explicitly set.
     const initialUp = new THREE.Vector3(...initialCameraState.up.value);
-    if (initialCameraState.position.source !== "default") {
+    if (initialCameraState.up.source !== "default") {
       initialUp.applyMatrix4(T_threeworld_world);
     }
     initialUp.normalize();
@@ -326,7 +410,7 @@ export function SynchronizedCameraControls() {
       );
     } else {
       // Calling setLookAt with animate = false seems to break future calls to
-      // setLookAt. Possible dpeendency bug.
+      // setLookAt. Possible dependency bug.
       viewerMutable.cameraControl!.setPosition(
         initialPos.x,
         initialPos.y,
@@ -342,16 +426,40 @@ export function SynchronizedCameraControls() {
     }
   };
 
+  const searchParams = new URLSearchParams(window.location.search);
+  const forceOrbitOriginTool = searchParams.get("forceOrbitOriginTool") === "1";
+  const logCamera = viewer.useDevSettings((state) => state.logCamera);
+
   // Callback for sending cameras.
   // It makes the code more chaotic, but we preallocate a bunch of things to
   // minimize garbage collection!
-  const R_threecam_cam = new THREE.Quaternion().setFromEuler(
-    new THREE.Euler(Math.PI, 0.0, 0.0),
-  );
   const R_world_threeworld = new THREE.Quaternion();
   const tmpMatrix4 = new THREE.Matrix4();
   const lookAt = new THREE.Vector3();
   const R_world_camera = new THREE.Quaternion();
+  // Pending camera-send timer (the not-ready retry and the connect delay share
+  // one slot -- at most one is ever pending). Cleared on unmount so the 10ms
+  // retry can't re-schedule itself forever or fire `sendCamera` after teardown.
+  const cameraTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  React.useEffect(
+    () => () => {
+      if (cameraTimeoutRef.current !== null) {
+        clearTimeout(cameraTimeoutRef.current);
+      }
+    },
+    [],
+  );
+  const scheduleSendCamera = React.useCallback(
+    (fn: () => void, delayMs: number) => {
+      if (cameraTimeoutRef.current !== null)
+        clearTimeout(cameraTimeoutRef.current);
+      cameraTimeoutRef.current = setTimeout(fn, delayMs);
+    },
+    [],
+  );
+
   const t_world_camera = new THREE.Vector3();
   const scale = new THREE.Vector3();
   const sendCamera = React.useCallback(() => {
@@ -363,7 +471,7 @@ export function SynchronizedCameraControls() {
 
     if (camera_control === null) {
       // Camera controls not yet ready, let's re-try later.
-      setTimeout(sendCamera, 10);
+      scheduleSendCamera(sendCamera, 10);
       return;
     }
 
@@ -420,11 +528,7 @@ export function SynchronizedCameraControls() {
           `&initialCameraFar=${three_camera.far}`,
       );
     }
-  }, [camera, sendCameraThrottled]);
-
-  const searchParams = new URLSearchParams(window.location.search);
-  const forceOrbitOriginTool = searchParams.get("forceOrbitOriginTool") === "1";
-  const logCamera = viewer.useDevSettings((state) => state.logCamera);
+  }, [camera, sendCameraThrottled, logCamera, scheduleSendCamera]);
 
   // Send camera for new connections.
   // We add a small delay to give the server time to add a callback.
@@ -437,9 +541,9 @@ export function SynchronizedCameraControls() {
       // Reset position, orientation, and up direction.
       viewerMutable.resetCameraPose!(false);
 
-      // Read initial camera state from the Zustand store.
+      // Read initial camera state from the store.
       // This contains defaults, URL params, or will be updated by server messages.
-      const initialCameraState = viewer.useInitialCamera.getState();
+      const initialCameraState = viewer.useInitialCamera.get();
 
       // Apply fov/near/far from the store.
       // tan(fov / 2.0) = 0.5 * film height / focal length
@@ -457,8 +561,15 @@ export function SynchronizedCameraControls() {
 
     viewerMutable.sendCamera = sendCamera;
     if (!connected) return;
-    setTimeout(() => sendCamera(), 50);
-  }, [connected, sendCamera]);
+    scheduleSendCamera(sendCamera, 50);
+  }, [
+    connected,
+    sendCamera,
+    camera,
+    viewer.useInitialCamera,
+    viewerMutable,
+    scheduleSendCamera,
+  ]);
 
   // Send camera for 3D viewport changes.
   const canvas = viewerMutable.canvas!; // R3F canvas.
@@ -471,96 +582,83 @@ export function SynchronizedCameraControls() {
 
     // Cleanup.
     return () => resizeObserver.disconnect();
-  }, [canvas]);
+  }, [canvas, sendCamera]);
 
-  // Keyboard controls.
+  // Keyboard controls. The document/window listeners only track which keys are
+  // currently held; movement is applied per frame in the `useFrame` below. The
+  // effect has no dependencies, so the listeners are attached once and removed
+  // on unmount.
+  const heldKeysRef = useRef<Set<string>>(new Set());
   React.useEffect(() => {
-    const cameraControls = viewerMutable.cameraControl!;
-
-    const keys = {
-      w: new holdEvent.KeyboardKeyHold("KeyW", 1000 / 60),
-      a: new holdEvent.KeyboardKeyHold("KeyA", 1000 / 60),
-      s: new holdEvent.KeyboardKeyHold("KeyS", 1000 / 60),
-      d: new holdEvent.KeyboardKeyHold("KeyD", 1000 / 60),
-      q: new holdEvent.KeyboardKeyHold("KeyQ", 1000 / 60),
-      e: new holdEvent.KeyboardKeyHold("KeyE", 1000 / 60),
-      up: new holdEvent.KeyboardKeyHold("ArrowUp", 1000 / 60),
-      down: new holdEvent.KeyboardKeyHold("ArrowDown", 1000 / 60),
-      left: new holdEvent.KeyboardKeyHold("ArrowLeft", 1000 / 60),
-      right: new holdEvent.KeyboardKeyHold("ArrowRight", 1000 / 60),
+    const held = heldKeysRef.current;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!CAMERA_MOVEMENT_KEYS.has(event.code)) return;
+      if (isFormElement(event.target)) return;
+      // Ignore auto-repeat: only a fresh press counts as a new hold.
+      if (held.has(event.code)) return;
+      held.add(event.code);
+      setKeyboardCrosshairCounter((count) => count + 1);
     };
-
-    // TODO: these event listeners are currently never removed, even if this
-    // component gets unmounted.
-    keys.a.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.truck(-0.002 * event?.deltaTime, 0, false);
-    });
-    keys.d.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.truck(0.002 * event?.deltaTime, 0, false);
-    });
-    keys.w.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.forward(0.002 * event?.deltaTime, false);
-    });
-    keys.s.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.forward(-0.002 * event?.deltaTime, false);
-    });
-    keys.q.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.elevate(-0.002 * event?.deltaTime, false);
-    });
-    keys.e.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.elevate(0.002 * event?.deltaTime, false);
-    });
-    keys.left.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.rotate(
-        -0.05 * THREE.MathUtils.DEG2RAD * event?.deltaTime,
-        0,
-        true,
-      );
-    });
-    keys.right.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.rotate(
-        0.05 * THREE.MathUtils.DEG2RAD * event?.deltaTime,
-        0,
-        true,
-      );
-    });
-    keys.up.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.rotate(
-        0,
-        -0.05 * THREE.MathUtils.DEG2RAD * event?.deltaTime,
-        true,
-      );
-    });
-    keys.down.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLDING, (event) => {
-      cameraControls.rotate(
-        0,
-        0.05 * THREE.MathUtils.DEG2RAD * event?.deltaTime,
-        true,
-      );
-    });
-    for (const key of Object.values(keys)) {
-      key.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLD_START, () => {
-        // Keyboard inputs can overlap, so increment counter.
-        setKeyboardCrosshairCounter((count) => count + 1);
-      });
-      key.addEventListener(holdEvent.HOLD_EVENT_TYPE.HOLD_END, () => {
-        // Decrement counter when key is released.
-        setKeyboardCrosshairCounter((count) => Math.max(0, count - 1));
-      });
-    }
-
-    // TODO: we currently don't remove any event listeners. This is a bit messy
-    // because KeyboardKeyHold attaches listeners directly to the
-    // document/window; it's unclear if we can remove these.
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (!held.delete(event.code)) return;
+      setKeyboardCrosshairCounter((count) => Math.max(0, count - 1));
+    };
+    const onBlur = () => {
+      // A window blur swallows keyups, so drop all held keys at once.
+      if (held.size === 0) return;
+      held.clear();
+      setKeyboardCrosshairCounter(0);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
     return () => {
-      return;
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+      held.clear();
     };
-  }, [CameraControls]);
+  }, []);
+
+  // Apply held-key camera movement each frame. Rates: linear 2.0/s, rotation
+  // 50 deg/s (`delta` is in seconds).
+  useFrame((_, delta) => {
+    const cameraControls = viewerMutable.cameraControl;
+    const held = heldKeysRef.current;
+    if (cameraControls === null || held.size === 0) return;
+    // Respect camera locks: when a lease (or a gizmo drag) has disabled the
+    // controls, keyboard movement must not bypass it. The library's
+    // programmatic truck/forward/rotate ignore `enabled`, so guard here.
+    if (!cameraControls.enabled) return;
+    const linear = 2.0 * delta;
+    const angular = 50.0 * THREE.MathUtils.DEG2RAD * delta;
+    if (held.has("KeyA")) cameraControls.truck(-linear, 0, false);
+    if (held.has("KeyD")) cameraControls.truck(linear, 0, false);
+    if (held.has("KeyW")) cameraControls.forward(linear, false);
+    if (held.has("KeyS")) cameraControls.forward(-linear, false);
+    if (held.has("KeyQ")) cameraControls.elevate(-linear, false);
+    if (held.has("KeyE")) cameraControls.elevate(linear, false);
+    if (held.has("ArrowLeft")) cameraControls.rotate(-angular, 0, true);
+    if (held.has("ArrowRight")) cameraControls.rotate(angular, 0, true);
+    if (held.has("ArrowUp")) cameraControls.rotate(0, -angular, true);
+    if (held.has("ArrowDown")) cameraControls.rotate(0, angular, true);
+  });
+
+  // Stable ref callback so React only invokes it when the controls instance
+  // actually attaches/changes -- `cameraLocks.apply()` should run on attach,
+  // not on every commit (which an inline arrow would cause).
+  const setCameraControlRef = React.useCallback(
+    (controls: CameraControls | null) => {
+      viewerMutable.cameraControl = controls;
+      viewer.interaction.cameraLocks.apply();
+    },
+    [viewerMutable, viewer.interaction.cameraLocks],
+  );
 
   return (
     <>
       <CameraControls
-        ref={(controls) => (viewerMutable.cameraControl = controls)}
+        ref={setCameraControlRef}
         minDistance={0.01}
         dollySpeed={0.3}
         smoothTime={0.05}
@@ -577,12 +675,48 @@ export function SynchronizedCameraControls() {
       <OrbitOriginTool
         forceShow={forceOrbitOriginTool}
         pivotRef={pivotRef}
+        onDragStart={() => {
+          pivotDraggingRef.current = true;
+        }}
         onPivotChange={(matrix) => {
+          pivotDraggingRef.current = false;
           updateCameraLookAtAndUpFromPivotControl(matrix);
         }}
         update={updatePivotControlFromCameraLookAtAndup}
         crosshairVisible={crosshairVisible}
       />
+      <InitialCameraSetter />
     </>
   );
+}
+
+/**
+ * Reactively applies the initial camera pose when the server sets
+ * initial_camera properties (non-default sources). Also watches rootWxyz
+ * so that if set_up_direction() and initial_camera messages arrive in
+ * separate batches, the camera converges to the correct pose.
+ *
+ * For default-only sources, this is a no-op -- the camera stays at the
+ * position set on mount, and set_up_direction() only rotates the scene.
+ */
+function InitialCameraSetter() {
+  const viewer = React.useContext(ViewerContext)!;
+  const viewerMutable = viewer.mutable.current;
+
+  const posSource = viewer.useInitialCamera((s) => s.position.source);
+  const lookAtSource = viewer.useInitialCamera((s) => s.lookAt.source);
+  const upSource = viewer.useInitialCamera((s) => s.up.source);
+  const rootWxyz = viewer.useSceneTree("", (node) => node!.wxyz);
+
+  const hasNonDefault =
+    posSource !== "default" ||
+    lookAtSource !== "default" ||
+    upSource !== "default";
+
+  React.useEffect(() => {
+    if (!hasNonDefault) return;
+    viewerMutable.resetCameraPose?.(false);
+  }, [hasNonDefault, rootWxyz, viewerMutable]);
+
+  return null;
 }

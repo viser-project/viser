@@ -6,6 +6,7 @@ name: Upload Python Package
 on:
   release:
     types: [created]
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -14,11 +15,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
-      - name: Install dependencies and build client
-        run: |
-          # Build client files.
-          uv run --extra dev --python 3.12 python -c "import viser; viser.ViserServer()"
+        uses: astral-sh/setup-uv@v5
+      # Restore the shared client build (built by the e2e workflow on the same
+      # commit, or built here on a cache miss). Needed both to run the e2e tests
+      # below and to bundle into the PyPI package.
+      - uses: ./.github/actions/build-client
+      - uses: ./.github/actions/setup-e2e
+        with:
+          python-version: "3.12"
       - name: Make sure tests pass
         run: uv run --extra dev --python 3.12 pytest
       - name: Strip unsupported tags in README

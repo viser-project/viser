@@ -1,6 +1,6 @@
 import React, { useMemo, useEffect } from "react";
 import * as THREE from "three";
-import { InstancedMesh2 } from "@three.ez/instanced-mesh";
+import { InstancedMesh2 } from "../vendor/instanced-mesh/index.js";
 import { MeshoptSimplifier } from "meshoptimizer";
 import { BatchedMeshHoverOutlines } from "./BatchedMeshHoverOutlines";
 import { useThree } from "@react-three/fiber";
@@ -117,12 +117,12 @@ export const BatchedMeshBase = React.forwardRef<
   InstancedMesh2,
   {
     // Data for instance positions and orientations.
-    batched_positions: Uint8Array;
-    batched_wxyzs: Uint8Array;
-    batched_scales: Uint8Array | null;
-    batched_colors: Uint8Array | null;
+    batched_positions: Float32Array;
+    batched_wxyzs: Float32Array;
+    batched_scales: Float32Array | null;
+    batched_colors: Uint8Array<ArrayBuffer> | null;
     opacity: number | null;
-    batched_opacities: Uint8Array | null;
+    batched_opacities: Float32Array | null;
 
     // Geometry info.
     geometry: THREE.BufferGeometry;
@@ -137,6 +137,7 @@ export const BatchedMeshBase = React.forwardRef<
 
     // Optional props.
     clickable?: boolean;
+    draggable?: boolean;
   }
 >(function BatchedMeshBase(props, ref) {
   // Store the mesh instance in state so effects can depend on it.
@@ -156,7 +157,10 @@ export const BatchedMeshBase = React.forwardRef<
     // Create new InstancedMesh2.
     const instanceCount =
       props.batched_positions.byteLength / (3 * Float32Array.BYTES_PER_ELEMENT);
-    const newMesh = new InstancedMesh2(props.geometry.clone(), props.material, {
+    // We own this clone of the geometry; it must be disposed in cleanup since
+    // InstancedMesh2.dispose() only frees its internal textures, not geometry.
+    const ownedGeometry = props.geometry.clone();
+    const newMesh = new InstancedMesh2(ownedGeometry, props.material, {
       capacity: instanceCount,
       renderer: gl,
     });
@@ -188,11 +192,14 @@ export const BatchedMeshBase = React.forwardRef<
       // Cleanup on unmount or when dependencies change.
       newMesh.disposeBVH();
       newMesh.dispose();
+      // InstancedMesh2.dispose() frees its textures but not its geometry, so
+      // dispose the clone we created.
+      ownedGeometry.dispose();
       // Dispose LOD resources captured via closure.
       lodGeometries.forEach((geometry) => geometry.dispose());
       lodMaterials.forEach((material) => material.dispose());
     };
-  }, [props.geometry, props.lod, props.material]); // Recreate when these change.
+  }, [props.geometry, props.lod, props.material]);
 
   // Update instances when positions or orientations change.
   useEffect(() => {
@@ -209,67 +216,50 @@ export const BatchedMeshBase = React.forwardRef<
       mesh.addInstances(instanceCount, () => {});
     }
 
-    // Create views to efficiently read float values.
-    const positionsView = new DataView(
-      props.batched_positions.buffer,
-      props.batched_positions.byteOffset,
-      props.batched_positions.byteLength,
-    );
-    const wxyzsView = new DataView(
-      props.batched_wxyzs.buffer,
-      props.batched_wxyzs.byteOffset,
-      props.batched_wxyzs.byteLength,
-    );
-    const scalesView = props.batched_scales
-      ? new DataView(
-          props.batched_scales.buffer,
-          props.batched_scales.byteOffset,
-          props.batched_scales.byteLength,
-        )
-      : null;
+    const positions = props.batched_positions;
+    const wxyzs = props.batched_wxyzs;
+    const scales = props.batched_scales;
+    const posLength = positions.length;
+    const wxyzLength = wxyzs.length;
+    const scalesLength = scales ? scales.length : 0;
+
+    // Determine scaling mode: per-axis (N,3) or uniform (N,).
+    const perAxisScaling =
+      scales !== null && scalesLength === (wxyzLength / 4) * 3;
 
     // Update all instances.
     mesh.updateInstances((obj, index) => {
-      // Calculate byte offsets for reading float values.
       // Use modulo as a defensive check to prevent out-of-bounds reads when
-      // array lengths don't match (e.g., if batched_wxyzs has fewer elements
-      // than batched_positions).
-      const posOffset = (index * 3 * 4) % props.batched_positions.byteLength;
-      const wxyzOffset = (index * 4 * 4) % props.batched_wxyzs.byteLength;
+      // array lengths don't match.
+      const posIdx = (index * 3) % posLength;
+      const wxyzIdx = (index * 4) % wxyzLength;
 
       // Read position values.
       tempPosition.set(
-        positionsView.getFloat32(posOffset, true), // x.
-        positionsView.getFloat32(posOffset + 4, true), // y.
-        positionsView.getFloat32(posOffset + 8, true), // z.
+        positions[posIdx], // x.
+        positions[posIdx + 1], // y.
+        positions[posIdx + 2], // z.
       );
 
-      // Read quaternion values.
+      // Read quaternion values (wxyz layout -> xyzw for Three.js).
       tempQuaternion.set(
-        wxyzsView.getFloat32(wxyzOffset + 4, true), // x.
-        wxyzsView.getFloat32(wxyzOffset + 8, true), // y.
-        wxyzsView.getFloat32(wxyzOffset + 12, true), // z.
-        wxyzsView.getFloat32(wxyzOffset, true), // w (first value).
+        wxyzs[wxyzIdx + 1], // x.
+        wxyzs[wxyzIdx + 2], // y.
+        wxyzs[wxyzIdx + 3], // z.
+        wxyzs[wxyzIdx], // w (first value).
       );
 
       // Read scale value if available.
-      if (scalesView && props.batched_scales) {
-        // Check if we have per-axis scaling (N,3) or uniform scaling (N,).
-        if (
-          props.batched_scales.byteLength ===
-          (props.batched_wxyzs.byteLength / 4) * 3
-        ) {
-          // Per-axis scaling: read 3 floats.
-          const scaleOffset = (index * 3 * 4) % props.batched_scales.byteLength;
+      if (scales !== null) {
+        if (perAxisScaling) {
+          const scaleIdx = (index * 3) % scalesLength;
           tempScale.set(
-            scalesView.getFloat32(scaleOffset, true), // x scale.
-            scalesView.getFloat32(scaleOffset + 4, true), // y scale.
-            scalesView.getFloat32(scaleOffset + 8, true), // z scale.
+            scales[scaleIdx], // x scale.
+            scales[scaleIdx + 1], // y scale.
+            scales[scaleIdx + 2], // z scale.
           );
         } else {
-          // Uniform scaling: read 1 float and apply to all axes.
-          const scaleOffset = (index * 4) % props.batched_scales.byteLength;
-          const scale = scalesView.getFloat32(scaleOffset, true);
+          const scale = scales[index % scalesLength];
           tempScale.setScalar(scale);
         }
       } else {
@@ -281,26 +271,54 @@ export const BatchedMeshBase = React.forwardRef<
       obj.quaternion.copy(tempQuaternion);
       obj.scale.copy(tempScale);
     });
+
+    // Invalidate the union bounding sphere. The vendor InstancedMesh2
+    // raycast (and frustum culling) computes this lazily on first use
+    // and caches it forever -- so without this, rays toward instances at
+    // their *new* positions early-exit at a sphere that was sized for
+    // the *old* positions. The BVH path auto-updates via ``bvh.move()``
+    // inside ``updateMatrix()``, but the BVH is only built for clickable
+    // or large meshes (see effect below); drag-only nodes (which never
+    // set ``clickable=true``) fall through to the bounding-sphere path.
+    // The vendor types ``boundingSphere`` as ``Sphere`` (non-null) but
+    // the lazy-init code in ``Raycasting.ts`` / ``FrustumCulling.ts``
+    // explicitly checks for null and recomputes -- writing null is the
+    // correct invalidation primitive. Cast to satisfy the types.
+    (mesh as { boundingSphere: THREE.Sphere | null }).boundingSphere = null;
   }, [
     props.batched_positions,
     props.batched_wxyzs,
     props.batched_scales,
     mesh,
+    tempPosition,
+    tempQuaternion,
+    tempScale,
   ]);
 
-  // Compute BVH for raycasting for clickable meshes.
+  // Compute BVH for raycasting on interactive (clickable/draggable) or
+  // very large meshes.
   //
-  // We could also do this always. This would speed up frustum culling, but
-  // would add overhead to every position/quaternion/scale update. Since we
-  // don't know in advance if the mesh will be static or dynamic, it seems
-  // conservative to avoid computing a BVH for now.
+  // The per-instance bounding-sphere fallback scales ~linearly with
+  // instance count: at 15k drag-only instances a single raycast takes
+  // ~1.9ms, at 30k it's ~7ms -- burning almost half a 60Hz frame budget
+  // per hover event. BVH keeps it flat ~0.1-0.2ms across the range, so
+  // any interactive mesh wants it.
   //
-  // In the future, we could consider computing the BVH only if we detect that
-  // the mesh is static (no changes for N frames). There are a lot of possible
-  // heuristics that can be written here.
+  // We don't enable BVH unconditionally because for non-interactive
+  // meshes (static visualization, no hover/click/drag), the build cost
+  // and per-update refit cost on every position/quaternion/scale change
+  // outweigh the raycast savings -- there are no raycasts to save.
+  //
+  // In the future, we could consider computing the BVH only if we detect
+  // that the mesh is static (no changes for N frames). There are a lot
+  // of possible heuristics that can be written here.
   React.useEffect(() => {
     if (mesh === null) return;
-    if (props.clickable || mesh.instancesCount > 50000) {
+    if (
+      props.clickable ||
+      (props.draggable ?? false) ||
+      mesh.instancesCount > 50000
+    ) {
       // We'll add a small margin to reduce the effort of updating the BVH if
       // instances need to move. This adds a small overhead to
       // raycasting/frustum culling, but should still be dramatically faster
@@ -309,7 +327,7 @@ export const BatchedMeshBase = React.forwardRef<
     } else {
       mesh.disposeBVH();
     }
-  }, [props.clickable, mesh]);
+  }, [props.clickable, props.draggable, mesh]);
 
   // Update instances when colors change (broadcast case).
   // When a single color is provided, broadcast it to all instances.
@@ -370,15 +388,10 @@ export const BatchedMeshBase = React.forwardRef<
       return;
     }
 
-    const opacityView = new DataView(
-      props.batched_opacities.buffer,
-      props.batched_opacities.byteOffset,
-      props.batched_opacities.byteLength,
-    );
+    const opacities = props.batched_opacities;
 
     for (let i = 0; i < mesh.instancesCount; i++) {
-      const instanceOpacity = opacityView.getFloat32(i * 4, true);
-      mesh.setOpacityAt(i, globalOpacity * instanceOpacity);
+      mesh.setOpacityAt(i, globalOpacity * opacities[i]);
     }
   }, [props.opacity, props.batched_opacities, mesh]);
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import io
 import time
 import warnings
@@ -9,12 +10,13 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
+    Optional,
     Tuple,
     TypeVar,
     Union,
     cast,
-    get_args,
     overload,
 )
 
@@ -29,6 +31,7 @@ from ._assignable_props_api import colors_to_uint8
 from ._image_encoding import cv2_imencode_with_fallback
 from ._scene_handles import (
     AmbientLightHandle,
+    ArrowsHandle,
     BatchedAxesHandle,
     BatchedGlbHandle,
     BatchedMeshHandle,
@@ -37,6 +40,7 @@ from ._scene_handles import (
     CameraFrustumHandle,
     CylinderHandle,
     DirectionalLightHandle,
+    DragPhase,
     FrameHandle,
     GaussianSplatHandle,
     GlbHandle,
@@ -53,15 +57,20 @@ from ._scene_handles import (
     PointCloudHandle,
     PointLightHandle,
     RectAreaLightHandle,
+    SceneClickEvent,
+    SceneNodeDragEvent,
     SceneNodeHandle,
     SceneNodePointerEvent,
     ScenePointerEvent,
+    SceneRectSelectEvent,
     SplineCatmullRomHandle,
     SplineCubicBezierHandle,
     SpotLightHandle,
     TransformControlsEvent,
     TransformControlsHandle,
-    _ClickableSceneNodeHandle,
+    _DragInput,
+    _normalize_node_name,
+    _RaycastSupportedSceneNodeHandle,
     _TransformControlsState,
 )
 from ._threadpool_exceptions import print_threadpool_errors
@@ -81,6 +90,44 @@ RgbTupleOrArray: TypeAlias = Union[
 ]
 
 NoneOrCoroutine = TypeVar("NoneOrCoroutine", None, Coroutine)
+
+
+@dataclasses.dataclass
+class _PointerCallbackEntry:
+    callback: Callable[[Any], None | Coroutine]
+    event_type: _messages.ScenePointerEventType
+    modifier: _messages.KeyModifier | None
+    event_class: type
+
+
+def _modifier_matches_filter(
+    held: _messages.KeyModifier | None,
+    filter_modifier: _messages.KeyModifier | None,
+) -> bool:
+    """Return whether a canonical held-modifier string matches a
+    :data:`KeyModifier` filter.
+
+    Both inputs are already canonicalized by the wire layer (server-side
+    receives them from clients post-canonicalization; user-supplied
+    filters go through ``_normalize_key_modifier``), so this is just
+    string equality.
+
+    Mirrored client-side in ``matchesModifierFilter``
+    (``src/viser/client/src/dragUtils.ts``). Drift = silent missed
+    events or spurious teardowns.
+    """
+    return held == filter_modifier
+
+
+def _drag_input_matches_filter(
+    input: _DragInput,
+    filter_button: _messages.DragButton,
+    filter_modifier: _messages.KeyModifier | None,
+) -> bool:
+    """Return whether a drag input matches a registered binding filter."""
+    if filter_button != input.button:
+        return False
+    return _modifier_matches_filter(input.modifier, filter_modifier)
 
 
 def _encode_rgb(rgb: RgbTupleOrArray) -> tuple[int, int, int]:
@@ -126,6 +173,45 @@ def cast_vector(vector: TVector | np.ndarray, length: int) -> TVector:
     return cast(TVector, tuple(map(float, vector)))
 
 
+def _warn_wireframe_conflicts(
+    wireframe: bool, material: str, flat_shading: bool
+) -> None:
+    """Warn about arguments that are ignored when wireframe rendering is on.
+
+    Called one level below the public ``add_*`` method, so ``stacklevel=3``
+    points the warning at the user's call site (warn -> here -> add_* -> user).
+    """
+    if wireframe and material != "standard":
+        warnings.warn(
+            f"Invalid combination of {wireframe=} and {material=}. Material argument will be ignored.",
+            stacklevel=3,
+        )
+    if wireframe and flat_shading:
+        warnings.warn(
+            f"Invalid combination of {wireframe=} and {flat_shading=}. Flat shading argument will be ignored.",
+            stacklevel=3,
+        )
+
+
+def _validate_batched_transforms(
+    batched_wxyzs: Any, batched_positions: Any, batched_scales: Any
+) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray], int]:
+    """Coerce and shape-check the per-instance transform arrays shared by the
+    batched scene primitives. Returns ``(wxyzs, positions, scales, count)``.
+    ``wxyzs`` and ``positions`` keep their input dtype (cast to float32 at
+    message construction); ``scales`` is cast to float32 here.
+    """
+    batched_wxyzs = np.asarray(batched_wxyzs)
+    batched_positions = np.asarray(batched_positions)
+    count = batched_wxyzs.shape[0]
+    assert batched_wxyzs.shape == (count, 4)
+    assert batched_positions.shape == (count, 3)
+    if batched_scales is not None:
+        batched_scales = np.asarray(batched_scales).astype(np.float32)
+        assert batched_scales.shape in ((count,), (count, 3))
+    return batched_wxyzs, batched_positions, batched_scales, count
+
+
 MISSING_SENTINEL = "MISSING"
 MISSING_SENTINEL_TYPE = Literal["MISSING"]
 
@@ -162,12 +248,38 @@ class SceneApi:
         ] = {}
         self._handle_from_node_name: dict[str, SceneNodeHandle] = {}
         self._children_from_node_name: dict[str, set[str]] = {}
+        # Tracks handles with an in-flight drag gesture, plus the last
+        # message we processed for that drag. Populated on
+        # ``phase="start"``, refreshed on ``phase="update"``, cleared on
+        # ``phase="end"``. Lets us dispatch ``on_drag_end`` even when
+        # the user calls ``handle.remove()`` mid-drag (which pops the
+        # handle from ``_handle_from_node_name``) and when a client
+        # disconnects mid-drag (where the ``end`` message never
+        # arrives) -- see ``_drop_active_drags_for_client``. Without
+        # this the end callback is silently dropped and per-drag user
+        # state leaks. Keyed by ``(client_id, node_name)`` because two
+        # clients can drag the same node concurrently -- keying by name
+        # alone would let one client's start overwrite the other's,
+        # and ``end`` from the first client would pop the wrong entry.
+        self._active_drag_handles: dict[
+            tuple[ClientId, str],
+            tuple[_RaycastSupportedSceneNodeHandle, _messages.SceneNodeDragMessage],
+        ] = {}
+        # Same idea for transform-control gizmos: track in-flight drags so a
+        # late ``update``/``end`` still dispatches after the gizmo (or an
+        # ancestor) is removed mid-drag -- which pops the handle from
+        # ``_handle_from_transform_controls_name`` -- and so ``on_drag_end``
+        # fires (and the entry is released) on a mid-drag disconnect.
+        self._active_transform_drag_handles: dict[
+            tuple[ClientId, str], TransformControlsHandle
+        ] = {}
 
-        self._scene_pointer_cb: (
-            Callable[[ScenePointerEvent], None | Coroutine] | None
-        ) = None
-        self._scene_pointer_done_cb: Callable[[], None | Coroutine] = lambda: None
-        self._scene_pointer_event_type: _messages.ScenePointerEventType | None = None
+        # Enable/disable of ``ScenePointerEnableMessage`` is
+        # reference-counted per ``event_type``: enable when the first
+        # callback for that type registers, disable when the last is
+        # removed.
+        self._scene_pointer_cb: list[_PointerCallbackEntry] = []
+        self._scene_pointer_done_cb: list[Callable[[], None | Coroutine]] = []
 
         # Set up world axes handle.
         self.world_axes: FrameHandle = self.add_frame(
@@ -195,9 +307,49 @@ class SceneApi:
             self._handle_node_click_updates,
         )
         self._websock_interface.register_handler(
+            _messages.SceneNodeDragMessage, self._handle_node_drag
+        )
+        self._websock_interface.register_handler(
             _messages.ScenePointerMessage,
             self._handle_scene_pointer_updates,
         )
+
+    def _is_drag_active_for(self, name: str) -> bool:
+        """Whether the named scene node currently has any in-flight drag
+        gesture (from any connected client). Used by ``remove()`` to
+        decide whether to clear ``drag_cb`` immediately or preserve it
+        until the in-flight drag's ``end`` message arrives."""
+        return any(key[1] == name for key in self._active_drag_handles)
+
+    async def _drop_active_drags_for_client(self, client_id: ClientId) -> None:
+        """Drop any in-flight drag entries for a disconnecting client,
+        synthesizing a ``phase="end"`` event so user state allocated in
+        ``on_drag_start`` can be released. Without this, a mid-drag
+        disconnect both leaks the ``_active_drag_handles`` entry (the
+        entry pins a ``SceneNodeHandle`` reference, and
+        ``_is_drag_active_for`` will return spurious-true for the
+        leaked node name -- preventing a future ``remove()`` from
+        clearing its callbacks) and silently skips ``on_drag_end``."""
+        stale_keys = [k for k in self._active_drag_handles if k[0] == client_id]
+        for k in stale_keys:
+            entry = self._active_drag_handles.pop(k, None)
+            if entry is None:
+                continue
+            handle, last_msg = entry
+            # Synthesize an end event using the most recently observed
+            # client-reported positions.
+            synthetic = dataclasses.replace(last_msg, phase="end")
+            await self._dispatch_drag_callbacks(client_id, handle, synthetic)
+
+        # Same for in-flight transform-control gizmo drags.
+        stale_tc_keys = [
+            k for k in self._active_transform_drag_handles if k[0] == client_id
+        ]
+        for k in stale_tc_keys:
+            tc_handle = self._active_transform_drag_handles.pop(k, None)
+            if tc_handle is None:
+                continue
+            await self._fire_transform_controls_callbacks(client_id, tc_handle, "end")
 
     def _ensure_ancestors_exist(self, name: str) -> None:
         """Create intermediate frame nodes for any missing ancestors of `name`."""
@@ -498,6 +650,7 @@ class SceneApi:
         decay: float = 2.0,
         intensity: float = 1.0,
         cast_shadow: bool = False,
+        direction: tuple[float, float, float] = (0.0, 0.0, -1.0),
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -517,6 +670,7 @@ class SceneApi:
             decay: The amount the light dims along the distance of the light.
             intensity: Light's strength/intensity.
             cast_shadow: If set to true light will cast dynamic shadows
+            direction: Direction that the spotlight points in its local frame.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
             position: Translation to parent frame from local frame (t_pl).
             visible: Whether or not this scene node is initially visible.
@@ -528,7 +682,14 @@ class SceneApi:
         message = _messages.SpotLightMessage(
             name,
             _messages.SpotLightProps(
-                color, intensity, distance, angle, penumbra, decay, cast_shadow
+                color,
+                intensity,
+                distance,
+                angle,
+                penumbra,
+                decay,
+                cast_shadow,
+                direction,
             ),
         )
         return SpotLightHandle._make(self, message, name, wxyz, position, visible)
@@ -762,6 +923,76 @@ class SceneApi:
         )
         return LineSegmentsHandle._make(self, message, name, wxyz, position, visible)
 
+    @deprecated_positional_shim
+    def add_arrows(
+        self,
+        name: str,
+        points: np.ndarray,
+        colors: np.ndarray | RgbTupleOrArray,
+        *,
+        shaft_radius: float = 0.02,
+        head_radius: float = 0.05,
+        head_length: float = 0.1,
+        line_width: float = 1,
+        scale: float | tuple[float, float, float] = 1.0,
+        wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
+        position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
+        visible: bool = True,
+    ) -> ArrowsHandle:
+        """Add arrows to the scene.
+
+        For more complex arrow geometry or material options, consider using
+        :meth:`add_batched_meshes_simple` directly with custom cylinder/cone meshes.
+
+        Args:
+            name: A scene tree name. Names in the format of /parent/child can
+                be used to define a kinematic tree.
+            points: A numpy array of shape (N, 2, 3) defining start/end points
+                for each of N arrows.
+            colors: Colors of the arrows. Can be a single color as an RGB tuple or
+                np.ndarray of shape (3,) to apply to all arrows, or an np.ndarray of
+                shape (N, 3) to specify a color per arrow.
+            shaft_radius: Radius of the arrow shaft.
+            head_radius: Radius of the arrow head cone.
+            head_length: Length of the arrow head.
+            line_width: Width of the lines (fallback rendering).
+            scale: Scale of the arrows. A single float for uniform
+                scaling or a tuple of (x, y, z) for per-axis scaling.
+            wxyz: Quaternion rotation to parent frame from local frame (R_pl).
+            position: Translation to parent frame from local frame (t_pl).
+            visible: Whether or not these arrows are initially visible.
+
+        Returns:
+            Handle for manipulating scene node.
+        """
+        points_array = np.asarray(points, dtype=np.float32)
+        if (
+            points_array.ndim != 3
+            or points_array.shape[1] != 2
+            or points_array.shape[2] != 3
+        ):
+            raise ValueError("points should have shape (N, 2, 3) for N arrows.")
+
+        colors_array = colors_to_uint8(np.asarray(colors))
+        assert colors_array.shape in {
+            (points_array.shape[0], 3),
+            (3,),
+        }, "Shape of colors should be (N, 3) or (3,)."
+
+        message = _messages.ArrowMessage(
+            name=name,
+            props=_messages.ArrowProps(
+                points=points_array,
+                colors=colors_array,
+                shaft_radius=shaft_radius,
+                head_radius=head_radius,
+                head_length=head_length,
+                line_width=line_width,
+                scale=scale,
+            ),
+        )
+        return ArrowsHandle._make(self, message, name, wxyz, position, visible)
+
     @overload
     def add_spline_catmull_rom(
         self,
@@ -850,7 +1081,7 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        # Handle backward compatibility: support old 'positions' parameter
+        # Handle backward compatibility: support old 'positions' parameter.
         if "positions" in _deprecated_kwargs:
             if points is not MISSING_SENTINEL:
                 raise ValueError(
@@ -985,7 +1216,7 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        # Handle backward compatibility: support old 'positions' parameter
+        # Handle backward compatibility: support old 'positions' parameter.
         if "positions" in _deprecated_kwargs:
             if points is not MISSING_SENTINEL:
                 raise ValueError(
@@ -1207,16 +1438,11 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        batched_wxyzs = np.asarray(batched_wxyzs)
-        batched_positions = np.asarray(batched_positions)
-
-        num_axes = batched_wxyzs.shape[0]
-        assert batched_wxyzs.shape == (num_axes, 4)
-        assert batched_positions.shape == (num_axes, 3)
-
-        if batched_scales is not None:
-            batched_scales = np.asarray(batched_scales).astype(np.float32)
-            assert batched_scales.shape in ((num_axes,), (num_axes, 3))
+        batched_wxyzs, batched_positions, batched_scales, _ = (
+            _validate_batched_transforms(
+                batched_wxyzs, batched_positions, batched_scales
+            )
+        )
 
         props = _messages.BatchedAxesProps(
             batched_wxyzs=batched_wxyzs.astype(np.float32),
@@ -1387,6 +1613,7 @@ class SceneApi:
         ] = "square",
         precision: Literal["float16", "float32"] = "float16",
         scale: float | tuple[float, float, float] = 1.0,
+        point_shading: Literal["flat", "gradient"] = "gradient",
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
@@ -1405,6 +1632,8 @@ class SceneApi:
                 will be cast to this precision.
             scale: Scale of the point cloud. A single float for uniform scaling
                 or a tuple of (x, y, z) for per-axis scaling.
+            point_shading: Shading mode for points. "flat" renders solid colors.
+                "gradient" adds center-to-edge shading for a sphere-like look.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
             position: Translation to parent frame from local frame (t_pl).
             visible: Whether or not this scene node is initially visible.
@@ -1423,17 +1652,19 @@ class SceneApi:
         message = _messages.PointCloudMessage(
             name=name,
             props=_messages.PointCloudProps(
-                points=points.astype(
-                    {
+                points=np.asarray(
+                    points,
+                    dtype={
                         "float16": np.float16,
                         "float32": np.float32,
-                    }[precision]
+                    }[precision],
                 ),
                 colors=colors_cast,
                 point_size=point_size,
                 point_shape=point_shape,
                 precision=precision,
                 scale=scale,
+                point_shading=point_shading,
             ),
         )
         return PointCloudHandle._make(self, message, name, wxyz, position, visible)
@@ -1497,29 +1728,29 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        if wireframe and material != "standard":
-            warnings.warn(
-                f"Invalid combination of {wireframe=} and {material=}. Material argument will be ignored.",
-                stacklevel=2,
-            )
-        if wireframe and flat_shading:
-            warnings.warn(
-                f"Invalid combination of {wireframe=} and {flat_shading=}. Flat shading argument will be ignored.",
-                stacklevel=2,
-            )
+        _warn_wireframe_conflicts(wireframe, material, flat_shading)
 
         assert len(bone_wxyzs) == len(bone_positions)
         num_bones = len(bone_wxyzs)
+        if num_bones == 0:
+            raise ValueError("A skinned mesh requires at least one bone.")
         assert skin_weights.shape == (vertices.shape[0], num_bones)
 
-        # Take the four biggest indices.
-        top4_skin_indices = np.argsort(skin_weights, axis=-1)[:, -4:]
-        top4_skin_weights = skin_weights[
-            np.arange(vertices.shape[0])[:, None], top4_skin_indices
+        # Take up to the four biggest weights per vertex. The client expects
+        # exactly four bone indices/weights per vertex, so when the rig has
+        # fewer than four bones we pad with zero-weight (index 0) entries, which
+        # have no effect on the skinning result.
+        num_vertices = vertices.shape[0]
+        num_influences = min(4, num_bones)
+        pad = 4 - num_influences
+        top_skin_indices = np.argsort(skin_weights, axis=-1)[:, -num_influences:]
+        top_skin_weights = skin_weights[
+            np.arange(num_vertices)[:, None], top_skin_indices
         ]
-        assert (
-            top4_skin_weights.shape == top4_skin_indices.shape == (vertices.shape[0], 4)
-        )
+        if pad > 0:
+            top_skin_indices = np.pad(top_skin_indices, ((0, 0), (0, pad)))
+            top_skin_weights = np.pad(top_skin_weights, ((0, 0), (0, pad)))
+        assert top_skin_weights.shape == top_skin_indices.shape == (num_vertices, 4)
 
         bone_wxyzs = np.asarray(bone_wxyzs)
         bone_positions = np.asarray(bone_positions)
@@ -1539,8 +1770,8 @@ class SceneApi:
                 scale=scale,
                 bone_wxyzs=bone_wxyzs.astype(np.float32),
                 bone_positions=bone_positions.astype(np.float32),
-                skin_indices=top4_skin_indices.astype(np.uint16),
-                skin_weights=top4_skin_weights.astype(np.float32),
+                skin_indices=top_skin_indices.astype(np.uint16),
+                skin_weights=top_skin_weights.astype(np.float32),
                 cast_shadow=cast_shadow,
                 receive_shadow=receive_shadow,
             ),
@@ -1612,16 +1843,7 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        if wireframe and material != "standard":
-            warnings.warn(
-                f"Invalid combination of {wireframe=} and {material=}. Material argument will be ignored.",
-                stacklevel=2,
-            )
-        if wireframe and flat_shading:
-            warnings.warn(
-                f"Invalid combination of {wireframe=} and {flat_shading=}. Flat shading argument will be ignored.",
-                stacklevel=2,
-            )
+        _warn_wireframe_conflicts(wireframe, material, flat_shading)
         message = _messages.MeshMessage(
             name=name,
             props=_messages.MeshProps(
@@ -1753,27 +1975,13 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        if wireframe and material != "standard":
-            warnings.warn(
-                f"Invalid combination of {wireframe=} and {material=}. Material argument will be ignored.",
-                stacklevel=2,
+        _warn_wireframe_conflicts(wireframe, material, flat_shading)
+
+        batched_wxyzs, batched_positions, batched_scales, num_instances = (
+            _validate_batched_transforms(
+                batched_wxyzs, batched_positions, batched_scales
             )
-        if wireframe and flat_shading:
-            warnings.warn(
-                f"Invalid combination of {wireframe=} and {flat_shading=}. Flat shading argument will be ignored.",
-                stacklevel=2,
-            )
-
-        batched_wxyzs = np.asarray(batched_wxyzs)
-        batched_positions = np.asarray(batched_positions)
-
-        num_instances = batched_wxyzs.shape[0]
-        assert batched_wxyzs.shape == (num_instances, 4)
-        assert batched_positions.shape == (num_instances, 3)
-
-        if batched_scales is not None:
-            batched_scales = np.asarray(batched_scales).astype(np.float32)
-            assert batched_scales.shape in ((num_instances,), (num_instances, 3))
+        )
 
         # Handle batched opacities.
         if batched_opacities is not None:
@@ -1784,6 +1992,13 @@ class SceneApi:
         batched_colors_array = None
         if batched_colors is not None:
             batched_colors_array = colors_to_uint8(np.asarray(batched_colors))
+            # Validate length against the instance count (like the other
+            # per-instance arrays above); otherwise a mismatched-length color
+            # array is sent verbatim and the client silently drops all colors.
+            assert batched_colors_array.shape in ((3,), (num_instances, 3)), (
+                f"batched_colors must have shape (3,) or ({num_instances}, 3), "
+                f"got {batched_colors_array.shape}."
+            )
 
         message = _messages.BatchedMeshesMessage(
             name=name,
@@ -1851,16 +2066,11 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        batched_wxyzs = np.asarray(batched_wxyzs)
-        batched_positions = np.asarray(batched_positions)
-
-        num_instances = batched_wxyzs.shape[0]
-        assert batched_wxyzs.shape == (num_instances, 4)
-        assert batched_positions.shape == (num_instances, 3)
-
-        if batched_scales is not None:
-            batched_scales = np.asarray(batched_scales).astype(np.float32)
-            assert batched_scales.shape in ((num_instances,), (num_instances, 3))
+        batched_wxyzs, batched_positions, batched_scales, _ = (
+            _validate_batched_transforms(
+                batched_wxyzs, batched_positions, batched_scales
+            )
+        )
 
         with io.BytesIO() as data_buffer:
             mesh.export(data_buffer, file_type="glb")
@@ -1925,16 +2135,11 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        batched_wxyzs = np.asarray(batched_wxyzs)
-        batched_positions = np.asarray(batched_positions)
-
-        num_instances = batched_wxyzs.shape[0]
-        assert batched_wxyzs.shape == (num_instances, 4)
-        assert batched_positions.shape == (num_instances, 3)
-
-        if batched_scales is not None:
-            batched_scales = np.asarray(batched_scales).astype(np.float32)
-            assert batched_scales.shape in ((num_instances,), (num_instances, 3))
+        batched_wxyzs, batched_positions, batched_scales, _ = (
+            _validate_batched_transforms(
+                batched_wxyzs, batched_positions, batched_scales
+            )
+        )
 
         message = _messages.BatchedGlbMessage(
             name=name,
@@ -2072,23 +2277,12 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        if isinstance(dimensions, np.ndarray):
-            dimensions_list = dimensions.tolist()
-            assert len(dimensions_list) == 3, (
-                f"Expected 3 dimensions, got {len(dimensions_list)}"
-            )
-            dimensions_tuple = (
-                float(dimensions_list[0]),
-                float(dimensions_list[1]),
-                float(dimensions_list[2]),
-            )
-        else:
-            assert len(dimensions) == 3, f"Expected 3 dimensions, got {len(dimensions)}"
-            dimensions_tuple = (
-                float(dimensions[0]),
-                float(dimensions[1]),
-                float(dimensions[2]),
-            )
+        assert len(dimensions) == 3, f"Expected 3 dimensions, got {len(dimensions)}"
+        dimensions_tuple = (
+            float(dimensions[0]),
+            float(dimensions[1]),
+            float(dimensions[2]),
+        )
 
         message = _messages.BoxMessage(
             name=name,
@@ -2413,6 +2607,11 @@ class SceneApi:
         Returns:
             Handle for manipulating (and reading state of) scene node.
         """
+        # Normalize the name up front so the node map, the transform-controls
+        # registry, and the pose-sync messages below all key off the same
+        # (leading-slash) name the client uses.
+        name = _normalize_node_name(name)
+
         message = _messages.TransformControlsMessage(
             name=name,
             props=_messages.TransformControlsProps(
@@ -2455,6 +2654,10 @@ class SceneApi:
         )
         handle = TransformControlsHandle(node_handle._impl, state_aux)
         self._handle_from_transform_controls_name[name] = handle
+        # Store the typed handle (not the plain SceneNodeHandle from `_make`) in
+        # the node map so removal via `reset()` / re-add dedup goes through the
+        # same path that cleans up the transform-controls registry.
+        self._handle_from_node_name[name] = handle
         return handle
 
     def reset(self) -> None:
@@ -2494,23 +2697,59 @@ class SceneApi:
     async def _handle_transform_controls_updates(
         self, client_id: ClientId, message: _messages.TransformControlsUpdateMessage
     ) -> None:
-        """Callback for handling transform gizmo messages."""
-        handle = self._handle_from_transform_controls_name.get(message.name, None)
+        """Apply pose update and fire `update_cb` with phase="update"."""
+        # Prefer the active-drag map so a late update still resolves after the
+        # gizmo was removed mid-drag (which pops it from the live registry).
+        handle = self._active_transform_drag_handles.get(
+            (client_id, message.name)
+        ) or self._handle_from_transform_controls_name.get(message.name, None)
         if handle is None:
             return
 
-        # Update state.
-        wxyz = np.array(message.wxyz)
-        position = np.array(message.position)
-        handle._impl.wxyz = wxyz
-        handle._impl.position = position
+        handle._impl.wxyz = np.array(message.wxyz)
+        handle._impl.position = np.array(message.position)
         handle._impl_aux.last_updated = time.time()
 
-        # Trigger callbacks.
+        await self._fire_transform_controls_callbacks(client_id, handle, "update")
+        # Fire the callback even for a removed gizmo (late update during teardown),
+        # but skip the cross-client pose broadcast: sync_cb queues PERSISTENT
+        # Set{Orientation,Position} messages keyed by node name, which would
+        # linger in the broadcast buffer for the removed name (the
+        # RemoveSceneNodeMessage uses a different redundancy key and won't purge
+        # them) and corrupt the pose of a future same-name node.
+        if handle._impl_aux.sync_cb is not None and not handle._impl.removed:
+            handle._impl_aux.sync_cb(client_id, handle)
+
+    async def _handle_transform_controls_drag_start(
+        self, client_id: ClientId, message: _messages.TransformControlsDragStartMessage
+    ) -> None:
+        handle = self._handle_from_transform_controls_name.get(message.name, None)
+        if handle is None:
+            return
+        self._active_transform_drag_handles[(client_id, message.name)] = handle
+        await self._fire_transform_controls_callbacks(client_id, handle, "start")
+
+    async def _handle_transform_controls_drag_end(
+        self, client_id: ClientId, message: _messages.TransformControlsDragEndMessage
+    ) -> None:
+        handle = self._active_transform_drag_handles.pop(
+            (client_id, message.name), None
+        ) or self._handle_from_transform_controls_name.get(message.name, None)
+        if handle is None:
+            return
+        await self._fire_transform_controls_callbacks(client_id, handle, "end")
+
+    async def _fire_transform_controls_callbacks(
+        self,
+        client_id: ClientId,
+        handle: TransformControlsHandle,
+        phase: DragPhase,
+    ) -> None:
         event = TransformControlsEvent(
             client=self._get_client_handle(client_id),
             client_id=client_id,
             target=handle,
+            phase=phase,
         )
         for cb in handle._impl_aux.update_cb:
             if asyncio.iscoroutinefunction(cb):
@@ -2519,52 +2758,21 @@ class SceneApi:
                 self._thread_executor.submit(cb, event).add_done_callback(
                     print_threadpool_errors
                 )
-        if handle._impl_aux.sync_cb is not None:
-            handle._impl_aux.sync_cb(client_id, handle)
 
-    async def _handle_transform_controls_drag_start(
-        self, client_id: ClientId, message: _messages.TransformControlsDragStartMessage
+    async def _dispatch_callback(
+        self,
+        cb: Callable[[Any], None | Coroutine],
+        event: Any,
     ) -> None:
-        """Callback for handling transform control drag start messages."""
-        handle = self._handle_from_transform_controls_name.get(message.name, None)
-        if handle is None:
-            return
-
-        # Trigger callbacks.
-        event = TransformControlsEvent(
-            client=self._get_client_handle(client_id),
-            client_id=client_id,
-            target=handle,
-        )
-        for cb in handle._impl_aux.drag_start_cb:
-            if asyncio.iscoroutinefunction(cb):
-                await cb(event)
-            else:
-                self._thread_executor.submit(cb, event).add_done_callback(
-                    print_threadpool_errors
-                )
-
-    async def _handle_transform_controls_drag_end(
-        self, client_id: ClientId, message: _messages.TransformControlsDragEndMessage
-    ) -> None:
-        """Callback for handling transform control drag end messages."""
-        handle = self._handle_from_transform_controls_name.get(message.name, None)
-        if handle is None:
-            return
-
-        # Trigger callbacks.
-        event = TransformControlsEvent(
-            client=self._get_client_handle(client_id),
-            client_id=client_id,
-            target=handle,
-        )
-        for cb in handle._impl_aux.drag_end_cb:
-            if asyncio.iscoroutinefunction(cb):
-                await cb(event)
-            else:
-                self._thread_executor.submit(cb, event).add_done_callback(
-                    print_threadpool_errors
-                )
+        """Run a user callback either via ``await`` (async) or via the
+        thread pool (sync). The thread-pool branch routes exceptions
+        through ``print_threadpool_errors``."""
+        if asyncio.iscoroutinefunction(cb):
+            await cb(event)
+        else:
+            self._thread_executor.submit(cb, event).add_done_callback(
+                print_threadpool_errors
+            )
 
     async def _handle_node_click_updates(
         self, client_id: ClientId, message: _messages.SceneNodeClickMessage
@@ -2573,144 +2781,409 @@ class SceneApi:
         handle = self._handle_from_node_name.get(message.name, None)
         if handle is None or handle._impl.click_cb is None:
             return
-        for cb in handle._impl.click_cb:
-            event = SceneNodePointerEvent(
-                client=self._get_client_handle(client_id),
-                client_id=client_id,
-                event="click",
-                target=cast(_ClickableSceneNodeHandle, handle),
-                ray_origin=message.ray_origin,
-                ray_direction=message.ray_direction,
-                screen_pos=message.screen_pos,
-                instance_index=message.instance_index,
-            )
-            if asyncio.iscoroutinefunction(cb):
-                await cb(event)
+        event = SceneNodePointerEvent(
+            client=self._get_client_handle(client_id),
+            client_id=client_id,
+            event="click",
+            target=cast(_RaycastSupportedSceneNodeHandle, handle),
+            ray_origin=message.ray_origin,
+            ray_direction=message.ray_direction,
+            screen_pos=message.screen_pos,
+            instance_index=message.instance_index,
+            modifier=message.modifier,
+        )
+        # Snapshot the list -- a callback may register/remove other
+        # callbacks during dispatch; mutations should not affect the
+        # in-flight iteration.
+        for entry in list(handle._impl.click_cb):
+            if not _modifier_matches_filter(message.modifier, entry.modifier):
+                continue
+            await self._dispatch_callback(entry.callback, event)
+
+    async def _handle_node_drag(
+        self,
+        client_id: ClientId,
+        message: _messages.SceneNodeDragMessage,
+    ) -> None:
+        """Dispatch a scene-node drag start/update/end message to matching
+        callbacks.
+
+        Note on ordering: sync callbacks are submitted to a thread pool
+        fire-and-forget, so two drags messages dispatched back-to-back
+        (e.g. start + update) can race -- the update's callback may run
+        before the start's callback finishes, leaving user state
+        half-initialized. Async callbacks are awaited in order and don't
+        have this issue, so for stateful gestures define your callbacks
+        as ``async def`` (with no internal ``await`` s, so each runs
+        atomically on the event loop)."""
+        # On phase="start", look up the handle in the live registry and
+        # remember it (with the message, so a synthetic end on
+        # disconnect can carry the latest positions). On update, refresh
+        # the stored message. On update/end, prefer the active-drag map
+        # so we can still dispatch even if the node was removed
+        # mid-drag -- the user's on_drag_end MUST fire so per-drag state
+        # can be released. The active-drag entry is always cleared on
+        # ``end``, even when dispatch falls through.
+        active_key = (client_id, message.name)
+        handle: SceneNodeHandle | None
+        if message.phase == "start":
+            handle = self._handle_from_node_name.get(message.name, None)
+            if isinstance(handle, _RaycastSupportedSceneNodeHandle):
+                self._active_drag_handles[active_key] = (handle, message)
+        else:
+            entry = self._active_drag_handles.get(active_key)
+            if entry is not None:
+                handle = entry[0]
+                if message.phase == "update":
+                    self._active_drag_handles[active_key] = (handle, message)
             else:
-                self._thread_executor.submit(cb, event).add_done_callback(
-                    print_threadpool_errors
-                )
+                handle = self._handle_from_node_name.get(message.name, None)
+        if message.phase == "end":
+            self._active_drag_handles.pop(active_key, None)
+        if not isinstance(handle, _RaycastSupportedSceneNodeHandle):
+            return
+
+        await self._dispatch_drag_callbacks(client_id, handle, message)
+
+    async def _dispatch_drag_callbacks(
+        self,
+        client_id: ClientId,
+        handle: _RaycastSupportedSceneNodeHandle,
+        message: _messages.SceneNodeDragMessage,
+    ) -> None:
+        """Run all matching ``handle`` drag callbacks for ``message``.
+
+        Shared by ``_handle_node_drag`` (live messages) and
+        ``_drop_active_drags_for_client`` (synthetic end on disconnect)."""
+        input = _DragInput(button=message.button, modifier=message.modifier)
+        matching = handle._dispatch_drag(input)
+        if not matching:
+            return
+
+        event = SceneNodeDragEvent(
+            client=self._get_client_handle(client_id),
+            client_id=client_id,
+            target=cast(_RaycastSupportedSceneNodeHandle, handle),
+            phase=message.phase,
+            instance_index=message.instance_index,
+            start_position=message.start_position,
+            start_screen_pos=message.start_screen_pos,
+            end_position=message.end_position,
+            end_screen_pos=message.end_screen_pos,
+            button=message.button,
+            modifier=message.modifier,
+        )
+        for cb in matching:
+            await self._dispatch_callback(cb, event)
 
     async def _handle_scene_pointer_updates(
         self, client_id: ClientId, message: _messages.ScenePointerMessage
     ):
-        """Callback for handling click messages."""
-        event = ScenePointerEvent(
-            client=self._get_client_handle(client_id),
+        """Dispatch a scene-level click or rect-select to matching
+        callbacks (new typed APIs and legacy ``on_pointer_event``)."""
+        if not self._scene_pointer_cb:
+            return
+        client = self._get_client_handle(client_id)
+        modifier = message.modifier
+
+        # Build the typed event once for the actual gesture; the legacy
+        # union-shape event is also built once. ``ScenePointerEvent``
+        # remains a separate path because it lumps clicks and rect-
+        # selects into one shape with Optional ray fields.
+        typed_event: SceneClickEvent | SceneRectSelectEvent
+        if message.event_type == "click":
+            assert message.ray_origin is not None
+            assert message.ray_direction is not None
+            typed_event = SceneClickEvent(
+                client=client,
+                client_id=client_id,
+                ray_origin=message.ray_origin,
+                ray_direction=message.ray_direction,
+                screen_pos=message.screen_pos[0],
+                modifier=modifier,
+            )
+        else:
+            typed_event = SceneRectSelectEvent(
+                client=client,
+                client_id=client_id,
+                screen_min=message.screen_pos[0],
+                screen_max=message.screen_pos[1],
+                modifier=modifier,
+            )
+        legacy_event = ScenePointerEvent(
+            client=client,
             client_id=client_id,
             event_type=message.event_type,
             ray_origin=message.ray_origin,
             ray_direction=message.ray_direction,
             screen_pos=message.screen_pos,
+            modifier=modifier,
         )
-        # Call the callback if it exists, and the after-run callback.
-        if self._scene_pointer_cb is None:
-            return
-        if asyncio.iscoroutinefunction(self._scene_pointer_cb):
-            await self._scene_pointer_cb(event)
-        else:
-            self._thread_executor.submit(
-                self._scene_pointer_cb, event
-            ).add_done_callback(print_threadpool_errors)
 
+        # Snapshot the list -- a callback may register/remove other
+        # callbacks during dispatch; mutations should not affect the
+        # in-flight iteration.
+        for entry in list(self._scene_pointer_cb):
+            if entry.event_type != message.event_type:
+                continue
+            if not _modifier_matches_filter(modifier, entry.modifier):
+                continue
+            event = (
+                legacy_event if entry.event_class is ScenePointerEvent else typed_event
+            )
+            await self._dispatch_callback(entry.callback, event)
+
+    def on_click(
+        self,
+        *,
+        modifier: _messages.KeyModifier | None = None,
+    ) -> Callable[
+        [Callable[[SceneClickEvent], None]], Callable[[SceneClickEvent], None]
+    ]:
+        """Register a callback for clicks anywhere in the scene
+        (background and meshes both, after the per-node ``on_click``
+        for any clickable mesh under the cursor).
+
+        Multiple callbacks can be registered. Each fires only when its
+        ``modifier`` filter matches the modifiers held at click time.
+
+        Args:
+            modifier: Modifier-combo filter. Default ``None`` matches
+                "no modifiers held". ``"cmd/ctrl"``, ``"shift"``,
+                ``"cmd/ctrl+shift"``, etc. are exact matches (listed
+                modifiers held, others not). ``cmd/ctrl`` matches
+                whenever either Cmd or Ctrl is held.
+        """
+        return self._register_scene_pointer_callback("click", modifier, SceneClickEvent)
+
+    def on_rect_select(
+        self,
+        *,
+        modifier: _messages.KeyModifier | None = None,
+    ) -> Callable[
+        [Callable[[SceneRectSelectEvent], None]],
+        Callable[[SceneRectSelectEvent], None],
+    ]:
+        """Register a callback for rectangle-select gestures (drag a
+        box on the canvas).
+
+        Multiple callbacks can be registered. Each fires only when its
+        ``modifier`` filter matches the modifiers held at gesture
+        start. The selection rectangle is drawn on the canvas only
+        when the held modifiers match at least one registered
+        callback's filter.
+
+        Args:
+            modifier: See :meth:`on_click` for semantics.
+        """
+        return self._register_scene_pointer_callback(
+            "rect-select", modifier, SceneRectSelectEvent
+        )
+
+    @deprecated(
+        "Use on_click() (with SceneClickEvent) or on_rect_select() "
+        "(with SceneRectSelectEvent) instead."
+    )
     def on_pointer_event(
-        self, event_type: Literal["click", "rect-select"]
+        self,
+        event_type: Literal["click", "rect-select"],
+        *,
+        modifier: _messages.KeyModifier | None = None,
     ) -> Callable[
         [Callable[[ScenePointerEvent], None]], Callable[[ScenePointerEvent], None]
     ]:
-        """Add a callback for scene pointer events.
+        """Legacy registration that hands callbacks the union-shaped
+        :class:`ScenePointerEvent`. Single-slot semantics: re-registering
+        replaces the existing pointer callback (and fires any pending
+        :meth:`on_pointer_callback_removed` cleanups).
 
-        Args:
-            event_type: event to listen to.
+        .. deprecated::
+            Use :meth:`on_click` or :meth:`on_rect_select` instead.
+            They produce the typed :class:`SceneClickEvent` /
+            :class:`SceneRectSelectEvent` and accept multiple
+            coexisting callbacks.
         """
-        # Ensure the event type is valid.
-        assert event_type in get_args(_messages.ScenePointerEventType)
-
-        from ._viser import ClientHandle, ViserServer
-
-        def cleanup_previous_event(target: ViserServer | ClientHandle):
-            # If the server or client does not have a scene pointer callback, return.
-            if target.scene._scene_pointer_cb is None:
-                return
-
-            # Remove callback.
-            target.scene.remove_pointer_callback()
+        register = self._register_scene_pointer_callback(
+            event_type, modifier, ScenePointerEvent
+        )
 
         def decorator(
             func: Callable[[ScenePointerEvent], None],
         ) -> Callable[[ScenePointerEvent], None]:
-            # Check if another scene pointer event was previously registered.
-            # If so, we need to clear the previous event and register the new one.
-            cleanup_previous_event(self._owner)
+            # Preserve legacy "one pointer callback at a time" semantic
+            # -- replace any prior on_pointer_event/on_click/on_rect_select
+            # registrations and fire their cleanup hooks before adding.
+            self._remove_all_pointer_callbacks()
+            return register(func)
 
-            # If called on the server handle, remove all clients' callbacks.
+        return decorator
+
+    def _register_scene_pointer_callback(
+        self,
+        event_type: _messages.ScenePointerEventType,
+        modifier: _messages.KeyModifier | None,
+        event_class: type,
+    ) -> Any:
+        normalized_modifier = _messages._normalize_key_modifier(modifier)
+
+        from ._viser import ClientHandle, ViserServer
+
+        def decorator(func: Callable[[Any], None]) -> Callable[[Any], None]:
+            # Server-scope and client-scope share the same client-side
+            # enable toggle. Coexistence would let one scope's
+            # disable silently deactivate the other's callbacks;
+            # enforce exclusivity instead.
             if isinstance(self._owner, ViserServer):
                 for client in self._owner.get_clients().values():
-                    cleanup_previous_event(client)
-
-            # If called on the client handle, and server handle has a callback, remove the server's callback.
-            # (If the server has a callback, none of the clients should have callbacks.)
+                    client.scene._remove_all_pointer_callbacks()
             elif isinstance(self._owner, ClientHandle):
-                server = self._owner._viser_server
-                cleanup_previous_event(server)
+                self._owner._viser_server.scene._remove_all_pointer_callbacks()
 
-            self._scene_pointer_cb = func
-            self._scene_pointer_event_type = event_type
-
-            self._websock_interface.queue_message(
-                _messages.ScenePointerEnableMessage(enable=True, event_type=event_type)
+            self._scene_pointer_cb.append(
+                _PointerCallbackEntry(
+                    callback=func,
+                    event_type=event_type,
+                    modifier=normalized_modifier,
+                    event_class=event_class,
+                )
             )
+            self._sync_scene_pointer_filters(event_type)
             return func
 
         return decorator
 
+    def _sync_scene_pointer_filters(
+        self, event_type: _messages.ScenePointerEventType
+    ) -> None:
+        """Send the current modifier-filter set for ``event_type`` to the
+        client. An empty set disables the event type. Duplicates are
+        collapsed -- multiple callbacks under the same filter only need
+        one wire entry to gate gesture engagement."""
+        modifiers = cast(
+            Tuple[Optional[_messages.KeyModifier], ...],
+            tuple(
+                {
+                    entry.modifier
+                    for entry in self._scene_pointer_cb
+                    if entry.event_type == event_type
+                }
+            ),
+        )
+        self._websock_interface.queue_message(
+            _messages.ScenePointerEnableMessage(
+                event_type=event_type, modifiers=modifiers
+            )
+        )
+
+    @deprecated(
+        "Run cleanup inline right after remove_click_callback() / "
+        "remove_rect_select_callback() instead."
+    )
     def on_pointer_callback_removed(
         self,
         func: Callable[[], NoneOrCoroutine],
     ) -> Callable[[], NoneOrCoroutine]:
-        """Add a callback to run automatically when the callback for a scene
-        pointer event is removed. This will be triggered exactly once, either
-        manually (via :meth:`remove_pointer_callback()`) or automatically (if
-        the scene pointer event is overridden with another call to
-        :meth:`on_pointer_event()`).
+        """Add a cleanup callback fired when the scene pointer
+        registration list becomes empty.
+
+        .. deprecated::
+            Paired with the deprecated :meth:`on_pointer_event` /
+            :meth:`remove_pointer_callback`. With :meth:`on_click` /
+            :meth:`on_rect_select` (which can coexist) and
+            :meth:`remove_click_callback` /
+            :meth:`remove_rect_select_callback`, run cleanup inline
+            right after the per-event removal.
 
         Args:
             func: Callback for when scene pointer events are removed.
         """
-        self._scene_pointer_done_cb = func
+        self._scene_pointer_done_cb.append(func)
         return func
 
+    def remove_click_callback(
+        self, callback: Literal["all"] | Callable = "all"
+    ) -> None:
+        """Remove scene-level click callbacks registered via
+        :meth:`on_click`. Pass a specific function to remove just that
+        registration, or ``"all"`` to clear every click registration."""
+        self._remove_pointer_callback("click", callback)
+
+    def remove_rect_select_callback(
+        self, callback: Literal["all"] | Callable = "all"
+    ) -> None:
+        """Remove rect-select callbacks registered via
+        :meth:`on_rect_select`. Pass a specific function to remove just
+        that registration, or ``"all"`` to clear every rect-select
+        registration."""
+        self._remove_pointer_callback("rect-select", callback)
+
+    def _remove_pointer_callback(
+        self,
+        event_type: _messages.ScenePointerEventType,
+        callback: Literal["all"] | Callable,
+    ) -> None:
+        before = len(self._scene_pointer_cb)
+        if callback == "all":
+            self._scene_pointer_cb = [
+                entry
+                for entry in self._scene_pointer_cb
+                if entry.event_type != event_type
+            ]
+        else:
+            self._scene_pointer_cb = [
+                entry
+                for entry in self._scene_pointer_cb
+                if not (entry.event_type == event_type and entry.callback == callback)
+            ]
+        if len(self._scene_pointer_cb) == before:
+            return
+        self._sync_scene_pointer_filters(event_type)
+        # Fire cleanup callbacks once the user's last registration is
+        # gone -- same teardown contract as the legacy
+        # ``remove_pointer_callback()`` path.
+        if not self._scene_pointer_cb:
+            self._fire_scene_pointer_done_callbacks()
+
+    @deprecated("Use remove_click_callback() or remove_rect_select_callback() instead.")
     def remove_pointer_callback(
         self,
     ) -> None:
-        """Remove the currently attached scene pointer event. This will trigger
-        any callback attached to `.on_scene_pointer_removed()`."""
+        """Remove all attached scene pointer event callbacks. This will
+        trigger any callback attached to
+        :meth:`on_pointer_callback_removed()`.
 
-        if self._scene_pointer_cb is None:
-            warnings.warn(
-                "No scene pointer callback exists for this server/client, ignoring.",
-                stacklevel=2,
-            )
+        .. deprecated::
+            Paired with the deprecated :meth:`on_pointer_event`. Use
+            :meth:`remove_click_callback` and/or
+            :meth:`remove_rect_select_callback` for the per-event-type
+            equivalents.
+        """
+        self._remove_all_pointer_callbacks()
+
+    def _remove_all_pointer_callbacks(self) -> None:
+        if not self._scene_pointer_cb:
             return
 
-        # Notify client that the listener has been removed.
-        event_type = self._scene_pointer_event_type
-        assert event_type is not None
-        self._websock_interface.queue_message(
-            _messages.ScenePointerEnableMessage(enable=False, event_type=event_type)
-        )
+        # Empty the callback list, then sync the disable for every
+        # event_type that had at least one entry.
+        seen_event_types: set[_messages.ScenePointerEventType] = {
+            entry.event_type for entry in self._scene_pointer_cb
+        }
+        self._scene_pointer_cb = []
+        for event_type in seen_event_types:
+            self._sync_scene_pointer_filters(event_type)
         self._owner.flush()
+        self._fire_scene_pointer_done_callbacks()
 
-        # Run cleanup callback.
-        if asyncio.iscoroutinefunction(self._scene_pointer_done_cb):
-            self._event_loop.create_task(self._scene_pointer_done_cb())
-        else:
-            self._scene_pointer_done_cb()
-
-        # Reset the callback and event type, on the python side.
-        self._scene_pointer_cb = None
-        self._scene_pointer_done_cb = lambda: None
-        self._scene_pointer_event_type = None
+    def _fire_scene_pointer_done_callbacks(self) -> None:
+        # Snapshot -- each cleanup may unregister itself via the same
+        # handle without breaking iteration.
+        for cleanup in list(self._scene_pointer_done_cb):
+            if asyncio.iscoroutinefunction(cleanup):
+                self._event_loop.create_task(cleanup())
+            else:
+                cleanup()
+        self._scene_pointer_done_cb = []
 
     @deprecated_positional_shim
     def add_3d_gui_container(
@@ -2737,11 +3210,15 @@ class SceneApi:
         """
 
         # Avoids circular import.
-        from ._gui_api import _make_uuid
+        from ._gui_handles import _make_uuid
 
         # New name to make the type checker happy; ViserServer and ClientHandle inherit
         # from both GuiApi and MessageApi. The pattern below is unideal.
         gui_api = self._owner.gui
+
+        # Normalize the name so the dedup check below matches the (leading-slash)
+        # key the node map actually uses.
+        name = _normalize_node_name(name)
 
         # Remove the 3D GUI container if it already exists. This will make sure
         # contained GUI elements are removed, preventing potential memory leaks.
@@ -2759,7 +3236,12 @@ class SceneApi:
         node_handle = SceneNodeHandle._make(
             self, message, name, wxyz, position, visible=visible
         )
-        return Gui3dContainerHandle(node_handle._impl, gui_api, container_id)
+        handle = Gui3dContainerHandle(node_handle._impl, gui_api, container_id)
+        # Store the typed handle (not the plain SceneNodeHandle from `_make`) in
+        # the node map so removal via `reset()` / re-add dedup / cascading parent
+        # removal cleans up the container's GUI children and registry entry.
+        self._handle_from_node_name[name] = handle
+        return handle
 
     def get_handle_by_name(self, name: str) -> SceneNodeHandle | None:
         """Get the scene node handle for the given `name`, if it exists.
@@ -2776,9 +3258,7 @@ class SceneApi:
         Returns:
             Scene node handle, or None if no such node exists.
         """
-        if not name.startswith("/"):
-            name = "/" + name
-        return self._handle_from_node_name.get(name, None)
+        return self._handle_from_node_name.get(_normalize_node_name(name), None)
 
     def remove_by_name(self, name: str) -> None:
         """Remove the scene node with the given `name` and any of its children.
@@ -2788,12 +3268,38 @@ class SceneApi:
             ``add_*()`` call and calling :meth:`SceneNodeHandle.remove()`
             directly instead of using this method.
         """
-        name = name.rstrip("/")  # '/parent/' => '/parent'
-        if not name.startswith("/"):
-            name = "/" + name
+        name = _normalize_node_name(name.rstrip("/"))  # '/parent/' => '/parent'
         handle = self._handle_from_node_name.get(name)
         if handle is not None:
             handle.remove()
+
+    def as_html(self, dark_mode: bool = False) -> str:
+        """Get a standalone HTML string for the current scene.
+
+        Returns a self-contained HTML document that can be saved to a file
+        or embedded in other contexts.
+
+        This method is only available when called on ``server.scene``, not on
+        individual client scene APIs.
+
+        See also :meth:`viser.infra.StateSerializer.as_html()`.
+
+        Args:
+            dark_mode: Use dark color scheme.
+
+        Returns:
+            A complete HTML document as a string.
+        """
+        from ._viser import ViserServer
+
+        assert isinstance(self._owner, ViserServer), (
+            "as_html() is only available on server.scene, not on client scene APIs."
+        )
+
+        # Clear any previous recording state to allow multiple calls.
+        self._owner._websock_server._record_handles.clear()
+
+        return self._owner.get_scene_serializer().as_html(dark_mode)
 
     def show(self, height: int = 400, dark_mode: bool = False) -> None:
         """Display the scene in a Jupyter notebook or web browser.

@@ -1,135 +1,129 @@
+import React from "react";
 import * as THREE from "three";
 import {
-  MeshBasicMaterial,
-  MeshDepthMaterial,
-  MeshDistanceMaterial,
-  MeshLambertMaterial,
-  MeshMatcapMaterial,
-  MeshNormalMaterial,
-  MeshPhongMaterial,
-  MeshPhysicalMaterial,
-  MeshStandardMaterial,
-  MeshToonMaterial,
-  ShadowMaterial,
-  SpriteMaterial,
-  RawShaderMaterial,
-  ShaderMaterial,
-  PointsMaterial,
-  LineBasicMaterial,
-  LineDashedMaterial,
-} from "three";
+  rgbToInt,
+  assertUnreachable,
+  GRADIENT_MAP_3,
+  GRADIENT_MAP_5,
+  sideMap,
+} from "./meshMaterialUtils";
+import type { StandardMaterialProps } from "./meshMaterialUtils";
+
+export type { StandardMaterialProps } from "./meshMaterialUtils";
 
 /**
- * Type definition for all possible Three.js materials
+ * Declarative material component for standard/toon materials.
+ * R3F manages lifecycle -- no manual disposal needed.
  */
-export type AllPossibleThreeJSMaterials =
-  | MeshBasicMaterial
-  | MeshDepthMaterial
-  | MeshDistanceMaterial
-  | MeshLambertMaterial
-  | MeshMatcapMaterial
-  | MeshNormalMaterial
-  | MeshPhongMaterial
-  | MeshPhysicalMaterial
-  | MeshStandardMaterial
-  | MeshToonMaterial
-  | ShadowMaterial
-  | SpriteMaterial
-  | RawShaderMaterial
-  | ShaderMaterial
-  | PointsMaterial
-  | LineBasicMaterial
-  | LineDashedMaterial;
+export function ViserStandardMeshMaterial(props: StandardMaterialProps) {
+  const color = props.color === undefined ? 0xffffff : rgbToInt(props.color);
+  const transparent = props.opacity !== null;
+  const opacity = props.opacity ?? 1.0;
+  const side = sideMap[props.side];
 
-/**
- * Convert RGB array to integer color representation
- */
-export function rgbToInt(rgb: [number, number, number]): number {
-  return (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
-}
+  // Force material recreation when shader-affecting properties change.
+  // R3F's applyProps sets properties but doesn't set needsUpdate, so
+  // Three.js won't recompile shaders for flatShading/side changes or
+  // re-sort render passes for transparent changes.
+  const materialKey = `${transparent}-${props.flat_shading}-${side}-${props.wireframe}`;
 
-/**
- * Create a gradient texture for toon materials
- */
-export function generateGradientMap(shades: 3 | 5): THREE.DataTexture {
-  const texture = new THREE.DataTexture(
-    Uint8Array.from(shades === 3 ? [0, 128, 255] : [0, 64, 128, 192, 255]),
-    shades,
-    1,
-    THREE.RedFormat,
-  );
-
-  texture.needsUpdate = true;
-  return texture;
-}
-
-/**
- * Helper function for type checking
- */
-export function assertUnreachable(x: never): never {
-  throw new Error(`Should never get here! ${x}`);
-}
-
-/**
- * Helper to dispose material textures
- */
-export function disposeMaterial(material: AllPossibleThreeJSMaterials) {
-  if ("map" in material) material.map?.dispose();
-  if ("lightMap" in material) material.lightMap?.dispose();
-  if ("bumpMap" in material) material.bumpMap?.dispose();
-  if ("normalMap" in material) material.normalMap?.dispose();
-  if ("specularMap" in material) material.specularMap?.dispose();
-  if ("envMap" in material) material.envMap?.dispose();
-  if ("alphaMap" in material) material.alphaMap?.dispose();
-  if ("aoMap" in material) material.aoMap?.dispose();
-  if ("displacementMap" in material) material.displacementMap?.dispose();
-  if ("emissiveMap" in material) material.emissiveMap?.dispose();
-  if ("gradientMap" in material) material.gradientMap?.dispose();
-  if ("metalnessMap" in material) material.metalnessMap?.dispose();
-  if ("roughnessMap" in material) material.roughnessMap?.dispose();
-  material.dispose(); // disposes any programs associated with the material
-}
-
-/**
- * Create standard material based on properties
- */
-export function createStandardMaterial(props: {
-  material: "standard" | "toon3" | "toon5";
-  color?: [number, number, number];
-  wireframe: boolean;
-  opacity: number | null;
-  flat_shading: boolean;
-  side: "front" | "back" | "double";
-}): THREE.Material {
-  const standardArgs = {
-    color: props.color === undefined ? 0xffffff : rgbToInt(props.color),
-    wireframe: props.wireframe,
-    transparent: props.opacity !== null,
-    opacity: props.opacity ?? 1.0,
-    side: {
-      front: THREE.FrontSide,
-      back: THREE.BackSide,
-      double: THREE.DoubleSide,
-    }[props.side],
-  };
-
-  if (props.material == "standard" || props.wireframe) {
-    return new THREE.MeshStandardMaterial({
-      // Flat shading only makes sense for standard + non-wireframe materials.
-      flatShading: props.flat_shading && !props.wireframe,
-      ...standardArgs,
-    });
-  } else if (props.material == "toon3") {
-    return new THREE.MeshToonMaterial({
-      gradientMap: generateGradientMap(3),
-      ...standardArgs,
-    });
-  } else if (props.material == "toon5") {
-    return new THREE.MeshToonMaterial({
-      gradientMap: generateGradientMap(5),
-      ...standardArgs,
-    });
+  if (props.material === "standard" || props.wireframe) {
+    return (
+      <meshStandardMaterial
+        key={materialKey}
+        color={color}
+        wireframe={props.wireframe}
+        transparent={transparent}
+        opacity={opacity}
+        side={side}
+        flatShading={props.flat_shading && !props.wireframe}
+      />
+    );
+  } else if (props.material === "toon3") {
+    return (
+      <meshToonMaterial
+        key={materialKey}
+        gradientMap={GRADIENT_MAP_3}
+        color={color}
+        wireframe={props.wireframe}
+        transparent={transparent}
+        opacity={opacity}
+        side={side}
+      />
+    );
+  } else if (props.material === "toon5") {
+    return (
+      <meshToonMaterial
+        key={materialKey}
+        gradientMap={GRADIENT_MAP_5}
+        color={color}
+        wireframe={props.wireframe}
+        transparent={transparent}
+        opacity={opacity}
+        side={side}
+      />
+    );
   } else {
     return assertUnreachable(props.material);
   }
+}
+
+/**
+ * Declarative shadow mesh. Renders a mesh with ShadowMaterial when opacity > 0.
+ * R3F manages material lifecycle -- no manual disposal needed.
+ */
+export function ShadowMesh({
+  opacity,
+  geometry,
+  scale,
+  position,
+  rotation,
+}: {
+  opacity: number;
+  geometry: THREE.BufferGeometry;
+  scale?: [number, number, number] | number;
+  position?: THREE.Vector3 | [number, number, number];
+  rotation?: THREE.Euler;
+}) {
+  if (opacity <= 0) return null;
+  return (
+    <mesh
+      geometry={geometry}
+      receiveShadow
+      scale={scale}
+      position={position}
+      rotation={rotation}
+    >
+      <shadowMaterial opacity={opacity} color={0x000000} depthWrite={false} />
+    </mesh>
+  );
+}
+
+/**
+ * Declarative shadow skinned mesh. Like ShadowMesh but for skinned meshes
+ * that need skeleton deformation.
+ */
+export function ShadowSkinnedMesh({
+  opacity,
+  geometry,
+  skeleton,
+  scale,
+}: {
+  opacity: number;
+  geometry: THREE.BufferGeometry;
+  skeleton: THREE.Skeleton;
+  scale?: [number, number, number] | number;
+}) {
+  if (opacity <= 0) return null;
+  return (
+    <skinnedMesh
+      geometry={geometry}
+      skeleton={skeleton}
+      receiveShadow
+      frustumCulled={false}
+      scale={scale}
+    >
+      <shadowMaterial opacity={opacity} color={0x000000} depthWrite={false} />
+    </skinnedMesh>
+  );
 }

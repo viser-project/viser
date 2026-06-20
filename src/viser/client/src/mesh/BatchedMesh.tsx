@@ -1,11 +1,12 @@
 import React, { useMemo } from "react";
 import * as THREE from "three";
-import { createStandardMaterial } from "./MeshUtils";
+import { createStandardMaterial } from "./meshMaterialUtils";
 import { BatchedMeshesMessage } from "../WebsocketMessages";
-import { InstancedMesh2 } from "@three.ez/instanced-mesh";
+import { InstancedMesh2 } from "../vendor/instanced-mesh/index.js";
 import { ViewerContext } from "../ViewerContext";
 import { BatchedMeshBase } from "./BatchedMeshBase";
 import { normalizeScale } from "../utils/normalizeScale";
+import { shallowArrayEqual } from "../utils/shallowArrayEqual";
 
 /**
  * Component for rendering batched/instanced meshes
@@ -16,7 +17,14 @@ export const BatchedMesh = React.forwardRef<
 >(function BatchedMesh({ children, ...message }, ref) {
   const viewer = React.useContext(ViewerContext)!;
   const clickable =
-    viewer.useSceneTree((state) => state[message.name]?.clickable) ?? false;
+    (viewer.useSceneTree(message.name, (node) => node?.clickBindings?.length)
+      ?? 0) > 0;
+  const draggable =
+    (viewer.useSceneTree(
+      message.name,
+      (node) => node?.dragBindings,
+      shallowArrayEqual,
+    ) ?? []).length > 0;
 
   // Create a material based on the message props.
   const material = useMemo(() => {
@@ -48,37 +56,33 @@ export const BatchedMesh = React.forwardRef<
     message.props.side,
   ]);
 
+  // Clean up material when it changes.
+  React.useEffect(() => {
+    return () => {
+      material.dispose();
+    };
+  }, [material]);
+
   // Setup geometry using memoization.
   const geometry = useMemo(() => {
     const geometry = new THREE.BufferGeometry();
+    // Vertices and faces arrive as Float32Array / Uint32Array views.
     geometry.setAttribute(
       "position",
-      new THREE.BufferAttribute(
-        new Float32Array(
-          message.props.vertices.buffer.slice(
-            message.props.vertices.byteOffset,
-            message.props.vertices.byteOffset +
-              message.props.vertices.byteLength,
-          ),
-        ),
-        3,
-      ),
+      new THREE.BufferAttribute(message.props.vertices, 3),
     );
-    geometry.setIndex(
-      new THREE.BufferAttribute(
-        new Uint32Array(
-          message.props.faces.buffer.slice(
-            message.props.faces.byteOffset,
-            message.props.faces.byteOffset + message.props.faces.byteLength,
-          ),
-        ),
-        1,
-      ),
-    );
+    geometry.setIndex(new THREE.BufferAttribute(message.props.faces, 1));
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
     return geometry;
   }, [message.props.vertices.buffer, message.props.faces.buffer]);
+
+  // Clean up geometry when it changes.
+  React.useEffect(() => {
+    return () => {
+      geometry.dispose();
+    };
+  }, [geometry]);
 
   return (
     <group ref={ref}>
@@ -96,6 +100,7 @@ export const BatchedMesh = React.forwardRef<
           cast_shadow={message.props.cast_shadow}
           receive_shadow={message.props.receive_shadow}
           clickable={clickable}
+          draggable={draggable}
         />
       </group>
       {children}

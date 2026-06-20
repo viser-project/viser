@@ -10,6 +10,7 @@
     "@mantine/form": "^8.3.0",
     "@mantine/hooks": "^8.3.0",
     "@mantine/notifications": "^8.3.0",
+    "@mantine/spotlight": "^8.3.3",
     "@mantine/vanilla-extract": "^8.3.0",
     "@mdx-js/mdx": "^3.0.1",
     "@mdx-js/react": "^3.0.1",
@@ -18,20 +19,19 @@
     "@react-three/drei": "^10.7.3",
     "@react-three/fiber": "^9.3.0",
     "@tabler/icons-react": "^3.35.0",
-    "@three.ez/instanced-mesh": "^0.3.11",
     "@types/node": "^25.0.6",
     "@types/react": "^18.0.33",
     "@types/react-dom": "^18.0.11",
-    "@types/three": "^0.179.0",
+    "@types/three": "^0.183.0",
     "@vanilla-extract/css": "^1.14.1",
     "@vitejs/plugin-react": "^4.0.1",
     "acorn": "^8.0.0",
     "await-lock": "^2.2.2",
     "browserslist": "^4.24.4",
+    "bvh.js": "^0.0.13",
     "colortranslator": "^4.1.0",
     "detect-browser": "^5.3.0",
-    "hold-event": "^1.1.0",
-    "immer": "^10.0.4",
+    "fuse.js": "^7.3.0",
     "its-fine": "^2.0.0",
     "meshoptimizer": "^0.25.0",
     "postcss": "^8.4.38",
@@ -42,7 +42,7 @@
     "react-qr-code": "^2.0.12",
     "rehype-color-chips": "^0.1.3",
     "remark-gfm": "^4.0.0",
-    "three": "^0.179.0",
+    "three": "^0.183.2",
     "three-stdlib": "^2.36.0",
     "troika-three-text": "^0.52.4",
     "uplot": "^1.6.32",
@@ -52,15 +52,16 @@
     "vite-plugin-singlefile": "^2.0.3",
     "vite-plugin-svgr": "^4.2.0",
     "vite-tsconfig-paths": "^4.2.0",
-    "zstddec": "^0.2.0",
-    "zustand": "^4.3.7"
+    "zstddec": "^0.2.0"
   },
   "scripts": {
     "dev": "vite --host",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "lint": "eslint src/",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "eslintConfig": {
     "extends": [
@@ -88,8 +89,10 @@
     "browserslist-to-esbuild": "^2.1.1",
     "eslint": "^8.43.0",
     "eslint-plugin-react": "^7.32.2",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.4.1",
     "typescript": "^5.0.4",
-    "vite-plugin-eslint": "^1.8.1"
+    "vite-plugin-eslint": "^1.8.1",
+    "vitest": "^4.1.8"
   }
 }

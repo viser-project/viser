@@ -1,17 +1,20 @@
 import * as React from "react";
 import { Box, Flex, Text, NumberInput, Tooltip } from "@mantine/core";
 import { GuiComponentContext } from "../ControlPanel/GuiComponentContext";
+import { finiteNumberOrNull } from "./numberInputUtils";
 
 export function ViserInputComponent({
   uuid,
   label,
   hint,
+  hintDisabled,
   children,
 }: {
   uuid: string;
   children: React.ReactNode;
   label?: string;
   hint?: string | null;
+  hintDisabled?: boolean;
 }) {
   const { folderDepth } = React.useContext(GuiComponentContext)!;
   if (hint !== undefined && hint !== null) {
@@ -25,6 +28,7 @@ export function ViserInputComponent({
           withArrow
           openDelay={500}
           withinPortal
+          disabled={hintDisabled}
         >
           <Box>{children}</Box>
         </Tooltip>
@@ -75,10 +79,18 @@ function LabeledInput(props: {
             letterSpacing: "-0.75px",
             width: "100%",
             boxSizing: "content-box",
+            overflowWrap: "anywhere",
           }}
           unselectable="off"
         >
-          <label htmlFor={props.uuid}>{props.label}</label>
+          <label htmlFor={props.uuid}>
+            {props.label.split(/(?<=[_\-/.])/).map((part, i) => (
+              <React.Fragment key={i}>
+                {i > 0 && <wbr />}
+                {part}
+              </React.Fragment>
+            ))}
+          </label>
         </Text>
       </Box>
       <Box style={{ flexGrow: 1 }}>{props.input}</Box>
@@ -119,8 +131,13 @@ export function VectorInput(
           key={i}
           value={props.value[i]}
           onChange={(v) => {
+            // Ignore empty / partial input (e.g. "-", "1e") while the user is
+            // typing; committing those would send NaN for this component (and
+            // clearing to retype would momentarily commit 0).
+            const parsed = finiteNumberOrNull(v);
+            if (parsed === null) return;
             const updated = [...props.value];
-            updated[i] = v === "" ? 0.0 : Number(v);
+            updated[i] = parsed;
             props.onChange(updated);
           }}
           size="xs"

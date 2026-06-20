@@ -7,11 +7,19 @@ Events
 We define a small set of event types, which are passed to callback functions
 when events like clicks or GUI updates are triggered.
 
+.. autoclass:: viser.CommandEvent()
+
 .. autoclass:: viser.GuiEvent()
+
+.. autoclass:: viser.SceneClickEvent()
+
+.. autoclass:: viser.SceneNodeDragEvent()
 
 .. autoclass:: viser.SceneNodePointerEvent()
 
 .. autoclass:: viser.ScenePointerEvent()
+
+.. autoclass:: viser.SceneRectSelectEvent()
 
 .. autoclass:: viser.TransformControlsEvent()
 

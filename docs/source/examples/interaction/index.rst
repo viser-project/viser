@@ -12,3 +12,5 @@ Examples showing user input and interaction handling.
    camera_poses
    camera_commands
    gui_in_scene
+   scene_node_drag
+   batched_scene_node_drag

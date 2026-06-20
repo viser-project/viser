@@ -8,7 +8,16 @@ import { IconMaximize } from "@tabler/icons-react";
 // When drawing border around the plot, it should be aligned with the folder's.
 import { folderWrapper } from "./Folder.css";
 
-const PlotWithAspect = React.memo(function PlotWithAspect({
+function PlotWithAspect(props: {
+  jsonStr: string;
+  aspectRatio: number;
+  onExpand?: () => void;
+}) {
+  if (props.jsonStr === "") return <div></div>;
+  return <PlotWithAspectInner {...props} />;
+}
+
+const PlotWithAspectInner = React.memo(function PlotWithAspectInner({
   jsonStr,
   aspectRatio,
   onExpand,
@@ -17,36 +26,50 @@ const PlotWithAspect = React.memo(function PlotWithAspect({
   aspectRatio: number;
   onExpand?: () => void;
 }) {
-  // Hover state for expand button
   const [isHovered, setIsHovered] = React.useState(false);
-
-  // Catch if the jsonStr is empty; if so, render an empty div.
-  if (jsonStr === "") return <div></div>;
-
-  // Parse json string, to construct plotly object.
-  // Note that only the JSON string is kept as state, not the json object.
-  const plotJson = JSON.parse(jsonStr);
-
-  // This keeps the zoom-in state, etc, see https://plotly.com/javascript/uirevision/.
-  plotJson.layout.uirevision = "true";
-
   // Box size change -> width value change -> plot rerender trigger.
   const { ref, width } = useElementSize();
-  plotJson.layout.width = width;
-  plotJson.layout.height = width * aspectRatio;
-
-  // Use React hooks to update the plotly object, when the plot data changes.
+  // Used to imperatively call ``Plotly.react``.
   // based on https://github.com/plotly/react-plotly.js/issues/242.
   const plotRef = React.useRef<HTMLDivElement>(null);
+
+  // Parse JSON only when ``jsonStr`` changes. Memoizing avoids re-parsing
+  // on every render and keeps ``plotJson`` referentially stable across
+  // resizes -- the effect below adds ``width`` / ``aspectRatio`` to deps
+  // so it still re-fires on container size changes.
+  const plotJson = React.useMemo(() => {
+    const parsed = JSON.parse(jsonStr);
+    // This keeps the zoom-in state, etc, see https://plotly.com/javascript/uirevision/.
+    parsed.layout.uirevision = "true";
+    return parsed;
+  }, [jsonStr]);
+
   React.useEffect(() => {
     // @ts-ignore - Plotly.js is dynamically imported with an eval() call.
     Plotly.react(
       plotRef.current!,
       plotJson.data,
-      plotJson.layout,
+      { ...plotJson.layout, width, height: width * aspectRatio },
       plotJson.config,
     );
-  }, [plotJson]);
+  }, [plotJson, width, aspectRatio]);
+
+  // Purge the Plotly instance on unmount. Plotly.react attaches event
+  // listeners and (for gl traces) a WebGL context to the node; without
+  // Plotly.purge these leak every time a plot is removed or its folder/modal
+  // remounts, eventually exhausting the browser's WebGL context limit.
+  React.useEffect(() => {
+    const node = plotRef.current;
+    return () => {
+      // Plotly is a global (dynamically imported via eval()); may be undefined
+      // if the component unmounts before the script loads.
+      const plotly = (window as unknown as { Plotly?: { purge(n: HTMLElement): void } })
+        .Plotly;
+      if (node !== null && plotly !== undefined) {
+        plotly.purge(node);
+      }
+    };
+  }, []);
 
   return (
     <Paper
@@ -83,12 +106,14 @@ const PlotWithAspect = React.memo(function PlotWithAspect({
   );
 });
 
-export default function PlotlyComponent({
-  props: { visible, _plotly_json_str: plotly_json_str, aspect },
-}: GuiPlotlyMessage) {
-  if (!visible) return null;
+export default function PlotlyComponent(message: GuiPlotlyMessage) {
+  if (!message.props.visible) return null;
+  return <PlotlyComponentInner {...message} />;
+}
 
-  // Create a modal with the plot, and a button to open it.
+function PlotlyComponentInner({
+  props: { _plotly_json_str: plotly_json_str, aspect },
+}: GuiPlotlyMessage) {
   const [opened, { open, close }] = useDisclosure(false);
   return (
     <Box>

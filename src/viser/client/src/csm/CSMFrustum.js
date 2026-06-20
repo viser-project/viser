@@ -4,6 +4,8 @@ const inverseProjectionMatrix = new Matrix4();
 
 /**
  * Represents the frustum of a CSM instance.
+ *
+ * @three_import import { CSMFrustum } from 'three/addons/csm/CSMFrustum.js';
  */
 class CSMFrustum {
 
@@ -23,7 +25,19 @@ class CSMFrustum {
 		 *
 		 * @type {number}
 		 */
-		this.zNear = data.webGL === true ? - 1 : 0;
+		if ( data.reversedDepth === true ) {
+
+			// With EXT_clip_control(ZERO_TO_ONE) + reversed depth:
+			// clip z range is [0, 1] with near=1, far=0.
+			this.zNear = 1;
+			this.zFar = 0;
+
+		} else {
+
+			this.zNear = data.webGL === true ? - 1 : 0;
+			this.zFar = 1;
+
+		}
 
 		/**
 		 * An object representing the vertices of the near and
@@ -73,6 +87,8 @@ class CSMFrustum {
 		// 2 --- 1
 		// clip space spans from [-1, 1]
 
+		const zFar = this.zFar;
+
 		this.vertices.near[ 0 ].set( 1, 1, zNear );
 		this.vertices.near[ 1 ].set( 1, - 1, zNear );
 		this.vertices.near[ 2 ].set( - 1, - 1, zNear );
@@ -83,10 +99,10 @@ class CSMFrustum {
 
 		} );
 
-		this.vertices.far[ 0 ].set( 1, 1, 1 );
-		this.vertices.far[ 1 ].set( 1, - 1, 1 );
-		this.vertices.far[ 2 ].set( - 1, - 1, 1 );
-		this.vertices.far[ 3 ].set( - 1, 1, 1 );
+		this.vertices.far[ 0 ].set( 1, 1, zFar );
+		this.vertices.far[ 1 ].set( 1, - 1, zFar );
+		this.vertices.far[ 2 ].set( - 1, - 1, zFar );
+		this.vertices.far[ 3 ].set( - 1, 1, zFar );
 		this.vertices.far.forEach( function ( v ) {
 
 			v.applyMatrix4( inverseProjectionMatrix );

@@ -3,17 +3,19 @@ from __future__ import annotations
 import warnings
 from functools import partial
 from pathlib import Path
-from typing import List, Tuple
+from typing import TYPE_CHECKING, List, Tuple
 
 import numpy as np
 import trimesh
-import yourdfpy
 from trimesh.scene import Scene
 from typing_extensions import assert_never
 
 import viser
 
 from .. import transforms as tf
+
+if TYPE_CHECKING:
+    import yourdfpy
 
 
 class ViserUrdf:
@@ -92,6 +94,14 @@ class ViserUrdf:
     ) -> None:
         assert root_node_name.startswith("/")
         assert len(root_node_name) == 1 or not root_node_name.endswith("/")
+
+        try:
+            import yourdfpy
+        except ImportError as e:
+            raise ImportError(
+                "yourdfpy is required for ViserUrdf but is not installed. "
+                "Install it with `pip install yourdfpy` or `pip install viser[urdf]`."
+            ) from e
 
         if isinstance(urdf_or_path, Path):
             urdf = yourdfpy.URDF.load(
@@ -192,6 +202,8 @@ class ViserUrdf:
 
     def update_cfg(self, configuration: np.ndarray) -> None:
         """Update the joint angles of the visualized URDF."""
+        import yourdfpy
+
         self._urdf.update_cfg(configuration)
         for joint, frame_handle in zip(self._joint_map_values, self._joint_frames):
             assert isinstance(joint, yourdfpy.Joint)
@@ -205,6 +217,8 @@ class ViserUrdf:
         self,
     ) -> dict[str, tuple[float | None, float | None]]:
         """Returns an ordered mapping from actuated joint names to position limits."""
+        import yourdfpy
+
         out: dict[str, tuple[float | None, float | None]] = {}
         for joint_name, joint in zip(
             self._urdf.actuated_joint_names, self._urdf.actuated_joints
@@ -233,6 +247,8 @@ class ViserUrdf:
         """
         Helper function to add joint frames and meshes to the ViserUrdf object.
         """
+        import yourdfpy
+
         prefix = "collision" if collision_geometry else "visual"
         prefixed_root_node_name = (f"{root_node_name}/{prefix}").replace("//", "/")
         root_frame = self._target.scene.add_frame(

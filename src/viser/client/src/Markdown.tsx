@@ -36,15 +36,23 @@ function rehypeCodeblock(): void | Transformer<Root, Root> {
   };
 }
 
-// Custom classes to pipe MDX into Mantine Components
-// Some of them separate the children into a separate prop since Mantine requires a child
-// and MDX always makes children optional, so destructuring props doesn't work
+// Custom classes to pipe MDX into Mantine Components.
+//
+// ``size="sm"`` (14px) on Text/Anchor/List is a compromise between
+// Mantine's default (16px, too big next to GUI inputs) and the ``xs``
+// (12px) used by input components themselves -- paragraphs read cleanly
+// without feeling cramped. Titles keep their own order-based sizing so
+// headings still read as headings.
+//
+// Some of them separate the children into a separate prop since Mantine
+// requires a child and MDX always makes children optional, so
+// destructuring props doesn't work.
 function MdxText(props: React.ComponentPropsWithoutRef<typeof Text>) {
-  return <Text {...props} />;
+  return <Text size="sm" {...props} />;
 }
 
 function MdxAnchor(props: React.ComponentPropsWithoutRef<typeof Anchor>) {
-  return <Anchor {...props} />;
+  return <Anchor size="sm" {...props} />;
 }
 
 function MdxTitle(
@@ -59,16 +67,16 @@ function MdxList(
   children: React.ComponentPropsWithoutRef<typeof List>["children"],
   type: ListProps["type"],
 ) {
-  // Account for GFM Checkboxes
+  // Account for GFM Checkboxes.
   if (props.className == "contains-task-list") {
     return (
-      <List type={type} {...props} listStyleType="none">
+      <List size="sm" type={type} {...props} listStyleType="none">
         {children}
       </List>
     );
   }
   return (
-    <List type={type} {...props}>
+    <List size="sm" type={type} {...props}>
       {children}
     </List>
   );
@@ -166,13 +174,23 @@ export default function Markdown(props: { children?: string }) {
   const [child, setChild] = useState<ReactNode>(null);
 
   useEffect(() => {
-    try {
-      parseMarkdown(props.children ?? "").then((Content) => {
+    // Guard against stale/after-unmount updates: parseMarkdown is async, so a
+    // slow earlier parse could otherwise resolve last and render stale content,
+    // or call setChild after unmount. The promise also rejects asynchronously,
+    // so the error fallback must live in `.catch`, not the synchronous `try`.
+    let cancelled = false;
+    parseMarkdown(props.children ?? "")
+      .then((Content) => {
+        if (cancelled) return;
         setChild(<Content components={components} />);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setChild(<Title order={2}>Error Parsing Markdown...</Title>);
       });
-    } catch {
-      setChild(<Title order={2}>Error Parsing Markdown...</Title>);
-    }
+    return () => {
+      cancelled = true;
+    };
   }, [props.children]);
 
   return child;

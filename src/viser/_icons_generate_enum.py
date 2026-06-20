@@ -3,7 +3,7 @@
 import zipfile
 from pathlib import Path
 
-HERE_DIR = Path(__file__).absolute().parent
+HERE_DIR = Path(__file__).resolve().parent
 ICON_DIR = HERE_DIR / "_icons"
 
 

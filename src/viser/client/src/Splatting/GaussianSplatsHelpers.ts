@@ -1,6 +1,6 @@
 import React from "react";
 import * as THREE from "three";
-import { create } from "zustand";
+import { createStore } from "../store";
 import { Object3D } from "three";
 import { useThree } from "@react-three/fiber";
 import { shaderMaterial } from "@react-three/drei";
@@ -50,10 +50,6 @@ const GaussianSplatMaterial = /* @__PURE__ */ shaderMaterial(
   out vec2 vPosition;
 
   #include <fog_pars_vertex>
-  #include <logdepthbuf_pars_vertex>
-  #ifdef USE_LOGDEPTHBUF
-  bool isPerspectiveMatrix( mat4 m ) { return m[ 2 ][ 3 ] == -1.0; }
-  #endif
 
   // Function to fetch and construct the i-th transform matrix using texelFetch
   mat4 getGroupTransform(uint i) {
@@ -163,7 +159,6 @@ const GaussianSplatMaterial = /* @__PURE__ */ shaderMaterial(
             + position.x * v1 / viewport * 2.0
             + position.y * v2 / viewport * 2.0) * pos2d.w, pos2d.z, pos2d.w);
 
-    #include <logdepthbuf_vertex>
 
     #ifdef USE_FOG
       vFogDepth = -c_cam.z;
@@ -178,7 +173,6 @@ const GaussianSplatMaterial = /* @__PURE__ */ shaderMaterial(
   in vec2 vPosition;
 
   #include <fog_pars_fragment>
-  #include <logdepthbuf_pars_fragment>
 
   void main () {
     float A = -dot(vPosition, vPosition);
@@ -186,7 +180,6 @@ const GaussianSplatMaterial = /* @__PURE__ */ shaderMaterial(
     float B = exp(A) * vRgba.a;
     if (B < 0.01) discard;  // alphaTest.
     gl_FragColor = vec4(vRgba.rgb, B);
-    #include <logdepthbuf_fragment>
     #include <fog_fragment>
   }`,
 );
@@ -285,6 +278,12 @@ interface SplatState {
   nodeRefFromId: React.MutableRefObject<{
     [name: string]: undefined | Object3D;
   }>;
+  sceneNodeNameFromId: React.MutableRefObject<{
+    [id: string]: string | undefined;
+  }>;
+}
+
+interface SplatActions {
   setBuffer: (id: string, buffer: Uint32Array) => void;
   removeBuffer: (id: string) => void;
 }
@@ -292,28 +291,35 @@ interface SplatState {
 /**Hook for creating global splat state.*/
 export function useGaussianSplatStore() {
   const nodeRefFromId = React.useRef({});
-  return React.useState(() =>
-    create<SplatState>((set) => ({
+  const sceneNodeNameFromId = React.useRef<{
+    [id: string]: string | undefined;
+  }>({});
+  return React.useState(() => {
+    const store = createStore<SplatState>({
       groupBufferFromId: {},
       nodeRefFromId: nodeRefFromId,
+      sceneNodeNameFromId: sceneNodeNameFromId,
+    });
+
+    const actions: SplatActions = {
       setBuffer: (id, buffer) => {
-        return set((state) => ({
+        store.set((state) => ({
           groupBufferFromId: { ...state.groupBufferFromId, [id]: buffer },
         }));
       },
       removeBuffer: (id) => {
-        return set((state) => {
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { [id]: _, ...buffers } = state.groupBufferFromId;
-          return { groupBufferFromId: buffers };
-        });
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { [id]: _, ...buffers } = store.get().groupBufferFromId;
+        store.set({ groupBufferFromId: buffers });
       },
-    })),
-  )[0];
+    };
+
+    return { store, actions };
+  })[0];
 }
 
 export const GaussianSplatsContext = React.createContext<{
-  useGaussianSplatStore: ReturnType<typeof useGaussianSplatStore>;
+  gaussianSplatState: ReturnType<typeof useGaussianSplatStore>;
   updateCamera: React.MutableRefObject<
     | null
     | ((

@@ -12,6 +12,7 @@ import * as THREE from "three";
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import React, { useEffect, useMemo } from "react";
 import { ViewerMutable } from "./ViewerContext";
+import { InteractionController } from "./pointer/interactionController";
 import {
   Anchor,
   Box,
@@ -24,19 +25,28 @@ import {
   useMantineColorScheme,
   useMantineTheme,
 } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
+import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 
 // Local imports.
 import { SynchronizedCameraControls } from "./CameraControls";
 import { SceneNodeThreeObject } from "./SceneTree";
+import { DragLayer } from "./DragLayer";
+import { KeyModifier, hasCmdCtrl, keyModifierFromEvent } from "./dragUtils";
 import { shallowArrayEqual } from "./utils/shallowArrayEqual";
+import { isFormElement } from "./utils/isFormElement";
+import { ndcFromPointerXy, opencvXyFromPointerXy } from "./utils/pointerCoords";
 import { ViewerContext, ViewerContextContents } from "./ViewerContext";
 import ControlPanel from "./ControlPanel/ControlPanel";
+import {
+  ControlDockState,
+  ControlPanelDockSurface,
+} from "./ControlPanel/ControlPanelDock";
 import { useGuiState } from "./ControlPanel/GuiState";
 import { searchParamKey } from "./SearchParamsUtils";
 import { WebsocketMessageProducer } from "./WebsocketInterface";
 import { Titlebar } from "./Titlebar";
 import { ViserModal } from "./Modal";
+import { CommandPalette } from "./CommandPalette";
 import { useSceneTreeState } from "./SceneTreeState";
 import { useEnvironmentState } from "./EnvironmentState";
 import { useDevSettingsStore } from "./DevSettingsStore";
@@ -85,43 +95,6 @@ const hdriPresets: Record<string, string> = {
 
 // ======= Utility functions =======
 
-/** Turn a click event into a normalized device coordinate (NDC) vector.
- * Normalizes click coordinates to be between -1 and 1, with (0, 0) being the center of the screen.
- *
- * Returns null if input is not valid.
- */
-function ndcFromPointerXy(
-  viewer: ViewerContextContents,
-  xy: [number, number],
-): THREE.Vector2 | null {
-  const mouseVector = new THREE.Vector2();
-  mouseVector.x =
-    2 * ((xy[0] + 0.5) / viewer.mutable.current.canvas!.clientWidth) - 1;
-  mouseVector.y =
-    1 - 2 * ((xy[1] + 0.5) / viewer.mutable.current.canvas!.clientHeight);
-  return mouseVector.x < 1 &&
-    mouseVector.x > -1 &&
-    mouseVector.y < 1 &&
-    mouseVector.y > -1
-    ? mouseVector
-    : null;
-}
-
-/** Turn a click event to normalized OpenCV coordinate (NDC) vector.
- * Normalizes click coordinates to be between (0, 0) as upper-left corner,
- * and (1, 1) as lower-right corner, with (0.5, 0.5) being the center of the screen.
- * Uses offsetX/Y, and clientWidth/Height to get the coordinates.
- */
-function opencvXyFromPointerXy(
-  viewer: ViewerContextContents,
-  xy: [number, number],
-): THREE.Vector2 {
-  const mouseVector = new THREE.Vector2();
-  mouseVector.x = (xy[0] + 0.5) / viewer.mutable.current.canvas!.clientWidth;
-  mouseVector.y = (xy[1] + 0.5) / viewer.mutable.current.canvas!.clientHeight;
-  return mouseVector;
-}
-
 /** Gets default WebSocket server URL based on current window location. */
 const getDefaultServerFromUrl = (): string => {
   let server = window.location.href;
@@ -163,7 +136,7 @@ export function Root() {
   // If dummy window dimensions are specified, wrap content in MacWindowWrapper.
   if (!dummyWindowParam) return content;
 
-  // Handle "fill" flag to make window full size
+  // Handle "fill" flag to make window full size.
   if (dummyWindowParam === "fill") {
     return (
       <MacWindowWrapper
@@ -242,26 +215,32 @@ function ViewerRoot() {
 
     // Message and rendering state.
     messageQueue: [],
+    firstMessageBatch: true,
     getRenderRequestState: "ready",
     getRenderRequest: null,
-
-    // Interaction state.
-    scenePointerInfo: {
-      enabled: false,
-      dragStart: [0, 0],
-      dragEnd: [0, 0],
-      isDragging: false,
-    },
+    initialCameraDiagnostic: null,
 
     // Skinned mesh state.
     skinnedMeshState: {},
 
-    // Global hover state tracking.
-    hoveredElementsCount: 0,
+    // Per-node pose data (non-reactive, read in useFrame).
+    nodePoseData: {},
   });
 
+  const interaction = React.useMemo(
+    () =>
+      new InteractionController({
+        getCameraControl: () => mutable.current.cameraControl,
+        getCanvas: () => mutable.current.canvas,
+      }),
+    [],
+  );
+
   // Create the scene tree state and extract store and actions.
-  const sceneTreeState = useSceneTreeState(mutable.current.nodeRefFromName);
+  const sceneTreeState = useSceneTreeState(
+    mutable.current.nodeRefFromName,
+    mutable.current.nodePoseData,
+  );
 
   // Create the environment state and extract store and actions.
   const environmentState = useEnvironmentState();
@@ -299,25 +278,35 @@ function ViewerRoot() {
     }, []),
   );
 
+  // `?darkMode` / embed darkMode forces dark mode. We OR it into the rendered
+  // color scheme in ViewerContents so it (a) wins over a server-sent theme --
+  // configure_theme defaults dark_mode=False, which would otherwise override
+  // the URL -- and (b) is correct on the very first paint, with no render-phase
+  // store write or post-mount flash.
+  const effectiveDarkMode = darkMode || embedConfig?.darkMode || false;
+
+  // Create GUI state.
+  const guiState = useGuiState(initialServer);
+
   // Create the context value with hooks and single ref.
   const viewer: ViewerContextContents = {
     messageSource,
     useSceneTree: sceneTreeState.store,
     sceneTreeActions: sceneTreeState.actions,
     useEnvironment: environmentState,
-    useGui: useGuiState(initialServer),
+    useGui: guiState.store,
+    useGuiConfig: guiState.configStore,
+    guiActions: guiState.actions,
     useDevSettings: devSettingsStore,
-    useInitialCamera: initialCameraState,
+    useInitialCamera: initialCameraState.store,
+    initialCameraActions: initialCameraState.actions,
     mutable,
+    interaction,
   };
-
-  // Apply dark mode setting if provided via URL or embed config.
-  const effectiveDarkMode = darkMode || embedConfig?.darkMode;
-  if (effectiveDarkMode) viewer.useGui.getState().theme.dark_mode = true;
 
   return (
     <ViewerContext.Provider value={viewer}>
-      <ViewerContents>
+      <ViewerContents forceDarkMode={effectiveDarkMode}>
         {messageSource === "websocket" && <WebsocketMessageProducer />}
         {messageSource === "file_playback" && (
           <PlaybackFromFile fileUrl={playbackPath!} />
@@ -333,9 +322,18 @@ function ViewerRoot() {
 /**
  * Main content wrapper with theme and layout.
  */
-function ViewerContents({ children }: { children: React.ReactNode }) {
+function ViewerContents({
+  children,
+  forceDarkMode,
+}: {
+  children: React.ReactNode;
+  forceDarkMode: boolean;
+}) {
   const viewer = React.useContext(ViewerContext)!;
-  const darkMode = viewer.useGui((state) => state.theme.dark_mode);
+  // `?darkMode` / embed darkMode forces dark mode and wins over the server's
+  // theme (configure_theme defaults dark_mode=False).
+  const storeDarkMode = viewer.useGui((state) => state.theme.dark_mode);
+  const darkMode = forceDarkMode || storeDarkMode;
   const colors = viewer.useGui((state) => state.theme.colors);
   const controlLayout = viewer.useGui((state) => state.theme.control_layout);
   const showLogo = viewer.useGui((state) => state.theme.show_logo);
@@ -381,48 +379,126 @@ function ViewerContents({ children }: { children: React.ReactNode }) {
       >
         {children}
         <ColorSchemeSetter darkMode={darkMode} />
-        <NotificationsPanel />
         <BrowserWarning />
         <ViserModal />
-        {/* App layout */}
-        <Box
-          style={{
-            width: "100%",
-            height: "100%",
-            display: "flex",
-            position: "relative",
-            flexDirection: "column",
-          }}
-        >
-          <Titlebar />
-          <Box
-            style={{
-              width: "100%",
-              position: "relative",
-              flexGrow: 1,
-              overflow: "hidden",
-              display: "flex",
-            }}
-          >
-            <Box
-              style={(theme) => ({
-                backgroundColor: darkMode ? theme.colors.dark[9] : "#fff",
-                flexGrow: 1,
-                overflow: "hidden",
-                height: "100%",
-              })}
-            >
-              {canvases}
-              {showLogo && messageSource === "websocket" && <ViserLogo />}
-            </Box>
-            {messageSource === "websocket" && (
-              <ControlPanel control_layout={controlLayout} />
-            )}
-          </Box>
-        </Box>
+        <CommandPalette />
+        <AppLayout
+          darkMode={darkMode}
+          controlLayout={controlLayout}
+          showLogo={showLogo}
+          messageSource={messageSource}
+          canvases={canvases}
+        />
         {showStats && <Stats className="stats-panel" />}
       </MantineProvider>
     </>
+  );
+}
+
+/**
+ * The app layout below the titlebar: canvas area + control panel. Lives in its
+ * own component (inside the MantineProvider) so it can read the theme's mobile
+ * breakpoint.
+ */
+function AppLayout({
+  darkMode,
+  controlLayout,
+  showLogo,
+  messageSource,
+  canvases,
+}: {
+  darkMode: boolean;
+  controlLayout: "floating" | "collapsible" | "fixed";
+  showLogo: boolean;
+  messageSource: "websocket" | "file_playback" | "embed";
+  canvases: React.ReactNode;
+}) {
+  const mantineTheme = useMantineTheme();
+  const useMobileView =
+    useMediaQuery(`(max-width: ${mantineTheme.breakpoints.xs})`) ?? false;
+  // The floating layout runs on the docking library: the control panel is a
+  // dock panel over the canvas (draggable, dockable to either edge, resizable,
+  // minimizable). Sidebar layouts and the mobile bottom sheet are unchanged.
+  const dockFloating =
+    controlLayout === "floating" &&
+    !useMobileView &&
+    messageSource === "websocket";
+
+  // Where the control panel sits, reported by the dock surface. `side: null`
+  // means it floats freely; a non-null side means it's docked (the dock
+  // surface insets the canvas itself -- this state only feeds the
+  // notifications offset).
+  const [controlDock, setControlDock] = React.useState<ControlDockState>({
+    side: null,
+    widthPx: 320,
+    expanded: true,
+  });
+  // Leaving the dock-floating layout (theme switch, mobile resize) unmounts
+  // the dock surface; clear any stale dock state so the notifications offset
+  // doesn't keep a defunct inset.
+  React.useEffect(() => {
+    if (!dockFloating) {
+      setControlDock((prev) =>
+        prev.side === null ? prev : { ...prev, side: null },
+      );
+    }
+  }, [dockFloating]);
+
+  const canvasContent = (
+    <>
+      {canvases}
+      {showLogo && messageSource === "websocket" && <ViserLogo />}
+    </>
+  );
+
+  return (
+    <Box
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        position: "relative",
+        flexDirection: "column",
+      }}
+    >
+      <Titlebar />
+      <Box
+        style={{
+          width: "100%",
+          position: "relative",
+          flexGrow: 1,
+          overflow: "hidden",
+          display: "flex",
+        }}
+      >
+        <NotificationsPanel
+          dockedLeftInsetPx={
+            controlDock.side === "left" && controlDock.expanded
+              ? controlDock.widthPx
+              : null
+          }
+        />
+        <Box
+          style={(theme) => ({
+            backgroundColor: darkMode ? theme.colors.dark[9] : "#fff",
+            overflow: "hidden",
+            flexGrow: 1,
+            height: "100%",
+          })}
+        >
+          {dockFloating ? (
+            <ControlPanelDockSurface onDockStateChange={setControlDock}>
+              {canvasContent}
+            </ControlPanelDockSurface>
+          ) : (
+            canvasContent
+          )}
+        </Box>
+        {messageSource === "websocket" && !dockFloating && (
+          <ControlPanel control_layout={controlLayout} />
+        )}
+      </Box>
+    </Box>
   );
 }
 
@@ -438,7 +514,15 @@ function ColorSchemeSetter(props: { darkMode: boolean }) {
 /**
  * Notifications panel with fixed styling.
  */
-function NotificationsPanel() {
+function NotificationsPanel({
+  dockedLeftInsetPx,
+}: {
+  /** Width of a left-docked, expanded control panel, or null when the
+   * top-left is clear. Notifications sit at the top-left; a left-docked panel
+   * shifts them right by its width so they appear over the canvas instead of
+   * covering the GUI. */
+  dockedLeftInsetPx: number | null;
+}) {
   return (
     <Notifications
       position="top-left"
@@ -450,7 +534,10 @@ function NotificationsPanel() {
           boxShadow: "0.1em 0 1em 0 rgba(0,0,0,0.1) !important",
           position: "absolute",
           top: "1em",
-          left: "1em",
+          left:
+            dockedLeftInsetPx !== null
+              ? `calc(${dockedLeftInsetPx}px + 1em)`
+              : "1em",
           pointerEvents: "none",
         },
         notification: {
@@ -466,6 +553,7 @@ function NotificationsPanel() {
  */
 function ViewerCanvas({ children }: { children: React.ReactNode }) {
   const viewer = React.useContext(ViewerContext)!;
+  const interaction = viewer.interaction;
   const sendClickThrottled = useThrottledMessageSender(20).send;
   const theme = useMantineTheme();
   const { ref: inViewRef, inView } = useInView();
@@ -476,91 +564,161 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  // Handle pointer down event. I don't think we need useCallback here, since
-  // remounts should be very rare.
-  const handlePointerDown = (e: React.PointerEvent) => {
-    const { mutable } = viewer;
-    const pointerInfo = mutable.current.scenePointerInfo;
-    if (pointerInfo.enabled === false) return;
-
-    const canvasBbox = mutable.current.canvas!.getBoundingClientRect();
-    pointerInfo.dragStart = [
-      e.clientX - canvasBbox.left,
-      e.clientY - canvasBbox.top,
-    ];
-    pointerInfo.dragEnd = pointerInfo.dragStart;
-
-    if (ndcFromPointerXy(viewer, pointerInfo.dragEnd) === null) return;
-    if (pointerInfo.isDragging) return;
-
-    pointerInfo.isDragging = true;
-    mutable.current.cameraControl!.enabled = false;
-
-    const ctx = mutable.current.canvas2d!.getContext("2d")!;
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-  };
-
-  // Handle pointer move event.
-  const handlePointerMove = (e: React.PointerEvent) => {
-    const { mutable } = viewer;
-    const pointerInfo = mutable.current.scenePointerInfo;
-    if (pointerInfo.enabled === false || !pointerInfo.isDragging) return;
-
-    const canvasBbox = mutable.current.canvas!.getBoundingClientRect();
-    const pointerXy: [number, number] = [
-      e.clientX - canvasBbox.left,
-      e.clientY - canvasBbox.top,
-    ];
-
-    if (ndcFromPointerXy(viewer, pointerXy) === null) return;
-    pointerInfo.dragEnd = pointerXy;
-
-    // Check if pointer moved enough to be considered a drag.
-    if (
-      Math.abs(pointerInfo.dragEnd[0] - pointerInfo.dragStart[0]) <= 3 &&
-      Math.abs(pointerInfo.dragEnd[1] - pointerInfo.dragStart[1]) <= 3
-    )
-      return;
-
-    // Draw selection rectangle if in rect-select mode.
-    if (pointerInfo.enabled === "rect-select") {
-      const ctx = mutable.current.canvas2d!.getContext("2d")!;
+  // Render the rect-select overlay onto the canvas2d layer. Called
+  // from the pointer handlers when motion in a committed rect-select
+  // gesture should repaint. Theme is read at draw time (not captured)
+  // so a runtime theme change reflects immediately.
+  const drawRectSelectOverlay = React.useCallback(
+    (rect: { startXy: [number, number]; endXy: [number, number] } | null) => {
+      const c2d = viewer.mutable.current.canvas2d;
+      if (c2d === null) return;
+      const ctx = c2d.getContext("2d");
+      if (ctx === null) return;
       ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      if (rect === null) return;
+      const [sx, sy] = rect.startXy;
+      const [ex, ey] = rect.endXy;
       ctx.beginPath();
       ctx.fillStyle = theme.primaryColor;
       ctx.strokeStyle = "blue";
       ctx.globalAlpha = 0.2;
-      ctx.fillRect(
-        pointerInfo.dragStart[0],
-        pointerInfo.dragStart[1],
-        pointerInfo.dragEnd[0] - pointerInfo.dragStart[0],
-        pointerInfo.dragEnd[1] - pointerInfo.dragStart[1],
-      );
+      ctx.fillRect(sx, sy, ex - sx, ey - sy);
       ctx.globalAlpha = 1.0;
       ctx.stroke();
+    },
+    [theme, viewer],
+  );
+
+  const cancelActiveScenePointer = React.useCallback(() => {
+    interaction.cancelAny();
+    drawRectSelectOverlay(null);
+  }, [drawRectSelectOverlay, interaction]);
+
+  // Keep a stable handle to the latest cancel callback. The blur/key effect
+  // below must NOT depend on `cancelActiveScenePointer` directly: that callback's
+  // identity changes whenever the Mantine theme changes (via
+  // `drawRectSelectOverlay`'s `[theme]` dep), and re-running the effect calls
+  // `cancelActiveScenePointer()` in its cleanup -- which would abort an in-flight
+  // scene-pointer gesture on every theme update.
+  const cancelActiveScenePointerRef = React.useRef(cancelActiveScenePointer);
+  cancelActiveScenePointerRef.current = cancelActiveScenePointer;
+
+  // Held-modifier tracking. Three sources keep `hoverSet`'s
+  // `heldModifier` in sync with reality:
+  //   - `keydown`/`keyup`: live updates while the canvas is focused.
+  //   - `blur`: drops the modifier; a release out of focus may not
+  //     deliver `keyup`.
+  //   - `pointermove`: reconciles from the event's modifier flags so
+  //     a focus regain with the modifier still held recovers without
+  //     waiting for the next keypress.
+  React.useEffect(() => {
+    const onBlur = () => {
+      cancelActiveScenePointerRef.current();
+      interaction.hover.setHeldModifier(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      // Skip while typing in form controls so Shift in a TextInput
+      // doesn't flicker the canvas cursor.
+      if (isFormElement(e.target) || isFormElement(document.activeElement)) {
+        return;
+      }
+      interaction.hover.setHeldModifier(keyModifierFromEvent(e));
+    };
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
+    return () => {
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKey);
+      cancelActiveScenePointerRef.current();
+    };
+  }, [interaction]);
+
+  // Canvas pointer handlers thin-delegate to the gestures module.
+  // Side effects (camera lock, overlay draw, wire dispatch) happen
+  // here based on the returned outcome.
+  const canvasXyFromEvent = React.useCallback(
+    (e: React.PointerEvent): [number, number] => {
+      const bbox = viewer.mutable.current.canvas!.getBoundingClientRect();
+      return [e.clientX - bbox.left, e.clientY - bbox.top];
+    },
+    [viewer],
+  );
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    // If a 3D handle already captured this pointer (drei's orbit-origin /
+    // transform gizmos call setPointerCapture on the canvas in their own
+    // pointerdown, which runs before this bubbles up), it owns the gesture.
+    // Engaging the canvas-level scene-pointer path here would, for a
+    // rect-select gesture, call setPointerCapture on a *different* element and
+    // steal the gizmo's capture -- R3F then drops it and the gizmo's pointerup
+    // is missed, leaving it stuck mid-drag.
+    if (viewer.mutable.current.canvas?.hasPointerCapture(e.pointerId)) return;
+    const xy = canvasXyFromEvent(e);
+    const next = interaction.scenePointer.onPointerDown({
+      pointerId: e.pointerId,
+      button: e.nativeEvent.button,
+      modifier: keyModifierFromEvent(e),
+      xy,
+      insideViewport: ndcFromPointerXy(viewer, xy) !== null,
+    });
+    if (next.kind !== "scene-rect-select") return;
+    // Capture the pointer so subsequent move/up/cancel for this
+    // pointer id are delivered to the canvas regardless of cursor
+    // travel. Closes the off-canvas release leak.
+    try {
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    } catch {
+      /* setPointerCapture may throw on some legacy paths; harmless. */
     }
   };
 
-  // Handle pointer up event.
-  const handlePointerUp = () => {
-    const { mutable } = viewer;
-    const pointerInfo = mutable.current.scenePointerInfo;
-
-    // Re-enable camera controls.
-    mutable.current.cameraControl!.enabled = true;
-    if (pointerInfo.enabled === false || !pointerInfo.isDragging) return;
-
-    const ctx = mutable.current.canvas2d!.getContext("2d")!;
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-
-    // Handle click or rect-select based on mode.
-    if (pointerInfo.enabled === "click") {
-      sendClickMessage(viewer, pointerInfo.dragEnd, sendClickThrottled);
-    } else if (pointerInfo.enabled === "rect-select") {
-      sendRectSelectMessage(viewer, pointerInfo, sendClickThrottled);
+  const handlePointerMove = (e: React.PointerEvent) => {
+    // Reconcile modifier state on every pointer event -- recovers from
+    // focus-regain with the modifier still held without waiting for a
+    // keypress.
+    interaction.hover.setHeldModifier(keyModifierFromEvent(e));
+    const xy = canvasXyFromEvent(e);
+    const repaint = interaction.scenePointer.onPointerMove({
+      pointerId: e.pointerId,
+      xy,
+    });
+    if (repaint) {
+      const g = interaction.scenePointer.getGesture();
+      if (g.kind === "scene-rect-select") {
+        drawRectSelectOverlay({ startXy: g.startXy, endXy: g.endXy });
+      }
     }
+  };
 
-    pointerInfo.isDragging = false;
+  const handlePointerUp = (e: React.PointerEvent) => {
+    const outcome = interaction.scenePointer.onPointerUp({
+      pointerId: e.pointerId,
+    });
+    drawRectSelectOverlay(null);
+    if (outcome.kind === "scene-click") {
+      sendClickMessage(
+        viewer,
+        outcome.xy,
+        outcome.modifier,
+        sendClickThrottled,
+      );
+    } else if (outcome.kind === "scene-rect-select") {
+      sendRectSelectMessage(
+        viewer,
+        { dragStart: outcome.startXy, dragEnd: outcome.endXy },
+        outcome.modifier,
+        sendClickThrottled,
+      );
+    }
+    // Reconcile `cameraControl.enabled` with the held leases once the gesture
+    // ends. drei's PivotControls (orbit-origin gizmo, transform controls)
+    // disables the camera directly during a drag and only re-enables it in its
+    // own pointerup -- which is skipped on a pointercancel or a release where
+    // pointer capture was lost. Without this the camera would be left disabled
+    // (no lease held) and orbit/pan would silently stop working.
+    interaction.cameraLocks.apply();
   };
 
   const fixedDpr = viewer.useDevSettings((state) => state.fixedDpr);
@@ -574,7 +732,9 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
           <AdaptiveDpr />
           {children}
           <BatchedLabelManager>
-            <SceneNodeThreeObject name="" />
+            <DragLayer>
+              <SceneNodeThreeObject name="" />
+            </DragLayer>
           </BatchedLabelManager>
         </SplatRenderContext>
         <DefaultLights />
@@ -589,13 +749,50 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
       style={{ position: "relative", zIndex: 0, width: "100%", height: "100%" }}
     >
       <Canvas
-        gl={{ preserveDrawingBuffer: true, logarithmicDepthBuffer: true }}
-        style={{ width: "100%", height: "100%" }}
-        ref={(el) => (viewer.mutable.current.canvas = el)}
+        gl={{ preserveDrawingBuffer: true, reversedDepthBuffer: true }}
+        // `touchAction: none` opts the canvas out of native touch actions.
+        // Without it the browser can reinterpret a curved/multi-touch drag
+        // (e.g. dragging the orbit gizmo's rotation ring, especially on
+        // trackpads) as a scroll/zoom gesture and fire `pointercancel`
+        // mid-drag. drei's PivotControls has no cancel handler, so the gizmo
+        // would be left stuck following the cursor. camera-controls handles
+        // all viewport gestures itself, so there is nothing to lose.
+        style={{ width: "100%", height: "100%", touchAction: "none" }}
+        ref={(el) => {
+          viewer.mutable.current.canvas = el;
+          interaction.hover.refresh();
+        }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        shadows
+        onPointerCancel={(e) => {
+          interaction.cancelPointer(e.pointerId);
+          drawRectSelectOverlay(null);
+          // drei's PivotControls disables the camera on pointerdown and only
+          // re-enables it in its own pointerup -- it has no pointercancel
+          // handler. A canceled gizmo drag (common for the curved rotation-ring
+          // gesture) would otherwise leave the camera disabled. Reconcile to
+          // the lease state here so it recovers.
+          interaction.cameraLocks.apply();
+        }}
+        onContextMenu={(e) => {
+          // Suppress the browser context menu only for ctrl/cmd-modified
+          // gestures that match a registered scene-pointer filter. macOS
+          // fires contextmenu on ctrl+click, so without this a ctrl+click
+          // scene-pointer callback would also pop the OS menu.
+          //
+          // We deliberately do NOT suppress plain right-clicks even when
+          // a ``modifier=None`` filter is registered: scene-pointer click
+          // callbacks are conventionally left-click, and stealing the
+          // canvas's right-click menu wholesale (losing the inspector)
+          // would surprise users who registered an unmodified callback.
+          const modifier = keyModifierFromEvent(e);
+          if (!hasCmdCtrl(modifier)) return;
+          if (interaction.scenePointer.anyFilterMatches(modifier)) {
+            e.preventDefault();
+          }
+        }}
+        shadows="percentage"
         dpr={fixedDpr ?? undefined}
       >
         {!inView && <DisableRender />}
@@ -613,6 +810,7 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
 function sendClickMessage(
   viewer: ViewerContextContents,
   pointerPos: [number, number],
+  modifier: KeyModifier | null,
   sendClickThrottled: (message: any) => void,
 ) {
   const raycaster = new THREE.Raycaster();
@@ -629,6 +827,7 @@ function sendClickMessage(
     ray_origin: [ray.origin.x, ray.origin.y, ray.origin.z],
     ray_direction: [ray.direction.x, ray.direction.y, ray.direction.z],
     screen_pos: [[mouseVectorOpenCV.x, mouseVectorOpenCV.y]],
+    modifier,
   });
 }
 
@@ -638,6 +837,7 @@ function sendClickMessage(
 function sendRectSelectMessage(
   viewer: ViewerContextContents,
   pointerInfo: { dragStart: [number, number]; dragEnd: [number, number] },
+  modifier: KeyModifier | null,
   sendClickThrottled: (message: any) => void,
 ) {
   const firstMouseVector = opencvXyFromPointerXy(viewer, pointerInfo.dragStart);
@@ -657,6 +857,7 @@ function sendRectSelectMessage(
       [x_min, y_min],
       [x_max, y_max],
     ],
+    modifier,
   });
 }
 
@@ -675,7 +876,8 @@ function DefaultLights() {
 
   // Get world rotation directly from scene tree state.
   const worldRotation = viewer.useSceneTree(
-    (state) => state[""]?.wxyz ?? [1, 0, 0, 0],
+    "",
+    (node) => node?.wxyz ?? [1, 0, 0, 0],
     shallowArrayEqual,
   );
 
@@ -800,7 +1002,7 @@ function AdaptiveDpr() {
         return [min, max];
       }}
       onChange={({ factor, fps, refreshrate }) => {
-        const dpr = window.devicePixelRatio * (0.5 + 0.5 * factor);
+        const dpr = window.devicePixelRatio * (0.75 + 0.25 * factor);
         console.log(
           `[Performance] Setting DPR to ${dpr}; FPS=${fps}/${refreshrate}`,
         );
@@ -852,20 +1054,14 @@ function BackgroundImage() {
   const shaders = useMemo(
     () => ({
       vert: `
-    #include <logdepthbuf_pars_vertex>
-    #ifdef USE_LOGDEPTHBUF
-    bool isPerspectiveMatrix( mat4 m ) { return m[ 2 ][ 3 ] == -1.0; }
-    #endif
     varying vec2 vUv;
     void main() {
       vUv = uv;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      #include <logdepthbuf_vertex>
     }
     `,
       frag: `
     #include <packing>
-    #include <logdepthbuf_pars_fragment>
     precision highp float;
     precision highp int;
 
@@ -894,13 +1090,17 @@ function BackgroundImage() {
       float bufDepth;
       if(hasDepth){
         float depth = readDepth(depthMap, vUv);
-        #ifdef USE_LOGDEPTHBUF
-          bufDepth = log2(1.0 + depth) * logDepthBufFC * 0.5;
-        #else
-          bufDepth = viewZToPerspectiveDepth(-depth, cameraNear, cameraFar);
+        bufDepth = viewZToPerspectiveDepth(-depth, cameraNear, cameraFar);
+        #ifdef USE_REVERSED_DEPTH_BUFFER
+          bufDepth = 1.0 - bufDepth;
         #endif
       } else {
-        bufDepth = 1.0;
+        // Far plane: 1.0 for standard depth, 0.0 for reversed depth.
+        #ifdef USE_REVERSED_DEPTH_BUFFER
+          bufDepth = 0.0;
+        #else
+          bufDepth = 1.0;
+        #endif
       }
       gl_FragDepth = bufDepth;
     }
@@ -968,11 +1168,50 @@ function BackgroundImage() {
  * Helper component to sync scene and camera state.
  */
 function SceneContextSetter() {
-  const { mutable } = React.useContext(ViewerContext)!;
+  const viewer = React.useContext(ViewerContext)!;
+  const { mutable } = viewer;
   mutable.current.scene = useThree((state) => state.scene);
   mutable.current.camera = useThree(
     (state) => state.camera as THREE.PerspectiveCamera,
   );
+
+  const gl = useThree((state) => state.gl);
+
+  // Expose scene internals on window for E2E testing (Playwright).
+  useEffect(() => {
+    const w = window as any;
+    w.__viserMutable = mutable.current;
+    w.__viserPointer = viewer.interaction.testApi();
+    // Expose a shim for E2E tests.
+    w.__viserSceneTree = {
+      getState: () => viewer.useSceneTree.getAll(),
+      subscribe: (listener: () => void) => {
+        // Subscribe to all key changes -- for benchmarking purposes.
+        // This uses a polling approach via the store's internal mechanism.
+        const unsubs: (() => void)[] = [];
+        const state = viewer.useSceneTree.getAll();
+        for (const key of Object.keys(state)) {
+          unsubs.push(viewer.useSceneTree.subscribe(key, listener));
+        }
+        return () => unsubs.forEach((u) => u());
+      },
+    };
+    w.__viserTestpoints = {
+      rendererInfo: gl.info,
+      // Exposed for E2E regression tests of dev-settings-driven behavior
+      // (e.g. ``logCamera`` stale-closure fix, see
+      // ``tests/e2e/test_dev_settings_log_camera.py``).
+      devSettings: viewer.useDevSettings,
+    };
+
+    return () => {
+      delete w.__viserMutable;
+      delete w.__viserPointer;
+      delete w.__viserSceneTree;
+      delete w.__viserTestpoints;
+    };
+  }, [mutable, viewer.useSceneTree, viewer.useDevSettings, gl]);
+
   return null;
 }
 

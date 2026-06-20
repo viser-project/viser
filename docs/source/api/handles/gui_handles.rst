@@ -4,15 +4,21 @@
 GUI Handles
 ===========
 
+.. autoclass:: viser.CommandHandle
+
 .. autoclass:: viser.GuiButtonGroupHandle
 
 .. autoclass:: viser.GuiButtonHandle
 
 .. autoclass:: viser.GuiCheckboxHandle
 
+.. autoclass:: viser.GuiDividerHandle
+
 .. autoclass:: viser.GuiDropdownHandle
 
 .. autoclass:: viser.GuiFolderHandle
+
+.. autoclass:: viser.GuiFormHandle
 
 .. autoclass:: viser.GuiHtmlHandle
 

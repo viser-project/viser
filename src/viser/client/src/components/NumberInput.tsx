@@ -2,6 +2,7 @@ import * as React from "react";
 import { GuiComponentContext } from "../ControlPanel/GuiComponentContext";
 import { GuiNumberMessage } from "../WebsocketMessages";
 import { ViserInputComponent } from "./common";
+import { finiteNumberOrNull } from "./numberInputUtils";
 import { NumberInput } from "@mantine/core";
 
 export default function NumberInputComponent({
@@ -23,8 +24,10 @@ export default function NumberInputComponent({
         step={step}
         size="xs"
         onChange={(newValue) => {
-          // Ignore empty values.
-          newValue !== "" && setValue(uuid, newValue);
+          // Ignore empty / partial input (e.g. "-", "1e"); committing those
+          // would send NaN or a raw string to the server.
+          const parsed = finiteNumberOrNull(newValue);
+          if (parsed !== null) setValue(uuid, parsed);
         }}
         styles={{
           input: {

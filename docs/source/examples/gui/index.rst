@@ -16,3 +16,4 @@ Examples demonstrating interactive GUI elements.
    plotly_integration
    uplot
    plots_as_images
+   commands

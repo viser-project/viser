@@ -14,8 +14,10 @@ import { CSM, CSMParameters } from "./csm/CSM";
 // @ts-ignore
 import { CSMHelper } from "./csm/CSMHelper";
 
-interface CsmDirectionalLightProps
-  extends Omit<CSMParameters, "lightDirection" | "camera" | "parent"> {
+interface CsmDirectionalLightProps extends Omit<
+  CSMParameters,
+  "lightDirection" | "camera" | "parent"
+> {
   fade?: boolean;
   position?: Vector3Tuple; // Position of the light
   color?: number;
@@ -57,10 +59,10 @@ class CSMProxy {
       this.instance.dispose();
       this.instance = undefined;
 
-      // Decrement the active instances counter
+      // Decrement the active instances counter.
       activeCSMInstances--;
 
-      // Only restore original shader chunks when the last instance is disposed
+      // Only restore original shader chunks when the last instance is disposed.
       if (activeCSMInstances === 0) {
         ShaderChunk.lights_fragment_begin = originalLightsFragmentBegin;
         ShaderChunk.lights_pars_begin = originalLightsParsBegin;
@@ -152,6 +154,8 @@ function ShadowCsmLight({
   debug = false,
 }: Omit<CsmDirectionalLightProps, "castShadow">) {
   const camera = useThree((three) => three.camera);
+  const gl = useThree((three) => three.gl);
+  const reversedDepth = gl.capabilities.reversedDepthBuffer;
 
   // Get the scene object from the three fiber context.
   // This is a hack, see: https://github.com/pmndrs/react-three-fiber/issues/2725
@@ -173,17 +177,17 @@ function ShadowCsmLight({
   const dummyGroupRef = useRef<THREE.Group>(null);
   const helperRef = useRef<any | null>(null);
 
-  // Pre-create reusable Vector3 instances to avoid creating new ones in useFrame
+  // Pre-create reusable Vector3 instances to avoid creating new ones in useFrame.
   const worldPosition = useMemo(() => new Vector3(), []);
   const origin = useMemo(() => new Vector3(0, 0, 0), []);
   const direction = useMemo(() => new Vector3(), []);
 
-  // Create the CSM proxy with initial light direction
+  // Create the CSM proxy with initial light direction.
   const proxyInstance = useMemo(() => {
     return new CSMProxy({
       camera,
       cascades,
-      lightDirection: lightDirection.clone(), // Clone to avoid mutation issues
+      lightDirection: lightDirection.clone(), // Clone to avoid mutation issues.
       lightFar,
       lightIntensity,
       lightMargin,
@@ -193,6 +197,7 @@ function ShadowCsmLight({
       parent: scene,
       shadowBias,
       shadowMapSize,
+      reversedDepth,
     });
   }, [
     camera,
@@ -207,12 +212,13 @@ function ShadowCsmLight({
     mode,
     shadowBias,
     shadowMapSize,
+    reversedDepth,
   ]);
 
-  // Create a memoized color to avoid unnecessary recreations
+  // Create a memoized color to avoid unnecessary recreations.
   const threeColor = useMemo(() => new Color(color), [color]);
 
-  // Update light color when the color changes
+  // Update light color when the color changes.
   useEffect(() => {
     if (proxyInstance.instance) {
       proxyInstance.instance.lights.forEach((light) => {
@@ -226,16 +232,16 @@ function ShadowCsmLight({
   useFrame(() => {
     if (!proxyInstance.instance || !dummyGroupRef.current) return;
 
-    // Get the world position of the dummy group
+    // Get the world position of the dummy group.
     dummyGroupRef.current.getWorldPosition(worldPosition);
 
-    // Calculate direction from world position to origin
+    // Calculate direction from world position to origin.
     direction.subVectors(origin, worldPosition).normalize();
 
-    // Update the CSM light direction
+    // Update the CSM light direction.
     proxyInstance.instance.lightDirection.copy(direction);
 
-    // Update CSM
+    // Update CSM.
     proxyInstance.instance.update();
 
     // Update helper visualization if it exists.

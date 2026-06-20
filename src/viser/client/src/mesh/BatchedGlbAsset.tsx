@@ -6,6 +6,7 @@ import { ViewerContext } from "../ViewerContext";
 import { mergeBufferGeometries } from "three-stdlib";
 import { BatchedMeshBase } from "./BatchedMeshBase";
 import { normalizeScale } from "../utils/normalizeScale";
+import { shallowArrayEqual } from "../utils/shallowArrayEqual";
 
 /**
  * Component for rendering batched/instanced GLB models
@@ -21,7 +22,16 @@ export const BatchedGlbAsset = React.forwardRef<
 >(function BatchedGlbAsset({ children, ...message }, ref) {
   const viewer = React.useContext(ViewerContext)!;
   const clickable =
-    viewer.useSceneTree((state) => state[message.name]?.clickable) ?? false;
+    (viewer.useSceneTree(message.name, (node) => node?.clickBindings?.length) ??
+      0) > 0;
+  const draggable =
+    (
+      viewer.useSceneTree(
+        message.name,
+        (node) => node?.dragBindings,
+        shallowArrayEqual,
+      ) ?? []
+    ).length > 0;
 
   // Note: We don't support animations for batched meshes.
   const { gltf } = useGlbLoader(message.props.glb_data);
@@ -57,6 +67,16 @@ export const BatchedGlbAsset = React.forwardRef<
     };
   }, [gltf]);
 
+  // `mergedGeometry` is owned here (a clone/merge of the source geometries);
+  // BatchedMeshBase clones it again rather than taking ownership, so we must
+  // free it when it changes or on unmount. The source materials/geometries are
+  // disposed by useGlbLoader's own cleanup.
+  React.useEffect(() => {
+    return () => {
+      geometry?.dispose();
+    };
+  }, [geometry]);
+
   if (!geometry || !material) return null;
 
   return (
@@ -75,6 +95,7 @@ export const BatchedGlbAsset = React.forwardRef<
           cast_shadow={message.props.cast_shadow}
           receive_shadow={message.props.receive_shadow}
           clickable={clickable}
+          draggable={draggable}
         />
       </group>
       {children}

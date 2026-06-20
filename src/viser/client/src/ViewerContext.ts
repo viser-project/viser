@@ -6,11 +6,24 @@ import "./index.css";
 import { CameraControls } from "@react-three/drei";
 import * as THREE from "three";
 import React from "react";
-import { UseSceneTree } from "./SceneTree";
+import { useSceneTreeState } from "./SceneTreeState";
 
 import { UseGui } from "./ControlPanel/GuiState";
-import { UseInitialCamera } from "./InitialCameraState";
+import { useInitialCameraState } from "./InitialCameraState";
+import { useEnvironmentState } from "./EnvironmentState";
+import { useDevSettingsStore } from "./DevSettingsStore";
 import { GetRenderRequestMessage, Message } from "./WebsocketMessages";
+import { InteractionController } from "./pointer/interactionController";
+
+export type NodePoseEntry = {
+  wxyz: [number, number, number, number];
+  position: [number, number, number];
+  poseUpdateState: "updated" | "needsUpdate" | "waitForMakeObject";
+};
+
+export type NodePoseDataMap = {
+  [name: string]: NodePoseEntry | undefined;
+};
 
 // Type definitions for all mutable state.
 export type ViewerMutable = {
@@ -34,16 +47,23 @@ export type ViewerMutable = {
 
   // Message and rendering state.
   messageQueue: Message[];
+  // True until the first message batch of the current connection is processed.
+  // Reset to true on every (re)connect so the root-orientation-first ordering
+  // hack runs again. Lives here (not a component ref) so WebsocketInterface can
+  // reset it on reconnect.
+  firstMessageBatch: boolean;
   getRenderRequestState: "ready" | "triggered" | "pause" | "in_progress";
   getRenderRequest: null | GetRenderRequestMessage;
 
-  // Interaction state.
-  scenePointerInfo: {
-    enabled: false | "click" | "rect-select"; // Enable box events.
-    dragStart: [number, number]; // First mouse position.
-    dragEnd: [number, number]; // Final mouse position.
-    isDragging: boolean;
-  };
+  // Diagnostic snapshot for the initial-camera / scene-orientation flow,
+  // exposed via window.__viserMutable for e2e tests + debugging. See
+  // initial_pose_and_scene_orientation.md. `rootWxyzAtCapture` is the root
+  // node's orientation observed when SynchronizedCameraControls captured
+  // `initialT` at mount -- a mount-ordering race would leave this at identity
+  // [1,0,0,0] instead of the +Z-up default [0.5,-0.5,0.5,0.5].
+  initialCameraDiagnostic: {
+    rootWxyzAtCapture: [number, number, number, number];
+  } | null;
 
   // Skinned mesh state.
   skinnedMeshState: {
@@ -57,28 +77,31 @@ export type ViewerMutable = {
     };
   };
 
-  // Global hover state tracking.
-  hoveredElementsCount: number;
+  // Per-node pose data. Stored outside the reactive store to avoid
+  // triggering React re-renders on every pose update.
+  nodePoseData: NodePoseDataMap;
 };
 
 export type ViewerContextContents = {
   // Non-mutable state.
   messageSource: "websocket" | "file_playback" | "embed";
 
-  // Zustand state hooks and actions.
-  useSceneTree: UseSceneTree["store"];
-  sceneTreeActions: UseSceneTree["actions"];
-  useEnvironment: ReturnType<
-    typeof import("./EnvironmentState").useEnvironmentState
-  >;
-  useGui: UseGui;
-  useDevSettings: ReturnType<
-    typeof import("./DevSettingsStore").useDevSettingsStore
-  >;
-  useInitialCamera: UseInitialCamera;
+  // Store hooks and actions.
+  useSceneTree: ReturnType<typeof useSceneTreeState>["store"];
+  sceneTreeActions: ReturnType<typeof useSceneTreeState>["actions"];
+  useEnvironment: ReturnType<typeof useEnvironmentState>;
+  useGui: UseGui["store"];
+  useGuiConfig: UseGui["configStore"];
+  guiActions: UseGui["actions"];
+  useDevSettings: ReturnType<typeof useDevSettingsStore>;
+  useInitialCamera: ReturnType<typeof useInitialCameraState>["store"];
+  initialCameraActions: ReturnType<typeof useInitialCameraState>["actions"];
 
   // Single reference to all mutable state.
   mutable: React.MutableRefObject<ViewerMutable>;
+
+  // Per-viewer pointer/hover/camera interaction coordinator.
+  interaction: InteractionController;
 };
 
 export const ViewerContext = React.createContext<null | ViewerContextContents>(

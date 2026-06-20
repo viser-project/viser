@@ -13,7 +13,6 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, ContextManager, TypeVar, cast, overload
 
-import imageio.v3 as iio
 import numpy as np
 import numpy.typing as npt
 from typing_extensions import Literal, deprecated
@@ -21,7 +20,8 @@ from typing_extensions import Literal, deprecated
 from . import _client_autobuild, _messages, infra
 from . import transforms as tf
 from ._backwards_compat_shims import DeprecatedAttributeShim
-from ._gui_api import GuiApi, LiteralColor, _make_uuid
+from ._gui_api import GuiApi, LiteralColor
+from ._gui_handles import _make_uuid
 from ._notification_handle import NotificationHandle, _NotificationHandleState
 from ._scene_api import SceneApi, cast_vector
 from ._threadpool_exceptions import print_threadpool_errors
@@ -599,7 +599,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 ),
             )
         )
-        handle._sync_with_client("show")
+        handle._show()
         return handle
 
     @overload
@@ -658,18 +658,34 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
 
         connection = self._websock_connection
 
+        render_uuid = _make_uuid()
+
         def got_render_cb(
             client_id: int, message: _messages.GetRenderResponseMessage
         ) -> None:
             del client_id
+            # Ignore responses for other concurrent get_render() calls on this
+            # client; only ours matches our request's uuid.
+            if message.render_uuid != render_uuid:
+                return
             connection.unregister_handler(
                 _messages.GetRenderResponseMessage, got_render_cb
             )
             nonlocal out
-            out = iio.imread(
-                io.BytesIO(message.payload),
-                extension=f".{transport_format}",
-            )
+            # An empty payload is the client's failure sentinel (capture threw,
+            # or toBlob() returned null). Leave `out` as None and let the
+            # waiter raise, rather than crashing the decode here (which would
+            # never set the event and hang get_render() forever).
+            if len(message.payload) > 0:
+                import imageio.v3 as iio
+
+                try:
+                    out = iio.imread(
+                        io.BytesIO(message.payload),
+                        extension=f".{transport_format}",
+                    )
+                except Exception:
+                    out = None
             render_ready_event.set()
 
         connection.register_handler(_messages.GetRenderResponseMessage, got_render_cb)
@@ -687,10 +703,14 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 ),
                 wxyz=cast_vector(wxyz if wxyz is not None else self.camera.wxyz, 4),
                 fov=fov if fov is not None else self.camera.fov,
+                render_uuid=render_uuid,
             )
         )
         render_ready_event.wait()
-        assert out is not None
+        if out is None:
+            raise RuntimeError(
+                "Render request failed: the client could not capture a frame."
+            )
         return out
 
 
@@ -726,7 +746,7 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         verbose: bool = True,
         **_deprecated_kwargs,
     ):
-        # Check for port override environment variable
+        # Check for port override environment variable.
         port_override = os.environ.get("_VISER_PORT_OVERRIDE")
         if port_override is not None:
             try:
@@ -741,9 +761,8 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             host=host,
             port=port,
             message_class=_messages.Message,
-            http_server_root=Path(__file__).absolute().parent / "client" / "build",
+            http_server_root=Path(__file__).resolve().parent / "client" / "build",
             verbose=verbose,
-            client_api_version=1,
         )
         self._websock_server = server
 
@@ -825,6 +844,16 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 if conn.client_id not in self._connected_clients:
                     return
 
+                # Drop any in-flight drag entries for this client; the
+                # corresponding ``phase="end"`` will never arrive, so
+                # without this the active-drag map leaks an entry per
+                # dropped drag and ``on_drag_end`` is silently skipped.
+                # Run this *before* popping from ``_connected_clients``
+                # so the synthesized end event can resolve a
+                # ``ClientHandle`` for ``event.client``.
+                await self.scene._drop_active_drags_for_client(
+                    cast(infra.ClientId, conn.client_id)
+                )
                 handle = self._connected_clients.pop(conn.client_id)
                 for cb in self._client_disconnect_cb:
                     if asyncio.iscoroutinefunction(cb):
@@ -924,65 +953,76 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         return self._initial_camera
 
     def _run_garbage_collector(self, force: bool = False) -> None:
-        """Clean up old messages. This is not elegant; a refactor of our
-        message persistence logic will significantly reduce complexity."""
+        """Purge from the persistent broadcast buffer:
+
+        - Every tombstone message (``lifecycle_phase == "remove"``) for an
+          entity -- new clients shouldn't replay removals of entities that
+          never existed to them.
+        - Every update message (``lifecycle_phase`` of ``update_dict`` or
+          ``update_simple``) targeting an entity that was already removed. This
+          includes the scene-node ``Set*Message`` pose/visibility variants
+          (SetPosition, SetOrientation, SetBonePosition, SetBoneOrientation,
+          SetSceneNodeVisibility), which are declared ``update_simple``.
+        - Any remaining non-entity message carrying a ``name`` that matches a
+          removed scene node (e.g. the click/drag binding messages); a
+          ``name``-match against the tombstone set catches them generically.
+
+        Two passes so purging is order-independent under concurrent writers:
+        the first pass collects all tombstone entity ids, the second sweeps
+        updates (and scene-adjacent Set* messages) targeting them.
+        """
         buffer = self._websock_server._broadcast_buffer
         with buffer.buffer_lock:
-            # Skip garbage collection if we have messages that are queeud but
-            # not yet processed by the window generators.
-            #
-            # This makes sure that we don't accidentally cull messages before
-            # they're sent to existing clients. RemoveSceneNodeMessage, for example,
-            # needs to be sent to old clients but not new ones.
+            # Skip GC while there are messages queued but not yet processed by
+            # the window generators. Without this, we could cull messages
+            # before they reach existing clients.
             if (
                 not force
                 and self._websock_server._broadcast_buffer.message_event.is_set()
             ):
                 return
 
+            # First pass: collect every tombstone's entity id.
             remove_message_ids: list[int] = []
-
-            remove_scene_names: set[str] = set()
-            remove_gui_uuids: set[str] = set()
-
-            for id, message in reversed(buffer.message_from_id.items()):
-                # Find scene nodes or GUI elements that were removed.
-                if isinstance(message, _messages.RemoveSceneNodeMessage):
-                    remove_message_ids.append(id)
-                    remove_scene_names.add(message.name)
-                elif isinstance(message, _messages.GuiRemoveMessage):
-                    remove_message_ids.append(id)
-                    remove_gui_uuids.add(message.uuid)
-                elif isinstance(message, _messages.GuiCloseModalMessage):
-                    remove_message_ids.append(id)
-
-                # For removed elements, no need to send any update messages.
-                if (
-                    isinstance(
-                        message,
-                        (
-                            _messages.SetPositionMessage,
-                            _messages.SetOrientationMessage,
-                            _messages.SetBonePositionMessage,
-                            _messages.SetBoneOrientationMessage,
-                            _messages.SetSceneNodeClickableMessage,
-                            _messages.SetSceneNodeVisibilityMessage,
-                        ),
+            removed_ids_by_type: dict[str, set[str]] = {}
+            for msg_id, message in buffer.message_from_id.items():
+                if message.lifecycle_phase == "remove":
+                    assert (
+                        message.entity_type is not None
+                        and message.entity_id_field is not None
                     )
-                    and message.name in remove_scene_names
-                ):
-                    remove_message_ids.append(id)
+                    remove_message_ids.append(msg_id)
+                    removed_ids_by_type.setdefault(message.entity_type, set()).add(
+                        getattr(message, message.entity_id_field)
+                    )
 
-                if (
-                    isinstance(message, _messages.GuiUpdateMessage)
-                    and message.uuid in remove_gui_uuids
-                ):
-                    remove_message_ids.append(id)
+            # Second pass: purge updates whose target entity has a tombstone,
+            # including scene-adjacent Set*Message variants that target a
+            # removed scene node by `name` but aren't entity-declared. Skip
+            # the walk entirely when nothing was tombstoned this round.
+            if removed_ids_by_type:
+                for msg_id, message in buffer.message_from_id.items():
+                    phase = message.lifecycle_phase
+                    if phase in ("update_dict", "update_simple"):
+                        assert (
+                            message.entity_type is not None
+                            and message.entity_id_field is not None
+                        )
+                        entity_id = getattr(message, message.entity_id_field)
+                        if entity_id in removed_ids_by_type.get(
+                            message.entity_type, ()
+                        ):
+                            remove_message_ids.append(msg_id)
+                    elif phase is None:
+                        name = getattr(message, "name", None)
+                        if name is not None and name in removed_ids_by_type.get(
+                            "scene", ()
+                        ):
+                            remove_message_ids.append(msg_id)
 
-            # Remove old messages.
-            for id in remove_message_ids:
-                message = buffer.message_from_id.pop(id)
-                buffer.id_from_redundancy_key.pop(message.redundancy_key())
+            for msg_id in remove_message_ids:
+                message = buffer.message_from_id.pop(msg_id)
+                buffer.id_from_redundancy_key.pop(message.redundancy_key(), None)
 
     def get_host(self) -> str:
         """Returns the host address of the Viser server.
@@ -1008,6 +1048,9 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
 
         This is an experimental feature that relies on an external server; it shouldn't
         be relied on for critical applications.
+
+        Args:
+            verbose: Whether to print status messages.
 
         Returns:
             Share URL as string, or None if connection fails or is closed.
@@ -1225,10 +1268,12 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         visualization.
         """
         serializer = self._websock_server.get_message_serializer(
-            # Don't record GUI messages. This feels brittle.
-            filter=lambda message: "Gui" not in type(message).__name__
+            filter=lambda message: message.include_in_scene_serialization
         )
         # Insert current scene state.
-        for message in self._websock_server._broadcast_buffer.message_from_id.values():
+        buffer = self._websock_server._broadcast_buffer
+        with buffer.buffer_lock:
+            messages = list(buffer.message_from_id.values())
+        for message in messages:
             serializer._insert_message(message)
         return serializer
