@@ -175,6 +175,32 @@ def test_folder_collapse_toggle(
     expect(inner_label).to_be_visible(timeout=3_000)
 
 
+def test_row_lays_out_children_side_by_side(
+    viser_server: viser.ViserServer,
+    viser_page: Page,
+) -> None:
+    """A row should render child GUI handles side by side."""
+    with viser_server.gui.add_row():
+        viser_server.gui.add_button("Apply")
+        viser_server.gui.add_checkbox("Enabled", initial_value=True)
+
+    button = viser_page.get_by_role("button", name="Apply")
+    checkbox = viser_page.get_by_role("checkbox", name="Enabled")
+    expect(button).to_be_visible(timeout=5_000)
+    expect(checkbox).to_be_visible(timeout=5_000)
+
+    viser_page.wait_for_timeout(300)
+    button_box = button.bounding_box()
+    checkbox_box = checkbox.bounding_box()
+    assert button_box is not None
+    assert checkbox_box is not None
+
+    assert abs(button_box["y"] - checkbox_box["y"]) < max(
+        button_box["height"], checkbox_box["height"]
+    )
+    assert button_box["x"] < checkbox_box["x"]
+
+
 def test_multiple_gui_elements_order(
     viser_server: viser.ViserServer,
     viser_page: Page,

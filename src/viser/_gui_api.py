@@ -58,6 +58,7 @@ from ._gui_handles import (
     GuiProgressBarHandle,
     GuiRgbaHandle,
     GuiRgbHandle,
+    GuiRowHandle,
     GuiSliderHandle,
     GuiTabGroupHandle,
     GuiTabHandle,
@@ -770,6 +771,51 @@ class GuiApi:
         return GuiFolderHandle(
             _GuiHandleState(
                 folder_container_id,
+                self,
+                None,
+                props=props,
+                parent_container_id=self._get_container_uuid(),
+            )
+        )
+
+    @deprecated_positional_shim
+    def add_row(
+        self,
+        *,
+        order: float | None = None,
+        visible: bool = True,
+    ) -> GuiRowHandle:
+        """Add a row, and return a handle that can be used to populate it.
+
+        GUI elements added inside the returned context are laid out
+        horizontally with equal-width slots, matching the built-in controls for
+        Save Canvas / Reset View in configuration and diagnostics panel.
+
+        Args:
+            order: Optional ordering, smallest values will be displayed first.
+            visible: Whether the component is visible.
+
+        Returns:
+            A handle that can be used as a context to populate the row.
+        """
+        row_container_id = _make_uuid()
+        order = _apply_default_order(order)
+        props = _messages.GuiFolderProps(
+            order=order,
+            label=None,
+            expand_by_default=True,
+            visible=visible,
+        )
+        self._websock_interface.queue_message(
+            _messages.GuiRowMessage(
+                uuid=row_container_id,
+                container_uuid=self._get_container_uuid(),
+                props=props,
+            )
+        )
+        return GuiRowHandle(
+            _GuiHandleState(
+                row_container_id,
                 self,
                 None,
                 props=props,

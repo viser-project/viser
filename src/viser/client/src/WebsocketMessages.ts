@@ -526,6 +526,21 @@ export interface GuiFolderMessage {
     expand_by_default: boolean;
   };
 }
+/** A row lays out its children horizontally.
+ *
+ * (automatically generated)
+ */
+export interface GuiRowMessage {
+  type: "GuiRowMessage";
+  uuid: string;
+  container_uuid: string;
+  props: {
+    order: number;
+    label: string | null;
+    visible: boolean;
+    expand_by_default: boolean;
+  };
+}
 /** A form is a folder whose children's values can be committed together.
  *
  * Reuses ``GuiFolderProps`` because the visual shape is identical to a
@@ -1956,6 +1971,7 @@ export type Message =
   | GaussianSplatsMessage
   | RemoveSceneNodeMessage
   | GuiFolderMessage
+  | GuiRowMessage
   | GuiFormMessage
   | GuiMarkdownMessage
   | GuiHtmlMessage
@@ -2062,6 +2078,7 @@ export type SceneNodeMessage =
   | GaussianSplatsMessage;
 export type GuiComponentMessage =
   | GuiFolderMessage
+  | GuiRowMessage
   | GuiFormMessage
   | GuiMarkdownMessage
   | GuiHtmlMessage
@@ -2121,6 +2138,7 @@ export function isSceneNodeMessage(
 }
 const typeSetGuiComponentMessage = new Set([
   "GuiFolderMessage",
+  "GuiRowMessage",
   "GuiFormMessage",
   "GuiMarkdownMessage",
   "GuiHtmlMessage",

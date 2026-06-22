@@ -1,9 +1,10 @@
 import { ViewerContext } from "../ViewerContext";
+import { GuiRowMessage } from "../WebsocketMessages";
 import { useThrottledMessageSender } from "../WebsocketUtils";
 import { GuiComponentContext } from "./GuiComponentContext";
 import { shallowObjectKeysEqual } from "../utils/shallowObjectKeysEqual";
 
-import { Box } from "@mantine/core";
+import { Box, Group } from "@mantine/core";
 import React from "react";
 import ButtonComponent from "../components/Button";
 import SliderComponent from "../components/Slider";
@@ -64,11 +65,13 @@ export default function GeneratedGuiContainer({
 function GuiContainer({
   containerUuid,
   unwrapped = false,
+  layout = "stack",
 }: {
   containerUuid: string;
   /** If true, don't wrap children in a padded Box. Used by label=null
    * folders and forms, which should be transparent for layout purposes. */
   unwrapped?: boolean;
+  layout?: "stack" | "row";
 }) {
   const viewer = React.useContext(ViewerContext)!;
 
@@ -97,6 +100,9 @@ function GuiContainer({
       nextGuiUuid={guiUuidOrderPairArray[index + 1]?.uuid ?? null}
     />
   ));
+  if (layout === "row") {
+    return <Group gap="0.5em">{children}</Group>;
+  }
   if (unwrapped) {
     return <>{children}</>;
   }
@@ -117,6 +123,8 @@ function GeneratedInput(props: {
   switch (conf.type) {
     case "GuiFolderMessage":
       return <FolderComponent {...conf} nextGuiUuid={props.nextGuiUuid} />;
+    case "GuiRowMessage":
+      return <RowComponent {...conf} />;
     case "GuiFormMessage":
       return <FormComponent {...conf} nextGuiUuid={props.nextGuiUuid} />;
     case "GuiTabGroupMessage":
@@ -164,6 +172,12 @@ function GeneratedInput(props: {
     default:
       assertNeverType(conf);
   }
+}
+
+function RowComponent({ uuid, props: { visible } }: GuiRowMessage) {
+  const guiContext = React.useContext(GuiComponentContext)!;
+  if (!visible) return null;
+  return <guiContext.GuiContainer containerUuid={uuid} layout="row" />;
 }
 
 function assertNeverType(x: never): never {
