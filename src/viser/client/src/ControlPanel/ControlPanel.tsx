@@ -186,7 +186,11 @@ export function ConnectionStatus() {
 
   return (
     <>
-      <div style={{ width: "1.1em" }} /> {/* Spacer. */}
+      {/* Spacer reserving room for the absolutely-positioned status icon (which
+      crossfades between the connected/reconnecting/inactive variants in this
+      spot), plus a small gap before the label. */}
+      <div style={{ width: "1.25em", flexShrink: 0 }} />
+      <div style={{ width: "0.4em", flexShrink: 0 }} />
       <Transition transition="fade" mounted={websocketState === "connected"}>
         {(styles) => (
           <IconCloudCheck
@@ -229,7 +233,21 @@ export function ConnectionStatus() {
           />
         )}
       </Transition>
-      <Box px="xs" style={{ flexGrow: 1, letterSpacing: "-0.5px" }} pt="0.1em">
+      <Box
+        pr="xs"
+        pt="0.1em"
+        style={{
+          flexGrow: 1,
+          letterSpacing: "-0.5px",
+          // Truncate instead of wrapping/pushing the action icons off the edge
+          // when the panel is narrow. minWidth:0 lets the flex item shrink below
+          // its content width.
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
         {label !== ""
           ? label
           : websocketState === "connected"

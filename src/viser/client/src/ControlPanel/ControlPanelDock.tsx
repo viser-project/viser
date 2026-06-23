@@ -16,7 +16,9 @@ import { htmlIconWrapper } from "../components/ComponentStyles.css";
 import { DockMetricsContext, useDock } from "../dock/DockContext";
 import { DockManager } from "../dock/DockManager";
 import * as ops from "../dock/layoutOps";
-import { PaneRegistry, emptyLayout } from "../dock/types";
+import { DockLayout, PaneRegistry, emptyLayout } from "../dock/types";
+import type { CanvasBounds } from "../dock/layoutOps";
+import { DockMetrics } from "../dock/DockContext";
 import {
   CommandsButton,
   ConnectionStatus,
@@ -36,6 +38,16 @@ const MemoizedGeneratedGuiContainer = React.memo(GeneratedGuiContainer);
 
 // Match the original FloatingPanel's 15px boundary pad for initial placement.
 const PANEL_PAD_PX = 15;
+
+/** The canvas bounds (for resolving float placements) from the dock metrics. */
+function canvasBoundsFromMetrics(metrics: DockMetrics): CanvasBounds {
+  return {
+    width: metrics.containerWidth,
+    height: metrics.containerHeight,
+    leftInset: metrics.reservedWidth.left,
+    rightInset: metrics.reservedWidth.right,
+  };
+}
 
 /** Where the control panel currently sits, reported up to App so the
  * notifications layer can offset itself clear of a left-docked panel. */
@@ -87,7 +99,11 @@ export function ControlPanelDockSurface({
             {/* Action icons: stop pointerdown so pressing them neither starts
             a panel drag nor registers as a minimize click on the header. */}
             <Box
-              style={{ display: "flex", alignItems: "center" }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                flexShrink: 0,
+              }}
               onPointerDown={(event) => event.stopPropagation()}
             >
               <CommandsButton />
@@ -382,7 +398,7 @@ function ControlPanelDockSync({
         // The control panel is floated separately (initial-placement effect);
         // don't let a no-position placement double-place it. A main_panel.float()
         // is canvas-relative like any other panel's.
-        { floatIfUnplaced: false, canvasLeftPx: metrics.reservedWidth.left },
+        { floatIfUnplaced: false, canvasBounds: canvasBoundsFromMetrics(metrics) },
       ),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -590,6 +606,9 @@ function StandalonePanelPlacement({
   const expandByDefault = viewer.useGui(
     (state) => state.panels[uuid]?.props.expand_by_default ?? true,
   );
+  const visible = viewer.useGui(
+    (state) => state.panels[uuid]?.props.visible ?? true,
+  );
 
   // The panel's panes must be registered (specs created) before we can place or
   // reconcile -- placing earlier races the registry reconciliation.
@@ -612,31 +631,63 @@ function StandalonePanelPlacement({
   // false->true transition (which happens whenever a tab is added, since the new
   // pane registers a render later) re-runs this effect but is a no-op unless the
   // placement value actually changed.
+  // Re-create + place this panel's group from its panes (used by the placement
+  // effect and the ungrouped-recovery fallback below).
+  const placePanel = (layout: DockLayout) =>
+    placement === null
+      ? layout
+      : ops.applyPanelPlacement(
+          layout,
+          tabIds,
+          placement,
+          (anchorUuid) => resolveAnchor(layout, anchorUuid),
+          { canvasBounds: canvasBoundsFromMetrics(metrics), expandByDefault },
+        );
+
   const appliedPlacementKey = React.useRef<string | null>(null);
   React.useEffect(() => {
+    // When hidden, drop the applied-key so re-showing re-places the panel.
+    if (!visible) {
+      appliedPlacementKey.current = null;
+      return;
+    }
     if (!ready || placement === null) return;
     if (appliedPlacementKey.current === placementKey) return;
     appliedPlacementKey.current = placementKey;
-    const canvasLeftPx = metrics.reservedWidth.left;
-    dock.api.apply((layout) =>
-      ops.applyPanelPlacement(
-        layout,
-        tabIds,
-        placement,
-        (anchorUuid) => resolveAnchor(layout, anchorUuid),
-        { canvasLeftPx, expandByDefault },
-      ),
-    );
+    dock.api.apply(placePanel);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, placementKey, dock.api]);
+  }, [ready, placementKey, visible, dock.api]);
+
+  // Hide/show: when `visible` is false, remove the panel's panes from the layout
+  // (it renders nothing) without destroying the panel; when it flips back to
+  // true the placement effect above re-applies. Keyed on `visible` + `orderKey`
+  // so a tab added while hidden is also removed.
+  React.useEffect(() => {
+    if (visible || tabIds.length === 0) return;
+    dock.api.apply((layout) => {
+      let next = layout;
+      for (const id of tabIds) next = ops.removePane(next, id);
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, orderKey, dock.api]);
 
   // (2) Reconcile MEMBERSHIP (tabs added/removed) without repositioning, so a
   // tab change updates the group's panes but leaves its current location alone.
+  // Edge case: if the server replaced ALL tab containers at once (zero overlap
+  // with the old set), the panel's group can no longer be found by its panes, so
+  // reconcile no-ops and the panel would render nowhere. Detect that (ready but
+  // ungrouped) and fall back to re-applying the full placement, which re-creates
+  // and re-places the group from the new panes.
   React.useEffect(() => {
-    if (!ready) return;
-    dock.api.apply((layout) => ops.reconcilePanelMembership(layout, tabIds));
+    if (!ready || !visible) return;
+    dock.api.apply((layout) =>
+      placement !== null && ops.findPaneGroup(layout, tabIds[0]) === null
+        ? placePanel(layout)
+        : ops.reconcilePanelMembership(layout, tabIds),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, orderKey, dock.api]);
+  }, [ready, orderKey, visible, dock.api]);
 
   return null;
 }

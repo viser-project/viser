@@ -23,9 +23,21 @@ export type WindowId = string;
 export type NodeId = string;
 export type AreaId = string;
 
-/** Minimum width of a panel, enforced everywhere a panel's width is set or
- * previewed: floating windows, docked regions, and drop-zone hints. */
+/** Minimum width of a panel's CONTENT, enforced on the inner body container
+ * (TabGroupFrame's PanelBody) -- NOT on the region/window/column layout. When a
+ * region is dragged narrower than this, the body keeps this width and the panel
+ * scrolls horizontally instead of squeezing the content. The layout itself may
+ * commit narrower than this, down to MIN_REGION_GRAB_PX. */
 export const MIN_PANEL_WIDTH_PX = 220;
+
+/** Minimum width a docked region / floating window / split column may be
+ * resized to in the LAYOUT model. Small (the panel body, min MIN_PANEL_WIDTH_PX,
+ * simply overflows with a horizontal scrollbar below this), but wide enough to
+ * stay comfortably grabbable so a region dragged narrow can always be pulled
+ * back wide -- and wide enough that the header chrome (status + action icons)
+ * still reads. Kept above MINIMIZED_STRIP_PX so an expanded panel never renders
+ * thinner than its own minimized strip. */
+export const MIN_REGION_GRAB_PX = 96;
 
 /** Maximum width of a *single* panel. Region/window caps are derived per-panel
  * from this (e.g. a two-column region can be up to 2x this), never applied to
@@ -47,6 +59,12 @@ export const SPLIT_DIVIDER_PX = 7;
 /** Width (px) a docked region starts at (and that a newly docked column gets)
  * before the user resizes it. */
 export const DEFAULT_REGION_PX = 300;
+
+/** Minimum rendered height (px) of a pinned floating window: the floor a window
+ * is kept at so it stays usable (its contents scroll) when the container is too
+ * small for its pinned height. A window whose pinned height is below this is
+ * left as-is (the floor never inflates a window above its pinned height). */
+export const MIN_WINDOW_HEIGHT_PX = 100;
 
 /** Clamp `v` into [lo, hi]. Shared by every place a size/position is bounded
  * (resize gestures, width reconciliation, hint geometry). */
@@ -156,6 +174,15 @@ export interface FloatingWindow {
    * weight 1 (equal). Keyed by group id (not index) so it survives stack
    * insert/remove without re-alignment; stale keys are harmless. */
   stackWeights?: Record<GroupId, number>;
+  /** Server-requested float coordinates (canvas-relative), kept so the live
+   * position can be re-resolved against the current canvas size + measured
+   * window size each render. A NEGATIVE value is a gap from the FAR edge: x<0 is
+   * `|x|`px from the canvas right boundary, y<0 is `|y|`px from the bottom (so
+   * top-right is x:-15, y:15). Set only for server-placed panels; a user drag
+   * clears them (the dragged position becomes absolute). See
+   * resolveRequestedFloatPosition. */
+  requestedX?: number;
+  requestedY?: number;
 }
 
 /** The complete, serializable layout. */

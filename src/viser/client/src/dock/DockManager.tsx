@@ -32,8 +32,13 @@ import {
 } from "./gestures";
 import * as ops from "./layoutOps";
 import { RegionResizer } from "./RegionResizer";
-import { plannedReservedWidth, planRegion } from "./regionPlan";
+import {
+  canvasFacingStripOffsetPx,
+  plannedReservedWidth,
+  planRegion,
+} from "./regionPlan";
 import { reconcileRegionWidths } from "./widthReconciliation";
+import { invariantViolations } from "./layoutInvariants";
 import {
   DEFAULT_REGION_PX,
   DropHint,
@@ -50,7 +55,7 @@ import {
   DockLayout,
   GroupId,
   MAX_PANEL_WIDTH_PX,
-  MIN_PANEL_WIDTH_PX,
+  MIN_REGION_GRAB_PX,
   NodeId,
   PaneId,
   PaneRegistry,
@@ -58,7 +63,6 @@ import {
   WindowId,
 } from "./types";
 
-const MIN_REGION_PX = MIN_PANEL_WIDTH_PX;
 // Keep at least this much of a floating window's top-left corner on-screen so
 // its handle stays reachable (panes may otherwise overflow off-screen).
 const KEEP_VISIBLE_PX = 40;
@@ -195,6 +199,16 @@ export function DockManager({
   const applyOp = React.useCallback((next: DockLayout) => {
     if (next === layoutRef.current) return; // no-op op: nothing to commit.
     reconcileRegionWidths(layoutRef.current, next);
+    // Dev-only: every committed layout must satisfy the structural invariants
+    // (one location per group, one group per pane, etc.). Catches a corrupt
+    // commit the instant the op produces it, instead of as a duplicated/orphaned
+    // pane later. Stripped from production builds. The fuzz test asserts the same
+    // function over random op sequences.
+    if (import.meta.env.DEV) {
+      const violations = invariantViolations(next);
+      if (violations.length > 0)
+        console.error("[dock] layout invariant violation:\n" + violations.join("\n"));
+    }
     layoutRef.current = next;
     setLayout(next);
   }, []);
@@ -242,6 +256,9 @@ export function DockManager({
   // Container height, for capping floating panes' scrolling bodies (matches
   // the original FloatingPanel, which capped its body to the parent height).
   const [containerHeight, setContainerHeight] = React.useState(0);
+  // Container width, exposed via metrics so float coords (incl. negative
+  // gap-from-right) can be resolved against the live canvas.
+  const [containerWidth, setContainerWidth] = React.useState(0);
 
   // Keep floating windows sensibly placed when the container resizes. Each
   // axis anchors to the NEARER container edge (matching the original
@@ -256,6 +273,7 @@ export function DockManager({
     const observer = new ResizeObserver(() => {
       const rect = el.getBoundingClientRect();
       setContainerHeight(rect.height);
+      setContainerWidth(rect.width);
       const prevSize = prevContainerSize.current;
       prevContainerSize.current = { w: rect.width, h: rect.height };
       const deltaW = prevSize === null ? 0 : rect.width - prevSize.w;
@@ -272,13 +290,15 @@ export function DockManager({
         let changed = false;
         const floating = prev.floating.map((w) => {
           if (w.id === draggingWindowIdRef.current) return w;
+          // Server-placed panels (requestedX/Y) are repositioned by the
+          // resolve-effect below (keyed on container size); skip them here so the
+          // two don't fight.
+          if (w.requestedX !== undefined && w.requestedY !== undefined) return w;
           let x = w.x;
           let y = w.y;
-          // Anchoring and pulling operate on what the user SEES: the RENDERED
-          // height, which the map above just measured. The model height is
-          // only a fallback for a window with no DOM yet. (Using the model
-          // height first yanked collapsed pinned-height windows around by the
-          // height of their hidden content.)
+          // Dragged windows: anchor to the nearer edge (operate on the RENDERED
+          // height the map just measured; the model height is only a fallback
+          // for a window with no DOM yet).
           const wh = heights.get(w.id) ?? w.height ?? 0;
           if (prevSize !== null && (deltaW !== 0 || deltaH !== 0)) {
             if (w.x + w.width / 2 > prevSize.w / 2) x += deltaW;
@@ -833,7 +853,7 @@ export function DockManager({
     return {
       x: r.left - crect.left,
       y: r.top - crect.top,
-      width: clamp(r.width, MIN_REGION_PX, MAX_PANEL_WIDTH_PX),
+      width: clamp(r.width, MIN_REGION_GRAB_PX, MAX_PANEL_WIDTH_PX),
       // Rendered height -- used to give an undocked panel a definite height when
       // it needs one (e.g. a full-bleed nested area, which collapses to 0 in an
       // auto-height window). Clamped so a region-tall panel doesn't float huge.
@@ -1344,20 +1364,41 @@ export function DockManager({
             ? plannedReservedWidth(plans.right, regionWidth.right)
             : 0,
       },
+      containerWidth,
+      containerHeight,
     }),
-    [regionWidth, plans],
+    [regionWidth, plans, containerWidth, containerHeight],
   );
 
   // Stable per-window handlers (windowId-first) so FloatingWindowView can be
   // memoized -- inline per-window closures would break the memo every render.
+  // A user resize gesture (any grip) takes manual control: release the window's
+  // server anchor so it stops re-resolving against the canvas edges (otherwise a
+  // right/bottom-anchored panel would grow away from the cursor as the resolve
+  // re-pins its far edge). Server-driven set_width/set_height go through
+  // applyPanelPlacement, not these handlers, so they keep the anchor.
   const onWindowResize = React.useCallback(
     (windowId: WindowId, width: number, x?: number) =>
-      applyOp(ops.resizeWindow(layoutRef.current, windowId, width, x)),
+      applyOp(
+        ops.resizeWindow(
+          ops.releaseRequestedCoords(layoutRef.current, windowId),
+          windowId,
+          width,
+          x,
+        ),
+      ),
     [applyOp],
   );
   const onWindowResizeHeight = React.useCallback(
-    (windowId: WindowId, height: number, y?: number) =>
-      applyOp(ops.resizeWindowHeight(layoutRef.current, windowId, height, y)),
+    (windowId: WindowId, height: number | undefined, y?: number) =>
+      applyOp(
+        ops.resizeWindowHeight(
+          ops.releaseRequestedCoords(layoutRef.current, windowId),
+          windowId,
+          height,
+          y,
+        ),
+      ),
     [applyOp],
   );
   const onWindowSetStackWeights = React.useCallback(
@@ -1379,12 +1420,21 @@ export function DockManager({
     const tree = layout.docked[edge];
     const plan = plans[edge];
     if (tree === null || plan === null)
-      return { edge, tree, reservedWidth: 0, hasExpanded: false };
+      return {
+        edge,
+        tree,
+        reservedWidth: 0,
+        hasExpanded: false,
+        resizerStripOffset: 0,
+      };
     return {
       edge,
       tree,
       hasExpanded: plan.hasExpanded,
       reservedWidth: plannedReservedWidth(plan, regionWidth[edge]),
+      // Inset the resize handle past any canvas-facing minimized strips so it
+      // lands on the first expanded panel's boundary, not the strip's far side.
+      resizerStripOffset: canvasFacingStripOffsetPx(plan, edge),
     };
   });
   const leftInset = regions[0].reservedWidth;
@@ -1394,43 +1444,118 @@ export function DockManager({
   // (which excludes the strips and preserves widths through minimization).
   reservedWidthRef.current = { left: leftInset, right: rightInset };
 
-  // Keep floating windows within the canvas as the docked insets change: a
-  // growing docked region PUSHES a float that its edge runs into, so the float
-  // is never covered by the chrome. This fires on EVERY inset change, including
-  // each frame of an interactive region-divider resize (the float slides live as
-  // the boundary advances) -- it's safe to run mid-resize because it only touches
-  // `floating`, never the docked region widths the resize is editing. We only
-  // PULL a float inward, never push it outward, so a float comfortably inside the
-  // canvas is left alone and undocking doesn't yank floats around.
-  const prevInsets = React.useRef<{ left: number; right: number } | null>(null);
-  React.useEffect(() => {
-    const prev = prevInsets.current;
-    prevInsets.current = { left: leftInset, right: rightInset };
+  // Keep floating windows positioned correctly as the canvas changes (docked
+  // insets grow/shrink, or the container resizes):
+  // - Server-placed panels (those carrying requestedX/requestedY) RE-RESOLVE
+  //   their canvas-relative request against the live canvas + measured window
+  //   size -- this is what makes negative coords (gap-from-far-edge, e.g.
+  //   top-right `x:-15`) track the edge, and what places auto-height panels with
+  //   a negative y once their height is known.
+  // - Other (user-dragged) windows are CLAMPED inward so a growing docked region
+  //   pushes a float it would otherwise cover; a float comfortably inside is left
+  //   alone, so undocking/dragging isn't second-guessed.
+  // Fires on every inset/size change, including each frame of an interactive
+  // region resize -- safe because it only touches `floating`, not docked widths.
+  // Re-resolve requested-coord windows + clamp dragged ones. Idempotent: given
+  // the same canvas + measured sizes it produces the same positions, so it never
+  // loops. Reads measured heights so a negative y (gap-from-bottom) on an
+  // auto-height panel lands correctly once the panel has rendered.
+  // Re-resolve requested-coord windows (always) and optionally clamp dragged
+  // ones. `clampDragged` is set ONLY for inset changes: a growing docked region
+  // PUSHES a covered float inward (the requested behavior). On a plain container
+  // resize or a window-size change we must NOT clamp dragged floats -- the
+  // container ResizeObserver already anchors them and preserves deliberate
+  // overhang (clampCorner); double-clamping here would yank an overhanging
+  // user float fully inside on every resize.
+  const resolveFloatingPositions = React.useCallback((clampDragged: boolean) => {
     const el = containerRef.current;
-    if (prev === null || el === null) return;
-    if (prev.left === leftInset && prev.right === rightInset) return;
-    const containerW = el.getBoundingClientRect().width;
+    if (el === null) return;
+    const rect = el.getBoundingClientRect();
+    const heights = new Map<string, number>();
+    el.querySelectorAll<HTMLElement>("[data-floating-window]").forEach(
+      (winEl) => {
+        const id = winEl.getAttribute("data-floating-window");
+        if (id !== null) heights.set(id, winEl.offsetHeight);
+      },
+    );
+    const bounds = {
+      width: rect.width,
+      height: rect.height,
+      leftInset: reservedWidthRef.current.left,
+      rightInset: reservedWidthRef.current.right,
+    };
     setLayout((cur) => {
       let changed = false;
       const floating = cur.floating.map((w) => {
         if (w.id === draggingWindowIdRef.current) return w;
-        // Canvas bounds: [leftInset, containerW - rightInset]. Keep the window's
-        // left edge >= the canvas left, and its right edge <= the canvas right
-        // (clamp left, then re-clamp left so a too-wide window pins to the
-        // canvas left rather than going negative).
-        const maxX = Math.max(leftInset, containerW - rightInset - w.width);
-        const x = Math.min(Math.max(w.x, leftInset), maxX);
-        if (x === w.x) return w;
+        const winHeight = heights.get(w.id) ?? w.height ?? 0;
+        let x: number;
+        let y: number;
+        if (w.requestedX !== undefined && w.requestedY !== undefined) {
+          // Server-placed: re-resolve the (possibly negative) request.
+          ({ x, y } = ops.resolveRequestedFloatPosition(
+            w.requestedX,
+            w.requestedY,
+            w.width,
+            winHeight,
+            bounds,
+          ));
+        } else if (clampDragged) {
+          // User-dragged, inset grew: push inward so the chrome doesn't cover it.
+          const maxX = Math.max(
+            bounds.leftInset,
+            rect.width - bounds.rightInset - w.width,
+          );
+          x = Math.min(Math.max(w.x, bounds.leftInset), maxX);
+          y = w.y;
+        } else {
+          return w;
+        }
+        if (x === w.x && y === w.y) return w;
         changed = true;
-        return { ...w, x };
+        return { ...w, x, y };
       });
       if (!changed) return cur;
       const next = { ...cur, floating };
       layoutRef.current = next;
       return next;
     });
+  }, []);
+
+  // Inset change (docking): re-resolve requested + push dragged floats inward.
+  React.useEffect(() => {
+    resolveFloatingPositions(true);
+  }, [leftInset, rightInset, resolveFloatingPositions]);
+
+  // Container resize: re-resolve requested floats only (the container
+  // ResizeObserver handles dragged-float anchoring + overhang).
+  React.useEffect(() => {
+    resolveFloatingPositions(false);
+  }, [containerWidth, containerHeight, resolveFloatingPositions]);
+
+  // A floating window's RENDERED size changing (e.g. an auto-height panel
+  // finishing its first layout, or content growing) re-resolves requested floats
+  // so a negative y uses the real height. Observe the windows directly.
+  //
+  // Keyed on the SET of window ids (not `layout.floating`, which is a fresh array
+  // on every layout commit): otherwise the observer would disconnect/reconnect on
+  // every frame of any drag (each per-frame commit clones the layout), firing an
+  // extra resolve each frame. We only need to re-attach when windows are
+  // added/removed.
+  const floatingWindowIds = layout.floating
+    .map((w) => w.id)
+    .sort()
+    .join("\n");
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (el === null) return;
+    const observer = new ResizeObserver(() => resolveFloatingPositions(false));
+    el.querySelectorAll("[data-floating-window]").forEach((winEl) =>
+      observer.observe(winEl),
+    );
+    return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leftInset, rightInset]);
+  }, [floatingWindowIds, resolveFloatingPositions]);
 
   return (
     <DockContext.Provider value={contextValue}>
@@ -1460,7 +1585,8 @@ export function DockManager({
 
         {/* Docked regions: every column insets the canvas, with fully-minimized
         columns rendering as fixed-width vertical strips. */}
-        {regions.map(({ edge, tree, hasExpanded, reservedWidth }) => (
+        {regions.map(
+          ({ edge, tree, hasExpanded, reservedWidth, resizerStripOffset }) => (
           <React.Fragment key={edge}>
             {/* Canvas-facing shadow on a div BEHIND the panes (zIndex 1), so it
             only shows over the canvas, never on top of a panel. */}
@@ -1495,6 +1621,7 @@ export function DockManager({
                 {hasExpanded && (
                 <RegionResizer
                   edge={edge}
+                  stripOffset={resizerStripOffset}
                   getStart={() => reservedWidth}
                   // Called once per drag: snapshots the columns' start widths
                   // and limits, and returns the per-frame handler. Widths are

@@ -109,8 +109,14 @@ export interface DockMetrics {
    * actually insets the canvas. Use this for screen-geometry consumers like
    * the notifications offset. */
   reservedWidth: { left: number; right: number };
+  /** Dock-root size in px. With reservedWidth, gives the canvas bounds used to
+   * resolve (possibly negative) float coordinates. */
+  containerWidth: number;
+  containerHeight: number;
 }
 
 export const DockMetricsContext = React.createContext<DockMetrics>({
   reservedWidth: { left: 0, right: 0 },
+  containerWidth: 0,
+  containerHeight: 0,
 });

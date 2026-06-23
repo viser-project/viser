@@ -18,9 +18,9 @@ import {
   DropRegion,
   GroupId,
   NodeId,
-  PaneId,
   emptyLayout,
 } from "./types";
+import { invariantViolations } from "./layoutInvariants";
 import {
   dockToEdge,
   dockToRegionEdge,
@@ -66,121 +66,10 @@ function leaves(node: DockNode | null): Extract<DockNode, { type: "leaf" }>[] {
     (n): n is Extract<DockNode, { type: "leaf" }> => n.type === "leaf",
   );
 }
-function splits(node: DockNode | null): Extract<DockNode, { type: "split" }>[] {
-  return [...walkNodes(node)].filter(
-    (n): n is Extract<DockNode, { type: "split" }> => n.type === "split",
-  );
-}
-/** All group ids referenced anywhere (docked leaves + floating stacks), with
- * duplicates, so we can detect double-references. */
-function referencedGroupIds(layout: DockLayout): GroupId[] {
-  const out: GroupId[] = [];
-  for (const edge of ["left", "right"] as DockEdge[])
-    for (const l of leaves(layout.docked[edge])) out.push(l.group);
-  for (const w of layout.floating) out.push(...w.stack);
-  return out;
-}
 
-// ---------------------------------------------------------------------------
-// THE INVARIANTS. Returns a list of violation strings (empty == healthy).
-// `known` lets us suppress shapes that match a separately-tracked known bug so
-// the fuzzer keeps surfacing NEW problems.
-// ---------------------------------------------------------------------------
-function invariantViolations(layout: DockLayout): string[] {
-  const v: string[] = [];
-  const refs = referencedGroupIds(layout);
-  const refSet = new Set(refs);
-  const groupIds = Object.keys(layout.groups);
-
-  // 1. No double-references: each referenced group id appears at most once.
-  const seen = new Map<GroupId, number>();
-  for (const g of refs) seen.set(g, (seen.get(g) ?? 0) + 1);
-  for (const [g, n] of seen) if (n > 1) v.push(`group ${g} referenced ${n}x`);
-
-  // 2. No orphans: every group in `groups` is referenced exactly once.
-  for (const g of groupIds) {
-    if (!refSet.has(g)) v.push(`group ${g} is an orphan (in groups, unreferenced)`);
-  }
-
-  // 3. No dangling leaves: every referenced group exists in `groups`.
-  for (const g of refs) {
-    if (layout.groups[g] === undefined) v.push(`reference to missing group ${g}`);
-  }
-
-  // 4. No paneId in two groups.
-  const panelOwner = new Map<PaneId, GroupId>();
-  for (const [gid, group] of Object.entries(layout.groups)) {
-    for (const p of group.paneIds) {
-      if (panelOwner.has(p))
-        v.push(`panel ${p} in both ${panelOwner.get(p)} and ${gid}`);
-      panelOwner.set(p, gid);
-    }
-  }
-
-  // 5. activeId in non-empty paneIds; paneIds non-empty.
-  for (const [gid, group] of Object.entries(layout.groups)) {
-    if (group.paneIds.length === 0) {
-      v.push(`group ${gid} has empty paneIds`);
-    } else if (!group.paneIds.includes(group.activeId)) {
-      v.push(`group ${gid} activeId ${group.activeId} not in paneIds`);
-    }
-  }
-
-  // 6. Splits have >= 2 children (post-normalization), and dir is valid.
-  for (const edge of ["left", "right"] as DockEdge[]) {
-    for (const s of splits(layout.docked[edge])) {
-      if (s.children.length < 2)
-        v.push(`split ${s.id} on ${edge} has ${s.children.length} children`);
-      if (s.dir !== "row" && s.dir !== "column")
-        v.push(`split ${s.id} bad dir ${s.dir}`);
-    }
-  }
-
-  // 7. No same-axis nested splits (normalization should have flattened).
-  for (const edge of ["left", "right"] as DockEdge[]) {
-    for (const s of splits(layout.docked[edge])) {
-      for (const c of s.children) {
-        if (c.type === "split" && c.dir === s.dir)
-          v.push(`unflattened same-axis nesting under ${s.id} on ${edge}`);
-      }
-    }
-  }
-
-  // 8. Weights finite and > 0 everywhere in docked trees.
-  for (const edge of ["left", "right"] as DockEdge[]) {
-    for (const n of walkNodes(layout.docked[edge])) {
-      if (!Number.isFinite(n.weight) || n.weight <= 0)
-        v.push(`node ${n.id} on ${edge} bad weight ${n.weight}`);
-    }
-  }
-
-  // 9. Floating windows have non-empty stacks + finite geometry.
-  for (const w of layout.floating) {
-    if (w.stack.length === 0) v.push(`floating window ${w.id} has empty stack`);
-    if (!Number.isFinite(w.x) || !Number.isFinite(w.y) || !Number.isFinite(w.width))
-      v.push(`floating window ${w.id} bad geometry`);
-    if (w.height !== undefined && !Number.isFinite(w.height))
-      v.push(`floating window ${w.id} bad height`);
-  }
-
-  // 10. Node ids unique within docked trees.
-  const ids: NodeId[] = [];
-  for (const edge of ["left", "right"] as DockEdge[])
-    for (const n of walkNodes(layout.docked[edge])) ids.push(n.id);
-  if (new Set(ids).size !== ids.length) v.push(`duplicate node ids in docked trees`);
-
-  // 11. Floating window ids unique.
-  const wids = layout.floating.map((w) => w.id);
-  if (new Set(wids).size !== wids.length) v.push(`duplicate floating window ids`);
-
-  // 12. collapsed, when present, is a boolean.
-  for (const [gid, group] of Object.entries(layout.groups)) {
-    if (group.collapsed !== undefined && typeof group.collapsed !== "boolean")
-      v.push(`group ${gid} collapsed is not boolean`);
-  }
-
-  return v;
-}
+// THE INVARIANTS live in production (layoutInvariants.ts) so applyOp asserts the
+// exact same definition on every commit in dev -- this fuzzer and the live app
+// agree on "what valid means".
 
 /** Multiset of all panel ids across all groups (for the conservation check). */
 function allPanels(layout: DockLayout): string[] {

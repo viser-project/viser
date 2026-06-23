@@ -28,10 +28,17 @@ const PanelBody = React.memo(function PanelBody({
   panel,
   fill,
   maxContentHeight,
+  persistentScrollbar,
 }: {
   panel: PaneSpec | undefined;
   fill: boolean;
   maxContentHeight?: number;
+  /** When true (docked leaves), the fill-height ScrollArea shows its scrollbars
+   * whenever content overflows (`type="auto"`) -- so the horizontal bar that
+   * appears when the panel is squeezed below its content minimum stays visible
+   * at the panel bottom. Floating windows leave this false to keep Mantine's
+   * default hover-reveal bars. */
+  persistentScrollbar?: boolean;
 }) {
   if (panel?.fullBleed === true) {
     // Full-bleed: render the content directly with no padding and no ScrollArea
@@ -56,22 +63,40 @@ const PanelBody = React.memo(function PanelBody({
       </Box>
     );
   }
-  return (
-    <ScrollArea.Autosize
-      mah={fill ? undefined : maxContentHeight}
-      className={dockBodyScroll}
-      style={
-        fill ? { flexGrow: 1, minHeight: 0, width: "100%" } : { width: "100%" }
-      }
+  const inner = (
+    <Box
+      style={{
+        padding: panel?.unpadded === true ? undefined : "0.6em 0.75em",
+        width: "100%",
+      }}
     >
-      <Box
-        style={{
-          padding: panel?.unpadded === true ? undefined : "0.6em 0.75em",
-          width: "100%",
-        }}
-      >
-        {panel?.render() ?? null}
-      </Box>
+      {panel?.render() ?? null}
+    </Box>
+  );
+  // Fill (docked leaves, and fixed-height floating windows): a plain ScrollArea
+  // that FILLS the panel's height, so the horizontal scrollbar (shown when the
+  // body is narrower than its content minimum) pins to the BOTTOM of the panel
+  // rather than floating just under short content. The flex parent (flexGrow:1,
+  // minHeight:0) gives it the definite height it needs to scroll. Docked leaves
+  // pass persistentScrollbar so the bar stays visible; floating windows keep the
+  // default hover-reveal.
+  // Non-fill (auto-height floating): ScrollArea.Autosize so the window sizes to
+  // its content up to the maxContentHeight cap (a fill ScrollArea has no height).
+  return fill ? (
+    <ScrollArea
+      type={persistentScrollbar === true ? "auto" : "hover"}
+      className={dockBodyScroll}
+      style={{ flexGrow: 1, minHeight: 0, width: "100%" }}
+    >
+      {inner}
+    </ScrollArea>
+  ) : (
+    <ScrollArea.Autosize
+      mah={maxContentHeight}
+      className={dockBodyScroll}
+      style={{ width: "100%" }}
+    >
+      {inner}
     </ScrollArea.Autosize>
   );
 });
@@ -163,11 +188,16 @@ export function TabGroupFrame({
   /** Controls whether the tab strip itself acts as a move handle (docked) vs.
    * deferring to the window header (floating, multi-group stacks). */
   stripDragsGroup = true,
+  /** Docked leaves set this so the body's fill-height scrollbars stay visible
+   * whenever content overflows (the persistent horizontal bar at the panel
+   * bottom); floating windows leave it off for hover-reveal bars. */
+  persistentScrollbar = false,
 }: {
   group: TabGroup;
   fill?: boolean;
   maxContentHeight?: number;
   stripDragsGroup?: boolean;
+  persistentScrollbar?: boolean;
 }) {
   const dock = useDock();
   const { panes } = dock;
@@ -250,6 +280,7 @@ export function TabGroupFrame({
       panel={panes[group.activeId]}
       fill={fill}
       maxContentHeight={maxContentHeight}
+      persistentScrollbar={persistentScrollbar}
     />
   );
   const contents = fill ? (

@@ -31,7 +31,7 @@ import {
   DockNode,
   GroupId,
   MAX_PANEL_WIDTH_PX,
-  MIN_PANEL_WIDTH_PX,
+  MIN_REGION_GRAB_PX,
   SPLIT_DIVIDER_PX,
 } from "./types";
 import {
@@ -375,15 +375,16 @@ describe("RegionResizer clamp bounds for a column-rooted unequal region", () => 
     return { lo, hi };
   }
 
-  it("a column root with an unequal inner row clamps so the smaller column keeps its min", () => {
+  it("a column root with an unequal inner row clamps so the smaller column keeps its grab min", () => {
     // column[C, row[A(400), B(200)]]: B is 1/3 of the width. At the region's lo
-    // bound, B must still be >= MIN_PANEL_WIDTH_PX.
+    // bound, B must still be >= MIN_REGION_GRAB_PX (the layout floor -- narrower
+    // panels scroll their body rather than refusing to shrink).
     const tree = colSplit([leaf("c", 1), rowSplit([leaf("a", 400), leaf("b", 200)], 1)]);
     const { lo, hi } = clampBounds(tree);
-    // B proportion = 200/600; min region so B >= 220 is 220 / (1/3) = 660.
-    expect(lo).toBeCloseTo(MIN_PANEL_WIDTH_PX / (200 / 600), 0);
-    // At lo, scaled B width >= the per-panel min.
-    expect(lo * (200 / 600)).toBeGreaterThanOrEqual(MIN_PANEL_WIDTH_PX - 0.5);
+    // B proportion = 200/600; min region so B >= grab is grab / (1/3).
+    expect(lo).toBeCloseTo(MIN_REGION_GRAB_PX / (200 / 600), 0);
+    // At lo, scaled B width >= the grab min.
+    expect(lo * (200 / 600)).toBeGreaterThanOrEqual(MIN_REGION_GRAB_PX - 0.5);
     // At hi, the larger column A must not exceed its per-panel max.
     expect(hi * (400 / 600)).toBeLessThanOrEqual(MAX_PANEL_WIDTH_PX + 0.5);
     expect(lo).toBeLessThanOrEqual(hi);
@@ -393,11 +394,11 @@ describe("RegionResizer clamp bounds for a column-rooted unequal region", () => 
     const tree = colSplit([leaf("c", 1), rowSplit([leaf("a", 1), leaf("b", 1)], 1)]);
     const { lo, hi } = clampBounds(tree);
     // Equal columns (prop = 0.5 each):
-    // - lo: the summed row min WITH the 7px divider (447) beats the per-column
-    //   min/0.5 = 2*min (440), so the divider-inclusive summed min wins.
+    // - lo: the summed row grab-min WITH the 7px divider (2*grab + 7) beats the
+    //   per-column grab/0.5 = 2*grab, so the divider-inclusive summed min wins.
     // - hi: the per-column max/0.5 = 2*max (1200) is TIGHTER than the summed max
     //   with divider (1207), so the per-column bound wins (keeps each <= its max).
-    expect(lo).toBeCloseTo(MIN_PANEL_WIDTH_PX * 2 + SPLIT_DIVIDER_PX, 0);
+    expect(lo).toBeCloseTo(MIN_REGION_GRAB_PX * 2 + SPLIT_DIVIDER_PX, 0);
     expect(hi).toBeCloseTo(MAX_PANEL_WIDTH_PX * 2, 0);
   });
 });
