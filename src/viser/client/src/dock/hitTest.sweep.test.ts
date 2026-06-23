@@ -29,6 +29,7 @@ import {
   row as rowS,
   col as colS,
   group,
+  floatingWindow,
 } from "./testUtils";
 
 const CONTAINER: ContainerRect = { left: 0, top: 0, width: 1000, height: 800 };
@@ -281,8 +282,8 @@ function layouts(): { name: string; layout: DockLayout }[] {
       c: group("c"),
     };
     l.floating = [
-      { id: "w1", x: 400, y: 200, width: 300, stack: ["a", "b"] },
-      { id: "w2", x: 750, y: 120, width: 200, stack: ["c"] },
+      floatingWindow({ id: "w1", x: 400, y: 200, width: 300, stack: ["a", "b"] }),
+      floatingWindow({ id: "w2", x: 750, y: 120, width: 200, stack: ["c"] }),
     ];
     out.push({ name: "floating stacks", layout: l });
   }
@@ -298,9 +299,9 @@ function layouts(): { name: string; layout: DockLayout }[] {
       c: group("c"),
     };
     l.floating = [
-      { id: "w1", x: 300, y: 200, width: 260, stack: ["a"] },
-      { id: "w2", x: 360, y: 240, width: 260, stack: ["b"] },
-      { id: "w3", x: 420, y: 280, width: 260, stack: ["c"] },
+      floatingWindow({ id: "w1", x: 300, y: 200, width: 260, stack: ["a"] }),
+      floatingWindow({ id: "w2", x: 360, y: 240, width: 260, stack: ["b"] }),
+      floatingWindow({ id: "w3", x: 420, y: 280, width: 260, stack: ["c"] }),
     ];
     out.push({ name: "overlapping floating windows", layout: l });
   }
@@ -312,7 +313,7 @@ function layouts(): { name: string; layout: DockLayout }[] {
       f: group("f"),
     };
     l.docked.left = leaf("d");
-    l.floating = [{ id: "wf", x: 200, y: 250, width: 240, stack: ["f"] }];
+    l.floating = [floatingWindow({ id: "wf", x: 200, y: 250, width: 240, stack: ["f"] })];
     out.push({ name: "floating straddling docked region", layout: l });
   }
   {

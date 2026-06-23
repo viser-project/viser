@@ -38,6 +38,7 @@ import {
   groupsInTree,
   group,
   refCount,
+  floatingWindow,
 } from "./testUtils";
 import {
   edgeIsSingleLeaf,
@@ -91,14 +92,7 @@ function floatingLayout(
   windows: { id: string; stack: GroupId[]; stackWeights?: Record<GroupId, number> }[],
 ): DockLayout {
   const l = emptyLayout();
-  l.floating = windows.map((w) => ({
-    id: w.id,
-    x: 0,
-    y: 0,
-    width: 300,
-    stack: [...w.stack],
-    ...(w.stackWeights !== undefined ? { stackWeights: { ...w.stackWeights } } : {}),
-  }));
+  l.floating = windows.map(floatingWindow);
   for (const w of windows)
     for (const g of w.stack)
       if (l.groups[g] === undefined)
@@ -700,8 +694,8 @@ describe("(7) dock/snap ops guard an area group in the dragged set", () => {
     const l = areaSourceLayout();
     // A floating window to snap into / drag from.
     l.floating = [
-      { id: "w1", x: 0, y: 0, width: 300, stack: ["plain-src"] },
-      { id: "w2", x: 350, y: 0, width: 300, stack: ["target"] },
+      floatingWindow({ id: "w1", x: 0, y: 0, width: 300, stack: ["plain-src"] }),
+      floatingWindow({ id: "w2", x: 350, y: 0, width: 300, stack: ["target"] }),
     ];
     return l;
   }
@@ -983,14 +977,14 @@ describe("BUG #1 (fixed): snapToWindowStack self-target no longer empties the wi
   it("snapping the sole group of a window into that same window is a safe no-op", () => {
     const l = emptyLayout();
     l.groups = { a: group("a") };
-    l.floating = [{ id: "w1", x: 10, y: 10, width: 260, stack: ["a"] }];
+    l.floating = [floatingWindow({ id: "w1", x: 10, y: 10, width: 260, stack: ["a"] })];
 
     const out = snapToWindowStack(l, ["a"], "w1", 0);
 
     // FIXED: window preserved, `a` still referenced exactly once, no orphan.
     expect(out).toBe(l); // safe no-op: returns the input unchanged
     expect(out.floating).toEqual([
-      { id: "w1", x: 10, y: 10, width: 260, stack: ["a"] },
+      floatingWindow({ id: "w1", x: 10, y: 10, width: 260, stack: ["a"] }),
     ]);
     expect(refCount(out, "a")).toBe(1);
   });
@@ -998,7 +992,7 @@ describe("BUG #1 (fixed): snapToWindowStack self-target no longer empties the wi
   it("snapping a window's ENTIRE multi-group stack into itself is a safe no-op", () => {
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b") };
-    l.floating = [{ id: "w1", x: 0, y: 0, width: 260, stack: ["a", "b"] }];
+    l.floating = [floatingWindow({ id: "w1", x: 0, y: 0, width: 260, stack: ["a", "b"] })];
 
     const out = snapToWindowStack(l, ["a", "b"], "w1", 0);
 
@@ -1011,8 +1005,8 @@ describe("BUG #1 (fixed): snapToWindowStack self-target no longer empties the wi
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b"), c: group("c") };
     l.floating = [
-      { id: "w1", x: 0, y: 0, width: 260, stack: ["a", "b"] },
-      { id: "w2", x: 300, y: 0, width: 260, stack: ["c"] },
+      floatingWindow({ id: "w1", x: 0, y: 0, width: 260, stack: ["a", "b"] }),
+      floatingWindow({ id: "w2", x: 300, y: 0, width: 260, stack: ["c"] }),
     ];
     const out = snapToWindowStack(l, ["a", "c"], "w1", 0);
     expect(out.floating.map((w) => w.id)).toEqual(["w1"]); // w2 cleaned up
@@ -1324,7 +1318,7 @@ describe("NOTE: numeric ops do not validate their inputs", () => {
   it("resizeWindow accepts a non-finite width verbatim", () => {
     const l = emptyLayout();
     l.groups = { a: group("a") };
-    l.floating = [{ id: "w1", x: 0, y: 0, width: 260, stack: ["a"] }];
+    l.floating = [floatingWindow({ id: "w1", x: 0, y: 0, width: 260, stack: ["a"] })];
     const out = resizeWindow(l, "w1", Number.NaN);
     expect(Number.isNaN(out.floating[0].width)).toBe(true); // no validation
   });

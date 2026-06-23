@@ -5,6 +5,7 @@
 import {
   DockLayout,
   DockNode,
+  FloatingWindow,
   GroupId,
   PaneId,
   TabGroup,
@@ -81,6 +82,36 @@ export function defGroup(
   return g;
 }
 
+/** THE single constructor for a FloatingWindow in tests. Every test builds
+ * floating windows through this (never a raw object literal), so the window shape
+ * lives in ONE place: a field change (e.g. a future tagged-union for height or
+ * position) updates this factory, not ~100 literals. Sensible defaults keep call
+ * sites terse; pass only what the test cares about. */
+export function floatingWindow(opts: {
+  id: string;
+  stack: GroupId[];
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  stackWeights?: Record<GroupId, number>;
+  requestedX?: number;
+  requestedY?: number;
+}): FloatingWindow {
+  const w: FloatingWindow = {
+    id: opts.id,
+    x: opts.x ?? 0,
+    y: opts.y ?? 0,
+    width: opts.width ?? 300,
+    stack: [...opts.stack],
+  };
+  if (opts.height !== undefined) w.height = opts.height;
+  if (opts.stackWeights !== undefined) w.stackWeights = opts.stackWeights;
+  if (opts.requestedX !== undefined) w.requestedX = opts.requestedX;
+  if (opts.requestedY !== undefined) w.requestedY = opts.requestedY;
+  return w;
+}
+
 export function makeLayout(opts: {
   left?: DockNode | null;
   right?: DockNode | null;
@@ -100,14 +131,7 @@ export function makeLayout(opts: {
   }
   layout.docked.left = opts.left ?? null;
   layout.docked.right = opts.right ?? null;
-  layout.floating = (opts.floating ?? []).map((w) => ({
-    id: w.id,
-    x: w.x ?? 0,
-    y: w.y ?? 0,
-    width: w.width ?? 300,
-    height: w.height,
-    stack: [...w.stack],
-  }));
+  layout.floating = (opts.floating ?? []).map(floatingWindow);
   const ensure = (g: GroupId) => {
     if (layout.groups[g] === undefined) defGroup(layout, g, 1);
   };
