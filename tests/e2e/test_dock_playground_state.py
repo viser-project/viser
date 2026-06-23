@@ -281,7 +281,9 @@ def test_drag_does_not_resize_pinned_height_window(page: Page) -> None:
     after = _box(page, "[data-floating-window]")
     assert win is not None and after is not None
     assert win["y"] > 500, "drag should have moved the window down"
-    assert win["height"] == 360, "model height must be untouched by a move"
+    assert win["height"] == {"mode": "pinned", "px": 360}, (
+        "model height must be untouched by a move"
+    )
     assert abs(after["height"] - before["height"]) < 2, (
         f"drag visually resized the window: {before['height']} -> {after['height']}"
     )
@@ -300,7 +302,7 @@ def test_width_only_viewport_resize_keeps_bottom_window_y(page: Page) -> None:
     page.wait_for_timeout(150)  # let ResizeObserver fire + React commit
     win = floating_window_for_panel(page, "controls")
     assert win is not None
-    assert win["height"] == 300
+    assert win["height"] == {"mode": "pinned", "px": 300}
     assert win["y"] == 620, f"width-only resize moved the window up: y={win['y']}"
 
 

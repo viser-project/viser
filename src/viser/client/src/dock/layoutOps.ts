@@ -764,26 +764,25 @@ export function resizeWindowHeight(
   return draft;
 }
 
-/** Mark a (draft) window user-owned by dropping its server-requested coords, so
- * it stops re-anchoring to the canvas edges. The single home for "a user gesture
- * took manual control" -- every gesture op that commits a user-chosen geometry
- * (move, resize, snap) calls this, so a new gesture can't silently forget to
- * un-anchor. Mutates in place; the caller owns the draft. */
+/** Mark a (draft) window user-owned by dropping its server anchor, so it stops
+ * re-anchoring to the canvas edges. The single home for "a user gesture took
+ * manual control" -- every gesture op that commits a user-chosen geometry (move,
+ * resize, snap) calls this, so a new gesture can't silently forget to un-anchor.
+ * Mutates in place; the caller owns the draft. */
 function markWindowUserOwned(win: FloatingWindow): void {
-  delete win.requestedX;
-  delete win.requestedY;
+  delete win.anchor;
 }
 
-/** Release a window's server-requested (canvas-relative) coordinates so it stops
- * re-anchoring on canvas changes -- it becomes a plainly user-owned float at its
- * current absolute position. Called when a USER gesture (drag, any resize grip)
- * takes manual control of the window. No-op if it had none. */
+/** Release a window's server anchor so it stops re-anchoring on canvas changes
+ * -- it becomes a plainly user-owned float at its current absolute position.
+ * Called when a USER gesture (drag, any resize grip) takes manual control of the
+ * window. No-op if it had none. */
 export function releaseRequestedCoords(
   layout: DockLayout,
   windowId: WindowId,
 ): DockLayout {
   const win = layout.floating.find((w) => w.id === windowId);
-  if (win === undefined || win.requestedX === undefined) return layout;
+  if (win === undefined || win.anchor === undefined) return layout;
   const draft = clone(layout);
   markWindowUserOwned(draft.floating.find((x) => x.id === windowId)!);
   return draft;
@@ -1577,8 +1576,7 @@ export function applyPanelPlacement(
     if (result.windowId === null) return;
     const win = draft.floating.find((w) => w.id === result.windowId);
     if (win === undefined) return;
-    win.requestedX = reqX;
-    win.requestedY = reqY;
+    win.anchor = { x: reqX, y: reqY };
     const resolved = resolveRequestedFloatPosition(
       reqX,
       reqY,
@@ -1611,7 +1609,7 @@ export function applyPanelPlacement(
     } else if (position.kind === "float") {
       // Canvas-relative coords; negatives are gaps from the far edge. Resolved
       // against the live canvas + window size (and re-resolved on canvas changes
-      // via the stored requestedX/Y).
+      // via the stored anchor).
       floatAtRequested(
         position.x ?? DEFAULT_FLOAT_X,
         position.y ?? DEFAULT_FLOAT_Y,

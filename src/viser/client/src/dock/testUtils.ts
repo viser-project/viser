@@ -95,8 +95,7 @@ export function floatingWindow(opts: {
   width?: number;
   height?: number;
   stackWeights?: Record<GroupId, number>;
-  requestedX?: number;
-  requestedY?: number;
+  anchor?: { x: number; y: number };
 }): FloatingWindow {
   const w: FloatingWindow = {
     id: opts.id,
@@ -110,8 +109,7 @@ export function floatingWindow(opts: {
     stack: [...opts.stack],
   };
   if (opts.stackWeights !== undefined) w.stackWeights = opts.stackWeights;
-  if (opts.requestedX !== undefined) w.requestedX = opts.requestedX;
-  if (opts.requestedY !== undefined) w.requestedY = opts.requestedY;
+  if (opts.anchor !== undefined) w.anchor = opts.anchor;
   return w;
 }
 

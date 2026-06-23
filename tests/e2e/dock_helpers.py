@@ -348,15 +348,15 @@ def window(
     """Floating-window spec: one tab group per panel spec; 2+ specs make a
     snapped stack (top to bottom). Pass to dock_layout(floating=[...])."""
     groups = [_as_group(s) for s in panel_specs]
+    # `height` is a WindowHeight tagged union: auto-track content, or pinned px.
     win: dict = {
         "id": f"t-w-{groups[0]['id'][2:]}",
         "x": x,
         "y": y,
         "width": width,
+        "height": {"mode": "auto"} if height is None else {"mode": "pinned", "px": height},
         "stack": [g["id"] for g in groups],
     }
-    if height is not None:
-        win["height"] = height
     return {"window": win, "groups": groups}
 
 

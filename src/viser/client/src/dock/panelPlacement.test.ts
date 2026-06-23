@@ -96,9 +96,9 @@ describe("applyPanelPlacement", () => {
     );
     expect(out.floating[0].x).toBe(340);
     expect(out.floating[0].y).toBe(20);
-    // The requested coords are stored for later re-resolution.
-    expect(out.floating[0].requestedX).toBe(40);
-    expect(out.floating[0].requestedY).toBe(20);
+    // The anchor (canvas-relative request) is stored for later re-resolution.
+    expect(out.floating[0].anchor?.x).toBe(40);
+    expect(out.floating[0].anchor?.y).toBe(20);
   });
 
   it("resolves a negative x as a gap from the canvas RIGHT edge", () => {
@@ -113,7 +113,7 @@ describe("applyPanelPlacement", () => {
     );
     expect(out.floating[0].x).toBe(745);
     expect(out.floating[0].y).toBe(15);
-    expect(out.floating[0].requestedX).toBe(-15);
+    expect(out.floating[0].anchor?.x).toBe(-15);
   });
 
   it("resolves a negative y as a gap from the canvas BOTTOM edge", () => {
@@ -401,20 +401,19 @@ describe("requested float coordinates", () => {
     let layout = place(15, 15, 240, 200);
     const win = layout.floating[0];
     layout = resizeWindow(layout, win.id, 320);
-    expect(layout.floating[0].requestedX).toBe(15);
+    expect(layout.floating[0].anchor?.x).toBe(15);
     expect(layout.floating[0].width).toBe(320);
     layout = resizeWindowHeight(layout, win.id, 250);
-    expect(layout.floating[0].requestedY).toBe(15);
+    expect(layout.floating[0].anchor?.y).toBe(15);
   });
 
   it("releaseRequestedCoords drops the anchor (user takes manual control)", () => {
     // The gesture layer calls this on any user resize/drag so the window stops
     // re-resolving against the canvas edges.
     let layout = place(-15, 15, 240, null);
-    expect(layout.floating[0].requestedX).toBe(-15);
+    expect(layout.floating[0].anchor?.x).toBe(-15);
     layout = releaseRequestedCoords(layout, layout.floating[0].id);
-    expect(layout.floating[0].requestedX).toBeUndefined();
-    expect(layout.floating[0].requestedY).toBeUndefined();
+    expect(layout.floating[0].anchor).toBeUndefined();
     // No-op when there's nothing to release (returns same layout reference).
     const again = releaseRequestedCoords(layout, layout.floating[0].id);
     expect(again).toBe(layout);
@@ -423,9 +422,9 @@ describe("requested float coordinates", () => {
   it("clears requestedX/Y when the user drags (moveWindow)", () => {
     let layout = place(-15, 15, 240, null);
     const win = layout.floating[0];
-    expect(win.requestedX).toBe(-15);
+    expect(win.anchor?.x).toBe(-15);
     layout = moveWindow(layout, win.id, 400, 300);
-    expect(layout.floating[0].requestedX).toBeUndefined();
+    expect(layout.floating[0].anchor).toBeUndefined();
     expect(layout.floating[0].x).toBe(400);
   });
 });
