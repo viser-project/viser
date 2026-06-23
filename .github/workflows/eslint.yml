@@ -19,8 +19,13 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: src/viser/client/package-lock.json
       - name: Run eslint
+        # Use npm (the repo's lockfile is package-lock.json, not yarn.lock) so
+        # installs are deterministic and cacheable, matching the other client
+        # workflows.
         run: |
           cd src/viser/client
-          yarn
-          yarn eslint .
+          npm ci
+          npx eslint .
