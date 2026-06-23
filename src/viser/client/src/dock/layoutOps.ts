@@ -1158,8 +1158,11 @@ export function snapToWindowStack(
       ? target.stack.length
       : Math.max(0, Math.min(target.stack.length, index));
   target.stack.splice(i, 0, ...groupIds);
+  // Copy (don't alias) the source's height object: sourceHeight is read from the
+  // ORIGINAL layout, so assigning it directly would share a reference between the
+  // committed draft and the prior (immutable) state.
   if (target.height.mode === "auto" && sourceHeight?.mode === "pinned")
-    target.height = sourceHeight;
+    target.height = { ...sourceHeight };
   // The user reshaped this window by snapping content into it -> it's now
   // user-owned; drop any server-requested coords so it isn't re-anchored against
   // its (now larger) size on the next canvas change.

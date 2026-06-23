@@ -6,7 +6,7 @@
 // orphan group.
 
 import { describe, expect, it } from "vitest";
-import { addPaneToArea, dockToEdge } from "./layoutOps";
+import { addPaneToArea, dockToEdge, ensureArea, removePane } from "./layoutOps";
 import { invariantViolations } from "./layoutInvariants";
 import { emptyLayout, DockLayout } from "./types";
 import { leaf, group, floatingWindow } from "./testUtils";
@@ -31,6 +31,25 @@ describe("invariantViolations", () => {
     l.groups["p"] = group("p");
     l = dockToEdge(l, ["p"], "right");
     expect(invariantViolations(l)).toEqual([]);
+  });
+
+  it("an EMPTY area group is NOT flagged (persists as a drop affordance)", () => {
+    // ensureArea creates an empty backing group (paneIds [], activeId "") that is
+    // a legitimate committed state -- a "drop a panel here" placeholder. The
+    // checker must not flag it for empty paneIds (an ordinary group would be).
+    let l: DockLayout = ensureArea(emptyLayout(), "gui-area");
+    expect(invariantViolations(l)).toEqual([]);
+    // It also goes empty when the last tab is removed (e.g. server drops it).
+    l = addPaneToArea(l, "gui-area", "tab1");
+    expect(invariantViolations(l)).toEqual([]);
+    l = removePane(l, "tab1");
+    expect(invariantViolations(l)).toEqual([]);
+    // A NON-area empty group is still a violation (sanity: the exemption is
+    // scoped to area groups only).
+    l.groups["bad"] = { id: "bad", paneIds: [], activeId: "" };
+    expect(invariantViolations(l).some((s) => s.includes("empty paneIds"))).toBe(
+      true,
+    );
   });
 
   it("flags a pane that appears in two groups (the duplication class)", () => {
