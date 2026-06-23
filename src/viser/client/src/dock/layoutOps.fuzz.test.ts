@@ -45,6 +45,7 @@ import {
   row as rowS,
   col as colS,
   group as grp,
+  floatingWindow,
 } from "./testUtils";
 
 type Rng = () => number;
@@ -124,7 +125,7 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
         };
         l.docked.left = rowS([leaf("a"), colS([leaf("b"), leaf("c")])]);
         l.docked.right = colS([leaf("d"), leaf("e")]);
-        l.floating = [{ id: "wf", x: 50, y: 50, width: 280, stack: ["f"] }];
+        l.floating = [floatingWindow({ id: "wf", x: 50, y: 50, width: 280, stack: ["f"] })];
         return l;
       },
     },
@@ -134,8 +135,8 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
         const l = emptyLayout();
         l.groups = { a: grp("a", 1), b: grp("b", 2), c: grp("c", 1) };
         l.floating = [
-          { id: "w1", x: 10, y: 10, width: 250, stack: ["a", "b"] },
-          { id: "w2", x: 300, y: 40, width: 250, stack: ["c"] },
+          floatingWindow({ id: "w1", x: 10, y: 10, width: 250, stack: ["a", "b"] }),
+          floatingWindow({ id: "w2", x: 300, y: 40, width: 250, stack: ["c"] }),
         ];
         return l;
       },

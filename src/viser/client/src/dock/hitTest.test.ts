@@ -27,7 +27,7 @@ import {
   DropTargets,
 } from "./hitTest";
 import { DockEdge, DockLayout, DockNode, GroupId, emptyLayout } from "./types";
-import { rect, leaf, row as rowSplit, col as colSplit, group } from "./testUtils";
+import { rect, leaf, row as rowSplit, col as colSplit, group, floatingWindow } from "./testUtils";
 
 const CONTAINER: ContainerRect = { left: 0, top: 0, width: 1000, height: 800 };
 
@@ -736,8 +736,8 @@ describe("BUG #4 (fixed): overlapping drop targets resolve to the one on TOP", (
       b: group("b"),
     };
     l.floating = [
-      { id: "w1", x: 400, y: 300, width: 200, stack: ["a"] }, // bottom
-      { id: "w2", x: 420, y: 320, width: 200, stack: ["b"] }, // top
+      floatingWindow({ id: "w1", x: 400, y: 300, width: 200, stack: ["a"] }), // bottom
+      floatingWindow({ id: "w2", x: 420, y: 320, width: 200, stack: ["b"] }), // top
     ];
     // Targets ordered back-to-front (ascending z): bottom window first, top last.
     const targets: DropTargets = {
@@ -761,7 +761,7 @@ describe("BUG #4 (fixed): overlapping drop targets resolve to the one on TOP", (
       f: group("f"),
     };
     l.docked.left = { type: "leaf", id: "Ld", group: "d", weight: 1 } as DockNode;
-    l.floating = [{ id: "wf", x: 100, y: 300, width: 180, stack: ["f"] }];
+    l.floating = [floatingWindow({ id: "wf", x: 100, y: 300, width: 180, stack: ["f"] })];
     const targets: DropTargets = {
       groups: [
         dockTarget("d", "Ld", rect(0, 0, 300, 800)),
@@ -780,8 +780,8 @@ describe("BUG #4 (fixed): overlapping drop targets resolve to the one on TOP", (
       b: group("b"),
     };
     l.floating = [
-      { id: "w1", x: 50, y: 300, width: 150, stack: ["a"] },
-      { id: "w2", x: 500, y: 300, width: 150, stack: ["b"] },
+      floatingWindow({ id: "w1", x: 50, y: 300, width: 150, stack: ["a"] }),
+      floatingWindow({ id: "w2", x: 500, y: 300, width: 150, stack: ["b"] }),
     ];
     const targets: DropTargets = {
       groups: [
@@ -880,8 +880,8 @@ describe("draggingUnmergeable suppresses merge/insertTab from the SOURCE side", 
       b: group("b"),
     };
     l.floating = [
-      { id: "w1", x: 400, y: 300, width: 200, stack: ["a"] },
-      { id: "w2", x: 700, y: 300, width: 200, stack: ["b"] },
+      floatingWindow({ id: "w1", x: 400, y: 300, width: 200, stack: ["a"] }),
+      floatingWindow({ id: "w2", x: 700, y: 300, width: 200, stack: ["b"] }),
     ];
     return l;
   }
@@ -996,7 +996,7 @@ describe("unmergeable header acts as the dock-above / snap-above zone", () => {
   it("header of a floating unmergeable window -> snap above", () => {
     const l = emptyLayout();
     l.groups = { ctrl: { id: "ctrl", paneIds: ["c.0"], activeId: "c.0" } };
-    l.floating = [{ id: "wc", x: 400, y: 100, width: 320, stack: ["ctrl"] }];
+    l.floating = [floatingWindow({ id: "wc", x: 400, y: 100, width: 320, stack: ["ctrl"] })];
     const t: GroupTarget = {
       groupId: "ctrl",
       rect: rect(400, 100, 320, 400),

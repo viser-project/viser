@@ -9,14 +9,14 @@ import { describe, expect, it } from "vitest";
 import { addPaneToArea, dockToEdge } from "./layoutOps";
 import { invariantViolations } from "./layoutInvariants";
 import { emptyLayout, DockLayout } from "./types";
-import { leaf, group } from "./testUtils";
+import { leaf, group, floatingWindow } from "./testUtils";
 
 describe("invariantViolations", () => {
   it("a healthy docked layout has no violations", () => {
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b") };
     l.docked.right = leaf("a");
-    l.floating = [{ id: "w", x: 10, y: 10, width: 240, stack: ["b"] }];
+    l.floating = [floatingWindow({ id: "w", x: 10, y: 10, width: 240, stack: ["b"] })];
     expect(invariantViolations(l)).toEqual([]);
   });
 
@@ -39,7 +39,7 @@ describe("invariantViolations", () => {
     // Inject the duplication: "dup" also in a.
     l.groups["a"].paneIds = ["a", "dup"];
     l.docked.left = leaf("a");
-    l.floating = [{ id: "w", x: 0, y: 0, width: 240, stack: ["b"] }];
+    l.floating = [floatingWindow({ id: "w", x: 0, y: 0, width: 240, stack: ["b"] })];
     const v = invariantViolations(l);
     expect(v.some((s) => s.includes("dup") && s.includes("both"))).toBe(true);
   });
@@ -48,7 +48,7 @@ describe("invariantViolations", () => {
     const l = emptyLayout();
     l.groups = { a: group("a") };
     l.docked.left = leaf("a");
-    l.floating = [{ id: "w", x: 0, y: 0, width: 240, stack: ["a"] }]; // also here
+    l.floating = [floatingWindow({ id: "w", x: 0, y: 0, width: 240, stack: ["a"] })]; // also here
     const v = invariantViolations(l);
     expect(v.some((s) => s.includes("referenced 2x"))).toBe(true);
   });
