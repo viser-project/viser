@@ -76,12 +76,6 @@ class AssignablePropsBase(Generic[TImpl]):
 
         return value
 
-    def _cast_array_dtypes(
-        self, prop_hints: Dict[str, Any], prop_name: str, value: np.ndarray
-    ) -> np.ndarray:
-        """Helper to cast array values to the correct data type."""
-        return self._cast_value_recursive(prop_hints[prop_name], value, prop_name)
-
     @cached_property
     def _prop_hints(self) -> Dict[str, Any]:
         return get_type_hints(type(self._impl.props))
@@ -89,6 +83,11 @@ class AssignablePropsBase(Generic[TImpl]):
     @abc.abstractmethod
     def _queue_update(self, name: str, value: Any) -> None:
         """Queue an update message with the property change."""
+
+    def _on_prop_assigned(self, name: str) -> None:
+        """Hook called after a props field is assigned and its update is queued.
+        Subclasses can override to enforce cross-field invariants (e.g. keeping
+        an array's dtype in sync with another field). No-op by default."""
 
 
 def props_setattr(self, name: str, value: Any) -> None:
@@ -144,13 +143,21 @@ def props_setattr(self, name: str, value: Any) -> None:
                 current_value[:] = value
             else:
                 setattr(self._impl.props, name, value.copy())
+            # Queue a private snapshot for the wire. It must alias NEITHER the
+            # caller's ``value`` (which the caller may mutate after assignment,
+            # e.g. an animation loop reusing one buffer) NOR the server's stored
+            # array (which a later same-shape update mutates in place, possibly
+            # while the event-loop thread is still serializing this message).
+            queued: Any = value.copy()
         else:
-            # Non-array properties
+            # Non-array properties (immutable / already a fresh cast).
             setattr(self._impl.props, name, value)
+            queued = value
     else:
         return object.__setattr__(self, name, value)
 
-    self._queue_update(name, value)
+    self._queue_update(name, queued)
+    self._on_prop_assigned(name)
 
 
 def props_getattr(self, name: str) -> Any:

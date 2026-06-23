@@ -22,7 +22,60 @@ import { IconCheck, IconDownload } from "@tabler/icons-react";
 import { computeT_threeworld_world } from "./WorldTransformUtils";
 import { rootNodeTemplate, SceneNode } from "./SceneTreeState";
 import { applyGuiConfigUpdate } from "./ControlPanel/GuiState";
+import { CONTROL_PANEL_ID } from "./ControlPanel/controlPanelId";
 import { GaussianSplatsContext } from "./Splatting/GaussianSplatsHelpers";
+
+/** Swap a background-material uniform to a new texture (or null), disposing the
+ * previous texture if there was one. */
+function swapBackgroundTexture(
+  uniform: THREE.IUniform,
+  next: THREE.Texture | null,
+) {
+  const old = uniform.value;
+  uniform.value = next;
+  if (isTexture(old)) old.dispose();
+}
+
+// Per-uniform load sequence. Background-image decode is async, so without a
+// token a stale load resolving late could overwrite a newer image AND dispose
+// the newer texture (common when streaming `set_background_image` per frame).
+// Every new load and every synchronous clear bumps the uniform's token; an
+// async callback installs its result only if the token is still current.
+const backgroundTextureSeq = new WeakMap<THREE.IUniform, number>();
+function bumpBackgroundTextureSeq(uniform: THREE.IUniform): number {
+  const next = (backgroundTextureSeq.get(uniform) ?? 0) + 1;
+  backgroundTextureSeq.set(uniform, next);
+  return next;
+}
+
+/** Load image data into a background-material uniform, disposing the previous
+ * texture once the new one is ready. Revokes the object URL on success and on
+ * failure so it never leaks. Stale loads (superseded by a newer load/clear) are
+ * dropped and their decoded texture disposed. */
+function loadBackgroundTexture(
+  data: Uint8Array<ArrayBuffer>,
+  format: string,
+  uniform: THREE.IUniform,
+) {
+  const seq = bumpBackgroundTextureSeq(uniform);
+  const url = URL.createObjectURL(
+    new Blob([data], { type: "image/" + format }),
+  );
+  new TextureLoader().load(
+    url,
+    (texture) => {
+      URL.revokeObjectURL(url);
+      if (backgroundTextureSeq.get(uniform) !== seq) {
+        // A newer load/clear superseded this one; don't install the stale image.
+        texture.dispose();
+        return;
+      }
+      swapBackgroundTexture(uniform, texture);
+    },
+    undefined,
+    () => URL.revokeObjectURL(url),
+  );
+}
 
 /** Returns a handler for all incoming messages. */
 function useMessageHandler() {
@@ -39,6 +92,8 @@ function useMessageHandler() {
   const addGui = viewer.guiActions.addGui;
   const addModal = viewer.guiActions.addModal;
   const removeModal = viewer.guiActions.removeModal;
+  const addPanel = viewer.guiActions.addPanel;
+  const removePanel = viewer.guiActions.removePanel;
   const removeGui = viewer.guiActions.removeGui;
   const updateUploadState = viewer.guiActions.updateUploadState;
   const setFormDirty = viewer.guiActions.setFormDirty;
@@ -107,6 +162,27 @@ function useMessageHandler() {
         uuid: string;
         updates: { [key: string]: any };
       };
+
+  // Shared prologue for the SetCamera{Fov,Near,Far} handlers. When a message
+  // carries initial-camera state, record it (URL params take priority) and
+  // stop unless this is the first initial camera. Returns whether the caller
+  // should still apply the value to the live camera.
+  function applyInitialCameraParam(
+    field: "fov" | "near" | "far",
+    isInitial: boolean,
+    setInitial: () => void,
+  ): boolean {
+    const wasDefault =
+      viewer.useInitialCamera.get()[field].source === "default";
+    if (isInitial) {
+      // URL params take priority, ignore server's initial value.
+      setInitial();
+      // If this is the first initial camera: we'll also move the actual
+      // camera. If not, we return immediately.
+      if (!wasDefault) return false;
+    }
+    return true;
+  }
 
   // Return message handler.
   return (message: Message): HandleMessageResult => {
@@ -262,6 +338,16 @@ function useMessageHandler() {
         return;
       }
 
+      case "GuiPanelMessage": {
+        addPanel(message);
+        return;
+      }
+
+      case "GuiPanelRemoveMessage": {
+        removePanel(message.uuid);
+        return;
+      }
+
       // Register, update, or remove command palette actions.
       case "RegisterCommandMessage": {
         addCommand(message);
@@ -276,18 +362,29 @@ function useMessageHandler() {
         return;
       }
 
-      // Set the bone poses.
+      // Set the bone poses. Guard against a bone message that arrives before
+      // its SkinnedMeshMessage (out-of-order delivery) or after the node was
+      // removed, and against an out-of-range bone index -- otherwise the
+      // dereference throws inside the per-frame batch loop and drops the rest
+      // of the batch.
       case "SetBoneOrientationMessage": {
-        const state = viewerMutable.skinnedMeshState;
-        state[message.name].poses[message.bone_index].wxyz = message.wxyz;
-        state[message.name].dirty = true;
+        const pose =
+          viewerMutable.skinnedMeshState[message.name]?.poses[
+            message.bone_index
+          ];
+        if (pose === undefined) break;
+        pose.wxyz = message.wxyz;
+        viewerMutable.skinnedMeshState[message.name].dirty = true;
         break;
       }
       case "SetBonePositionMessage": {
-        const state = viewerMutable.skinnedMeshState;
-        state[message.name].poses[message.bone_index].position =
-          message.position;
-        state[message.name].dirty = true;
+        const pose =
+          viewerMutable.skinnedMeshState[message.name]?.poses[
+            message.bone_index
+          ];
+        if (pose === undefined) break;
+        pose.position = message.position;
+        viewerMutable.skinnedMeshState[message.name].dirty = true;
         break;
       }
       case "SetCameraLookAtMessage": {
@@ -376,18 +473,12 @@ function useMessageHandler() {
         return;
       }
       case "SetCameraFovMessage": {
-        // Setting initial camera parameters.
-        const wasDefault =
-          viewer.useInitialCamera.get().fov.source === "default";
-        if (message.initial) {
-          // URL params take priority, ignore server's initial value.
-          initialCameraActions.setFov(message.fov, "message");
-
-          // If this is the first initial camera: we'll also move the actual
-          // camera. If not, we return immediately.
-          if (!wasDefault) return;
-        }
-
+        if (
+          !applyInitialCameraParam("fov", message.initial, () =>
+            initialCameraActions.setFov(message.fov, "message"),
+          )
+        )
+          return;
         const camera = viewerMutable.camera!;
         // tan(fov / 2.0) = 0.5 * film height / focal length
         // focal length = 0.5 * film height / tan(fov / 2.0)
@@ -398,36 +489,24 @@ function useMessageHandler() {
         return;
       }
       case "SetCameraNearMessage": {
-        // Setting initial camera parameters.
-        const wasDefault =
-          viewer.useInitialCamera.get().near.source === "default";
-        if (message.initial) {
-          // URL params take priority, ignore server's initial value.
-          initialCameraActions.setNear(message.near, "message");
-
-          // If this is the first initial camera: we'll also move the actual
-          // camera. If not, we return immediately.
-          if (!wasDefault) return;
-        }
-
+        if (
+          !applyInitialCameraParam("near", message.initial, () =>
+            initialCameraActions.setNear(message.near, "message"),
+          )
+        )
+          return;
         const camera = viewerMutable.camera!;
         camera.near = message.near;
         camera.updateProjectionMatrix();
         return;
       }
       case "SetCameraFarMessage": {
-        // Setting initial camera parameters.
-        const wasDefault =
-          viewer.useInitialCamera.get().far.source === "default";
-        if (message.initial) {
-          // URL params take priority, ignore server's initial value.
-          initialCameraActions.setFar(message.far, "message");
-
-          // If this is the first initial camera: we'll also move the actual
-          // camera. If not, we return immediately.
-          if (!wasDefault) return;
-        }
-
+        if (
+          !applyInitialCameraParam("far", message.initial, () =>
+            initialCameraActions.setFar(message.far, "message"),
+          )
+        )
+          return;
         const camera = viewerMutable.camera!;
         camera.far = message.far;
         camera.updateProjectionMatrix();
@@ -501,29 +580,23 @@ function useMessageHandler() {
       // Add a background image.
       case "BackgroundImageMessage": {
         if (message.rgb_data !== null) {
-          const rgb_url = URL.createObjectURL(
-            new Blob([message.rgb_data], {
-              type: "image/" + message.format,
-            }),
+          loadBackgroundTexture(
+            message.rgb_data,
+            message.format,
+            viewerMutable.backgroundMaterial!.uniforms.colorMap,
           );
-          new TextureLoader().load(rgb_url, (texture) => {
-            URL.revokeObjectURL(rgb_url);
-            const oldBackgroundTexture =
-              viewerMutable.backgroundMaterial!.uniforms.colorMap.value;
-            viewerMutable.backgroundMaterial!.uniforms.colorMap.value = texture;
-
-            // Dispose the old background texture.
-            if (isTexture(oldBackgroundTexture)) oldBackgroundTexture.dispose();
-          });
-
           viewerMutable.backgroundMaterial!.uniforms.enabled.value = true;
         } else {
-          // Dispose the old background texture.
-          const oldBackgroundTexture =
-            viewerMutable.backgroundMaterial!.uniforms.colorMap.value;
-          if (isTexture(oldBackgroundTexture)) oldBackgroundTexture.dispose();
-
-          // Disable the background.
+          // Dispose the old background texture and disable the background.
+          // Bump the token so any in-flight load for this uniform is dropped
+          // instead of re-installing a texture after this clear.
+          bumpBackgroundTextureSeq(
+            viewerMutable.backgroundMaterial!.uniforms.colorMap,
+          );
+          swapBackgroundTexture(
+            viewerMutable.backgroundMaterial!.uniforms.colorMap,
+            null,
+          );
           viewerMutable.backgroundMaterial!.uniforms.enabled.value = false;
         }
 
@@ -532,32 +605,44 @@ function useMessageHandler() {
           message.depth_data !== null;
         if (message.depth_data !== null) {
           // If depth is available set the texture.
-          const depth_url = URL.createObjectURL(
-            new Blob([message.depth_data], {
-              type: "image/" + message.format,
-            }),
+          loadBackgroundTexture(
+            message.depth_data,
+            message.format,
+            viewerMutable.backgroundMaterial!.uniforms.depthMap,
           );
-          new TextureLoader().load(depth_url, (texture) => {
-            URL.revokeObjectURL(depth_url);
-            const oldDepthTexture =
-              viewerMutable.backgroundMaterial?.uniforms.depthMap.value;
-            viewerMutable.backgroundMaterial!.uniforms.depthMap.value = texture;
-            if (isTexture(oldDepthTexture)) oldDepthTexture.dispose();
-          });
+        } else {
+          // No depth in this message: free any existing depth texture so it
+          // isn't orphaned on the GPU (kept alive by the uniform but never
+          // disposed), and clear the uniform back to its initial null. Bump the
+          // token so an in-flight depth load is dropped rather than re-installed.
+          bumpBackgroundTextureSeq(
+            viewerMutable.backgroundMaterial!.uniforms.depthMap,
+          );
+          swapBackgroundTexture(
+            viewerMutable.backgroundMaterial!.uniforms.depthMap,
+            null,
+          );
         }
         return;
       }
       // Remove a scene node and its children by name.
       case "RemoveSceneNodeMessage": {
-        console.log("Removing scene node:", message.name);
         if (viewer.useSceneTree.get(message.name) === undefined) {
           console.log("(OK) Skipping scene node removal for " + message.name);
           return;
         }
         removeSceneNode(message.name);
 
-        if (viewerMutable.skinnedMeshState[message.name] !== undefined)
-          delete viewerMutable.skinnedMeshState[message.name];
+        // Clear skinned-mesh state for the removed node AND its descendants.
+        // `removeSceneNode` recurses the subtree, and this map is keyed by node
+        // name, so deleting only the exact name leaks any skinned mesh nested
+        // under a removed ancestor.
+        const subtreePrefix = message.name + "/";
+        for (const key of Object.keys(viewerMutable.skinnedMeshState)) {
+          if (key === message.name || key.startsWith(subtreePrefix)) {
+            delete viewerMutable.skinnedMeshState[key];
+          }
+        }
         return;
       }
       // Set the drag-binding set for a particular scene node.
@@ -662,6 +747,16 @@ function useFileDownloadHandler(): (
       }
       case "FileTransferPart": {
         const downloadState = downloadStatesRef.current[message.transfer_uuid];
+        if (downloadState === undefined) {
+          // A part for an unknown/cleared transfer (e.g. its start message was
+          // lost). Drop it rather than dereferencing undefined and throwing out
+          // of the per-frame message loop.
+          console.error(
+            "Received FileTransferPart for unknown transfer",
+            message.transfer_uuid,
+          );
+          return;
+        }
         if (message.part_index != downloadState.parts.length) {
           console.error("A file download message was received out of order!");
         }
@@ -755,7 +850,6 @@ export function FrameSynchronizedMessageHandler() {
   const messageQueue = viewerMutable.messageQueue;
   const splatContext = React.useContext(GaussianSplatsContext)!;
   const gl = useThree((state) => state.gl);
-  const isFirstBatchRef = React.useRef(true);
 
   useFrame(
     () => {
@@ -763,105 +857,146 @@ export function FrameSynchronizedMessageHandler() {
       if (viewerMutable.getRenderRequestState === "triggered") {
         viewerMutable.getRenderRequestState = "pause";
       } else if (viewerMutable.getRenderRequestState === "pause") {
-        const cameraPosition = viewerMutable.getRenderRequest!.position;
-        const cameraWxyz = viewerMutable.getRenderRequest!.wxyz;
-        const cameraFov = viewerMutable.getRenderRequest!.fov;
-
         const targetWidth = viewerMutable.getRenderRequest!.width;
         const targetHeight = viewerMutable.getRenderRequest!.height;
+        const format = viewerMutable.getRenderRequest!.format;
+        // Captured now so the response can be correlated to its request even
+        // after the async toBlob below.
+        const renderUuid = viewerMutable.getRenderRequest!.render_uuid;
 
-        // Render the scene using the virtual camera.
-        const T_threeworld_world = computeT_threeworld_world(viewer);
+        // Snapshot renderer state up front so the `finally` below can always
+        // restore it, even if rendering throws partway through.
+        const originalSize = gl.getSize(new THREE.Vector2());
+        const originalClearColor = gl.getClearColor(new THREE.Color());
+        const originalClearAlpha = gl.getClearAlpha();
 
-        // Create a new perspective camera.
-        const camera = new THREE.PerspectiveCamera(
-          THREE.MathUtils.radToDeg(cameraFov),
-          targetWidth / targetHeight,
-          0.01, // Near.
-          1000.0, // Far.
-        );
-
-        // Set camera pose.
-        camera.position.set(...cameraPosition).applyMatrix4(T_threeworld_world);
-        camera.setRotationFromQuaternion(
-          new THREE.Quaternion(
-            cameraWxyz[1],
-            cameraWxyz[2],
-            cameraWxyz[3],
-            cameraWxyz[0],
-          )
-            .premultiply(
-              new THREE.Quaternion().setFromRotationMatrix(T_threeworld_world),
-            )
-            .multiply(
-              // OpenCV => OpenGL coordinate system conversion.
-              new THREE.Quaternion().setFromAxisAngle(
-                new THREE.Vector3(1, 0, 0),
-                Math.PI,
-              ),
-            ),
-        );
-
-        // Update splatting camera if needed.
-        // We'll back up the current sorted indices, and restore them after rendering.
+        // Splat sorted-index backup, restored in `finally`.
         const splatMeshProps = splatContext.meshPropsRef.current;
         const sortedIndicesOrig =
           splatMeshProps !== null
             ? splatMeshProps.sortedIndexAttribute.array.slice()
             : null;
-        if (splatContext.updateCamera.current !== null)
-          splatContext.updateCamera.current!(
-            camera,
-            targetWidth,
-            targetHeight,
-            true,
-          );
 
-        // Save current renderer state.
-        const originalSize = gl.getSize(new THREE.Vector2());
-        const originalClearColor = gl.getClearColor(new THREE.Color());
-        const originalClearAlpha = gl.getClearAlpha();
-
-        // Configure for capture.
-        gl.setSize(targetWidth, targetHeight);
-        gl.setClearColor(0xffffff);
-        gl.setClearAlpha(
-          viewerMutable.getRenderRequest!.format == "image/png" ? 0.0 : 1.0,
-        );
-
-        // Render the scene.
-        gl.render(viewerMutable.scene!, camera);
-
-        // Temporary canvas for saving the rendered image. This is needed to
-        // prevent flickers: we need context from the original canvas for
-        // rendering, but we want to revert the renderer state immediately.
-        const canvas = gl.domElement;
-        const bufferCanvas = document.createElement("canvas");
-        bufferCanvas.width = targetWidth;
-        bufferCanvas.height = targetHeight;
-        const ctx = bufferCanvas.getContext("2d")!;
-        ctx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
-
-        // Restore the original renderer state.
-        gl.setSize(originalSize.x, originalSize.y);
-        gl.setClearColor(originalClearColor);
-        gl.setClearAlpha(originalClearAlpha);
-
-        // Restore splatting indices.
-        if (sortedIndicesOrig !== null && splatMeshProps !== null) {
-          splatMeshProps.sortedIndexAttribute.array = sortedIndicesOrig;
-          splatMeshProps.sortedIndexAttribute.needsUpdate = true;
-        }
-
-        // Get the rendered image from our temp canvas.
-        viewerMutable.getRenderRequestState = "in_progress";
-        bufferCanvas.toBlob(async (blob) => {
+        // An empty payload is the failure sentinel: it lets the server's
+        // pending get_render() resolve instead of blocking forever.
+        const sendRenderResponse = (payload: Uint8Array<ArrayBuffer>) =>
           viewerMutable.sendMessage({
             type: "GetRenderResponseMessage",
-            payload: new Uint8Array(await blob!.arrayBuffer()),
+            payload,
+            render_uuid: renderUuid,
           });
+
+        // Once we enter capture we must always return to "ready" -- otherwise
+        // an exception (or a null toBlob) would wedge the render state machine
+        // and block all further message handling, which is gated on "ready".
+        try {
+          const cameraPosition = viewerMutable.getRenderRequest!.position;
+          const cameraWxyz = viewerMutable.getRenderRequest!.wxyz;
+          const cameraFov = viewerMutable.getRenderRequest!.fov;
+
+          // Render the scene using the virtual camera.
+          const T_threeworld_world = computeT_threeworld_world(viewer);
+
+          // Create a new perspective camera.
+          const camera = new THREE.PerspectiveCamera(
+            THREE.MathUtils.radToDeg(cameraFov),
+            targetWidth / targetHeight,
+            0.01, // Near.
+            1000.0, // Far.
+          );
+
+          // Set camera pose.
+          camera.position
+            .set(...cameraPosition)
+            .applyMatrix4(T_threeworld_world);
+          camera.setRotationFromQuaternion(
+            new THREE.Quaternion(
+              cameraWxyz[1],
+              cameraWxyz[2],
+              cameraWxyz[3],
+              cameraWxyz[0],
+            )
+              .premultiply(
+                new THREE.Quaternion().setFromRotationMatrix(
+                  T_threeworld_world,
+                ),
+              )
+              .multiply(
+                // OpenCV => OpenGL coordinate system conversion.
+                new THREE.Quaternion().setFromAxisAngle(
+                  new THREE.Vector3(1, 0, 0),
+                  Math.PI,
+                ),
+              ),
+          );
+
+          // Update splatting camera if needed.
+          if (splatContext.updateCamera.current !== null)
+            splatContext.updateCamera.current!(
+              camera,
+              targetWidth,
+              targetHeight,
+              true,
+            );
+
+          // Configure for capture.
+          gl.setSize(targetWidth, targetHeight);
+          gl.setClearColor(0xffffff);
+          gl.setClearAlpha(format == "image/png" ? 0.0 : 1.0);
+
+          // Render the scene.
+          gl.render(viewerMutable.scene!, camera);
+
+          // Temporary canvas for saving the rendered image. This is needed to
+          // prevent flickers: we need context from the original canvas for
+          // rendering, but we want to revert the renderer state immediately.
+          const canvas = gl.domElement;
+          const bufferCanvas = document.createElement("canvas");
+          bufferCanvas.width = targetWidth;
+          bufferCanvas.height = targetHeight;
+          const ctx = bufferCanvas.getContext("2d")!;
+          ctx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
+
+          // Get the rendered image from our temp canvas.
+          viewerMutable.getRenderRequestState = "in_progress";
+          bufferCanvas.toBlob((blob) => {
+            void (async () => {
+              try {
+                // `toBlob` can hand back null (e.g. canvas too large / OOM);
+                // fall back to an empty payload so the server's pending
+                // request resolves instead of hanging forever.
+                sendRenderResponse(
+                  blob === null
+                    ? new Uint8Array(0)
+                    : new Uint8Array(await blob.arrayBuffer()),
+                );
+              } catch (e) {
+                console.error("Failed to read rendered image:", e);
+                sendRenderResponse(new Uint8Array(0));
+              } finally {
+                viewerMutable.getRenderRequestState = "ready";
+              }
+            })();
+          }, format);
+        } catch (e) {
+          console.error("Render request failed:", e);
+          // The toBlob callback won't run, so send the failure sentinel now --
+          // otherwise the server's get_render() blocks forever waiting for a
+          // response. Then resume message handling.
+          sendRenderResponse(new Uint8Array(0));
           viewerMutable.getRenderRequestState = "ready";
-        }, viewerMutable.getRenderRequest!.format);
+        } finally {
+          // Restore the original renderer state.
+          gl.setSize(originalSize.x, originalSize.y);
+          gl.setClearColor(originalClearColor);
+          gl.setClearAlpha(originalClearAlpha);
+
+          // Restore splatting indices.
+          if (sortedIndicesOrig !== null && splatMeshProps !== null) {
+            splatMeshProps.sortedIndexAttribute.array = sortedIndicesOrig;
+            splatMeshProps.sortedIndexAttribute.needsUpdate = true;
+          }
+        }
       }
 
       // Handle messages, but only if we're not trying to render something.
@@ -886,8 +1021,8 @@ export function FrameSynchronizedMessageHandler() {
         // Hack: On the very first batch, handle any root node SetOrientationMessage
         // (from set_up_direction()) before all other messages. This ensures
         // T_threeworld_world is up-to-date when initial camera messages are processed.
-        if (isFirstBatchRef.current) {
-          isFirstBatchRef.current = false;
+        if (viewerMutable.firstMessageBatch) {
+          viewerMutable.firstMessageBatch = false;
           const rootOrientationIndex = processBatch.findIndex(
             (msg) => msg.type === "SetOrientationMessage" && msg.name === "",
           );
@@ -990,7 +1125,24 @@ export function FrameSynchronizedMessageHandler() {
         if (guiUpdates.length > 0) {
           const configUpdates: Record<string, GuiComponentMessage | undefined> =
             {};
+          const panelSnapshot = viewer.useGui.get().panels;
           for (const { uuid, updates } of guiUpdates) {
+            // The control panel isn't a GUI component (it has no config), but
+            // `main_panel` placement is delivered as a GuiUpdateMessage to its
+            // fixed id. Route that to dedicated GUI state instead of erroring.
+            if (uuid === CONTROL_PANEL_ID) {
+              if ("placement" in updates) {
+                viewer.guiActions.setMainPanelPlacement(updates.placement);
+              }
+              continue;
+            }
+            // Standalone panels live in their own store (not configStore), and
+            // their placement/tab/visibility updates also arrive as
+            // GuiUpdateMessages. Route those to updatePanel.
+            if (uuid in panelSnapshot) {
+              viewer.guiActions.updatePanel(uuid, updates);
+              continue;
+            }
             const current =
               configUpdates[uuid] ?? viewer.useGuiConfig.get(uuid);
             if (current === undefined) {

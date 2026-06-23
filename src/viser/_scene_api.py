@@ -69,6 +69,7 @@ from ._scene_handles import (
     TransformControlsEvent,
     TransformControlsHandle,
     _DragInput,
+    _normalize_node_name,
     _RaycastSupportedSceneNodeHandle,
     _TransformControlsState,
 )
@@ -172,6 +173,45 @@ def cast_vector(vector: TVector | np.ndarray, length: int) -> TVector:
     return cast(TVector, tuple(map(float, vector)))
 
 
+def _warn_wireframe_conflicts(
+    wireframe: bool, material: str, flat_shading: bool
+) -> None:
+    """Warn about arguments that are ignored when wireframe rendering is on.
+
+    Called one level below the public ``add_*`` method, so ``stacklevel=3``
+    points the warning at the user's call site (warn -> here -> add_* -> user).
+    """
+    if wireframe and material != "standard":
+        warnings.warn(
+            f"Invalid combination of {wireframe=} and {material=}. Material argument will be ignored.",
+            stacklevel=3,
+        )
+    if wireframe and flat_shading:
+        warnings.warn(
+            f"Invalid combination of {wireframe=} and {flat_shading=}. Flat shading argument will be ignored.",
+            stacklevel=3,
+        )
+
+
+def _validate_batched_transforms(
+    batched_wxyzs: Any, batched_positions: Any, batched_scales: Any
+) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray], int]:
+    """Coerce and shape-check the per-instance transform arrays shared by the
+    batched scene primitives. Returns ``(wxyzs, positions, scales, count)``.
+    ``wxyzs`` and ``positions`` keep their input dtype (cast to float32 at
+    message construction); ``scales`` is cast to float32 here.
+    """
+    batched_wxyzs = np.asarray(batched_wxyzs)
+    batched_positions = np.asarray(batched_positions)
+    count = batched_wxyzs.shape[0]
+    assert batched_wxyzs.shape == (count, 4)
+    assert batched_positions.shape == (count, 3)
+    if batched_scales is not None:
+        batched_scales = np.asarray(batched_scales).astype(np.float32)
+        assert batched_scales.shape in ((count,), (count, 3))
+    return batched_wxyzs, batched_positions, batched_scales, count
+
+
 MISSING_SENTINEL = "MISSING"
 MISSING_SENTINEL_TYPE = Literal["MISSING"]
 
@@ -224,6 +264,14 @@ class SceneApi:
         self._active_drag_handles: dict[
             tuple[ClientId, str],
             tuple[_RaycastSupportedSceneNodeHandle, _messages.SceneNodeDragMessage],
+        ] = {}
+        # Same idea for transform-control gizmos: track in-flight drags so a
+        # late ``update``/``end`` still dispatches after the gizmo (or an
+        # ancestor) is removed mid-drag -- which pops the handle from
+        # ``_handle_from_transform_controls_name`` -- and so ``on_drag_end``
+        # fires (and the entry is released) on a mid-drag disconnect.
+        self._active_transform_drag_handles: dict[
+            tuple[ClientId, str], TransformControlsHandle
         ] = {}
 
         # Enable/disable of ``ScenePointerEnableMessage`` is
@@ -292,6 +340,16 @@ class SceneApi:
             # client-reported positions.
             synthetic = dataclasses.replace(last_msg, phase="end")
             await self._dispatch_drag_callbacks(client_id, handle, synthetic)
+
+        # Same for in-flight transform-control gizmo drags.
+        stale_tc_keys = [
+            k for k in self._active_transform_drag_handles if k[0] == client_id
+        ]
+        for k in stale_tc_keys:
+            tc_handle = self._active_transform_drag_handles.pop(k, None)
+            if tc_handle is None:
+                continue
+            await self._fire_transform_controls_callbacks(client_id, tc_handle, "end")
 
     def _ensure_ancestors_exist(self, name: str) -> None:
         """Create intermediate frame nodes for any missing ancestors of `name`."""
@@ -1380,16 +1438,11 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        batched_wxyzs = np.asarray(batched_wxyzs)
-        batched_positions = np.asarray(batched_positions)
-
-        num_axes = batched_wxyzs.shape[0]
-        assert batched_wxyzs.shape == (num_axes, 4)
-        assert batched_positions.shape == (num_axes, 3)
-
-        if batched_scales is not None:
-            batched_scales = np.asarray(batched_scales).astype(np.float32)
-            assert batched_scales.shape in ((num_axes,), (num_axes, 3))
+        batched_wxyzs, batched_positions, batched_scales, _ = (
+            _validate_batched_transforms(
+                batched_wxyzs, batched_positions, batched_scales
+            )
+        )
 
         props = _messages.BatchedAxesProps(
             batched_wxyzs=batched_wxyzs.astype(np.float32),
@@ -1675,29 +1728,29 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        if wireframe and material != "standard":
-            warnings.warn(
-                f"Invalid combination of {wireframe=} and {material=}. Material argument will be ignored.",
-                stacklevel=2,
-            )
-        if wireframe and flat_shading:
-            warnings.warn(
-                f"Invalid combination of {wireframe=} and {flat_shading=}. Flat shading argument will be ignored.",
-                stacklevel=2,
-            )
+        _warn_wireframe_conflicts(wireframe, material, flat_shading)
 
         assert len(bone_wxyzs) == len(bone_positions)
         num_bones = len(bone_wxyzs)
+        if num_bones == 0:
+            raise ValueError("A skinned mesh requires at least one bone.")
         assert skin_weights.shape == (vertices.shape[0], num_bones)
 
-        # Take the four biggest indices.
-        top4_skin_indices = np.argsort(skin_weights, axis=-1)[:, -4:]
-        top4_skin_weights = skin_weights[
-            np.arange(vertices.shape[0])[:, None], top4_skin_indices
+        # Take up to the four biggest weights per vertex. The client expects
+        # exactly four bone indices/weights per vertex, so when the rig has
+        # fewer than four bones we pad with zero-weight (index 0) entries, which
+        # have no effect on the skinning result.
+        num_vertices = vertices.shape[0]
+        num_influences = min(4, num_bones)
+        pad = 4 - num_influences
+        top_skin_indices = np.argsort(skin_weights, axis=-1)[:, -num_influences:]
+        top_skin_weights = skin_weights[
+            np.arange(num_vertices)[:, None], top_skin_indices
         ]
-        assert (
-            top4_skin_weights.shape == top4_skin_indices.shape == (vertices.shape[0], 4)
-        )
+        if pad > 0:
+            top_skin_indices = np.pad(top_skin_indices, ((0, 0), (0, pad)))
+            top_skin_weights = np.pad(top_skin_weights, ((0, 0), (0, pad)))
+        assert top_skin_weights.shape == top_skin_indices.shape == (num_vertices, 4)
 
         bone_wxyzs = np.asarray(bone_wxyzs)
         bone_positions = np.asarray(bone_positions)
@@ -1717,8 +1770,8 @@ class SceneApi:
                 scale=scale,
                 bone_wxyzs=bone_wxyzs.astype(np.float32),
                 bone_positions=bone_positions.astype(np.float32),
-                skin_indices=top4_skin_indices.astype(np.uint16),
-                skin_weights=top4_skin_weights.astype(np.float32),
+                skin_indices=top_skin_indices.astype(np.uint16),
+                skin_weights=top_skin_weights.astype(np.float32),
                 cast_shadow=cast_shadow,
                 receive_shadow=receive_shadow,
             ),
@@ -1790,16 +1843,7 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        if wireframe and material != "standard":
-            warnings.warn(
-                f"Invalid combination of {wireframe=} and {material=}. Material argument will be ignored.",
-                stacklevel=2,
-            )
-        if wireframe and flat_shading:
-            warnings.warn(
-                f"Invalid combination of {wireframe=} and {flat_shading=}. Flat shading argument will be ignored.",
-                stacklevel=2,
-            )
+        _warn_wireframe_conflicts(wireframe, material, flat_shading)
         message = _messages.MeshMessage(
             name=name,
             props=_messages.MeshProps(
@@ -1931,27 +1975,13 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        if wireframe and material != "standard":
-            warnings.warn(
-                f"Invalid combination of {wireframe=} and {material=}. Material argument will be ignored.",
-                stacklevel=2,
+        _warn_wireframe_conflicts(wireframe, material, flat_shading)
+
+        batched_wxyzs, batched_positions, batched_scales, num_instances = (
+            _validate_batched_transforms(
+                batched_wxyzs, batched_positions, batched_scales
             )
-        if wireframe and flat_shading:
-            warnings.warn(
-                f"Invalid combination of {wireframe=} and {flat_shading=}. Flat shading argument will be ignored.",
-                stacklevel=2,
-            )
-
-        batched_wxyzs = np.asarray(batched_wxyzs)
-        batched_positions = np.asarray(batched_positions)
-
-        num_instances = batched_wxyzs.shape[0]
-        assert batched_wxyzs.shape == (num_instances, 4)
-        assert batched_positions.shape == (num_instances, 3)
-
-        if batched_scales is not None:
-            batched_scales = np.asarray(batched_scales).astype(np.float32)
-            assert batched_scales.shape in ((num_instances,), (num_instances, 3))
+        )
 
         # Handle batched opacities.
         if batched_opacities is not None:
@@ -1962,6 +1992,13 @@ class SceneApi:
         batched_colors_array = None
         if batched_colors is not None:
             batched_colors_array = colors_to_uint8(np.asarray(batched_colors))
+            # Validate length against the instance count (like the other
+            # per-instance arrays above); otherwise a mismatched-length color
+            # array is sent verbatim and the client silently drops all colors.
+            assert batched_colors_array.shape in ((3,), (num_instances, 3)), (
+                f"batched_colors must have shape (3,) or ({num_instances}, 3), "
+                f"got {batched_colors_array.shape}."
+            )
 
         message = _messages.BatchedMeshesMessage(
             name=name,
@@ -2029,16 +2066,11 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        batched_wxyzs = np.asarray(batched_wxyzs)
-        batched_positions = np.asarray(batched_positions)
-
-        num_instances = batched_wxyzs.shape[0]
-        assert batched_wxyzs.shape == (num_instances, 4)
-        assert batched_positions.shape == (num_instances, 3)
-
-        if batched_scales is not None:
-            batched_scales = np.asarray(batched_scales).astype(np.float32)
-            assert batched_scales.shape in ((num_instances,), (num_instances, 3))
+        batched_wxyzs, batched_positions, batched_scales, _ = (
+            _validate_batched_transforms(
+                batched_wxyzs, batched_positions, batched_scales
+            )
+        )
 
         with io.BytesIO() as data_buffer:
             mesh.export(data_buffer, file_type="glb")
@@ -2103,16 +2135,11 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        batched_wxyzs = np.asarray(batched_wxyzs)
-        batched_positions = np.asarray(batched_positions)
-
-        num_instances = batched_wxyzs.shape[0]
-        assert batched_wxyzs.shape == (num_instances, 4)
-        assert batched_positions.shape == (num_instances, 3)
-
-        if batched_scales is not None:
-            batched_scales = np.asarray(batched_scales).astype(np.float32)
-            assert batched_scales.shape in ((num_instances,), (num_instances, 3))
+        batched_wxyzs, batched_positions, batched_scales, _ = (
+            _validate_batched_transforms(
+                batched_wxyzs, batched_positions, batched_scales
+            )
+        )
 
         message = _messages.BatchedGlbMessage(
             name=name,
@@ -2250,23 +2277,12 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
-        if isinstance(dimensions, np.ndarray):
-            dimensions_list = dimensions.tolist()
-            assert len(dimensions_list) == 3, (
-                f"Expected 3 dimensions, got {len(dimensions_list)}"
-            )
-            dimensions_tuple = (
-                float(dimensions_list[0]),
-                float(dimensions_list[1]),
-                float(dimensions_list[2]),
-            )
-        else:
-            assert len(dimensions) == 3, f"Expected 3 dimensions, got {len(dimensions)}"
-            dimensions_tuple = (
-                float(dimensions[0]),
-                float(dimensions[1]),
-                float(dimensions[2]),
-            )
+        assert len(dimensions) == 3, f"Expected 3 dimensions, got {len(dimensions)}"
+        dimensions_tuple = (
+            float(dimensions[0]),
+            float(dimensions[1]),
+            float(dimensions[2]),
+        )
 
         message = _messages.BoxMessage(
             name=name,
@@ -2591,6 +2607,11 @@ class SceneApi:
         Returns:
             Handle for manipulating (and reading state of) scene node.
         """
+        # Normalize the name up front so the node map, the transform-controls
+        # registry, and the pose-sync messages below all key off the same
+        # (leading-slash) name the client uses.
+        name = _normalize_node_name(name)
+
         message = _messages.TransformControlsMessage(
             name=name,
             props=_messages.TransformControlsProps(
@@ -2633,6 +2654,10 @@ class SceneApi:
         )
         handle = TransformControlsHandle(node_handle._impl, state_aux)
         self._handle_from_transform_controls_name[name] = handle
+        # Store the typed handle (not the plain SceneNodeHandle from `_make`) in
+        # the node map so removal via `reset()` / re-add dedup goes through the
+        # same path that cleans up the transform-controls registry.
+        self._handle_from_node_name[name] = handle
         return handle
 
     def reset(self) -> None:
@@ -2673,7 +2698,11 @@ class SceneApi:
         self, client_id: ClientId, message: _messages.TransformControlsUpdateMessage
     ) -> None:
         """Apply pose update and fire `update_cb` with phase="update"."""
-        handle = self._handle_from_transform_controls_name.get(message.name, None)
+        # Prefer the active-drag map so a late update still resolves after the
+        # gizmo was removed mid-drag (which pops it from the live registry).
+        handle = self._active_transform_drag_handles.get(
+            (client_id, message.name)
+        ) or self._handle_from_transform_controls_name.get(message.name, None)
         if handle is None:
             return
 
@@ -2682,7 +2711,13 @@ class SceneApi:
         handle._impl_aux.last_updated = time.time()
 
         await self._fire_transform_controls_callbacks(client_id, handle, "update")
-        if handle._impl_aux.sync_cb is not None:
+        # Fire the callback even for a removed gizmo (late update during teardown),
+        # but skip the cross-client pose broadcast: sync_cb queues PERSISTENT
+        # Set{Orientation,Position} messages keyed by node name, which would
+        # linger in the broadcast buffer for the removed name (the
+        # RemoveSceneNodeMessage uses a different redundancy key and won't purge
+        # them) and corrupt the pose of a future same-name node.
+        if handle._impl_aux.sync_cb is not None and not handle._impl.removed:
             handle._impl_aux.sync_cb(client_id, handle)
 
     async def _handle_transform_controls_drag_start(
@@ -2691,12 +2726,15 @@ class SceneApi:
         handle = self._handle_from_transform_controls_name.get(message.name, None)
         if handle is None:
             return
+        self._active_transform_drag_handles[(client_id, message.name)] = handle
         await self._fire_transform_controls_callbacks(client_id, handle, "start")
 
     async def _handle_transform_controls_drag_end(
         self, client_id: ClientId, message: _messages.TransformControlsDragEndMessage
     ) -> None:
-        handle = self._handle_from_transform_controls_name.get(message.name, None)
+        handle = self._active_transform_drag_handles.pop(
+            (client_id, message.name), None
+        ) or self._handle_from_transform_controls_name.get(message.name, None)
         if handle is None:
             return
         await self._fire_transform_controls_callbacks(client_id, handle, "end")
@@ -3178,6 +3216,10 @@ class SceneApi:
         # from both GuiApi and MessageApi. The pattern below is unideal.
         gui_api = self._owner.gui
 
+        # Normalize the name so the dedup check below matches the (leading-slash)
+        # key the node map actually uses.
+        name = _normalize_node_name(name)
+
         # Remove the 3D GUI container if it already exists. This will make sure
         # contained GUI elements are removed, preventing potential memory leaks.
         if name in self._handle_from_node_name:
@@ -3194,7 +3236,12 @@ class SceneApi:
         node_handle = SceneNodeHandle._make(
             self, message, name, wxyz, position, visible=visible
         )
-        return Gui3dContainerHandle(node_handle._impl, gui_api, container_id)
+        handle = Gui3dContainerHandle(node_handle._impl, gui_api, container_id)
+        # Store the typed handle (not the plain SceneNodeHandle from `_make`) in
+        # the node map so removal via `reset()` / re-add dedup / cascading parent
+        # removal cleans up the container's GUI children and registry entry.
+        self._handle_from_node_name[name] = handle
+        return handle
 
     def get_handle_by_name(self, name: str) -> SceneNodeHandle | None:
         """Get the scene node handle for the given `name`, if it exists.
@@ -3211,9 +3258,7 @@ class SceneApi:
         Returns:
             Scene node handle, or None if no such node exists.
         """
-        if not name.startswith("/"):
-            name = "/" + name
-        return self._handle_from_node_name.get(name, None)
+        return self._handle_from_node_name.get(_normalize_node_name(name), None)
 
     def remove_by_name(self, name: str) -> None:
         """Remove the scene node with the given `name` and any of its children.
@@ -3223,9 +3268,7 @@ class SceneApi:
             ``add_*()`` call and calling :meth:`SceneNodeHandle.remove()`
             directly instead of using this method.
         """
-        name = name.rstrip("/")  # '/parent/' => '/parent'
-        if not name.startswith("/"):
-            name = "/" + name
+        name = _normalize_node_name(name.rstrip("/"))  # '/parent/' => '/parent'
         handle = self._handle_from_node_name.get(name)
         if handle is not None:
             handle.remove()

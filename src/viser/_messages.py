@@ -9,7 +9,7 @@ from typing import Any, ClassVar, Dict, Optional, Tuple, Type, TypeVar, Union, c
 
 import numpy as np
 import numpy.typing as npt
-from typing_extensions import Annotated, Literal, TypeAlias, override
+from typing_extensions import Annotated, Literal, TypeAlias, TypedDict, override
 
 from . import infra, theme, uplot
 
@@ -171,10 +171,18 @@ LabelAnchor = Literal[
 EntityType: TypeAlias = Literal["gui", "scene", "command", "notification", "modal"]
 """Kinds of removable entities in the protocol."""
 
-LifecyclePhase: TypeAlias = Literal["create", "update", "remove"]
+LifecyclePhase: TypeAlias = Literal["create", "update_dict", "update_simple", "remove"]
 """Phase of an entity message. Create and Remove share a redundancy-key
-namespace (so Remove supersedes Create); Update has its own namespace keyed by
-prop-set."""
+namespace (so Remove supersedes Create). There are two update flavors, both
+purged when their entity is removed:
+
+- ``update_dict``: carries an ``updates`` dict; coalesces per prop-set
+  (``{entity}:{id}:update:{props}``), so independent prop changes don't clobber
+  each other.
+- ``update_simple``: a single-purpose update with no ``updates`` dict (e.g.
+  ``SetPositionMessage``); coalesces latest-wins per message *type*
+  (``{entity}:{id}:update:{ClassName}``), so e.g. position and orientation stay
+  in separate slots."""
 
 EntityIdField: TypeAlias = Literal["uuid", "name"]
 """Name of the dataclass field that carries the entity id. ``"uuid"`` for
@@ -228,15 +236,17 @@ class Message(infra.Message):
             entity_id = getattr(self, self.entity_id_field)
             if self.lifecycle_phase in ("create", "remove"):
                 key = f"{self.entity_type}:{entity_id}:create-or-remove"
-            else:
-                # Delta updates coalesce per prop-set; full-props updates
-                # (no `updates` dict) coalesce latest-wins per entity.
-                if hasattr(self, "updates"):
-                    updates: Dict[str, Any] = self.updates  # type: ignore[attr-defined]
-                    prop_suffix = ",".join(sorted(updates.keys()))
-                else:
-                    prop_suffix = "full"
+            elif self.lifecycle_phase == "update_dict":
+                # Delta updates coalesce per prop-set, so independent prop
+                # changes don't clobber each other.
+                updates: Dict[str, Any] = self.updates  # type: ignore[attr-defined]
+                prop_suffix = ",".join(sorted(updates.keys()))
                 key = f"{self.entity_type}:{entity_id}:update:{prop_suffix}"
+            else:
+                # update_simple: single-purpose update, coalesce latest-wins
+                # per message type (so e.g. SetPosition and SetOrientation for
+                # the same node stay in separate slots).
+                key = f"{self.entity_type}:{entity_id}:update:{type(self).__name__}"
         else:
             # Non-entity fallback: ClassName + any incidental name/uuid fields.
             parts = [type(self).__name__]
@@ -362,7 +372,7 @@ class NotificationShowMessage(
 @dataclasses.dataclass
 class NotificationUpdateMessage(
     Message,
-    entity=EntityLifecycle("notification", "update", "uuid"),
+    entity=EntityLifecycle("notification", "update_simple", "uuid"),
     include_in_scene_serialization=False,
 ):
     """Server -> client message to update an existing notification.
@@ -679,9 +689,9 @@ class PointCloudProps:
     point_shape: Literal["square", "diamond", "circle", "rounded", "sparkle"]
     """Shape to draw each point."""
     precision: Annotated[Literal["float16", "float32"], infra.EditorHidden()]
-    """Precision of the point cloud. Assignments to `points` are automatically casted
-    based on the current precision value. Updates to `points` should therefore happen
-    *after* updates to `precision`."""
+    """Precision used to store point positions. Assignments to `points` are cast to
+    the current precision, and changing `precision` re-casts the existing `points`
+    buffer in place, so `precision` and `points` can be assigned in either order."""
     scale: Union[float, Tuple[float, float, float]] = 1.0
     """Scale of the point cloud. A single float for uniform scaling or a
     tuple of (x, y, z) for per-axis scaling."""
@@ -1154,7 +1164,11 @@ class BatchedGlbProps(_BatchedMeshExtraProps):
 
 
 @dataclasses.dataclass
-class SetBoneOrientationMessage(Message, include_in_scene_serialization=True):
+class SetBoneOrientationMessage(
+    Message,
+    entity=EntityLifecycle("scene", "update_simple", "name"),
+    include_in_scene_serialization=True,
+):
     """Server -> client message to set a skinned mesh bone's orientation.
 
     As with all other messages, transforms take the `T_parent_local` convention."""
@@ -1169,7 +1183,11 @@ class SetBoneOrientationMessage(Message, include_in_scene_serialization=True):
 
 
 @dataclasses.dataclass
-class SetBonePositionMessage(Message, include_in_scene_serialization=True):
+class SetBonePositionMessage(
+    Message,
+    entity=EntityLifecycle("scene", "update_simple", "name"),
+    include_in_scene_serialization=True,
+):
     """Server -> client message to set a skinned mesh bone's position.
 
     As with all other messages, transforms take the `T_parent_local` convention."""
@@ -1280,7 +1298,11 @@ class SetCameraFovMessage(Message, include_in_scene_serialization=True):
 
 
 @dataclasses.dataclass
-class SetOrientationMessage(Message, include_in_scene_serialization=True):
+class SetOrientationMessage(
+    Message,
+    entity=EntityLifecycle("scene", "update_simple", "name"),
+    include_in_scene_serialization=True,
+):
     """Server -> client message to set a scene node's orientation.
 
     As with all other messages, transforms take the `T_parent_local` convention."""
@@ -1290,7 +1312,11 @@ class SetOrientationMessage(Message, include_in_scene_serialization=True):
 
 
 @dataclasses.dataclass
-class SetPositionMessage(Message, include_in_scene_serialization=True):
+class SetPositionMessage(
+    Message,
+    entity=EntityLifecycle("scene", "update_simple", "name"),
+    include_in_scene_serialization=True,
+):
     """Server -> client message to set a scene node's position.
 
     As with all other messages, transforms take the `T_parent_local` convention."""
@@ -1362,7 +1388,11 @@ class ImageProps:
 
 
 @dataclasses.dataclass
-class SetSceneNodeVisibilityMessage(Message, include_in_scene_serialization=True):
+class SetSceneNodeVisibilityMessage(
+    Message,
+    entity=EntityLifecycle("scene", "update_simple", "name"),
+    include_in_scene_serialization=True,
+):
     """Set the visibility of a particular node in the scene."""
 
     name: str
@@ -1508,34 +1538,6 @@ class GuiFormMessage(_CreateGuiComponentMessage):
 
     container_uuid: str
     props: GuiFolderProps
-
-
-@dataclasses.dataclass
-class GuiPanelProps:
-    order: float
-    title: str
-    visible: bool
-    initial_x: Union[int, Literal["center"]]
-    """Initial x offset in pixels. Negative values anchor to the right edge.
-    ``"center"`` horizontally centers the panel."""
-    initial_y: Union[int, Literal["center"]]
-    """Initial y offset in pixels. Negative values anchor to the bottom edge.
-    ``"center"`` vertically centers the panel."""
-    initial_width_px: int
-    min_width_px: int
-    max_width_px: int
-    resizable: bool
-    layout: Literal["column", "row"]
-
-
-@dataclasses.dataclass
-class GuiPanelMessage(_CreateGuiComponentMessage):
-    """Floating, draggable, resizable panel rendered alongside the main
-    control panel. ``container_uuid`` is always ``"root"``; child GUI
-    elements use the panel's ``uuid`` as their container."""
-
-    container_uuid: str
-    props: GuiPanelProps
 
 
 @dataclasses.dataclass
@@ -1719,6 +1721,42 @@ class GuiImageMessage(_CreateGuiComponentMessage):
     props: GuiImageProps
 
 
+class EdgePlacement(TypedDict):
+    """Dock a standalone panel to a viewport edge."""
+
+    kind: Literal["edge"]
+    edge: Literal["left", "right"]
+
+
+class SplitPlacement(TypedDict):
+    """Split a standalone panel above/below another panel (a column split)."""
+
+    kind: Literal["split"]
+    anchor_uuid: str
+    """Tab-group uuid of the anchor panel (CONTROL_PANEL_ID for the main panel)."""
+    side: Literal["above", "below"]
+
+
+class FloatPlacement(TypedDict):
+    """Float a standalone panel at an explicit position (None => client default)."""
+
+    kind: Literal["float"]
+    x: Optional[float]
+    y: Optional[float]
+
+
+class GuiDockPlacement(TypedDict):
+    """Imperative placement state for a standalone panel.
+
+    Orthogonal fields so independent commands (dock/float, set_width, set_height)
+    coalesce without clobbering each other. Delivered via GuiUpdateMessage and
+    replayed to late-joining clients."""
+
+    position: Optional[Union[EdgePlacement, SplitPlacement, FloatPlacement]]
+    width: Optional[float]
+    height: Optional[float]
+
+
 @dataclasses.dataclass
 class GuiTabGroupProps:
     _tab_labels: Tuple[str, ...]
@@ -1737,6 +1775,56 @@ class GuiTabGroupProps:
 class GuiTabGroupMessage(_CreateGuiComponentMessage):
     container_uuid: str
     props: GuiTabGroupProps
+
+
+@dataclasses.dataclass
+class GuiPanelProps:
+    """Props for a standalone panel (`server.gui.add_panel()`). A panel carries
+    its own tabs (it IS the tab container), plus placement and an initial
+    collapsed hint."""
+
+    _tab_labels: Tuple[str, ...]
+    """(Private) Tuple of labels for each tab."""
+    _tab_icons_html: Tuple[Union[str, None], ...]
+    """(Private) Tuple of HTML strings for icons of each tab, or None if no icon."""
+    _tab_container_ids: Tuple[str, ...]
+    """(Private) Tuple of container IDs for each tab."""
+    order: float
+    """Order value for arranging panels."""
+    visible: bool
+    """Visibility state of the panel."""
+    placement: GuiDockPlacement
+    """Imperative placement for the panel. Seeded empty on create, then updated
+    by dock/float/size commands (coalesced via GuiUpdateMessage)."""
+    expand_by_default: bool = True
+    """One-shot initial collapsed state: when False, the panel starts minimized.
+    Applied once at creation (like a folder's expand_by_default); the user owns
+    the collapsed state thereafter."""
+
+
+@dataclasses.dataclass
+class GuiPanelMessage(
+    Message,
+    entity=EntityLifecycle("gui", "create", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """A standalone panel: a dockable / floating GUI container that lives outside
+    the control panel. Deliberately NOT a GuiComponentMessage -- it is a
+    top-level entity (like a modal), so it never enters the inline GUI tree."""
+
+    uuid: str
+    props: GuiPanelProps
+
+
+@dataclasses.dataclass
+class GuiPanelRemoveMessage(
+    Message,
+    entity=EntityLifecycle("gui", "remove", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """Sent server->client to remove a standalone panel."""
+
+    uuid: str
 
 
 @dataclasses.dataclass
@@ -1984,7 +2072,7 @@ class GuiButtonGroupMessage(_CreateGuiComponentMessage):
 @dataclasses.dataclass
 class GuiUpdateMessage(
     Message,
-    entity=EntityLifecycle("gui", "update", "uuid"),
+    entity=EntityLifecycle("gui", "update_dict", "uuid"),
     include_in_scene_serialization=False,
 ):
     """Sent client<->server when any property of a GUI component is changed."""
@@ -1997,7 +2085,7 @@ class GuiUpdateMessage(
 @dataclasses.dataclass
 class SceneNodeUpdateMessage(
     Message,
-    entity=EntityLifecycle("scene", "update", "name"),
+    entity=EntityLifecycle("scene", "update_dict", "name"),
     include_in_scene_serialization=True,
 ):
     """Sent client<->server when any property of a scene node is changed."""
@@ -2163,12 +2251,18 @@ class GetRenderRequestMessage(Message, include_in_scene_serialization=False):
     position: Tuple[float, float, float]
     fov: float
 
+    # Correlation ID echoed back in the response, so concurrent get_render()
+    # calls on the same client can be matched to their responses.
+    render_uuid: str
+
 
 @dataclasses.dataclass
 class GetRenderResponseMessage(Message, include_in_scene_serialization=False):
     """Message from client->server carrying a render."""
 
     payload: bytes
+    # Correlation ID matching the originating GetRenderRequestMessage.
+    render_uuid: str
 
 
 @dataclasses.dataclass
@@ -2303,7 +2397,7 @@ class RegisterCommandMessage(
 @dataclasses.dataclass
 class CommandUpdateMessage(
     Message,
-    entity=EntityLifecycle("command", "update", "uuid"),
+    entity=EntityLifecycle("command", "update_dict", "uuid"),
     include_in_scene_serialization=False,
 ):
     """Message from server->client to update properties of an existing command."""

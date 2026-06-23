@@ -17,7 +17,7 @@ import viser
 # the classes that consume them. These are not picked up by `inspect.isclass`,
 # so they need to be enumerated explicitly and emitted as ``autodata``.
 TYPE_ALIASES: Dict[str, List[str]] = {
-    "gui": [],
+    "gui": ["PlaceableHandle"],
     "events": [],
 }
 

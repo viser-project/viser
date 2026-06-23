@@ -73,4 +73,17 @@ export class GLInstancedBufferAttribute extends GLBufferAttribute {
     // This method is intentionally empty but necessary to avoid exceptions when cloning geometry.
     return this;
   }
+
+  // === VISER LOCAL PATCH (see vendor/instanced-mesh/LOCAL_PATCHES.md) ===
+  // Re-apply this method after any upstream re-vendor.
+  /**
+   * Frees the underlying GL buffer. This buffer is created directly via
+   * `gl.createBuffer()` and is NOT tracked by three.js's WebGLAttributes, so
+   * it must be deleted explicitly -- otherwise it leaks on every mesh
+   * recreation (the JS garbage collector cannot free GPU memory promptly).
+   */
+  public dispose(gl: WebGL2RenderingContext): void {
+    gl.deleteBuffer(this.buffer);
+  }
+  // === END VISER LOCAL PATCH ===
 }

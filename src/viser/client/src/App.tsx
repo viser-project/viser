@@ -25,25 +25,22 @@ import {
   useMantineColorScheme,
   useMantineTheme,
 } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
+import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 
 // Local imports.
 import { SynchronizedCameraControls } from "./CameraControls";
 import { SceneNodeThreeObject } from "./SceneTree";
 import { DragLayer } from "./DragLayer";
-import {
-  KeyModifier,
-  hasCmdCtrl,
-  keyModifierFromEvent,
-} from "./dragUtils";
+import { KeyModifier, hasCmdCtrl, keyModifierFromEvent } from "./dragUtils";
 import { shallowArrayEqual } from "./utils/shallowArrayEqual";
-import {
-  ndcFromPointerXy,
-  opencvXyFromPointerXy,
-} from "./utils/pointerCoords";
+import { isFormElement } from "./utils/isFormElement";
+import { ndcFromPointerXy, opencvXyFromPointerXy } from "./utils/pointerCoords";
 import { ViewerContext, ViewerContextContents } from "./ViewerContext";
 import ControlPanel from "./ControlPanel/ControlPanel";
-import UserPanels from "./ControlPanel/UserPanels";
+import {
+  ControlDockState,
+  ControlPanelDockSurface,
+} from "./ControlPanel/ControlPanelDock";
 import { useGuiState } from "./ControlPanel/GuiState";
 import { searchParamKey } from "./SearchParamsUtils";
 import { WebsocketMessageProducer } from "./WebsocketInterface";
@@ -218,8 +215,10 @@ function ViewerRoot() {
 
     // Message and rendering state.
     messageQueue: [],
+    firstMessageBatch: true,
     getRenderRequestState: "ready",
     getRenderRequest: null,
+    initialCameraDiagnostic: null,
 
     // Skinned mesh state.
     skinnedMeshState: {},
@@ -279,17 +278,15 @@ function ViewerRoot() {
     }, []),
   );
 
+  // `?darkMode` / embed darkMode forces dark mode. We OR it into the rendered
+  // color scheme in ViewerContents so it (a) wins over a server-sent theme --
+  // configure_theme defaults dark_mode=False, which would otherwise override
+  // the URL -- and (b) is correct on the very first paint, with no render-phase
+  // store write or post-mount flash.
+  const effectiveDarkMode = darkMode || embedConfig?.darkMode || false;
+
   // Create GUI state.
   const guiState = useGuiState(initialServer);
-
-  // Apply dark mode setting if provided via URL or embed config.
-  const effectiveDarkMode = darkMode || embedConfig?.darkMode;
-  if (effectiveDarkMode) {
-    const currentTheme = guiState.store.get().theme;
-    if (!currentTheme.dark_mode) {
-      guiState.store.set({ theme: { ...currentTheme, dark_mode: true } });
-    }
-  }
 
   // Create the context value with hooks and single ref.
   const viewer: ViewerContextContents = {
@@ -309,7 +306,7 @@ function ViewerRoot() {
 
   return (
     <ViewerContext.Provider value={viewer}>
-      <ViewerContents>
+      <ViewerContents forceDarkMode={effectiveDarkMode}>
         {messageSource === "websocket" && <WebsocketMessageProducer />}
         {messageSource === "file_playback" && (
           <PlaybackFromFile fileUrl={playbackPath!} />
@@ -325,9 +322,18 @@ function ViewerRoot() {
 /**
  * Main content wrapper with theme and layout.
  */
-function ViewerContents({ children }: { children: React.ReactNode }) {
+function ViewerContents({
+  children,
+  forceDarkMode,
+}: {
+  children: React.ReactNode;
+  forceDarkMode: boolean;
+}) {
   const viewer = React.useContext(ViewerContext)!;
-  const darkMode = viewer.useGui((state) => state.theme.dark_mode);
+  // `?darkMode` / embed darkMode forces dark mode and wins over the server's
+  // theme (configure_theme defaults dark_mode=False).
+  const storeDarkMode = viewer.useGui((state) => state.theme.dark_mode);
+  const darkMode = forceDarkMode || storeDarkMode;
   const colors = viewer.useGui((state) => state.theme.colors);
   const controlLayout = viewer.useGui((state) => state.theme.control_layout);
   const showLogo = viewer.useGui((state) => state.theme.show_logo);
@@ -376,49 +382,126 @@ function ViewerContents({ children }: { children: React.ReactNode }) {
         <BrowserWarning />
         <ViserModal />
         <CommandPalette />
-        {/* App layout */}
-        <Box
-          style={{
-            width: "100%",
-            height: "100%",
-            display: "flex",
-            position: "relative",
-            flexDirection: "column",
-          }}
-        >
-          <Titlebar />
-          <Box
-            style={{
-              width: "100%",
-              position: "relative",
-              flexGrow: 1,
-              overflow: "hidden",
-              display: "flex",
-            }}
-          >
-            <NotificationsPanel />
-            <Box
-              style={(theme) => ({
-                backgroundColor: darkMode ? theme.colors.dark[9] : "#fff",
-                flexGrow: 1,
-                overflow: "hidden",
-                height: "100%",
-              })}
-            >
-              {canvases}
-              {showLogo && messageSource === "websocket" && <ViserLogo />}
-            </Box>
-            {messageSource === "websocket" && (
-              <>
-                <ControlPanel control_layout={controlLayout} />
-                <UserPanels />
-              </>
-            )}
-          </Box>
-        </Box>
+        <AppLayout
+          darkMode={darkMode}
+          controlLayout={controlLayout}
+          showLogo={showLogo}
+          messageSource={messageSource}
+          canvases={canvases}
+        />
         {showStats && <Stats className="stats-panel" />}
       </MantineProvider>
     </>
+  );
+}
+
+/**
+ * The app layout below the titlebar: canvas area + control panel. Lives in its
+ * own component (inside the MantineProvider) so it can read the theme's mobile
+ * breakpoint.
+ */
+function AppLayout({
+  darkMode,
+  controlLayout,
+  showLogo,
+  messageSource,
+  canvases,
+}: {
+  darkMode: boolean;
+  controlLayout: "floating" | "collapsible" | "fixed";
+  showLogo: boolean;
+  messageSource: "websocket" | "file_playback" | "embed";
+  canvases: React.ReactNode;
+}) {
+  const mantineTheme = useMantineTheme();
+  const useMobileView =
+    useMediaQuery(`(max-width: ${mantineTheme.breakpoints.xs})`) ?? false;
+  // The floating layout runs on the docking library: the control panel is a
+  // dock panel over the canvas (draggable, dockable to either edge, resizable,
+  // minimizable). Sidebar layouts and the mobile bottom sheet are unchanged.
+  const dockFloating =
+    controlLayout === "floating" &&
+    !useMobileView &&
+    messageSource === "websocket";
+
+  // Where the control panel sits, reported by the dock surface. `side: null`
+  // means it floats freely; a non-null side means it's docked (the dock
+  // surface insets the canvas itself -- this state only feeds the
+  // notifications offset).
+  const [controlDock, setControlDock] = React.useState<ControlDockState>({
+    side: null,
+    widthPx: 320,
+    expanded: true,
+    leftRegionWidthPx: 0,
+  });
+  // Leaving the dock-floating layout (theme switch, mobile resize) unmounts
+  // the dock surface; clear any stale dock state so the notifications offset
+  // doesn't keep a defunct inset.
+  React.useEffect(() => {
+    if (!dockFloating) {
+      setControlDock((prev) =>
+        prev.side === null && prev.leftRegionWidthPx === 0
+          ? prev
+          : { ...prev, side: null, leftRegionWidthPx: 0 },
+      );
+    }
+  }, [dockFloating]);
+
+  const canvasContent = (
+    <>
+      {canvases}
+      {showLogo && messageSource === "websocket" && <ViserLogo />}
+    </>
+  );
+
+  return (
+    <Box
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        position: "relative",
+        flexDirection: "column",
+      }}
+    >
+      <Titlebar />
+      <Box
+        style={{
+          width: "100%",
+          position: "relative",
+          flexGrow: 1,
+          overflow: "hidden",
+          display: "flex",
+        }}
+      >
+        <NotificationsPanel
+          dockedLeftInsetPx={
+            // Clear the entire left-docked region (control panel OR a standalone
+            // panel docked left). 0 when nothing is docked left.
+            controlDock.leftRegionWidthPx > 0
+              ? controlDock.leftRegionWidthPx
+              : null
+          }
+        />
+        <Box
+          style={(theme) => ({
+            backgroundColor: darkMode ? theme.colors.dark[9] : "#fff",
+            overflow: "hidden",
+            flexGrow: 1,
+            height: "100%",
+          })}
+        >
+          {dockFloating ? (
+            <ControlPanelDockSurface onDockStateChange={setControlDock}>
+              {canvasContent}
+            </ControlPanelDockSurface>
+          ) : (
+            canvasContent
+          )}
+        </Box>
+        {messageSource === "websocket" && !dockFloating && <ControlPanel />}
+      </Box>
+    </Box>
   );
 }
 
@@ -434,7 +517,15 @@ function ColorSchemeSetter(props: { darkMode: boolean }) {
 /**
  * Notifications panel with fixed styling.
  */
-function NotificationsPanel() {
+function NotificationsPanel({
+  dockedLeftInsetPx,
+}: {
+  /** Width of a left-docked, expanded control panel, or null when the
+   * top-left is clear. Notifications sit at the top-left; a left-docked panel
+   * shifts them right by its width so they appear over the canvas instead of
+   * covering the GUI. */
+  dockedLeftInsetPx: number | null;
+}) {
   return (
     <Notifications
       position="top-left"
@@ -446,7 +537,10 @@ function NotificationsPanel() {
           boxShadow: "0.1em 0 1em 0 rgba(0,0,0,0.1) !important",
           position: "absolute",
           top: "1em",
-          left: "1em",
+          left:
+            dockedLeftInsetPx !== null
+              ? `calc(${dockedLeftInsetPx}px + 1em)`
+              : "1em",
           pointerEvents: "none",
         },
         notification: {
@@ -503,6 +597,15 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     drawRectSelectOverlay(null);
   }, [drawRectSelectOverlay, interaction]);
 
+  // Keep a stable handle to the latest cancel callback. The blur/key effect
+  // below must NOT depend on `cancelActiveScenePointer` directly: that callback's
+  // identity changes whenever the Mantine theme changes (via
+  // `drawRectSelectOverlay`'s `[theme]` dep), and re-running the effect calls
+  // `cancelActiveScenePointer()` in its cleanup -- which would abort an in-flight
+  // scene-pointer gesture on every theme update.
+  const cancelActiveScenePointerRef = React.useRef(cancelActiveScenePointer);
+  cancelActiveScenePointerRef.current = cancelActiveScenePointer;
+
   // Held-modifier tracking. Three sources keep `hoverSet`'s
   // `heldModifier` in sync with reality:
   //   - `keydown`/`keyup`: live updates while the canvas is focused.
@@ -513,24 +616,13 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
   //     waiting for the next keypress.
   React.useEffect(() => {
     const onBlur = () => {
-      cancelActiveScenePointer();
+      cancelActiveScenePointerRef.current();
       interaction.hover.setHeldModifier(null);
-    };
-    const isFormElement = (el: Element | null): boolean => {
-      if (el === null) return false;
-      const tag = el.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
-        return true;
-      }
-      return (el as HTMLElement).isContentEditable;
     };
     const onKey = (e: KeyboardEvent) => {
       // Skip while typing in form controls so Shift in a TextInput
       // doesn't flicker the canvas cursor.
-      if (
-        isFormElement(e.target as Element | null) ||
-        isFormElement(document.activeElement)
-      ) {
+      if (isFormElement(e.target) || isFormElement(document.activeElement)) {
         return;
       }
       interaction.hover.setHeldModifier(keyModifierFromEvent(e));
@@ -542,9 +634,9 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
       window.removeEventListener("blur", onBlur);
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onKey);
-      cancelActiveScenePointer();
+      cancelActiveScenePointerRef.current();
     };
-  }, [cancelActiveScenePointer, interaction]);
+  }, [interaction]);
 
   // Canvas pointer handlers thin-delegate to the gestures module.
   // Side effects (camera lock, overlay draw, wire dispatch) happen
@@ -558,6 +650,14 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
   );
 
   const handlePointerDown = (e: React.PointerEvent) => {
+    // If a 3D handle already captured this pointer (drei's orbit-origin /
+    // transform gizmos call setPointerCapture on the canvas in their own
+    // pointerdown, which runs before this bubbles up), it owns the gesture.
+    // Engaging the canvas-level scene-pointer path here would, for a
+    // rect-select gesture, call setPointerCapture on a *different* element and
+    // steal the gizmo's capture -- R3F then drops it and the gizmo's pointerup
+    // is missed, leaving it stuck mid-drag.
+    if (viewer.mutable.current.canvas?.hasPointerCapture(e.pointerId)) return;
     const xy = canvasXyFromEvent(e);
     const next = interaction.scenePointer.onPointerDown({
       pointerId: e.pointerId,
@@ -601,7 +701,12 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     });
     drawRectSelectOverlay(null);
     if (outcome.kind === "scene-click") {
-      sendClickMessage(viewer, outcome.xy, outcome.modifier, sendClickThrottled);
+      sendClickMessage(
+        viewer,
+        outcome.xy,
+        outcome.modifier,
+        sendClickThrottled,
+      );
     } else if (outcome.kind === "scene-rect-select") {
       sendRectSelectMessage(
         viewer,
@@ -610,6 +715,13 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
         sendClickThrottled,
       );
     }
+    // Reconcile `cameraControl.enabled` with the held leases once the gesture
+    // ends. drei's PivotControls (orbit-origin gizmo, transform controls)
+    // disables the camera directly during a drag and only re-enables it in its
+    // own pointerup -- which is skipped on a pointercancel or a release where
+    // pointer capture was lost. Without this the camera would be left disabled
+    // (no lease held) and orbit/pan would silently stop working.
+    interaction.cameraLocks.apply();
   };
 
   const fixedDpr = viewer.useDevSettings((state) => state.fixedDpr);
@@ -641,7 +753,14 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     >
       <Canvas
         gl={{ preserveDrawingBuffer: true, reversedDepthBuffer: true }}
-        style={{ width: "100%", height: "100%" }}
+        // `touchAction: none` opts the canvas out of native touch actions.
+        // Without it the browser can reinterpret a curved/multi-touch drag
+        // (e.g. dragging the orbit gizmo's rotation ring, especially on
+        // trackpads) as a scroll/zoom gesture and fire `pointercancel`
+        // mid-drag. drei's PivotControls has no cancel handler, so the gizmo
+        // would be left stuck following the cursor. camera-controls handles
+        // all viewport gestures itself, so there is nothing to lose.
+        style={{ width: "100%", height: "100%", touchAction: "none" }}
         ref={(el) => {
           viewer.mutable.current.canvas = el;
           interaction.hover.refresh();
@@ -652,6 +771,12 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
         onPointerCancel={(e) => {
           interaction.cancelPointer(e.pointerId);
           drawRectSelectOverlay(null);
+          // drei's PivotControls disables the camera on pointerdown and only
+          // re-enables it in its own pointerup -- it has no pointercancel
+          // handler. A canceled gizmo drag (common for the curved rotation-ring
+          // gesture) would otherwise leave the camera disabled. Reconcile to
+          // the lease state here so it recovers.
+          interaction.cameraLocks.apply();
         }}
         onContextMenu={(e) => {
           // Suppress the browser context menu only for ctrl/cmd-modified

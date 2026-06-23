@@ -43,7 +43,11 @@ export const BatchedLabelManager: React.FC<{
   children?: React.ReactNode;
 }> = ({ children }) => {
   const viewer = React.useContext(ViewerContext)!;
-  const [group, setGroup] = React.useState<THREE.Group | null>(null);
+  // Created synchronously (not via state + mount effect) so the group exists
+  // on the very first render. Otherwise a child label whose effect runs before
+  // the manager's mount effect would call registerText() while `group` was
+  // still null and be dropped permanently.
+  const group = React.useMemo(() => new THREE.Group(), []);
 
   // One BatchedText instance per depthTest setting (true/false).
   const batchedTextsRef = React.useRef<Map<boolean, BatchedText>>(new Map());
@@ -76,20 +80,16 @@ export const BatchedLabelManager: React.FC<{
   // Create unit rectangle geometry once (scaled per-instance).
   const rectGeometry = React.useMemo(() => new THREE.PlaneGeometry(1, 1), []);
 
-  // Create the group once on mount.
+  // Dispose batched texts on unmount. (Reads the latest set of registered
+  // texts via the ref -- intentional, we want the value at unmount time.)
   React.useEffect(() => {
-    const newGroup = new THREE.Group();
-    setGroup(newGroup);
-
-    // Cleanup on unmount: read the latest set of registered texts via the
-    // ref (intentional -- we want the value at unmount time, not mount).
     return () => {
       batchedTextsRef.current.forEach((batchedText) => {
-        newGroup.remove(batchedText);
+        group.remove(batchedText);
         batchedText.dispose();
       });
     };
-  }, []);
+  }, [group]);
 
   // API for components to register/unregister their text objects.
   const registerText = React.useCallback(
@@ -472,38 +472,36 @@ export const BatchedLabelManager: React.FC<{
   return (
     <BatchedLabelManagerContext.Provider value={contextValue}>
       {group && <primitive object={group} />}
-      {/* Background rectangles with depth test = true */}
-      <Instances frustumCulled={false}>
-        <primitive object={rectGeometry} attach="geometry" />
-        <meshBasicMaterial
-          color={LABEL_BACKGROUND_COLOR}
-          transparent={true}
-          opacity={LABEL_BACKGROUND_OPACITY}
-          depthTest={true}
-          depthWrite={false}
-          toneMapped={false}
-        />
-        {backgroundsByDepthTest.get(true)?.map((instanceId) => {
-          const ref = backgroundInstanceRefsRef.current.get(instanceId);
-          return <Instance key={instanceId} ref={ref} renderOrder={10000} />;
-        })}
-      </Instances>
-      {/* Background rectangles with depth test = false */}
-      <Instances frustumCulled={false} renderOrder={9999}>
-        <primitive object={rectGeometry} attach="geometry" />
-        <meshBasicMaterial
-          color={LABEL_BACKGROUND_COLOR}
-          transparent={true}
-          opacity={LABEL_BACKGROUND_OPACITY}
-          depthTest={false}
-          depthWrite={false}
-          toneMapped={false}
-        />
-        {backgroundsByDepthTest.get(false)?.map((instanceId) => {
-          const ref = backgroundInstanceRefsRef.current.get(instanceId);
-          return <Instance key={instanceId} ref={ref} />;
-        })}
-      </Instances>
+      {/* Background rectangles, split by depth-test setting. The depthTest=true
+          group renders on top (Instance renderOrder 10000); the depthTest=false
+          group sits behind the scene (Instances renderOrder 9999). */}
+      {([true, false] as const).map((depthTest) => (
+        <Instances
+          key={String(depthTest)}
+          frustumCulled={false}
+          renderOrder={depthTest ? undefined : 9999}
+        >
+          <primitive object={rectGeometry} attach="geometry" />
+          <meshBasicMaterial
+            color={LABEL_BACKGROUND_COLOR}
+            transparent={true}
+            opacity={LABEL_BACKGROUND_OPACITY}
+            depthTest={depthTest}
+            depthWrite={false}
+            toneMapped={false}
+          />
+          {backgroundsByDepthTest.get(depthTest)?.map((instanceId) => {
+            const ref = backgroundInstanceRefsRef.current.get(instanceId);
+            return (
+              <Instance
+                key={instanceId}
+                ref={ref}
+                renderOrder={depthTest ? 10000 : undefined}
+              />
+            );
+          })}
+        </Instances>
+      ))}
       {children}
     </BatchedLabelManagerContext.Provider>
   );

@@ -10,6 +10,7 @@ import viser
 from .utils import (
     JS_GET_MESH_CHILD_COUNT,
     JS_GET_SCENE_CHILD_NAMES,
+    wait_for_mesh_children,
     wait_for_scene_node,
     wait_for_scene_node_hidden,
     wait_for_scene_node_removed,
@@ -38,7 +39,7 @@ def test_icosphere_in_scene(
         position=(0.0, 0.0, 0.5),
     )
 
-    wait_for_scene_node(viser_page, "/test_sphere")
+    wait_for_mesh_children(viser_page, "/test_sphere")
 
     mesh_count = viser_page.evaluate(JS_GET_MESH_CHILD_COUNT, "/test_sphere")
     assert mesh_count > 0, f"Expected mesh children, got {mesh_count}"
@@ -56,7 +57,7 @@ def test_box_in_scene(
         position=(1.0, 0.0, 0.0),
     )
 
-    wait_for_scene_node(viser_page, "/test_box")
+    wait_for_mesh_children(viser_page, "/test_box")
 
     mesh_count = viser_page.evaluate(JS_GET_MESH_CHILD_COUNT, "/test_box")
     assert mesh_count > 0
@@ -250,7 +251,7 @@ def test_arrows_in_scene(
         colors=colors,
     )
 
-    wait_for_scene_node(viser_page, "/test_arrows")
+    wait_for_mesh_children(viser_page, "/test_arrows")
 
     mesh_count = viser_page.evaluate(JS_GET_MESH_CHILD_COUNT, "/test_arrows")
     assert mesh_count > 0, f"Expected mesh children, got {mesh_count}"

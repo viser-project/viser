@@ -32,7 +32,11 @@ from viser._messages import (
     RemoveNotificationMessage,
     RemoveSceneNodeMessage,
     SceneNodeUpdateMessage,
+    SetBoneOrientationMessage,
+    SetBonePositionMessage,
+    SetOrientationMessage,
     SetPositionMessage,
+    SetSceneNodeVisibilityMessage,
     _CreateGuiComponentMessage,
     _CreateSceneNodeMessage,
 )
@@ -48,16 +52,23 @@ def test_entity_markers_on_expected_classes() -> None:
     cases: list[tuple[type[Message], EntityType, LifecyclePhase, EntityIdField]] = [
         (_CreateSceneNodeMessage, "scene", "create", "name"),
         (RemoveSceneNodeMessage, "scene", "remove", "name"),
-        (SceneNodeUpdateMessage, "scene", "update", "name"),
+        (SceneNodeUpdateMessage, "scene", "update_dict", "name"),
         (_CreateGuiComponentMessage, "gui", "create", "uuid"),
         (GuiRemoveMessage, "gui", "remove", "uuid"),
-        (GuiUpdateMessage, "gui", "update", "uuid"),
+        (GuiUpdateMessage, "gui", "update_dict", "uuid"),
         (RegisterCommandMessage, "command", "create", "uuid"),
-        (CommandUpdateMessage, "command", "update", "uuid"),
+        (CommandUpdateMessage, "command", "update_dict", "uuid"),
         (RemoveCommandMessage, "command", "remove", "uuid"),
         (NotificationShowMessage, "notification", "create", "uuid"),
-        (NotificationUpdateMessage, "notification", "update", "uuid"),
+        (NotificationUpdateMessage, "notification", "update_simple", "uuid"),
         (RemoveNotificationMessage, "notification", "remove", "uuid"),
+        # Single-purpose scene-node pose/visibility updates -- purged on
+        # removal, each in its own per-type redundancy slot.
+        (SetPositionMessage, "scene", "update_simple", "name"),
+        (SetOrientationMessage, "scene", "update_simple", "name"),
+        (SetSceneNodeVisibilityMessage, "scene", "update_simple", "name"),
+        (SetBoneOrientationMessage, "scene", "update_simple", "name"),
+        (SetBonePositionMessage, "scene", "update_simple", "name"),
     ]
     for cls, expected_type, expected_phase, expected_id in cases:
         assert cls.entity_type == expected_type, cls
@@ -304,8 +315,9 @@ def test_gc_two_pass_purges_update_buffered_after_tombstone() -> None:
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
 def test_gc_purges_set_position_after_scene_remove() -> None:
-    """Scene-adjacent Set*Messages (no entity markers, just a `name` field)
-    must be purged when their target scene node has a tombstone."""
+    """Scene-node pose ``Set*Message`` variants (declared ``update_simple``)
+    must be purged when their target scene node has a tombstone, so a reused
+    node name / late-joining client doesn't replay a stale pose."""
     server = viser.ViserServer()
     buf = server._websock_server._broadcast_buffer
 
@@ -322,3 +334,38 @@ def test_gc_purges_set_position_after_scene_remove() -> None:
         if getattr(m, "name", None) == "/setpos_target"
     ]
     assert leftover == [], f"scene-adjacent messages survived GC: {leftover}"
+
+
+def test_update_simple_messages_have_distinct_redundancy_slots() -> None:
+    """The two-phase keying must keep distinct ``update_simple`` message types in
+    separate redundancy slots, so e.g. a pending SetPosition isn't clobbered by a
+    SetOrientation for the same node (the collision that a naive ``update:full``
+    key would cause). Same type + same node still coalesces; bone messages stay
+    distinct per ``bone_index``."""
+    from viser._messages import (
+        SetBoneOrientationMessage,
+        SetOrientationMessage,
+        SetPositionMessage,
+        SetSceneNodeVisibilityMessage,
+    )
+
+    pos = SetPositionMessage(name="/n", position=(1.0, 2.0, 3.0))
+    ori = SetOrientationMessage(name="/n", wxyz=(1.0, 0.0, 0.0, 0.0))
+    vis = SetSceneNodeVisibilityMessage(name="/n", visible=False)
+    keys = {pos.redundancy_key(), ori.redundancy_key(), vis.redundancy_key()}
+    assert len(keys) == 3, f"distinct Set* types collided: {keys}"
+
+    # Same type + same node -> same slot (coalesces, latest-wins).
+    assert (
+        SetPositionMessage(name="/n", position=(4.0, 5.0, 6.0)).redundancy_key()
+        == pos.redundancy_key()
+    )
+    # Different node -> different slot.
+    assert (
+        SetPositionMessage(name="/other", position=(1.0, 2.0, 3.0)).redundancy_key()
+        != pos.redundancy_key()
+    )
+    # Bone messages stay distinct per bone index.
+    b0 = SetBoneOrientationMessage(name="/n", bone_index=0, wxyz=(1.0, 0.0, 0.0, 0.0))
+    b1 = SetBoneOrientationMessage(name="/n", bone_index=1, wxyz=(1.0, 0.0, 0.0, 0.0))
+    assert b0.redundancy_key() != b1.redundancy_key()

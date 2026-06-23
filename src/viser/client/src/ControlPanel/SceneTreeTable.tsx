@@ -93,6 +93,7 @@ function PropInput({
   stringify,
   parse,
   submit,
+  submitField,
 }: {
   propKey: string;
   descriptor: ScenePropDescriptor;
@@ -101,6 +102,7 @@ function PropInput({
   stringify: (value: any) => string;
   parse: (value: string) => any;
   submit: () => void;
+  submitField: (key: string) => void;
 }) {
   const stringValue = form.values[propKey];
 
@@ -115,7 +117,9 @@ function PropInput({
             checked={stringValue === "true"}
             onChange={(evt) => {
               form.setFieldValue(propKey, stringify(evt.currentTarget.checked));
-              submit();
+              // Submit only this field: a whole-form submit would be blocked by
+              // an unrelated text field left mid-edit with invalid JSON.
+              submitField(propKey);
             }}
           />
         </TsTypeTooltip>
@@ -144,7 +148,7 @@ function PropInput({
             onChange={(next) => {
               if (next === null) return;
               form.setFieldValue(propKey, stringify(next));
-              submit();
+              submitField(propKey);
             }}
           />
         </TsTypeTooltip>
@@ -179,12 +183,12 @@ function PropInput({
               const rgb = parseToRgb(nextHex);
               if (rgb === null) return;
               form.setFieldValue(propKey, stringify(rgb));
-              submit();
+              submitField(propKey);
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                submit();
+                submitField(propKey);
               }
             }}
           />
@@ -310,9 +314,35 @@ function EditNodePropsInner({
     },
   });
 
+  // Sync the form when the server changes props (the footer promises "Updates
+  // from the server will overwrite local changes"). Mantine's useForm only
+  // reads initialValues at mount, so we push server-changed fields in here.
+  //
+  // We update ONLY the fields whose server value actually changed -- not a full
+  // form reset / remount -- so an in-progress edit of an unrelated field isn't
+  // discarded, and the popover doesn't churn (lose focus / close dropdowns) on
+  // every prop tick. `nodeMessage` identity changes only on prop updates (pose
+  // and visibility updates don't touch it), so this effect is keyed on it.
+  const prevInitialValuesRef = React.useRef(initialValues);
+  React.useEffect(() => {
+    const prev = prevInitialValuesRef.current;
+    for (const key of Object.keys(initialValues)) {
+      if (initialValues[key] !== prev[key]) {
+        form.setFieldValue(key, initialValues[key]);
+      }
+    }
+    prevInitialValuesRef.current = initialValues;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodeMessage]);
+
   const handleSubmit = (values: Record<string, string>) => {
     Object.entries(values).forEach(([key, value]) => {
-      if (value !== initialValues[key]) {
+      // Only submit keys that belong to the current node's props. If the node
+      // at this name was replaced by a different type, the form may still hold
+      // stale keys from the old schema (the sync effect updates current keys
+      // but doesn't prune removed ones); submitting those would push props the
+      // new node doesn't have.
+      if (key in initialValues && value !== initialValues[key]) {
         try {
           const parsedValue = parse(value);
           updateSceneNode(nodeName, { [key]: parsedValue });
@@ -323,6 +353,21 @@ function EditNodePropsInner({
         }
       }
     });
+  };
+
+  // Submit a single field, bypassing Mantine's whole-form validation. Used by
+  // the auto-submitting inputs (boolean/select/color) so a change isn't silently
+  // dropped when an unrelated text field is mid-edit with invalid JSON.
+  const submitField = (key: string) => {
+    try {
+      // getValues() (not the reactive `form.values` snapshot) so we read the
+      // value just set by the caller's setFieldValue in the same handler.
+      const parsedValue = parse(form.getValues()[key]);
+      updateSceneNode(nodeName, { [key]: parsedValue });
+      form.setFieldValue(key, stringify(parsedValue));
+    } catch (e) {
+      console.error("Failed to parse JSON:", e);
+    }
   };
 
   return (
@@ -420,6 +465,7 @@ function EditNodePropsInner({
                     stringify={stringify}
                     parse={parse}
                     submit={() => form.onSubmit(handleSubmit)()}
+                    submitField={submitField}
                   />
                 </Flex>
               </Flex>

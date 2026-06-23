@@ -9,7 +9,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
     Generic,
     Literal,
     Optional,
@@ -28,13 +27,43 @@ from typing_extensions import Self, deprecated, override
 
 from . import _messages
 from ._assignable_props_api import AssignablePropsBase
-from .infra._infra import WebsockClientConnection, WebsockServer
+from .infra._infra import (
+    WebsockClientConnection,
+    WebsockMessageHandler,
+    WebsockServer,
+)
 
 if TYPE_CHECKING:
     from ._gui_api import GuiApi
     from ._scene_api import SceneApi
     from ._viser import ClientHandle
     from .infra import ClientId
+
+
+_PoseTupleT = TypeVar("_PoseTupleT", bound=Tuple[float, ...])
+
+
+def _set_pose_vector(
+    current: np.ndarray,
+    value: _PoseTupleT | np.ndarray,
+    length: int,
+    websock: WebsockMessageHandler,
+    make_message: Callable[[_PoseTupleT], _messages.Message],
+) -> None:
+    """Shared write path for the scene-node and skinned-bone pose setters.
+
+    Casts and validates ``value``, no-ops if it is numerically unchanged from
+    ``current``, and otherwise writes it into ``current`` in place and queues the
+    message built from the cast value. Keeping this in one place stops the four
+    near-identical wxyz/position setters from drifting apart.
+    """
+    from ._scene_api import cast_vector
+
+    value_cast: _PoseTupleT = cast_vector(value, length)
+    if np.allclose(value_cast, current):
+        return
+    current[:] = np.asarray(value)
+    websock.queue_message(make_message(value_cast))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -186,6 +215,11 @@ class _SceneNodeHandleState:
     _last_published_click_bindings: tuple[_messages.DragBinding, ...] | None = None
 
 
+def _normalize_node_name(name: str) -> str:
+    """Scene node names are canonicalized to always start with "/"."""
+    return name if name.startswith("/") else "/" + name
+
+
 class _SceneNodeMessage(Protocol):
     name: str
     props: Any
@@ -218,9 +252,8 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
         """Create scene node: send state to client(s) and set up
         server-side state."""
         # Normalize name to always start with "/".
-        if not name.startswith("/"):
-            name = "/" + name
-            message.name = name
+        name = _normalize_node_name(name)
+        message.name = name
 
         # Ensure all ancestor nodes exist (creates intermediate frames as needed).
         api._ensure_ancestors_exist(name)
@@ -255,15 +288,14 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
 
     @wxyz.setter
     def wxyz(self, wxyz: tuple[float, float, float, float] | np.ndarray) -> None:
-        from ._scene_api import cast_vector
-
-        wxyz_cast = cast_vector(wxyz, 4)
-        wxyz_array = np.asarray(wxyz)
-        if np.allclose(wxyz_cast, self._impl.wxyz):
-            return
-        self._impl.wxyz[:] = wxyz_array
-        self._impl.api._websock_interface.queue_message(
-            _messages.SetOrientationMessage(self._impl.name, wxyz_cast)
+        # wxyz is assumed to be a unit quaternion (the client applies it to the
+        # object's rotation without normalizing).
+        _set_pose_vector(
+            self._impl.wxyz,
+            wxyz,
+            4,
+            self._impl.api._websock_interface,
+            lambda v: _messages.SetOrientationMessage(self._impl.name, v),
         )
 
     @property
@@ -275,15 +307,12 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
 
     @position.setter
     def position(self, position: tuple[float, float, float] | np.ndarray) -> None:
-        from ._scene_api import cast_vector
-
-        position_cast = cast_vector(position, 3)
-        position_array = np.asarray(position)
-        if np.allclose(position_array, self._impl.position):
-            return
-        self._impl.position[:] = position_array
-        self._impl.api._websock_interface.queue_message(
-            _messages.SetPositionMessage(self._impl.name, position_cast)
+        _set_pose_vector(
+            self._impl.position,
+            position,
+            3,
+            self._impl.api._websock_interface,
+            lambda v: _messages.SetPositionMessage(self._impl.name, v),
         )
 
     @property
@@ -351,12 +380,18 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
                     _messages.SetSceneNodeDragBindingsMessage(node_name, ())
                 )
 
-        # Clean up all descendants from both dicts.
+        # Tear down each descendant from both dicts and let it release any
+        # subclass-specific registries via the polymorphic ``_on_remove`` hook.
+        # This runs once per node -- for direct removal, ``reset()``, and
+        # cascading parent removal alike -- because a node removed via an
+        # ancestor never has its own ``remove()`` called.
         for node_name in to_remove:
             handle = api._handle_from_node_name.pop(node_name, None)
-            if handle is not None:
-                handle._impl.removed = True
             api._children_from_node_name.pop(node_name, None)
+            if handle is None:
+                continue
+            handle._impl.removed = True
+            handle._on_remove()
 
         # Remove from parent's children set.
         parent = self._impl.name.rsplit("/", 1)[0]
@@ -370,6 +405,14 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             api._websock_interface.queue_message(
                 _messages.RemoveSceneNodeMessage(node_name)
             )
+
+    def _on_remove(self) -> None:
+        """Release any subclass-specific registries for this node.
+
+        Called once per node during removal -- including when the node is
+        removed via an ancestor's cascade, where a subclass ``remove()`` would
+        never run. The base node holds no extra registries, so this is a no-op;
+        subclasses override it to clean up their own state."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -745,6 +788,7 @@ class CameraFrustumHandle(
         from ._scene_api import _encode_image_binary
 
         if image is None:
+            self._image = None
             self._image_data = None
             return
 
@@ -865,18 +909,25 @@ class PointCloudHandle(
     """Handle for point clouds. Does not support click events."""
 
     @override
-    def _cast_array_dtypes(
-        self,
-        prop_hints: Dict[str, Any],
-        prop_name: str,
-        value: np.ndarray,
-    ) -> np.ndarray:
-        """Casts assigned `points` based on the current value of `precision`."""
-        if prop_name == "points":
-            return value.astype(
-                {"float16": np.float16, "float32": np.float32}[self.precision]
-            )
-        return super()._cast_array_dtypes(prop_hints, prop_name, value)
+    def _on_prop_assigned(self, name: str) -> None:
+        # `points` is stored at the dtype named by `precision`, so re-cast the
+        # buffer in place whenever `precision` changes. This both keeps the
+        # cloud consistent and means a subsequent `points` assignment won't be
+        # pinned back to the old dtype by the generic setter -- so `precision`
+        # and `points` can be assigned in either order.
+        if name != "precision":
+            return
+        dtype = {"float16": np.float16, "float32": np.float32}[
+            self._impl.props.precision
+        ]
+        points = self._impl.props.points
+        if points.dtype != dtype:
+            new_points = points.astype(dtype)
+            self._impl.props.points = new_points
+            # Queue a private snapshot, not the stored array (a later same-shape
+            # `points` update mutates the stored buffer in place, which could
+            # corrupt this still-unsent message). Mirrors props_setattr.
+            self._queue_update("points", new_points.copy())
 
 
 class BatchedAxesHandle(
@@ -985,7 +1036,10 @@ class GaussianSplatHandle(
         )
         self._ensure_buffer_size(centers.shape[0])
         self.buffer[:, 0:3] = centers.astype(np.float32).view(np.uint32)
-        self._queue_update("buffer", self.buffer)
+        # Queue a private snapshot: the stored buffer is mutated in place by
+        # later sub-property assignments, possibly while the event loop is still
+        # serializing this message. Matches the guard in props_setattr.
+        self._queue_update("buffer", self.buffer.copy())
 
     @property
     def rgbs(self) -> npt.NDArray[np.uint8]:
@@ -1004,7 +1058,7 @@ class GaussianSplatHandle(
         rgba = self.buffer[:, 7:8].view(np.uint8).reshape(-1, 4)
         rgba[:, :3] = colors_to_uint8(rgbs)
         self.buffer[:, 7:8] = rgba.view(np.uint32)
-        self._queue_update("buffer", self.buffer)
+        self._queue_update("buffer", self.buffer.copy())
 
     @property
     def opacities(self) -> npt.NDArray[np.uint8]:
@@ -1024,7 +1078,7 @@ class GaussianSplatHandle(
         rgba = self.buffer[:, 7:8].view(np.uint8).reshape(-1, 4)
         rgba[:, 3:4] = colors_to_uint8(opacities)
         self.buffer[:, 7:8] = rgba.view(np.uint32)
-        self._queue_update("buffer", self.buffer)
+        self._queue_update("buffer", self.buffer.copy())
 
     @property
     def covariances(self) -> npt.NDArray[np.float32]:
@@ -1056,7 +1110,7 @@ class GaussianSplatHandle(
         cov_triu = covariances.reshape((-1, 9))[:, np.array([0, 1, 2, 4, 5, 8])]
         cov_triu_f16 = cov_triu.astype(np.float16)
         self.buffer[:, 4:7] = np.ascontiguousarray(cov_triu_f16).view(np.uint32)
-        self._queue_update("buffer", self.buffer)
+        self._queue_update("buffer", self.buffer.copy())
 
 
 class MeshSkinnedHandle(
@@ -1096,17 +1150,15 @@ class MeshSkinnedBoneHandle:
 
     @wxyz.setter
     def wxyz(self, wxyz: tuple[float, float, float, float] | np.ndarray) -> None:
-        from ._scene_api import cast_vector
-
-        wxyz_cast = cast_vector(wxyz, 4)
-        wxyz_array = np.asarray(wxyz)
-        if np.allclose(wxyz_cast, self._impl.wxyz):
-            return
-        self._impl.wxyz[:] = wxyz_array
-        self._impl.websock_interface.queue_message(
-            _messages.SetBoneOrientationMessage(
-                self._impl.name, self._impl.bone_index, wxyz_cast
-            )
+        # wxyz is assumed to be a unit quaternion (see SceneNodeHandle.wxyz).
+        _set_pose_vector(
+            self._impl.wxyz,
+            wxyz,
+            4,
+            self._impl.websock_interface,
+            lambda v: _messages.SetBoneOrientationMessage(
+                self._impl.name, self._impl.bone_index, v
+            ),
         )
 
     @property
@@ -1118,17 +1170,14 @@ class MeshSkinnedBoneHandle:
 
     @position.setter
     def position(self, position: tuple[float, float, float] | np.ndarray) -> None:
-        from ._scene_api import cast_vector
-
-        position_cast = cast_vector(position, 3)
-        position_array = np.asarray(position)
-        if np.allclose(position_array, self._impl.position):
-            return
-        self._impl.position[:] = position_array
-        self._impl.websock_interface.queue_message(
-            _messages.SetBonePositionMessage(
-                self._impl.name, self._impl.bone_index, position_cast
-            )
+        _set_pose_vector(
+            self._impl.position,
+            position,
+            3,
+            self._impl.websock_interface,
+            lambda v: _messages.SetBonePositionMessage(
+                self._impl.name, self._impl.bone_index, v
+            ),
         )
 
 
@@ -1336,6 +1385,11 @@ class TransformControlsHandle(
         super().__init__(impl)
         self._impl_aux = impl_aux
 
+    @override
+    def _on_remove(self) -> None:
+        # Drop the name-keyed gizmo registry entry.
+        self._impl.api._handle_from_transform_controls_name.pop(self._impl.name, None)
+
     @property
     def update_timestamp(self) -> float:
         return self._impl_aux.last_updated
@@ -1423,11 +1477,6 @@ class TransformControlsHandle(
 
         self._impl_aux.update_cb = [cb for cb in self._impl_aux.update_cb if keep(cb)]
 
-    def remove(self) -> None:
-        """Remove the node from the scene."""
-        self._impl.api._handle_from_transform_controls_name.pop(self.name)
-        super().remove()
-
 
 class Gui3dContainerHandle(
     SceneNodeHandle,
@@ -1454,13 +1503,9 @@ class Gui3dContainerHandle(
         self._gui_api._set_container_uuid(self._container_id_restore)
         self._container_id_restore = None
 
-    def remove(self) -> None:
-        """Permanently remove this GUI container from the visualizer."""
-
-        # Call scene node remove.
-        super().remove()
-
-        # Clean up contained GUI elements.
+    @override
+    def _on_remove(self) -> None:
+        # Remove contained GUI elements, then drop the UUID-keyed container entry.
         for child in tuple(self._children.values()):
             child.remove()
-        self._gui_api._container_handle_from_uuid.pop(self._container_id)
+        self._gui_api._container_handle_from_uuid.pop(self._container_id, None)

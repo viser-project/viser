@@ -545,29 +545,6 @@ export interface GuiFormMessage {
     expand_by_default: boolean;
   };
 }
-/** Floating, draggable, resizable panel rendered alongside the main
- * control panel. ``container_uuid`` is always ``"root"``; child GUI
- * elements use the panel's ``uuid`` as their container.
- *
- * (automatically generated)
- */
-export interface GuiPanelMessage {
-  type: "GuiPanelMessage";
-  uuid: string;
-  container_uuid: string;
-  props: {
-    order: number;
-    title: string;
-    visible: boolean;
-    initial_x: number | "center";
-    initial_y: number | "center";
-    initial_width_px: number;
-    min_width_px: number;
-    max_width_px: number;
-    resizable: boolean;
-    layout: "column" | "row";
-  };
-}
 /** GuiMarkdownMessage(uuid: 'str', container_uuid: 'str', props: 'GuiMarkdownProps')
  *
  * (automatically generated)
@@ -1649,6 +1626,41 @@ export interface GuiFormDirtyMessage {
   type: "GuiFormDirtyMessage";
   uuid: string;
 }
+/** A standalone panel: a dockable / floating GUI container that lives outside
+ * the control panel. Deliberately NOT a GuiComponentMessage -- it is a
+ * top-level entity (like a modal), so it never enters the inline GUI tree.
+ *
+ * (automatically generated)
+ */
+export interface GuiPanelMessage {
+  type: "GuiPanelMessage";
+  uuid: string;
+  props: {
+    _tab_labels: string[];
+    _tab_icons_html: (string | null)[];
+    _tab_container_ids: string[];
+    order: number;
+    visible: boolean;
+    placement: {
+      position:
+        | { kind: "edge"; edge: "left" | "right" }
+        | { kind: "split"; anchor_uuid: string; side: "above" | "below" }
+        | { kind: "float"; x: number | null; y: number | null }
+        | null;
+      width: number | null;
+      height: number | null;
+    };
+    expand_by_default: boolean;
+  };
+}
+/** Sent server->client to remove a standalone panel.
+ *
+ * (automatically generated)
+ */
+export interface GuiPanelRemoveMessage {
+  type: "GuiPanelRemoveMessage";
+  uuid: string;
+}
 /** GuiModalMessage(order: 'float', uuid: 'str', title: 'str')
  *
  * (automatically generated)
@@ -1751,6 +1763,7 @@ export interface GetRenderRequestMessage {
   wxyz: [number, number, number, number];
   position: [number, number, number];
   fov: number;
+  render_uuid: string;
 }
 /** Message from client->server carrying a render.
  *
@@ -1759,6 +1772,7 @@ export interface GetRenderRequestMessage {
 export interface GetRenderResponseMessage {
   type: "GetRenderResponseMessage";
   payload: Uint8Array<ArrayBuffer>;
+  render_uuid: string;
 }
 /** Signal that a file is about to be sent.
  *
@@ -1978,7 +1992,6 @@ export type Message =
   | RemoveSceneNodeMessage
   | GuiFolderMessage
   | GuiFormMessage
-  | GuiPanelMessage
   | GuiMarkdownMessage
   | GuiHtmlMessage
   | GuiDividerMessage
@@ -2033,6 +2046,8 @@ export type Message =
   | ResetGuiMessage
   | GuiFormSubmitMessage
   | GuiFormDirtyMessage
+  | GuiPanelMessage
+  | GuiPanelRemoveMessage
   | GuiModalMessage
   | GuiCloseModalMessage
   | GuiButtonHoldMessage
@@ -2085,7 +2100,6 @@ export type SceneNodeMessage =
 export type GuiComponentMessage =
   | GuiFolderMessage
   | GuiFormMessage
-  | GuiPanelMessage
   | GuiMarkdownMessage
   | GuiHtmlMessage
   | GuiDividerMessage
@@ -2145,7 +2159,6 @@ export function isSceneNodeMessage(
 const typeSetGuiComponentMessage = new Set([
   "GuiFolderMessage",
   "GuiFormMessage",
-  "GuiPanelMessage",
   "GuiMarkdownMessage",
   "GuiHtmlMessage",
   "GuiDividerMessage",

@@ -17,7 +17,6 @@ from ._gui_handles import GuiInputHandle as GuiInputHandle
 from ._gui_handles import GuiMarkdownHandle as GuiMarkdownHandle
 from ._gui_handles import GuiMultiSliderHandle as GuiMultiSliderHandle
 from ._gui_handles import GuiNumberHandle as GuiNumberHandle
-from ._gui_handles import GuiPanelHandle as GuiPanelHandle
 from ._gui_handles import GuiPlotlyHandle as GuiPlotlyHandle
 from ._gui_handles import GuiRgbaHandle as GuiRgbaHandle
 from ._gui_handles import GuiRgbHandle as GuiRgbHandle
@@ -29,6 +28,9 @@ from ._gui_handles import GuiUploadButtonHandle as GuiUploadButtonHandle
 from ._gui_handles import GuiUplotHandle as GuiUplotHandle
 from ._gui_handles import GuiVector2Handle as GuiVector2Handle
 from ._gui_handles import GuiVector3Handle as GuiVector3Handle
+from ._gui_handles import MainPanelHandle as MainPanelHandle
+from ._gui_handles import PanelHandle as PanelHandle
+from ._gui_handles import PlaceableHandle as PlaceableHandle
 from ._gui_handles import UploadedFile as UploadedFile
 from ._icons_enum import Icon as Icon
 from ._icons_enum import IconName as IconName
@@ -80,4 +82,4 @@ from ._viser import ViserServer as ViserServer
 if not _TYPE_CHECKING:
     from ._scene_handles import ScenePointerEvent as ScenePointerEvent
 
-__version__ = "1.0.28"
+__version__ = "1.0.30"

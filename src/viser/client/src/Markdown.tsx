@@ -174,13 +174,23 @@ export default function Markdown(props: { children?: string }) {
   const [child, setChild] = useState<ReactNode>(null);
 
   useEffect(() => {
-    try {
-      parseMarkdown(props.children ?? "").then((Content) => {
+    // Guard against stale/after-unmount updates: parseMarkdown is async, so a
+    // slow earlier parse could otherwise resolve last and render stale content,
+    // or call setChild after unmount. The promise also rejects asynchronously,
+    // so the error fallback must live in `.catch`, not the synchronous `try`.
+    let cancelled = false;
+    parseMarkdown(props.children ?? "")
+      .then((Content) => {
+        if (cancelled) return;
         setChild(<Content components={components} />);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setChild(<Title order={2}>Error Parsing Markdown...</Title>);
       });
-    } catch {
-      setChild(<Title order={2}>Error Parsing Markdown...</Title>);
-    }
+    return () => {
+      cancelled = true;
+    };
   }, [props.children]);
 
   return child;

@@ -12,6 +12,7 @@ import {
 import { BatchedMeshHoverOutlines } from "./mesh/BatchedMeshHoverOutlines";
 import { MeshBasicMaterial } from "three";
 import { normalizeScale } from "./utils/normalizeScale";
+import { syncPointCloudGeometry } from "./utils/pointCloudGeometry";
 // @ts-ignore - troika-three-text doesn't have type definitions
 import { Text as TroikaText } from "troika-three-text";
 import { BatchedLabelManagerContext } from "./BatchedLabelManagerContext";
@@ -108,28 +109,11 @@ export const PointCloud = React.forwardRef<
   React.useLayoutEffect(() => {
     const geom = geomRef.current;
     if (!geom) return;
-
-    if (props.points instanceof Float32Array) {
-      geom.setAttribute(
-        "position",
-        new THREE.Float32BufferAttribute(props.points, 3),
-      );
-    } else {
-      geom.setAttribute(
-        "position",
-        new THREE.Float16BufferAttribute(props.points, 3),
-      );
-    }
-
-    // Add color attribute if needed. Colors arrive as Uint8Array.
-    if (props.colors.length > 3) {
-      geom.setAttribute(
-        "color",
-        new THREE.BufferAttribute(props.colors, 3, true),
-      );
-    } else if (props.colors.length < 3) {
-      console.error(`Invalid color buffer length, got ${props.colors.length}`);
-    }
+    // Reuse the existing GPU buffers in place across updates. Replacing
+    // attributes with `setAttribute(new ...)` every update leaks the old buffer;
+    // a same-size swap reuses it; a point-count change reallocates safely. See
+    // syncPointCloudGeometry / syncBufferGeometry.
+    syncPointCloudGeometry(geom, props.points, props.colors);
   }, [props.points, props.colors]);
 
   // Material needs heavy per-frame uniform updates, so kept imperative.
@@ -414,7 +398,13 @@ export const InstancedAxes = React.forwardRef<
       axesRef.current.setColorAt(i * 3 + 2, blue);
     }
     axesRef.current.instanceMatrix.needsUpdate = true;
-    axesRef.current.instanceColor!.needsUpdate = true;
+    // `instanceColor` stays null until the first setColorAt, so it's null when
+    // there are zero instances -- guard the deref.
+    if (axesRef.current.instanceColor !== null)
+      axesRef.current.instanceColor.needsUpdate = true;
+    // Invalidate the cached bounding sphere so raycasting (clicks/hover) tests
+    // against the new instance positions rather than the stale ones.
+    axesRef.current.boundingSphere = null;
   }, [batched_wxyzs, batched_positions, batched_scales, axesTransformations]);
 
   // Create cylinder geometries for outlines - one for each axis.
@@ -422,36 +412,37 @@ export const InstancedAxes = React.forwardRef<
     () => new THREE.CylinderGeometry(axes_radius, axes_radius, axes_length, 16),
     [axes_radius, axes_length],
   );
-
-  // Compute transform matrices for each axis.
-  const xAxisTransform = React.useMemo(
-    () => ({
-      position: new THREE.Vector3(0.5 * axes_length, 0, 0),
-      rotation: new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(0, 0, (3 * Math.PI) / 2),
-      ),
-      scale: new THREE.Vector3(1, 1, 1),
-    }),
-    [axes_length],
+  // Dispose the outline geometry when it's replaced (axis dimensions change) or
+  // on unmount. It's consumed by BatchedMeshHoverOutlines, which clones it, so
+  // this original is ours to free.
+  React.useEffect(
+    () => () => outlineCylinderGeom.dispose(),
+    [outlineCylinderGeom],
   );
 
-  const yAxisTransform = React.useMemo(
-    () => ({
-      position: new THREE.Vector3(0, 0.5 * axes_length, 0),
-      rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0)),
-      scale: new THREE.Vector3(1, 1, 1),
-    }),
-    [axes_length],
-  );
-
-  const zAxisTransform = React.useMemo(
-    () => ({
-      position: new THREE.Vector3(0, 0, 0.5 * axes_length),
-      rotation: new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(Math.PI / 2, 0, 0),
-      ),
-      scale: new THREE.Vector3(1, 1, 1),
-    }),
+  // Compute transform matrices for each axis (x, y, z).
+  const axisTransforms = React.useMemo(
+    () => [
+      {
+        position: new THREE.Vector3(0.5 * axes_length, 0, 0),
+        rotation: new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(0, 0, (3 * Math.PI) / 2),
+        ),
+        scale: new THREE.Vector3(1, 1, 1),
+      },
+      {
+        position: new THREE.Vector3(0, 0.5 * axes_length, 0),
+        rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0)),
+        scale: new THREE.Vector3(1, 1, 1),
+      },
+      {
+        position: new THREE.Vector3(0, 0, 0.5 * axes_length),
+        rotation: new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(Math.PI / 2, 0, 0),
+        ),
+        scale: new THREE.Vector3(1, 1, 1),
+      },
+    ],
     [axes_length],
   );
 
@@ -464,41 +455,26 @@ export const InstancedAxes = React.forwardRef<
         <instancedMesh
           ref={axesRef}
           args={[cylinderGeom, material, numInstances]}
+          // Instance matrices are updated imperatively, so the cached bounding
+          // sphere used for frustum culling goes stale; disable culling so the
+          // axes don't pop out of view after a position update.
+          frustumCulled={false}
         />
 
-        {/* Create hover outlines for each axis */}
-        <BatchedMeshHoverOutlines
-          geometry={outlineCylinderGeom}
-          batched_positions={batched_positions}
-          batched_wxyzs={batched_wxyzs}
-          batched_scales={batched_scales}
-          meshTransform={xAxisTransform}
-          computeBatchIndexFromInstanceIndex={(instanceId) =>
-            Math.floor(instanceId / 3)
-          }
-        />
-
-        <BatchedMeshHoverOutlines
-          geometry={outlineCylinderGeom}
-          batched_positions={batched_positions}
-          batched_wxyzs={batched_wxyzs}
-          batched_scales={batched_scales}
-          meshTransform={yAxisTransform}
-          computeBatchIndexFromInstanceIndex={(instanceId) =>
-            Math.floor(instanceId / 3)
-          }
-        />
-
-        <BatchedMeshHoverOutlines
-          geometry={outlineCylinderGeom}
-          batched_positions={batched_positions}
-          batched_wxyzs={batched_wxyzs}
-          batched_scales={batched_scales}
-          meshTransform={zAxisTransform}
-          computeBatchIndexFromInstanceIndex={(instanceId) =>
-            Math.floor(instanceId / 3)
-          }
-        />
+        {/* Create hover outlines for each axis (x, y, z). */}
+        {axisTransforms.map((meshTransform, i) => (
+          <BatchedMeshHoverOutlines
+            key={i}
+            geometry={outlineCylinderGeom}
+            batched_positions={batched_positions}
+            batched_wxyzs={batched_wxyzs}
+            batched_scales={batched_scales}
+            meshTransform={meshTransform}
+            computeBatchIndexFromInstanceIndex={(instanceId) =>
+              Math.floor(instanceId / 3)
+            }
+          />
+        ))}
       </group>
       {children}
     </group>

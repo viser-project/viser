@@ -14,11 +14,17 @@ export function useAsyncTexture(
       const url = URL.createObjectURL(
         new Blob([data], { type: "image/" + format }),
       );
-      new THREE.TextureLoader().load(url, (tex) => {
-        if (!cancelled) setTexture(tex);
-        else tex.dispose();
-        URL.revokeObjectURL(url);
-      });
+      new THREE.TextureLoader().load(
+        url,
+        (tex) => {
+          if (!cancelled) setTexture(tex);
+          else tex.dispose();
+          URL.revokeObjectURL(url);
+        },
+        undefined,
+        // Revoke on failure too, otherwise the object URL leaks.
+        () => URL.revokeObjectURL(url),
+      );
     } else {
       setTexture(undefined);
     }

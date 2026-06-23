@@ -77,33 +77,26 @@ export const CameraFrustumComponent = React.forwardRef<
     imageTexture === undefined ? [0.0, -0.9, 1.0] : [0.0, -1.0, 1.0],
   ].map((xyz) => [xyz[0] * x, xyz[1] * y, xyz[2] * z]);
 
-  // Populate filled-variant geometry via ref. R3F auto-disposes.
-  const filledGeomRef = React.useRef<THREE.BufferGeometry>(null);
-  React.useLayoutEffect(() => {
-    const geom = filledGeomRef.current;
-    if (!geom || message.props.variant !== "filled") return;
-
+  // Fresh BufferGeometry per dimension change: in-place setAttribute swaps
+  // hit the same truncation bug as LineSegments2. See:
+  //   https://github.com/nerfstudio-project/viser/issues/719
+  const filledGeometry = React.useMemo(() => {
+    if (message.props.variant !== "filled") return null;
+    const geom = new THREE.BufferGeometry();
     const vertices = new Float32Array([
-      0,
-      0,
-      0,
-      -x,
-      -y,
-      z,
-      x,
-      -y,
-      z,
-      x,
-      y,
-      z,
-      -x,
-      y,
-      z,
+      0, 0, 0, -x, -y, z, x, -y, z, x, y, z, -x, y, z,
     ]);
     geom.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
     geom.setIndex(new THREE.BufferAttribute(FRUSTUM_INDICES, 1));
     geom.computeVertexNormals();
+    return geom;
   }, [x, y, z, message.props.variant]);
+
+  React.useEffect(() => {
+    return () => {
+      filledGeometry?.dispose();
+    };
+  }, [filledGeometry]);
 
   const color = new THREE.Color().setRGB(
     message.props.color[0] / 255,
@@ -124,9 +117,9 @@ export const CameraFrustumComponent = React.forwardRef<
       />
 
       {/* Filled faces - only for "filled" variant */}
-      {message.props.variant === "filled" && (
+      {message.props.variant === "filled" && filledGeometry && (
         <mesh>
-          <bufferGeometry ref={filledGeomRef} />
+          <primitive object={filledGeometry} attach="geometry" />
           <meshBasicMaterial
             color={isHovered ? 0xfbff00 : color}
             transparent

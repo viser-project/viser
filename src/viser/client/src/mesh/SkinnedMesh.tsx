@@ -102,7 +102,16 @@ export const SkinnedMesh = React.forwardRef<
   React.useEffect(() => {
     const state = viewerMutable.skinnedMeshState[message.name];
     state.initialized = false;
+    // The bones for this skeleton (added to the parent node imperatively in
+    // useFrame below). Captured here so the cleanup can remove exactly these on
+    // a skeleton change / unmount -- otherwise a re-added skinned mesh leaks its
+    // old bones into the parent (its child count grows by numBones each update).
+    const addedBones = bonesRef.current;
     return () => {
+      const parentNode = viewerMutable.nodeRefFromName[message.name];
+      if (parentNode !== undefined && addedBones !== undefined) {
+        addedBones.forEach((bone) => parentNode.remove(bone));
+      }
       if (skeleton) skeleton.dispose();
       if (geometry) geometry.dispose();
     };

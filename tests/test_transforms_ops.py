@@ -127,3 +127,41 @@ def test_multiply(
         ),
     )
     assert_transforms_close(T_w_b @ T_b_a, Group.multiply(T_w_b, T_b_a))
+
+
+def test_small_angle_log_exp_precision():
+    """Regression: SE2/SE3 exp->log round-trip must stay near machine precision
+    even for small rotation angles.
+
+    The closed-form V / V_inv coefficients ((1 - cos t)/t, (t - sin t)/t^3,
+    1 - (t/2) cot(t/2)) used to lose precision in a band just above the (far too
+    tight) Taylor threshold -- e.g. SE3 float32 round-trip error ~4e-3 near
+    t ~ 3e-3. The reformulated / widened-Taylor coefficients keep the error at
+    the noise floor across the whole small-angle range.
+    """
+    # Sweep angles spanning the previously-bad band, well below the old
+    # thresholds up through ~1 rad.
+    thetas = np.logspace(-6, 0, 60)
+    for dtype, atol in ((np.float32, 1e-5), (np.float64, 1e-10)):
+        axis = np.array([0.3, -0.5, 0.8])
+        axis = axis / np.linalg.norm(axis)
+        for theta_f in thetas:
+            theta = np.asarray(theta_f, dtype=dtype)
+
+            tangent_se2 = np.array([0.7, -0.4, theta], dtype=dtype)
+            roundtrip_se2 = vtf.SE2.exp(tangent_se2).log()
+            assert np.max(np.abs(roundtrip_se2 - tangent_se2)) < atol, (
+                "SE2",
+                np.dtype(dtype).name,
+                float(theta),
+            )
+
+            tangent_se3 = np.concatenate(
+                [np.array([0.7, -0.4, 0.9]), axis * theta]
+            ).astype(dtype)
+            roundtrip_se3 = vtf.SE3.exp(tangent_se3).log()
+            assert np.max(np.abs(roundtrip_se3 - tangent_se3)) < atol, (
+                "SE3",
+                np.dtype(dtype).name,
+                float(theta),
+            )
