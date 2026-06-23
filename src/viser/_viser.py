@@ -262,9 +262,10 @@ class CameraHandle:
         y = y - np.dot(z, y) * z
         y /= np.linalg.norm(y)
         x = np.cross(y, z)
-        self._state.wxyz = tf.SO3.from_matrix(np.stack([x, y, z], axis=1)).wxyz.astype(
-            np.float64
-        )
+        # Cast to float64 explicitly: newer numpy stubs type np.cross() as
+        # possibly complex, which from_matrix() rejects.
+        matrix = np.stack([x, y, z], axis=1).astype(np.float64)
+        self._state.wxyz = tf.SO3.from_matrix(matrix).wxyz.astype(np.float64)
 
     @property
     def fov(self) -> float:
