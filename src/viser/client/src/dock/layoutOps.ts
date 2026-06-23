@@ -758,8 +758,8 @@ export function resizeWindowHeight(
   const draft = clone(layout);
   const win = draft.floating.find((w) => w.id === windowId);
   if (win === undefined) return layout;
-  if (height === undefined) delete win.height;
-  else win.height = height;
+  win.height =
+    height === undefined ? { mode: "auto" } : { mode: "pinned", px: height };
   if (y !== undefined) win.y = y;
   return draft;
 }
@@ -981,7 +981,8 @@ function makeFloatingWindow(
     x,
     y,
     width,
-    ...(height !== undefined ? { height } : {}),
+    height:
+      height === undefined ? { mode: "auto" } : { mode: "pinned", px: height },
     stack,
     ...(stackWeights !== undefined ? { stackWeights } : {}),
   };
@@ -1158,7 +1159,7 @@ export function snapToWindowStack(
       ? target.stack.length
       : Math.max(0, Math.min(target.stack.length, index));
   target.stack.splice(i, 0, ...groupIds);
-  if (target.height === undefined && sourceHeight !== undefined)
+  if (target.height.mode === "auto" && sourceHeight?.mode === "pinned")
     target.height = sourceHeight;
   // The user reshaped this window by snapping content into it -> it's now
   // user-owned; drop any server-requested coords so it isn't re-anchored against
@@ -1582,7 +1583,7 @@ export function applyPanelPlacement(
       reqX,
       reqY,
       win.width,
-      win.height ?? 0,
+      win.height.mode === "pinned" ? win.height.px : 0,
       bounds,
     );
     win.x = resolved.x;

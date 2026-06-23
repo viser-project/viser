@@ -82,7 +82,7 @@ describe("addFloatingPane", () => {
     );
     expect(windowId).not.toBeNull();
     const win = out.floating.find((w) => w.id === windowId)!;
-    expect(win).toMatchObject({ x: 40, y: 50, width: 300, height: 420 });
+    expect(win).toMatchObject({ x: 40, y: 50, width: 300, height: { mode: "pinned", px: 420 } });
     expect(out.groups[win.stack[0]].paneIds).toEqual(["p1"]);
   });
 
@@ -239,7 +239,7 @@ describe("floatColumn", () => {
     const win = out.floating.find((w) => w.id === windowId)!;
     expect(win.stack).toEqual(["a", "b"]);
     expect(win.stackWeights).toEqual({ a: 2, b: 1 });
-    expect(win).toMatchObject({ x: 10, y: 20, width: 300, height: 400 });
+    expect(win).toMatchObject({ x: 10, y: 20, width: 300, height: { mode: "pinned", px: 400 } });
     // The row collapsed to the surviving leaf.
     expect(out.docked.left).toMatchObject({ type: "leaf", group: "x" });
   });
@@ -252,7 +252,7 @@ describe("floatColumn", () => {
     expect(windowId).not.toBeNull();
     expect(out.docked.left).toBeNull();
     expect(out.floating[0].stack).toEqual(["a", "b"]);
-    expect(out.floating[0].height).toBeUndefined(); // height optional
+    expect(out.floating[0].height).toEqual({ mode: "auto" });
   });
 
   it("preserves a collapsed group's state in the floated stack", () => {

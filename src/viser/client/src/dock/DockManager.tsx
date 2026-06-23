@@ -299,7 +299,9 @@ export function DockManager({
           // Dragged windows: anchor to the nearer edge (operate on the RENDERED
           // height the map just measured; the model height is only a fallback
           // for a window with no DOM yet).
-          const wh = heights.get(w.id) ?? w.height ?? 0;
+          const wh =
+            heights.get(w.id) ??
+            (w.height.mode === "pinned" ? w.height.px : 0);
           if (prevSize !== null && (deltaW !== 0 || deltaH !== 0)) {
             if (w.x + w.width / 2 > prevSize.w / 2) x += deltaW;
             if (w.y + wh / 2 > prevSize.h / 2) y += deltaH;
@@ -1488,7 +1490,8 @@ export function DockManager({
       let changed = false;
       const floating = cur.floating.map((w) => {
         if (w.id === draggingWindowIdRef.current) return w;
-        const winHeight = heights.get(w.id) ?? w.height ?? 0;
+        const winHeight =
+          heights.get(w.id) ?? (w.height.mode === "pinned" ? w.height.px : 0);
         let x: number;
         let y: number;
         if (w.requestedX !== undefined && w.requestedY !== undefined) {

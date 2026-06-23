@@ -505,13 +505,15 @@ function randomStart(seed: number): DockLayout {
   let rest = buckets[2];
   while (rest.length > 0) {
     const take = int(rng, 1, Math.min(3, rest.length));
-    l.floating.push({
-      id: `rw${wi++}`,
-      x: int(rng, 0, 600),
-      y: int(rng, 0, 600),
-      width: int(rng, 220, 400),
-      stack: rest.slice(0, take),
-    });
+    l.floating.push(
+      floatingWindow({
+        id: `rw${wi++}`,
+        x: int(rng, 0, 600),
+        y: int(rng, 0, 600),
+        width: int(rng, 220, 400),
+        stack: rest.slice(0, take),
+      }),
+    );
     rest = rest.slice(take);
   }
   return l;

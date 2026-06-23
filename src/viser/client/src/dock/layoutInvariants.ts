@@ -124,7 +124,7 @@ export function invariantViolations(layout: DockLayout): string[] {
       !Number.isFinite(w.width)
     )
       v.push(`floating window ${w.id} bad geometry`);
-    if (w.height !== undefined && !Number.isFinite(w.height))
+    if (w.height.mode === "pinned" && !Number.isFinite(w.height.px))
       v.push(`floating window ${w.id} bad height`);
   }
 

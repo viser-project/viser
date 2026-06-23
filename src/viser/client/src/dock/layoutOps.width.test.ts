@@ -303,7 +303,9 @@ describe("dropOnDockedLeaf top/bottom: 50/50 split, width preserved", () => {
     const l: DockLayout = {
       groups: groups("a", "b", "c"),
       docked: { left: null, right: tree },
-      floating: [{ id: "w", x: 0, y: 0, width: 280, stack: ["c"] }],
+      floating: [
+        { id: "w", x: 0, y: 0, width: 280, height: { mode: "auto" }, stack: ["c"] },
+      ],
     };
     return { l, targetId: "La" };
   }

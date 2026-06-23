@@ -33,18 +33,22 @@ wins snapshot, so a log would re-derive what the server already collapsed).
   panes back via this primitive (replacing the ad-hoc detach loop from the
   drag-out-then-place fix). Validated by the fuzz suite + the re-gather op test.
 
+- **Test factory (enabler).** Tests constructed FloatingWindow as ~100 raw
+  literals, coupling the model to test literals -- the real reason union refactors
+  were "expensive." Added `floatingWindow()` in testUtils as the one constructor;
+  routed makeLayout/floatingLayout through it; migrated every literal. After this,
+  #3a touched ZERO factory-routed literals (only ~4 stragglers + the assertions
+  that genuinely changed contract). Proves the model is now cheap to evolve.
+
+- **#3a WindowHeight tagged union (DONE).** `FloatingWindow.height` is now
+  `{ mode: "auto" } | { mode: "pinned"; px: number }` (was `height?: number`).
+  Pin-trap + sentinel-undefined ambiguity unrepresentable; "revert to auto" is the
+  one named transition. The factory translates the terse `height?: number` test
+  opt, so call sites stayed terse; production reads branch on `.mode`. Verified:
+  403 vitest, 29 e2e, pin-trap re-confirmed end-to-end.
+
 ## Remaining (recommended; each its own reviewed commit, ideally after the
 current work is committed so there's a clean bisect checkpoint)
-
-- **#3a WindowHeight tagged union.** Replace `FloatingWindow.height?: number`
-  (overloads auto=undefined vs pinned=number -- the source of the pin-trap) with
-  `{ mode: "auto" } | { mode: "pinned"; px: number }`. Makes the pin-trap and the
-  `undefined`-ambiguity unrepresentable; "revert to auto when dragged to content"
-  becomes the one named transition. Touch points (~10 production): FloatingWindowView
-  render (`fixedHeight`/`renderedHeight`/FLIP baseline), `resizeWindowHeight`,
-  `snapToWindowStack` height adoption, `applyPanelPlacement` size section,
-  `cappedWindowHeight`, DockManager height reads; plus ~15 test assertions that
-  read `win.height` as a number. No drag/hit-test coupling -> lower risk than #3b.
 
 - **#3b FloatPlacement tagged union (the bigger one).** Replace `x/y` +
   `requestedX?/requestedY?` with `placement: { kind: "anchored"; anchorX; anchorY }

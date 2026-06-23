@@ -796,15 +796,15 @@ describe("floatGroup", () => {
     const layout = makeLayout({ left: leaf("a") });
     const { layout: out, windowId } = floatGroup(layout, "a", 10, 20, 250, 420);
     const win = out.floating.find((w) => w.id === windowId)!;
-    expect(win.height).toBe(420);
+    expect(win.height).toEqual({ mode: "pinned", px: 420 });
   });
 
   it("omits height (auto-size) when no height is passed", () => {
     const layout = makeLayout({ left: leaf("a") });
     const { layout: out, windowId } = floatGroup(layout, "a", 10, 20, 250);
     const win = out.floating.find((w) => w.id === windowId)!;
-    // No height key at all (auto-size), not merely undefined-after-set.
-    expect("height" in win).toBe(false);
+    // Auto-size (the explicit tagged-union state, not a missing key).
+    expect(win.height).toEqual({ mode: "auto" });
   });
 });
 
@@ -938,7 +938,7 @@ describe("snapToWindowStack height preservation", () => {
     const merged = out.floating.find((w) => w.id === "w1")!;
     expect(merged.stack).toEqual(["a", "b"]);
     // The source height carries over to the merged (previously auto) target.
-    expect(merged.height).toBe(333);
+    expect(merged.height).toEqual({ mode: "pinned", px: 333 });
   });
 
   it("keeps the target's own height when it already has one", () => {
@@ -953,7 +953,7 @@ describe("snapToWindowStack height preservation", () => {
     const out = snapToWindowStack(layout, ["b"], "w1");
     const merged = out.floating.find((w) => w.id === "w1")!;
     expect(merged.stack).toEqual(["a", "b"]);
-    expect(merged.height).toBe(200);
+    expect(merged.height).toEqual({ mode: "pinned", px: 200 });
   });
 
   it("stays auto when neither source nor target has a height", () => {
@@ -965,7 +965,7 @@ describe("snapToWindowStack height preservation", () => {
     });
     const out = snapToWindowStack(layout, ["b"], "w1");
     const merged = out.floating.find((w) => w.id === "w1")!;
-    expect(merged.height).toBeUndefined();
+    expect(merged.height).toEqual({ mode: "auto" });
   });
 });
 
@@ -1085,7 +1085,7 @@ describe("(8) detaching a group prunes its stackWeights entry", () => {
     const l = floatingLayout([
       { id: "w1", stack: ["a", "b", "c"], stackWeights: { a: 100, b: 200, c: 50 } },
     ]);
-    l.floating[0].height = 400;
+    l.floating[0].height = { mode: "pinned", px: 400 };
     const out = floatGroup(l, "b", 10, 10, 260).layout;
     const w1 = out.floating.find((w) => w.id === "w1")!;
     expect(w1.stack).toEqual(["a", "c"]);
@@ -1097,7 +1097,7 @@ describe("(8) detaching a group prunes its stackWeights entry", () => {
       { id: "w1", stack: ["a", "b"], stackWeights: { a: 100, b: 200 } },
       { id: "w2", stack: ["c"] },
     ]);
-    l.floating[0].height = 300;
+    l.floating[0].height = { mode: "pinned", px: 300 };
     const out = snapToWindowStack(l, ["b"], "w2", 0);
     const w1 = out.floating.find((w) => w.id === "w1")!;
     expect(w1.stackWeights).toEqual({ a: 100 });
@@ -1305,7 +1305,7 @@ describe("resizeWindowHeight", () => {
   it("sets explicit height", () => {
     const layout = makeLayout({ floating: [{ id: "w1", stack: ["a"] }] });
     const out = resizeWindowHeight(layout, "w1", 333);
-    expect(out.floating[0].height).toBe(333);
+    expect(out.floating[0].height).toEqual({ mode: "pinned", px: 333 });
   });
   it("returns input for unknown window", () => {
     const layout = makeLayout({ floating: [{ id: "w1", stack: ["a"] }] });

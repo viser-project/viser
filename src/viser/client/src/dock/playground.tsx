@@ -173,10 +173,10 @@ const initialLayout: DockLayout = {
     right: null,
   },
   floating: [
-    { id: "w-a", x: 360, y: 40, width: 280, stack: [floatA.id] },
-    { id: "w-b", x: 680, y: 120, width: 260, stack: [floatB.id] },
-    { id: "w-c", x: 480, y: 320, width: 300, stack: [floatC.id] },
-    { id: "w-m", x: 900, y: 60, width: 300, height: 380, stack: [floatM.id] },
+    { id: "w-a", x: 360, y: 40, width: 280, height: { mode: "auto" }, stack: [floatA.id] },
+    { id: "w-b", x: 680, y: 120, width: 260, height: { mode: "auto" }, stack: [floatB.id] },
+    { id: "w-c", x: 480, y: 320, width: 300, height: { mode: "auto" }, stack: [floatC.id] },
+    { id: "w-m", x: 900, y: 60, width: 300, height: { mode: "pinned", px: 380 }, stack: [floatM.id] },
   ],
   areas: {
     "area-scene": { id: "area-scene", group: areaSceneGroup.id },
