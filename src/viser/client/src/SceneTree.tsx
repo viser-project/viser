@@ -205,30 +205,27 @@ function createObjectFactory(
     }
 
     case "GridMessage": {
+      // There's redundancy here when we set the side to
+      // THREE.DoubleSide, where xy and yx should be the same.
+      //
+      // But it makes sense to keep this parameterization because
+      // specifying planes by xy seems more natural than the normal
+      // direction (z, +z, or -z), and it opens the possibility of
+      // rendering only FrontSide or BackSide grids in the future.
+      //
+      // If we add support for FrontSide or BackSide, we should
+      // double-check that the normal directions from each of these
+      // rotations match the right-hand rule!
+      const planeEulers: Record<string, [number, number, number]> = {
+        xz: [0.0, 0.0, 0.0],
+        xy: [Math.PI / 2.0, 0.0, 0.0],
+        yx: [0.0, Math.PI / 2.0, Math.PI / 2.0],
+        yz: [0.0, 0.0, Math.PI / 2.0],
+        zx: [0.0, Math.PI / 2.0, 0.0],
+        zy: [-Math.PI / 2.0, 0.0, -Math.PI / 2.0],
+      };
       const gridQuaternion = new THREE.Quaternion().setFromEuler(
-        // There's redundancy here when we set the side to
-        // THREE.DoubleSide, where xy and yx should be the same.
-        //
-        // But it makes sense to keep this parameterization because
-        // specifying planes by xy seems more natural than the normal
-        // direction (z, +z, or -z), and it opens the possibility of
-        // rendering only FrontSide or BackSide grids in the future.
-        //
-        // If we add support for FrontSide or BackSide, we should
-        // double-check that the normal directions from each of these
-        // rotations match the right-hand rule!
-        message.props.plane == "xz"
-          ? new THREE.Euler(0.0, 0.0, 0.0)
-          : message.props.plane == "xy"
-            ? new THREE.Euler(Math.PI / 2.0, 0.0, 0.0)
-            : message.props.plane == "yx"
-              ? new THREE.Euler(0.0, Math.PI / 2.0, Math.PI / 2.0)
-              : message.props.plane == "yz"
-                ? new THREE.Euler(0.0, 0.0, Math.PI / 2.0)
-                : message.props.plane == "zx"
-                  ? new THREE.Euler(0.0, Math.PI / 2.0, 0.0)
-                  : //message.props.plane == "zy"
-                    new THREE.Euler(-Math.PI / 2.0, 0.0, -Math.PI / 2.0),
+        new THREE.Euler(...(planeEulers[message.props.plane] ?? planeEulers.zy)),
       );
 
       return {
@@ -245,6 +242,14 @@ function createObjectFactory(
                 sectionThickness={message.props.section_thickness}
                 sectionSize={message.props.section_size}
                 infiniteGrid={message.props.infinite_grid}
+                // Slide the grid geometry to track the camera so an infinite
+                // grid never reveals its edge. Only valid when the fade is also
+                // camera-relative; with fade_from="origin" the grid would fade
+                // to nothing once the camera moves past fade_distance.
+                followCamera={
+                  message.props.infinite_grid &&
+                  message.props.fade_from === "camera"
+                }
                 fadeDistance={message.props.fade_distance}
                 fadeStrength={message.props.fade_strength}
                 fadeFrom={message.props.fade_from === "camera" ? 1 : 0}
@@ -914,7 +919,6 @@ export function SceneNodeThreeObject(props: { name: string }) {
         if (!objRef.current.matrixWorldAutoUpdate)
           objRef.current.updateMatrixWorld();
       }
-
     },
     // Other useFrame hooks may depend on transforms + visibility. So it's best
     // to call this hook early.

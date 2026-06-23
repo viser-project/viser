@@ -30,10 +30,13 @@ import HtmlComponent from "../components/Html";
 import DividerComponent from "../components/Divider";
 
 /** Root of generated inputs. */
-export default function GeneratedGuiContainer({
-  containerUuid,
+/** Provides the GuiComponentContext that generated GUI children (folders, tab
+ * groups, inputs) read. Wrap any subtree that renders such children outside the
+ * normal container tree -- e.g. standalone panels in the mobile fallback. */
+export function GuiComponentContextProvider({
+  children,
 }: {
-  containerUuid: string;
+  children: React.ReactNode;
 }) {
   const viewer = React.useContext(ViewerContext)!;
   const updateGuiProps = viewer.guiActions.updateGuiProps;
@@ -56,8 +59,20 @@ export default function GeneratedGuiContainer({
         setValue: setValue,
       }}
     >
-      <GuiContainer containerUuid={containerUuid} />
+      {children}
     </GuiComponentContext.Provider>
+  );
+}
+
+export default function GeneratedGuiContainer({
+  containerUuid,
+}: {
+  containerUuid: string;
+}) {
+  return (
+    <GuiComponentContextProvider>
+      <GuiContainer containerUuid={containerUuid} />
+    </GuiComponentContextProvider>
   );
 }
 
@@ -79,7 +94,9 @@ function GuiContainer({
     shallowObjectKeysEqual,
   );
 
-  // Render each GUI element in this container.
+  // Render each GUI element in this container. (Standalone panels are a separate
+  // top-level entity -- they never appear in any container set, so there is
+  // nothing to filter here.)
   const guiIdArray = [...Object.keys(guiIdSet)];
   const guiOrderFromId = viewer!.useGui((state) => state.guiOrderFromUuid);
 
@@ -119,10 +136,11 @@ function GeneratedInput(props: {
       return <FolderComponent {...conf} nextGuiUuid={props.nextGuiUuid} />;
     case "GuiFormMessage":
       return <FormComponent {...conf} nextGuiUuid={props.nextGuiUuid} />;
-    case "GuiPanelMessage":
-      // Rendered by UserPanels as a separate floating window.
-      return null;
     case "GuiTabGroupMessage":
+      // TabGroupComponent decides how to render: a standalone panel inside the
+      // dock surface is rendered there (StandalonePanelSync) so it renders null
+      // here; outside the dock surface (mobile / static) it falls back to plain
+      // tabs so its content stays visible.
       return <TabGroupComponent {...conf} />;
     case "GuiMarkdownMessage":
       return <MarkdownComponent {...conf} />;

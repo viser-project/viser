@@ -168,7 +168,7 @@ function SplatRendererImpl() {
   const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
 
   // Consolidate Gaussian groups into a single buffer.
-  // Memoized on groupBufferFromId reference -- zustand returns the same
+  // Memoized on groupBufferFromId reference -- the store returns the same
   // reference when state hasn't changed, so this avoids re-merging every render.
   const merged = React.useMemo(
     () => mergeGaussianGroups(groupBufferFromId),
@@ -306,6 +306,12 @@ function SplatRendererImpl() {
       if (sortWorkerRef.current) {
         sortWorkerRef.current.postMessage({ close: true });
       }
+      // Free the main-thread WASM Sorter (embind object; not GC'd).
+      sorterDisposedRef.current = true;
+      if (SorterRef.current) {
+        SorterRef.current.delete();
+        SorterRef.current = null;
+      }
     };
   }, []);
 
@@ -342,7 +348,12 @@ function SplatRendererImpl() {
   );
 
   // Make local sorter for blocking sorts (e.g., rendering from virtual cameras).
+  // `SorterRef` is an Emscripten embind object that owns WASM-heap allocations;
+  // it is only released by an explicit `.delete()` (GC does not reclaim it), so
+  // it must be deleted on unmount. `sorterDisposedRef` guards the async
+  // creation below from instantiating a Sorter after the component unmounts.
   const SorterRef = React.useRef<any>(null);
+  const sorterDisposedRef = React.useRef(false);
   const sorterBufferVersionRef = React.useRef<number>(0);
   const currentBufferVersionRef = React.useRef<number>(0);
 
@@ -362,10 +373,17 @@ function SplatRendererImpl() {
             merged.groupIndices,
           );
         } else {
-          SorterRef.current = new (await SorterModulePromise).Sorter(
+          const sorter = new (await SorterModulePromise).Sorter(
             merged.gaussianBuffer,
             merged.groupIndices,
           );
+          // The component may have unmounted while the module was loading; if
+          // so, free the just-created Sorter instead of orphaning it.
+          if (sorterDisposedRef.current) {
+            sorter.delete();
+            return;
+          }
+          SorterRef.current = sorter;
         }
       })();
     }

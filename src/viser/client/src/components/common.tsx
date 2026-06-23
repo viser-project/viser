@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Box, Flex, Text, NumberInput, Tooltip } from "@mantine/core";
 import { GuiComponentContext } from "../ControlPanel/GuiComponentContext";
+import { finiteNumberOrNull } from "./numberInputUtils";
 
 export function ViserInputComponent({
   uuid,
@@ -130,8 +131,13 @@ export function VectorInput(
           key={i}
           value={props.value[i]}
           onChange={(v) => {
+            // Ignore empty / partial input (e.g. "-", "1e") while the user is
+            // typing; committing those would send NaN for this component (and
+            // clearing to retype would momentarily commit 0).
+            const parsed = finiteNumberOrNull(v);
+            if (parsed === null) return;
             const updated = [...props.value];
-            updated[i] = v === "" ? 0.0 : Number(v);
+            updated[i] = parsed;
             props.onChange(updated);
           }}
           size="xs"

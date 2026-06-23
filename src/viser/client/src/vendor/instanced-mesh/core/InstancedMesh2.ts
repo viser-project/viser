@@ -857,6 +857,21 @@ export class InstancedMesh2<
     this.morphTexture?.dispose();
     this.boneTexture?.dispose();
     this.uniformsTexture?.dispose();
+
+    // === VISER LOCAL PATCH (see vendor/instanced-mesh/LOCAL_PATCHES.md) ===
+    // Re-apply this block after any upstream re-vendor.
+    // Free the raw GL buffer backing `instanceIndex`. Unlike the textures
+    // above (and unlike normal geometry attributes), this buffer is created
+    // via `gl.createBuffer()` and is never tracked by three.js, so it leaks on
+    // every mesh recreation unless we delete it explicitly here.
+    if (this._renderer) {
+      const gl = this._renderer.getContext() as WebGL2RenderingContext;
+      this.instanceIndex?.dispose(gl);
+      if (this.LODinfo) {
+        for (const obj of this.LODinfo.objects) obj.instanceIndex?.dispose(gl);
+      }
+    }
+    // === END VISER LOCAL PATCH ===
   }
 
   public override updateMatrixWorld(force?: boolean): void {

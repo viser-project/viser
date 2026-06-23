@@ -7,6 +7,7 @@ import dataclasses
 import functools
 import threading
 import time
+import warnings
 from asyncio import AbstractEventLoop
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -37,6 +38,7 @@ from viser._backwards_compat_shims import deprecated_positional_shim
 
 from . import _messages, uplot
 from ._gui_handles import (
+    CONTROL_PANEL_ID,
     CommandEvent,
     CommandHandle,
     GuiButtonGroupHandle,
@@ -54,7 +56,6 @@ from ._gui_handles import (
     GuiModalHandle,
     GuiMultiSliderHandle,
     GuiNumberHandle,
-    GuiPanelHandle,
     GuiPlotlyHandle,
     GuiProgressBarHandle,
     GuiRgbaHandle,
@@ -67,9 +68,13 @@ from ._gui_handles import (
     GuiUplotHandle,
     GuiVector2Handle,
     GuiVector3Handle,
+    MainPanelHandle,
+    PanelHandle,
     SupportsRemoveProtocol,
     UploadedFile,
+    _colors_to_int_tuple,
     _CommandHandleState,
+    _empty_placement,
     _GuiButtonHandleState,
     _GuiHandleState,
     _GuiInputHandle,
@@ -134,6 +139,41 @@ def _compute_step(x: float | None) -> float:  # type: ignore
     return 1 if x is None else 10 ** (-_compute_precision_digits(x))
 
 
+def _build_slider_marks(
+    marks: tuple[float | tuple[float, str], ...] | None,
+) -> tuple[GuiSliderMark, ...] | None:
+    """Normalize a slider's ``marks`` argument into ``GuiSliderMark`` tuples.
+    Shared by add_slider and add_multi_slider so the two can't diverge."""
+    if marks is None:
+        return None
+    return tuple(
+        GuiSliderMark(value=float(x[0]), label=x[1])
+        if isinstance(x, tuple)
+        else GuiSliderMark(value=x, label=None)
+        for x in marks
+    )
+
+
+def _infer_vector_step(
+    value: tuple[float, ...],
+    min: tuple[float, ...] | None,
+    max: tuple[float, ...] | None,
+    step: float | None,
+) -> float:
+    """Pick a default step for a vector input from its value/min/max components
+    when the caller didn't pass one. Shared by add_vector2 and add_vector3 so
+    the inference can't drift between the two."""
+    if step is not None:
+        return step
+    possible_steps: list[float] = []
+    possible_steps.extend([_compute_step(x) for x in value])
+    if min is not None:
+        possible_steps.extend([_compute_step(x) for x in min])
+    if max is not None:
+        possible_steps.extend([_compute_step(x) for x in max])
+    return float(np.min(possible_steps))
+
+
 def _compute_precision_digits(x: float) -> int:
     """For number inputs: compute digits of precision from some number.
 
@@ -193,8 +233,11 @@ class GuiApi:
     Used by both our global server object, for sharing the same GUI elements
     with all clients, and by individual client handles."""
 
-    _target_container_from_thread_id: dict[int, str] = {}
-    """ID of container to put GUI elements into."""
+    _target_container_from_thread_id: dict[int, str]
+    """ID of container to put GUI elements into. Per-instance (NOT a shared
+    class attribute) -- otherwise a thread inside a ``with some_gui.add_folder()``
+    block would leak that container target into a *different* GuiApi instance
+    (e.g. server.gui vs a client.gui) and raise KeyError on the foreign uuid."""
 
     def __init__(
         self,
@@ -206,6 +249,7 @@ class GuiApi:
 
         self._owner = owner
         """Entity that owns this API."""
+        self._target_container_from_thread_id = {}
         self._thread_executor = thread_executor
         self._event_loop = event_loop
 
@@ -221,8 +265,13 @@ class GuiApi:
             "root": _RootGuiContainer({})
         }
         self._modal_handle_from_uuid: dict[str, GuiModalHandle] = {}
+        self._panel_handle_from_uuid: dict[str, PanelHandle] = {}
         self._command_handle_from_uuid: dict[str, CommandHandle] = {}
         self._current_file_upload_states: dict[str, _FileUploadState] = {}
+
+        # Coalesced placement state for the main (control) panel. Owned here
+        # rather than on a handle, since `main_panel` returns throwaway handles.
+        self._main_panel_placement = _empty_placement()
 
         # Set to True when plotly.min.js has been sent to client.
         self._setup_plotly_js: bool = False
@@ -404,6 +453,61 @@ class GuiApi:
             "lock": threading.Lock(),
         }
 
+        # A zero-byte file is sent with part_count == 0, so no FileTransferPart
+        # messages ever arrive to drive completion. Finish it here -- otherwise
+        # on_upload never fires and the transfer state leaks forever.
+        if message.part_count == 0:
+            self._websock_interface.queue_message(
+                FileTransferPartAck(
+                    source_component_uuid=message.source_component_uuid,
+                    transfer_uuid=message.transfer_uuid,
+                    transferred_bytes=0,
+                    total_bytes=0,
+                )
+            )
+            self._finish_file_upload(
+                client_id, message.transfer_uuid, message.source_component_uuid
+            )
+
+    def _finish_file_upload(
+        self,
+        client_id: ClientId,
+        transfer_uuid: str,
+        source_component_uuid: str,
+    ) -> None:
+        """Finalize a completed upload by assembling the file contents and
+        firing the handle's update callbacks. Shared by the normal multi-part
+        path and the zero-byte path (which has no parts)."""
+        state = self._current_file_upload_states.pop(transfer_uuid, None)
+        if state is None:
+            return
+
+        handle = self._gui_input_handle_from_uuid.get(source_component_uuid, None)
+        if handle is None or handle._impl.removed:
+            return
+        handle_state = handle._impl
+
+        value = UploadedFile(
+            name=state["filename"],
+            content=b"".join(state["parts"][i] for i in range(state["part_count"])),
+        )
+
+        # Update state.
+        handle_state.value = value
+        handle_state.update_timestamp = time.time()
+
+        # Trigger callbacks.
+        client = self._resolve_client(client_id)
+        if client is None:
+            return
+        for cb in handle_state.update_cb:
+            if asyncio.iscoroutinefunction(cb):
+                self._event_loop.create_task(cb(GuiEvent(client, client_id, handle)))
+            else:
+                self._thread_executor.submit(
+                    cb, GuiEvent(client, client_id, handle)
+                ).add_done_callback(print_threadpool_errors)
+
     def _handle_file_transfer_part(
         self, client_id: ClientId, message: _messages.FileTransferPart
     ) -> None:
@@ -433,36 +537,9 @@ class GuiApi:
 
         # Finish the upload.
         assert state["transferred_bytes"] == total_bytes
-        state = self._current_file_upload_states.pop(message.transfer_uuid)
-
-        handle = self._gui_input_handle_from_uuid.get(
-            message.source_component_uuid, None
+        self._finish_file_upload(
+            client_id, message.transfer_uuid, message.source_component_uuid
         )
-        if handle is None or handle._impl.removed:
-            return
-
-        handle_state = handle._impl
-
-        value = UploadedFile(
-            name=state["filename"],
-            content=b"".join(state["parts"][i] for i in range(state["part_count"])),
-        )
-
-        # Update state.
-        handle_state.value = value
-        handle_state.update_timestamp = time.time()
-
-        # Trigger callbacks.
-        client = self._resolve_client(client_id)
-        if client is None:
-            return
-        for cb in handle_state.update_cb:
-            if asyncio.iscoroutinefunction(cb):
-                self._event_loop.create_task(cb(GuiEvent(client, client_id, handle)))
-            else:
-                self._thread_executor.submit(
-                    cb, GuiEvent(client, client_id, handle)
-                ).add_done_callback(print_threadpool_errors)
 
     async def _handle_command_trigger(
         self, client_id: ClientId, message: _messages.CommandTriggerMessage
@@ -502,8 +579,35 @@ class GuiApi:
             next(iter(root_container._children.values())).remove()
         while self._modal_handle_from_uuid:
             next(iter(self._modal_handle_from_uuid.values())).close()
+        # Panels are top-level entities (not under `root`), so drain them
+        # explicitly -- otherwise they leak and replay to late joiners.
+        while self._panel_handle_from_uuid:
+            next(iter(self._panel_handle_from_uuid.values())).remove()
         while self._command_handle_from_uuid:
             next(iter(self._command_handle_from_uuid.values())).remove()
+
+        # Clear any server-authored main-panel placement (from `main_panel`
+        # commands or the deprecated `control_layout`). Without this, a prior
+        # placement persists in the broadcast buffer and replays to clients that
+        # connect after the reset -- a stale layout the user never asked for. We
+        # send the cleared placement so connected clients revert to the default
+        # control-panel position too.
+        if self._main_panel_placement != _empty_placement():
+            # Clear IN PLACE (not a rebind): every `MainPanelHandle` aliases this
+            # exact dict (handles are throwaway and capture it by reference), so
+            # rebinding would orphan handles obtained before reset() -- their
+            # later commands would mutate the dead dict and never reach the api.
+            placement_dict = cast(dict, self._main_panel_placement)
+            placement_dict.clear()
+            placement_dict.update(_empty_placement())
+            # The queued message gets its OWN fresh dict, not the live one (the
+            # snapshot rationale in `_send_placement`).
+            self._websock_interface.queue_message(
+                _messages.GuiUpdateMessage(
+                    CONTROL_PANEL_ID,
+                    {"placement": _empty_placement()},
+                )
+            )
 
     def set_panel_label(self, label: str | None) -> None:
         """Set the main label that appears in the GUI panel.
@@ -537,6 +641,23 @@ class GuiApi:
             show_share_button: A boolean indicating if the share button should be displayed.
             brand_color: An optional tuple of integers (RGB) representing the brand color.
         """
+
+        # `control_layout` is soft-deprecated in favor of `main_panel` placement.
+        # "collapsible"/"fixed" both map to docking the control panel to the
+        # right edge; the dock system makes every docked panel user-collapsible,
+        # so the old fixed/collapsible distinction no longer applies. We send
+        # "floating" to the client (the dock surface) and issue the dock command.
+        if control_layout != "floating":
+            warnings.warn(
+                "`control_layout` is deprecated; use `main_panel` placement"
+                " instead, e.g. `server.gui.main_panel.dock_right()`. Both"
+                ' "collapsible" and "fixed" now dock the control panel to the'
+                " right edge.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.main_panel.dock_right()
+            control_layout = "floating"
 
         colors_cast: LengthTenStrTuple | None = None
 
@@ -671,7 +792,11 @@ class GuiApi:
         expand_by_default: bool = True,
         visible: bool = True,
     ) -> GuiFolderHandle:
-        """Add a folder, and return a handle that can be used to populate it.
+        """Add a folder: a single **inline** collapsible section. Return a handle
+        that can be used to populate it.
+
+        For inline *tabs* use :meth:`add_tab_group`; for content in a *movable*
+        window (dockable / floating) use :meth:`add_panel`.
 
         Args:
             label: Label to display on the folder. If ``None``, the folder is
@@ -707,76 +832,6 @@ class GuiApi:
                 None,
                 props=props,
                 parent_container_id=self._get_container_uuid(),
-            )
-        )
-
-    def add_panel(
-        self,
-        title: str,
-        *,
-        order: float | None = None,
-        initial_position: tuple[int | Literal["center"], int | Literal["center"]] = (
-            -340,
-            20,
-        ),
-        initial_width_px: int = 320,
-        min_width_px: int = 220,
-        max_width_px: int = 960,
-        resizable: bool = True,
-        visible: bool = True,
-        layout: Literal["column", "row"] = "column",
-    ) -> GuiPanelHandle:
-        """Add a floating, draggable, resizable panel that renders as a
-        sibling of the main control panel, and return a handle that can be
-        used as a context manager to populate it.
-
-        Useful when the default single-panel layout gets too tall or too
-        narrow — panels can be placed side-by-side and sized independently.
-
-        Args:
-            title: Text shown in the panel header.
-            order: Optional ordering.
-            initial_position: Initial ``(x, y)`` pixel offset. Negative
-                integers anchor to the right (``x``) or bottom (``y``)
-                edge, so e.g. ``(-340, 20)`` places the panel near the
-                top-right. Pass ``"center"`` for either component to
-                center along that axis.
-            initial_width_px: Initial width in pixels.
-            min_width_px: Minimum width when dragging the resize handle.
-            max_width_px: Maximum width when dragging the resize handle.
-            resizable: If True, show a drag handle on the right edge.
-            visible: Whether the panel is visible.
-            layout: ``"column"`` stacks children vertically like a folder;
-                ``"row"`` renders them side-by-side with equal flex share.
-        """
-        panel_uuid = _make_uuid()
-        order = _apply_default_order(order)
-        props = _messages.GuiPanelProps(
-            order=order,
-            title=title,
-            visible=visible,
-            initial_x=initial_position[0],
-            initial_y=initial_position[1],
-            initial_width_px=initial_width_px,
-            min_width_px=min_width_px,
-            max_width_px=max_width_px,
-            resizable=resizable,
-            layout=layout,
-        )
-        self._websock_interface.queue_message(
-            _messages.GuiPanelMessage(
-                uuid=panel_uuid,
-                container_uuid="root",
-                props=props,
-            )
-        )
-        return GuiPanelHandle(
-            _GuiHandleState(
-                panel_uuid,
-                self,
-                None,
-                props=props,
-                parent_container_id="root",
             )
         )
 
@@ -890,7 +945,12 @@ class GuiApi:
         order: float | None = None,
         visible: bool = True,
     ) -> GuiTabGroupHandle:
-        """Add a tab group.
+        """Add a tab group: **inline** tabs that stay put where they are added
+        (in the control panel or a folder).
+
+        For tabs in a *movable* window the user can dock or float, use
+        :meth:`add_panel` instead; for a single inline collapsible section, use
+        :meth:`add_folder`.
 
         Args:
             order: Optional ordering, smallest values will be displayed first.
@@ -923,6 +983,84 @@ class GuiApi:
                 parent_container_id=message.container_uuid,
             )
         )
+
+    def add_panel(
+        self, *, visible: bool = True, expand_by_default: bool = True
+    ) -> PanelHandle:
+        """Add a standalone panel: a **movable** window (dockable / floating)
+        that lives outside the main control panel. A panel is the *container*;
+        its tabs (added with :meth:`PanelHandle.add_tab`) hold the content.
+
+        Choosing a container: use :meth:`add_folder` for an inline collapsible
+        section, :meth:`add_tab_group` for inline tabs that stay put inside the
+        control panel, and ``add_panel`` for tabs in a window the user can move,
+        dock, or float. (A panel is essentially a tab group you can place.)
+
+        A panel is a top-level entity (like :meth:`add_modal`): it is not placed
+        in the current container context. Add content with
+        :meth:`PanelHandle.add_tab`, place it with the imperative ``dock_*`` /
+        :meth:`PanelHandle.float` commands, and remove it with
+        :meth:`PanelHandle.remove` (there is no UI close button). See also
+        :attr:`main_panel` to place the main control panel.
+
+        Args:
+            visible: Whether the panel is visible.
+            expand_by_default: Whether the panel starts expanded. Set False to
+                start it minimized. A one-shot initial hint (like a folder's
+                ``expand_by_default``) -- the user owns the collapsed state after.
+
+        Returns:
+            A handle used to add tabs to and place the panel.
+
+        Example::
+
+            panel = server.gui.add_panel()
+            with panel.add_tab("Stats", viser.Icon.CHART_BAR):
+                server.gui.add_number("Counter", 0, disabled=True)
+            panel.dock_right()
+            panel.set_width(320)
+        """
+        panel_id = _make_uuid()
+        message = _messages.GuiPanelMessage(
+            uuid=panel_id,
+            props=_messages.GuiPanelProps(
+                order=_apply_default_order(None),
+                _tab_labels=(),
+                visible=visible,
+                _tab_icons_html=(),
+                _tab_container_ids=(),
+                # Seed placement on the create message so the wire always carries
+                # a non-null placement, even before any verb is called (the client
+                # never has to handle a null placement for a panel).
+                placement=_empty_placement(),
+                expand_by_default=expand_by_default,
+            ),
+        )
+        self._websock_interface.queue_message(message)
+        return PanelHandle(
+            _GuiHandleState(
+                message.uuid,
+                self,
+                value=None,
+                props=message.props,
+                # A panel is a top-level entity (not nested in a container); it
+                # registers itself in `_panel_handle_from_uuid`. The
+                # parent_container_id is unused for panels, but the handle state
+                # requires one -- "root" is a harmless placeholder.
+                parent_container_id="root",
+            )
+        )
+
+    @property
+    def main_panel(self) -> MainPanelHandle:
+        """Handle for the main control panel.
+
+        Supports the same placement / sizing / minimize commands as a standalone
+        panel (see :class:`MainPanelHandle` and :meth:`add_panel`), and is a legal
+        dock anchor for other panels from any scope. A fresh handle is returned on
+        each access. This is the supported replacement for the deprecated
+        ``configure_theme(control_layout=...)``."""
+        return MainPanelHandle(self)
 
     @deprecated_positional_shim
     def add_markdown(
@@ -1478,6 +1616,8 @@ class GuiApi:
         Returns:
             A handle that can be used to interact with the GUI element.
         """
+        if len(options) == 0:
+            raise ValueError("add_button_group requires at least one option.")
         value = options[0]
         uuid = _make_uuid()
         order = _apply_default_order(order)
@@ -1709,14 +1849,7 @@ class GuiApi:
         uuid = _make_uuid()
         order = _apply_default_order(order)
 
-        if step is None:
-            possible_steps: list[float] = []
-            possible_steps.extend([_compute_step(x) for x in value])
-            if min is not None:
-                possible_steps.extend([_compute_step(x) for x in min])
-            if max is not None:
-                possible_steps.extend([_compute_step(x) for x in max])
-            step = float(np.min(possible_steps))
+        step = _infer_vector_step(value, min, max, step)
 
         return GuiVector2Handle(
             self._create_gui_input(
@@ -1777,14 +1910,7 @@ class GuiApi:
         uuid = _make_uuid()
         order = _apply_default_order(order)
 
-        if step is None:
-            possible_steps: list[float] = []
-            possible_steps.extend([_compute_step(x) for x in value])
-            if min is not None:
-                possible_steps.extend([_compute_step(x) for x in min])
-            if max is not None:
-                possible_steps.extend([_compute_step(x) for x in max])
-            step = float(np.min(possible_steps))
+        step = _infer_vector_step(value, min, max, step)
 
         return GuiVector3Handle(
             self._create_gui_input(
@@ -1861,9 +1987,19 @@ class GuiApi:
         Returns:
             A handle that can be used to interact with the GUI element.
         """
+        # Materialize once so a one-shot iterable isn't consumed by the checks
+        # below and again by the message construction.
+        options_tuple = tuple(options)
+        if len(options_tuple) == 0:
+            raise ValueError("add_dropdown requires at least one option.")
         value = initial_value
         if value is None:
-            value = options[0]
+            value = options_tuple[0]
+        elif value not in options_tuple:
+            raise ValueError(
+                f"Dropdown initial_value {value!r} is not one of the options "
+                f"{options_tuple!r}."
+            )
         uuid = _make_uuid()
         order = _apply_default_order(order)
         return GuiDropdownHandle(
@@ -1877,7 +2013,7 @@ class GuiApi:
                         order=order,
                         label=label,
                         hint=hint,
-                        options=tuple(options),
+                        options=options_tuple,
                         disabled=disabled,
                         visible=visible,
                     ),
@@ -2003,14 +2139,7 @@ class GuiApi:
                         precision=_compute_precision_digits(step),
                         visible=visible,
                         disabled=disabled,
-                        _marks=tuple(
-                            GuiSliderMark(value=float(x[0]), label=x[1])
-                            if isinstance(x, tuple)
-                            else GuiSliderMark(value=x, label=None)
-                            for x in marks
-                        )
-                        if marks is not None
-                        else None,
+                        _marks=_build_slider_marks(marks),
                     ),
                 ),
                 is_button=False,
@@ -2092,14 +2221,7 @@ class GuiApi:
                         disabled=disabled,
                         fixed_endpoints=fixed_endpoints,
                         precision=_compute_precision_digits(step),
-                        _marks=tuple(
-                            GuiSliderMark(value=float(x[0]), label=x[1])
-                            if isinstance(x, tuple)
-                            else GuiSliderMark(value=x, label=None)
-                            for x in marks
-                        )
-                        if marks is not None
-                        else None,
+                        _marks=_build_slider_marks(marks),
                     ),
                 ),
                 is_button=False,
@@ -2117,7 +2239,10 @@ class GuiApi:
         hint: str | None = None,
         order: float | None = None,
     ) -> GuiRgbHandle:
-        """Add an RGB picker to the GUI. All values should be in [0, 255].
+        """Add an RGB picker to the GUI.
+
+        Integer channels are in [0, 255]; float channels in [0, 1] are scaled to
+        match (matplotlib convention), so ``1.0`` is white.
 
         Args:
             label: Label to display on the RGB picker.
@@ -2131,7 +2256,7 @@ class GuiApi:
             A handle that can be used to interact with the GUI element.
         """
 
-        value = initial_value
+        value = cast("tuple[int, int, int]", _colors_to_int_tuple(initial_value))
         uuid = _make_uuid()
         order = _apply_default_order(order)
         return GuiRgbHandle(
@@ -2163,7 +2288,10 @@ class GuiApi:
         hint: str | None = None,
         order: float | None = None,
     ) -> GuiRgbaHandle:
-        """Add an RGBA picker to the GUI. All values should be in [0, 255].
+        """Add an RGBA picker to the GUI.
+
+        Integer channels are in [0, 255]; float channels in [0, 1] are scaled to
+        match (matplotlib convention), so ``1.0`` is white/opaque.
 
         Args:
             label: Label to display on the RGBA picker.
@@ -2176,7 +2304,7 @@ class GuiApi:
         Returns:
             A handle that can be used to interact with the GUI element.
         """
-        value = initial_value
+        value = cast("tuple[int, int, int, int]", _colors_to_int_tuple(initial_value))
         uuid = _make_uuid()
         order = _apply_default_order(order)
         return GuiRgbaHandle(

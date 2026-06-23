@@ -158,7 +158,9 @@ class SE2(
         one_minus_cos_over_theta = np.where(
             use_taylor,
             0.5 * theta - theta * theta_sq / 24.0,
-            (1.0 - np.cos(safe_theta)) / safe_theta,
+            # (1 - cos t) / t, written as 2 sin^2(t/2) / t to avoid the
+            # catastrophic cancellation in (1 - cos t) for small t.
+            2.0 * np.sin(safe_theta / 2.0) ** 2 / safe_theta,
         )
 
         V = np.stack(
@@ -187,25 +189,25 @@ class SE2(
 
         theta = self.rotation().log()[..., 0]
 
-        cos = np.cos(theta)
-        cos_minus_one = cos - 1.0
         half_theta = theta / 2.0
-        use_taylor = np.abs(cos_minus_one) < get_epsilon(theta.dtype)
+        use_taylor = np.abs(theta) < get_epsilon(theta.dtype)
 
-        # Shim to avoid NaNs in np.where branches, which cause failures for
-        # reverse-mode AD in JAX. This isn't needed for vanilla numpy.
-        safe_cos_minus_one = np.where(
+        # Shim to avoid NaNs in np.where branches (0/0 at theta == 0), which
+        # also cause failures for reverse-mode AD in JAX.
+        safe_half_theta = np.where(
             use_taylor,
-            np.ones_like(cos_minus_one),  # Any non-zero value should do here.
-            cos_minus_one,
+            np.ones_like(half_theta),  # Any non-zero value should do here.
+            half_theta,
         )
 
         half_theta_over_tan_half_theta = np.where(
             use_taylor,
             # Taylor approximation.
             1.0 - theta**2 / 12.0,
-            # Default.
-            -(half_theta * np.sin(theta)) / safe_cos_minus_one,
+            # (theta / 2) / tan(theta / 2) -- equivalent to the textbook
+            # -(theta/2) sin(theta) / (cos(theta) - 1), but tan(theta/2) avoids
+            # the catastrophic cancellation in (cos(theta) - 1) for small theta.
+            half_theta / np.tan(safe_half_theta),
         )
 
         V_inv = np.stack(

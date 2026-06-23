@@ -26,6 +26,23 @@ def get_epsilon(dtype: onp.dtype) -> float:
         assert False
 
 
+def get_taylor_threshold(dtype: onp.dtype) -> float:
+    """Angle ``|theta|`` below which a small-angle Taylor expansion is used for
+    the SE3 coefficients whose closed forms suffer catastrophic cancellation:
+    ``(theta - sin theta) / theta**3`` (exp) and
+    ``(1 - (theta/2) cot(theta/2)) / theta**2`` (log).
+
+    Both are series in ``theta**2``; with a 3-term expansion the truncation
+    error stays well below the working precision out to a crossover near
+    ``(5040 * eps)**(1/6)``, where it matches the cancellation error of the
+    closed form. The old ``get_epsilon`` thresholds were far too tight, leaving
+    a band just above them where the closed form was already badly cancelled
+    (e.g. SE3 float32 round-trip error ~4e-3). For float32 this returns ~0.29;
+    for float64 ~0.01.
+    """
+    return float((5040.0 * onp.finfo(dtype).eps) ** (1.0 / 6.0))
+
+
 TupleOfBroadcastable = TypeVar(
     "TupleOfBroadcastable",
     bound="Tuple[Union[MatrixLieGroup, onp.ndarray], ...]",

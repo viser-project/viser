@@ -54,6 +54,23 @@ const PlotWithAspectInner = React.memo(function PlotWithAspectInner({
     );
   }, [plotJson, width, aspectRatio]);
 
+  // Purge the Plotly instance on unmount. Plotly.react attaches event
+  // listeners and (for gl traces) a WebGL context to the node; without
+  // Plotly.purge these leak every time a plot is removed or its folder/modal
+  // remounts, eventually exhausting the browser's WebGL context limit.
+  React.useEffect(() => {
+    const node = plotRef.current;
+    return () => {
+      // Plotly is a global (dynamically imported via eval()); may be undefined
+      // if the component unmounts before the script loads.
+      const plotly = (window as unknown as { Plotly?: { purge(n: HTMLElement): void } })
+        .Plotly;
+      if (node !== null && plotly !== undefined) {
+        plotly.purge(node);
+      }
+    };
+  }, []);
+
   return (
     <Paper
       ref={ref}

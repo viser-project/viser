@@ -120,6 +120,30 @@ export function MultiSlider({
     [value, onChange, min, max, step, minRange, fixedEndpoints],
   );
 
+  // While a thumb is held (activeThumb !== null), track the drag on `document`.
+  // The effect cleanup removes the listeners on mouseup, on unmount, and when
+  // the slider is disabled mid-drag -- so they never leak and a disabled
+  // control stops responding immediately.
+  React.useEffect(() => {
+    if (activeThumb === null) return;
+    if (disabled) {
+      setActiveThumb(null);
+      return;
+    }
+    const onMove = (e: MouseEvent) =>
+      updateValue(getValueFromPosition(e.clientX), activeThumb);
+    const onUp = () => setActiveThumb(null);
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    // `updateValue`/`getValueFromPosition` are captured at drag start, matching
+    // the previous behavior (only the active thumb moves during a drag).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeThumb, disabled]);
+
   const handleMouseDown = (event: React.MouseEvent) => {
     if (disabled || value.length === 0) return;
 
@@ -128,20 +152,6 @@ export function MultiSlider({
     if (thumbIndex === -1) return;
 
     setActiveThumb(thumbIndex);
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const newValue = getValueFromPosition(e.clientX);
-      updateValue(newValue, thumbIndex);
-    };
-
-    const handleMouseUp = () => {
-      setActiveThumb(null);
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
   };
 
   const handleThumbMouseDown = (event: React.MouseEvent, index: number) => {
@@ -149,20 +159,6 @@ export function MultiSlider({
     if (disabled || value.length === 0 || index >= value.length) return;
 
     setActiveThumb(index);
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const newValue = getValueFromPosition(e.clientX);
-      updateValue(newValue, index);
-    };
-
-    const handleMouseUp = () => {
-      setActiveThumb(null);
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
   };
 
   return (

@@ -5,9 +5,18 @@ import { ColorTranslator } from "colortranslator";
 import {
   GuiComponentMessage,
   GuiModalMessage,
+  GuiPanelMessage,
   RegisterCommandMessage,
   ThemeConfigurationMessage,
 } from "../WebsocketMessages";
+
+/** Server placement for a standalone panel / the main panel (the `placement`
+ * field on a panel's props). */
+export type GuiDockPlacement = GuiPanelMessage["props"]["placement"];
+
+/** Main-panel placement, which is null until the server places it (the panel
+ * placement field is always non-null on a real panel). */
+export type MainPanelPlacement = GuiDockPlacement | null;
 
 export interface GuiState {
   theme: ThemeConfigurationMessage;
@@ -21,6 +30,10 @@ export interface GuiState {
     [containerUuid: string]: { [uuid: string]: true } | undefined;
   };
   modals: GuiModalMessage[];
+  /** Standalone panels (`server.gui.add_panel()`), keyed by uuid. A dedicated
+   * top-level entity (like modals) -- NOT part of the inline GUI tree -- so
+   * panels never appear in `guiUuidSetFromContainerUuid`. */
+  panels: { [uuid: string]: GuiPanelMessage };
   guiOrderFromUuid: { [id: string]: number };
   /** Set of form UUIDs that currently have unsaved changes. Updated by
    * GuiFormDirtyMessage (adds) and GuiFormSubmitMessage (removes). */
@@ -35,6 +48,10 @@ export interface GuiState {
   };
   /** Registered command palette actions, keyed by UUID. */
   commands: { [uuid: string]: RegisterCommandMessage };
+  /** Server-authored placement for the main (control) panel, or null when the
+   * server hasn't placed it (default top-right floating). Set via a
+   * GuiUpdateMessage targeting CONTROL_PANEL_ID. */
+  mainPanelPlacement: MainPanelPlacement;
 }
 
 export interface GuiActions {
@@ -43,6 +60,9 @@ export interface GuiActions {
   addGui: (config: GuiComponentMessage) => void;
   addModal: (config: GuiModalMessage) => void;
   removeModal: (id: string) => void;
+  addPanel: (config: GuiPanelMessage) => void;
+  updatePanel: (id: string, updates: { [key: string]: any }) => void;
+  removePanel: (id: string) => void;
   updateGuiProps: (id: string, updates: { [key: string]: any }) => void;
   removeGui: (id: string) => void;
   resetGui: () => void;
@@ -57,6 +77,7 @@ export interface GuiActions {
   addCommand: (command: RegisterCommandMessage) => void;
   updateCommand: (uuid: string, updates: { [key: string]: any }) => void;
   removeCommand: (uuid: string) => void;
+  setMainPanelPlacement: (placement: MainPanelPlacement) => void;
 }
 
 const searchParams = new URLSearchParams(window.location.search);
@@ -80,10 +101,12 @@ const cleanGuiState: GuiState = {
   showOrbitOriginTool: false,
   guiUuidSetFromContainerUuid: { root: {} },
   modals: [],
+  panels: {},
   guiOrderFromUuid: {},
   dirtyFormUuids: {},
   uploadsInProgress: {},
   commands: {},
+  mainPanelPlacement: null,
 };
 
 export function computeRelativeLuminance(color: string) {
@@ -112,13 +135,15 @@ export function applyGuiConfigUpdate(
 
   for (const [key, value] of Object.entries(updates)) {
     if (key === "value") {
-      if (!Object.is((config as any).value, value)) valueChanged = true;
+      const current = "value" in config ? config.value : undefined;
+      if (!Object.is(current, value)) valueChanged = true;
     } else if (!(key in config.props)) {
       console.error(
         `Tried to update nonexistent property '${key}' of GUI element!`,
       );
     } else {
-      if (!Object.is((config.props as any)[key], value)) propsChanged = true;
+      if (!Object.is((config.props as Record<string, unknown>)[key], value))
+        propsChanged = true;
     }
   }
 
@@ -129,7 +154,7 @@ export function applyGuiConfigUpdate(
     newConfig = { ...newConfig, value: updates.value };
   }
   if (propsChanged) {
-    const newProps = { ...config.props } as any;
+    const newProps = { ...config.props } as Record<string, unknown>;
     for (const [key, value] of Object.entries(updates)) {
       if (key !== "value" && key in config.props) {
         newProps[key] = value;
@@ -183,6 +208,34 @@ export function useGuiState(initialServer: string) {
           modals: state.modals.filter((m) => m.uuid !== id),
         }));
       },
+      addPanel: (config) => {
+        store.set((state) => ({
+          panels: { ...state.panels, [config.uuid]: config },
+        }));
+      },
+      updatePanel: (id, updates) => {
+        store.set((state) => {
+          const panel = state.panels[id];
+          if (panel === undefined) {
+            console.error(`Tried to update non-existent panel '${id}'`, updates);
+            return {};
+          }
+          return {
+            panels: {
+              ...state.panels,
+              [id]: { ...panel, props: { ...panel.props, ...updates } },
+            },
+          };
+        });
+      },
+      removePanel: (id) => {
+        store.set((state) => {
+          if (state.panels[id] === undefined) return {};
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { [id]: _removed, ...rest } = state.panels;
+          return { panels: rest };
+        });
+      },
       removeGui: (id) => {
         const guiConfig = configStore.get(id);
         if (guiConfig == undefined) {
@@ -191,17 +244,18 @@ export function useGuiState(initialServer: string) {
           console.warn("(OK) Tried to remove non-existent component", id);
           return;
         }
+        const state = store.get();
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { [id]: _2, ...remainingOrders } = store.get().guiOrderFromUuid;
-        const dirtyFormUuids = { ...store.get().dirtyFormUuids };
+        const { [id]: _2, ...remainingOrders } = state.guiOrderFromUuid;
+        const dirtyFormUuids = { ...state.dirtyFormUuids };
         delete dirtyFormUuids[id];
         const containerUuid = guiConfig.container_uuid;
         const containerSet = {
-          ...store.get().guiUuidSetFromContainerUuid[containerUuid],
+          ...state.guiUuidSetFromContainerUuid[containerUuid],
         };
         delete containerSet[id];
         const newContainerMap = {
-          ...store.get().guiUuidSetFromContainerUuid,
+          ...state.guiUuidSetFromContainerUuid,
         };
         if (Object.keys(containerSet).length === 0) {
           delete newContainerMap[containerUuid];
@@ -223,10 +277,12 @@ export function useGuiState(initialServer: string) {
           guiUuidSetFromContainerUuid:
             cleanGuiState.guiUuidSetFromContainerUuid,
           modals: cleanGuiState.modals,
+          panels: cleanGuiState.panels,
           guiOrderFromUuid: cleanGuiState.guiOrderFromUuid,
           dirtyFormUuids: cleanGuiState.dirtyFormUuids,
           uploadsInProgress: cleanGuiState.uploadsInProgress,
           commands: cleanGuiState.commands,
+          mainPanelPlacement: cleanGuiState.mainPanelPlacement,
         });
         configStore.setAll({}, true);
       },
@@ -269,13 +325,9 @@ export function useGuiState(initialServer: string) {
           const existing = state.commands[uuid];
           if (existing === undefined) return state;
           const existingProps = existing.props as Record<string, unknown>;
-          let changed = false;
-          for (const [k, v] of Object.entries(updates)) {
-            if (!Object.is(existingProps[k], v)) {
-              changed = true;
-              break;
-            }
-          }
+          const changed = Object.entries(updates).some(
+            ([k, v]) => !Object.is(existingProps[k], v),
+          );
           if (!changed) return state;
           const merged: RegisterCommandMessage = {
             ...existing,
@@ -291,6 +343,9 @@ export function useGuiState(initialServer: string) {
           delete next[uuid];
           return { commands: next };
         });
+      },
+      setMainPanelPlacement: (placement) => {
+        store.set({ mainPanelPlacement: placement });
       },
       updateGuiProps: (id, updates) => {
         const config = configStore.get(id);

@@ -90,41 +90,44 @@ function useFileUpload({
     return `${displaySize.toFixed(1)}${displayUnits[displayUnitIndex]}`;
   }, [totalBytes]);
 
+  // Track which notifications we've already shown, so the first effect run
+  // creates the notification (notifications.show) and later runs update it
+  // (notifications.update is a no-op if the id doesn't exist yet).
+  const shownNotificationsRef = React.useRef<Set<string>>(new Set());
+
   // Update notification status.
   React.useEffect(() => {
     if (uploadState === undefined) return;
     const { notificationId, filename } = uploadState;
-    if (uploadState.uploadedBytes === 0) {
-      // Show notification.
-      notifications.show({
-        id: notificationId,
-        title: "Uploading " + `${filename} (${totalBytesString})`,
-        message: <Progress size="sm" value={0} />,
-        autoClose: false,
-        withCloseButton: false,
-        loading: true,
-      });
+
+    // Guard against 0/0 = NaN for empty (zero-byte) files: they complete
+    // immediately with uploadedBytes == totalBytes == 0, so treat them as done
+    // rather than leaving the spinner up forever.
+    const progressValue =
+      uploadState.totalBytes === 0
+        ? 1.0
+        : uploadState.uploadedBytes / uploadState.totalBytes;
+    const isDone = progressValue >= 1.0;
+
+    const body = {
+      id: notificationId,
+      title: "Uploading " + `${filename} (${totalBytesString})`,
+      message: isDone ? (
+        "File uploaded successfully."
+      ) : (
+        <Progress size="sm" transitionDuration={10} value={100 * progressValue} />
+      ),
+      autoClose: isDone,
+      withCloseButton: isDone,
+      loading: !isDone,
+      icon: isDone ? <IconCheck /> : undefined,
+    };
+
+    if (shownNotificationsRef.current.has(notificationId)) {
+      notifications.update(body);
     } else {
-      // Update progress.
-      const progressValue = uploadState.uploadedBytes / uploadState.totalBytes;
-      const isDone = progressValue === 1.0;
-      notifications.update({
-        id: notificationId,
-        title: "Uploading " + `${filename} (${totalBytesString})`,
-        message: !isDone ? (
-          <Progress
-            size="sm"
-            transitionDuration={10}
-            value={100 * progressValue}
-          />
-        ) : (
-          "File uploaded successfully."
-        ),
-        autoClose: isDone,
-        withCloseButton: isDone,
-        loading: !isDone,
-        icon: isDone ? <IconCheck /> : undefined,
-      });
+      shownNotificationsRef.current.add(notificationId);
+      notifications.show(body);
     }
   }, [uploadState, totalBytesString]);
 

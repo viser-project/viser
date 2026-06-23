@@ -32,8 +32,6 @@ GUI Handles
 
 .. autoclass:: viser.GuiNumberHandle
 
-.. autoclass:: viser.GuiPanelHandle
-
 .. autoclass:: viser.GuiPlotlyHandle
 
 .. autoclass:: viser.GuiRgbHandle
@@ -55,6 +53,12 @@ GUI Handles
 .. autoclass:: viser.GuiVector2Handle
 
 .. autoclass:: viser.GuiVector3Handle
+
+.. autoclass:: viser.MainPanelHandle
+
+.. autoclass:: viser.PanelHandle
+
+.. autodata:: viser.PlaceableHandle
 
 .. autoclass:: viser.UploadedFile
 

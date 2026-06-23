@@ -15,7 +15,6 @@ export type SceneNode = {
   clickBindings: DragBinding[];
   dragBindings: DragBinding[];
   labelVisible?: boolean; // Whether to show the label for this node.
-  poseUpdateState?: "updated" | "needsUpdate" | "waitForMakeObject";
   wxyz?: [number, number, number, number];
   position?: [number, number, number];
   visibility?: boolean; // Visibility state from the server.
@@ -169,14 +168,14 @@ function createSceneTreeActions(
       }
       // Skip the store write when nothing actually changed -- the prop editor
       // auto-submits on every Switch/Select/ColorInput change, and a no-op
-      // write would still notify zustand subscribers and re-render every
+      // write would still notify store subscribers and re-render every
       // useSceneTree consumer of this node.
       //
       // Shallow-compare arrays explicitly: ColorInput (and tuple-shaped scale
       // updates) emit fresh array references on every onChange, so a plain
       // ``Object.is`` would think every re-click of the same color is a
       // change.
-      const currentProps = node.message.props as Record<string, any>;
+      const currentProps = node.message.props as Record<string, unknown>;
       let changed = false;
       for (const key in updates) {
         const a = currentProps[key];
@@ -270,12 +269,16 @@ function createSceneTreeActions(
       const node = store.get(name);
       if (!node) return;
 
-      // Compute parent's effective visibility.
+      // Compute parent's effective visibility. The check is on `name` (is this
+      // node the root?), NOT on `parentName`: the root node itself has no
+      // parent, but its *children* (whose parentName is also "") must inherit
+      // the root's actual effectiveVisibility -- otherwise a child recomputed
+      // after `set_global_visibility(False)` would wrongly become visible.
       const parentName = name.split("/").slice(0, -1).join("/");
       const parentNode = store.get(parentName);
       const parentEffective =
-        parentName === ""
-          ? true // Root is always effectively visible
+        name === ""
+          ? true // Root node has no parent.
           : (parentNode?.effectiveVisibility ?? true);
 
       // Compute this node's visibility.
@@ -333,6 +336,13 @@ export function useSceneTreeState(
       nodeRefFromName,
       nodePoseData,
     );
+
+    // Establish the default state up front via the same path used on
+    // (re)connect. This seeds the root node's pose into nodePoseData -- which
+    // the pose sync needs in order to orient the root frame (and the
+    // /WorldAxes gizmo under it). Without it, the root renders at identity (the
+    // three.js Y-up frame) until the first connection.
+    actions.resetScene();
 
     // Return both store and helpers.
     return { store, actions };

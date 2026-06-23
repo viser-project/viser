@@ -3,6 +3,7 @@ import { GuiSliderMessage } from "../WebsocketMessages";
 import { Slider, Flex, NumberInput } from "@mantine/core";
 import { GuiComponentContext } from "../ControlPanel/GuiComponentContext";
 import { ViserInputComponent } from "./common";
+import { finiteNumberOrNull } from "./numberInputUtils";
 import { sliderDefaultMarks } from "./ComponentStyles.css";
 
 export default function SliderComponent({
@@ -99,15 +100,20 @@ export default function SliderComponent({
       <NumberInput
         value={value}
         onChange={(newValue) => {
-          // Ignore empty values.
-          newValue !== "" && updateValue(Number(newValue));
+          // Ignore empty / partial input (e.g. "-", "1e"); committing those
+          // would push NaN into the slider and send it to the server.
+          const parsed = finiteNumberOrNull(newValue);
+          if (parsed !== null) updateValue(parsed);
         }}
         size="xs"
         min={min}
         max={max}
         hideControls
         step={step ?? undefined}
-        // precision={precision}
+        // Limit typed decimals to the slider's precision (0 for integer
+        // sliders), so the companion box can't send a fractional/over-precise
+        // value that the slider track itself would never produce.
+        decimalScale={precision}
         style={{ width: "3rem" }}
         styles={{
           input: {

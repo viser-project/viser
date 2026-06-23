@@ -62,6 +62,10 @@ export const SingleGlbAsset = React.forwardRef<
     material.toneMapped = true;
     return material;
   }, [contextSize]);
+  // R3F does not auto-dispose materials passed in via the `material` prop (only
+  // ones it instantiates from JSX), so free it explicitly when it's replaced
+  // (contextSize change) or on unmount -- matching BatchedMeshHoverOutlines.
+  React.useEffect(() => () => outlineMaterial.dispose(), [outlineMaterial]);
   const outlineRef = React.useRef<THREE.Group>(null);
   const hoverContext = React.useContext(HoverableContext)!;
   useFrame(() => {

@@ -56,6 +56,24 @@ export function WebsocketMessageProducer() {
         isConnected = true;
         resetGui();
         resetScene();
+        // Drop any messages left over from the previous connection and re-arm
+        // the first-batch ordering hack, so the server's fresh scene replay
+        // applies against clean state. The worker/ref persist across reconnects,
+        // so this transient state isn't reset for us.
+        viewerMutable.messageQueue.length = 0;
+        viewerMutable.firstMessageBatch = true;
+        // Skinned-mesh pose buffers are keyed by node name on the mutable ref,
+        // which persists across reconnects; drop them so they don't leak (and
+        // so stale bone state doesn't apply to the fresh scene).
+        for (const key of Object.keys(viewerMutable.skinnedMeshState)) {
+          delete viewerMutable.skinnedMeshState[key];
+        }
+        // Clear any render request left in flight from the previous connection.
+        // Message handling is gated on this being "ready", and a stale request
+        // would otherwise render once against the fresh scene (its response is
+        // dropped via render_uuid mismatch anyway).
+        viewerMutable.getRenderRequestState = "ready";
+        viewerMutable.getRenderRequest = null;
         viewer.useGui.set({ websocketState: "connected" });
         updateRetryInterval();
         viewerMutable.sendMessage = (message) => {

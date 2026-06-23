@@ -48,13 +48,14 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
     ) {
       const size = useThree((state) => state.size);
       const lineRef = React.useRef<Line2 | LineSegments2>(null);
-      const geomRef = React.useRef<LineGeometry | LineSegmentsGeometry>(null);
       const matRef = React.useRef<LineMaterial>(null);
 
-      // Populate geometry data via ref.
-      React.useLayoutEffect(() => {
-        const geom = geomRef.current;
-        if (!geom) return;
+      // Build a fresh geometry per change: reusing one instance and calling
+      // setPositions() in a layout effect intermittently truncates the draw
+      // on LineSegments2. See:
+      //   https://github.com/nerfstudio-project/viser/issues/719
+      const lineGeom = React.useMemo(() => {
+        const geom = segments ? new LineSegmentsGeometry() : new LineGeometry();
         geom.setPositions(points);
         if (vertexColors) {
           const normalizedColors = new Float32Array(vertexColors).map(
@@ -62,11 +63,18 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
           );
           geom.setColors(normalizedColors, 3);
         }
-      }, [points, vertexColors]);
+        return geom;
+      }, [points, vertexColors, segments]);
+
+      React.useEffect(() => {
+        return () => {
+          lineGeom.dispose();
+        };
+      }, [lineGeom]);
 
       React.useLayoutEffect(() => {
         lineRef.current?.computeLineDistances();
-      }, [points]);
+      }, [lineGeom]);
 
       // Handle dashed defines via ref (can't be expressed as a prop).
       React.useLayoutEffect(() => {
@@ -97,10 +105,31 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
         [ref],
       );
 
+      // LineMaterial's trimSegment near-plane estimate assumes standard
+      // depth; under reversed depth (App.tsx) it explodes and lines smear
+      // when the camera is close. Switch the formula on sign(a). Three.js
+      // has an equivalent fix queued for r185
+      // (https://github.com/mrdoob/three.js/pull/33572); drop this patch
+      // once we upgrade to three@>=0.185.
+      const patchLineMaterialShader = React.useCallback(
+        (mat: LineMaterial | null) => {
+          (matRef as React.MutableRefObject<LineMaterial | null>).current = mat;
+          if (!mat) return;
+          mat.onBeforeCompile = (shader) => {
+            shader.vertexShader = shader.vertexShader.replace(
+              "float nearEstimate = - 0.5 * b / a;",
+              "float nearEstimate = ( a > 0.0 ) ? ( - b / ( 1.0 + a ) ) : ( - 0.5 * b / a );",
+            );
+          };
+          mat.needsUpdate = true;
+        },
+        [],
+      );
+
       // R3F manages lifecycle for all declarative children -- no manual disposal.
       const materialJsx = (
         <lineMaterial
-          ref={matRef}
+          ref={patchLineMaterialShader}
           color={effectiveColor}
           vertexColors={Boolean(vertexColors)}
           resolution={[size.width, size.height]}
@@ -114,14 +143,14 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
       if (segments) {
         return (
           <lineSegments2 ref={setLineRef} {...rest}>
-            <lineSegmentsGeometry ref={geomRef} />
+            <primitive object={lineGeom} attach="geometry" />
             {materialJsx}
           </lineSegments2>
         );
       } else {
         return (
           <line2 ref={setLineRef} {...rest}>
-            <lineGeometry ref={geomRef} />
+            <primitive object={lineGeom} attach="geometry" />
             {materialJsx}
           </line2>
         );
