@@ -1,0 +1,37 @@
+name: Build viser client (cached)
+description: >
+  Ensure src/viser/client/build is present, reusing a content-addressed cache
+  keyed on the client source. The cache is shared across every workflow and run
+  in the repo: once a build for a given source has populated the cache, all
+  consumers -- e2e test jobs, the release/publish job, any future workflow --
+  restore it instead of rebuilding. (On a cold cache, concurrent jobs may each
+  build once before one populates the cache; the worst case is a redundant
+  build, never a wrong artifact.)
+
+runs:
+  using: composite
+  steps:
+    - name: Restore cached client build
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: src/viser/client/build
+        # `build/` and `node_modules/` are gitignored, so on a fresh checkout
+        # this hashes only tracked source -- a stable content address.
+        key: viser-client-build-${{ runner.os }}-${{ hashFiles('src/viser/client/**') }}
+
+    - name: Use Node.js
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/setup-node@v6
+      with:
+        node-version: 24
+        cache: npm
+        cache-dependency-path: src/viser/client/package-lock.json
+
+    - name: Build viser client
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        cd src/viser/client
+        npm ci
+        npm run build
