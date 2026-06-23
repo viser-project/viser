@@ -55,6 +55,7 @@ import {
   DockLayout,
   GroupId,
   MAX_PANEL_WIDTH_PX,
+  MIN_CANVAS_PX,
   MIN_REGION_GRAB_PX,
   NodeId,
   PaneId,
@@ -1438,6 +1439,22 @@ export function DockManager({
       resizerStripOffset: canvasFacingStripOffsetPx(plan, edge),
     };
   });
+  // Render-time overflow guard: many panels docked on a narrow viewport can make
+  // left + right reserved width exceed the container, overlapping the regions and
+  // fully occluding the canvas (trapping the controls underneath). When the sum
+  // would leave less than MIN_CANVAS_PX of scene, scale BOTH regions down
+  // proportionally so a usable canvas strip always remains. Model widths are
+  // untouched -- this only shrinks what's rendered; widths restore when the
+  // viewport grows back. (containerWidth === 0 before first measure -> skip.)
+  if (containerWidth > 0) {
+    const available = containerWidth - MIN_CANVAS_PX;
+    const total = regions[0].reservedWidth + regions[1].reservedWidth;
+    if (total > available && total > 0) {
+      const scale = Math.max(0, available) / total;
+      regions[0].reservedWidth = Math.floor(regions[0].reservedWidth * scale);
+      regions[1].reservedWidth = Math.floor(regions[1].reservedWidth * scale);
+    }
+  }
   const leftInset = regions[0].reservedWidth;
   const rightInset = regions[1].reservedWidth;
   // Rendered region widths, for hit-testing during drags: drop zones and
