@@ -78,8 +78,15 @@ def main():
         )
         if panel_dock.value == "left":
             server.gui.main_panel.dock_left()
+            dock_code = "server.gui.main_panel.dock_left()"
         elif panel_dock.value == "right":
             server.gui.main_panel.dock_right()
+            dock_code = "server.gui.main_panel.dock_right()"
+        else:  # "floating"
+            # Negative coords are gaps from the far edge, so this floats the panel
+            # back to the top-right corner (its original spot).
+            server.gui.main_panel.float(x=-15, y=15)
+            dock_code = "server.gui.main_panel.float(x=-15, y=15)"
         gui_theme_code.content = f"""
             ### Current applied theme
             ```
@@ -91,6 +98,7 @@ def main():
                 show_share_button={show_share_button.value},
                 brand_color={brand_color.value},
             )
+            {dock_code}
             ```
         """
 

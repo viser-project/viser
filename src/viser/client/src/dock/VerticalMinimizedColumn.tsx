@@ -72,10 +72,6 @@ function VerticalMinimizedCell({
     .map((p) => dock.panes[p]?.title ?? p)
     .join(" / ");
   const icon = dock.panes[group.activeId]?.icon;
-  // The tab strip draws its rule on the side AWAY from the content; rotated
-  // 90 degrees, that's the side facing the canvas (left for a right-docked
-  // strip, right for a left-docked one).
-  const ruleSide = edge === "right" ? "borderLeft" : "borderRight";
   return (
     // data-dock-leaf/-edge on the cell so collectTargets offers it as a docked
     // target; hitTest's collapsed branch gives it the 5-way drop zones.
@@ -110,10 +106,6 @@ function VerticalMinimizedCell({
           WebkitUserSelect: "none",
           overflow: "hidden",
           opacity: dock.draggingGroupId === group.id ? 0.4 : 1,
-          // A hairline rule separating the strip from the canvas (the rotated
-          // analog of the tab strip's bottom rule). 1px: a 2px rule reads as a
-          // heavy bar on the narrow ~36px strip.
-          [ruleSide]: "1px solid var(--mantine-color-default-border)",
         }}
       >
         {/* Gray cap holding just the expand button -- no grip pill: the +

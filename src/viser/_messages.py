@@ -1792,7 +1792,8 @@ class GuiPanelProps:
     order: float
     """Order value for arranging panels."""
     visible: bool
-    """Visibility state of the panel."""
+    """Visibility state of the panel: when False the panel renders nothing (its
+    panes are removed from the dock layout) without being destroyed."""
     placement: GuiDockPlacement
     """Imperative placement for the panel. Seeded empty on create, then updated
     by dock/float/size commands (coalesced via GuiUpdateMessage)."""

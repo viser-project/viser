@@ -73,6 +73,35 @@ def test_add_panel_floats_with_tab(
     )
 
 
+def test_panel_visible_toggle_hides_and_shows(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """panel.visible = False removes the panel from the dock (without destroying
+    it); = True restores it, re-placed."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(300)
+
+    panel = viser_server.gui.add_panel()
+    with panel.add_tab("Toggle"):
+        viser_server.gui.add_markdown("toggle me")
+    panel.dock_right()
+    expect(_tab(viser_page, "Toggle")).to_be_visible(timeout=5_000)
+
+    panel.visible = False
+    expect(_tab(viser_page, "Toggle")).to_have_count(0, timeout=5_000)
+    # No empty docked leaf left behind on the right edge.
+    expect(
+        viser_page.locator("[data-dock-leaf][data-dock-edge='right']")
+    ).to_have_count(0)
+
+    panel.visible = True
+    expect(_tab(viser_page, "Toggle")).to_be_visible(timeout=5_000)
+    # Re-placed on the right edge.
+    expect(
+        viser_page.locator("[data-dock-leaf][data-dock-edge='right']")
+    ).to_have_count(1)
+
+
 def test_add_panel_without_placement_is_visible(
     viser_page: Page, viser_server: viser.ViserServer
 ) -> None:
@@ -312,6 +341,32 @@ def test_main_panel_dock_left(
     assert panel.get_attribute("data-dock-side") == "left"
 
 
+def test_main_panel_float_undocks(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """main_panel.float() after a dock_* returns the control panel to floating
+    (regression: the 05_theming example's "floating" option appeared to do
+    nothing -- here we exercise the underlying command that fixes it)."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(300)
+
+    viser_server.gui.main_panel.dock_left()
+    viser_page.wait_for_timeout(500)
+    panel = viser_page.get_by_test_id("floating-panel")
+    assert panel.get_attribute("data-dock-side") == "left"
+
+    viser_server.gui.main_panel.float()
+    viser_page.wait_for_timeout(500)
+    # Back to floating: no dock side, and it lives in a floating window.
+    panel = viser_page.get_by_test_id("floating-panel")
+    expect(panel).to_be_visible()
+    assert panel.get_attribute("data-dock-side") == "none"
+    # The left dock region is gone (the panel is no longer docked there).
+    expect(
+        viser_page.locator("[data-dock-leaf][data-dock-edge='left']")
+    ).to_have_count(0)
+
+
 def test_reset_reverts_main_panel_to_float(
     viser_page: Page, viser_server: viser.ViserServer
 ) -> None:
@@ -393,6 +448,87 @@ def test_late_joining_client_sees_placed_panel(browser: Browser) -> None:
             expect(_tab(page, "Replayed")).to_be_visible(timeout=5_000)
             leaf = page.locator("[data-dock-leaf][data-dock-edge='right']")
             expect(leaf.filter(has=_tab(page, "Replayed"))).to_have_count(1)
+        finally:
+            context.close()
+    finally:
+        server.stop()
+
+
+def test_float_negative_coords_anchor_to_right_edge(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """float(x<0) anchors the panel to the canvas RIGHT edge (a gap of |x|px) and
+    tracks it when the viewport resizes."""
+    viser_page.set_viewport_size({"width": 1280, "height": 800})
+    viser_page.wait_for_timeout(300)
+
+    panel = viser_server.gui.add_panel()
+    with panel.add_tab("Anchored"):
+        viser_server.gui.add_markdown("top-right")
+    panel.float(x=-15, y=15, width=240)
+    expect(_tab(viser_page, "Anchored")).to_be_visible(timeout=5_000)
+
+    win = viser_page.locator("[data-floating-window]").filter(
+        has=_tab(viser_page, "Anchored")
+    )
+
+    def right_gap(width: int) -> float:
+        box = win.first.bounding_box()
+        assert box is not None
+        return width - (box["x"] + box["width"])
+
+    # ~15px gap from the right edge at the initial width...
+    assert abs(right_gap(1280) - 15) <= 2, right_gap(1280)
+    # ...and still ~15px after the viewport narrows (it tracked the edge).
+    viser_page.set_viewport_size({"width": 1000, "height": 800})
+    viser_page.wait_for_timeout(500)
+    assert abs(right_gap(1000) - 15) <= 2, right_gap(1000)
+
+
+def test_disconnect_freezes_gui_instead_of_wiping(browser: Browser) -> None:
+    """On websocket disconnect, the GUI + panels stay rendered (frozen + dimmed),
+    rather than being wiped. Regression: previously a disconnect called resetGui()
+    and everything vanished."""
+    server = _make_server()
+    try:
+        server.gui.add_button("StayButton")
+        panel = server.gui.add_panel()
+        with panel.add_tab("StayTab"):
+            server.gui.add_markdown("still here after disconnect")
+        panel.dock_right()
+
+        context = browser.new_context(viewport=_VIEWPORT)
+        page = context.new_page()
+        try:
+            wait_for_connection(page, server.get_port())
+            expect(page.get_by_role("button", name="StayButton")).to_be_visible(
+                timeout=5_000
+            )
+            expect(_tab(page, "StayTab")).to_be_visible()
+
+            # Drop the connection.
+            server.stop()
+            # The button + panel must REMAIN in the DOM (frozen), not be removed.
+            expect(page.get_by_role("button", name="StayButton")).to_have_count(
+                1, timeout=5_000
+            )
+            expect(_tab(page, "StayTab")).to_have_count(1)
+            # And the GUI body is dimmed (the disconnected gate): some ancestor of
+            # the button has opacity < 1.
+            dimmed = page.evaluate(
+                """() => {
+                  const btn = [...document.querySelectorAll('button')]
+                    .find(b => b.textContent.includes('StayButton'));
+                  let el = btn;
+                  while (el) {
+                    const o = parseFloat(getComputedStyle(el).opacity);
+                    if (o < 1) return true;
+                    el = el.parentElement;
+                  }
+                  return false;
+                }"""
+            )
+            assert dimmed, "GUI should be dimmed while disconnected"
         finally:
             context.close()
     finally:

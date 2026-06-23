@@ -26,6 +26,7 @@ import {
   DockNode,
   GroupId,
   MIN_PANEL_WIDTH_PX,
+  MIN_REGION_GRAB_PX,
   emptyLayout,
 } from "./types";
 import {
@@ -214,31 +215,34 @@ describe("edgeIsSingleLeaf", () => {
 // ===========================================================================
 
 describe("minRegionWidth", () => {
-  it("a leaf needs exactly one panel minimum", () => {
-    expect(minRegionWidth(leaf("a"))).toBe(MIN_PANEL_WIDTH_PX);
+  // The layout floor is the grabbable sliver (MIN_REGION_GRAB_PX), NOT the
+  // panel-content minimum -- a region narrower than its content scrolls its
+  // body rather than refusing to shrink.
+  it("a leaf floors at one grab minimum", () => {
+    expect(minRegionWidth(leaf("a"))).toBe(MIN_REGION_GRAB_PX);
   });
 
   it("a column (stacked) takes the max of its children (shared width)", () => {
-    expect(minRegionWidth(col([leaf("a"), leaf("b")]))).toBe(MIN_PANEL_WIDTH_PX);
+    expect(minRegionWidth(col([leaf("a"), leaf("b")]))).toBe(MIN_REGION_GRAB_PX);
   });
 
   it("a row sums children plus dividers", () => {
     const divider = 6;
     expect(minRegionWidth(row([leaf("a"), leaf("b")]), divider)).toBe(
-      MIN_PANEL_WIDTH_PX * 2 + divider,
+      MIN_REGION_GRAB_PX * 2 + divider,
     );
   });
 
   it("honors a custom divider width", () => {
     expect(minRegionWidth(row([leaf("a"), leaf("b"), leaf("c")]), 10)).toBe(
-      MIN_PANEL_WIDTH_PX * 3 + 10 * 2,
+      MIN_REGION_GRAB_PX * 3 + 10 * 2,
     );
   });
 
   it("nested: a column containing a row takes the row's (summed) width", () => {
     const divider = 6;
     const node = col([leaf("a"), row([leaf("b"), leaf("c")])]);
-    expect(minRegionWidth(node, divider)).toBe(MIN_PANEL_WIDTH_PX * 2 + divider);
+    expect(minRegionWidth(node, divider)).toBe(MIN_REGION_GRAB_PX * 2 + divider);
   });
 });
 

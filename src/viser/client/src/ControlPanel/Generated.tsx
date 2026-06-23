@@ -30,9 +30,38 @@ import HtmlComponent from "../components/Html";
 import DividerComponent from "../components/Divider";
 
 /** Root of generated inputs. */
+/** Dims and freezes its children while the websocket is not connected: the GUI
+ * stays VISIBLE (last-known values) but every input is blocked, so a transient
+ * disconnect isn't jarring and stale clicks can't fire. Applied inside
+ * GuiComponentContextProvider, the single chokepoint all generated GUI funnels
+ * through -- so it covers the control panel, every panel/tab, inline GUI, and the
+ * mobile fallback in one place. The connection status in the panel header conveys
+ * the "Connecting..." state. */
+function DisconnectedGate({ children }: { children: React.ReactNode }) {
+  const viewer = React.useContext(ViewerContext)!;
+  const connected = viewer.useGui(
+    (state) => state.websocketState === "connected",
+  );
+  return (
+    <div
+      // pointer-events:none blocks clicks/drags; opacity signals the frozen
+      // state. (Keyboard focus into a dimmed input is harmless -- edits can't be
+      // committed: the value change is dropped while the socket is closed.)
+      style={{
+        opacity: connected ? 1 : 0.5,
+        pointerEvents: connected ? undefined : "none",
+        transition: "opacity 150ms ease",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 /** Provides the GuiComponentContext that generated GUI children (folders, tab
  * groups, inputs) read. Wrap any subtree that renders such children outside the
- * normal container tree -- e.g. standalone panels in the mobile fallback. */
+ * normal container tree -- e.g. standalone panels in the mobile fallback. Also
+ * gates interaction on connection state (see DisconnectedGate). */
 export function GuiComponentContextProvider({
   children,
 }: {
@@ -59,7 +88,7 @@ export function GuiComponentContextProvider({
         setValue: setValue,
       }}
     >
-      {children}
+      <DisconnectedGate>{children}</DisconnectedGate>
     </GuiComponentContext.Provider>
   );
 }

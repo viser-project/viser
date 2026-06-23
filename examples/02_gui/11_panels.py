@@ -57,7 +57,7 @@ def main() -> None:
     tools_panel = server.gui.add_panel()
     with tools_panel.add_tab("Tools", viser.Icon.TOOL):
         randomize = server.gui.add_button("Randomize point cloud")
-    tools_panel.float(x=40, y=40, width=260)
+    tools_panel.float(x=30, y=30, width=260)
 
     # A panel stacked below the docked stats panel (a column split). It starts
     # minimized via the one-shot `expand_by_default=False` hint; the user can

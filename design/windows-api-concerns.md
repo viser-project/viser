@@ -637,3 +637,52 @@ Refactored to a **dedicated top-level entity** (like a modal):
   an explicit `PanelsFallback` (renders panels as `PlainTabGroup` inside a
   `GuiComponentContextProvider` when there is no dock surface). Guarded by
   `test_standalone_panel_visible_on_mobile`.
+
+## L. Multi-agent review loop (bugs found + fixed)
+
+A multi-iteration adversarial review (Python lifecycle/concurrency, client
+placement/gesture dynamics, message/sync/replay, serialization, geometry, API
+ergonomics, plus a second-opinion pass on the fixes) surfaced and fixed:
+
+- **Resize snap-back (J1):** `resizeWindow`/`resizeWindowHeight` and
+  `snapToWindowStack` didn't release a server-placed window's `requestedX/Y`, so a
+  user edge-resize/snap got re-anchored on the next canvas change. Fixed via
+  `releaseRequestedCoords` (called from the user-gesture handlers); the ops stay
+  pure. A right/bottom-anchored panel's far-edge grip now grows toward the cursor.
+- **Negative-coord off-screen flash (J2):** `resolveRequestedFloatPosition` placed
+  a negative coord off-screen when the canvas was unmeasured (first apply). Now
+  falls back to the near edge until measured.
+- **Over-clamp on resize (J3):** the resolve effect was split so dragged floats
+  are pushed inward only on INSET change, not on container resize (the container
+  observer owns dragged-float anchoring + overhang).
+- **ResizeObserver thrash (J4):** the per-window observer keyed on `layout.floating`
+  (new array each commit) re-attached every drag frame; now keyed on the window-id
+  set.
+- **Full tab-swap orphan (J5):** replacing ALL of a panel's tabs at once left it
+  ungrouped/invisible; the membership effect now re-applies placement when the
+  group can't be found.
+- **`visible` was a no-op (J6):** `add_panel(visible=)` / `.visible` wrote a prop
+  the client never read. Now wired: `visible=False` removes the panel's panes
+  (hide-without-destroy), `True` re-places. Guarded by
+  `test_panel_visible_toggle_hides_and_shows`.
+- **`set_width` had no MAX cap (J7):** a server `set_width(huge)` could overflow
+  the canvas. `reconcileRegionWidths` now clamps regionWidth to `[colsMin,
+  colsMax]` on every commit (renamed `clampRegionWidth`).
+- **`placement` desync (J8):** `PanelHandle._placement` is now a property over
+  `props.placement` (single source of truth), so a direct `panel.placement = ...`
+  can't diverge the command stream from the replayed state.
+- **`with add_panel():` cryptic error (J9):** raised a bare
+  `AttributeError('__enter__')`; now a clear `TypeError` pointing to `add_tab`.
+- **`add_tab` removed-guard symmetry (J10):** moved into `_TabContainerMixin` so
+  tab groups and panels both guard before mutating; NaN/inf float coords rejected
+  via `_check_coordinate`.
+- **Borrowed-tab teardown (verified, not a bug):** removing a panel removes its
+  tabs even after they were dragged into other groups/windows (the registry
+  reconciliation + `removePane` are location-agnostic). Locked in with op tests.
+
+Confirmed clean by the review: serialization/static-export (all GUI is
+`include_in_scene_serialization=False` — no orphan tab content), late-join replay,
+multi-client isolation, disconnect/reconnect freeze, the panel→pane rename, and
+the dock width/split geometry. The 3 failing `test_dock_playground_*` drag tests
+are pre-existing software-WebGL environment flakes (the PR touches none of the
+code they exercise; confirmed via a stash A/B).

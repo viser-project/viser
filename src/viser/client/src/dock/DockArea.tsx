@@ -74,7 +74,16 @@ export function DockArea({
           </Text>
         </Box>
       ) : (
-        <TabGroupFrame group={group} fill={fill} stripDragsGroup={false} />
+        <TabGroupFrame
+          group={group}
+          fill={fill}
+          stripDragsGroup={false}
+          // A filling nested area lives in a docked leaf / fixed-height window,
+          // where the body can be squeezed below its content minimum -- match the
+          // rest of the docked UI with a persistent overflow scrollbar (not the
+          // hover-reveal default that only fits content-sized floating bodies).
+          persistentScrollbar={fill}
+        />
       )}
     </Box>
   );

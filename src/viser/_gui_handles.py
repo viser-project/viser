@@ -692,6 +692,15 @@ class _TabContainerMixin:
 
     def add_tab(self, label: str, icon: IconName | None = None) -> GuiTabHandle:
         """Add a tab. Returns a handle we can use to add GUI elements to it."""
+        # Guard before mutating: otherwise we'd half-register a tab (appended to
+        # _tab_handles + the container map via GuiTabHandle.__post_init__) before
+        # the first props write below hits the removed-guard and raises, leaving
+        # inconsistent state + a leaked container entry. Applies to both mixers
+        # (tab group and standalone panel).
+        if self._impl.removed:
+            raise RuntimeError(
+                f"Cannot add a tab to a removed {type(self).__name__}."
+            )
 
         uuid = _make_uuid()
 
@@ -855,6 +864,14 @@ def _check_dimension(value: float | None, name: str) -> None:
         raise ValueError(f"{name} must be a positive, finite number, got {value!r}.")
 
 
+def _check_coordinate(value: float | None, name: str) -> None:
+    """Reject non-finite float coordinates. Unlike dimensions, coordinates may be
+    negative (a gap from the far edge) or zero, but NaN/inf would produce a
+    broken, sticky, replayed window position."""
+    if value is not None and not math.isfinite(value):
+        raise ValueError(f"{name} must be a finite number, got {value!r}.")
+
+
 class _PlacementMixin:
     """Shared placement / sizing commands for panel handles.
 
@@ -977,13 +994,23 @@ class _PlacementMixin:
     ) -> None:
         """Float this panel at an explicit position and size, in CSS pixels.
 
-        ``x`` / ``y`` are measured from the top-left of the **viewport** -- the
-        canvas area inside any docked panels -- so ``float(x=40)`` lands 40px into
-        the canvas, clear of a left-docked panel rather than under it. The panel
-        also shifts to stay within the canvas if the docked regions later change
-        (e.g. another panel docks to the right). Any argument left as ``None``
-        uses a client-chosen default; ``width`` / ``height`` set the floating
-        window size."""
+        ``x`` / ``y`` are measured relative to the **viewport** -- the canvas area
+        inside any docked panels:
+
+        * A non-negative value is a gap from the **left** / **top**:
+          ``float(x=40)`` lands 40px from the canvas left edge (clear of a
+          left-docked panel, not under it).
+        * A **negative** value is a gap from the **right** / **bottom**:
+          ``float(x=-15)`` puts the panel's right edge 15px from the canvas right
+          edge. So ``float(x=-15, y=15)`` is the top-right corner, and
+          ``float(x=-15, y=-15)`` the bottom-right.
+
+        The panel re-resolves against these edges as the canvas changes (a dock
+        added/removed, the window resized), so an edge-anchored panel stays put.
+        Any argument left as ``None`` uses a client-chosen default (top-left);
+        ``width`` / ``height`` set the floating window size."""
+        _check_coordinate(x, "x")
+        _check_coordinate(y, "y")
         _check_dimension(width, "width")
         _check_dimension(height, "height")
         self._placement["position"] = {"kind": "float", "x": x, "y": y}
@@ -1044,15 +1071,21 @@ class PanelHandle(
         self._tab_handles: list[GuiTabHandle] = []
         self._placement_uuid = _impl.uuid
         self._placement_gui_api = _impl.gui_api
-        # The panel keeps its placement on the props object so it also rides the
-        # create message; the mixin reads/writes it via this alias.
         assert isinstance(_impl.props, GuiPanelProps)
-        self._placement = _impl.props.placement
         # A panel is a top-level entity tracked in its own registry (parallel to
         # modals), NOT under any parent container's `_children`. Its TABS register
         # themselves in `_container_handle_from_uuid` (keyed by tab id), so the
         # panel itself doesn't need a container entry.
         _impl.gui_api._panel_handle_from_uuid[_impl.uuid] = self
+
+    @property
+    def _placement(self) -> GuiDockPlacement:
+        # Single source of truth: the props dict (which also rides the create
+        # message). Reading it live -- rather than caching a separate reference --
+        # means the placement commands and the serialized/replayed state can never
+        # diverge, even if `props.placement` is reassigned.
+        assert isinstance(self._impl.props, GuiPanelProps)
+        return self._impl.props.placement
 
     @override
     def _queue_update(self, name: str, value: Any) -> None:
@@ -1064,13 +1097,22 @@ class PanelHandle(
         """Add a tab to the panel, returning a handle to populate it as a context.
 
         A single-tab panel renders as a plain header; multiple tabs render as a
-        tab strip."""
-        # Guard before mutating: add_tab would otherwise half-register a tab
-        # (appended to _tab_handles + the container map) before the props write
-        # raises the removed-guard, leaving inconsistent state.
-        if self._impl.removed:
-            raise RuntimeError("Cannot add a tab to a removed PanelHandle.")
+        tab strip. Raises if the panel has been removed (the shared
+        :class:`_TabContainerMixin` guard)."""
         return super().add_tab(label, icon)
+
+    def __enter__(self) -> "PanelHandle":
+        # A panel is a container for TABS, not a GUI context itself: you populate
+        # its tabs (`with panel.add_tab(...):`), not the panel. Catch the natural
+        # `with server.gui.add_panel():` mistake with a clear message instead of a
+        # bare AttributeError on __enter__. (No __exit__ is needed: `with` only
+        # calls it if __enter__ returns, and this always raises.)
+        raise TypeError(
+            "A panel is not a context manager. Add content via its tabs, e.g.\n"
+            '    panel = server.gui.add_panel()\n'
+            '    with panel.add_tab("Tab"):\n'
+            "        server.gui.add_markdown(...)"
+        )
 
     def remove(self) -> None:
         """Permanently remove this panel and all its tabs / contained elements.

@@ -22,7 +22,7 @@ import {
   DockNode,
   DockSplit,
   MAX_PANEL_WIDTH_PX,
-  MIN_PANEL_WIDTH_PX,
+  MIN_REGION_GRAB_PX,
   MINIMIZED_STRIP_PX,
   SPLIT_DIVIDER_PX,
 } from "./types";
@@ -258,7 +258,7 @@ function SplitNode({
                   dividerIndex: index,
                   deltaPx,
                   minCell:
-                    node.dir === "row" ? MIN_PANEL_WIDTH_PX : MIN_CELL_HEIGHT_PX,
+                    node.dir === "row" ? MIN_REGION_GRAB_PX : MIN_CELL_HEIGHT_PX,
                   // Per-panel width cap applies to row splits; column splits
                   // resize height, which has no width cap.
                   maxCell: node.dir === "row" ? MAX_PANEL_WIDTH_PX : Infinity,
@@ -326,7 +326,9 @@ function DockLeafView({ node, edge }: { node: DockNode; edge: DockEdge }) {
 function DockLeafFrame({ groupId }: { groupId: string }) {
   const group = useDock().groups[groupId];
   if (group === undefined) return null;
-  return <TabGroupFrame group={group} stripDragsGroup />;
+  // Docked leaves can be resized narrower than the panel-content minimum, so
+  // their body shows a persistent horizontal scrollbar pinned to the bottom.
+  return <TabGroupFrame group={group} stripDragsGroup persistentScrollbar />;
 }
 
 /** Draggable divider between two split children. Reports the pointer delta

@@ -1,6 +1,21 @@
 # Spec: Standalone Panels API
 
-Status: **Finalized** · Owner: brentyi · Branch: `brent/windows_api`
+Status: **Superseded — historical design doc.** This was the original spec; the
+shipped implementation diverged. For accurate current behavior see
+`design/windows-api-concerns.md` (esp. §K "Dedicated panel entity") and the
+docstrings on `GuiApi.add_panel` / `PanelHandle`. Key differences from this doc:
+
+- Panels are a **dedicated `GuiPanelMessage` entity**, not a `GuiTabGroupMessage`
+  with a `standalone` flag; there is no `collapsed` field on the placement dict.
+- **No `minimize()` / `expand()` methods.** Initial collapsed state is the
+  one-shot `add_panel(expand_by_default=...)` hint; the user controls collapse
+  thereafter.
+- `float()` coordinates are **viewport/canvas-relative** (not dock-root), the
+  default float position is **top-left**, and **negative coords are gaps from the
+  far edge** (`x=-15` = 15px from the right, etc.).
+- `add_panel(*, visible=True, expand_by_default=True)` takes kwargs.
+
+Owner: brentyi · Branch: `brent/windows_api`
 
 ## 1. Summary
 

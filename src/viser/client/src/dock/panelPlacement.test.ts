@@ -7,9 +7,23 @@ import {
   applyPanelPlacement,
   findGroupLocation,
   findPaneGroup,
+  moveWindow,
   PanelPlacement,
+  releaseRequestedCoords,
+  removePane,
+  resizeWindow,
+  resizeWindowHeight,
+  resolveRequestedFloatPosition,
+  tearOutPane,
 } from "./layoutOps";
 import { emptyLayout, DockLayout } from "./types";
+
+const BOUNDS_1000 = {
+  width: 1000,
+  height: 800,
+  leftInset: 0,
+  rightInset: 0,
+};
 
 const EMPTY: PanelPlacement = {
   position: null,
@@ -71,10 +85,48 @@ describe("applyPanelPlacement", () => {
       ["p"],
       { position: { kind: "float", x: 40, y: 20 }, width: null, height: null },
       () => null,
-      { canvasLeftPx: 300 },
+      {
+        canvasBounds: {
+          width: 1280,
+          height: 800,
+          leftInset: 300,
+          rightInset: 0,
+        },
+      },
     );
     expect(out.floating[0].x).toBe(340);
     expect(out.floating[0].y).toBe(20);
+    // The requested coords are stored for later re-resolution.
+    expect(out.floating[0].requestedX).toBe(40);
+    expect(out.floating[0].requestedY).toBe(20);
+  });
+
+  it("resolves a negative x as a gap from the canvas RIGHT edge", () => {
+    // float(x=-15) in a 1000px-wide canvas (no insets) with a 240px window:
+    // right edge 15px from the right boundary -> left edge at 1000-240-15 = 745.
+    const out = applyPanelPlacement(
+      emptyLayout(),
+      ["p"],
+      { position: { kind: "float", x: -15, y: 15 }, width: 240, height: null },
+      () => null,
+      { canvasBounds: { width: 1000, height: 800, leftInset: 0, rightInset: 0 } },
+    );
+    expect(out.floating[0].x).toBe(745);
+    expect(out.floating[0].y).toBe(15);
+    expect(out.floating[0].requestedX).toBe(-15);
+  });
+
+  it("resolves a negative y as a gap from the canvas BOTTOM edge", () => {
+    // float(y=-15) with an explicit 200px-tall window in an 800px canvas:
+    // bottom edge 15px from the bottom -> top at 800-200-15 = 585.
+    const out = applyPanelPlacement(
+      emptyLayout(),
+      ["p"],
+      { position: { kind: "float", x: 15, y: -15 }, width: 240, height: 200 },
+      () => null,
+      { canvasBounds: { width: 1000, height: 800, leftInset: 0, rightInset: 0 } },
+    );
+    expect(out.floating[0].y).toBe(585);
   });
 
   it("floats at default geometry when x/y/size are null", () => {
@@ -268,6 +320,34 @@ describe("applyPanelPlacement", () => {
     expect(out).toBe(input);
   });
 
+  it("re-creates + re-places the group after a FULL pane swap (zero overlap)", () => {
+    // Server replaces ALL tab containers at once (e.g. remove every tab, add new
+    // ones). The old group can't be found by the new panes; re-applying placement
+    // must re-create the group and place it (not orphan the panel). This backs the
+    // ControlPanelDock membership effect's orphan-recovery fallback.
+    let layout = applyPanelPlacement(
+      emptyLayout(),
+      ["a", "b"],
+      { ...EMPTY, position: { kind: "edge", edge: "right" } },
+      () => null,
+    );
+    expect(findPaneGroup(layout, "a")).not.toBeNull();
+    layout = applyPanelPlacement(
+      layout,
+      ["c", "d"], // entirely new panes
+      { ...EMPTY, position: { kind: "edge", edge: "right" } },
+      () => null,
+    );
+    const gid = findPaneGroup(layout, "c");
+    expect(gid).not.toBeNull();
+    expect(layout.groups[gid!].paneIds).toEqual(["c", "d"]);
+    expect(findGroupLocation(layout, gid!)?.kind).toBe("docked");
+    // The new panes form their OWN group, not co-located with the stale old one
+    // (the old group is torn down separately by the dock registry reconciliation
+    // when the server drops those tab containers).
+    expect(findPaneGroup(layout, "a")).not.toBe(gid);
+  });
+
   it("floats an unplaced panel at the default when no position is given", () => {
     // A bare add_panel() with no placement verb: the empty placement should
     // still make the panel visible (floated) rather than an orphaned group.
@@ -301,5 +381,238 @@ describe("applyPanelPlacement", () => {
     expect(findGroupLocation(layout, findPaneGroup(layout, "p")!)?.kind).toBe(
       "docked",
     );
+  });
+});
+
+describe("requested float coordinates", () => {
+  const place = (x: number, y: number, width: number, height: number | null) =>
+    applyPanelPlacement(
+      emptyLayout(),
+      ["p"],
+      { position: { kind: "float", x, y }, width, height },
+      () => null,
+      { canvasBounds: BOUNDS_1000 },
+    );
+
+  it("resizeWindow/resizeWindowHeight preserve requested coords (server sizing)", () => {
+    // Server set_width/set_height go through these ops; they must NOT release the
+    // anchor (only a USER gesture does, via releaseRequestedCoords). So a
+    // right-anchored panel stays anchored across a server resize.
+    let layout = place(15, 15, 240, 200);
+    const win = layout.floating[0];
+    layout = resizeWindow(layout, win.id, 320);
+    expect(layout.floating[0].requestedX).toBe(15);
+    expect(layout.floating[0].width).toBe(320);
+    layout = resizeWindowHeight(layout, win.id, 250);
+    expect(layout.floating[0].requestedY).toBe(15);
+  });
+
+  it("releaseRequestedCoords drops the anchor (user takes manual control)", () => {
+    // The gesture layer calls this on any user resize/drag so the window stops
+    // re-resolving against the canvas edges.
+    let layout = place(-15, 15, 240, null);
+    expect(layout.floating[0].requestedX).toBe(-15);
+    layout = releaseRequestedCoords(layout, layout.floating[0].id);
+    expect(layout.floating[0].requestedX).toBeUndefined();
+    expect(layout.floating[0].requestedY).toBeUndefined();
+    // No-op when there's nothing to release (returns same layout reference).
+    const again = releaseRequestedCoords(layout, layout.floating[0].id);
+    expect(again).toBe(layout);
+  });
+
+  it("clears requestedX/Y when the user drags (moveWindow)", () => {
+    let layout = place(-15, 15, 240, null);
+    const win = layout.floating[0];
+    expect(win.requestedX).toBe(-15);
+    layout = moveWindow(layout, win.id, 400, 300);
+    expect(layout.floating[0].requestedX).toBeUndefined();
+    expect(layout.floating[0].x).toBe(400);
+  });
+});
+
+describe("resolveRequestedFloatPosition", () => {
+  it("resolves positive coords as gaps from left/top", () => {
+    expect(
+      resolveRequestedFloatPosition(40, 20, 240, 100, BOUNDS_1000),
+    ).toEqual({ x: 40, y: 20 });
+  });
+
+  it("resolves negative coords as gaps from right/bottom", () => {
+    // x:-15 -> right edge 15px from the 1000px right boundary -> x=1000-240-15.
+    // y:-15 -> bottom edge 15px from 800 -> y=800-100-15.
+    expect(
+      resolveRequestedFloatPosition(-15, -15, 240, 100, BOUNDS_1000),
+    ).toEqual({ x: 745, y: 685 });
+  });
+
+  it("accounts for docked insets on a positive x", () => {
+    expect(
+      resolveRequestedFloatPosition(40, 20, 240, 100, {
+        width: 1000,
+        height: 800,
+        leftInset: 300,
+        rightInset: 0,
+      }),
+    ).toEqual({ x: 340, y: 20 });
+  });
+
+  it("falls back to near edge for negative coords when canvas is UNMEASURED", () => {
+    // width/height 0 (first apply before layout): a negative coord can't resolve
+    // against a missing far edge, so fall back to left/top (NOT off-screen).
+    const r = resolveRequestedFloatPosition(-15, -15, 240, 100, {
+      width: 0,
+      height: 0,
+      leftInset: 0,
+      rightInset: 0,
+    });
+    expect(r.x).toBe(0);
+    expect(r.y).toBe(0);
+  });
+
+  it("clamps a window wider than the canvas to the near edge", () => {
+    const r = resolveRequestedFloatPosition(-15, 15, 2000, 100, BOUNDS_1000);
+    expect(r.x).toBe(0); // pinned to canvas left rather than off-screen
+  });
+});
+
+describe("removing a panel removes its tabs even when borrowed elsewhere", () => {
+  it("removePane drops a tab from whatever group it was dragged into", () => {
+    // Panel A (a1, a2) docked right; panel B (b1) floated.
+    let layout = applyPanelPlacement(
+      emptyLayout(),
+      ["a1", "a2"],
+      { position: { kind: "edge", edge: "right" }, width: null, height: null },
+      () => null,
+      { canvasBounds: BOUNDS_1000 },
+    );
+    layout = applyPanelPlacement(
+      layout,
+      ["b1"],
+      { position: { kind: "float", x: 40, y: 40 }, width: 240, height: null },
+      () => null,
+      { canvasBounds: BOUNDS_1000 },
+    );
+    // User "borrows" a2 by tearing it out into its own floating window (the
+    // relocated end-state we care about).
+    const a2Group = findPaneGroup(layout, "a2")!;
+    const torn = tearOutPane(layout, a2Group, "a2", 0, 0, 240);
+    layout = torn.layout;
+    // a2 is now in its own window, NOT in A's docked group.
+    const aGroup = findPaneGroup(layout, "a1")!;
+    expect(layout.groups[aGroup].paneIds).toEqual(["a1"]);
+    expect(findPaneGroup(layout, "a2")).not.toBe(aGroup);
+
+    // Now the server removes panel A -> removePane for BOTH a1 and a2, wherever
+    // they live. a2 is in a different window now; it must still be removed.
+    layout = removePane(layout, "a1");
+    layout = removePane(layout, "a2");
+    expect(findPaneGroup(layout, "a1")).toBeNull();
+    expect(findPaneGroup(layout, "a2")).toBeNull();
+    // B is untouched.
+    expect(findPaneGroup(layout, "b1")).not.toBeNull();
+  });
+
+  it("removePane on a multi-tab borrower leaves the borrower's own tabs intact", () => {
+    // A's tab a2 snapped into B's group [b1] -> B group = [b1, a2]. Removing a2
+    // (because A was removed) must leave b1.
+    let layout = applyPanelPlacement(
+      emptyLayout(),
+      ["b1"],
+      { position: { kind: "float", x: 40, y: 40 }, width: 240, height: null },
+      () => null,
+      { canvasBounds: BOUNDS_1000 },
+    );
+    // Put a2 into B's group directly (simulate the borrow end-state).
+    const bGroup = findPaneGroup(layout, "b1")!;
+    layout = {
+      ...layout,
+      groups: {
+        ...layout.groups,
+        [bGroup]: {
+          ...layout.groups[bGroup],
+          paneIds: [...layout.groups[bGroup].paneIds, "a2"],
+        },
+      },
+    };
+    expect(layout.groups[bGroup].paneIds).toEqual(["b1", "a2"]);
+    layout = removePane(layout, "a2");
+    // a2 gone, b1 stays, group survives.
+    expect(layout.groups[bGroup].paneIds).toEqual(["b1"]);
+    expect(findPaneGroup(layout, "b1")).toBe(bGroup);
+  });
+});
+
+describe("resizeWindowHeight pin / un-pin (auto-height)", () => {
+  const floatWin = () =>
+    applyPanelPlacement(
+      emptyLayout(),
+      ["p"],
+      { position: { kind: "float", x: 40, y: 40 }, width: 240, height: null },
+      () => null,
+      { canvasBounds: BOUNDS_1000 },
+    );
+
+  it("a freshly floated window is auto-height (no height pinned)", () => {
+    expect(floatWin().floating[0].height).toBeUndefined();
+  });
+
+  it("pins an explicit height", () => {
+    const base = floatWin();
+    const layout = resizeWindowHeight(base, base.floating[0].id, 320);
+    expect(layout.floating[0].height).toBe(320);
+  });
+
+  it("reverts to auto-height when height is set to undefined", () => {
+    let layout = floatWin();
+    const id = layout.floating[0].id;
+    layout = resizeWindowHeight(layout, id, 320);
+    expect(layout.floating[0].height).toBe(320);
+    // Drag back down to content -> un-pin.
+    layout = resizeWindowHeight(layout, id, undefined);
+    expect(layout.floating[0].height).toBeUndefined();
+  });
+});
+
+describe("placement re-gathers tabs dragged out of the panel", () => {
+  it("a placement command pulls a torn-out tab back, with no duplicate", () => {
+    // Panel [a, b] docked right. User tears tab b out to its own float.
+    let layout = applyPanelPlacement(
+      emptyLayout(),
+      ["a", "b"],
+      { position: { kind: "edge", edge: "right" }, width: null, height: null },
+      () => null,
+      { canvasBounds: BOUNDS_1000 },
+    );
+    const homeGroup = findPaneGroup(layout, "a")!;
+    layout = tearOutPane(layout, homeGroup, "b", 40, 40, 240).layout;
+    // b is now in a DIFFERENT group from a.
+    expect(findPaneGroup(layout, "b")).not.toBe(findPaneGroup(layout, "a"));
+    const groupsWithB = Object.values(layout.groups).filter((g) =>
+      g.paneIds.includes("b"),
+    ).length;
+    expect(groupsWithB).toBe(1);
+
+    // Server re-places the panel -> both tabs re-assembled into ONE group, b's
+    // torn-out window collapsed, no duplicate.
+    layout = applyPanelPlacement(
+      layout,
+      ["a", "b"],
+      { position: { kind: "float", x: 100, y: 100 }, width: 260, height: null },
+      () => null,
+      { canvasBounds: BOUNDS_1000 },
+    );
+    const gA = findPaneGroup(layout, "a");
+    const gB = findPaneGroup(layout, "b");
+    expect(gA).toBe(gB); // same group
+    expect(layout.groups[gA!].paneIds.sort()).toEqual(["a", "b"]);
+    // b appears in exactly one group (no duplicate left in the torn-out window).
+    expect(
+      Object.values(layout.groups).filter((g) => g.paneIds.includes("b")).length,
+    ).toBe(1);
+    // The panel is floating; exactly one floating window holds the group.
+    expect(findGroupLocation(layout, gA!)?.kind).toBe("floating");
+    expect(
+      layout.floating.filter((w) => w.stack.includes(gA!)).length,
+    ).toBe(1);
   });
 });

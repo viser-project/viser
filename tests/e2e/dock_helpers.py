@@ -139,6 +139,46 @@ def setup_side_by_side(page: Page, a: str, b: str) -> bool:
     return len(cols) == 2 and a in gids and b in gids
 
 
+def move_floating_window(page: Page, win_id: str, x: float, y: float) -> None:
+    """Reposition a floating window by id via the layout-injection probe. Used to
+    shove an incidental window (e.g. the monitor) clear of a drag-start point: a
+    docked region growing its reserved width can clamp an unrelated floating
+    window over another panel's grip, occluding the press."""
+    page.evaluate(
+        """([winId, x, y]) => {
+            const layout = window.__dockLayout;
+            const next = {
+                ...layout,
+                floating: layout.floating.map((w) =>
+                    w.id === winId ? { ...w, x, y } : w),
+            };
+            window.__dockSetLayout(next);
+        }""",
+        [win_id, x, y],
+    )
+
+
+def grip_above_strip_point(page: Page, gid: str) -> tuple[float, float]:
+    """A point in the group's grip bar's per-panel 'above THIS one' split zone --
+    below the thin 8px region-top span band but above the tab strip. Unlike
+    `group_grip_center`, this avoids the span band that a short grip bar's
+    geometric center can fall into (which resolves to a region-wide span-all
+    drop). Targets the MIDPOINT of the valid band [region-top + 8, strip.top) so
+    it stays robust across font sizes rather than hugging either edge."""
+    box = page.eval_on_selector(
+        f'[data-dock-group="{gid}"]',
+        "e => { const grip = e.querySelector('[data-dock-griphandle]'); "
+        "const strip = e.querySelector('[data-dock-strip]'); "
+        "const g = grip.getBoundingClientRect(); "
+        "const s = strip.getBoundingClientRect(); "
+        # grip.top is the region's top edge (the grip sits flush there); the
+        # span band is its first 8px (REGION_EDGE_PX in hitTest.ts).
+        "const lo = g.top + 8, hi = s.top; "
+        "return { x: g.x + g.width/2, y: (lo + hi) / 2 }; }",
+    )
+    return box["x"], box["y"]
+
+
 def collect_errors(page: Page) -> list[str]:
     """Start collecting console/page errors into the returned (live) list."""
     errors: list[str] = []

@@ -103,9 +103,9 @@ def test_reset_clears_panels() -> None:
         assert len(server.gui._panel_handle_from_uuid) == 1
         server.gui.reset()
         assert len(server.gui._panel_handle_from_uuid) == 0
-        # A GuiPanelRemoveMessage was queued for the dropped panel.
+        # The remove superseded the create in the broadcast buffer, so a late
+        # joiner won't replay the now-gone panel: no create message remains.
         buffer = server._websock_server._broadcast_buffer.message_from_id
-        # After remove supersedes create, no create message for the panel remains.
         assert not any(
             isinstance(msg, m.GuiPanelMessage) and msg.uuid == panel._impl.uuid
             for msg in buffer.values()
@@ -134,6 +134,25 @@ def test_dock_edges_set_position_and_buffer() -> None:
             "kind": "edge",
             "edge": "left",
         }
+    finally:
+        server.stop()
+
+
+def test_placement_is_single_source_of_truth() -> None:
+    """`_placement` reads through props.placement, so a (discouraged) direct
+    reassignment of `panel.placement` can't desync the command stream from the
+    serialized/replayed state."""
+    server = _make_server()
+    try:
+        panel = server.gui.add_panel()
+        panel.dock_right()
+        # Rebind placement directly (props_setattr path).
+        panel.placement = {"position": None, "width": None, "height": None}
+        panel.set_width(500)
+        # The command wrote through to props.placement (the create-message + the
+        # mixin's _placement are the same object).
+        assert panel._placement is _props(panel).placement
+        assert _props(panel).placement["width"] == 500
     finally:
         server.stop()
 
@@ -221,6 +240,33 @@ def test_main_panel_placement_persists_across_handles() -> None:
         assert _latest_placement_update(server, CONTROL_PANEL_ID)["position"] == {
             "kind": "edge",
             "edge": "right",
+        }
+    finally:
+        server.stop()
+
+
+def test_main_panel_float_after_dock() -> None:
+    """main_panel.float() after a dock_* writes a float position (the command
+    behind the 05_theming "floating" option). The placement must flip from an
+    edge dock back to a float so the client undocks."""
+    server = _make_server()
+    try:
+        server.gui.main_panel.dock_left()
+        assert server.gui.main_panel._placement["position"] == {
+            "kind": "edge",
+            "edge": "left",
+        }
+        server.gui.main_panel.float()
+        assert server.gui.main_panel._placement["position"] == {
+            "kind": "float",
+            "x": None,
+            "y": None,
+        }
+        # The latest buffered placement (what a late joiner replays) is the float.
+        assert _latest_placement_update(server, CONTROL_PANEL_ID)["position"] == {
+            "kind": "float",
+            "x": None,
+            "y": None,
         }
     finally:
         server.stop()
@@ -448,6 +494,25 @@ def test_commands_on_removed_panel_raise() -> None:
         server.stop()
 
 
+def test_panel_is_not_a_context_manager() -> None:
+    """`with server.gui.add_panel():` is a natural mistake (a panel is a tab
+    container, not a GUI context). It must raise a CLEAR TypeError, not a bare
+    AttributeError on __enter__."""
+    server = _make_server()
+    try:
+        panel = server.gui.add_panel()
+        # `with panel:` calls __enter__; invoke it directly so the test stays
+        # type-clean (the handle intentionally has no __exit__).
+        try:
+            panel.__enter__()
+            assert False, "expected TypeError"
+        except TypeError as e:
+            assert "context manager" in str(e)
+            assert "add_tab" in str(e)
+    finally:
+        server.stop()
+
+
 def test_invalid_dimensions_raise() -> None:
     """set_width/set_height/float reject non-positive and non-finite sizes
     before they reach the client (NaN/negative/zero produce broken layouts)."""
@@ -474,6 +539,67 @@ def test_invalid_dimensions_raise() -> None:
         panel.set_height(200.0)
         assert _placement(panel)["width"] == 300.0
         assert _placement(panel)["height"] == 200.0
+    finally:
+        server.stop()
+
+
+def test_float_coordinates_allow_negative_reject_nonfinite() -> None:
+    """float(x=, y=) accepts negatives/zero (gaps from far/near edges) but rejects
+    NaN/inf, which would produce a broken, replayed window position."""
+    import functools
+    import math
+
+    server = _make_server()
+    try:
+        panel = server.gui.add_panel()
+        # Negatives + zero are valid coordinates.
+        panel.float(x=-15.0, y=0.0)
+        assert _placement(panel)["position"] == {
+            "kind": "float",
+            "x": -15.0,
+            "y": 0.0,
+        }
+        # NaN / inf (either axis) are rejected.
+        for bad in (math.nan, math.inf, -math.inf):
+            for call in (
+                functools.partial(panel.float, x=bad),
+                functools.partial(panel.float, y=bad),
+            ):
+                try:
+                    call()
+                    assert False, f"expected ValueError for coordinate {bad!r}"
+                except ValueError:
+                    pass
+    finally:
+        server.stop()
+
+
+def test_add_tab_on_removed_container_raises_cleanly() -> None:
+    """add_tab on a removed tab group / panel raises RuntimeError WITHOUT leaving
+    half-registered state (the shared _TabContainerMixin guard, applied before any
+    mutation)."""
+    server = _make_server()
+    try:
+        # Tab group.
+        tg = server.gui.add_tab_group()
+        tg.remove()
+        try:
+            tg.add_tab("late")
+            assert False, "expected RuntimeError"
+        except RuntimeError:
+            pass
+        assert tg._tab_handles == []  # no half-registered tab
+        assert tg._tab_container_ids == ()
+
+        # Panel (same shared guard).
+        panel = server.gui.add_panel()
+        panel.remove()
+        try:
+            panel.add_tab("late")
+            assert False, "expected RuntimeError"
+        except RuntimeError:
+            pass
+        assert panel._tab_handles == []
     finally:
         server.stop()
 
