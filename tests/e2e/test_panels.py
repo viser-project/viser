@@ -671,3 +671,40 @@ def test_control_panel_not_blank_with_only_standalone(
     # The control panel still shows its server-controls body (Scene tree),
     # not a collapsed/empty generated view.
     expect(viser_page.get_by_text("Scene tree")).to_be_visible(timeout=5_000)
+
+
+def test_many_docked_panels_do_not_occlude_canvas(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """Regression: docking enough panels that the regions' summed default width
+    exceeds the viewport must NOT overlap the regions and hide the 3D canvas (the
+    controls underneath would be unreachable). The rendered region widths are
+    capped so a usable canvas strip always remains in the middle."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(300)
+
+    # 3 left + 3 right @ 300px default each = 1800px reserved on a 1280px canvas.
+    for i in range(3):
+        p = viser_server.gui.add_panel()
+        with p.add_tab(f"L{i}"):
+            viser_server.gui.add_markdown(f"left {i}")
+        p.dock_left()
+    for i in range(3):
+        p = viser_server.gui.add_panel()
+        with p.add_tab(f"R{i}"):
+            viser_server.gui.add_markdown(f"right {i}")
+        p.dock_right()
+
+    expect(_tab(viser_page, "L0")).to_be_visible(timeout=5_000)
+    expect(_tab(viser_page, "R0")).to_be_visible(timeout=5_000)
+
+    # The element at the viewport center must be the 3D canvas, not a docked
+    # panel painted over it.
+    cx = _VIEWPORT["width"] // 2
+    cy = _VIEWPORT["height"] // 2
+    tag = viser_page.evaluate(
+        "([x, y]) => { const el = document.elementFromPoint(x, y);"
+        " return el ? el.tagName : null; }",
+        [cx, cy],
+    )
+    assert tag == "CANVAS", f"canvas occluded by a docked region (got <{tag}>)"

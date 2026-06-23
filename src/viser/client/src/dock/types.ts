@@ -60,6 +60,14 @@ export const SPLIT_DIVIDER_PX = 7;
  * before the user resizes it. */
 export const DEFAULT_REGION_PX = 300;
 
+/** Minimum px of canvas kept visible between the left and right docked regions.
+ * When the regions' summed reserved width would leave less than this (many
+ * panels docked on a narrow viewport), the RENDERED region widths are scaled
+ * down proportionally so they never overlap or fully occlude the scene. This is
+ * a render-time cap only -- the MODEL region widths (regionWidth) are preserved,
+ * so widths restore when the viewport grows back. */
+export const MIN_CANVAS_PX = 120;
+
 /** Minimum rendered height (px) of a pinned floating window: the floor a window
  * is kept at so it stays usable (its contents scroll) when the container is too
  * small for its pinned height. A window whose pinned height is below this is
