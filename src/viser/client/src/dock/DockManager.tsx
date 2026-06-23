@@ -290,10 +290,9 @@ export function DockManager({
         let changed = false;
         const floating = prev.floating.map((w) => {
           if (w.id === draggingWindowIdRef.current) return w;
-          // Server-placed panels (requestedX/Y) are repositioned by the
-          // resolve-effect below (keyed on container size); skip them here so the
-          // two don't fight.
-          if (w.requestedX !== undefined && w.requestedY !== undefined) return w;
+          // Server-anchored panels are repositioned by the resolve-effect below
+          // (keyed on container size); skip them here so the two don't fight.
+          if (w.anchor !== undefined) return w;
           let x = w.x;
           let y = w.y;
           // Dragged windows: anchor to the nearer edge (operate on the RENDERED
@@ -1448,8 +1447,8 @@ export function DockManager({
 
   // Keep floating windows positioned correctly as the canvas changes (docked
   // insets grow/shrink, or the container resizes):
-  // - Server-placed panels (those carrying requestedX/requestedY) RE-RESOLVE
-  //   their canvas-relative request against the live canvas + measured window
+  // - Server-anchored panels (those carrying an `anchor`) RE-RESOLVE
+  //   their canvas-relative anchor against the live canvas + measured window
   //   size -- this is what makes negative coords (gap-from-far-edge, e.g.
   //   top-right `x:-15`) track the edge, and what places auto-height panels with
   //   a negative y once their height is known.
@@ -1494,11 +1493,11 @@ export function DockManager({
           heights.get(w.id) ?? (w.height.mode === "pinned" ? w.height.px : 0);
         let x: number;
         let y: number;
-        if (w.requestedX !== undefined && w.requestedY !== undefined) {
-          // Server-placed: re-resolve the (possibly negative) request.
+        if (w.anchor !== undefined) {
+          // Server-anchored: re-resolve the (possibly negative) anchor.
           ({ x, y } = ops.resolveRequestedFloatPosition(
-            w.requestedX,
-            w.requestedY,
+            w.anchor.x,
+            w.anchor.y,
             w.width,
             winHeight,
             bounds,

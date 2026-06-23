@@ -180,15 +180,17 @@ export interface FloatingWindow {
    * weight 1 (equal). Keyed by group id (not index) so it survives stack
    * insert/remove without re-alignment; stale keys are harmless. */
   stackWeights?: Record<GroupId, number>;
-  /** Server-requested float coordinates (canvas-relative), kept so the live
-   * position can be re-resolved against the current canvas size + measured
-   * window size each render. A NEGATIVE value is a gap from the FAR edge: x<0 is
-   * `|x|`px from the canvas right boundary, y<0 is `|y|`px from the bottom (so
-   * top-right is x:-15, y:15). Set only for server-placed panels; a user drag
-   * clears them (the dragged position becomes absolute). See
-   * resolveRequestedFloatPosition. */
-  requestedX?: number;
-  requestedY?: number;
+  /** Server anchor for a server-placed panel: the canvas-relative coords the
+   * window re-resolves to as the canvas + measured window size change (`x`/`y`
+   * above are the resolved absolute position). A NEGATIVE component is a gap from
+   * the FAR edge: x<0 is `|x|`px from the canvas right boundary, y<0 is `|y|`px
+   * from the bottom (so top-right is {x:-15, y:15}).
+   *
+   * PRESENCE is the ownership tag: an anchored window re-resolves; a user drag /
+   * resize clears `anchor` (the window becomes user-owned and its absolute x/y is
+   * authoritative). Both coords live in ONE object so ownership can't be
+   * half-set. See resolveRequestedFloatPosition. */
+  anchor?: { x: number; y: number };
 }
 
 /** The complete, serializable layout. */

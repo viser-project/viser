@@ -47,22 +47,26 @@ wins snapshot, so a log would re-derive what the server already collapsed).
   opt, so call sites stayed terse; production reads branch on `.mode`. Verified:
   403 vitest, 29 e2e, pin-trap re-confirmed end-to-end.
 
-## Remaining (recommended; each its own reviewed commit, ideally after the
-current work is committed so there's a clean bisect checkpoint)
+- **#3b float ownership as one `anchor` object (DONE -- lighter form).**
+  Replaced the `requestedX?`/`requestedY?` PAIR with a single `anchor?: {x; y}`.
+  PRESENCE is the ownership tag (anchored = re-resolves; absent = user-owned at
+  its absolute x/y). Collapsing the pair into one object makes "half-set
+  ownership" unrepresentable -- the exact hazard the study flagged (a resize that
+  set one coord but not the other). `markWindowUserOwned` is now a single
+  `delete win.anchor`. Stored absolute `x/y` are KEPT (hit-test/drag/render read
+  them unchanged), so this deliberately stops short of the full
+  `{kind:"anchored"}|{kind:"user"}` union with no stored x/y -- per the study,
+  that fuller union's extra win guards code the single-resolver already makes
+  single-writer, at 150+ lines of gesture-layer churn. The lighter form captures
+  the correctness win without touching the delicate grab-offset/grip code.
+  E2E seam: the Python `window()` helper in dock_helpers.py is the one place test
+  layouts build floating windows -- updated it for the WindowHeight union too.
 
-- **#3b FloatPlacement tagged union (the bigger one).** Replace `x/y` +
-  `requestedX?/requestedY?` with `placement: { kind: "anchored"; anchorX; anchorY }
-  | { kind: "user"; x; y }`. Makes "requested vs resolved drift" and "half-set
-  ownership" unrepresentable: committing `{kind:"user"}` IS the release, so
-  `markWindowUserOwned`/`releaseRequestedCoords` disappear and resize can't forget
-  to release. Resolver branches on `kind`. Reaches into the gesture layer
-  (grab-offset, left/top-grip resize read x/y) -- the most delicate, e2e-only
-  code -- so it's the highest-churn item. Do it last, on its own.
-
-- **Deferred / only-if-it-bites (from the studies, not part of #1-#3):**
-  - Full render-time position resolution (drop stored x/y entirely): study judged
-    the incremental win guards code that #3b already makes single-writer, at
-    150+ lines of gesture-layer churn. Not worth it unless a post-#3b bug demands.
+- **Deferred / only-if-it-bites (from the studies):**
+  - Full `placement` tagged union (drop stored x/y; resolve at render): study
+    judged the incremental win guards code the single resolver already makes
+    single-writer, at 150+ lines of gesture-layer churn. Not worth it unless a
+    concrete drift bug demands it.
   - Move panel-placement sync from React effects to one out-of-React store
     subscription + a pure `reconcilePanel(layout, panel, record) -> layout`
     (study 3). High value for killing the dep-array fragility, but medium risk
