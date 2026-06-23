@@ -103,9 +103,12 @@ export function floatingWindow(opts: {
     x: opts.x ?? 0,
     y: opts.y ?? 0,
     width: opts.width ?? 300,
+    height:
+      opts.height === undefined
+        ? { mode: "auto" }
+        : { mode: "pinned", px: opts.height },
     stack: [...opts.stack],
   };
-  if (opts.height !== undefined) w.height = opts.height;
   if (opts.stackWeights !== undefined) w.stackWeights = opts.stackWeights;
   if (opts.requestedX !== undefined) w.requestedX = opts.requestedX;
   if (opts.requestedY !== undefined) w.requestedY = opts.requestedY;

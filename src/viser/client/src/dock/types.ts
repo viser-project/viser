@@ -155,6 +155,13 @@ export interface DockSplit extends DockNodeBase {
 
 export type DockNode = DockLeaf | DockSplit;
 
+/** A floating window's vertical sizing. `auto` tracks content (capped per
+ * group); `pinned` is an explicit px height the user dragged to. A tagged union
+ * (not `height?: number`) so "auto vs pinned" is an explicit, total state -- no
+ * sentinel-undefined ambiguity, and "revert to auto" is a real transition rather
+ * than a delete. */
+export type WindowHeight = { mode: "auto" } | { mode: "pinned"; px: number };
+
 /** A free-floating container. Holds a vertical stack of tab groups that move
  * together (the "snap group" from the spec). A single-group stack is an
  * ordinary floating panel. Position/size are parent-relative pixels. */
@@ -163,13 +170,12 @@ export interface FloatingWindow {
   x: number;
   y: number;
   width: number;
-  /** Explicit height in px once the user vertically resizes; otherwise the
-   * window auto-sizes to its content (capped per group). */
-  height?: number;
+  /** Vertical sizing: auto-track content, or a pinned px height. */
+  height: WindowHeight;
   /** Tab groups stacked top to bottom. */
   stack: GroupId[];
   /** Per-group height weights for a multi-group stack (groupId -> flex weight),
-   * used when the window has an explicit `height` so a draggable divider can
+   * used when the window has a pinned `height` so a draggable divider can
    * redistribute height between stacked groups. Missing/absent groups default to
    * weight 1 (equal). Keyed by group id (not index) so it survives stack
    * insert/remove without re-alignment; stale keys are harmless. */

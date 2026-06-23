@@ -74,7 +74,7 @@ describe("applyPanelPlacement", () => {
     expect(win.x).toBe(42);
     expect(win.y).toBe(84);
     expect(win.width).toBe(350);
-    expect(win.height).toBe(250);
+    expect(win.height).toEqual({ mode: "pinned", px: 250 });
   });
 
   it("offsets a float's x by the canvas left inset (canvas-relative coords)", () => {
@@ -238,7 +238,7 @@ describe("applyPanelPlacement", () => {
       () => null,
     );
     expect(out.floating[0].width).toBe(480);
-    expect(out.floating[0].height).toBe(360);
+    expect(out.floating[0].height).toEqual({ mode: "pinned", px: 360 });
   });
 
   it("ignores height on a docked panel (docked cells size to weights)", () => {
@@ -553,23 +553,23 @@ describe("resizeWindowHeight pin / un-pin (auto-height)", () => {
     );
 
   it("a freshly floated window is auto-height (no height pinned)", () => {
-    expect(floatWin().floating[0].height).toBeUndefined();
+    expect(floatWin().floating[0].height).toEqual({ mode: "auto" });
   });
 
   it("pins an explicit height", () => {
     const base = floatWin();
     const layout = resizeWindowHeight(base, base.floating[0].id, 320);
-    expect(layout.floating[0].height).toBe(320);
+    expect(layout.floating[0].height).toEqual({ mode: "pinned", px: 320 });
   });
 
   it("reverts to auto-height when height is set to undefined", () => {
     let layout = floatWin();
     const id = layout.floating[0].id;
     layout = resizeWindowHeight(layout, id, 320);
-    expect(layout.floating[0].height).toBe(320);
+    expect(layout.floating[0].height).toEqual({ mode: "pinned", px: 320 });
     // Drag back down to content -> un-pin.
     layout = resizeWindowHeight(layout, id, undefined);
-    expect(layout.floating[0].height).toBeUndefined();
+    expect(layout.floating[0].height).toEqual({ mode: "auto" });
   });
 });
 

@@ -68,11 +68,13 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
   const collapsed = win.stack.every(
     (id) => dock.groups[id]?.collapsed === true,
   );
-  const fixedHeight = win.height !== undefined && !collapsed;
+  // The pinned px height, or undefined when the window auto-sizes to content.
+  const pinnedPx = win.height.mode === "pinned" ? win.height.px : undefined;
+  const fixedHeight = pinnedPx !== undefined && !collapsed;
   const renderedHeight =
-    win.height !== undefined
-      ? cappedWindowHeight(win.height, containerHeight)
-      : win.height;
+    pinnedPx !== undefined
+      ? cappedWindowHeight(pinnedPx, containerHeight)
+      : undefined;
 
   // Animate collapse/expand by FLIP-ing the window height: each render notes
   // the Paper's resting height; when the collapsed state flips we replay the
@@ -91,7 +93,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     if (p === null) return;
     const flipped = prevCollapsedRef.current !== collapsed;
     prevCollapsedRef.current = collapsed;
-    if (win.height === undefined) {
+    if (pinnedPx === undefined) {
       flipCancelRef.current?.();
       prevHeightRef.current = null;
       return;
@@ -245,7 +247,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
   // analog of a left-edge width resize), with the height additionally capped
   // at the start bottom so the top edge can't leave the container.
   const vResizeStart = (vside: "top" | "bottom") => {
-    const startHeight = paperRef.current?.offsetHeight ?? win.height ?? 200;
+    const startHeight = paperRef.current?.offsetHeight ?? pinnedPx ?? 200;
     const startBottom = win.y + startHeight;
     const contentHeight = measureContentHeight();
     const maxHeight =
