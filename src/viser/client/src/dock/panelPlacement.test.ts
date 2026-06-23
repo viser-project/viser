@@ -320,6 +320,41 @@ describe("applyPanelPlacement", () => {
     expect(out).toBe(input);
   });
 
+  it("regathers panes the user scattered into separate windows (order + activeId)", () => {
+    // Panel [a,b] docked, then the user tears each pane into its own floating
+    // window; a later placement command must re-assemble them into one group.
+    // Exercises ensurePanelGroup's one-by-one movePaneInPlace gather loop.
+    let layout = applyPanelPlacement(
+      emptyLayout(),
+      ["a", "b"],
+      { ...EMPTY, position: { kind: "edge", edge: "right" } },
+      () => null,
+    );
+    const gid = findPaneGroup(layout, "a")!;
+    // Tear b out, then a (a now floats wholesale as its group's only pane).
+    layout = tearOutPane(layout, gid, "b", 100, 100, 240).layout;
+    layout = tearOutPane(layout, findPaneGroup(layout, "a")!, "a", 200, 200, 240)
+      .layout;
+    expect(findPaneGroup(layout, "a")).not.toBe(findPaneGroup(layout, "b"));
+    // Re-place: both panes regather into one docked group, in server order.
+    layout = applyPanelPlacement(
+      layout,
+      ["a", "b"],
+      { ...EMPTY, position: { kind: "edge", edge: "right" } },
+      () => null,
+    );
+    const finalGid = findPaneGroup(layout, "a")!;
+    expect(findPaneGroup(layout, "b")).toBe(finalGid);
+    expect(layout.groups[finalGid].paneIds.sort()).toEqual(["a", "b"]);
+    // activeId stays valid (a member of the regathered group).
+    expect(layout.groups[finalGid].paneIds).toContain(
+      layout.groups[finalGid].activeId,
+    );
+    expect(findGroupLocation(layout, finalGid)?.kind).toBe("docked");
+    // No leftover empty groups / orphaned windows from the torn-out panes.
+    expect(layout.floating).toHaveLength(0);
+  });
+
   it("re-creates + re-places the group after a FULL pane swap (zero overlap)", () => {
     // Server replaces ALL tab containers at once (e.g. remove every tab, add new
     // ones). The old group can't be found by the new panes; re-applying placement

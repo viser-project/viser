@@ -89,10 +89,18 @@ export function invariantViolations(layout: DockLayout): string[] {
     }
   }
 
-  // 5. activeId valid; paneIds non-empty.
+  // 5. activeId valid; paneIds non-empty. EXCEPTION: an area-backing group is
+  // allowed to be empty -- it persists as a "drop a panel here" affordance even
+  // with no tabs (see ensureArea / addPaneToArea / removePaneInPlace's area
+  // branch). An empty area group carries a meaningless activeId ("") by design,
+  // so it's exempt from both checks; a NON-empty area group is still validated.
+  const areaGroupIds = new Set(
+    Object.values(layout.areas ?? {}).map((a) => a.group),
+  );
   for (const [gid, group] of Object.entries(layout.groups)) {
-    if (group.paneIds.length === 0) v.push(`group ${gid} has empty paneIds`);
-    else if (!group.paneIds.includes(group.activeId))
+    if (group.paneIds.length === 0) {
+      if (!areaGroupIds.has(gid)) v.push(`group ${gid} has empty paneIds`);
+    } else if (!group.paneIds.includes(group.activeId))
       v.push(`group ${gid} activeId ${group.activeId} not in paneIds`);
   }
 
