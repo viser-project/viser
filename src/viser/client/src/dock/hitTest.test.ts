@@ -697,6 +697,72 @@ describe("zone priority", () => {
     const out = run(layout, [tgt], 50, REGION_EDGE_PX - 5)!;
     expect(out.result.kind).toBe("regionEdge");
   });
+
+  // regression: a tab-strip insert beats the region-edge band that overlaps it.
+  // A region-edge band spans the WHOLE region, so the leftmost tab of a stacked
+  // (column) region sits inside the 40px left region-side band, and a topmost
+  // panel's strip sits inside the 8px top band. Dropping THERE must still
+  // insert at the tab position (more specific than a region span) -- not dock a
+  // region-wide column/row. (Lives in hitTest.ts: an "over an insertable strip"
+  // guard skips the region-edge bands.)
+  describe("tab-strip insert wins over the region-edge band it overlaps", () => {
+    // Column [a/b]: left/right span rows, so edgeIsSingleLeaf(_, "left") is
+    // false and the 40px left region-side band is LIVE across both panes.
+    const tree = colSplit([leaf("a"), leaf("b")]);
+    const layout = layoutWith({ left: tree });
+
+    function colTarget(
+      groupId: GroupId,
+      nodeId: string,
+      frame: DOMRect,
+      stripTop: number,
+    ): GroupTarget {
+      return {
+        groupId,
+        rect: frame,
+        stripRect: rect(frame.left, stripTop, frame.width, 30),
+        tabs: [
+          { paneId: `${groupId}:0`, rect: rect(frame.left, stripTop, 70, 30) },
+          { paneId: `${groupId}:1`, rect: rect(frame.left + 70, stripTop, 70, 30) },
+        ],
+        ctx: { kind: "docked", nodeId, edge: "left" },
+      };
+    }
+
+    it("lower stacked panel: leftmost tab in the left side band -> insertTab 0", () => {
+      // b's strip is mid-region (clear of the 8px top band) but its leftmost tab
+      // is flush at x=0, i.e. inside the 40px left region-side band.
+      const tgt = colTarget("b", (tree as any).children[1].id, rect(0, 400, 300, 400), 412);
+      const out = run(layout, [tgt], 20, 425)!;
+      expect(out.result).toEqual({ kind: "insertTab", targetGroupId: "b", index: 0 });
+    });
+
+    it("topmost stacked panel: strip in the top band -> insertTab 0", () => {
+      // a's strip is flush at the region top (y in the 8px top band) AND its
+      // leftmost tab is in the left side band -- both region bands overlap it.
+      const tgt = colTarget("a", (tree as any).children[0].id, rect(0, 0, 300, 400), 2);
+      const out = run(layout, [tgt], 20, 7)!;
+      expect(out.result).toEqual({ kind: "insertTab", targetGroupId: "a", index: 0 });
+    });
+
+    it("draggingUnmergeable: still a region span (no tab insert possible)", () => {
+      // An unmergeable dragged stack can't become tabs, so the strip is NOT an
+      // insertable target -- the region-edge band must still win there.
+      const tgt = colTarget("b", (tree as any).children[1].id, rect(0, 400, 300, 400), 412);
+      const out = hitTest(layout, REGION_W, CONTAINER, { groups: [tgt] }, 20, 425, {
+        draggingUnmergeable: true,
+      })!;
+      expect(out.result.kind).toBe("regionEdge");
+    });
+
+    it("the region-edge band still wins OFF the strip (content side band)", () => {
+      // Same column region, but the pointer is in the content area (below the
+      // strip) within the left side band -> region span, as before.
+      const tgt = colTarget("b", (tree as any).children[1].id, rect(0, 400, 300, 400), 412);
+      const out = run(layout, [tgt], 20, 600)!;
+      expect(out.result).toEqual({ kind: "regionEdge", edge: "left", side: "left" });
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

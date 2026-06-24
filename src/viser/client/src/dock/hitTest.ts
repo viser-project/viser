@@ -269,12 +269,48 @@ export function hitTest(
     };
   }
 
+  // A region-edge band spans the WHOLE region, including the strip of a panel
+  // that sits flush at the region's top/left/right. But a drop directly over a
+  // panel's tab STRIP is a more specific intent -- "insert at this tab
+  // position" -- than the region-wide "span all beside everything". Without
+  // this, the leftmost tab of a stacked (column) region always sits inside the
+  // 40px left region-side band and the topmost panel's strip sits inside the
+  // 8px top band, so dropping there docks a region span (or wrong index)
+  // instead of inserting at index 0. So: if the pointer is over a tab strip
+  // where a tab-insert WOULD actually resolve (a mergeable docked/floating
+  // group, the drag itself is mergeable, and the pointer maps to a tab), let
+  // section 3 handle it and skip the region-edge bands. Outermost region-edge
+  // docking is unaffected: the content area, grip bar, and screen edges are
+  // not strips, so they still hit the region bands.
+  const overInsertableStrip = (): boolean => {
+    if (draggingUnmergeable) return false;
+    for (const t of targets.groups) {
+      if (
+        t.stripRect === null ||
+        t.unmergeable === true ||
+        t.collapsed === true ||
+        t.ctx.kind === "area"
+      )
+        continue;
+      if (
+        clientX >= t.stripRect.left &&
+        clientX <= t.stripRect.right &&
+        clientY >= t.stripRect.top &&
+        clientY <= t.stripRect.bottom &&
+        tabInsertion(t.tabs, clientX, clientY) !== null
+      )
+        return true;
+    }
+    return false;
+  };
+  const skipRegionEdges = overInsertableStrip();
+
   // 2. Region edges -> dock a full-span band beside everything in the region.
   // Checked before per-panel zones so an outermost panel's edge means "span
   // all" rather than "split just this one"; an interior panel is past these
   // bands, so its own split wins. Each is suppressed when the edge is a single
   // full-span leaf (then it would be identical to the per-panel split).
-  for (const edge of ["left", "right"] as DockEdge[]) {
+  for (const edge of skipRegionEdges ? [] : (["left", "right"] as DockEdge[])) {
     const tree = layout.docked[edge];
     if (tree === null) continue;
     const w = regionWidth[edge];
