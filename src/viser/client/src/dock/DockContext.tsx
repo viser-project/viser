@@ -75,6 +75,9 @@ export interface DockContextValue {
     windowId: string,
   ) => void;
   activateTab: (groupId: GroupId, paneId: PaneId) => void;
+  /** Select a tab AND expand the group if minimized -- clicking a tab to read it
+   * should reveal its content, not just switch the (hidden) active tab. */
+  expandToTab: (groupId: GroupId, paneId: PaneId) => void;
   /** Toggle a group's minimized state (tap on its handle). */
   toggleCollapsed: (groupId: GroupId) => void;
   /** True while a split divider is being dragged. The column collapse/expand

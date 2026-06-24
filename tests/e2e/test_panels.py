@@ -708,3 +708,33 @@ def test_many_docked_panels_do_not_occlude_canvas(
         [cx, cy],
     )
     assert tag == "CANVAS", f"canvas occluded by a docked region (got <{tag}>)"
+
+
+def test_minimized_multitab_strip_rows_expand_to_tab(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """A minimized docked panel with multiple tabs shows one clickable row PER
+    tab in its vertical strip; clicking a row expands the panel to THAT tab
+    (not just switching a hidden active tab)."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(300)
+
+    panel = viser_server.gui.add_panel(expand_by_default=False)
+    with panel.add_tab("Alpha"):
+        viser_server.gui.add_markdown("alpha body")
+    with panel.add_tab("Beta"):
+        viser_server.gui.add_markdown("beta body")
+    panel.dock_right()
+
+    strip = viser_page.locator("[data-dock-group][data-dock-collapsed]")
+    expect(strip).to_have_count(1, timeout=5_000)
+    # One row per tab in the collapsed strip.
+    rows = strip.locator("[data-dock-tab]")
+    expect(rows).to_have_count(2)
+
+    # Click the Beta row -> the panel expands AND Beta's body shows.
+    rows.filter(has_text="Beta").first.click()
+    expect(viser_page.locator("[data-dock-group][data-dock-collapsed]")).to_have_count(
+        0, timeout=5_000
+    )
+    expect(viser_page.get_by_text("beta body")).to_be_visible(timeout=5_000)

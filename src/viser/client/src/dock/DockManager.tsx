@@ -987,11 +987,31 @@ export function DockManager({
           ),
         );
         const crect = containerRect();
+        // Grab offset = where in the SOURCE element the cursor pressed. But the
+        // source may be much taller/wider than the floated window -- notably a
+        // minimized vertical strip is region-tall while the window is short, so a
+        // press near the strip's bottom yields a grab far below the window,
+        // leaving a big cursor-to-ghost gap. Clamp the grab into the window's
+        // ACTUAL rendered box (measured after the flush above) so the cursor
+        // always sits on the dragged window. A small top margin keeps the grab on
+        // the grip/header rather than flush at the very edge.
+        const winEl = containerRef.current?.querySelector<HTMLElement>(
+          `[data-floating-window="${res.windowId}"]`,
+        );
+        const winRect = winEl?.getBoundingClientRect();
+        const rawGrabX = e.clientX - crect.left - rect.x;
+        const rawGrabY = e.clientY - crect.top - rect.y;
         return {
           windowId: res.windowId,
           groupIdForDim: groupId,
-          grabX: e.clientX - crect.left - rect.x,
-          grabY: e.clientY - crect.top - rect.y,
+          grabX:
+            winRect !== undefined
+              ? clamp(rawGrabX, 0, Math.max(0, winRect.width - 8))
+              : rawGrabX,
+          grabY:
+            winRect !== undefined
+              ? clamp(rawGrabY, 0, Math.max(0, winRect.height - 8))
+              : rawGrabY,
         };
       });
     }, onClick);
@@ -1286,7 +1306,9 @@ export function DockManager({
         activeCleanup.current = cleanup;
         raf = requestAnimationFrame(apply);
       },
-      () => applyOp(ops.setActiveTab(layoutRef.current, groupId, paneId)),
+      // No-motion click: select the tab AND expand the group if it's minimized
+      // (clicking a tab to read it should reveal its content).
+      () => expandToTab(groupId, paneId),
     );
   };
 
@@ -1325,6 +1347,16 @@ export function DockManager({
       applyOp(ops.setActiveTab(layoutRef.current, groupId, paneId)),
     [applyOp],
   );
+  const expandToTab = React.useCallback(
+    (groupId: GroupId, paneId: PaneId) =>
+      applyOp(
+        ops.expandGroup(
+          ops.setActiveTab(layoutRef.current, groupId, paneId),
+          groupId,
+        ),
+      ),
+    [applyOp],
+  );
   const toggleCollapsed = React.useCallback(
     (groupId: GroupId) =>
       applyOp(ops.toggleCollapsed(layoutRef.current, groupId)),
@@ -1345,6 +1377,7 @@ export function DockManager({
       setResizing,
       ...stableGestures,
       activateTab,
+      expandToTab,
       toggleCollapsed,
       draggingGroupId,
       draggingTabId,
@@ -1356,6 +1389,7 @@ export function DockManager({
       resizing,
       stableGestures,
       activateTab,
+      expandToTab,
       toggleCollapsed,
       draggingGroupId,
       draggingTabId,

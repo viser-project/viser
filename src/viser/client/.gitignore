@@ -16,3 +16,6 @@
 .env.production.local
 
 npm-debug.log*
+
+# Transient e2e harness configs (generated per Playwright run).
+vite.e2e.*.mts

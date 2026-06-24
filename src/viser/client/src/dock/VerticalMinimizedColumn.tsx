@@ -68,10 +68,6 @@ function VerticalMinimizedCell({
   group: TabGroup;
 }) {
   const dock = useDock();
-  const title = group.paneIds
-    .map((p) => dock.panes[p]?.title ?? p)
-    .join(" / ");
-  const icon = dock.panes[group.activeId]?.icon;
   return (
     // data-dock-leaf/-edge on the cell so collectTargets offers it as a docked
     // target; hitTest's collapsed branch gives it the 5-way drop zones.
@@ -83,18 +79,22 @@ function VerticalMinimizedCell({
       <Box
         data-dock-group={group.id}
         data-dock-collapsed="true"
-        title={title}
-        onPointerDown={(event) =>
+        onPointerDown={(event) => {
+          // Which tab row was pressed (if any)? A no-motion click expands to
+          // THAT tab; a press elsewhere (cap/empty area) just expands. A drag
+          // tears the panel out; a drag from the + button tears it out expanded.
+          const target = event.target as HTMLElement;
+          const rowPane = target
+            .closest("[data-dock-tab]")
+            ?.getAttribute("data-dock-tab");
           dock.startGroupDrag(event, group.id, {
-            onClick: () => dock.toggleCollapsed(group.id),
-            // A drag that starts on the expand (+) button tears out the FULL
-            // panel (expand-then-drag); from anywhere else the cell drags as
-            // the minimized stub it shows.
-            expandOnDrag:
-              (event.target as HTMLElement).closest("[data-dock-minimize]") !==
-              null,
-          })
-        }
+            onClick: () =>
+              rowPane !== null && rowPane !== undefined
+                ? dock.expandToTab(group.id, rowPane)
+                : dock.toggleCollapsed(group.id),
+            expandOnDrag: target.closest("[data-dock-minimize]") !== null,
+          });
+        }}
         style={{
           width: "100%",
           display: "flex",
@@ -129,42 +129,71 @@ function VerticalMinimizedCell({
             <IconPlus size={14} />
           </HandleIconButton>
         </Box>
-        {/* Panel icon stays UPRIGHT (icons don't read rotated). */}
-        {icon !== undefined && (
-          <Box
-            style={{
-              flexShrink: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              marginTop: "0.3em",
-              color: "var(--mantine-color-dimmed)",
-            }}
-          >
-            {icon}
-          </Box>
-        )}
-        {/* Book-spine orientation (top-to-bottom, rotated clockwise): the
-        portable vertical-text form -- sideways-lr isn't supported in Safari.
-        Dimmed like the strip's secondary chrome -- a minimized title is a
-        wayfinding label, not content. */}
-        <Box
-          style={{
-            writingMode: "vertical-rl",
-            textOrientation: "mixed",
-            fontSize: "0.85em",
-            fontWeight: 500,
-            marginTop: "0.45em",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            minHeight: 0,
-            color: "var(--mantine-color-dimmed)",
-            paddingBottom: "0.6em",
-          }}
-        >
-          {title}
-        </Box>
+        {/* One row PER TAB: upright icon + rotated (book-spine) label. Each row
+        is its own click target (data-dock-tab) -- clicking expands the panel to
+        that tab -- so a multi-tab minimized panel shows ALL its tabs instead of
+        one arbitrary icon plus a confusing joined label. The whole cell remains
+        draggable for tear-out (handled by the cell's onPointerDown above). */}
+        {group.paneIds.map((paneId) => {
+          const spec = dock.panes[paneId];
+          const active = paneId === group.activeId;
+          return (
+            <Box
+              key={paneId}
+              data-dock-tab={paneId}
+              role="tab"
+              aria-selected={active}
+              title={spec?.title ?? paneId}
+              style={{
+                flexShrink: 1,
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                width: "100%",
+                paddingTop: "0.35em",
+                paddingBottom: "0.6em",
+                cursor: "pointer",
+                // Active tab reads at full strength; others are dimmed chrome.
+                color: active
+                  ? "var(--mantine-primary-color-filled)"
+                  : "var(--mantine-color-dimmed)",
+                opacity: active ? 1 : 0.85,
+              }}
+            >
+              {spec?.icon !== undefined && (
+                // Icons don't read rotated -- keep them upright.
+                <Box
+                  style={{
+                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginBottom: "0.3em",
+                  }}
+                >
+                  {spec.icon}
+                </Box>
+              )}
+              {/* Book-spine orientation (top-to-bottom, rotated clockwise): the
+              portable vertical-text form -- sideways-lr isn't Safari-supported. */}
+              <Box
+                style={{
+                  writingMode: "vertical-rl",
+                  textOrientation: "mixed",
+                  fontSize: "0.85em",
+                  fontWeight: active ? 600 : 500,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  minHeight: 0,
+                }}
+              >
+                {spec?.title ?? paneId}
+              </Box>
+            </Box>
+          );
+        })}
       </Box>
     </Box>
   );
