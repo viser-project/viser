@@ -1534,7 +1534,32 @@ function resolveAnchorLeaf(
  *   effect). Defaults to a zero-inset canvas if omitted.
  * - `expandByDefault` (default true): one-shot initial collapsed hint, applied
  *   only when the panel's group is first created.
+ * - `prevPosition`: the position from the LAST applied placement. When it equals
+ *   the incoming position, this is a SIZE-ONLY re-placement (e.g. set_width
+ *   re-sends the coalesced placement, whose `position` is unchanged) -- so a
+ *   panel the user has locally moved (e.g. torn a docked panel out to a float)
+ *   must NOT be relocated; only its size is applied. A genuine position CHANGE
+ *   (dock_left after dock_right) still relocates. The float branch enforces this
+ *   per-window via the `anchor` flag; edge/split have no per-panel ownership bit,
+ *   so they compare positions instead.
  */
+/** Whether two placement positions are the same (so a re-placement that only
+ * changed width/height -- a set_width/set_height -- can be detected and left from
+ * relocating the panel). */
+function positionsEqual(
+  a: PanelPlacement["position"] | undefined,
+  b: PanelPlacement["position"],
+): boolean {
+  if (a == null || b == null) return a == null && b == null;
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "edge" && b.kind === "edge") return a.edge === b.edge;
+  if (a.kind === "float" && b.kind === "float")
+    return a.x === b.x && a.y === b.y;
+  if (a.kind === "split" && b.kind === "split")
+    return a.anchor_uuid === b.anchor_uuid && a.side === b.side;
+  return false;
+}
+
 export function applyPanelPlacement(
   layout: DockLayout,
   paneIds: PaneId[],
@@ -1544,6 +1569,7 @@ export function applyPanelPlacement(
     floatIfUnplaced?: boolean;
     canvasBounds?: CanvasBounds;
     expandByDefault?: boolean;
+    prevPosition?: PanelPlacement["position"];
   } = {},
 ): DockLayout {
   const floatIfUnplaced = opts.floatIfUnplaced ?? true;
@@ -1629,6 +1655,7 @@ export function applyPanelPlacement(
     }
   } else {
     if (position.kind === "edge") {
+      const loc = findGroupLocation(draft, groupId);
       // Skip the re-dock when the group is ALREADY docked on this edge: a
       // size-only re-placement (set_width) re-runs this branch, and re-docking
       // would detach + recreate the leaf with a fresh node id -- which makes the
@@ -1636,9 +1663,15 @@ export function applyPanelPlacement(
       // default, dropping the requested width (and needlessly reordering a
       // multi-panel region). Leaving it in place keeps the column id stable so
       // the size branch below applies the new width.
-      const loc = findGroupLocation(draft, groupId);
       const alreadyHere = loc?.kind === "docked" && loc.edge === position.edge;
-      if (!alreadyHere) draft = dockToEdge(draft, [groupId], position.edge);
+      // Relocate only on a genuine position CHANGE. When the position is
+      // unchanged (a size-only re-placement, e.g. set_width re-sending the
+      // coalesced placement), leave the panel where it is -- so a panel the user
+      // locally tore out to a float isn't yanked back to the server's edge; the
+      // size branch below still resizes it in place.
+      const positionChanged = !positionsEqual(opts.prevPosition, position);
+      if (!alreadyHere && positionChanged)
+        draft = dockToEdge(draft, [groupId], position.edge);
     } else if (position.kind === "float") {
       // Canvas-relative coords; negatives are gaps from the far edge. Resolved
       // against the live canvas + window size (and re-resolved on canvas changes
@@ -1649,9 +1682,11 @@ export function applyPanelPlacement(
         placement.width ?? DEFAULT_FLOAT_WIDTH,
         placement.height ?? undefined,
       );
-    } else {
+    } else if (!positionsEqual(opts.prevPosition, position)) {
       // split: dock above/below the anchor's docked leaf. Fall back to a right
       // edge dock when the anchor isn't docked (floating / not yet placed).
+      // Guarded by a genuine position change, like the edge branch: a size-only
+      // re-placement (set_width) must not re-split a panel the user has moved.
       const anchorGroupId = anchorGroupOf(position.anchor_uuid);
       const leaf =
         anchorGroupId === null

@@ -631,6 +631,12 @@ function StandalonePanelPlacement({
   // false->true transition (which happens whenever a tab is added, since the new
   // pane registers a render later) re-runs this effect but is a no-op unless the
   // placement value actually changed.
+  // Position from the LAST applied placement, so applyPanelPlacement can tell a
+  // size-only re-placement (set_width: position unchanged) from a real move and
+  // not yank a user-relocated panel back. Cleared on hide (re-show re-places).
+  const appliedPosition = React.useRef<
+    ops.PanelPlacement["position"] | undefined
+  >(undefined);
   // Re-create + place this panel's group from its panes (used by the placement
   // effect and the ungrouped-recovery fallback below).
   const placePanel = (layout: DockLayout) =>
@@ -641,7 +647,11 @@ function StandalonePanelPlacement({
           tabIds,
           placement,
           (anchorUuid) => resolveAnchor(layout, anchorUuid),
-          { canvasBounds: canvasBoundsFromMetrics(metrics), expandByDefault },
+          {
+            canvasBounds: canvasBoundsFromMetrics(metrics),
+            expandByDefault,
+            prevPosition: appliedPosition.current,
+          },
         );
 
   const appliedPlacementKey = React.useRef<string | null>(null);
@@ -649,12 +659,14 @@ function StandalonePanelPlacement({
     // When hidden, drop the applied-key so re-showing re-places the panel.
     if (!visible) {
       appliedPlacementKey.current = null;
+      appliedPosition.current = undefined;
       return;
     }
     if (!ready || placement === null) return;
     if (appliedPlacementKey.current === placementKey) return;
     appliedPlacementKey.current = placementKey;
     dock.api.apply(placePanel);
+    appliedPosition.current = placement.position;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, placementKey, visible, dock.api]);
 

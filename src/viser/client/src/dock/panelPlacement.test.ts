@@ -7,6 +7,7 @@ import {
   applyPanelPlacement,
   findGroupLocation,
   findPaneGroup,
+  floatGroup,
   moveWindow,
   PanelPlacement,
   releaseAnchor,
@@ -723,5 +724,63 @@ describe("re-placing an already-DOCKED panel applies the new size", () => {
 
     layout = dockP(layout, 180);
     expect(regionWidthsOf(layout).right).toBe(180);
+  });
+});
+
+describe("size-only re-placement does not relocate a user-moved panel", () => {
+  it("a torn-out (floated) edge-docked panel stays floating on set_width", () => {
+    // dock_right(): position = edge/right.
+    const edgeRight = {
+      position: { kind: "edge", edge: "right" } as const,
+      width: null,
+      height: null,
+    };
+    let layout = applyPanelPlacement(emptyLayout(), ["p"], edgeRight, () => null, {
+      prevPosition: undefined,
+    });
+    expect(findGroupLocation(layout, findPaneGroup(layout, "p")!)?.kind).toBe(
+      "docked",
+    );
+    // User tears it out to a float (local layout change).
+    const gid = findPaneGroup(layout, "p")!;
+    layout = floatGroup(layout, gid, 200, 150, 280).layout;
+    expect(findGroupLocation(layout, gid)?.kind).toBe("floating");
+
+    // Server set_width(420): SAME position (edge/right, coalesced), new width.
+    // prevPosition === the position -> size-only -> must NOT re-dock it.
+    layout = applyPanelPlacement(
+      layout,
+      ["p"],
+      { position: { kind: "edge", edge: "right" }, width: 420, height: null },
+      () => null,
+      { prevPosition: { kind: "edge", edge: "right" } },
+    );
+    expect(findGroupLocation(layout, findPaneGroup(layout, "p")!)?.kind).toBe(
+      "floating",
+    );
+  });
+
+  it("a genuine position change DOES relocate (dock_left after float)", () => {
+    let layout = applyPanelPlacement(
+      emptyLayout(),
+      ["p"],
+      { position: { kind: "float", x: 50, y: 50 }, width: 240, height: null },
+      () => null,
+      { canvasBounds: BOUNDS_1000, prevPosition: undefined },
+    );
+    expect(findGroupLocation(layout, findPaneGroup(layout, "p")!)?.kind).toBe(
+      "floating",
+    );
+    // Server dock_left(): position CHANGED (float -> edge/left) -> relocate.
+    layout = applyPanelPlacement(
+      layout,
+      ["p"],
+      { position: { kind: "edge", edge: "left" }, width: null, height: null },
+      () => null,
+      { prevPosition: { kind: "float", x: 50, y: 50 } },
+    );
+    const loc = findGroupLocation(layout, findPaneGroup(layout, "p")!);
+    expect(loc?.kind).toBe("docked");
+    expect((loc as { edge: string }).edge).toBe("left");
   });
 });
