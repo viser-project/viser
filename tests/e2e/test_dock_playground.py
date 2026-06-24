@@ -233,17 +233,30 @@ def test_minimize_via_button(page: Page) -> None:
     _wait_collapsed(page, False)
 
 
-def test_handle_tap_does_not_minimize(page: Page) -> None:
-    """Guard the intended design: a tap (no drag) on the grip HANDLE must NOT
-    collapse the group -- minimize lives on its own button now."""
+def test_handle_tap_toggles_minimize(page: Page) -> None:
+    """A motionless tap anywhere on the grip HANDLE toggles minimize/expand --
+    consistent with the main panel's header. (A real drag still moves the panel;
+    the click-vs-drag threshold keeps a tap from being read as a drag.)"""
     leaf_grip = page.locator("[data-dock-leaf] [data-dock-griphandle]").first
     box = leaf_grip.bounding_box()
     assert box is not None
     cx, cy = _center(box)
 
     assert not _docked_collapsed(page)
+    # Tap (no motion) -> collapses.
     page.mouse.move(cx, cy)
     page.mouse.down()
     page.mouse.up()
     page.wait_for_timeout(120)
-    assert not _docked_collapsed(page), "a no-motion handle tap must not collapse"
+    assert _docked_collapsed(page), "a no-motion handle tap should collapse"
+
+    # Tap again -> expands. (The collapsed strip's cell is the handle now.)
+    strip = page.locator("[data-dock-group][data-dock-collapsed]").first
+    sbox = strip.bounding_box()
+    assert sbox is not None
+    sx, sy = _center(sbox)
+    page.mouse.move(sx, sy)
+    page.mouse.down()
+    page.mouse.up()
+    page.wait_for_timeout(120)
+    assert not _docked_collapsed(page), "a tap on the collapsed handle should expand"
