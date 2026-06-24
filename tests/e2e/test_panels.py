@@ -738,3 +738,51 @@ def test_minimized_multitab_strip_rows_expand_to_tab(
         0, timeout=5_000
     )
     expect(viser_page.get_by_text("beta body")).to_be_visible(timeout=5_000)
+
+
+def test_undock_minimized_panel_keeps_width(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """Regression: dock a panel (default ~300px), minimize it, drag it out to
+    float, then expand. The floated window must keep the panel's width, NOT the
+    narrow minimized-strip width (~96px). Before the fix, floatRectFor measured
+    the collapsed strip's DOM width and the window stayed ~96px after expand."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(300)
+
+    panel = viser_server.gui.add_panel()
+    with panel.add_tab("Wide"):
+        for i in range(3):
+            viser_server.gui.add_slider(f"s{i}", 0, 1, step=0.1, initial_value=0.5)
+    panel.dock_right()
+
+    leaf = viser_page.locator("[data-dock-leaf][data-dock-edge='right']").filter(
+        has=_tab(viser_page, "Wide")
+    )
+    expect(leaf).to_have_count(1, timeout=5_000)
+    docked_w = leaf.bounding_box()["width"]
+    assert docked_w > 200, f"docked panel should be wide, got {docked_w}"
+
+    # Minimize, then drag the strip out into the canvas to float it.
+    leaf.locator("[data-dock-minimize]").first.click()
+    viser_page.wait_for_timeout(400)
+    strip = viser_page.locator("[data-dock-group][data-dock-collapsed]").first
+    sb = strip.bounding_box()
+    viser_page.mouse.move(sb["x"] + sb["width"] / 2, sb["y"] + 40)
+    viser_page.mouse.down()
+    viser_page.mouse.move(sb["x"] - 400, sb["y"] + 220, steps=12)
+    viser_page.mouse.move(sb["x"] - 400, sb["y"] + 220)
+    viser_page.mouse.up()
+    viser_page.wait_for_timeout(400)
+
+    win = viser_page.locator("[data-floating-window]").filter(
+        has=_tab(viser_page, "Wide")
+    )
+    expect(win).to_have_count(1, timeout=5_000)
+    # Expand and assert the width survived (not collapsed to the strip width).
+    win.locator("[data-dock-minimize]").first.click()
+    viser_page.wait_for_timeout(400)
+    expanded_w = win.bounding_box()["width"]
+    assert expanded_w > 200, (
+        f"undocked+expanded panel collapsed to strip width: {expanded_w}px"
+    )
