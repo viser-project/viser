@@ -467,6 +467,116 @@ describe("docked group per-panel zones", () => {
   });
 });
 
+// regression: the SEAM between two vertically-stacked docked panels [A above B]
+// is one stable "insert between A and B" target. Crossing it used to flicker:
+// A's bottom band drew the line at A.bottom, the ~SPLIT_DIVIDER_PX divider gap
+// hit no target (a NONE dead frame), and B's grip bar drew at B.top -- so the
+// hint jumped A.bottom -> (gone) -> B.top. Now all three resolve to a split that
+// inserts between A and B, with the hint pinned to the gap center.
+describe("seam between vertically-stacked docked panels is one stable target", () => {
+  // Mirror the live geometry: A[15..404], 7px divider, B[411..800], in a left
+  // column. B's strip starts STRIP_OFFSET below B.top, so [411..423) is B's grip
+  // bar (above-strip -> split top).
+  const A = rect(0, 15, 300, 389); // bottom = 404
+  const B = rect(0, 411, 300, 389); // top = 411
+  const tree = colSplit([leaf("a"), leaf("b")]);
+  const layout = layoutWith({ left: tree });
+  const aNode = (tree as any).children[0].id;
+  const bNode = (tree as any).children[1].id;
+  const targets = () => [
+    dockedTarget("a", aNode, "left", A),
+    dockedTarget("b", bNode, "left", B),
+  ];
+  const seamCenter = (A.bottom + B.top) / 2; // 407.5
+
+  it("A's content bottom band -> split BELOW A (region bottom), line at gap center", () => {
+    const out = run(layout, targets(), 150, A.bottom - 5)!; // y=399, in A
+    expect(out.result).toEqual({
+      kind: "split",
+      edge: "left",
+      nodeId: aNode,
+      region: "bottom",
+    });
+    expect(out.hint.variant).toBe("line");
+    expect(out.hint.top + out.hint.height / 2).toBeCloseTo(seamCenter, 0);
+  });
+
+  it("the divider gap (dead spot) -> split ABOVE B (region top), line at gap center", () => {
+    const out = run(layout, targets(), 150, 407)!; // y=407, over the 7px divider
+    expect(out.result).toEqual({
+      kind: "split",
+      edge: "left",
+      nodeId: bNode,
+      region: "top",
+    });
+    expect(out.hint.variant).toBe("line");
+    expect(out.hint.top + out.hint.height / 2).toBeCloseTo(seamCenter, 0);
+  });
+
+  it("B's grip bar -> split ABOVE B (region top), line at gap center", () => {
+    const out = run(layout, targets(), 150, B.top + 6)!; // y=417, B's grip bar
+    expect(out.result).toEqual({
+      kind: "split",
+      edge: "left",
+      nodeId: bNode,
+      region: "top",
+    });
+    expect(out.hint.variant).toBe("line");
+    expect(out.hint.top + out.hint.height / 2).toBeCloseTo(seamCenter, 0);
+  });
+
+  it("the hint line stays at ONE position with NO null frame across the whole seam band", () => {
+    let lastTop: number | null = null;
+    const tops: number[] = [];
+    for (let y = A.bottom - 8; y <= B.top + 10; y += 1) {
+      const out = run(layout, targets(), 150, y);
+      // Once we are in the seam band (at/after A.bottom) there must be no dead
+      // frame and the result must insert between A and B.
+      if (y >= A.bottom) {
+        expect(out, `null hint at y=${y}`).not.toBeNull();
+        const res = out!.result;
+        expect(res.kind).toBe("split");
+        if (res.kind === "split") {
+          // Always either "below A" or "above B" -- both insert between them.
+          expect(
+            (res.nodeId === aNode && res.region === "bottom") ||
+              (res.nodeId === bNode && res.region === "top"),
+          ).toBe(true);
+        }
+        tops.push(out!.hint.top);
+      }
+      if (out !== null) lastTop = out.hint.top;
+    }
+    void lastTop;
+    // Hint line never moves while crossing the seam (stable, no 7px jump).
+    const min = Math.min(...tops);
+    const max = Math.max(...tops);
+    expect(max - min).toBeLessThanOrEqual(1);
+  });
+
+  it("single docked leaf (no sibling): bottom band still docks at the panel's own bottom edge", () => {
+    // Region-edge zones are suppressed for a single full-span leaf, so the
+    // per-panel bottom band must still work and anchor to the panel edge (the
+    // seam-snap must not kick in without a sibling).
+    const solo = leaf("a");
+    const soloLayout = layoutWith({ left: solo });
+    const frame = rect(0, 100, 300, 400); // bottom=500, mid-region (clamp inactive)
+    const out = run(
+      soloLayout,
+      [dockedTarget("a", solo.id, "left", frame)],
+      150,
+      frame.bottom - 10,
+    )!;
+    expect(out.result).toEqual({
+      kind: "split",
+      edge: "left",
+      nodeId: solo.id,
+      region: "bottom",
+    });
+    expect(out.hint.top + out.hint.height / 2).toBeCloseTo(frame.bottom, 0);
+  });
+});
+
 // regression: collapsed-target vertical zones are pixel-capped. A minimized
 // VERTICAL strip is narrow but region-tall; 30% of that height would be a huge
 // "split above/below" band. (No-op for short horizontal handle bars.)

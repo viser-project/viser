@@ -15,6 +15,7 @@ import {
   GroupId,
   NodeId,
   PaneId,
+  SPLIT_DIVIDER_PX,
   WindowId,
 } from "./types";
 
@@ -39,6 +40,10 @@ const SPLIT_BAND_H_MAX_PX = 70;
 // balloon on a tall panel -- the bulk of the content area stays "merge".
 const SPLIT_BAND_V = 0.15;
 const SPLIT_BAND_V_MAX_PX = 70;
+// Max vertical gap between two stacked docked panels still treated as ONE seam
+// (the divider). Slightly above SPLIT_DIVIDER_PX for sub-px layout slack; small
+// enough that two genuinely separated panels aren't fused.
+const SEAM_GAP_MAX_PX = SPLIT_DIVIDER_PX + 3;
 
 /** Where a drop will land, resolved from the pointer during a drag.
  * - edge: dock as a new outer column on an empty screen edge.
@@ -371,7 +376,93 @@ export function hitTest(
   for (const t of targets.groups) {
     if (hitsTarget(t, clientX, clientY)) g = t;
   }
-  if (g === undefined) return null;
+
+  // The visual SEAM between two vertically-stacked docked panels [A above B] is
+  // split across three slivers that all mean the same thing -- "insert a leaf
+  // between A and B": A's content bottom band (3c, region "bottom"), the
+  // ~SPLIT_DIVIDER_PX divider gap (a target-less strip), and B's grip bar (3a,
+  // region "top"). To make the hint feel like ONE stable target we (1) snap the
+  // line for both bands to the gap CENTER so it doesn't jump A.bottom<->B.top,
+  // and (2) treat the divider gap itself as part of the seam so there is no
+  // NONE dead frame as the pointer crosses it.
+  //
+  // dockedSeamSibling: given a docked group `g` and which side ("top"/"bottom")
+  // a split would land on, find the immediately-adjacent docked sibling across
+  // a small vertical gap (same edge, horizontally overlapping). Returns the
+  // sibling and the gap-center y, or null when `g` is at the region's outer edge
+  // (single panel / region boundary), where the existing r.top/r.bottom +
+  // on-screen clamp behavior must be preserved.
+  const dockedSeamSibling = (
+    self: GroupTarget,
+    side: "top" | "bottom",
+  ): { gapCenter: number } | null => {
+    if (self.ctx.kind !== "docked") return null;
+    const edge = self.ctx.edge;
+    const sr = self.rect;
+    const selfBoundary = side === "top" ? sr.top : sr.bottom;
+    let best: { gapCenter: number; gap: number } | null = null;
+    for (const t of targets.groups) {
+      if (t === self || t.ctx.kind !== "docked" || t.ctx.edge !== edge) continue;
+      const tr = t.rect;
+      // Must horizontally overlap (same column) to be a vertical neighbor.
+      if (tr.right <= sr.left || tr.left >= sr.right) continue;
+      // The neighbor sits on the relevant side, just across the divider gap.
+      const otherBoundary = side === "top" ? tr.bottom : tr.top;
+      const gap = side === "top" ? sr.top - tr.bottom : tr.top - sr.bottom;
+      // Only an immediately-adjacent panel across a small gap counts (skip far
+      // panels / overlaps). The divider is SPLIT_DIVIDER_PX; allow a little slack.
+      if (gap < -1 || gap > SEAM_GAP_MAX_PX) continue;
+      if (best === null || gap < best.gap)
+        best = { gapCenter: (selfBoundary + otherBoundary) / 2, gap };
+    }
+    return best;
+  };
+
+  if (g === undefined) {
+    // Divider dead-spot recovery: the pointer is over the ~SPLIT_DIVIDER_PX gap
+    // between two stacked docked panels (the divider has no group target). Map
+    // it to the seam split it sits in the middle of, so the hint stays stable
+    // and gap-free instead of blinking to NONE.
+    let seam: { lower: GroupTarget; gapCenter: number } | null = null;
+    for (const t of targets.groups) {
+      if (t.ctx.kind !== "docked") continue;
+      const sib = dockedSeamSibling(t, "top");
+      if (sib === null) continue;
+      const tr = t.rect;
+      // `t` is the LOWER panel of the pair; the gap is just above it. Confirm
+      // the pointer is in that gap (and horizontally within the column).
+      if (
+        clientX >= tr.left &&
+        clientX <= tr.right &&
+        clientY < tr.top &&
+        clientY >= sib.gapCenter - SEAM_GAP_MAX_PX
+      ) {
+        if (seam === null || sib.gapCenter > seam.gapCenter)
+          seam = { lower: t, gapCenter: sib.gapCenter };
+      }
+    }
+    if (seam !== null && seam.lower.ctx.kind === "docked") {
+      const t = 3;
+      return {
+        result: {
+          kind: "split",
+          edge: seam.lower.ctx.edge,
+          nodeId: seam.lower.ctx.nodeId,
+          region: "top",
+        },
+        hint: rel(
+          {
+            left: seam.lower.rect.left,
+            top: seam.gapCenter - t / 2,
+            width: seam.lower.rect.width,
+            height: t,
+          },
+          "line",
+        ),
+      };
+    }
+    return null;
+  }
   const r = g.rect;
   const strip = g.stripRect;
 
@@ -387,7 +478,14 @@ export function hitTest(
     // a seam between two stacked/side-by-side panes is mid-region, so no clamp
     // applies and "right of A" / "left of B" still draw the same line.
     if (region === "top" || region === "bottom") {
-      const raw = (region === "top" ? r.top : r.bottom) - t / 2;
+      // When this split lands on a SEAM shared with an adjacent stacked sibling
+      // (a divider gap between two docked panels), draw the line at the gap
+      // CENTER so "below A" and "above B" coincide instead of jumping the
+      // ~SPLIT_DIVIDER_PX divider width. With no sibling (region's outer edge),
+      // fall back to the panel boundary + on-screen clamp.
+      const seam = g!.ctx.kind === "docked" ? dockedSeamSibling(g!, region) : null;
+      const edgeY = region === "top" ? r.top : r.bottom;
+      const raw = (seam !== null ? seam.gapCenter : edgeY) - t / 2;
       const top = clamp(raw, crect.top, crect.top + crect.height - t);
       return rel({ left: r.left, top, width: r.width, height: t }, "line");
     }
