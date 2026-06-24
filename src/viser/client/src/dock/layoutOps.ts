@@ -1635,7 +1635,16 @@ export function applyPanelPlacement(
     }
   } else {
     if (position.kind === "edge") {
-      draft = dockToEdge(draft, [groupId], position.edge);
+      // Skip the re-dock when the group is ALREADY docked on this edge: a
+      // size-only re-placement (set_width) re-runs this branch, and re-docking
+      // would detach + recreate the leaf with a fresh node id -- which makes the
+      // width reconciler treat it as a new column and reset its width to the
+      // default, dropping the requested width (and needlessly reordering a
+      // multi-panel region). Leaving it in place keeps the column id stable so
+      // the size branch below applies the new width.
+      const loc = findGroupLocation(draft, groupId);
+      const alreadyHere = loc?.kind === "docked" && loc.edge === position.edge;
+      if (!alreadyHere) draft = dockToEdge(draft, [groupId], position.edge);
     } else if (position.kind === "float") {
       // Canvas-relative coords; negatives are gaps from the far edge. Resolved
       // against the live canvas + window size (and re-resolved on canvas changes
