@@ -786,3 +786,38 @@ def test_undock_minimized_panel_keeps_width(
     assert expanded_w > 200, (
         f"undocked+expanded panel collapsed to strip width: {expanded_w}px"
     )
+
+
+def test_emptied_docked_panel_revives(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """Regression: removing all of a DOCKED panel's tabs (down to zero) and then
+    adding a new tab must re-show the panel. Before the fix the stale empty group
+    lingered, the revive created a new orphaned group, and the panel rendered
+    nowhere (with a dev layout-invariant violation)."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(300)
+
+    panel = viser_server.gui.add_panel()
+    tab = panel.add_tab("Only")
+    with tab:
+        viser_server.gui.add_markdown("only content")
+    panel.dock_left()
+    expect(_tab(viser_page, "Only")).to_be_visible(timeout=5_000)
+
+    # Empty it: the panel disappears.
+    tab.remove()
+    expect(
+        viser_page.locator("[data-dock-leaf]").filter(has=_tab(viser_page, "Only"))
+    ).to_have_count(0, timeout=5_000)
+
+    # Revive: a fresh tab must re-show the panel, docked left again.
+    with panel.add_tab("Revived"):
+        viser_server.gui.add_markdown("back content")
+    revived = _tab(viser_page, "Revived")
+    expect(revived).to_be_visible(timeout=5_000)
+    expect(
+        viser_page.locator("[data-dock-leaf][data-dock-edge='left']").filter(
+            has=revived
+        )
+    ).to_have_count(1)

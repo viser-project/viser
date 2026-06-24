@@ -684,6 +684,30 @@ function StandalonePanelPlacement({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, orderKey, dock.api]);
 
+  // Remember the panel's last-known panes so we can clean up the dock layout
+  // when the panel is emptied (the empty effect below has no current tabIds to
+  // look the group up by).
+  const lastTabIds = React.useRef<string[]>([]);
+  if (tabIds.length > 0) lastTabIds.current = tabIds;
+
+  // Emptied to ZERO tabs (last tab removed) while still visible: remove the
+  // panel's now-dead panes from the dock layout (collapsing its group/leaf) and
+  // forget the applied placement, so re-populating the panel later re-places it
+  // cleanly. Without this, a docked panel's stale group lingers (the membership
+  // effect bails on !ready and the hide effect bails on visible), and a revive
+  // creates a NEW group -- orphaning the stale one and rendering nowhere.
+  React.useEffect(() => {
+    if (!visible || tabIds.length > 0) return;
+    dock.api.apply((layout) => {
+      let next = layout;
+      for (const id of lastTabIds.current) next = ops.removePane(next, id);
+      return next;
+    });
+    appliedPlacementKey.current = null;
+    appliedPosition.current = undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, orderKey, dock.api]);
+
   // (2) Reconcile MEMBERSHIP (tabs added/removed) without repositioning, so a
   // tab change updates the group's panes but leaves its current location alone.
   // Edge case: if the server replaced ALL tab containers at once (zero overlap
