@@ -198,19 +198,29 @@ export function topColumns(tree: DockNode): DockNode[] {
  * collapsing the whole stack to one column's worth (the LEAD 1 bug). */
 export function widthColumns(tree: DockNode): DockNode[] {
   if (tree.type === "leaf" || tree.dir === "row") return topColumns(tree);
-  // Column (stacked) root: the width-bearing child is the widest one. Pick by
-  // maxRegionWidth (its full horizontal extent) so a nested row wins over a
-  // stacked leaf, then recurse to surface that row's columns.
+  // Column (stacked) root: the width-bearing child is the one with the most
+  // side-by-side columns (a nested row of N leaves outranks a stacked leaf), so
+  // we recurse into it to surface those columns.
   let widest = tree.children[0];
   let widestExtent = -Infinity;
   for (const child of tree.children) {
-    const extent = maxRegionWidth(child);
+    const extent = columnExtent(child);
     if (extent > widestExtent) {
       widestExtent = extent;
       widest = child;
     }
   }
   return widthColumns(widest);
+}
+
+/** Number of side-by-side columns a node spans: leaf = 1, row = sum of its
+ * children, column = max of its children. A pure ORDINAL comparator for
+ * widthColumns (which stacked child is "widest") -- no pixels, no cap. */
+function columnExtent(node: DockNode): number {
+  if (node.type === "leaf") return 1;
+  if (node.dir === "row")
+    return node.children.reduce((s, c) => s + columnExtent(c), 0);
+  return Math.max(...node.children.map(columnExtent));
 }
 
 /** Whether a region's given edge is a single full-span leaf. When true, a "span
@@ -261,31 +271,6 @@ export function minRegionWidth(
     );
   }
   return Math.max(...node.children.map((c) => minRegionWidth(c, dividerPx)));
-}
-
-// A leaf's nominal width unit for the structural extent comparator below. There
-// is NO real per-panel max width anymore (regions/floats are bounded only by the
-// container -- see widthReconciliation.colsMax / FloatingWindowView.maxResizeWidth);
-// this constant only gives leaves a relative size so widthColumns can pick a
-// column's width-bearing child (a nested row of N leaves outranks a single leaf).
-export const LEAF_WIDTH_UNIT_PX = 600;
-
-/** Structural horizontal EXTENT of a node, used only as a RELATIVE comparator
- * (widthColumns picks a column's widest child). Mirrors minRegionWidth: a row
- * sums its children (so an N-column row outranks a single leaf); a column takes
- * the max. NOT a width cap -- nothing clamps to this. */
-export function maxRegionWidth(
-  node: DockNode,
-  dividerPx = SPLIT_DIVIDER_PX,
-): number {
-  if (node.type === "leaf") return LEAF_WIDTH_UNIT_PX;
-  if (node.dir === "row") {
-    return (
-      node.children.reduce((sum, c) => sum + maxRegionWidth(c, dividerPx), 0) +
-      dividerPx * (node.children.length - 1)
-    );
-  }
-  return Math.max(...node.children.map((c) => maxRegionWidth(c, dividerPx)));
 }
 
 /** The area id whose tab group is `groupId`, or null. A group that backs a

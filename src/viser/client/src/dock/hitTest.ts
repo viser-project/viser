@@ -298,10 +298,7 @@ export function hitTest(
       )
         continue;
       if (
-        clientX >= t.stripRect.left &&
-        clientX <= t.stripRect.right &&
-        clientY >= t.stripRect.top &&
-        clientY <= t.stripRect.bottom &&
+        inside(t.stripRect, clientX, clientY) &&
         tabInsertion(t.tabs, clientX, clientY) !== null
       )
         return true;

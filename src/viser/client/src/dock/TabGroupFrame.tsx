@@ -11,7 +11,7 @@ import {
   gripBarBg,
   headerRule,
 } from "./DockStyles.css";
-import { keyActivate, prefersReducedMotion } from "./gestures";
+import { prefersReducedMotion, tabListKeyDown } from "./gestures";
 import { GripPill, HandleIconButton } from "./handles";
 import { PaneSpec, TabGroup } from "./types";
 
@@ -223,25 +223,15 @@ export function TabGroupFrame({
   // paying layout reads per render.
   // Tablist keyboard pattern: ArrowLeft/Right activate the neighbor tab and
   // move focus with it; Enter/Space activate the focused tab.
-  const tabKeyDown =
-    (paneId: string) => (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-        event.preventDefault();
-        event.stopPropagation();
-        const i = group.paneIds.indexOf(paneId);
-        const next = group.paneIds[event.key === "ArrowLeft" ? i - 1 : i + 1];
-        if (next !== undefined) {
-          dock.activateTab(group.id, next);
-          event.currentTarget.parentElement
-            ?.querySelector<HTMLElement>(
-              `[data-dock-tab="${CSS.escape(next)}"]`,
-            )
-            ?.focus();
-        }
-        return;
-      }
-      keyActivate(() => dock.activateTab(group.id, paneId))(event);
-    };
+  const tabKeyDown = (paneId: string) =>
+    tabListKeyDown({
+      paneId,
+      paneIds: group.paneIds,
+      prevKey: "ArrowLeft",
+      nextKey: "ArrowRight",
+      onActivate: (id) => dock.activateTab(group.id, id),
+      onMove: (id) => dock.activateTab(group.id, id),
+    });
 
   const stripRef = React.useRef<HTMLDivElement>(null);
   const prevLefts = React.useRef<Map<string, number>>(new Map());

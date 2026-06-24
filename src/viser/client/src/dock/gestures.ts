@@ -163,6 +163,44 @@ export function keyActivate(action: () => void) {
   };
 }
 
+/** Roving-focus keyboard handler for a tab list (horizontal strip or vertical
+ * minimized strip): the `prev`/`next` arrow keys move focus to the adjacent tab
+ * (found by its `data-dock-tab` attribute off the shared parent), and Enter/Space
+ * activate the focused tab. Both axes share this; the caller picks the key pair,
+ * the pane order, and what "activate"/"move" do. `onMove` (optional) runs when
+ * focus moves -- the expanded strip activates-on-move; the minimized strip
+ * doesn't (activating there would expand the panel). */
+export function tabListKeyDown(opts: {
+  paneId: string;
+  paneIds: readonly string[];
+  prevKey: "ArrowLeft" | "ArrowUp";
+  nextKey: "ArrowRight" | "ArrowDown";
+  onActivate: (paneId: string) => void;
+  onMove?: (paneId: string) => void;
+}) {
+  return (event: {
+    key: string;
+    preventDefault: () => void;
+    stopPropagation: () => void;
+    currentTarget: { parentElement: HTMLElement | null };
+  }) => {
+    if (event.key === opts.prevKey || event.key === opts.nextKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      const i = opts.paneIds.indexOf(opts.paneId);
+      const next = opts.paneIds[event.key === opts.prevKey ? i - 1 : i + 1];
+      if (next !== undefined) {
+        opts.onMove?.(next);
+        event.currentTarget.parentElement
+          ?.querySelector<HTMLElement>(`[data-dock-tab="${CSS.escape(next)}"]`)
+          ?.focus();
+      }
+      return;
+    }
+    keyActivate(() => opts.onActivate(opts.paneId))(event);
+  };
+}
+
 // Honors the OS-level "reduce motion" accessibility setting: dock animations
 // (FLIP slides, collapse transitions, preview tweens) become instant. The
 // MediaQueryList is module-scoped so `.matches` reads stay live without

@@ -3,13 +3,13 @@
 //
 // Scope:
 //   - topColumns / widthColumns: which nodes determine a region's width.
-//   - minRegionWidth / maxRegionWidth: aggregate width bounds for a subtree.
+//   - minRegionWidth: aggregate min width for a subtree.
 //   - setNodeWeights: id-based weight setting (fixes M1: a divider in a
 //     reserved subtree references children by id, so partial/synthetic
 //     subtrees update the right nodes).
 //   - dockToRegionEdge / dropOnDockedLeaf top-bottom behavior as it affects
 //     widths and the vertical 50/50 split.
-//   - RegionResizer clamp bounds built from widthColumns + min/maxRegionWidth.
+//   - RegionResizer clamp bounds built from widthColumns + minRegionWidth.
 //
 // Includes the resize-audit regression pins (task #38), which fixed:
 //   LEAD 1 (width): dockToRegionEdge with side top/bottom onto a multi-column
@@ -37,8 +37,6 @@ import {
   topColumns,
   widthColumns,
   minRegionWidth,
-  maxRegionWidth,
-  LEAF_WIDTH_UNIT_PX,
   setNodeWeights,
   dockToRegionEdge,
   dropOnDockedLeaf,
@@ -124,7 +122,7 @@ describe("widthColumns", () => {
   it("a plain vertical stack picks one leaf (stacked cells share one width)", () => {
     const a = leaf("a");
     const b = leaf("b");
-    // Both leaves cap at the same max width, so the first is chosen; the result
+    // Both leaves have equal column-extent, so the first is chosen; the result
     // is a single width-column (the stack renders all at one shared width).
     expect(widthColumns(colSplit([a, b]))).toEqual([a]);
   });
@@ -147,37 +145,10 @@ describe("widthColumns", () => {
 
 });
 
-// ===========================================================================
-// maxRegionWidth (mirror of minRegionWidth)
-// ===========================================================================
-describe("maxRegionWidth", () => {
-  it("a leaf returns the leaf width unit (structural comparator)", () => {
-    expect(maxRegionWidth(leaf("a"))).toBe(LEAF_WIDTH_UNIT_PX);
-  });
-
-  it("a row sums children maxima plus dividers", () => {
-    const divider = 6;
-    expect(maxRegionWidth(rowSplit([leaf("a"), leaf("b")]), divider)).toBe(
-      LEAF_WIDTH_UNIT_PX * 2 + divider,
-    );
-  });
-
-  it("a column (stacked) takes the max of its children (shared width)", () => {
-    expect(maxRegionWidth(colSplit([leaf("a"), leaf("b")]))).toBe(LEAF_WIDTH_UNIT_PX);
-  });
-
-  it("honors a custom divider width and >=2 children", () => {
-    expect(maxRegionWidth(rowSplit([leaf("a"), leaf("b"), leaf("c")]), 10)).toBe(
-      LEAF_WIDTH_UNIT_PX * 3 + 10 * 2,
-    );
-  });
-
-  it("nested: a column containing a row uses the row's summed max", () => {
-    const divider = 6;
-    const node = colSplit([leaf("a"), rowSplit([leaf("b"), leaf("c")])]);
-    expect(maxRegionWidth(node, divider)).toBe(LEAF_WIDTH_UNIT_PX * 2 + divider);
-  });
-});
+// (maxRegionWidth removed: there is no per-panel max width. widthColumns now
+// picks a column's width-bearing child by an internal column-COUNT comparator,
+// covered by the "picks the WIDEST stacked child" case in the widthColumns
+// describe above.)
 
 // ===========================================================================
 // setNodeWeights -- id-based weight setting (fixes M1).
@@ -356,9 +327,9 @@ describe("column-rooted region width bounds reflect the inner row", () => {
 
 // ===========================================================================
 // RegionResizer clamp invariant: for a column-rooted region with UNEQUAL inner
-// columns, the per-column clamp (built from widthColumns + min/maxRegionWidth)
-// keeps every inner column within [min, max] when the whole region is scaled.
-// This mirrors the clamp in DockManager.RegionResizer.onResize.
+// columns, the per-column clamp (built from widthColumns + minRegionWidth, with
+// no max ceiling) keeps every inner column at/above its grab-min when the whole
+// region is scaled. This mirrors the clamp in DockManager.RegionResizer.onResize.
 // ===========================================================================
 describe("RegionResizer clamp bounds for a column-rooted unequal region", () => {
   /** Reproduce the clamp computation from the width reconciler for a region
