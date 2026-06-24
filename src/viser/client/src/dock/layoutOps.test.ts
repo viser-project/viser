@@ -1299,6 +1299,13 @@ describe("resizeWindow", () => {
     const layout = makeLayout({ floating: [{ id: "w1", stack: ["a"] }] });
     expect(resizeWindow(layout, "zzz", 100)).toBe(layout);
   });
+  it("floors width at the grab minimum (server set_width(0)/negative)", () => {
+    const layout = makeLayout({ floating: [{ id: "w1", stack: ["a"], width: 300 }] });
+    expect(resizeWindow(layout, "w1", 0).floating[0].width).toBe(MIN_REGION_GRAB_PX);
+    expect(resizeWindow(layout, "w1", -50).floating[0].width).toBe(
+      MIN_REGION_GRAB_PX,
+    );
+  });
 });
 
 describe("resizeWindowHeight", () => {
