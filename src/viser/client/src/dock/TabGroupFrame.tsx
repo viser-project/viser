@@ -380,9 +380,7 @@ export function TabGroupFrame({
             display: "flex",
             alignItems: "center",
             flexShrink: 0,
-            whiteSpace: "nowrap",
             overflow: "hidden",
-            textOverflow: "ellipsis",
             // With a custom titleNode (e.g. the connection-status bar), match the
             // live FloatingPanel handle EXACTLY: 2.75em tall, 1.5em line-height,
             // default font size, weight 400, 0.75em side padding, and just a
@@ -418,7 +416,17 @@ export function TabGroupFrame({
               {panes[group.activeId]?.titleNode}
             </Box>
           ) : (
-            (panes[group.activeId]?.title ?? group.activeId)
+            // Ellipsis on a non-flex child (see the tab-strip note below).
+            <span
+              style={{
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {panes[group.activeId]?.title ?? group.activeId}
+            </span>
           )}
         </Box>
       ) : (
@@ -481,9 +489,7 @@ export function TabGroupFrame({
                   padding: "0 0.9em",
                   maxWidth: "14em",
                   fontWeight: active ? 600 : 500,
-                  whiteSpace: "nowrap",
                   overflow: "hidden",
-                  textOverflow: "ellipsis",
                   cursor: "pointer",
                   userSelect: "none",
                   touchAction: "none",
@@ -508,12 +514,26 @@ export function TabGroupFrame({
                       display: "flex",
                       alignItems: "center",
                       marginRight: "0.5em",
+                      flexShrink: 0,
                     }}
                   >
                     {spec.icon}
                   </Box>
                 )}
-                {spec?.title ?? paneId}
+                {/* Ellipsis must live on a NON-flex (block) element, not the flex
+                    tab Box -- text-overflow is ignored on a flex container, so a
+                    raw text child would hard-clip with no "...". minWidth:0 lets
+                    this item shrink below its content width inside the flex row. */}
+                <span
+                  style={{
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {spec?.title ?? paneId}
+                </span>
               </Box>
             );
           })}
