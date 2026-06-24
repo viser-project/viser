@@ -1568,27 +1568,54 @@ export function applyPanelPlacement(
   // Float a group at the given REQUESTED coords: record them on the window (so
   // the position re-resolves on canvas changes) and set an initial absolute
   // position from the current bounds + window size.
+  //
+  // If the group is ALREADY the sole occupant of a floating window, reuse that
+  // window (preserving its id, z-order, and -- when the user has taken manual
+  // control of its position via a drag, i.e. anchor was cleared -- its current
+  // position). This is what makes a later size-only re-placement (set_width /
+  // set_height) update the size without recreating the window or yanking a
+  // user-dragged panel back to its server anchor. A fresh float (group docked or
+  // unplaced) makes a new window as before.
   const floatAtRequested = (
     reqX: number,
     reqY: number,
     width: number,
     height: number | undefined,
   ): void => {
-    const result = floatGroup(draft, groupId, reqX, reqY, width, height);
-    draft = result.layout;
-    if (result.windowId === null) return;
-    const win = draft.floating.find((w) => w.id === result.windowId);
-    if (win === undefined) return;
-    win.anchor = { x: reqX, y: reqY };
-    const resolved = resolveRequestedFloatPosition(
-      reqX,
-      reqY,
-      win.width,
-      pinnedPxOf(win.height) ?? 0,
-      bounds,
-    );
-    win.x = resolved.x;
-    win.y = resolved.y;
+    const loc = findGroupLocation(draft, groupId);
+    const reusable =
+      loc?.kind === "floating"
+        ? draft.floating.find((w) => w.id === loc.windowId)
+        : undefined;
+    let win: FloatingWindow | undefined;
+    // Reuse only a SOLO window (this group is its whole stack) -- a multi-group
+    // stack must keep its other groups, so re-float into a fresh window.
+    if (reusable !== undefined && reusable.stack.length === 1) {
+      win = reusable;
+      win.width = width;
+      win.height = windowHeight(height);
+    } else {
+      const result = floatGroup(draft, groupId, reqX, reqY, width, height);
+      draft = result.layout;
+      if (result.windowId === null) return;
+      win = draft.floating.find((w) => w.id === result.windowId);
+      if (win === undefined) return;
+    }
+    // A user-dragged window (anchor cleared) keeps its position on a size-only
+    // re-placement; otherwise (re)anchor and resolve against the live canvas.
+    const userOwnsPosition = win === reusable && win.anchor === undefined;
+    if (!userOwnsPosition) {
+      win.anchor = { x: reqX, y: reqY };
+      const resolved = resolveRequestedFloatPosition(
+        reqX,
+        reqY,
+        win.width,
+        pinnedPxOf(win.height) ?? 0,
+        bounds,
+      );
+      win.x = resolved.x;
+      win.y = resolved.y;
+    }
   };
 
   const position = placement.position;

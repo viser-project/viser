@@ -16,7 +16,7 @@ import {
   resolveRequestedFloatPosition,
   tearOutPane,
 } from "./layoutOps";
-import { emptyLayout, DockLayout } from "./types";
+import { emptyLayout, DockLayout, pinnedPxOf } from "./types";
 
 const BOUNDS_1000 = {
   width: 1000,
@@ -648,5 +648,48 @@ describe("placement re-gathers tabs dragged out of the panel", () => {
     expect(
       layout.floating.filter((w) => w.stack.includes(gA!)).length,
     ).toBe(1);
+  });
+});
+
+describe("re-placing an already-floating panel reuses its window", () => {
+  const BOUNDS = { width: 1000, height: 800, leftInset: 0, rightInset: 0 };
+  const floatP = (l: DockLayout, height: number | null) =>
+    applyPanelPlacement(
+      l,
+      ["p"],
+      { position: { kind: "float", x: 80, y: 80 }, width: 240, height },
+      () => null,
+      { canvasBounds: BOUNDS },
+    );
+
+  it("set_height keeps the SAME window id (no churn) and pins the height", () => {
+    let layout = floatP(emptyLayout(), null);
+    expect(layout.floating).toHaveLength(1);
+    const id = layout.floating[0].id;
+    expect(pinnedPxOf(layout.floating[0].height)).toBeUndefined();
+
+    // set_height(450): same position+width, now a height.
+    layout = floatP(layout, 450);
+    expect(layout.floating).toHaveLength(1);
+    expect(layout.floating[0].id).toBe(id); // window reused, not recreated
+    expect(pinnedPxOf(layout.floating[0].height)).toBe(450);
+    expect(layout.floating[0].x).toBe(80);
+  });
+
+  it("a size-only re-placement does NOT move a user-dragged panel", () => {
+    let layout = floatP(emptyLayout(), null);
+    const id = layout.floating[0].id;
+    // User drags it elsewhere (moveWindow clears the anchor -> user-owned).
+    layout = moveWindow(layout, id, 500, 400);
+    expect(layout.floating[0].anchor).toBeUndefined();
+    expect(layout.floating[0].x).toBe(500);
+
+    // Server set_height re-runs placement (position still float 80,80). The
+    // user's position must be preserved, not yanked back to the anchor.
+    layout = floatP(layout, 450);
+    expect(layout.floating[0].id).toBe(id);
+    expect(pinnedPxOf(layout.floating[0].height)).toBe(450);
+    expect(layout.floating[0].x).toBe(500);
+    expect(layout.floating[0].y).toBe(400);
   });
 });
