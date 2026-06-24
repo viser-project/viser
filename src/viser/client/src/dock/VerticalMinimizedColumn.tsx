@@ -9,7 +9,7 @@ import { IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
 import { gripBarBg, focusRing } from "./DockStyles.css";
-import { keyActivate } from "./gestures";
+import { tabListKeyDown } from "./gestures";
 import { HandleIconButton } from "./handles";
 import { DockEdge, DockNode, NodeId, TabGroup } from "./types";
 import { collectLeaves } from "./layoutOps";
@@ -138,25 +138,19 @@ function VerticalMinimizedCell({
         cell's onPointerDown above). role="tablist"/"tab" + keyboard support keep
         the strip accessible, mirroring the expanded tab strip. */}
         <Box role="tablist" aria-orientation="vertical" style={{ width: "100%" }}>
-          {group.paneIds.map((paneId, i) => {
+          {group.paneIds.map((paneId) => {
             const spec = dock.panes[paneId];
             const active = paneId === group.activeId;
             // Up/Down move focus between rows; Enter/Space expand to this tab.
-            const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-              if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-                event.preventDefault();
-                const next =
-                  group.paneIds[event.key === "ArrowUp" ? i - 1 : i + 1];
-                if (next !== undefined)
-                  event.currentTarget.parentElement
-                    ?.querySelector<HTMLElement>(
-                      `[data-dock-tab="${CSS.escape(next)}"]`,
-                    )
-                    ?.focus();
-                return;
-              }
-              keyActivate(() => dock.expandToTab(group.id, paneId))(event);
-            };
+            // No onMove: arrowing through a minimized strip shouldn't expand it
+            // (that's what Enter/Space + click do).
+            const onKeyDown = tabListKeyDown({
+              paneId,
+              paneIds: group.paneIds,
+              prevKey: "ArrowUp",
+              nextKey: "ArrowDown",
+              onActivate: (id) => dock.expandToTab(group.id, id),
+            });
             return (
               <Box
                 key={paneId}

@@ -1732,7 +1732,11 @@ export function DockManager({
                       ? [startRegion]
                       : cols.map((c) => c.weight);
                     const mins = cols.map((c) => ops.minRegionWidth(c));
-                    const maxs = cols.map((c) => ops.maxRegionWidth(c));
+                    // No per-column max: a region drag is bounded only by its
+                    // columns' grab-mins (and the render-time canvas guard), not
+                    // a fixed per-panel width -- matching the width reconciler
+                    // and SplitView divider drags.
+                    const maxs = cols.map(() => Infinity);
                     const ids = cols.map((c) => c.id);
                     return (reservedPx: number) => {
                       // The grip reports the desired RESERVED width, which
