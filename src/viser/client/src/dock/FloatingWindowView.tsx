@@ -19,7 +19,6 @@ import {
   clamp,
   FloatingWindow,
   GroupId,
-  MAX_PANEL_WIDTH_PX,
   MIN_REGION_GRAB_PX,
   MIN_WINDOW_HEIGHT_PX,
   pinnedPxOf,
@@ -164,13 +163,11 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
 
   // Container-relative width cap: like the original FloatingPanel, a resize
   // always leaves a sliver of canvas visible (it may never consume the whole
-  // container), on top of the absolute MAX_PANEL_WIDTH_PX.
+  // container). There is no absolute max width -- the only ceiling is the
+  // container minus a canvas sliver.
   const maxResizeWidth = () => {
     const containerW = paperRef.current?.parentElement?.clientWidth ?? Infinity;
-    return Math.max(
-      MIN_REGION_GRAB_PX,
-      Math.min(MAX_PANEL_WIDTH_PX, containerW - RESIZE_KEEP_CANVAS_PX),
-    );
+    return Math.max(MIN_REGION_GRAB_PX, containerW - RESIZE_KEEP_CANVAS_PX);
   };
 
   const widthResizeHandler =

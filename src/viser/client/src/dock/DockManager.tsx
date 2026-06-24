@@ -54,7 +54,6 @@ import {
   DockEdge,
   DockLayout,
   GroupId,
-  MAX_PANEL_WIDTH_PX,
   MIN_CANVAS_PX,
   MIN_REGION_GRAB_PX,
   NodeId,
@@ -862,7 +861,7 @@ export function DockManager({
     return {
       x: r.left - crect.left,
       y: r.top - crect.top,
-      width: clamp(r.width, MIN_REGION_GRAB_PX, MAX_PANEL_WIDTH_PX),
+      width: Math.max(r.width, MIN_REGION_GRAB_PX),
       // Rendered height -- used to give an undocked panel a definite height when
       // it needs one (e.g. a full-bleed nested area, which collapses to 0 in an
       // auto-height window). Clamped so a region-tall panel doesn't float huge.

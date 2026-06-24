@@ -17,12 +17,7 @@
 // writer. Layouts that bypassed the ops (test literals, injected layouts)
 // simply lack the field and get defaults here.
 
-import {
-  collectLeafGroups,
-  maxRegionWidth,
-  minRegionWidth,
-  widthColumns,
-} from "./layoutOps";
+import { collectLeafGroups, minRegionWidth, widthColumns } from "./layoutOps";
 import { planRegion, RegionPlan } from "./regionPlan";
 import {
   clamp,
@@ -30,7 +25,6 @@ import {
   DockEdge,
   DockLayout,
   DockNode,
-  MIN_REGION_GRAB_PX,
   regionWidthsOf,
 } from "./types";
 
@@ -46,11 +40,12 @@ function colsMin(cols: DockNode[]): number {
   return cols.reduce((s, c) => s + minRegionWidth(c), 0);
 }
 
-/** Sum of `cols`' maximum widths (no dividers -- those are chrome), for
- * clamping regionWidth. */
-function colsMax(cols: DockNode[]): number {
-  return cols.reduce((s, c) => s + maxRegionWidth(c), 0);
-}
+// NOTE: there is no upper bound on region width. A docked region may be dragged
+// as wide as the user likes; only the grab-min floor is enforced here, and the
+// render-time MIN_CANVAS_PX guard keeps a canvas sliver visible. So the width
+// clamps below use `Infinity` as their ceiling (this also removed the old
+// structure-dependent cap: a single panel capped at 600 alone but ~1207 when
+// stacked above a two-panel row).
 
 /** Reconcile docked region widths across a layout transition, writing the
  * result into `next.regionWidth` (and, for structural changes, into the
@@ -116,7 +111,7 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
           nextRW[edge] = clamp(
             sum,
             colsMin(expanded),
-            Math.max(MIN_REGION_GRAB_PX, colsMax(expanded)),
+            Infinity,
           );
         }
       }
@@ -154,18 +149,18 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
         // column's contents may have changed shape across the op (e.g. a lone
         // leaf becoming row-rooted raises its per-panel minimum), so the old
         // pixel width isn't automatically still legal for it.
-        return clamp(match.px, minRegionWidth(c), maxRegionWidth(c));
+        return clamp(match.px, minRegionWidth(c), Infinity);
       }
       // New column, previously EMPTY edge: the edge's preserved regionWidth
       // IS this content's width -- e.g. a layout snapshot being restored
       // (Escape after an undock), where the carried width must round-trip
       // exactly rather than reset to the default.
       if (prevCols.length === 0 && nextCols.length === 1) {
-        return clamp(nextRW[edge], minRegionWidth(c), maxRegionWidth(c));
+        return clamp(nextRW[edge], minRegionWidth(c), Infinity);
       }
       // New column joining existing content: a sensible default, clamped to
       // its panes' min/max.
-      return clamp(DEFAULT_REGION_PX, minRegionWidth(c), maxRegionWidth(c));
+      return clamp(DEFAULT_REGION_PX, minRegionWidth(c), Infinity);
     });
     // Set the columns' weights to their pixel widths so each renders at
     // `intended` px within the summed region width. ONLY when there are
@@ -197,7 +192,7 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
         ? clamp(
             summed,
             colsMin(expandedCols),
-            Math.max(MIN_REGION_GRAB_PX, colsMax(expandedCols)),
+            Infinity,
           )
         : summed;
     clampRegionWidth(nextRW, edge, nextPlan);
@@ -217,14 +212,10 @@ function clampRegionWidth(
 ): void {
   const expanded = plan.expandedColumns;
   if (expanded.length === 0) return; // fully minimized: width kept for restore.
-  // Clamp to [min, max] on EVERY commit so a server set_width can't drive the
-  // region past its panes' summed grab-min/max (interactive resize already
-  // clamps; this guards the server-driven width path, which otherwise had no
-  // ceiling and could overflow the canvas). The floor is the grabbable sliver,
-  // not the content min -- narrower regions scroll their body. Mirrors the
-  // structural-branch clamp bounds.
+  // Floor the width on EVERY commit so a server set_width can't drive the region
+  // below its panes' summed grab-min (interactive resize already clamps; this
+  // guards the server-driven path). The floor is the grabbable sliver, not the
+  // content min -- a narrower region scrolls its body. There is no max ceiling.
   const min = colsMin(expanded);
-  const max = Math.max(MIN_REGION_GRAB_PX, colsMax(expanded));
   if (rw[edge] < min) rw[edge] = min;
-  else if (rw[edge] > max) rw[edge] = max;
 }

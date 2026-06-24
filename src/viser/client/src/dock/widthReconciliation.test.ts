@@ -109,27 +109,26 @@ describe("reconcileRegionWidths with minimized columns", () => {
   });
 });
 
-describe("reconcileRegionWidths width clamp (max ceiling)", () => {
-  it("caps an over-wide single-column width to its max (canvas-overflow guard)", () => {
-    // A server set_width(100000) on one docked column: the deliberate
-    // regionWidth write must be capped to the column's max (600). Same-set
-    // commit -> the clamp runs every commit.
+describe("reconcileRegionWidths width clamp (no max ceiling)", () => {
+  it("preserves a deliberately wide single-column width (no per-panel cap)", () => {
+    // There is no fixed max panel width: a server set_width(2000) on a docked
+    // column keeps its requested width. (Render-time MIN_CANVAS_PX keeps a canvas
+    // sliver visible; the model width itself is uncapped.) Same-set commit -> the
+    // clamp runs every commit but only enforces the grab-min floor.
     const prev = emptyLayout();
     prev.groups = { a: group("a") };
     prev.docked.right = leaf("a", 1);
     prev.regionWidth = { left: 0, right: 400 };
     const next = structuredClone(prev);
-    next.regionWidth = { left: 0, right: 100000 };
-    expect(recon(prev, next).right).toBe(600);
+    next.regionWidth = { left: 0, right: 2000 };
+    expect(recon(prev, next).right).toBe(2000);
   });
 
-  it("caps an over-wide multi-column width to colsMax", () => {
+  it("preserves a deliberately wide multi-column width (no colsMax cap)", () => {
     const prev = threeColumns([300, 300, 300]);
     const next = structuredClone(prev);
-    next.regionWidth = { left: 0, right: 100000 };
-    const w = recon(prev, next).right;
-    expect(w).toBeLessThan(2000); // ~3*600 + dividers, nowhere near 100000
-    expect(w).toBeGreaterThan(0);
+    next.regionWidth = { left: 0, right: 5000 };
+    expect(recon(prev, next).right).toBe(5000);
   });
 });
 
