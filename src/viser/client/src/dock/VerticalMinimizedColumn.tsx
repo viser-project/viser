@@ -8,7 +8,8 @@ import { Box, Paper } from "@mantine/core";
 import { IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
-import { gripBarBg } from "./DockStyles.css";
+import { gripBarBg, focusRing } from "./DockStyles.css";
+import { keyActivate } from "./gestures";
 import { HandleIconButton } from "./handles";
 import { DockEdge, DockNode, NodeId, TabGroup } from "./types";
 import { collectLeaves } from "./layoutOps";
@@ -130,70 +131,93 @@ function VerticalMinimizedCell({
           </HandleIconButton>
         </Box>
         {/* One row PER TAB: upright icon + rotated (book-spine) label. Each row
-        is its own click target (data-dock-tab) -- clicking expands the panel to
-        that tab -- so a multi-tab minimized panel shows ALL its tabs instead of
-        one arbitrary icon plus a confusing joined label. The whole cell remains
-        draggable for tear-out (handled by the cell's onPointerDown above). */}
-        {group.paneIds.map((paneId) => {
-          const spec = dock.panes[paneId];
-          const active = paneId === group.activeId;
-          return (
-            <Box
-              key={paneId}
-              data-dock-tab={paneId}
-              role="tab"
-              aria-selected={active}
-              title={spec?.title ?? paneId}
-              style={{
-                flexShrink: 1,
-                minHeight: 0,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                width: "100%",
-                paddingTop: "0.35em",
-                paddingBottom: "0.6em",
-                cursor: "pointer",
-                // Active tab reads at full strength; others are dimmed chrome.
-                color: active
-                  ? "var(--mantine-primary-color-filled)"
-                  : "var(--mantine-color-dimmed)",
-                opacity: active ? 1 : 0.85,
-              }}
-            >
-              {spec?.icon !== undefined && (
-                // Icons don't read rotated -- keep them upright.
-                <Box
-                  style={{
-                    flexShrink: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginBottom: "0.3em",
-                  }}
-                >
-                  {spec.icon}
-                </Box>
-              )}
-              {/* Book-spine orientation (top-to-bottom, rotated clockwise): the
-              portable vertical-text form -- sideways-lr isn't Safari-supported. */}
+        is its own tab control -- click, or keyboard (Enter/Space to expand to
+        it, Up/Down to move focus between rows) -- so a multi-tab minimized panel
+        shows ALL its tabs instead of one arbitrary icon plus a confusing joined
+        label. The whole cell remains draggable for tear-out (handled by the
+        cell's onPointerDown above). role="tablist"/"tab" + keyboard support keep
+        the strip accessible, mirroring the expanded tab strip. */}
+        <Box role="tablist" aria-orientation="vertical" style={{ width: "100%" }}>
+          {group.paneIds.map((paneId, i) => {
+            const spec = dock.panes[paneId];
+            const active = paneId === group.activeId;
+            // Up/Down move focus between rows; Enter/Space expand to this tab.
+            const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+              if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+                event.preventDefault();
+                const next =
+                  group.paneIds[event.key === "ArrowUp" ? i - 1 : i + 1];
+                if (next !== undefined)
+                  event.currentTarget.parentElement
+                    ?.querySelector<HTMLElement>(
+                      `[data-dock-tab="${CSS.escape(next)}"]`,
+                    )
+                    ?.focus();
+                return;
+              }
+              keyActivate(() => dock.expandToTab(group.id, paneId))(event);
+            };
+            return (
               <Box
+                key={paneId}
+                data-dock-tab={paneId}
+                role="tab"
+                aria-selected={active}
+                tabIndex={0}
+                className={focusRing}
+                title={spec?.title ?? paneId}
+                onKeyDown={onKeyDown}
                 style={{
-                  writingMode: "vertical-rl",
-                  textOrientation: "mixed",
-                  fontSize: "0.85em",
-                  fontWeight: active ? 600 : 500,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
+                  flexShrink: 1,
                   minHeight: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  width: "100%",
+                  paddingTop: "0.35em",
+                  paddingBottom: "0.6em",
+                  cursor: "pointer",
+                  // Active tab reads at full strength; others dimmed chrome.
+                  color: active
+                    ? "var(--mantine-primary-color-filled)"
+                    : "var(--mantine-color-dimmed)",
+                  opacity: active ? 1 : 0.85,
                 }}
               >
-                {spec?.title ?? paneId}
+                {spec?.icon !== undefined && (
+                  // Icons don't read rotated -- keep them upright.
+                  <Box
+                    style={{
+                      flexShrink: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      marginBottom: "0.3em",
+                    }}
+                  >
+                    {spec.icon}
+                  </Box>
+                )}
+                {/* Book-spine orientation (top-to-bottom, rotated clockwise):
+                the portable vertical-text form (sideways-lr isn't Safari-OK). */}
+                <Box
+                  style={{
+                    writingMode: "vertical-rl",
+                    textOrientation: "mixed",
+                    fontSize: "0.85em",
+                    fontWeight: active ? 600 : 500,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    minHeight: 0,
+                  }}
+                >
+                  {spec?.title ?? paneId}
+                </Box>
               </Box>
-            </Box>
-          );
-        })}
+            );
+          })}
+        </Box>
       </Box>
     </Box>
   );
