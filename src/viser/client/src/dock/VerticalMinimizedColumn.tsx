@@ -177,11 +177,12 @@ function VerticalMinimizedCell({
                   paddingTop: "0.35em",
                   paddingBottom: "0.6em",
                   cursor: "pointer",
-                  // Active tab reads at full strength; others dimmed chrome.
-                  color: active
-                    ? "var(--mantine-primary-color-filled)"
-                    : "var(--mantine-color-dimmed)",
-                  opacity: active ? 1 : 0.85,
+                  // All rows read uniformly as dimmed wayfinding chrome -- a
+                  // minimized strip is a label/affordance, not content, so an
+                  // active-tab highlight here just distracts. (aria-selected
+                  // still marks the logical active tab for assistive tech.)
+                  color: "var(--mantine-color-dimmed)",
+                  opacity: 0.85,
                 }}
               >
                 {spec?.icon !== undefined && (
@@ -205,7 +206,7 @@ function VerticalMinimizedCell({
                     writingMode: "vertical-rl",
                     textOrientation: "mixed",
                     fontSize: "0.85em",
-                    fontWeight: active ? 600 : 500,
+                    fontWeight: 500,
                     whiteSpace: "nowrap",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
