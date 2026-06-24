@@ -130,18 +130,19 @@ function GripBar({
       data-dock-griphandle
       className={gripBarBg}
       onPointerDown={(event) => {
-        // Presses that start ON the button get a motionless-click toggle (the
-        // bar itself deliberately has none -- see
-        // test_handle_tap_does_not_minimize); a drag from the + also expands.
+        // A motionless tap ANYWHERE on the handle toggles minimize/expand --
+        // matching the main panel's header, so every panel handle behaves the
+        // same (the +/- button is then a redundant, explicit cue). A real drag
+        // (motion past threshold) still moves the panel instead; the click-vs-
+        // drag split in armPress means a tap can't be mistaken for a drag. A
+        // press starting on the + button while collapsed also expands-then-drags.
         const fromButton =
           (event.target as HTMLElement).closest("[data-dock-minimize]") !==
           null;
-        startDrag(
-          event,
-          fromButton
-            ? { onClick: onToggle, expandOnDrag: collapsed }
-            : undefined,
-        );
+        startDrag(event, {
+          onClick: onToggle,
+          expandOnDrag: fromButton && collapsed,
+        });
       }}
       style={{
         position: "relative",
