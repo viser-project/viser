@@ -16,7 +16,7 @@ import {
   resolveRequestedFloatPosition,
   tearOutPane,
 } from "./layoutOps";
-import { emptyLayout, DockLayout, pinnedPxOf } from "./types";
+import { emptyLayout, DockLayout, pinnedPxOf, regionWidthsOf } from "./types";
 
 const BOUNDS_1000 = {
   width: 1000,
@@ -691,5 +691,37 @@ describe("re-placing an already-floating panel reuses its window", () => {
     expect(pinnedPxOf(layout.floating[0].height)).toBe(450);
     expect(layout.floating[0].x).toBe(500);
     expect(layout.floating[0].y).toBe(400);
+  });
+});
+
+describe("re-placing an already-DOCKED panel applies the new size", () => {
+  const dockP = (l: DockLayout, width: number | null) =>
+    applyPanelPlacement(
+      l,
+      ["p"],
+      { position: { kind: "edge", edge: "right" }, width, height: null },
+      () => null,
+    );
+
+  it("set_width changes the docked region width (no node-id churn reset)", () => {
+    // Regression: re-applying the edge placement used to detach+recreate the
+    // leaf, giving it a new node id, so the width reconciler treated it as a new
+    // column and reset the width to default -- silently dropping set_width.
+    let layout = dockP(emptyLayout(), null);
+    const nodeId = (findGroupLocation(layout, findPaneGroup(layout, "p")!) as {
+      nodeId: string;
+    }).nodeId;
+
+    layout = dockP(layout, 520);
+    expect(regionWidthsOf(layout).right).toBe(520);
+    // Same leaf node (not recreated) -> reconciler keeps the width.
+    expect(
+      (findGroupLocation(layout, findPaneGroup(layout, "p")!) as {
+        nodeId: string;
+      }).nodeId,
+    ).toBe(nodeId);
+
+    layout = dockP(layout, 180);
+    expect(regionWidthsOf(layout).right).toBe(180);
   });
 });
