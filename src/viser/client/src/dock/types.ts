@@ -39,11 +39,6 @@ export const MIN_PANEL_WIDTH_PX = 220;
  * thinner than its own minimized strip. */
 export const MIN_REGION_GRAB_PX = 96;
 
-/** Maximum width of a *single* panel. Region/window caps are derived per-panel
- * from this (e.g. a two-column region can be up to 2x this), never applied to
- * the summed width of several panes. */
-export const MAX_PANEL_WIDTH_PX = 600;
-
 /** Width (px) of the narrow vertical strip used for every fully-minimized
  * docked column. In px (not em) because minimized strips participate in the
  * region-width MODEL: totals and resize math add this constant directly, so

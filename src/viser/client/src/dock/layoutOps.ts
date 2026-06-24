@@ -17,7 +17,6 @@ import {
   FloatingWindow,
   GroupId,
   GroupLocation,
-  MAX_PANEL_WIDTH_PX,
   MIN_REGION_GRAB_PX,
   MIN_WINDOW_HEIGHT_PX,
   NodeId,
@@ -264,15 +263,22 @@ export function minRegionWidth(
   return Math.max(...node.children.map((c) => minRegionWidth(c, dividerPx)));
 }
 
-/** Maximum width a docked region may take while keeping the per-panel maximum.
- * Mirrors minRegionWidth: row splits sum their children's maxima (plus
- * dividers) so each column can independently reach its own max; column splits
- * take the max (stacked panes share one width). */
+// A leaf's nominal width unit for the structural extent comparator below. There
+// is NO real per-panel max width anymore (regions/floats are bounded only by the
+// container -- see widthReconciliation.colsMax / FloatingWindowView.maxResizeWidth);
+// this constant only gives leaves a relative size so widthColumns can pick a
+// column's width-bearing child (a nested row of N leaves outranks a single leaf).
+export const LEAF_WIDTH_UNIT_PX = 600;
+
+/** Structural horizontal EXTENT of a node, used only as a RELATIVE comparator
+ * (widthColumns picks a column's widest child). Mirrors minRegionWidth: a row
+ * sums its children (so an N-column row outranks a single leaf); a column takes
+ * the max. NOT a width cap -- nothing clamps to this. */
 export function maxRegionWidth(
   node: DockNode,
   dividerPx = SPLIT_DIVIDER_PX,
 ): number {
-  if (node.type === "leaf") return MAX_PANEL_WIDTH_PX;
+  if (node.type === "leaf") return LEAF_WIDTH_UNIT_PX;
   if (node.dir === "row") {
     return (
       node.children.reduce((sum, c) => sum + maxRegionWidth(c, dividerPx), 0) +

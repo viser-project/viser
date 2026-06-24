@@ -21,7 +21,6 @@ import {
   DockEdge,
   DockNode,
   DockSplit,
-  MAX_PANEL_WIDTH_PX,
   MIN_REGION_GRAB_PX,
   MINIMIZED_STRIP_PX,
   SPLIT_DIVIDER_PX,
@@ -259,9 +258,9 @@ function SplitNode({
                   deltaPx,
                   minCell:
                     node.dir === "row" ? MIN_REGION_GRAB_PX : MIN_CELL_HEIGHT_PX,
-                  // Per-panel width cap applies to row splits; column splits
-                  // resize height, which has no width cap.
-                  maxCell: node.dir === "row" ? MAX_PANEL_WIDTH_PX : Infinity,
+                  // No per-panel width/height cap -- a cell may grow as far as
+                  // its siblings' min widths allow (total is conserved).
+                  maxCell: Infinity,
                 });
                 if (next === null) return;
                 // Write new weights by node id (px values; total is conserved).

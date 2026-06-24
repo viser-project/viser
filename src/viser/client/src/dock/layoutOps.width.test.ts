@@ -30,7 +30,6 @@ import {
   DockLayout,
   DockNode,
   GroupId,
-  MAX_PANEL_WIDTH_PX,
   MIN_REGION_GRAB_PX,
   SPLIT_DIVIDER_PX,
 } from "./types";
@@ -39,6 +38,7 @@ import {
   widthColumns,
   minRegionWidth,
   maxRegionWidth,
+  LEAF_WIDTH_UNIT_PX,
   setNodeWeights,
   dockToRegionEdge,
   dropOnDockedLeaf,
@@ -151,31 +151,31 @@ describe("widthColumns", () => {
 // maxRegionWidth (mirror of minRegionWidth)
 // ===========================================================================
 describe("maxRegionWidth", () => {
-  it("a leaf caps at the per-panel max", () => {
-    expect(maxRegionWidth(leaf("a"))).toBe(MAX_PANEL_WIDTH_PX);
+  it("a leaf returns the leaf width unit (structural comparator)", () => {
+    expect(maxRegionWidth(leaf("a"))).toBe(LEAF_WIDTH_UNIT_PX);
   });
 
   it("a row sums children maxima plus dividers", () => {
     const divider = 6;
     expect(maxRegionWidth(rowSplit([leaf("a"), leaf("b")]), divider)).toBe(
-      MAX_PANEL_WIDTH_PX * 2 + divider,
+      LEAF_WIDTH_UNIT_PX * 2 + divider,
     );
   });
 
   it("a column (stacked) takes the max of its children (shared width)", () => {
-    expect(maxRegionWidth(colSplit([leaf("a"), leaf("b")]))).toBe(MAX_PANEL_WIDTH_PX);
+    expect(maxRegionWidth(colSplit([leaf("a"), leaf("b")]))).toBe(LEAF_WIDTH_UNIT_PX);
   });
 
   it("honors a custom divider width and >=2 children", () => {
     expect(maxRegionWidth(rowSplit([leaf("a"), leaf("b"), leaf("c")]), 10)).toBe(
-      MAX_PANEL_WIDTH_PX * 3 + 10 * 2,
+      LEAF_WIDTH_UNIT_PX * 3 + 10 * 2,
     );
   });
 
   it("nested: a column containing a row uses the row's summed max", () => {
     const divider = 6;
     const node = colSplit([leaf("a"), rowSplit([leaf("b"), leaf("c")])]);
-    expect(maxRegionWidth(node, divider)).toBe(MAX_PANEL_WIDTH_PX * 2 + divider);
+    expect(maxRegionWidth(node, divider)).toBe(LEAF_WIDTH_UNIT_PX * 2 + divider);
   });
 });
 
@@ -361,20 +361,19 @@ describe("column-rooted region width bounds reflect the inner row", () => {
 // This mirrors the clamp in DockManager.RegionResizer.onResize.
 // ===========================================================================
 describe("RegionResizer clamp bounds for a column-rooted unequal region", () => {
-  /** Reproduce the clamp computation from DockManager for a region `tree`. */
+  /** Reproduce the clamp computation from the width reconciler for a region
+   * `tree`. There is no longer an upper bound (no per-panel max width), so `hi`
+   * is Infinity -- only the grab-min floor (`lo`) is enforced. */
   function clampBounds(tree: DockNode): { lo: number; hi: number } {
     let lo = minRegionWidth(tree);
-    let hi = Math.max(lo, maxRegionWidth(tree));
     const cols = widthColumns(tree);
     const totalW = cols.reduce((s, c) => s + c.weight, 0) || 1;
     for (const c of cols) {
       const prop = c.weight / totalW;
       if (prop <= 0) continue;
       lo = Math.max(lo, minRegionWidth(c) / prop);
-      hi = Math.min(hi, maxRegionWidth(c) / prop);
     }
-    if (lo > hi) lo = hi;
-    return { lo, hi };
+    return { lo, hi: Infinity };
   }
 
   it("a column root with an unequal inner row clamps so the smaller column keeps its grab min", () => {
@@ -387,20 +386,18 @@ describe("RegionResizer clamp bounds for a column-rooted unequal region", () => 
     expect(lo).toBeCloseTo(MIN_REGION_GRAB_PX / (200 / 600), 0);
     // At lo, scaled B width >= the grab min.
     expect(lo * (200 / 600)).toBeGreaterThanOrEqual(MIN_REGION_GRAB_PX - 0.5);
-    // At hi, the larger column A must not exceed its per-panel max.
-    expect(hi * (400 / 600)).toBeLessThanOrEqual(MAX_PANEL_WIDTH_PX + 0.5);
+    // No upper bound: a region can grow as wide as the container allows.
+    expect(hi).toBe(Infinity);
     expect(lo).toBeLessThanOrEqual(hi);
   });
 
   it("matches plain summed bounds for a column root with an EQUAL inner row", () => {
     const tree = colSplit([leaf("c", 1), rowSplit([leaf("a", 1), leaf("b", 1)], 1)]);
     const { lo, hi } = clampBounds(tree);
-    // Equal columns (prop = 0.5 each):
-    // - lo: the summed row grab-min WITH the 7px divider (2*grab + 7) beats the
-    //   per-column grab/0.5 = 2*grab, so the divider-inclusive summed min wins.
-    // - hi: the per-column max/0.5 = 2*max (1200) is TIGHTER than the summed max
-    //   with divider (1207), so the per-column bound wins (keeps each <= its max).
+    // Equal columns (prop = 0.5 each): lo is the summed row grab-min WITH the
+    // 7px divider (2*grab + 7), which beats the per-column grab/0.5 = 2*grab.
+    // There's no upper bound anymore.
     expect(lo).toBeCloseTo(MIN_REGION_GRAB_PX * 2 + SPLIT_DIVIDER_PX, 0);
-    expect(hi).toBeCloseTo(MAX_PANEL_WIDTH_PX * 2, 0);
+    expect(hi).toBe(Infinity);
   });
 });
