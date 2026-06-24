@@ -1113,7 +1113,10 @@ export function resizeWindow(
   const draft = clone(layout);
   const win = draft.floating.find((w) => w.id === windowId);
   if (win === undefined) return layout;
-  win.width = width;
+  // Floor at the grab-min so a server set_width(0)/negative can't produce a
+  // zero- or ungrabbable-width window (the interactive drag path clamps too).
+  // No max here -- like docked regions, float width is otherwise uncapped.
+  win.width = Math.max(MIN_REGION_GRAB_PX, width);
   if (x !== undefined) win.x = x;
   return draft;
 }
