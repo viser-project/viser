@@ -501,10 +501,13 @@ def test_panel_is_not_a_context_manager() -> None:
     server = _make_server()
     try:
         panel = server.gui.add_panel()
-        # `with panel:` calls __enter__; invoke it directly so the test stays
-        # type-clean (the handle intentionally has no __exit__).
+        # Use a real `with` statement -- this is the actual user mistake. CPython
+        # looks up `__exit__` on the type *before* calling `__enter__`, so the
+        # panel must define both for the helpful TypeError to surface (otherwise
+        # `with` fails with a bare `AttributeError: __exit__`).
         try:
-            panel.__enter__()
+            with panel:
+                pass
             assert False, "expected TypeError"
         except TypeError as e:
             assert "context manager" in str(e)

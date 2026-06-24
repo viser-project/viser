@@ -1092,14 +1092,22 @@ class PanelHandle(
         # A panel is a container for TABS, not a GUI context itself: you populate
         # its tabs (`with panel.add_tab(...):`), not the panel. Catch the natural
         # `with server.gui.add_panel():` mistake with a clear message instead of a
-        # bare AttributeError on __enter__. (No __exit__ is needed: `with` only
-        # calls it if __enter__ returns, and this always raises.)
+        # bare `AttributeError: __exit__`. Both `__enter__` AND `__exit__` must be
+        # defined: CPython's `with` looks up `__exit__` on the type *before*
+        # calling `__enter__`, so omitting it surfaces `AttributeError: __exit__`
+        # and this helpful message never runs.
         raise TypeError(
             "A panel is not a context manager. Add content via its tabs, e.g.\n"
             '    panel = server.gui.add_panel()\n'
             '    with panel.add_tab("Tab"):\n'
             "        server.gui.add_markdown(...)"
         )
+
+    def __exit__(self, *args) -> None:
+        # Never reached (`__enter__` always raises), but must exist so the `with`
+        # statement's pre-flight `__exit__` lookup finds it and lets `__enter__`
+        # raise the helpful TypeError above.
+        del args
 
     def remove(self) -> None:
         """Permanently remove this panel and all its tabs / contained elements.
