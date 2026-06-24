@@ -988,6 +988,19 @@ export function DockManager({
     armPress(event, (e) => {
       dragAfterCommit(e, () => {
         const rect = floatRectFor(`[data-dock-group="${groupId}"]`);
+        // A MINIMIZED docked group renders as a ~strip-narrow cell, so its
+        // measured width is meaningless as a panel width. Float it at the
+        // region's preserved EXPANDED width instead (regionWidth survives
+        // minimization for exactly this kind of restore) -- otherwise tearing
+        // out a minimized panel produces a ~96px-wide window that stays narrow
+        // after expand. Expanded groups keep their measured width.
+        const loc = ops.findGroupLocation(layoutRef.current, groupId);
+        const collapsed =
+          layoutRef.current.groups[groupId]?.collapsed === true;
+        const floatWidth =
+          collapsed && loc?.kind === "docked"
+            ? regionWidthsOf(layoutRef.current)[loc.edge]
+            : rect.width;
         // A panel whose body is a full-bleed nested area needs a definite
         // height to fill (it collapses to 0 in an auto-height window). Give
         // the undocked window the panel's current rendered height in that
@@ -1000,7 +1013,7 @@ export function DockManager({
           groupId,
           rect.x,
           rect.y,
-          rect.width,
+          floatWidth,
           needsHeight ? rect.height : undefined,
         );
         // Null only for an area's backing group, which no UI surface offers a
