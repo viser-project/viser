@@ -165,12 +165,23 @@ DOCK_CLIENT_DIR = Path(__file__).resolve().parents[2] / "src" / "viser" / "clien
 
 # Wrap the client's vite config with HMR disabled: the playground tests drive
 # deterministic DOM interactions, and an HMR websocket reconnect mid-test can
-# reload the page under the pointer.
+# reload the page under the pointer. Also disable file watching entirely (the
+# tests never edit source mid-run) -- vite otherwise recursively watches the
+# whole client dir, including the huge `.nodeenv`/`node_modules` trees, which can
+# exhaust the OS inotify watcher limit and crash the dev server on startup
+# (ENOSPC). usePolling:false + ignored globs keeps the server lightweight.
 _DOCK_HMR_OFF_CONFIG = """\
 import base from "./vite.config.mts";
 export default async (env) => {
   const resolved = typeof base === "function" ? await base(env) : base;
-  return { ...resolved, server: { ...(resolved.server || {}), hmr: false } };
+  return {
+    ...resolved,
+    server: {
+      ...(resolved.server || {}),
+      hmr: false,
+      watch: { ignored: ["**/.nodeenv/**", "**/node_modules/**"] },
+    },
+  };
 };
 """
 
