@@ -870,6 +870,37 @@ export function DockManager({
     };
   };
 
+  // The grab offset = where in the dragged window the cursor pressed (so the
+  // window tracks the cursor 1:1). `originX/originY` is the source's top-left in
+  // container coords. When `winId` is given, clamp the offset into that floated
+  // window's actual rendered box: a tear-out source can be much bigger than the
+  // resulting window -- a region-tall minimized strip or docked column floats
+  // into a short window, so a press near the source's bottom would otherwise
+  // leave a large cursor-to-window gap. A small margin keeps the grab off the
+  // very edge. Call without `winId` when the source IS the window (offset from
+  // its own model coords needs no clamp).
+  const grabOffset = (
+    e: { clientX: number; clientY: number },
+    originX: number,
+    originY: number,
+    winId?: WindowId,
+  ): { grabX: number; grabY: number } => {
+    const crect = containerRect();
+    const rawX = e.clientX - crect.left - originX;
+    const rawY = e.clientY - crect.top - originY;
+    const winRect =
+      winId === undefined
+        ? undefined
+        : containerRef.current
+            ?.querySelector<HTMLElement>(`[data-floating-window="${winId}"]`)
+            ?.getBoundingClientRect();
+    if (winRect === undefined) return { grabX: rawX, grabY: rawY };
+    return {
+      grabX: clamp(rawX, 0, Math.max(0, winRect.width - 8)),
+      grabY: clamp(rawY, 0, Math.max(0, winRect.height - 8)),
+    };
+  };
+
   // --- Context callbacks -------------------------------------------------
 
   const startWindowDrag: DockContextValue["startWindowDrag"] = (
@@ -886,15 +917,12 @@ export function DockManager({
     armPress(event, (e) => {
       const win = layoutRef.current.floating.find((w) => w.id === windowId);
       if (win === undefined) return;
-      const crect = containerRect();
-      beginWindowDrag(
-        windowId,
-        null,
-        e.pointerId,
-        e.pointerType,
-        pressX - crect.left - win.x,
-        pressY - crect.top - win.y,
+      const { grabX, grabY } = grabOffset(
+        { clientX: pressX, clientY: pressY },
+        win.x,
+        win.y,
       );
+      beginWindowDrag(windowId, null, e.pointerId, e.pointerType, grabX, grabY);
     });
   };
 
@@ -925,9 +953,11 @@ export function DockManager({
               (w) => w.id === windowId,
             );
             if (win === undefined) return;
-            const crect = containerRect();
-            const grabX = pressX - crect.left - win.x;
-            const grabY = pressY - crect.top - win.y;
+            const { grabX, grabY } = grabOffset(
+              { clientX: pressX, clientY: pressY },
+              win.x,
+              win.y,
+            );
             if (expandOnDrag) {
               // A drag from the expand (+) button tears out the FULL panel:
               // expand first (flushed so the window height renders), then
@@ -986,32 +1016,12 @@ export function DockManager({
             expandOnDrag ? ops.expandGroup(res.layout, groupId) : res.layout,
           ),
         );
-        const crect = containerRect();
-        // Grab offset = where in the SOURCE element the cursor pressed. But the
-        // source may be much taller/wider than the floated window -- notably a
-        // minimized vertical strip is region-tall while the window is short, so a
-        // press near the strip's bottom yields a grab far below the window,
-        // leaving a big cursor-to-ghost gap. Clamp the grab into the window's
-        // ACTUAL rendered box (measured after the flush above) so the cursor
-        // always sits on the dragged window. A small top margin keeps the grab on
-        // the grip/header rather than flush at the very edge.
-        const winEl = containerRef.current?.querySelector<HTMLElement>(
-          `[data-floating-window="${res.windowId}"]`,
-        );
-        const winRect = winEl?.getBoundingClientRect();
-        const rawGrabX = e.clientX - crect.left - rect.x;
-        const rawGrabY = e.clientY - crect.top - rect.y;
+        // Clamp the grab into the floated window: the source (a region-tall
+        // minimized strip / docked column) can be far bigger than the result.
         return {
           windowId: res.windowId,
           groupIdForDim: groupId,
-          grabX:
-            winRect !== undefined
-              ? clamp(rawGrabX, 0, Math.max(0, winRect.width - 8))
-              : rawGrabX,
-          grabY:
-            winRect !== undefined
-              ? clamp(rawGrabY, 0, Math.max(0, winRect.height - 8))
-              : rawGrabY,
+          ...grabOffset(e, rect.x, rect.y, res.windowId),
         };
       });
     }, onClick);
@@ -1043,13 +1053,14 @@ export function DockManager({
         // edge's column set lets survivors keep their px and shrinks the
         // region.
         flushSync(() => applyOp(res.layout));
-        const crect = containerRect();
         return {
           // No single origin group to dim; the whole column left the tree.
           windowId: res.windowId,
           groupIdForDim: null,
-          grabX: e.clientX - crect.left - rect.x,
-          grabY: e.clientY - crect.top - rect.y,
+          // Clamp into the floated window: a region-tall column floats into a
+          // height-capped window, so a low grab would otherwise gap (same fix as
+          // the group undock above).
+          ...grabOffset(e, rect.x, rect.y, res.windowId),
         };
       });
     });
