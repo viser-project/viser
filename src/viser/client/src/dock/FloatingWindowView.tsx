@@ -22,6 +22,7 @@ import {
   MAX_PANEL_WIDTH_PX,
   MIN_REGION_GRAB_PX,
   MIN_WINDOW_HEIGHT_PX,
+  pinnedPxOf,
   TabGroup,
 } from "./types";
 
@@ -69,7 +70,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     (id) => dock.groups[id]?.collapsed === true,
   );
   // The pinned px height, or undefined when the window auto-sizes to content.
-  const pinnedPx = win.height.mode === "pinned" ? win.height.px : undefined;
+  const pinnedPx = pinnedPxOf(win.height);
   const fixedHeight = pinnedPx !== undefined && !collapsed;
   const renderedHeight =
     pinnedPx !== undefined

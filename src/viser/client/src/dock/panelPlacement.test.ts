@@ -9,7 +9,7 @@ import {
   findPaneGroup,
   moveWindow,
   PanelPlacement,
-  releaseRequestedCoords,
+  releaseAnchor,
   removePane,
   resizeWindow,
   resizeWindowHeight,
@@ -431,7 +431,7 @@ describe("requested float coordinates", () => {
 
   it("resizeWindow/resizeWindowHeight preserve requested coords (server sizing)", () => {
     // Server set_width/set_height go through these ops; they must NOT release the
-    // anchor (only a USER gesture does, via releaseRequestedCoords). So a
+    // anchor (only a USER gesture does, via releaseAnchor). So a
     // right-anchored panel stays anchored across a server resize.
     let layout = place(15, 15, 240, 200);
     const win = layout.floating[0];
@@ -442,15 +442,15 @@ describe("requested float coordinates", () => {
     expect(layout.floating[0].anchor?.y).toBe(15);
   });
 
-  it("releaseRequestedCoords drops the anchor (user takes manual control)", () => {
+  it("releaseAnchor drops the anchor (user takes manual control)", () => {
     // The gesture layer calls this on any user resize/drag so the window stops
     // re-resolving against the canvas edges.
     let layout = place(-15, 15, 240, null);
     expect(layout.floating[0].anchor?.x).toBe(-15);
-    layout = releaseRequestedCoords(layout, layout.floating[0].id);
+    layout = releaseAnchor(layout, layout.floating[0].id);
     expect(layout.floating[0].anchor).toBeUndefined();
     // No-op when there's nothing to release (returns same layout reference).
-    const again = releaseRequestedCoords(layout, layout.floating[0].id);
+    const again = releaseAnchor(layout, layout.floating[0].id);
     expect(again).toBe(layout);
   });
 

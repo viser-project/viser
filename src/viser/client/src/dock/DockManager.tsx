@@ -60,6 +60,7 @@ import {
   NodeId,
   PaneId,
   PaneRegistry,
+  pinnedPxOf,
   regionWidthsOf,
   WindowId,
 } from "./types";
@@ -197,22 +198,30 @@ export function DockManager({
   // changes (see widthReconciliation.ts). The old auto-grow effect is gone:
   // the reconciler enforces the min-width floor on every commit, so a
   // too-narrow region is unrepresentable in committed state.
-  const applyOp = React.useCallback((next: DockLayout) => {
-    if (next === layoutRef.current) return; // no-op op: nothing to commit.
-    reconcileRegionWidths(layoutRef.current, next);
-    // Dev-only: every committed layout must satisfy the structural invariants
-    // (one location per group, one group per pane, etc.). Catches a corrupt
-    // commit the instant the op produces it, instead of as a duplicated/orphaned
-    // pane later. Stripped from production builds. The fuzz test asserts the same
-    // function over random op sequences.
+  // Commit a layout: the ONE place layoutRef + React state are updated, so EVERY
+  // committed layout is structurally checked in dev. The invariant check (one
+  // location per group, one group per pane, ...) is stripped from production
+  // builds; the fuzz test asserts the same function over random op sequences.
+  const commit = React.useCallback((next: DockLayout) => {
     if (import.meta.env.DEV) {
       const violations = invariantViolations(next);
       if (violations.length > 0)
-        console.error("[dock] layout invariant violation:\n" + violations.join("\n"));
+        console.error(
+          "[dock] layout invariant violation:\n" + violations.join("\n"),
+        );
     }
     layoutRef.current = next;
     setLayout(next);
   }, []);
+
+  const applyOp = React.useCallback(
+    (next: DockLayout) => {
+      if (next === layoutRef.current) return; // no-op op: nothing to commit.
+      reconcileRegionWidths(layoutRef.current, next);
+      commit(next);
+    },
+    [commit],
+  );
 
   // Restore a previously COMMITTED layout exactly (Escape after a drag that
   // committed an op up front). No reconciliation: the snapshot already
@@ -220,10 +229,10 @@ export function DockManager({
   // pre-drag layout back" restores geometry by construction, where the
   // reconciler's content-matching would treat restored columns as new and
   // reset them to defaults.
-  const restoreLayout = React.useCallback((snapshot: DockLayout) => {
-    layoutRef.current = snapshot;
-    setLayout(snapshot);
-  }, []);
+  const restoreLayout = React.useCallback(
+    (snapshot: DockLayout) => commit(snapshot),
+    [commit],
+  );
 
   // Imperative panel lifecycle API (exposed via context). Stable identity so
   // sync layers can list it in effect deps without re-running.
@@ -299,9 +308,7 @@ export function DockManager({
           // Dragged windows: anchor to the nearer edge (operate on the RENDERED
           // height the map just measured; the model height is only a fallback
           // for a window with no DOM yet).
-          const wh =
-            heights.get(w.id) ??
-            (w.height.mode === "pinned" ? w.height.px : 0);
+          const wh = heights.get(w.id) ?? pinnedPxOf(w.height) ?? 0;
           if (prevSize !== null && (deltaW !== 0 || deltaH !== 0)) {
             if (w.x + w.width / 2 > prevSize.w / 2) x += deltaW;
             if (w.y + wh / 2 > prevSize.h / 2) y += deltaH;
@@ -1383,7 +1390,7 @@ export function DockManager({
     (windowId: WindowId, width: number, x?: number) =>
       applyOp(
         ops.resizeWindow(
-          ops.releaseRequestedCoords(layoutRef.current, windowId),
+          ops.releaseAnchor(layoutRef.current, windowId),
           windowId,
           width,
           x,
@@ -1395,7 +1402,7 @@ export function DockManager({
     (windowId: WindowId, height: number | undefined, y?: number) =>
       applyOp(
         ops.resizeWindowHeight(
-          ops.releaseRequestedCoords(layoutRef.current, windowId),
+          ops.releaseAnchor(layoutRef.current, windowId),
           windowId,
           height,
           y,
@@ -1506,8 +1513,7 @@ export function DockManager({
       let changed = false;
       const floating = cur.floating.map((w) => {
         if (w.id === draggingWindowIdRef.current) return w;
-        const winHeight =
-          heights.get(w.id) ?? (w.height.mode === "pinned" ? w.height.px : 0);
+        const winHeight = heights.get(w.id) ?? pinnedPxOf(w.height) ?? 0;
         let x: number;
         let y: number;
         if (w.anchor !== undefined) {

@@ -170,6 +170,18 @@ export type DockNode = DockLeaf | DockSplit;
  * than a delete. */
 export type WindowHeight = { mode: "auto" } | { mode: "pinned"; px: number };
 
+/** Build a WindowHeight from an optional px: undefined -> auto, else pinned.
+ * The ONE place this mapping lives (producers never open-code the union). */
+export function windowHeight(px?: number): WindowHeight {
+  return px === undefined ? { mode: "auto" } : { mode: "pinned", px };
+}
+
+/** The pinned px height, or undefined when the window auto-sizes. The ONE place
+ * the union is destructured for reading (consumers never branch on `.mode`). */
+export function pinnedPxOf(height: WindowHeight): number | undefined {
+  return height.mode === "pinned" ? height.px : undefined;
+}
+
 /** A free-floating container. Holds a vertical stack of tab groups that move
  * together (the "snap group" from the spec). A single-group stack is an
  * ordinary floating panel. Position/size are parent-relative pixels. */

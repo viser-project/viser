@@ -708,12 +708,20 @@ class _TabContainerMixin:
         out = GuiTabHandle(_parent=self, _id=uuid, _label=label, _icon=icon)
 
         self._tab_handles.append(out)
-        self._tab_labels = self._tab_labels + (label,)
-        self._tab_icons_html = self._tab_icons_html + (
-            None if icon is None else svg_from_icon(icon),
-        )
-        self._tab_container_ids = tuple(handle._id for handle in self._tab_handles)
+        self._rebuild_tab_props()
         return out
+
+    def _rebuild_tab_props(self) -> None:
+        """Recompute the three wire tuples from ``_tab_handles`` -- the single
+        source of truth for a tab's id/label/icon. Every mutation (add, remove,
+        icon change) rebuilds through here, so the parallel tuples can never
+        desync in length or order."""
+        self._tab_container_ids = tuple(h._id for h in self._tab_handles)
+        self._tab_labels = tuple(h._label for h in self._tab_handles)
+        self._tab_icons_html = tuple(
+            None if h._icon is None else svg_from_icon(h._icon)
+            for h in self._tab_handles
+        )
 
 
 class GuiTabGroupHandle(_TabContainerMixin, _GuiHandle[None], GuiTabGroupProps):
@@ -777,13 +785,10 @@ class GuiTabHandle:
 
     @icon.setter
     def icon(self, icon: IconName | None) -> None:
+        # The handle owns its icon; rebuild rederives the wire tuples from the
+        # handles, so there's no index arithmetic that could target the wrong tab.
         self._icon = icon
-        # Find the index of this tab in the parent's tab list.
-        tab_index = self._parent._tab_handles.index(self)
-        # Update the icon HTML in the parent's tuple.
-        icons_list = list(self._parent._tab_icons_html)
-        icons_list[tab_index] = None if icon is None else svg_from_icon(icon)
-        self._parent._tab_icons_html = tuple(icons_list)
+        self._parent._rebuild_tab_props()
 
     def __enter__(self) -> GuiTabHandle:
         self._container_id_restore = self._parent._impl.gui_api._get_container_uuid()
@@ -812,31 +817,13 @@ class GuiTabHandle:
         self.removed = True
 
         # We may want to make this thread-safe in the future.
-        found_index = -1
-        for i, tab in enumerate(self._parent._tab_handles):
-            if tab is self:
-                found_index = i
-                break
-        assert found_index != -1, "Tab already removed!"
-
-        self._parent._tab_labels = (
-            self._parent._tab_labels[:found_index]
-            + self._parent._tab_labels[found_index + 1 :]
-        )
-        self._parent._tab_icons_html = (
-            self._parent._tab_icons_html[:found_index]
-            + self._parent._tab_icons_html[found_index + 1 :]
-        )
-        self._parent._tab_handles = (
-            self._parent._tab_handles[:found_index]
-            + self._parent._tab_handles[found_index + 1 :]
-        )
-        # Keep the container-id list in sync with the handles. Otherwise the
-        # client receives mismatched `_tab_labels` / `_tab_container_ids`
-        # lengths and renders a stale (orphaned) tab panel.
-        self._parent._tab_container_ids = tuple(
-            handle._id for handle in self._parent._tab_handles
-        )
+        assert self in self._parent._tab_handles, "Tab already removed!"
+        # Drop this handle; the three wire tuples are rederived from the handle
+        # list in one place, so they can't end up mismatched in length or order.
+        self._parent._tab_handles = [
+            tab for tab in self._parent._tab_handles if tab is not self
+        ]
+        self._parent._rebuild_tab_props()
 
         for child in tuple(self._children.values()):
             child.remove()
