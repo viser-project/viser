@@ -23,9 +23,11 @@ import {
   NodeId,
   PaneId,
   PaneRegistry,
+  pinnedPxOf,
   regionWidthsOf,
   SPLIT_DIVIDER_PX,
   TabGroup,
+  windowHeight,
   WindowId,
 } from "./types";
 import { freshId } from "./gestures";
@@ -758,8 +760,7 @@ export function resizeWindowHeight(
   const draft = clone(layout);
   const win = draft.floating.find((w) => w.id === windowId);
   if (win === undefined) return layout;
-  win.height =
-    height === undefined ? { mode: "auto" } : { mode: "pinned", px: height };
+  win.height = windowHeight(height);
   if (y !== undefined) win.y = y;
   return draft;
 }
@@ -777,7 +778,7 @@ function markWindowUserOwned(win: FloatingWindow): void {
  * -- it becomes a plainly user-owned float at its current absolute position.
  * Called when a USER gesture (drag, any resize grip) takes manual control of the
  * window. No-op if it had none. */
-export function releaseRequestedCoords(
+export function releaseAnchor(
   layout: DockLayout,
   windowId: WindowId,
 ): DockLayout {
@@ -980,8 +981,7 @@ function makeFloatingWindow(
     x,
     y,
     width,
-    height:
-      height === undefined ? { mode: "auto" } : { mode: "pinned", px: height },
+    height: windowHeight(height),
     stack,
     ...(stackWeights !== undefined ? { stackWeights } : {}),
   };
@@ -1405,8 +1405,8 @@ export interface CanvasBounds {
  * missing far edge, so it falls back to the canvas-left/top (positive raw values
  * pass through unclamped); the post-render effect re-resolves once measured. */
 export function resolveRequestedFloatPosition(
-  requestedX: number,
-  requestedY: number,
+  anchorX: number,
+  anchorY: number,
   winWidth: number,
   winHeight: number,
   bounds: CanvasBounds,
@@ -1417,16 +1417,16 @@ export function resolveRequestedFloatPosition(
   // layout), fall back to the near edge (left/top) so the window isn't placed
   // off-screen; the post-render effect re-resolves once the canvas is measured.
   let x: number;
-  if (requestedX < 0) {
-    x = bounds.width > 0 ? canvasRight - winWidth + requestedX : bounds.leftInset;
+  if (anchorX < 0) {
+    x = bounds.width > 0 ? canvasRight - winWidth + anchorX : bounds.leftInset;
   } else {
-    x = bounds.leftInset + requestedX;
+    x = bounds.leftInset + anchorX;
   }
   let y: number;
-  if (requestedY < 0) {
-    y = bounds.height > 0 ? bounds.height - winHeight + requestedY : 0;
+  if (anchorY < 0) {
+    y = bounds.height > 0 ? bounds.height - winHeight + anchorY : 0;
   } else {
-    y = requestedY;
+    y = anchorY;
   }
   // Clamp against a measured canvas (a too-big window pins to the near edge); an
   // unmeasured canvas can't clamp meaningfully.
@@ -1584,7 +1584,7 @@ export function applyPanelPlacement(
       reqX,
       reqY,
       win.width,
-      win.height.mode === "pinned" ? win.height.px : 0,
+      pinnedPxOf(win.height) ?? 0,
       bounds,
     );
     win.x = resolved.x;
