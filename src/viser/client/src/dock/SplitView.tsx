@@ -266,11 +266,20 @@ function SplitNode({
                   maxCell: Infinity,
                 });
                 if (next === null) return;
-                // Write new weights by node id (px values; total is conserved).
-                // Collapsed cells keep their preserved weight (excluded).
+                // Write new weights by node id. Expanded cells get their resized
+                // PX size. A collapsed cell isn't resized, but its weight is its
+                // RESTORE size, and the resize just put its siblings on a px
+                // scale -- so we must rescale the collapsed cell's preserved
+                // weight onto the same px basis (keeping its proportion), or on
+                // expand it would render at a now-tiny flex-unit weight next to
+                // px-magnitude siblings and collapse to ~0 height (off-screen).
+                const totalAll =
+                  node.children.reduce((s, c) => s + c.weight, 0) || 1;
                 const byId: Record<string, number> = {};
                 node.children.forEach((c, i) => {
-                  if (!collapsed[i]) byId[c.id] = next[i];
+                  byId[c.id] = collapsed[i]
+                    ? (c.weight / totalAll) * containerPx
+                    : next[i];
                 });
                 dock.api.apply((l) => setNodeWeights(l, edge, byId));
               }}

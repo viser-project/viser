@@ -821,3 +821,71 @@ def test_emptied_docked_panel_revives(
             has=revived
         )
     ).to_have_count(1)
+
+
+def test_unminimize_after_sibling_resize_keeps_panel_onscreen(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """Regression: in a docked column [Top, Mid, minimized Bottom], resizing the
+    Top/Mid divider rewrites the expanded cells' weights to a px scale. The
+    minimized Bottom's preserved (restore) weight must be rescaled to the same
+    basis, or on expand it renders at a tiny flex-unit weight beside px-magnitude
+    siblings and collapses to ~0 height -- off the bottom of the viewport."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(300)
+    vh = _VIEWPORT["height"]
+
+    top = viser_server.gui.add_panel()
+    with top.add_tab("ColTop"):
+        viser_server.gui.add_markdown("top")
+    top.dock_right()
+    bottom = viser_server.gui.add_panel()
+    with bottom.add_tab("ColBot"):
+        viser_server.gui.add_markdown("bottom")
+    bottom.dock_below(top)
+    expect(_tab(viser_page, "ColBot")).to_be_visible(timeout=5_000)
+
+    # Minimize the bottom panel.
+    viser_page.locator("[data-dock-leaf][data-dock-edge='right']").filter(
+        has=_tab(viser_page, "ColBot")
+    ).locator("[data-dock-minimize]").first.click()
+    viser_page.wait_for_timeout(300)
+
+    # Insert a middle panel between them.
+    mid = viser_server.gui.add_panel()
+    with mid.add_tab("ColMid"):
+        viser_server.gui.add_markdown("mid")
+    mid.dock_below(top)
+    expect(_tab(viser_page, "ColMid")).to_be_visible(timeout=5_000)
+
+    # Drag the Top/Mid divider down (rewrites their weights to px).
+    top_box = (
+        viser_page.locator("[data-dock-leaf]")
+        .filter(has=_tab(viser_page, "ColTop"))
+        .first.bounding_box()
+    )
+    seam_y = top_box["y"] + top_box["height"]
+    cx = top_box["x"] + top_box["width"] / 2
+    viser_page.mouse.move(cx, seam_y)
+    viser_page.mouse.down()
+    viser_page.mouse.move(cx, seam_y + 120, steps=10)
+    viser_page.mouse.move(cx, seam_y + 120)
+    viser_page.mouse.up()
+    viser_page.wait_for_timeout(300)
+
+    # Unminimize the bottom panel: it must come back ON-SCREEN with real height.
+    viser_page.locator("[data-dock-group][data-dock-collapsed]").first.locator(
+        "[data-dock-minimize]"
+    ).first.click()
+    viser_page.wait_for_timeout(400)
+
+    box = (
+        viser_page.locator("[data-dock-leaf]")
+        .filter(has=_tab(viser_page, "ColBot"))
+        .first.bounding_box()
+    )
+    assert box is not None, "bottom panel not rendered after unminimize"
+    assert box["height"] > 40, f"bottom panel collapsed to {box['height']}px"
+    assert box["y"] + box["height"] <= vh + 5, (
+        f"bottom panel off-screen: y={box['y']} h={box['height']} (viewport {vh})"
+    )
