@@ -28,6 +28,8 @@ import {
   insertTabsInto,
   mergeGroupsInto,
   floatGroup,
+  floatColumn,
+  isPureColumn,
   tearOutPane,
   snapToWindowStack,
   reorderTab,
@@ -179,6 +181,7 @@ type OpName =
   | "insertTabsInto"
   | "mergeGroupsInto"
   | "floatGroup"
+  | "floatColumn"
   | "tearOutPane"
   | "snapToWindowStack"
   | "reorderTab"
@@ -215,6 +218,18 @@ function allDockedLeafTargets(
   return out;
 }
 
+/** All floatable PURE columns (>=2 leaf children) across the docked edges, for
+ * the floatColumn op (floats a whole column as one stacked window). */
+function allPureColumnTargets(
+  l: DockLayout,
+): { edge: DockEdge; nodeId: NodeId }[] {
+  const out: { edge: DockEdge; nodeId: NodeId }[] = [];
+  for (const edge of ["left", "right"] as DockEdge[])
+    for (const n of walkNodes(l.docked[edge]))
+      if (isPureColumn(n)) out.push({ edge, nodeId: n.id });
+  return out;
+}
+
 /** Choose a random op valid for the current layout; null if none applicable. */
 function chooseOp(rng: Rng, l: DockLayout): AppliedOp | null {
   const groups = allGroupIds(l);
@@ -229,6 +244,7 @@ function chooseOp(rng: Rng, l: DockLayout): AppliedOp | null {
     "insertTabsInto",
     "mergeGroupsInto",
     "floatGroup",
+    "floatColumn",
     "tearOutPane",
     "snapToWindowStack",
     "reorderTab",
@@ -324,6 +340,24 @@ function buildOp(
       return {
         desc: `floatGroup(${grp}, ...)`,
         apply: (x) => floatGroup(x, grp, int(rng, 0, 500), int(rng, 0, 500), int(rng, 220, 400)).layout,
+      };
+    }
+    case "floatColumn": {
+      const cols = allPureColumnTargets(l);
+      if (cols.length === 0) return null;
+      const c = pick(rng, cols);
+      return {
+        desc: `floatColumn(${c.edge}, ${c.nodeId}, ...)`,
+        apply: (x) =>
+          floatColumn(
+            x,
+            c.edge,
+            c.nodeId,
+            int(rng, 0, 500),
+            int(rng, 0, 500),
+            int(rng, 220, 400),
+            int(rng, 120, 500),
+          ).layout,
       };
     }
     case "tearOutPane": {
