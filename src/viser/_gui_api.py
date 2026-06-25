@@ -1056,10 +1056,13 @@ class GuiApi:
         """Handle for the main control panel.
 
         Supports the same placement / sizing / minimize commands as a standalone
-        panel (see :class:`MainPanelHandle` and :meth:`add_panel`), and is a legal
-        dock anchor for other panels from any scope. A fresh handle is returned on
-        each access. This is the supported replacement for the deprecated
-        ``configure_theme(control_layout=...)``."""
+        panel (see :class:`MainPanelHandle` and :meth:`add_panel`). It can be a
+        dock anchor for :meth:`PanelHandle.dock_above` / :meth:`dock_below` from
+        any scope, but ONLY while it is itself docked (e.g. after
+        ``main_panel.dock_left()``); the control panel floats by default, and
+        splitting against a floating anchor falls back to a right-edge dock. A
+        fresh handle is returned on each access. This is the supported replacement
+        for the deprecated ``configure_theme(control_layout=...)``."""
         return MainPanelHandle(self)
 
     @deprecated_positional_shim
