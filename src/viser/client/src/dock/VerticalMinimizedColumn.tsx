@@ -32,7 +32,12 @@ export function VerticalMinimizedColumn({
         minHeight: 0,
         display: "flex",
         flexDirection: "column",
-        overflow: "hidden",
+        // Scroll vertically when there are more cells/rows than fit (a short
+        // viewport with many minimized tabs); never scroll horizontally (the
+        // strip is intentionally narrow). Keeps every tab reachable instead of
+        // clipping the lower ones.
+        overflowX: "hidden",
+        overflowY: "auto",
         backgroundColor: "var(--mantine-color-body)",
       }}
     >
@@ -75,7 +80,11 @@ function VerticalMinimizedCell({
     <Box
       data-dock-leaf={nodeId}
       data-dock-edge={edge}
-      style={{ flexGrow: 1, minHeight: 0, display: "flex", width: "100%" }}
+      // flexShrink:0 so cells keep their content height and the column SCROLLS
+      // (via the Paper's overflowY) when they don't all fit, rather than
+      // compressing and clipping. flexGrow:1 still lets a few cells share the
+      // space when there's room.
+      style={{ flexGrow: 1, flexShrink: 0, minHeight: 0, display: "flex", width: "100%" }}
     >
       <Box
         data-dock-group={group.id}
@@ -162,7 +171,9 @@ function VerticalMinimizedCell({
                 title={spec?.title ?? paneId}
                 onKeyDown={onKeyDown}
                 style={{
-                  flexShrink: 1,
+                  // Keep each row at its content height (icon + capped label);
+                  // the strip scrolls when rows overflow rather than squashing.
+                  flexShrink: 0,
                   minHeight: 0,
                   display: "flex",
                   flexDirection: "column",
@@ -194,7 +205,10 @@ function VerticalMinimizedCell({
                   </Box>
                 )}
                 {/* Book-spine orientation (top-to-bottom, rotated clockwise):
-                the portable vertical-text form (sideways-lr isn't Safari-OK). */}
+                the portable vertical-text form (sideways-lr isn't Safari-OK).
+                maxHeight caps the spine so a long title ELLIPSIZES into a tidy
+                fixed length (in vertical-rl, the run length is the box's height,
+                so without a cap a long label would stretch the whole strip). */}
                 <Box
                   style={{
                     writingMode: "vertical-rl",
@@ -205,6 +219,7 @@ function VerticalMinimizedCell({
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     minHeight: 0,
+                    maxHeight: "14em",
                   }}
                 >
                   {spec?.title ?? paneId}
