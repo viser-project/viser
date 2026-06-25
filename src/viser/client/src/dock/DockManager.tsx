@@ -100,6 +100,7 @@ export function DockManager({
   panes,
   children,
   onLayoutChange,
+  onRegionResizeFrame,
 }: {
   initialLayout: DockLayout;
   panes: PaneRegistry;
@@ -107,7 +108,14 @@ export function DockManager({
   children?: React.ReactNode;
   /** Observe every committed layout (e.g. for persistence or test probes). */
   onLayoutChange?: (layout: DockLayout) => void;
+  /** Called after each per-frame region-width resize is committed AND its new
+   * inset has been flushed to the DOM. Lets the host (e.g. the 3D canvas)
+   * synchronously react to the canvas's new size on the SAME tick instead of
+   * waiting for a ResizeObserver -- see ControlPanelDock / syncCanvasSize. */
+  onRegionResizeFrame?: () => void;
 }) {
+  const onRegionResizeFrameRef = React.useRef(onRegionResizeFrame);
+  onRegionResizeFrameRef.current = onRegionResizeFrame;
   const [layout, setLayout] = React.useState(initialLayout);
   const layoutRef = React.useRef(layout);
   layoutRef.current = layout;
@@ -1766,7 +1774,16 @@ export function DockManager({
                         });
                         next = ops.setNodeWeights(next, edge, byId);
                       }
-                      applyOp(ops.setRegionWidth(next, edge, total));
+                      // Flush the width commit so the canvas wrapper's new
+                      // inset is in the DOM before the host reads it. The host
+                      // (the 3D canvas) then resizes its GL backbuffer to the
+                      // new CSS box on THIS tick, so the rendered scene tracks
+                      // the divider instead of trailing R3F's async
+                      // ResizeObserver by a frame on a fast drag.
+                      flushSync(() =>
+                        applyOp(ops.setRegionWidth(next, edge, total)),
+                      );
+                      onRegionResizeFrameRef.current?.();
                     };
                   }}
                 />
