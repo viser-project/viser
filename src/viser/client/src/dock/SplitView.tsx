@@ -60,24 +60,9 @@ export const SplitView = React.memo(function SplitView({
   ) {
     if (node.type === "split" && isPureColumn(node)) {
       return (
-        <Box
-          data-dock-column={node.id}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            width: "100%",
-            height: "100%",
-            minWidth: 0,
-            minHeight: 0,
-          }}
-        >
-          <ColumnHandle node={node} edge={edge} />
-          <Box
-            style={{ flexGrow: 1, minHeight: 0, minWidth: 0, display: "flex" }}
-          >
-            <VerticalMinimizedColumn node={node} edge={edge} />
-          </Box>
-        </Box>
+        <ColumnShell node={node} edge={edge}>
+          <VerticalMinimizedColumn node={node} edge={edge} />
+        </ColumnShell>
       );
     }
     return <VerticalMinimizedColumn node={node} edge={edge} />;
@@ -87,24 +72,9 @@ export const SplitView = React.memo(function SplitView({
   }
   if (topLevel && isPureColumn(node)) {
     return (
-      <Box
-        data-dock-column={node.id}
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          width: "100%",
-          height: "100%",
-          minWidth: 0,
-          minHeight: 0,
-        }}
-      >
-        <ColumnHandle node={node} edge={edge} />
-        <Box
-          style={{ flexGrow: 1, minHeight: 0, minWidth: 0, display: "flex" }}
-        >
-          <SplitNode node={node} edge={edge} />
-        </Box>
-      </Box>
+      <ColumnShell node={node} edge={edge}>
+        <SplitNode node={node} edge={edge} />
+      </ColumnShell>
     );
   }
   return (
@@ -115,6 +85,39 @@ export const SplitView = React.memo(function SplitView({
     />
   );
 });
+
+/** A top-level pure column's chrome: the float-the-column handle above its body
+ * (the body is the caller's `children` -- a SplitNode when expanded, or a
+ * VerticalMinimizedColumn when fully minimized). Both top-level pure-column
+ * render paths share this shell. */
+function ColumnShell({
+  node,
+  edge,
+  children,
+}: {
+  node: DockSplit;
+  edge: DockEdge;
+  children: React.ReactNode;
+}) {
+  return (
+    <Box
+      data-dock-column={node.id}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        height: "100%",
+        minWidth: 0,
+        minHeight: 0,
+      }}
+    >
+      <ColumnHandle node={node} edge={edge} />
+      <Box style={{ flexGrow: 1, minHeight: 0, minWidth: 0, display: "flex" }}>
+        {children}
+      </Box>
+    </Box>
+  );
+}
 
 /** Slim header at the top of a top-level PURE column (2+ stacked leaves):
  * dragging it floats the WHOLE column as one stacked window, then drags it.
