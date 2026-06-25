@@ -201,6 +201,7 @@ function ViewerRoot() {
         : () => null,
     sendCamera: null,
     resetCameraPose: null,
+    syncCanvasSize: null,
 
     // DOM/Three.js references.
     canvas: null,
@@ -1179,6 +1180,30 @@ function SceneContextSetter() {
   );
 
   const gl = useThree((state) => state.gl);
+  const setSize = useThree((state) => state.setSize);
+
+  // Register a SYNCHRONOUS canvas-size sync (see ViewerMutable.syncCanvasSize).
+  // R3F normally resizes the renderer from a ResizeObserver on the canvas
+  // wrapper, which fires asynchronously AFTER layout -- so while the user drags
+  // a docked region's width handle, the panel edge (CSS) moves immediately but
+  // the GL backbuffer trails a frame behind, and the rendered scene visibly
+  // lags the divider on a fast drag. The dock calls this right after it commits
+  // (flushes) the new region width, so the renderer resizes to the canvas's new
+  // CSS box on the SAME tick. R3F's own observer fires moments later and finds
+  // the size already current, so the two never fight.
+  useEffect(() => {
+    mutable.current.syncCanvasSize = () => {
+      const canvas = gl.domElement;
+      const cssW = canvas.clientWidth;
+      const cssH = canvas.clientHeight;
+      // setSize updates the renderer's drawing buffer AND the camera's aspect +
+      // projection; it no-ops internally if the size is unchanged.
+      if (cssW > 0 && cssH > 0) setSize(cssW, cssH);
+    };
+    return () => {
+      mutable.current.syncCanvasSize = null;
+    };
+  }, [mutable, gl, setSize]);
 
   // Expose scene internals on window for E2E testing (Playwright).
   useEffect(() => {

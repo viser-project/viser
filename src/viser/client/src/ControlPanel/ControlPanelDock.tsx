@@ -135,7 +135,14 @@ export function ControlPanelDockSurface({
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
       <GuiDockContext.Provider value={guiDockValue}>
-        <DockManager initialLayout={initialLayout} panes={panes}>
+        <DockManager
+          initialLayout={initialLayout}
+          panes={panes}
+          // Resize the 3D canvas's GL backbuffer synchronously as a docked
+          // region's width handle is dragged, so the scene tracks the divider
+          // instead of trailing R3F's async ResizeObserver by a frame.
+          onRegionResizeFrame={() => viewer.mutable.current.syncCanvasSize?.()}
+        >
           {children}
           <ControlPanelDockSync
             widthPx={widthPx}
