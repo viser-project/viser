@@ -86,7 +86,7 @@ describe("(a) tearOutPane on a single-panel area group", () => {
     expect(out.layout.groups[AREA_GID].paneIds).toEqual([]);
 
     // The torn panel lives in a NEW floating group, in a new floating window.
-    const floated = out.layout.groups[out.floatingGroupId];
+    const floated = out.layout.groups[out.floatingGroupId!];
     expect(floated.paneIds).toEqual(["layers"]);
     const win = out.layout.floating.find((w) => w.id === out.windowId)!;
     expect(win.stack).toEqual([out.floatingGroupId]);
@@ -115,7 +115,7 @@ describe("(b) tearOutPane from a multi-panel area keeps activeId valid", () => {
     expect(area.paneIds).toContain(area.activeId);
 
     // Torn panel floated on its own.
-    expect(out.layout.groups[out.floatingGroupId].paneIds).toEqual(["props"]);
+    expect(out.layout.groups[out.floatingGroupId!].paneIds).toEqual(["props"]);
   });
 
   it("tearing a NON-active middle panel preserves the existing activeId", () => {
@@ -126,6 +126,44 @@ describe("(b) tearOutPane from a multi-panel area keeps activeId valid", () => {
     const area = out.layout.groups[AREA_GID];
     expect(area.paneIds).toEqual(["props", "outline"]);
     expect(area.activeId).toBe("outline");
+  });
+
+  // Regression (fuzz seed=50021): tearing a pane the group does NOT hold must be
+  // a no-op. The area group can legitimately empty out (every pane merged/torn
+  // away while it persists as a drop affordance). A tear-out targeting a pane
+  // that isn't there used to CONJURE it -- the split path wrapped the (absent /
+  // undefined) paneId in a fresh floating group, materializing a phantom panel
+  // and breaking conservation. Now it returns the layout untouched.
+  it("tearing a pane the (empty) area group doesn't hold is a no-op", () => {
+    const l = areaLayout([]); // emptied area, still a registered drop target
+    expect(l.groups[AREA_GID].paneIds).toEqual([]);
+    // The fuzzer's pick() over an empty paneIds array yields undefined; any
+    // not-present paneId behaves the same.
+    const out = tearOutPane(
+      l,
+      AREA_GID,
+      undefined as unknown as string,
+      0,
+      0,
+      260,
+    );
+    expect(out.windowId).toBeNull();
+    expect(out.floatingGroupId).toBeNull();
+    // Layout is returned by reference, fully unchanged: no phantom group, no
+    // floating window, area group still empty and still registered.
+    expect(out.layout).toBe(l);
+    expect(Object.keys(out.layout.groups)).toEqual([AREA_GID]);
+    expect(out.layout.floating).toEqual([]);
+  });
+
+  // The same guard protects a plain (non-area) multi-panel group: tearing a
+  // pane it doesn't hold must not invent one.
+  it("tearing a pane a plain group doesn't hold is a no-op", () => {
+    const l = areaLayout(["x"], { plain: ["p0", "p1"] });
+    const out = tearOutPane(l, "plain", "nope", 0, 0, 260);
+    expect(out.windowId).toBeNull();
+    expect(out.floatingGroupId).toBeNull();
+    expect(out.layout).toBe(l);
   });
 });
 

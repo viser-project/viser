@@ -1054,8 +1054,20 @@ export function tearOutPane(
   x: number,
   y: number,
   width: number,
-): { layout: DockLayout; windowId: WindowId; floatingGroupId: GroupId } {
+): {
+  layout: DockLayout;
+  windowId: WindowId | null;
+  floatingGroupId: GroupId | null;
+} {
   const group = layout.groups[groupId];
+  // No-op when the pane isn't actually in this group: tearing out a pane the
+  // group doesn't hold would otherwise CONJURE it -- the split branch below
+  // wraps `paneId` in a fresh group regardless, so an absent (or undefined)
+  // paneId materializes a phantom panel and breaks conservation. The pane must
+  // already live here for there to be anything to tear out.
+  if (group !== undefined && !group.paneIds.includes(paneId)) {
+    return { layout, windowId: null, floatingGroupId: null };
+  }
   // An area group is a fixed fixture: never float it as a whole, even when it
   // holds a single panel. Always split the torn panel into its OWN new group and
   // leave the area group in place (it may end up empty -- it persists as a drop
