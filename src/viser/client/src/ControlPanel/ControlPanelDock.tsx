@@ -684,11 +684,16 @@ function StandalonePanelPlacement({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, orderKey, dock.api]);
 
-  // Remember the panel's last-known panes so we can clean up the dock layout
-  // when the panel is emptied (the empty effect below has no current tabIds to
-  // look the group up by).
+  // Remember the panel's last-known panes so the empty effect below can clean up
+  // the dock layout when the panel is emptied (it has no current tabIds to look
+  // the group up by). Updated in an effect (not during render) and only while
+  // non-empty -- so on the emptying commit lastTabIds still holds the panes to
+  // remove. Declared BEFORE the empty effect so it commits first on that render.
   const lastTabIds = React.useRef<string[]>([]);
-  if (tabIds.length > 0) lastTabIds.current = tabIds;
+  React.useEffect(() => {
+    if (tabIds.length > 0) lastTabIds.current = tabIds;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderKey]);
 
   // Emptied to ZERO tabs (last tab removed) while still visible: remove the
   // panel's now-dead panes from the dock layout (collapsing its group/leaf) and
@@ -696,6 +701,9 @@ function StandalonePanelPlacement({
   // cleanly. Without this, a docked panel's stale group lingers (the membership
   // effect bails on !ready and the hide effect bails on visible), and a revive
   // creates a NEW group -- orphaning the stale one and rendering nowhere.
+  // (Resets appliedPlacementKey, so it must stay declared AFTER the placement
+  // effect; both touch that ref. Op idempotency makes the ordering self-healing,
+  // but keep this order.)
   React.useEffect(() => {
     if (!visible || tabIds.length > 0) return;
     dock.api.apply((layout) => {
