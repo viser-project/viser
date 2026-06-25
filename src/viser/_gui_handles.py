@@ -952,7 +952,12 @@ class _PlacementMixin:
         self._set_position({"kind": "edge", "edge": "right"})
 
     def dock_above(self, anchor: PlaceableHandle) -> None:
-        """Stack this panel directly above another panel (a column split)."""
+        """Stack this panel directly above another panel (a column split).
+
+        The ``anchor`` must itself be DOCKED (a column split needs a docked
+        neighbor to split against). If the anchor is floating or not yet placed,
+        this falls back to docking on the right edge (with a warning); dock the
+        anchor first."""
         self._set_position(
             {
                 "kind": "split",
@@ -962,7 +967,12 @@ class _PlacementMixin:
         )
 
     def dock_below(self, anchor: PlaceableHandle) -> None:
-        """Stack this panel directly below another panel (a column split)."""
+        """Stack this panel directly below another panel (a column split).
+
+        The ``anchor`` must itself be DOCKED (a column split needs a docked
+        neighbor to split against). If the anchor is floating or not yet placed,
+        this falls back to docking on the right edge (with a warning); dock the
+        anchor first."""
         self._set_position(
             {
                 "kind": "split",
