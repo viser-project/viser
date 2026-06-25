@@ -56,9 +56,11 @@ function referencedGroupIds(layout: DockLayout): GroupId[] {
  *  5. activeId is a member; paneIds non-empty.
  *  6/7. Splits have >=2 children, valid dir, no same-axis nesting.
  *  8. Finite positive weights.
- *  9. Floating windows have non-empty stacks + finite geometry.
+ *  9. Floating windows: non-empty stacks, finite geometry, valid stackWeights
+ *     (finite/positive, keyed only by groups in the window's stack).
  *  10/11. Unique node ids and floating window ids.
- *  12. `collapsed`, when present, is a boolean. */
+ *  12. `collapsed` / `collapsedByParent`, when present, are booleans.
+ *  13. Each area is keyed by its own id. */
 export function invariantViolations(layout: DockLayout): string[] {
   const v: string[] = [];
   const refs = referencedGroupIds(layout);
@@ -123,7 +125,8 @@ export function invariantViolations(layout: DockLayout): string[] {
       if (!Number.isFinite(n.weight) || n.weight <= 0)
         v.push(`node ${n.id} on ${edge} bad weight ${n.weight}`);
 
-  // 9. Floating windows: non-empty stacks + finite geometry.
+  // 9. Floating windows: non-empty stacks + finite geometry + valid stackWeights
+  // (finite, positive, and keyed only by groups actually in this window's stack).
   for (const w of layout.floating) {
     if (w.stack.length === 0) v.push(`floating window ${w.id} has empty stack`);
     if (
@@ -134,6 +137,15 @@ export function invariantViolations(layout: DockLayout): string[] {
       v.push(`floating window ${w.id} bad geometry`);
     if (w.height.mode === "pinned" && !Number.isFinite(w.height.px))
       v.push(`floating window ${w.id} bad height`);
+    if (w.stackWeights !== undefined) {
+      const inStack = new Set(w.stack);
+      for (const [gid, weight] of Object.entries(w.stackWeights)) {
+        if (!Number.isFinite(weight) || weight <= 0)
+          v.push(`floating window ${w.id} stackWeight[${gid}] bad ${weight}`);
+        if (!inStack.has(gid))
+          v.push(`floating window ${w.id} stackWeight[${gid}] not in stack`);
+      }
+    }
   }
 
   // 10/11. Unique node + window ids.
@@ -145,10 +157,20 @@ export function invariantViolations(layout: DockLayout): string[] {
   const wids = layout.floating.map((w) => w.id);
   if (new Set(wids).size !== wids.length) v.push(`duplicate floating window ids`);
 
-  // 12. collapsed boolean.
-  for (const [gid, group] of Object.entries(layout.groups))
+  // 12. collapsed / collapsedByParent are booleans when present.
+  for (const [gid, group] of Object.entries(layout.groups)) {
     if (group.collapsed !== undefined && typeof group.collapsed !== "boolean")
       v.push(`group ${gid} collapsed is not boolean`);
+    if (
+      group.collapsedByParent !== undefined &&
+      typeof group.collapsedByParent !== "boolean"
+    )
+      v.push(`group ${gid} collapsedByParent is not boolean`);
+  }
+
+  // 13. Each area is keyed by its own id (areas[k].id === k).
+  for (const [k, area] of Object.entries(layout.areas ?? {}))
+    if (area.id !== k) v.push(`area key ${k} != area.id ${area.id}`);
 
   return v;
 }
