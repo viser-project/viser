@@ -131,7 +131,7 @@ describe("removePane", () => {
     const torn = tearOutPane(areaLayout(), "g-area", "tab2", 10, 10, 260);
     const out = removePane(torn.layout, "tab2");
     expect(out.floating).toEqual([]);
-    expect(out.groups[torn.floatingGroupId]).toBeUndefined();
+    expect(out.groups[torn.floatingGroupId!]).toBeUndefined();
     expect(out.groups["g-area"].paneIds).toEqual(["tab1"]);
     expect(out.areas!["area-1"].group).toBe("g-area");
   });

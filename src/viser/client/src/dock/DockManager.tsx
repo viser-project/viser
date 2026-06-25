@@ -1179,6 +1179,10 @@ export function DockManager({
           src.y,
           src.width,
         );
+        // No-op tear-out (pane not in the group): nothing floated, nothing to
+        // reposition.
+        if (res.windowId === null) return null;
+        const newWindowId = res.windowId;
         flushSync(() => applyOp(res.layout));
 
         // Anchor the new window so the cursor lands on its tab strip. Unlike
@@ -1188,7 +1192,7 @@ export function DockManager({
         // and reposition.
         const crect = containerRect();
         const winEl = containerRef.current?.querySelector<HTMLElement>(
-          `[data-floating-window="${res.windowId}"]`,
+          `[data-floating-window="${newWindowId}"]`,
         );
         let grabX = 40;
         let grabY = 18;
@@ -1210,10 +1214,10 @@ export function DockManager({
         const newX = e.clientX - crect.left - grabX;
         const newY = e.clientY - crect.top - grabY;
         flushSync(() =>
-          applyOp(ops.moveWindow(layoutRef.current, res.windowId, newX, newY)),
+          applyOp(ops.moveWindow(layoutRef.current, newWindowId, newX, newY)),
         );
         return {
-          windowId: res.windowId,
+          windowId: newWindowId,
           groupIdForDim: res.floatingGroupId,
           grabX,
           grabY,

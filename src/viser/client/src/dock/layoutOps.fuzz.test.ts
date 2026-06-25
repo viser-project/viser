@@ -141,6 +141,29 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
         return l;
       },
     },
+    {
+      // Includes a dockable AREA (an inline tab group's backing group, referenced
+      // only via `areas`) alongside a docked column + a float. Random ops then run
+      // WITH an area present, exercising the area branches (detachInPlace /
+      // removePaneInPlace area guards, the area-aware invariant exemptions) that
+      // the area-less fixtures never reach.
+      name: "area + docked + float",
+      make: () => {
+        const l = emptyLayout();
+        l.groups = {
+          area: grp("area", 2), // backs the area; referenced via l.areas only
+          d: grp("d", 1),
+          e: grp("e", 1),
+          f: grp("f", 1),
+        };
+        l.docked.left = colS([leaf("d"), leaf("e")]);
+        l.floating = [
+          floatingWindow({ id: "wf", x: 60, y: 60, width: 260, stack: ["f"] }),
+        ];
+        l.areas = { "area-1": { id: "area-1", group: "area" } };
+        return l;
+      },
+    },
   ];
 }
 

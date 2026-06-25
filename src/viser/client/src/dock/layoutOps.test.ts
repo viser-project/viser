@@ -828,7 +828,7 @@ describe("tearOutPane", () => {
     // Source group keeps the other two panes.
     expect(res.layout.groups["a"].paneIds).toEqual(["a:0", "a:2"]);
     // New floating group holds just the torn panel.
-    const newGroup = res.layout.groups[res.floatingGroupId];
+    const newGroup = res.layout.groups[res.floatingGroupId!];
     expect(newGroup.paneIds).toEqual(["a:1"]);
     expect(res.floatingGroupId).not.toBe("a");
     const win = res.layout.floating.find((w) => w.id === res.windowId)!;
