@@ -135,7 +135,7 @@ def test_tab_title_and_keyboard_activation(dock_context, vite_server) -> None:
         ),
     )
     gid = _group_id_for_panel(page, "controls")
-    merged = page.evaluate("(gid) => window.__dockLayout.groups[gid].panelIds", gid)
+    merged = page.evaluate("(gid) => window.__dockLayout.groups[gid].paneIds", gid)
     assert "inspector" in merged
 
     # The merged-in tab is active; both tabs carry their full label as a title
@@ -221,7 +221,7 @@ def test_drop_on_minimized_group_expands(dock_context, vite_server) -> None:
     )
     _drag(page, _grip(page, "inspector"), (target["x"], target["y"]))
 
-    merged = page.evaluate("(gid) => window.__dockLayout.groups[gid].panelIds", gid)
+    merged = page.evaluate("(gid) => window.__dockLayout.groups[gid].paneIds", gid)
     if "inspector" not in merged:
         pytest.skip("merge didn't land this run; geometry off by a few px")
     assert page.evaluate(

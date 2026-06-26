@@ -5,10 +5,12 @@
 import {
   DockLayout,
   DockNode,
+  FloatingWindow,
   GroupId,
-  PanelId,
+  PaneId,
   TabGroup,
   emptyLayout,
+  windowHeight,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -32,14 +34,14 @@ export function col(children: DockNode[], weight = 1): DockNode {
 }
 
 // ---------------------------------------------------------------------------
-// Group builders. `group("a", 2)` holds panels "a.0", "a.1".
+// Group builders. `group("a", 2)` holds panes "a.0", "a.1".
 // ---------------------------------------------------------------------------
 export function group(id: string, panelCount = 1, collapsed?: boolean): TabGroup {
-  const panelIds = Array.from({ length: panelCount }, (_, i) => `${id}.${i}`);
+  const paneIds = Array.from({ length: panelCount }, (_, i) => `${id}.${i}`);
   return {
     id,
-    panelIds,
-    activeId: panelIds[0],
+    paneIds,
+    activeId: paneIds[0],
     ...(collapsed !== undefined ? { collapsed } : {}),
   };
 }
@@ -72,13 +74,41 @@ export function defGroup(
   name: string,
   panelCount = 1,
 ): TabGroup {
-  const panelIds: PanelId[] = Array.from(
+  const paneIds: PaneId[] = Array.from(
     { length: panelCount },
     (_, i) => `${name}:${i}`,
   );
-  const g: TabGroup = { id: name, panelIds, activeId: panelIds[0] };
+  const g: TabGroup = { id: name, paneIds, activeId: paneIds[0] };
   layout.groups[name] = g;
   return g;
+}
+
+/** THE single constructor for a FloatingWindow in tests. Every test builds
+ * floating windows through this (never a raw object literal), so the window shape
+ * lives in ONE place: a field change (e.g. a future tagged-union for height or
+ * position) updates this factory, not ~100 literals. Sensible defaults keep call
+ * sites terse; pass only what the test cares about. */
+export function floatingWindow(opts: {
+  id: string;
+  stack: GroupId[];
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  stackWeights?: Record<GroupId, number>;
+  anchor?: { x: number; y: number };
+}): FloatingWindow {
+  const w: FloatingWindow = {
+    id: opts.id,
+    x: opts.x ?? 0,
+    y: opts.y ?? 0,
+    width: opts.width ?? 300,
+    height: windowHeight(opts.height),
+    stack: [...opts.stack],
+  };
+  if (opts.stackWeights !== undefined) w.stackWeights = opts.stackWeights;
+  if (opts.anchor !== undefined) w.anchor = opts.anchor;
+  return w;
 }
 
 export function makeLayout(opts: {
@@ -100,14 +130,7 @@ export function makeLayout(opts: {
   }
   layout.docked.left = opts.left ?? null;
   layout.docked.right = opts.right ?? null;
-  layout.floating = (opts.floating ?? []).map((w) => ({
-    id: w.id,
-    x: w.x ?? 0,
-    y: w.y ?? 0,
-    width: w.width ?? 300,
-    height: w.height,
-    stack: [...w.stack],
-  }));
+  layout.floating = (opts.floating ?? []).map(floatingWindow);
   const ensure = (g: GroupId) => {
     if (layout.groups[g] === undefined) defGroup(layout, g, 1);
   };

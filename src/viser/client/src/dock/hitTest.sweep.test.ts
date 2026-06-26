@@ -29,6 +29,7 @@ import {
   row as rowS,
   col as colS,
   group,
+  floatingWindow,
 } from "./testUtils";
 
 const CONTAINER: ContainerRect = { left: 0, top: 0, width: 1000, height: 800 };
@@ -39,7 +40,7 @@ const STRIP_H = 28;
 /** Build docked group targets from a tree, laying their frames out within the
  * region band [regionLeft, regionLeft+regionW] x [0, height]. We approximate
  * the real layout: a row splits width, a column splits height. Tabs are placed
- * along the strip; a group with >tabsPerRow panels wraps to a second row. */
+ * along the strip; a group with >tabsPerRow panes wraps to a second row. */
 function dockedTargets(
   layout: DockLayout,
   edge: DockEdge,
@@ -55,15 +56,15 @@ function dockedTargets(
       const stripTop = y + STRIP_OFFSET;
       // Lay tabs left-to-right, wrapping every 3 within the strip width.
       const tabW = Math.min(80, w / 3);
-      const tabs = (group?.panelIds ?? []).map((panelId, i) => {
+      const tabs = (group?.paneIds ?? []).map((paneId, i) => {
         const col = i % 3;
         const row = Math.floor(i / 3);
         return {
-          panelId,
+          paneId,
           rect: rect(x + col * tabW, stripTop + row * STRIP_H, tabW, STRIP_H),
         };
       });
-      const rows = Math.max(1, Math.ceil((group?.panelIds.length ?? 1) / 3));
+      const rows = Math.max(1, Math.ceil((group?.paneIds.length ?? 1) / 3));
       out.push({
         groupId: node.group,
         rect: r,
@@ -97,8 +98,8 @@ function floatingTargets(layout: DockLayout): GroupTarget[] {
       const x = win.x;
       const y = win.y + index * gh;
       const group = layout.groups[gid];
-      const tabs = (group?.panelIds ?? []).map((panelId, i) => ({
-        panelId,
+      const tabs = (group?.paneIds ?? []).map((paneId, i) => ({
+        paneId,
         rect: rect(x + i * 70, y + STRIP_OFFSET, 70, STRIP_H),
       }));
       out.push({
@@ -176,9 +177,9 @@ function validateResult(
         errs.push(`insertTab references missing group ${result.targetGroupId}`);
         break;
       }
-      if (result.index < 0 || result.index > group.panelIds.length)
+      if (result.index < 0 || result.index > group.paneIds.length)
         errs.push(
-          `insertTab index ${result.index} out of [0..${group.panelIds.length}] for ${result.targetGroupId}`,
+          `insertTab index ${result.index} out of [0..${group.paneIds.length}] for ${result.targetGroupId}`,
         );
       break;
     }
@@ -266,7 +267,7 @@ function layouts(): { name: string; layout: DockLayout }[] {
   }
   {
     const l = emptyLayout();
-    // Multi-tab group with WRAPPING (>3 panels -> two strip rows).
+    // Multi-tab group with WRAPPING (>3 panes -> two strip rows).
     l.groups = {
       a: group("a", 5),
     };
@@ -281,8 +282,8 @@ function layouts(): { name: string; layout: DockLayout }[] {
       c: group("c"),
     };
     l.floating = [
-      { id: "w1", x: 400, y: 200, width: 300, stack: ["a", "b"] },
-      { id: "w2", x: 750, y: 120, width: 200, stack: ["c"] },
+      floatingWindow({ id: "w1", x: 400, y: 200, width: 300, stack: ["a", "b"] }),
+      floatingWindow({ id: "w2", x: 750, y: 120, width: 200, stack: ["c"] }),
     ];
     out.push({ name: "floating stacks", layout: l });
   }
@@ -298,9 +299,9 @@ function layouts(): { name: string; layout: DockLayout }[] {
       c: group("c"),
     };
     l.floating = [
-      { id: "w1", x: 300, y: 200, width: 260, stack: ["a"] },
-      { id: "w2", x: 360, y: 240, width: 260, stack: ["b"] },
-      { id: "w3", x: 420, y: 280, width: 260, stack: ["c"] },
+      floatingWindow({ id: "w1", x: 300, y: 200, width: 260, stack: ["a"] }),
+      floatingWindow({ id: "w2", x: 360, y: 240, width: 260, stack: ["b"] }),
+      floatingWindow({ id: "w3", x: 420, y: 280, width: 260, stack: ["c"] }),
     ];
     out.push({ name: "overlapping floating windows", layout: l });
   }
@@ -312,7 +313,7 @@ function layouts(): { name: string; layout: DockLayout }[] {
       f: group("f"),
     };
     l.docked.left = leaf("d");
-    l.floating = [{ id: "wf", x: 200, y: 250, width: 240, stack: ["f"] }];
+    l.floating = [floatingWindow({ id: "wf", x: 200, y: 250, width: 240, stack: ["f"] })];
     out.push({ name: "floating straddling docked region", layout: l });
   }
   {

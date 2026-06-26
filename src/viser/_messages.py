@@ -9,7 +9,7 @@ from typing import Any, ClassVar, Dict, Optional, Tuple, Type, TypeVar, Union, c
 
 import numpy as np
 import numpy.typing as npt
-from typing_extensions import Annotated, Literal, TypeAlias, override
+from typing_extensions import Annotated, Literal, TypeAlias, TypedDict, override
 
 from . import infra, theme, uplot
 
@@ -1721,6 +1721,42 @@ class GuiImageMessage(_CreateGuiComponentMessage):
     props: GuiImageProps
 
 
+class EdgePlacement(TypedDict):
+    """Dock a standalone panel to a viewport edge."""
+
+    kind: Literal["edge"]
+    edge: Literal["left", "right"]
+
+
+class SplitPlacement(TypedDict):
+    """Split a standalone panel above/below another panel (a column split)."""
+
+    kind: Literal["split"]
+    anchor_uuid: str
+    """Tab-group uuid of the anchor panel (CONTROL_PANEL_ID for the main panel)."""
+    side: Literal["above", "below"]
+
+
+class FloatPlacement(TypedDict):
+    """Float a standalone panel at an explicit position (None => client default)."""
+
+    kind: Literal["float"]
+    x: Optional[float]
+    y: Optional[float]
+
+
+class GuiDockPlacement(TypedDict):
+    """Imperative placement state for a standalone panel.
+
+    Orthogonal fields so independent commands (dock/float, set_width, set_height)
+    coalesce without clobbering each other. Delivered via GuiUpdateMessage and
+    replayed to late-joining clients."""
+
+    position: Optional[Union[EdgePlacement, SplitPlacement, FloatPlacement]]
+    width: Optional[float]
+    height: Optional[float]
+
+
 @dataclasses.dataclass
 class GuiTabGroupProps:
     _tab_labels: Tuple[str, ...]
@@ -1739,6 +1775,57 @@ class GuiTabGroupProps:
 class GuiTabGroupMessage(_CreateGuiComponentMessage):
     container_uuid: str
     props: GuiTabGroupProps
+
+
+@dataclasses.dataclass
+class GuiPanelProps:
+    """Props for a standalone panel (`server.gui.add_panel()`). A panel carries
+    its own tabs (it IS the tab container), plus placement and an initial
+    collapsed hint."""
+
+    _tab_labels: Tuple[str, ...]
+    """(Private) Tuple of labels for each tab."""
+    _tab_icons_html: Tuple[Union[str, None], ...]
+    """(Private) Tuple of HTML strings for icons of each tab, or None if no icon."""
+    _tab_container_ids: Tuple[str, ...]
+    """(Private) Tuple of container IDs for each tab."""
+    order: float
+    """Order value for arranging panels."""
+    visible: bool
+    """Visibility state of the panel: when False the panel renders nothing (its
+    panes are removed from the dock layout) without being destroyed."""
+    placement: GuiDockPlacement
+    """Imperative placement for the panel. Seeded empty on create, then updated
+    by dock/float/size commands (coalesced via GuiUpdateMessage)."""
+    expand_by_default: bool = True
+    """One-shot initial collapsed state: when False, the panel starts minimized.
+    Applied once at creation (like a folder's expand_by_default); the user owns
+    the collapsed state thereafter."""
+
+
+@dataclasses.dataclass
+class GuiPanelMessage(
+    Message,
+    entity=EntityLifecycle("gui", "create", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """A standalone panel: a dockable / floating GUI container that lives outside
+    the control panel. Deliberately NOT a GuiComponentMessage -- it is a
+    top-level entity (like a modal), so it never enters the inline GUI tree."""
+
+    uuid: str
+    props: GuiPanelProps
+
+
+@dataclasses.dataclass
+class GuiPanelRemoveMessage(
+    Message,
+    entity=EntityLifecycle("gui", "remove", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """Sent server->client to remove a standalone panel."""
+
+    uuid: str
 
 
 @dataclasses.dataclass

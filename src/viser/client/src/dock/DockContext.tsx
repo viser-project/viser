@@ -10,13 +10,13 @@ import {
   DockLayout,
   GroupId,
   NodeId,
-  PanelId,
-  PanelRegistry,
+  PaneId,
+  PaneRegistry,
   TabGroup,
 } from "./types";
 
-/** Imperative layout API for code that drives panels from OUTSIDE a pointer
- * gesture -- e.g. a sync layer adding/removing panels as server state changes.
+/** Imperative layout API for code that drives panes from OUTSIDE a pointer
+ * gesture -- e.g. a sync layer adding/removing panes as server state changes.
  * All calls are routed through the manager's applyOp (so docked region widths
  * reconcile normally) and are stable across renders (safe in effect deps). */
 export interface DockApi {
@@ -24,11 +24,11 @@ export interface DockApi {
   apply: (fn: (layout: DockLayout) => DockLayout) => void;
   /** Add a not-yet-placed panel to an area's tabs (creates the area if
    * needed). No-op if the panel is already placed anywhere. */
-  addPanelToArea: (areaId: AreaId, panelId: PanelId, index?: number) => void;
+  addPaneToArea: (areaId: AreaId, paneId: PaneId, index?: number) => void;
 }
 
 export interface DockContextValue {
-  panels: PanelRegistry;
+  panes: PaneRegistry;
   /** Imperative panel lifecycle API (stable identity). */
   api: DockApi;
   /** The committed layout, for sync layers that need to OBSERVE where things
@@ -67,18 +67,21 @@ export interface DockContextValue {
   startTabDrag: (
     event: React.PointerEvent<HTMLElement>,
     groupId: GroupId,
-    panelId: PanelId,
+    paneId: PaneId,
   ) => void;
   /** Drag the entire floating window (its whole snap-stack) by its header. */
   startWindowDrag: (
     event: React.PointerEvent<HTMLElement>,
     windowId: string,
   ) => void;
-  activateTab: (groupId: GroupId, panelId: PanelId) => void;
+  activateTab: (groupId: GroupId, paneId: PaneId) => void;
+  /** Select a tab AND expand the group if minimized -- clicking a tab to read it
+   * should reveal its content, not just switch the (hidden) active tab. */
+  expandToTab: (groupId: GroupId, paneId: PaneId) => void;
   /** Toggle a group's minimized state (tap on its handle). */
   toggleCollapsed: (groupId: GroupId) => void;
   /** True while a split divider is being dragged. The column collapse/expand
-   * CSS transition is suppressed during a resize so panels track the cursor 1:1
+   * CSS transition is suppressed during a resize so panes track the cursor 1:1
    * instead of easing behind it. */
   resizing: boolean;
   /** Set the `resizing` flag (called by SplitDivider on pointer down/up). */
@@ -87,7 +90,7 @@ export interface DockContextValue {
   draggingGroupId: GroupId | null;
   /** Tab currently being reordered within its strip, or null. The frame lifts
    * this tab and skips FLIP for it (the manager drives it imperatively). */
-  draggingTabId: PanelId | null;
+  draggingTabId: PaneId | null;
 }
 
 export const DockContext = React.createContext<DockContextValue | null>(null);
@@ -109,8 +112,14 @@ export interface DockMetrics {
    * actually insets the canvas. Use this for screen-geometry consumers like
    * the notifications offset. */
   reservedWidth: { left: number; right: number };
+  /** Dock-root size in px. With reservedWidth, gives the canvas bounds used to
+   * resolve (possibly negative) float coordinates. */
+  containerWidth: number;
+  containerHeight: number;
 }
 
 export const DockMetricsContext = React.createContext<DockMetrics>({
   reservedWidth: { left: 0, right: 0 },
+  containerWidth: 0,
+  containerHeight: 0,
 });

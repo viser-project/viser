@@ -489,8 +489,12 @@ export default function SceneTreeTable() {
     (node) => node!.children,
     shallowArrayEqual,
   );
+  // Plain Box, not a ScrollArea: the scene tree's wide rows scroll horizontally
+  // via the PANEL BODY's own scrollbar (dockBodyScroll). A nested horizontal
+  // ScrollArea here would stack a SECOND horizontal bar inside the one the panel
+  // already shows when narrow.
   return (
-    <ScrollArea className={tableWrapper}>
+    <Box className={tableWrapper}>
       <PropsPopoverProvider>
         <VisibilityPaintProvider>
           {childrenName.map((name) => (
@@ -498,7 +502,7 @@ export default function SceneTreeTable() {
           ))}
         </VisibilityPaintProvider>
       </PropsPopoverProvider>
-    </ScrollArea>
+    </Box>
   );
 }
 

@@ -21,8 +21,7 @@ import {
   DockEdge,
   DockNode,
   DockSplit,
-  MAX_PANEL_WIDTH_PX,
-  MIN_PANEL_WIDTH_PX,
+  MIN_REGION_GRAB_PX,
   MINIMIZED_STRIP_PX,
   SPLIT_DIVIDER_PX,
 } from "./types";
@@ -61,24 +60,9 @@ export const SplitView = React.memo(function SplitView({
   ) {
     if (node.type === "split" && isPureColumn(node)) {
       return (
-        <Box
-          data-dock-column={node.id}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            width: "100%",
-            height: "100%",
-            minWidth: 0,
-            minHeight: 0,
-          }}
-        >
-          <ColumnHandle node={node} edge={edge} />
-          <Box
-            style={{ flexGrow: 1, minHeight: 0, minWidth: 0, display: "flex" }}
-          >
-            <VerticalMinimizedColumn node={node} edge={edge} />
-          </Box>
-        </Box>
+        <ColumnShell node={node} edge={edge}>
+          <VerticalMinimizedColumn node={node} edge={edge} />
+        </ColumnShell>
       );
     }
     return <VerticalMinimizedColumn node={node} edge={edge} />;
@@ -88,24 +72,9 @@ export const SplitView = React.memo(function SplitView({
   }
   if (topLevel && isPureColumn(node)) {
     return (
-      <Box
-        data-dock-column={node.id}
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          width: "100%",
-          height: "100%",
-          minWidth: 0,
-          minHeight: 0,
-        }}
-      >
-        <ColumnHandle node={node} edge={edge} />
-        <Box
-          style={{ flexGrow: 1, minHeight: 0, minWidth: 0, display: "flex" }}
-        >
-          <SplitNode node={node} edge={edge} />
-        </Box>
-      </Box>
+      <ColumnShell node={node} edge={edge}>
+        <SplitNode node={node} edge={edge} />
+      </ColumnShell>
     );
   }
   return (
@@ -117,11 +86,44 @@ export const SplitView = React.memo(function SplitView({
   );
 });
 
+/** A top-level pure column's chrome: the float-the-column handle above its body
+ * (the body is the caller's `children` -- a SplitNode when expanded, or a
+ * VerticalMinimizedColumn when fully minimized). Both top-level pure-column
+ * render paths share this shell. */
+function ColumnShell({
+  node,
+  edge,
+  children,
+}: {
+  node: DockSplit;
+  edge: DockEdge;
+  children: React.ReactNode;
+}) {
+  return (
+    <Box
+      data-dock-column={node.id}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        height: "100%",
+        minWidth: 0,
+        minHeight: 0,
+      }}
+    >
+      <ColumnHandle node={node} edge={edge} />
+      <Box style={{ flexGrow: 1, minHeight: 0, minWidth: 0, display: "flex" }}>
+        {children}
+      </Box>
+    </Box>
+  );
+}
+
 /** Slim header at the top of a top-level PURE column (2+ stacked leaves):
  * dragging it floats the WHOLE column as one stacked window, then drags it.
  * Mirrors the floating multi-stack window header (FloatingWindowView),
  * including the minimize-all button (which collapses the whole column to a
- * vertical strip; the handle's + or the cells expand panels back out). */
+ * vertical strip; the handle's + or the cells expand panes back out). */
 function ColumnHandle({ node, edge }: { node: DockSplit; edge: DockEdge }) {
   const dock = useDock();
   // Pure column: every child is a leaf (the isPureColumn render gate).
@@ -220,9 +222,25 @@ function SplitNode({
               <SplitView node={child} edge={edge} topLevel={topLevel} />
             )}
           </Box>
-          {index < node.children.length - 1 && (
+          {index < node.children.length - 1 &&
+            (() => {
+              // The divider can resize only if there's a non-collapsed cell on
+              // BOTH sides of it -- a divider between (or beside) only minimized
+              // strips can't move anything, so it shows no resize cursor / drag.
+              const isCollapsed = (c: DockNode) =>
+                isRow
+                  ? isColumnMinimized(c, groups)
+                  : c.type === "leaf" && groups[c.group]?.collapsed === true;
+              const leftResizable = node.children
+                .slice(0, index + 1)
+                .some((c) => !isCollapsed(c));
+              const rightResizable = node.children
+                .slice(index + 1)
+                .some((c) => !isCollapsed(c));
+              return (
             <SplitDivider
               dir={node.dir}
+              resizable={leftResizable && rightResizable}
               containerRef={containerRef}
               onResize={(deltaPx, containerPx) => {
                 // Cells rendered at a fixed compact size are excluded from the
@@ -242,17 +260,26 @@ function SplitNode({
                   dividerIndex: index,
                   deltaPx,
                   minCell:
-                    node.dir === "row" ? MIN_PANEL_WIDTH_PX : MIN_CELL_HEIGHT_PX,
-                  // Per-panel width cap applies to row splits; column splits
-                  // resize height, which has no width cap.
-                  maxCell: node.dir === "row" ? MAX_PANEL_WIDTH_PX : Infinity,
+                    node.dir === "row" ? MIN_REGION_GRAB_PX : MIN_CELL_HEIGHT_PX,
+                  // No per-panel width/height cap -- a cell may grow as far as
+                  // its siblings' min widths allow (total is conserved).
+                  maxCell: Infinity,
                 });
                 if (next === null) return;
-                // Write new weights by node id (px values; total is conserved).
-                // Collapsed cells keep their preserved weight (excluded).
+                // Write new weights by node id. Expanded cells get their resized
+                // PX size. A collapsed cell isn't resized, but its weight is its
+                // RESTORE size, and the resize just put its siblings on a px
+                // scale -- so we must rescale the collapsed cell's preserved
+                // weight onto the same px basis (keeping its proportion), or on
+                // expand it would render at a now-tiny flex-unit weight next to
+                // px-magnitude siblings and collapse to ~0 height (off-screen).
+                const totalAll =
+                  node.children.reduce((s, c) => s + c.weight, 0) || 1;
                 const byId: Record<string, number> = {};
                 node.children.forEach((c, i) => {
-                  if (!collapsed[i]) byId[c.id] = next[i];
+                  byId[c.id] = collapsed[i]
+                    ? (c.weight / totalAll) * containerPx
+                    : next[i];
                 });
                 dock.api.apply((l) => setNodeWeights(l, edge, byId));
               }}
@@ -267,7 +294,8 @@ function SplitNode({
                 dock.api.apply((l) => setNodeWeights(l, edge, byId));
               }}
             />
-          )}
+              );
+            })()}
         </React.Fragment>
         );
       })}
@@ -278,7 +306,7 @@ function SplitNode({
 function DockLeafView({ node, edge }: { node: DockNode; edge: DockEdge }) {
   if (node.type !== "leaf") return null;
   // No border (the top border in particular reads as ugly against the canvas);
-  // panels are separated from the canvas by the region's shadow and from each
+  // panes are separated from the canvas by the region's shadow and from each
   // other by the split dividers.
   return (
     <Paper
@@ -309,7 +337,9 @@ function DockLeafView({ node, edge }: { node: DockNode; edge: DockEdge }) {
 function DockLeafFrame({ groupId }: { groupId: string }) {
   const group = useDock().groups[groupId];
   if (group === undefined) return null;
-  return <TabGroupFrame group={group} stripDragsGroup />;
+  // Docked leaves can be resized narrower than the panel-content minimum, so
+  // their body shows a persistent horizontal scrollbar pinned to the bottom.
+  return <TabGroupFrame group={group} stripDragsGroup persistentScrollbar />;
 }
 
 /** Draggable divider between two split children. Reports the pointer delta
@@ -317,11 +347,15 @@ function DockLeafFrame({ groupId }: { groupId: string }) {
  * into new flex weights. */
 function SplitDivider({
   dir,
+  resizable,
   containerRef,
   onResize,
   onCancel,
 }: {
   dir: "row" | "column";
+  /** False when both sides of the divider are minimized strips: nothing can
+   * resize, so it shows no resize cursor and ignores drags. */
+  resizable: boolean;
   containerRef: React.RefObject<HTMLDivElement>;
   onResize: (deltaPx: number, containerPx: number) => void;
   /** Revert whatever per-frame onResize calls applied (Escape mid-drag). */
@@ -336,6 +370,7 @@ function SplitDivider({
   React.useEffect(() => () => activeDrag.current?.(), []);
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
+    if (!resizable) return; // nothing to resize between minimized strips
     if (activeDrag.current !== null) return; // one drag per divider
     event.stopPropagation();
     const container = containerRef.current;
@@ -372,7 +407,7 @@ function SplitDivider({
         // separator doesn't overpower the shadow-based panel boundaries.
         flexShrink: 0,
         [isRow ? "width" : "height"]: SPLIT_DIVIDER_PX,
-        cursor: isRow ? "ew-resize" : "ns-resize",
+        cursor: !resizable ? "default" : isRow ? "ew-resize" : "ns-resize",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",

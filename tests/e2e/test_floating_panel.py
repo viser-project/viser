@@ -232,29 +232,30 @@ def test_notification_offset_clear_of_left_dock(
     )
 
 
-def test_switching_layout_releases_dock(
+def test_deprecated_control_layout_docks_right(
     viser_page: Page, viser_server: viser.ViserServer
 ) -> None:
-    """Regression: docking, then switching control_layout away from floating,
-    must release the dock so the canvas stops reserving the panel's column.
-
-    The sidebar layout lives on the right, so a stale *left* dock would leave
-    the canvas pushed in from the left -- the artifact this guards against."""
+    """The deprecated ``control_layout="fixed"`` / ``"collapsible"`` now docks the
+    control panel to the right edge (via the new `main_panel` placement path),
+    instead of switching to the old sidebar layout. The floating panel stays
+    mounted on the dock surface; the canvas insets on the right."""
     viser_page.set_viewport_size(_VIEWPORT)
     viser_page.wait_for_timeout(300)
 
-    # Dock to the left; the canvas should inset from the left.
-    start = _center(_bbox(viser_page, "floating-panel-handle"))
-    _drag_handle_to(viser_page, (20, start[1]))
-    assert _dock_side(viser_page) == "left"
-    assert _canvas_box(viser_page)["x"] > 100
+    # Start undocked (default top-right float).
+    assert _dock_side(viser_page) == "none"
 
-    # Switch to a sidebar layout: the floating panel unmounts and must clean up.
+    # The deprecated setting translates to main_panel.dock_right().
     viser_server.gui.configure_theme(control_layout="fixed")
-    expect(viser_page.get_by_test_id("floating-panel")).to_have_count(0, timeout=5_000)
-    viser_page.wait_for_timeout(300)
+    viser_page.wait_for_timeout(500)
 
-    # Canvas no longer carries the (now-defunct) left dock inset.
+    # Panel stays mounted and is now docked to the right edge.
+    expect(viser_page.get_by_test_id("floating-panel")).to_be_visible()
+    assert _dock_side(viser_page) == "right"
+    panel = _panel_box(viser_page)
+    assert panel["x"] + panel["width"] > _VIEWPORT["width"] - 5
+    assert panel["height"] > _VIEWPORT["height"] * 0.9
+    # Canvas insets on the right (left edge stays at 0).
     assert _canvas_box(viser_page)["x"] < 5
 
 

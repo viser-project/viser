@@ -37,7 +37,7 @@ def _all_panel_ids(page: Page) -> list[str]:
     hidden (host tab inactive, host minimized) even though no panel was lost."""
     return sorted(
         page.evaluate(
-            "() => Object.values(window.__dockLayout.groups).flatMap(g => g.panelIds)"
+            "() => Object.values(window.__dockLayout.groups).flatMap(g => g.paneIds)"
         )
     )
 

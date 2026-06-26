@@ -8,7 +8,8 @@ import { Box, Paper } from "@mantine/core";
 import { IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
-import { gripBarBg } from "./DockStyles.css";
+import { gripBarBg, focusRing } from "./DockStyles.css";
+import { tabListKeyDown } from "./gestures";
 import { HandleIconButton } from "./handles";
 import { DockEdge, DockNode, NodeId, TabGroup } from "./types";
 import { collectLeaves } from "./layoutOps";
@@ -31,7 +32,12 @@ export function VerticalMinimizedColumn({
         minHeight: 0,
         display: "flex",
         flexDirection: "column",
-        overflow: "hidden",
+        // Scroll vertically when there are more cells/rows than fit (a short
+        // viewport with many minimized tabs); never scroll horizontally (the
+        // strip is intentionally narrow). Keeps every tab reachable instead of
+        // clipping the lower ones.
+        overflowX: "hidden",
+        overflowY: "auto",
         backgroundColor: "var(--mantine-color-body)",
       }}
     >
@@ -68,37 +74,37 @@ function VerticalMinimizedCell({
   group: TabGroup;
 }) {
   const dock = useDock();
-  const title = group.panelIds
-    .map((p) => dock.panels[p]?.title ?? p)
-    .join(" / ");
-  const icon = dock.panels[group.activeId]?.icon;
-  // The tab strip draws its rule on the side AWAY from the content; rotated
-  // 90 degrees, that's the side facing the canvas (left for a right-docked
-  // strip, right for a left-docked one).
-  const ruleSide = edge === "right" ? "borderLeft" : "borderRight";
   return (
     // data-dock-leaf/-edge on the cell so collectTargets offers it as a docked
     // target; hitTest's collapsed branch gives it the 5-way drop zones.
     <Box
       data-dock-leaf={nodeId}
       data-dock-edge={edge}
-      style={{ flexGrow: 1, minHeight: 0, display: "flex", width: "100%" }}
+      // flexShrink:0 so cells keep their content height and the column SCROLLS
+      // (via the Paper's overflowY) when they don't all fit, rather than
+      // compressing and clipping. flexGrow:1 still lets a few cells share the
+      // space when there's room.
+      style={{ flexGrow: 1, flexShrink: 0, minHeight: 0, display: "flex", width: "100%" }}
     >
       <Box
         data-dock-group={group.id}
         data-dock-collapsed="true"
-        title={title}
-        onPointerDown={(event) =>
+        onPointerDown={(event) => {
+          // Which tab row was pressed (if any)? A no-motion click expands to
+          // THAT tab; a press elsewhere (cap/empty area) just expands. A drag
+          // tears the panel out; a drag from the + button tears it out expanded.
+          const target = event.target as HTMLElement;
+          const rowPane = target
+            .closest("[data-dock-tab]")
+            ?.getAttribute("data-dock-tab");
           dock.startGroupDrag(event, group.id, {
-            onClick: () => dock.toggleCollapsed(group.id),
-            // A drag that starts on the expand (+) button tears out the FULL
-            // panel (expand-then-drag); from anywhere else the cell drags as
-            // the minimized stub it shows.
-            expandOnDrag:
-              (event.target as HTMLElement).closest("[data-dock-minimize]") !==
-              null,
-          })
-        }
+            onClick: () =>
+              rowPane !== null && rowPane !== undefined
+                ? dock.expandToTab(group.id, rowPane)
+                : dock.toggleCollapsed(group.id),
+            expandOnDrag: target.closest("[data-dock-minimize]") !== null,
+          });
+        }}
         style={{
           width: "100%",
           display: "flex",
@@ -110,9 +116,6 @@ function VerticalMinimizedCell({
           WebkitUserSelect: "none",
           overflow: "hidden",
           opacity: dock.draggingGroupId === group.id ? 0.4 : 1,
-          // The rotated analog of the tab strip's bottom rule, so the strip
-          // shares the horizontal tabs' visual language.
-          [ruleSide]: "2px solid var(--mantine-color-default-border)",
         }}
       >
         {/* Gray cap holding just the expand button -- no grip pill: the +
@@ -133,44 +136,97 @@ function VerticalMinimizedCell({
             // Static placement filling the cap (not bar-anchored).
             placement={{ width: "100%", height: "1.7em" }}
           >
-            <IconPlus size={14} />
+            <IconPlus size={12} />
           </HandleIconButton>
         </Box>
-        {/* Panel icon stays UPRIGHT (icons don't read rotated). */}
-        {icon !== undefined && (
-          <Box
-            style={{
-              flexShrink: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              marginTop: "0.3em",
-              color: "var(--mantine-color-dimmed)",
-            }}
-          >
-            {icon}
-          </Box>
-        )}
-        {/* Book-spine orientation (top-to-bottom, rotated clockwise): the
-        portable vertical-text form -- sideways-lr isn't supported in Safari.
-        Dimmed like the strip's secondary chrome -- a minimized title is a
-        wayfinding label, not content. */}
-        <Box
-          style={{
-            writingMode: "vertical-rl",
-            textOrientation: "mixed",
-            fontSize: "0.85em",
-            fontWeight: 500,
-            marginTop: "0.45em",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            minHeight: 0,
-            color: "var(--mantine-color-dimmed)",
-            paddingBottom: "0.6em",
-          }}
-        >
-          {title}
+        {/* One row PER TAB: upright icon + rotated (book-spine) label. Each row
+        is its own tab control -- click, or keyboard (Enter/Space to expand to
+        it, Up/Down to move focus between rows) -- so a multi-tab minimized panel
+        shows ALL its tabs instead of one arbitrary icon plus a confusing joined
+        label. The whole cell remains draggable for tear-out (handled by the
+        cell's onPointerDown above). role="tablist"/"tab" + keyboard support keep
+        the strip accessible, mirroring the expanded tab strip. */}
+        <Box role="tablist" aria-orientation="vertical" style={{ width: "100%" }}>
+          {group.paneIds.map((paneId) => {
+            const spec = dock.panes[paneId];
+            const active = paneId === group.activeId;
+            // Up/Down move focus between rows; Enter/Space expand to this tab.
+            // No onMove: arrowing through a minimized strip shouldn't expand it
+            // (that's what Enter/Space + click do).
+            const onKeyDown = tabListKeyDown({
+              paneId,
+              paneIds: group.paneIds,
+              prevKey: "ArrowUp",
+              nextKey: "ArrowDown",
+              onActivate: (id) => dock.expandToTab(group.id, id),
+            });
+            return (
+              <Box
+                key={paneId}
+                data-dock-tab={paneId}
+                role="tab"
+                aria-selected={active}
+                tabIndex={0}
+                className={focusRing}
+                title={spec?.title ?? paneId}
+                onKeyDown={onKeyDown}
+                style={{
+                  // Keep each row at its content height (icon + capped label);
+                  // the strip scrolls when rows overflow rather than squashing.
+                  flexShrink: 0,
+                  minHeight: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  width: "100%",
+                  paddingTop: "0.35em",
+                  paddingBottom: "0.6em",
+                  cursor: "pointer",
+                  // All rows read uniformly as dimmed wayfinding chrome -- a
+                  // minimized strip is a label/affordance, not content, so an
+                  // active-tab highlight here just distracts. (aria-selected
+                  // still marks the logical active tab for assistive tech.)
+                  color: "var(--mantine-color-dimmed)",
+                  opacity: 0.85,
+                }}
+              >
+                {spec?.icon !== undefined && (
+                  // Icons don't read rotated -- keep them upright.
+                  <Box
+                    style={{
+                      flexShrink: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      marginBottom: "0.3em",
+                    }}
+                  >
+                    {spec.icon}
+                  </Box>
+                )}
+                {/* Book-spine orientation (top-to-bottom, rotated clockwise):
+                the portable vertical-text form (sideways-lr isn't Safari-OK).
+                maxHeight caps the spine so a long title ELLIPSIZES into a tidy
+                fixed length (in vertical-rl, the run length is the box's height,
+                so without a cap a long label would stretch the whole strip). */}
+                <Box
+                  style={{
+                    writingMode: "vertical-rl",
+                    textOrientation: "mixed",
+                    fontSize: "0.85em",
+                    fontWeight: 500,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    minHeight: 0,
+                    maxHeight: "14em",
+                  }}
+                >
+                  {spec?.title ?? paneId}
+                </Box>
+              </Box>
+            );
+          })}
         </Box>
       </Box>
     </Box>

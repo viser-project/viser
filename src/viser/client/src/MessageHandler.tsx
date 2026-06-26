@@ -22,6 +22,7 @@ import { IconCheck, IconDownload } from "@tabler/icons-react";
 import { computeT_threeworld_world } from "./WorldTransformUtils";
 import { rootNodeTemplate, SceneNode } from "./SceneTreeState";
 import { applyGuiConfigUpdate } from "./ControlPanel/GuiState";
+import { CONTROL_PANEL_ID } from "./ControlPanel/controlPanelId";
 import { GaussianSplatsContext } from "./Splatting/GaussianSplatsHelpers";
 
 /** Swap a background-material uniform to a new texture (or null), disposing the
@@ -91,6 +92,8 @@ function useMessageHandler() {
   const addGui = viewer.guiActions.addGui;
   const addModal = viewer.guiActions.addModal;
   const removeModal = viewer.guiActions.removeModal;
+  const addPanel = viewer.guiActions.addPanel;
+  const removePanel = viewer.guiActions.removePanel;
   const removeGui = viewer.guiActions.removeGui;
   const updateUploadState = viewer.guiActions.updateUploadState;
   const setFormDirty = viewer.guiActions.setFormDirty;
@@ -332,6 +335,16 @@ function useMessageHandler() {
 
       case "GuiCloseModalMessage": {
         removeModal(message.uuid);
+        return;
+      }
+
+      case "GuiPanelMessage": {
+        addPanel(message);
+        return;
+      }
+
+      case "GuiPanelRemoveMessage": {
+        removePanel(message.uuid);
         return;
       }
 
@@ -1112,7 +1125,24 @@ export function FrameSynchronizedMessageHandler() {
         if (guiUpdates.length > 0) {
           const configUpdates: Record<string, GuiComponentMessage | undefined> =
             {};
+          const panelSnapshot = viewer.useGui.get().panels;
           for (const { uuid, updates } of guiUpdates) {
+            // The control panel isn't a GUI component (it has no config), but
+            // `main_panel` placement is delivered as a GuiUpdateMessage to its
+            // fixed id. Route that to dedicated GUI state instead of erroring.
+            if (uuid === CONTROL_PANEL_ID) {
+              if ("placement" in updates) {
+                viewer.guiActions.setMainPanelPlacement(updates.placement);
+              }
+              continue;
+            }
+            // Standalone panels live in their own store (not configStore), and
+            // their placement/tab/visibility updates also arrive as
+            // GuiUpdateMessages. Route those to updatePanel.
+            if (uuid in panelSnapshot) {
+              viewer.guiActions.updatePanel(uuid, updates);
+              continue;
+            }
             const current =
               configUpdates[uuid] ?? viewer.useGuiConfig.get(uuid);
             if (current === undefined) {

@@ -18,9 +18,9 @@ import {
   DropRegion,
   GroupId,
   NodeId,
-  PanelId,
   emptyLayout,
 } from "./types";
+import { invariantViolations } from "./layoutInvariants";
 import {
   dockToEdge,
   dockToRegionEdge,
@@ -28,7 +28,9 @@ import {
   insertTabsInto,
   mergeGroupsInto,
   floatGroup,
-  tearOutPanel,
+  floatColumn,
+  isPureColumn,
+  tearOutPane,
   snapToWindowStack,
   reorderTab,
   toggleCollapsed,
@@ -45,6 +47,7 @@ import {
   row as rowS,
   col as colS,
   group as grp,
+  floatingWindow,
 } from "./testUtils";
 
 type Rng = () => number;
@@ -66,126 +69,15 @@ function leaves(node: DockNode | null): Extract<DockNode, { type: "leaf" }>[] {
     (n): n is Extract<DockNode, { type: "leaf" }> => n.type === "leaf",
   );
 }
-function splits(node: DockNode | null): Extract<DockNode, { type: "split" }>[] {
-  return [...walkNodes(node)].filter(
-    (n): n is Extract<DockNode, { type: "split" }> => n.type === "split",
-  );
-}
-/** All group ids referenced anywhere (docked leaves + floating stacks), with
- * duplicates, so we can detect double-references. */
-function referencedGroupIds(layout: DockLayout): GroupId[] {
-  const out: GroupId[] = [];
-  for (const edge of ["left", "right"] as DockEdge[])
-    for (const l of leaves(layout.docked[edge])) out.push(l.group);
-  for (const w of layout.floating) out.push(...w.stack);
-  return out;
-}
 
-// ---------------------------------------------------------------------------
-// THE INVARIANTS. Returns a list of violation strings (empty == healthy).
-// `known` lets us suppress shapes that match a separately-tracked known bug so
-// the fuzzer keeps surfacing NEW problems.
-// ---------------------------------------------------------------------------
-function invariantViolations(layout: DockLayout): string[] {
-  const v: string[] = [];
-  const refs = referencedGroupIds(layout);
-  const refSet = new Set(refs);
-  const groupIds = Object.keys(layout.groups);
-
-  // 1. No double-references: each referenced group id appears at most once.
-  const seen = new Map<GroupId, number>();
-  for (const g of refs) seen.set(g, (seen.get(g) ?? 0) + 1);
-  for (const [g, n] of seen) if (n > 1) v.push(`group ${g} referenced ${n}x`);
-
-  // 2. No orphans: every group in `groups` is referenced exactly once.
-  for (const g of groupIds) {
-    if (!refSet.has(g)) v.push(`group ${g} is an orphan (in groups, unreferenced)`);
-  }
-
-  // 3. No dangling leaves: every referenced group exists in `groups`.
-  for (const g of refs) {
-    if (layout.groups[g] === undefined) v.push(`reference to missing group ${g}`);
-  }
-
-  // 4. No panelId in two groups.
-  const panelOwner = new Map<PanelId, GroupId>();
-  for (const [gid, group] of Object.entries(layout.groups)) {
-    for (const p of group.panelIds) {
-      if (panelOwner.has(p))
-        v.push(`panel ${p} in both ${panelOwner.get(p)} and ${gid}`);
-      panelOwner.set(p, gid);
-    }
-  }
-
-  // 5. activeId in non-empty panelIds; panelIds non-empty.
-  for (const [gid, group] of Object.entries(layout.groups)) {
-    if (group.panelIds.length === 0) {
-      v.push(`group ${gid} has empty panelIds`);
-    } else if (!group.panelIds.includes(group.activeId)) {
-      v.push(`group ${gid} activeId ${group.activeId} not in panelIds`);
-    }
-  }
-
-  // 6. Splits have >= 2 children (post-normalization), and dir is valid.
-  for (const edge of ["left", "right"] as DockEdge[]) {
-    for (const s of splits(layout.docked[edge])) {
-      if (s.children.length < 2)
-        v.push(`split ${s.id} on ${edge} has ${s.children.length} children`);
-      if (s.dir !== "row" && s.dir !== "column")
-        v.push(`split ${s.id} bad dir ${s.dir}`);
-    }
-  }
-
-  // 7. No same-axis nested splits (normalization should have flattened).
-  for (const edge of ["left", "right"] as DockEdge[]) {
-    for (const s of splits(layout.docked[edge])) {
-      for (const c of s.children) {
-        if (c.type === "split" && c.dir === s.dir)
-          v.push(`unflattened same-axis nesting under ${s.id} on ${edge}`);
-      }
-    }
-  }
-
-  // 8. Weights finite and > 0 everywhere in docked trees.
-  for (const edge of ["left", "right"] as DockEdge[]) {
-    for (const n of walkNodes(layout.docked[edge])) {
-      if (!Number.isFinite(n.weight) || n.weight <= 0)
-        v.push(`node ${n.id} on ${edge} bad weight ${n.weight}`);
-    }
-  }
-
-  // 9. Floating windows have non-empty stacks + finite geometry.
-  for (const w of layout.floating) {
-    if (w.stack.length === 0) v.push(`floating window ${w.id} has empty stack`);
-    if (!Number.isFinite(w.x) || !Number.isFinite(w.y) || !Number.isFinite(w.width))
-      v.push(`floating window ${w.id} bad geometry`);
-    if (w.height !== undefined && !Number.isFinite(w.height))
-      v.push(`floating window ${w.id} bad height`);
-  }
-
-  // 10. Node ids unique within docked trees.
-  const ids: NodeId[] = [];
-  for (const edge of ["left", "right"] as DockEdge[])
-    for (const n of walkNodes(layout.docked[edge])) ids.push(n.id);
-  if (new Set(ids).size !== ids.length) v.push(`duplicate node ids in docked trees`);
-
-  // 11. Floating window ids unique.
-  const wids = layout.floating.map((w) => w.id);
-  if (new Set(wids).size !== wids.length) v.push(`duplicate floating window ids`);
-
-  // 12. collapsed, when present, is a boolean.
-  for (const [gid, group] of Object.entries(layout.groups)) {
-    if (group.collapsed !== undefined && typeof group.collapsed !== "boolean")
-      v.push(`group ${gid} collapsed is not boolean`);
-  }
-
-  return v;
-}
+// THE INVARIANTS live in production (layoutInvariants.ts) so applyOp asserts the
+// exact same definition on every commit in dev -- this fuzzer and the live app
+// agree on "what valid means".
 
 /** Multiset of all panel ids across all groups (for the conservation check). */
 function allPanels(layout: DockLayout): string[] {
   return Object.values(layout.groups)
-    .flatMap((g) => g.panelIds)
+    .flatMap((g) => g.paneIds)
     .sort();
 }
 
@@ -235,7 +127,7 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
         };
         l.docked.left = rowS([leaf("a"), colS([leaf("b"), leaf("c")])]);
         l.docked.right = colS([leaf("d"), leaf("e")]);
-        l.floating = [{ id: "wf", x: 50, y: 50, width: 280, stack: ["f"] }];
+        l.floating = [floatingWindow({ id: "wf", x: 50, y: 50, width: 280, stack: ["f"] })];
         return l;
       },
     },
@@ -245,9 +137,32 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
         const l = emptyLayout();
         l.groups = { a: grp("a", 1), b: grp("b", 2), c: grp("c", 1) };
         l.floating = [
-          { id: "w1", x: 10, y: 10, width: 250, stack: ["a", "b"] },
-          { id: "w2", x: 300, y: 40, width: 250, stack: ["c"] },
+          floatingWindow({ id: "w1", x: 10, y: 10, width: 250, stack: ["a", "b"] }),
+          floatingWindow({ id: "w2", x: 300, y: 40, width: 250, stack: ["c"] }),
         ];
+        return l;
+      },
+    },
+    {
+      // Includes a dockable AREA (an inline tab group's backing group, referenced
+      // only via `areas`) alongside a docked column + a float. Random ops then run
+      // WITH an area present, exercising the area branches (detachInPlace /
+      // removePaneInPlace area guards, the area-aware invariant exemptions) that
+      // the area-less fixtures never reach.
+      name: "area + docked + float",
+      make: () => {
+        const l = emptyLayout();
+        l.groups = {
+          area: grp("area", 2), // backs the area; referenced via l.areas only
+          d: grp("d", 1),
+          e: grp("e", 1),
+          f: grp("f", 1),
+        };
+        l.docked.left = colS([leaf("d"), leaf("e")]);
+        l.floating = [
+          floatingWindow({ id: "wf", x: 60, y: 60, width: 260, stack: ["f"] }),
+        ];
+        l.areas = { "area-1": { id: "area-1", group: "area" } };
         return l;
       },
     },
@@ -266,7 +181,8 @@ type OpName =
   | "insertTabsInto"
   | "mergeGroupsInto"
   | "floatGroup"
-  | "tearOutPanel"
+  | "floatColumn"
+  | "tearOutPane"
   | "snapToWindowStack"
   | "reorderTab"
   | "toggleCollapsed"
@@ -302,6 +218,18 @@ function allDockedLeafTargets(
   return out;
 }
 
+/** All floatable PURE columns (>=2 leaf children) across the docked edges, for
+ * the floatColumn op (floats a whole column as one stacked window). */
+function allPureColumnTargets(
+  l: DockLayout,
+): { edge: DockEdge; nodeId: NodeId }[] {
+  const out: { edge: DockEdge; nodeId: NodeId }[] = [];
+  for (const edge of ["left", "right"] as DockEdge[])
+    for (const n of walkNodes(l.docked[edge]))
+      if (isPureColumn(n)) out.push({ edge, nodeId: n.id });
+  return out;
+}
+
 /** Choose a random op valid for the current layout; null if none applicable. */
 function chooseOp(rng: Rng, l: DockLayout): AppliedOp | null {
   const groups = allGroupIds(l);
@@ -316,7 +244,8 @@ function chooseOp(rng: Rng, l: DockLayout): AppliedOp | null {
     "insertTabsInto",
     "mergeGroupsInto",
     "floatGroup",
-    "tearOutPanel",
+    "floatColumn",
+    "tearOutPane",
     "snapToWindowStack",
     "reorderTab",
     "toggleCollapsed",
@@ -413,14 +342,32 @@ function buildOp(
         apply: (x) => floatGroup(x, grp, int(rng, 0, 500), int(rng, 0, 500), int(rng, 220, 400)).layout,
       };
     }
-    case "tearOutPanel": {
+    case "floatColumn": {
+      const cols = allPureColumnTargets(l);
+      if (cols.length === 0) return null;
+      const c = pick(rng, cols);
+      return {
+        desc: `floatColumn(${c.edge}, ${c.nodeId}, ...)`,
+        apply: (x) =>
+          floatColumn(
+            x,
+            c.edge,
+            c.nodeId,
+            int(rng, 0, 500),
+            int(rng, 0, 500),
+            int(rng, 220, 400),
+            int(rng, 120, 500),
+          ).layout,
+      };
+    }
+    case "tearOutPane": {
       const grp = g();
       const group = l.groups[grp];
       if (group === undefined) return null;
-      const panel = pick(rng, group.panelIds);
+      const panel = pick(rng, group.paneIds);
       return {
-        desc: `tearOutPanel(${grp}, ${panel}, ...)`,
-        apply: (x) => tearOutPanel(x, grp, panel, int(rng, 0, 500), int(rng, 0, 500), 260).layout,
+        desc: `tearOutPane(${grp}, ${panel}, ...)`,
+        apply: (x) => tearOutPane(x, grp, panel, int(rng, 0, 500), int(rng, 0, 500), 260).layout,
       };
     }
     case "snapToWindowStack": {
@@ -440,8 +387,8 @@ function buildOp(
       const grp = g();
       const group = l.groups[grp];
       if (group === undefined) return null;
-      const panel = pick(rng, group.panelIds);
-      const idx = int(rng, -2, group.panelIds.length + 2);
+      const panel = pick(rng, group.paneIds);
+      const idx = int(rng, -2, group.paneIds.length + 2);
       return {
         desc: `reorderTab(${grp}, ${panel}, ${idx})`,
         apply: (x) => reorderTab(x, grp, panel, idx),
@@ -486,7 +433,7 @@ function buildOp(
       const grp = g();
       const group = l.groups[grp];
       if (group === undefined) return null;
-      const panel = pick(rng, group.panelIds);
+      const panel = pick(rng, group.paneIds);
       return {
         desc: `setActiveTab(${grp}, ${panel})`,
         apply: (x) => setActiveTab(x, grp, panel),
@@ -615,13 +562,15 @@ function randomStart(seed: number): DockLayout {
   let rest = buckets[2];
   while (rest.length > 0) {
     const take = int(rng, 1, Math.min(3, rest.length));
-    l.floating.push({
-      id: `rw${wi++}`,
-      x: int(rng, 0, 600),
-      y: int(rng, 0, 600),
-      width: int(rng, 220, 400),
-      stack: rest.slice(0, take),
-    });
+    l.floating.push(
+      floatingWindow({
+        id: `rw${wi++}`,
+        x: int(rng, 0, 600),
+        y: int(rng, 0, 600),
+        width: int(rng, 220, 400),
+        stack: rest.slice(0, take),
+      }),
+    );
     rest = rest.slice(take);
   }
   return l;

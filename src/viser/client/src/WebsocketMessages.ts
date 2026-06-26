@@ -1626,6 +1626,41 @@ export interface GuiFormDirtyMessage {
   type: "GuiFormDirtyMessage";
   uuid: string;
 }
+/** A standalone panel: a dockable / floating GUI container that lives outside
+ * the control panel. Deliberately NOT a GuiComponentMessage -- it is a
+ * top-level entity (like a modal), so it never enters the inline GUI tree.
+ *
+ * (automatically generated)
+ */
+export interface GuiPanelMessage {
+  type: "GuiPanelMessage";
+  uuid: string;
+  props: {
+    _tab_labels: string[];
+    _tab_icons_html: (string | null)[];
+    _tab_container_ids: string[];
+    order: number;
+    visible: boolean;
+    placement: {
+      position:
+        | { kind: "edge"; edge: "left" | "right" }
+        | { kind: "split"; anchor_uuid: string; side: "above" | "below" }
+        | { kind: "float"; x: number | null; y: number | null }
+        | null;
+      width: number | null;
+      height: number | null;
+    };
+    expand_by_default: boolean;
+  };
+}
+/** Sent server->client to remove a standalone panel.
+ *
+ * (automatically generated)
+ */
+export interface GuiPanelRemoveMessage {
+  type: "GuiPanelRemoveMessage";
+  uuid: string;
+}
 /** GuiModalMessage(order: 'float', uuid: 'str', title: 'str')
  *
  * (automatically generated)
@@ -2011,6 +2046,8 @@ export type Message =
   | ResetGuiMessage
   | GuiFormSubmitMessage
   | GuiFormDirtyMessage
+  | GuiPanelMessage
+  | GuiPanelRemoveMessage
   | GuiModalMessage
   | GuiCloseModalMessage
   | GuiButtonHoldMessage

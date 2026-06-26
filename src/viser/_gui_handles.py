@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import dataclasses
 import json
+import math
 import re
 import time
 import uuid
@@ -23,7 +24,7 @@ from typing import (
 )
 
 import numpy as np
-from typing_extensions import Protocol, Self, override
+from typing_extensions import Protocol, Self, TypeAlias, override
 
 from ._assignable_props_api import AssignablePropsBase
 from ._icons import svg_from_icon
@@ -31,12 +32,15 @@ from ._icons_enum import IconName
 from ._messages import (
     CommandProps,
     CommandUpdateMessage,
+    EdgePlacement,
+    FloatPlacement,
     GuiBaseProps,
     GuiButtonGroupProps,
     GuiButtonProps,
     GuiCheckboxProps,
     GuiCloseModalMessage,
     GuiDividerProps,
+    GuiDockPlacement,
     GuiDropdownProps,
     GuiFolderProps,
     GuiFormSubmitMessage,
@@ -45,6 +49,8 @@ from ._messages import (
     GuiMarkdownProps,
     GuiMultiSliderProps,
     GuiNumberProps,
+    GuiPanelProps,
+    GuiPanelRemoveMessage,
     GuiPlotlyProps,
     GuiProgressBarProps,
     GuiRemoveMessage,
@@ -59,6 +65,7 @@ from ._messages import (
     GuiVector2Props,
     GuiVector3Props,
     RemoveCommandMessage,
+    SplitPlacement,
 )
 from ._scene_api import _encode_image_binary
 from .infra import ClientId
@@ -665,15 +672,35 @@ class GuiDropdownHandle(
             self.value = options[0]
 
 
-class GuiTabGroupHandle(_GuiHandle[None], GuiTabGroupProps):
-    """Handle for a tab group. Call :meth:`add_tab()` to add a tab."""
+class _TabContainerMixin:
+    """Shared ``add_tab`` machinery for handles that own a tab list.
 
-    def __init__(self, _impl: _GuiHandleState[None]) -> None:
-        super().__init__(impl=_impl)
-        self._tab_handles: list[GuiTabHandle] = []
+    A tab container holds the three parallel tab tuples (``_tab_labels`` /
+    ``_tab_icons_html`` / ``_tab_container_ids``, provided by the handle's props
+    class) plus ``_tab_handles``. Both :class:`GuiTabGroupHandle` (inline tab
+    group) and :class:`PanelHandle` (standalone panel) mix this in; the only
+    difference is their props class and lifecycle, not how tabs are added. The
+    tabs are real GUI containers (each :class:`GuiTabHandle`), so a panel's tabs
+    register as dock panes exactly like a tab group's."""
+
+    # Provided by the props class / handle:
+    _tab_labels: Tuple[str, ...]
+    _tab_icons_html: Tuple[str | None, ...]
+    _tab_container_ids: Tuple[str, ...]
+    _tab_handles: list[GuiTabHandle]
+    _impl: _GuiHandleState[None]
 
     def add_tab(self, label: str, icon: IconName | None = None) -> GuiTabHandle:
         """Add a tab. Returns a handle we can use to add GUI elements to it."""
+        # Guard before mutating: otherwise we'd half-register a tab (appended to
+        # _tab_handles + the container map via GuiTabHandle.__post_init__) before
+        # the first props write below hits the removed-guard and raises, leaving
+        # inconsistent state + a leaked container entry. Applies to both mixers
+        # (tab group and standalone panel).
+        if self._impl.removed:
+            raise RuntimeError(
+                f"Cannot add a tab to a removed {type(self).__name__}."
+            )
 
         uuid = _make_uuid()
 
@@ -681,12 +708,28 @@ class GuiTabGroupHandle(_GuiHandle[None], GuiTabGroupProps):
         out = GuiTabHandle(_parent=self, _id=uuid, _label=label, _icon=icon)
 
         self._tab_handles.append(out)
-        self._tab_labels = self._tab_labels + (label,)
-        self._tab_icons_html = self._tab_icons_html + (
-            None if icon is None else svg_from_icon(icon),
-        )
-        self._tab_container_ids = tuple(handle._id for handle in self._tab_handles)
+        self._rebuild_tab_props()
         return out
+
+    def _rebuild_tab_props(self) -> None:
+        """Recompute the three wire tuples from ``_tab_handles`` -- the single
+        source of truth for a tab's id/label/icon. Every mutation (add, remove,
+        icon change) rebuilds through here, so the parallel tuples can never
+        desync in length or order."""
+        self._tab_container_ids = tuple(h._id for h in self._tab_handles)
+        self._tab_labels = tuple(h._label for h in self._tab_handles)
+        self._tab_icons_html = tuple(
+            None if h._icon is None else svg_from_icon(h._icon)
+            for h in self._tab_handles
+        )
+
+
+class GuiTabGroupHandle(_TabContainerMixin, _GuiHandle[None], GuiTabGroupProps):
+    """Handle for a tab group. Call :meth:`add_tab()` to add a tab."""
+
+    def __init__(self, _impl: _GuiHandleState[None]) -> None:
+        super().__init__(impl=_impl)
+        self._tab_handles: list[GuiTabHandle] = []
 
     def __post_init__(self) -> None:
         parent = self._impl.gui_api._container_handle_from_uuid[
@@ -725,7 +768,7 @@ class GuiTabGroupHandle(_GuiHandle[None], GuiTabGroupProps):
 class GuiTabHandle:
     """Use as a context to place GUI elements into a tab."""
 
-    _parent: GuiTabGroupHandle
+    _parent: _TabContainerMixin
     _id: str  # Used as container ID of children.
     _label: str
     _icon: IconName | None
@@ -742,13 +785,10 @@ class GuiTabHandle:
 
     @icon.setter
     def icon(self, icon: IconName | None) -> None:
+        # The handle owns its icon; rebuild rederives the wire tuples from the
+        # handles, so there's no index arithmetic that could target the wrong tab.
         self._icon = icon
-        # Find the index of this tab in the parent's tab list.
-        tab_index = self._parent._tab_handles.index(self)
-        # Update the icon HTML in the parent's tuple.
-        icons_list = list(self._parent._tab_icons_html)
-        icons_list[tab_index] = None if icon is None else svg_from_icon(icon)
-        self._parent._tab_icons_html = tuple(icons_list)
+        self._parent._rebuild_tab_props()
 
     def __enter__(self) -> GuiTabHandle:
         self._container_id_restore = self._parent._impl.gui_api._get_container_uuid()
@@ -777,35 +817,355 @@ class GuiTabHandle:
         self.removed = True
 
         # We may want to make this thread-safe in the future.
-        found_index = -1
-        for i, tab in enumerate(self._parent._tab_handles):
-            if tab is self:
-                found_index = i
-                break
-        assert found_index != -1, "Tab already removed!"
-
-        self._parent._tab_labels = (
-            self._parent._tab_labels[:found_index]
-            + self._parent._tab_labels[found_index + 1 :]
-        )
-        self._parent._tab_icons_html = (
-            self._parent._tab_icons_html[:found_index]
-            + self._parent._tab_icons_html[found_index + 1 :]
-        )
-        self._parent._tab_handles = (
-            self._parent._tab_handles[:found_index]
-            + self._parent._tab_handles[found_index + 1 :]
-        )
-        # Keep the container-id list in sync with the handles. Otherwise the
-        # client receives mismatched `_tab_labels` / `_tab_container_ids`
-        # lengths and renders a stale (orphaned) tab panel.
-        self._parent._tab_container_ids = tuple(
-            handle._id for handle in self._parent._tab_handles
-        )
+        assert self in self._parent._tab_handles, "Tab already removed!"
+        # Drop this handle; the three wire tuples are rederived from the handle
+        # list in one place, so they can't end up mismatched in length or order.
+        self._parent._tab_handles = [
+            tab for tab in self._parent._tab_handles if tab is not self
+        ]
+        self._parent._rebuild_tab_props()
 
         for child in tuple(self._children.values()):
             child.remove()
         self._parent._impl.gui_api._container_handle_from_uuid.pop(self._id)
+
+
+# The control panel's fixed uuid, shared with the client (CONTROL_PANEL_ID in
+# ControlPanelDock.tsx). Used as the anchor uuid when `main_panel` is a dock
+# anchor, and as the placement target for the main panel itself.
+CONTROL_PANEL_ID = "viser-control-panel"
+
+
+def _empty_placement() -> GuiDockPlacement:
+    """A placement with no position/size set."""
+    return {"position": None, "width": None, "height": None}
+
+
+def _check_dimension(value: float | None, name: str) -> None:
+    """Reject non-positive / non-finite panel sizes before they reach the client.
+
+    NaN/negative/zero widths produce broken (and, for NaN, sticky + replayed)
+    layouts; the client's floating-window resize doesn't clamp them, so we
+    validate at the Python boundary like other viser inputs do."""
+    if value is not None and (not math.isfinite(value) or value <= 0.0):
+        raise ValueError(f"{name} must be a positive, finite number, got {value!r}.")
+
+
+def _check_coordinate(value: float | None, name: str) -> None:
+    """Reject non-finite float coordinates. Unlike dimensions, coordinates may be
+    negative (a gap from the far edge) or zero, but NaN/inf would produce a
+    broken, sticky, replayed window position."""
+    if value is not None and not math.isfinite(value):
+        raise ValueError(f"{name} must be a finite number, got {value!r}.")
+
+
+class _PlacementMixin:
+    """Shared placement / sizing commands for panel handles.
+
+    A panel's placement is a single coalesced ``placement`` prop (see
+    `GuiDockPlacement`). Each command mutates one field of the persisted dict and
+    re-sends the WHOLE dict, because `update_dict` messages coalesce per
+    prop-name (latest-wins): a partial update would drop the other fields. The
+    persisted value is replayed to late-joining clients.
+
+    Subclasses provide ``_placement_uuid`` (the tab-group uuid to target) and
+    ``_placement_gui_api``. Standalone panels store the dict on their props (so
+    it serializes with the create message too); the main panel has no props
+    object, so it stores it on the mixin.
+    """
+
+    _placement_uuid: str
+    _placement_gui_api: GuiApi
+    _placement: GuiDockPlacement
+    """The live, coalesced placement dict. Commands mutate it; `_send_placement`
+    snapshots + queues it. Held directly (not behind a getter) and aliased by the
+    handle's create-message props (standalone) or the api (main panel)."""
+
+    def _send_placement(self) -> None:
+        # Single guard point for every command (all route through here): reject
+        # placement on a removed panel, which would otherwise queue an update
+        # against a dead uuid (the ghost-entity hazard `props_setattr` guards --
+        # the placement path bypasses it). `MainPanelHandle` has no `_impl` and
+        # can't be removed, so it is never blocked.
+        impl = getattr(self, "_impl", None)
+        if impl is not None and impl.removed:
+            raise RuntimeError(f"Cannot place a removed {type(self).__name__}.")
+        # Snapshot: the message serializes later (async) and is captured by the
+        # state recorder, so sending the live dict would let a later command's
+        # mutation corrupt an already-queued message. Shallow suffices --
+        # `position` is always replaced wholesale, never mutated in place.
+        snapshot: GuiDockPlacement = dict(self._placement)  # type: ignore[assignment]
+        self._placement_gui_api._websock_interface.queue_message(
+            GuiUpdateMessage(self._placement_uuid, {"placement": snapshot})
+        )
+
+    def _set_position(
+        self, position: EdgePlacement | SplitPlacement | FloatPlacement
+    ) -> None:
+        self._placement["position"] = position
+        self._send_placement()
+
+    def _resolve_anchor_uuid(self, anchor: PlaceableHandle) -> str:
+        """Validate an anchor and return its tab-group uuid.
+
+        The anchor must share this panel's scope, except `main_panel`, which
+        renders on every client and is a legal anchor from any scope."""
+        if isinstance(anchor, MainPanelHandle):
+            # main_panel: legal from any scope, no removed/scope checks. Still
+            # reject docking it relative to itself (uuid check, not identity --
+            # `main_panel` hands out a fresh throwaway handle per access).
+            if self._placement_uuid == CONTROL_PANEL_ID:
+                raise ValueError("A panel cannot be docked relative to itself.")
+            return CONTROL_PANEL_ID
+        if not isinstance(anchor, PanelHandle):
+            # User-facing API: a clear error, not an AssertionError (which `-O`
+            # would strip, letting a wrong-typed anchor slip through).
+            raise ValueError(
+                "Anchor must be a PanelHandle or main_panel, got "
+                f"{type(anchor).__name__}."
+            )
+        if anchor._impl.uuid == self._placement_uuid:
+            raise ValueError("A panel cannot be docked relative to itself.")
+        if anchor._impl.removed:
+            raise ValueError("Cannot dock relative to a removed panel.")
+        if anchor._impl.gui_api is not self._placement_gui_api:
+            raise ValueError(
+                "Anchor panel belongs to a different scope (server vs. client, "
+                "or a different client). Use `main_panel` to anchor across scopes."
+            )
+        return anchor._impl.uuid
+
+    def dock_left(self) -> None:
+        """Dock this panel to the left viewport edge.
+
+        Each new left-dock is inserted at the innermost position, so several
+        panels docked to the left appear in call order from the edge inward.
+        Calling again repositions an already-placed panel."""
+        self._set_position({"kind": "edge", "edge": "left"})
+
+    def dock_right(self) -> None:
+        """Dock this panel to the right viewport edge.
+
+        Each new right-dock is inserted at the innermost position, so several
+        panels docked to the right appear in call order from the edge inward.
+        Calling again repositions an already-placed panel."""
+        self._set_position({"kind": "edge", "edge": "right"})
+
+    def dock_above(self, anchor: PlaceableHandle) -> None:
+        """Stack this panel directly above another panel (a column split).
+
+        The ``anchor`` must itself be DOCKED (a column split needs a docked
+        neighbor to split against). If the anchor is floating or not yet placed,
+        this falls back to docking on the right edge (with a warning); dock the
+        anchor first."""
+        self._set_position(
+            {
+                "kind": "split",
+                "anchor_uuid": self._resolve_anchor_uuid(anchor),
+                "side": "above",
+            }
+        )
+
+    def dock_below(self, anchor: PlaceableHandle) -> None:
+        """Stack this panel directly below another panel (a column split).
+
+        The ``anchor`` must itself be DOCKED (a column split needs a docked
+        neighbor to split against). If the anchor is floating or not yet placed,
+        this falls back to docking on the right edge (with a warning); dock the
+        anchor first."""
+        self._set_position(
+            {
+                "kind": "split",
+                "anchor_uuid": self._resolve_anchor_uuid(anchor),
+                "side": "below",
+            }
+        )
+
+    def float(
+        self,
+        *,
+        x: float | None = None,
+        y: float | None = None,
+        width: float | None = None,
+        height: float | None = None,
+    ) -> None:
+        """Float this panel at an explicit position and size, in CSS pixels.
+
+        ``x`` / ``y`` are measured relative to the **viewport** -- the canvas area
+        inside any docked panels:
+
+        * A non-negative value is a gap from the **left** / **top**:
+          ``float(x=40)`` lands 40px from the canvas left edge (clear of a
+          left-docked panel, not under it).
+        * A **negative** value is a gap from the **right** / **bottom**:
+          ``float(x=-15)`` puts the panel's right edge 15px from the canvas right
+          edge. So ``float(x=-15, y=15)`` is the top-right corner, and
+          ``float(x=-15, y=-15)`` the bottom-right.
+
+        The panel re-resolves against these edges as the canvas changes (a dock
+        added/removed, the window resized), so an edge-anchored panel stays put.
+        Any argument left as ``None`` uses a client-chosen default (top-left);
+        ``width`` / ``height`` set the floating window size."""
+        _check_coordinate(x, "x")
+        _check_coordinate(y, "y")
+        _check_dimension(width, "width")
+        _check_dimension(height, "height")
+        self._placement["position"] = {"kind": "float", "x": x, "y": y}
+        if width is not None:
+            self._placement["width"] = width
+        if height is not None:
+            self._placement["height"] = height
+        self._send_placement()
+
+    def set_width(self, width: float) -> None:
+        """Set the panel width in pixels (region width when docked, window width
+        when floating)."""
+        _check_dimension(width, "width")
+        self._placement["width"] = width
+        self._send_placement()
+
+    def set_height(self, height: float) -> None:
+        """Set the panel height in pixels.
+
+        Applies only to **floating** panels (sets the window height). A docked
+        panel -- whether solo or stacked via :meth:`dock_above` /
+        :meth:`dock_below` -- sizes to its split weights, so ``set_height`` has no
+        effect there."""
+        _check_dimension(height, "height")
+        self._placement["height"] = height
+        self._send_placement()
+
+
+class PanelHandle(
+    _PlacementMixin,
+    _TabContainerMixin,
+    AssignablePropsBase[_GuiHandleState],
+    GuiPanelProps,
+):
+    """Handle for a standalone panel: a dockable / floating GUI container that
+    lives outside the main control panel.
+
+    Create with :meth:`GuiApi.add_panel`. Add content with :meth:`add_tab`, and
+    place it with the imperative ``dock_*`` / :meth:`float` commands. A panel is a
+    dedicated top-level entity (like a modal) -- it is NOT part of the inline GUI
+    tree -- that carries its own tabs; a single-tab panel renders as a plain
+    header.
+
+    Placement and sizing are **imperative commands, not synced state**: they
+    apply to connected clients and replay to clients that connect later, but the
+    current layout is never read back from clients. There are no readable
+    ``.width`` / position properties, and a user dragging the panel afterward wins
+    until the next explicit command. (This is why sizing is ``set_width()`` rather
+    than a ``.width`` property.) The initial collapsed state is a one-shot
+    ``add_panel(expand_by_default=...)`` hint, like a folder's.
+
+    The server owns a panel's existence: users can rearrange, drag, minimize, and
+    resize a panel, but cannot close it from the UI. A panel disappears only when
+    :meth:`remove` is called."""
+
+    def __init__(self, _impl: _GuiHandleState[None]) -> None:
+        super().__init__(impl=_impl)
+        self._tab_handles: list[GuiTabHandle] = []
+        self._placement_uuid = _impl.uuid
+        self._placement_gui_api = _impl.gui_api
+        assert isinstance(_impl.props, GuiPanelProps)
+        # A panel is a top-level entity tracked in its own registry (parallel to
+        # modals), NOT under any parent container's `_children`. Its TABS register
+        # themselves in `_container_handle_from_uuid` (keyed by tab id), so the
+        # panel itself doesn't need a container entry.
+        _impl.gui_api._panel_handle_from_uuid[_impl.uuid] = self
+
+    @property
+    def _placement(self) -> GuiDockPlacement:
+        # Single source of truth: the props dict (which also rides the create
+        # message). Reading it live -- rather than caching a separate reference --
+        # means the placement commands and the serialized/replayed state can never
+        # diverge, even if `props.placement` is reassigned.
+        assert isinstance(self._impl.props, GuiPanelProps)
+        return self._impl.props.placement
+
+    @override
+    def _queue_update(self, name: str, value: Any) -> None:
+        self._impl.gui_api._websock_interface.queue_message(
+            GuiUpdateMessage(self._impl.uuid, {name: value})
+        )
+
+    def add_tab(self, label: str, icon: IconName | None = None) -> GuiTabHandle:
+        """Add a tab to the panel, returning a handle to populate it as a context.
+
+        A single-tab panel renders as a plain header; multiple tabs render as a
+        tab strip. Raises if the panel has been removed (the shared
+        :class:`_TabContainerMixin` guard)."""
+        return super().add_tab(label, icon)
+
+    def __enter__(self) -> "PanelHandle":
+        # A panel is a container for TABS, not a GUI context itself: you populate
+        # its tabs (`with panel.add_tab(...):`), not the panel. Catch the natural
+        # `with server.gui.add_panel():` mistake with a clear message instead of a
+        # bare `AttributeError: __exit__`. Both `__enter__` AND `__exit__` must be
+        # defined: CPython's `with` looks up `__exit__` on the type *before*
+        # calling `__enter__`, so omitting it surfaces `AttributeError: __exit__`
+        # and this helpful message never runs.
+        raise TypeError(
+            "A panel is not a context manager. Add content via its tabs, e.g.\n"
+            '    panel = server.gui.add_panel()\n'
+            '    with panel.add_tab("Tab"):\n'
+            "        server.gui.add_markdown(...)"
+        )
+
+    def __exit__(self, *args) -> None:
+        # Never reached (`__enter__` always raises), but must exist so the `with`
+        # statement's pre-flight `__exit__` lookup finds it and lets `__enter__`
+        # raise the helpful TypeError above.
+        del args
+
+    def remove(self) -> None:
+        """Permanently remove this panel and all its tabs / contained elements.
+
+        This is the only way a panel disappears -- there is no UI close button
+        (see :class:`PanelHandle`)."""
+        if self._impl.removed:
+            warnings.warn(
+                "Attempted to remove an already removed PanelHandle.",
+                stacklevel=2,
+            )
+            return
+        # Remove tabs first: each tab.remove() writes back to this panel's tab
+        # tuples, which the removed-guard in props_setattr would reject once the
+        # panel is marked removed (mirrors GuiTabGroupHandle.remove).
+        for tab in tuple(self._tab_handles):
+            tab.remove()
+        self._impl.removed = True
+        gui_api = self._impl.gui_api
+        gui_api._websock_interface.queue_message(
+            GuiPanelRemoveMessage(self._impl.uuid)
+        )
+        gui_api._panel_handle_from_uuid.pop(self._impl.uuid)
+
+
+class MainPanelHandle(_PlacementMixin):
+    """Handle for the main control panel. Returned by :attr:`GuiApi.main_panel`.
+
+    Supports the same placement / sizing commands as :class:`PanelHandle`, but
+    has no tabs and cannot be removed. Because the control panel renders on every
+    client, it is a legal anchor for other panels' ``dock_*`` commands from any
+    scope.
+
+    A fresh handle is returned on each access; placement state is keyed off the
+    control panel's fixed uuid, so handles are interchangeable."""
+
+    def __init__(self, gui_api: GuiApi) -> None:
+        self._placement_uuid = CONTROL_PANEL_ID
+        self._placement_gui_api = gui_api
+        # The main panel has no props object; placement lives on the api (one
+        # shared dict) so it persists across the throwaway handles `main_panel`
+        # returns -- every handle points at and mutates the same object.
+        self._placement = gui_api._main_panel_placement
+
+
+PlaceableHandle: TypeAlias = "PanelHandle | MainPanelHandle"
+"""A handle that can be used as a dock anchor: a standalone panel or the main
+panel."""
 
 
 class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):

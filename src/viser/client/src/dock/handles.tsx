@@ -156,7 +156,7 @@ export function StackHandleBar({
       {onToggle !== undefined && (
         <HandleIconButton
           attrs={{ "data-dock-minimize-all": "true" }}
-          label={collapsed ? "Expand all panels" : "Minimize all panels"}
+          label={collapsed ? "Expand all panes" : "Minimize all panes"}
           title={collapsed ? "Expand all" : "Minimize all"}
           expanded={!collapsed}
           onActivate={onToggle}
@@ -166,7 +166,7 @@ export function StackHandleBar({
               : undefined
           }
         >
-          {collapsed ? <IconPlus size={14} /> : <IconMinus size={14} />}
+          {collapsed ? <IconPlus size={12} /> : <IconMinus size={12} />}
         </HandleIconButton>
       )}
     </Box>

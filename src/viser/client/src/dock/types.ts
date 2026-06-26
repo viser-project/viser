@@ -2,12 +2,12 @@
 //
 // The layout is intentionally serializable: it holds only ids, geometry, and
 // structure -- never React nodes. Panel *content* lives in a separate registry
-// (see PanelRegistry) keyed by panel id, so the same layout can be saved,
+// (see PaneRegistry) keyed by panel id, so the same layout can be saved,
 // restored, or driven from the server later without touching the render tree.
 //
 // Vocabulary:
 // - Panel: a single titled pane of content. The atomic unit.
-// - TabGroup: one or more panels shown as tabs in a shared frame. A group with
+// - TabGroup: one or more panes shown as tabs in a shared frame. A group with
 //   a single panel is just a plain panel (we hide the tab strip in that case).
 // - DockNode: a binary/n-ary split tree describing the docked region on one
 //   screen edge. Leaves point at a TabGroup; splits arrange children in a row
@@ -17,20 +17,27 @@
 
 import React from "react";
 
-export type PanelId = string;
+export type PaneId = string;
 export type GroupId = string;
 export type WindowId = string;
 export type NodeId = string;
 export type AreaId = string;
 
-/** Minimum width of a panel, enforced everywhere a panel's width is set or
- * previewed: floating windows, docked regions, and drop-zone hints. */
+/** Minimum width of a panel's CONTENT, enforced on the inner body container
+ * (TabGroupFrame's PanelBody) -- NOT on the region/window/column layout. When a
+ * region is dragged narrower than this, the body keeps this width and the panel
+ * scrolls horizontally instead of squeezing the content. The layout itself may
+ * commit narrower than this, down to MIN_REGION_GRAB_PX. */
 export const MIN_PANEL_WIDTH_PX = 220;
 
-/** Maximum width of a *single* panel. Region/window caps are derived per-panel
- * from this (e.g. a two-column region can be up to 2x this), never applied to
- * the summed width of several panels. */
-export const MAX_PANEL_WIDTH_PX = 600;
+/** Minimum width a docked region / floating window / split column may be
+ * resized to in the LAYOUT model. Small (the panel body, min MIN_PANEL_WIDTH_PX,
+ * simply overflows with a horizontal scrollbar below this), but wide enough to
+ * stay comfortably grabbable so a region dragged narrow can always be pulled
+ * back wide -- and wide enough that the header chrome (status + action icons)
+ * still reads. Kept above MINIMIZED_STRIP_PX so an expanded panel never renders
+ * thinner than its own minimized strip. */
+export const MIN_REGION_GRAB_PX = 96;
 
 /** Width (px) of the narrow vertical strip used for every fully-minimized
  * docked column. In px (not em) because minimized strips participate in the
@@ -48,13 +55,27 @@ export const SPLIT_DIVIDER_PX = 7;
  * before the user resizes it. */
 export const DEFAULT_REGION_PX = 300;
 
+/** Minimum px of canvas kept visible between the left and right docked regions.
+ * When the regions' summed reserved width would leave less than this (many
+ * panels docked on a narrow viewport), the RENDERED region widths are scaled
+ * down proportionally so they never overlap or fully occlude the scene. This is
+ * a render-time cap only -- the MODEL region widths (regionWidth) are preserved,
+ * so widths restore when the viewport grows back. */
+export const MIN_CANVAS_PX = 120;
+
+/** Minimum rendered height (px) of a pinned floating window: the floor a window
+ * is kept at so it stays usable (its contents scroll) when the container is too
+ * small for its pinned height. A window whose pinned height is below this is
+ * left as-is (the floor never inflates a window above its pinned height). */
+export const MIN_WINDOW_HEIGHT_PX = 100;
+
 /** Clamp `v` into [lo, hi]. Shared by every place a size/position is bounded
  * (resize gestures, width reconciliation, hint geometry). */
 export const clamp = (v: number, lo: number, hi: number): number =>
   Math.max(lo, Math.min(hi, v));
 
 /** Which screen edge a docked region is pinned to. Top/bottom are intentionally
- * unsupported: Viser GUI panels are vertical layouts, so only left/right make
+ * unsupported: Viser GUI panes are vertical layouts, so only left/right make
  * sense for docking. */
 export type DockEdge = "left" | "right";
 
@@ -64,8 +85,8 @@ export type DropRegion = "center" | "top" | "bottom" | "left" | "right";
 
 /** Content + metadata for a single panel. Kept out of the serializable layout;
  * supplied by the consumer via the panel registry. */
-export interface PanelSpec {
-  id: PanelId;
+export interface PaneSpec {
+  id: PaneId;
   title: string;
   /** Optional small icon shown before the title in tab strips. */
   icon?: React.ReactNode;
@@ -94,14 +115,14 @@ export interface PanelSpec {
   unmergeable?: boolean;
 }
 
-export type PanelRegistry = Record<PanelId, PanelSpec>;
+export type PaneRegistry = Record<PaneId, PaneSpec>;
 
-/** A stack of panels shown as tabs. `activeId` must always be a member of
- * `panelIds`. */
+/** A stack of panes shown as tabs. `activeId` must always be a member of
+ * `paneIds`. */
 export interface TabGroup {
   id: GroupId;
-  panelIds: PanelId[];
-  activeId: PanelId;
+  paneIds: PaneId[];
+  activeId: PaneId;
   /** When true, the group is minimized: only its handle + tab strip show, with
    * the contents hidden. */
   collapsed?: boolean;
@@ -137,6 +158,25 @@ export interface DockSplit extends DockNodeBase {
 
 export type DockNode = DockLeaf | DockSplit;
 
+/** A floating window's vertical sizing. `auto` tracks content (capped per
+ * group); `pinned` is an explicit px height the user dragged to. A tagged union
+ * (not `height?: number`) so "auto vs pinned" is an explicit, total state -- no
+ * sentinel-undefined ambiguity, and "revert to auto" is a real transition rather
+ * than a delete. */
+export type WindowHeight = { mode: "auto" } | { mode: "pinned"; px: number };
+
+/** Build a WindowHeight from an optional px: undefined -> auto, else pinned.
+ * The ONE place this mapping lives (producers never open-code the union). */
+export function windowHeight(px?: number): WindowHeight {
+  return px === undefined ? { mode: "auto" } : { mode: "pinned", px };
+}
+
+/** The pinned px height, or undefined when the window auto-sizes. The ONE place
+ * the union is destructured for reading (consumers never branch on `.mode`). */
+export function pinnedPxOf(height: WindowHeight): number | undefined {
+  return height.mode === "pinned" ? height.px : undefined;
+}
+
 /** A free-floating container. Holds a vertical stack of tab groups that move
  * together (the "snap group" from the spec). A single-group stack is an
  * ordinary floating panel. Position/size are parent-relative pixels. */
@@ -145,17 +185,27 @@ export interface FloatingWindow {
   x: number;
   y: number;
   width: number;
-  /** Explicit height in px once the user vertically resizes; otherwise the
-   * window auto-sizes to its content (capped per group). */
-  height?: number;
+  /** Vertical sizing: auto-track content, or a pinned px height. */
+  height: WindowHeight;
   /** Tab groups stacked top to bottom. */
   stack: GroupId[];
   /** Per-group height weights for a multi-group stack (groupId -> flex weight),
-   * used when the window has an explicit `height` so a draggable divider can
+   * used when the window has a pinned `height` so a draggable divider can
    * redistribute height between stacked groups. Missing/absent groups default to
    * weight 1 (equal). Keyed by group id (not index) so it survives stack
    * insert/remove without re-alignment; stale keys are harmless. */
   stackWeights?: Record<GroupId, number>;
+  /** Server anchor for a server-placed panel: the canvas-relative coords the
+   * window re-resolves to as the canvas + measured window size change (`x`/`y`
+   * above are the resolved absolute position). A NEGATIVE component is a gap from
+   * the FAR edge: x<0 is `|x|`px from the canvas right boundary, y<0 is `|y|`px
+   * from the bottom (so top-right is {x:-15, y:15}).
+   *
+   * PRESENCE is the ownership tag: an anchored window re-resolves; a user drag /
+   * resize clears `anchor` (the window becomes user-owned and its absolute x/y is
+   * authoritative). Both coords live in ONE object so ownership can't be
+   * half-set. See resolveRequestedFloatPosition. */
+  anchor?: { x: number; y: number };
 }
 
 /** The complete, serializable layout. */
@@ -182,7 +232,7 @@ export interface DockLayout {
    * panel's body (rendered there by `DockArea`); the area's `group` is a normal
    * TabGroup in `groups`. Areas are first-class drop targets and tab sources --
    * they reuse the same drop/reorder/tear ops as everything else. An area's
-   * group is a fixed fixture: panels move in/out of it, but the group itself is
+   * group is a fixed fixture: panes move in/out of it, but the group itself is
    * never floated or removed (it persists empty as a drop affordance).
    *
    * Optional so existing layout literals (e.g. in tests) stay valid; treat a

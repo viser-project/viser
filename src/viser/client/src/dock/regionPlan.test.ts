@@ -6,7 +6,11 @@
 
 import { describe, expect, it } from "vitest";
 import { toggleCollapsed } from "./layoutOps";
-import { planRegion, plannedReservedWidth } from "./regionPlan";
+import {
+  canvasFacingStripOffsetPx,
+  planRegion,
+  plannedReservedWidth,
+} from "./regionPlan";
 import {
   emptyLayout,
   MINIMIZED_STRIP_PX,
@@ -82,5 +86,50 @@ describe("reconcile: dropping an expanded panel below a strip", () => {
     // And the rendered region uses that width (no strip chrome).
     const plan = planRegion(next.docked.right!, next.groups);
     expect(plannedReservedWidth(plan, next.regionWidth!.right)).toBe(320);
+  });
+});
+describe("canvasFacingStripOffsetPx", () => {
+  const STRIP_AND_DIVIDER = MINIMIZED_STRIP_PX + SPLIT_DIVIDER_PX;
+
+  it("RIGHT region: [strip][expanded] offsets past the leading strip", () => {
+    // The user's case -- handle should sit between the strip and the expanded
+    // panel, i.e. offset inward by one strip + its divider.
+    const plan = planRegion(row([leaf("a"), leaf("b")]), groups(["a", true], ["b"]));
+    expect(canvasFacingStripOffsetPx(plan, "right")).toBe(STRIP_AND_DIVIDER);
+  });
+
+  it("RIGHT region: [expanded][strip] -- strip is NOT canvas-facing, offset 0", () => {
+    const plan = planRegion(row([leaf("a"), leaf("b")]), groups(["a"], ["b", true]));
+    expect(canvasFacingStripOffsetPx(plan, "right")).toBe(0);
+  });
+
+  it("LEFT region: [expanded][strip] offsets past the trailing strip", () => {
+    // On a left edge the canvas is on the RIGHT, so a trailing strip is the
+    // canvas-facing one.
+    const plan = planRegion(row([leaf("a"), leaf("b")]), groups(["a"], ["b", true]));
+    expect(canvasFacingStripOffsetPx(plan, "left")).toBe(STRIP_AND_DIVIDER);
+  });
+
+  it("LEFT region: [strip][expanded] -- leading strip is away from canvas, offset 0", () => {
+    const plan = planRegion(row([leaf("a"), leaf("b")]), groups(["a", true], ["b"]));
+    expect(canvasFacingStripOffsetPx(plan, "left")).toBe(0);
+  });
+
+  it("counts MULTIPLE contiguous canvas-facing strips", () => {
+    const plan = planRegion(
+      row([leaf("a"), leaf("b"), leaf("c")]),
+      groups(["a", true], ["b", true], ["c"]),
+    );
+    expect(canvasFacingStripOffsetPx(plan, "right")).toBe(2 * STRIP_AND_DIVIDER);
+  });
+
+  it("no expanded columns (fully minimized) -> 0 (nothing to resize)", () => {
+    const plan = planRegion(row([leaf("a"), leaf("b")]), groups(["a", true], ["b", true]));
+    expect(canvasFacingStripOffsetPx(plan, "right")).toBe(0);
+  });
+
+  it("no strips -> 0", () => {
+    const plan = planRegion(row([leaf("a"), leaf("b")]), groups(["a"], ["b"]));
+    expect(canvasFacingStripOffsetPx(plan, "right")).toBe(0);
   });
 });

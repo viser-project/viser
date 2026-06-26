@@ -201,6 +201,7 @@ function ViewerRoot() {
         : () => null,
     sendCamera: null,
     resetCameraPose: null,
+    syncCanvasSize: null,
 
     // DOM/Three.js references.
     canvas: null,
@@ -432,6 +433,7 @@ function AppLayout({
     side: null,
     widthPx: 320,
     expanded: true,
+    leftRegionWidthPx: 0,
   });
   // Leaving the dock-floating layout (theme switch, mobile resize) unmounts
   // the dock surface; clear any stale dock state so the notifications offset
@@ -439,7 +441,9 @@ function AppLayout({
   React.useEffect(() => {
     if (!dockFloating) {
       setControlDock((prev) =>
-        prev.side === null ? prev : { ...prev, side: null },
+        prev.side === null && prev.leftRegionWidthPx === 0
+          ? prev
+          : { ...prev, side: null, leftRegionWidthPx: 0 },
       );
     }
   }, [dockFloating]);
@@ -473,8 +477,10 @@ function AppLayout({
       >
         <NotificationsPanel
           dockedLeftInsetPx={
-            controlDock.side === "left" && controlDock.expanded
-              ? controlDock.widthPx
+            // Clear the entire left-docked region (control panel OR a standalone
+            // panel docked left). 0 when nothing is docked left.
+            controlDock.leftRegionWidthPx > 0
+              ? controlDock.leftRegionWidthPx
               : null
           }
         />
@@ -494,9 +500,7 @@ function AppLayout({
             canvasContent
           )}
         </Box>
-        {messageSource === "websocket" && !dockFloating && (
-          <ControlPanel control_layout={controlLayout} />
-        )}
+        {messageSource === "websocket" && !dockFloating && <ControlPanel />}
       </Box>
     </Box>
   );
@@ -1176,6 +1180,32 @@ function SceneContextSetter() {
   );
 
   const gl = useThree((state) => state.gl);
+  const setSize = useThree((state) => state.setSize);
+
+  // Register a SYNCHRONOUS canvas-size sync (see ViewerMutable.syncCanvasSize).
+  // R3F normally resizes the renderer from a ResizeObserver on the canvas
+  // wrapper, which fires asynchronously AFTER layout -- so while the user drags
+  // a docked region's width handle, the panel edge (CSS) moves immediately but
+  // the GL backbuffer trails a frame behind, and the rendered scene visibly
+  // lags the divider on a fast drag. The dock calls this right after it commits
+  // (flushes) the new region width, so the renderer resizes to the canvas's new
+  // CSS box on the SAME tick. R3F's own observer fires moments later and finds
+  // the size already current, so the two never fight.
+  useEffect(() => {
+    mutable.current.syncCanvasSize = (width: number, height: number) => {
+      if (width <= 0 || height <= 0) return;
+      // setSize updates the drawing buffer + R3F's size store + camera aspect.
+      setSize(width, height);
+      // Paint THIS frame into the freshly-sized buffer (don't wait for R3F's
+      // next rAF), so the scene doesn't trail the panel edge during the drag.
+      const scene = mutable.current.scene;
+      const camera = mutable.current.camera;
+      if (scene !== null && camera !== null) gl.render(scene, camera);
+    };
+    return () => {
+      mutable.current.syncCanvasSize = null;
+    };
+  }, [mutable, gl, setSize]);
 
   // Expose scene internals on window for E2E testing (Playwright).
   useEffect(() => {

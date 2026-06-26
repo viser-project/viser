@@ -9,12 +9,17 @@ export function RegionResizer({
   edge,
   makeOnResize,
   getStart,
+  stripOffset = 0,
 }: {
   edge: DockEdge;
   /** Called once per drag (at pointer down) so the handler can snapshot the
    * columns' start widths; returns the per-frame resize handler. */
   makeOnResize: () => (px: number) => void;
   getStart: () => number;
+  /** Inset (px) from the region's canvas-facing edge, to skip past leading
+   * minimized strips so the handle sits on the first expanded panel's boundary
+   * (`[strip]│[panel]`) rather than the strip's far side. */
+  stripOffset?: number;
 }) {
   // Cancel the in-flight gesture if the resizer unmounts mid-drag (e.g. the
   // region empties), so its window listeners can't fire after unmount.
@@ -52,7 +57,9 @@ export function RegionResizer({
         position: "absolute",
         top: 0,
         bottom: 0,
-        [edge === "left" ? "right" : "left"]: "-3px",
+        // The canvas-facing edge of the region, pushed inward past any leading
+        // minimized strips so the handle is on the resized panel's boundary.
+        [edge === "left" ? "right" : "left"]: `${stripOffset - 3}px`,
         width: "8px",
         cursor: "ew-resize",
         zIndex: 15,
