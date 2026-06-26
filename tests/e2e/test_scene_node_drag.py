@@ -365,6 +365,118 @@ def test_scene_node_drag_dormant_then_resume(
         assert ends[0] == 2, ends[0]
 
 
+def test_scene_node_drag_many_stages_one_drag(
+    page: Page,
+    viser_server: viser.ViserServer,
+) -> None:
+    """A single drag that cycles through several segments AND a dormant gap:
+    cmd/ctrl -> cmd/ctrl+shift -> (dormant) -> cmd/ctrl+shift -> cmd/ctrl,
+    all within one button press. Both combos are entered twice, with an
+    unbound (dormant) interval in the middle, exercising repeated switching,
+    re-entry, and resume-after-dormant in one gesture. Each callback must
+    see exactly two clean start...end pairs."""
+    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
+
+    ctrl_starts = [0]
+    ctrl_ends = [0]
+    cs_starts = [0]
+    cs_ends = [0]
+    lock = threading.Lock()
+    # One event per milestone we gate the gesture on.
+    ev = {
+        k: threading.Event() for k in ("cs_s1", "cs_e1", "cs_s2", "ctrl_s2", "ctrl_e2")
+    }
+
+    box = viser_server.scene.add_box(
+        "/many_stage_box",
+        dimensions=(4.0, 4.0, 0.2),
+        color=(160, 140, 240),
+    )
+
+    # Async callbacks are awaited in dispatch order on the event loop, so
+    # the counters settle deterministically (sync callbacks fire-and-forget
+    # on a thread pool and would race the final count assertions -- step 4
+    # below fires two callbacks at once).
+    async def _ctrl_start(_e: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            ctrl_starts[0] += 1
+            n = ctrl_starts[0]
+        if n == 2:
+            ev["ctrl_s2"].set()
+
+    async def _ctrl_end(_e: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            ctrl_ends[0] += 1
+            n = ctrl_ends[0]
+        if n == 2:
+            ev["ctrl_e2"].set()
+
+    async def _cs_start(_e: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            cs_starts[0] += 1
+            n = cs_starts[0]
+        ev["cs_s1" if n == 1 else "cs_s2"].set()
+
+    async def _cs_end(_e: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            cs_ends[0] += 1
+            n = cs_ends[0]
+        if n == 1:
+            ev["cs_e1"].set()
+
+    _on_drag_phase(box, "start", "left", modifier="cmd/ctrl")(_ctrl_start)
+    _on_drag_phase(box, "end", "left", modifier="cmd/ctrl")(_ctrl_end)
+    _on_drag_phase(box, "start", "left", modifier="cmd/ctrl+shift")(_cs_start)
+    _on_drag_phase(box, "end", "left", modifier="cmd/ctrl+shift")(_cs_end)
+
+    wait_for_connection(page, viser_server.get_port())
+    wait_for_scene_node(page, "/many_stage_box")
+
+    (start_x, start_y), (end_x, end_y) = _get_canvas_drag_points(page)
+    q_x = start_x + (end_x - start_x) / 3
+    q_y = start_y + (end_y - start_y) / 3
+
+    # Segment 1: cmd/ctrl.
+    page.keyboard.down("Control")
+    page.mouse.move(start_x, start_y)
+    page.mouse.down()
+    page.mouse.move(q_x, q_y, steps=6)
+
+    # Segment 2: add Shift -> cmd/ctrl+shift (bound).
+    page.keyboard.down("Shift")
+    assert ev["cs_s1"].wait(timeout=5.0), "cmd/ctrl+shift didn't start on Shift add"
+
+    # Dormant: release Ctrl -> shift-only (unbound). cmd/ctrl+shift ends.
+    page.keyboard.up("Control")
+    assert ev["cs_e1"].wait(timeout=5.0), "cmd/ctrl+shift didn't end going dormant"
+
+    # Drag while dormant (nothing should fire).
+    page.mouse.move(end_x, end_y, steps=6)
+
+    # Resume: press Ctrl -> cmd/ctrl+shift again (bound).
+    page.keyboard.down("Control")
+    assert ev["cs_s2"].wait(timeout=5.0), "cmd/ctrl+shift didn't resume after dormant"
+
+    # Segment 4: release Shift -> back to cmd/ctrl (bound).
+    page.keyboard.up("Shift")
+    assert ev["ctrl_s2"].wait(timeout=5.0), "cmd/ctrl didn't restart on Shift release"
+
+    # Release.
+    page.mouse.up()
+    page.keyboard.up("Control")
+    assert ev["ctrl_e2"].wait(timeout=5.0), (
+        "final cmd/ctrl segment didn't end on release"
+    )
+
+    # Exactly two clean segments per combo across the whole gesture.
+    with lock:
+        assert ctrl_starts[0] == 2, ctrl_starts[0]
+        assert ctrl_ends[0] == 2, ctrl_ends[0]
+        assert cs_starts[0] == 2, cs_starts[0]
+        assert cs_ends[0] == 2, cs_ends[0]
+
+
 def test_scene_node_drag_filter_rejects_wrong_modifier(
     page: Page,
     viser_server: viser.ViserServer,

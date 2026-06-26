@@ -170,3 +170,58 @@ def test_unbound_segment_does_not_dispatch(
 
     assert ctrl_phases == ["start", "end"]
     assert not server.scene._is_drag_active_for("/unbound_box")
+
+
+def test_many_segments_one_drag_routes_and_cycles(
+    server: viser.ViserServer,
+) -> None:
+    """A single drag that switches modifiers SEVERAL times -- including
+    re-entering a previously-used combo -- routes each segment to its
+    callback as a clean, ordered start...end pair, and the active-drag
+    bookkeeping registers/pops correctly across every boundary.
+
+    Dormant (unbound) gaps produce no wire messages (the client suppresses
+    them), so a realistic multi-stage stream is just the bound segments
+    back to back. We interleave cmd/ctrl and cmd/ctrl+shift four times to
+    exercise repeated switching and re-entry of both combos in one drag."""
+    box = server.scene.add_box("/many_box", dimensions=(1.0, 1.0, 1.0))
+
+    ctrl_phases: list[str] = []
+    ctrl_shift_phases: list[str] = []
+
+    @box.on_drag("left", modifier="cmd/ctrl")
+    async def _(event: viser.SceneNodeDragEvent) -> None:
+        ctrl_phases.append(event.phase)
+        assert event.modifier == "cmd/ctrl"
+
+    @box.on_drag("left", modifier="cmd/ctrl+shift")
+    async def _(event: viser.SceneNodeDragEvent) -> None:
+        ctrl_shift_phases.append(event.phase)
+        assert event.modifier == "cmd/ctrl+shift"
+
+    client = cast(ClientId, 13)
+    server._connected_clients[client] = Mock()
+
+    # ctrl -> ctrl+shift -> ctrl -> ctrl+shift, all in one physical drag.
+    sequence: list[tuple[_messages._DragPhase, _messages.KeyModifier]] = [
+        ("start", "cmd/ctrl"),
+        ("update", "cmd/ctrl"),
+        ("end", "cmd/ctrl"),
+        ("start", "cmd/ctrl+shift"),
+        ("update", "cmd/ctrl+shift"),
+        ("end", "cmd/ctrl+shift"),
+        ("start", "cmd/ctrl"),  # re-enter ctrl
+        ("end", "cmd/ctrl"),
+        ("start", "cmd/ctrl+shift"),  # re-enter ctrl+shift
+        ("end", "cmd/ctrl+shift"),
+    ]
+    for phase, modifier in sequence:
+        _dispatch(server, client, _drag_msg("/many_box", phase, modifier))
+
+    # Each callback sees its two segments as clean, ordered, paired phases
+    # -- no cross-talk, no dropped or duplicated start/end across the four
+    # switches.
+    assert ctrl_phases == ["start", "update", "end", "start", "end"]
+    assert ctrl_shift_phases == ["start", "update", "end", "start", "end"]
+    # Bookkeeping fully released after the final end.
+    assert not server.scene._is_drag_active_for("/many_box")
