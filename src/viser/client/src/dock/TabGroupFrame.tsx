@@ -170,7 +170,7 @@ function GripBar({
         onActivate={onToggle}
         dragThrough
       >
-        {collapsed ? <IconPlus size={14} /> : <IconMinus size={14} />}
+        {collapsed ? <IconPlus size={12} /> : <IconMinus size={12} />}
       </HandleIconButton>
     </Box>
   );
