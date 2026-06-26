@@ -360,7 +360,14 @@ export function TabGroupFrame({
               ? undefined
               : (panes[group.activeId]?.title ?? group.activeId)
           }
-          className={panes[group.activeId]?.titleNode ? headerRule : undefined}
+          // The 1px bottom rule separates the header from the content below, so
+          // only show it when EXPANDED -- a collapsed panel is header-only, and
+          // the rule would read as a stray border on its bottom edge.
+          className={
+            panes[group.activeId]?.titleNode && !collapsed
+              ? headerRule
+              : undefined
+          }
           onPointerDown={(event) => {
             if (stripDragsGroup)
               dock.startGroupDrag(event, group.id, {
