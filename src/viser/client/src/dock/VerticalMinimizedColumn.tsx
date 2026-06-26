@@ -146,7 +146,12 @@ function VerticalMinimizedCell({
         label. The whole cell remains draggable for tear-out (handled by the
         cell's onPointerDown above). role="tablist"/"tab" + keyboard support keep
         the strip accessible, mirroring the expanded tab strip. */}
-        <Box role="tablist" aria-orientation="vertical" style={{ width: "100%" }}>
+        <Box
+          role="tablist"
+          aria-orientation="vertical"
+          // Breathing room between the + handle cap and the tab/panel labels.
+          style={{ width: "100%", marginTop: "0.6em" }}
+        >
           {group.paneIds.map((paneId) => {
             const spec = dock.panes[paneId];
             const active = paneId === group.activeId;
