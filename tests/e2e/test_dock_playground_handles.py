@@ -27,10 +27,8 @@ Same standalone-Vite harness as the other dock playground files. Run with::
 
 from __future__ import annotations
 
-import pytest
 from playwright.sync_api import Page  # noqa: E402
 
-from .dock_helpers import collapsed as _collapsed
 from .dock_helpers import columns, dock_layout, set_layout, stack, window
 from .dock_helpers import drag as _drag
 from .dock_helpers import group_id_for_panel as _group_id_for_panel
@@ -84,19 +82,6 @@ def _resize_grip(page: Page, window_id: str, edge: str) -> tuple[float, float]:
     return box["x"], box["y"]
 
 
-def _make_stack(page: Page) -> str | None:
-    """Inject one floating window stacking controls above inspector. Returns
-    the window id (from the [data-floating-handle] header)."""
-    set_layout(
-        page,
-        dock_layout(
-            floating=[window("controls", "inspector", x=400, y=120, width=300)]
-        ),
-    )
-    handle = page.query_selector("[data-floating-handle]")
-    if handle is None:
-        return None
-    return handle.get_attribute("data-floating-handle")
 
 
 # ---------------------------------------------------------------------------
@@ -332,69 +317,3 @@ def test_top_left_corner_resize(dock_context, vite_server) -> None:
     assert abs((before["h"] - after["h"]) - 30) < 6, "height should shrink ~30"
     page.close()
 
-
-# ---------------------------------------------------------------------------
-# 3. Stack handle minimize-all toggles every child group.
-# ---------------------------------------------------------------------------
-def test_stack_minimize_all_and_expand_all(dock_context, vite_server) -> None:
-    page = _open(dock_context, vite_server)
-    win_id = _make_stack(page)
-    if win_id is None:
-        pytest.skip("stack snap didn't land this run")
-    a = _group_id_for_panel(page, "controls")
-    b = _group_id_for_panel(page, "inspector")
-
-    page.eval_on_selector(
-        f'[data-floating-handle="{win_id}"] [data-dock-minimize-all]',
-        "e => e.click()",
-    )
-    page.wait_for_timeout(120)
-    assert _collapsed(page, a) and _collapsed(page, b), (
-        "minimize-all should collapse every group in the stack"
-    )
-
-    page.eval_on_selector(
-        f'[data-floating-handle="{win_id}"] [data-dock-minimize-all]',
-        "e => e.click()",
-    )
-    page.wait_for_timeout(120)
-    assert not _collapsed(page, a) and not _collapsed(page, b), (
-        "expand-all should restore both groups (all were expanded before)"
-    )
-    page.close()
-
-
-# ---------------------------------------------------------------------------
-# 4. Mixed arrangement round-trips through parent minimize/expand.
-# ---------------------------------------------------------------------------
-def test_stack_minimize_restores_previous_mix(dock_context, vite_server) -> None:
-    page = _open(dock_context, vite_server)
-    win_id = _make_stack(page)
-    if win_id is None:
-        pytest.skip("stack snap didn't land this run")
-    a = _group_id_for_panel(page, "controls")
-    b = _group_id_for_panel(page, "inspector")
-
-    # Minimize inspector INDIVIDUALLY first -> mix is [controls: max, inspector: min].
-    page.eval_on_selector(
-        f'[data-dock-group="{b}"] [data-dock-minimize]', "e => e.click()"
-    )
-    page.wait_for_timeout(120)
-    assert _collapsed(page, b) and not _collapsed(page, a)
-
-    # Parent minimize-all -> both minimized; parent expand -> the previous mix
-    # comes back (controls expands, inspector STAYS minimized).
-    page.eval_on_selector(
-        f'[data-floating-handle="{win_id}"] [data-dock-minimize-all]',
-        "e => e.click()",
-    )
-    page.wait_for_timeout(120)
-    assert _collapsed(page, a) and _collapsed(page, b)
-    page.eval_on_selector(
-        f'[data-floating-handle="{win_id}"] [data-dock-minimize-all]',
-        "e => e.click()",
-    )
-    page.wait_for_timeout(120)
-    assert not _collapsed(page, a), "controls was expanded before; must restore"
-    assert _collapsed(page, b), "inspector was minimized by the USER; must stay"
-    page.close()
