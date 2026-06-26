@@ -200,12 +200,14 @@ def test_escape_restores_docked_group_drag(dock_context, vite_server) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 6. Dropping onto a minimized group auto-expands it.
+# 6. Merging onto a minimized group keeps it minimized (organizing minimized
+#    panels never expands them); the dropped panel becomes another collapsed tab.
 # ---------------------------------------------------------------------------
-def test_drop_on_minimized_group_expands(dock_context, vite_server) -> None:
+def test_drop_on_minimized_group_stays_minimized(dock_context, vite_server) -> None:
     page = _open(dock_context, vite_server)
-    # Minimize the floating Controls window, then drop Inspector onto its
-    # collapsed handle (center = merge).
+    # Minimize the floating Controls window, then drop Inspector onto the center
+    # of its collapsed strip (the + cap = merge, since the strip's middle rows
+    # are tab-insert and its cap is merge).
     gid = _group_id_for_panel(page, "controls")
     page.eval_on_selector(
         f'[data-dock-group="{gid}"] [data-dock-minimize]', "e => e.click()"
@@ -214,8 +216,10 @@ def test_drop_on_minimized_group_expands(dock_context, vite_server) -> None:
     assert page.evaluate(
         "(gid) => window.__dockLayout.groups[gid].collapsed === true", gid
     )
+    # Aim at the + cap (top of the strip) so the drop merges rather than inserts
+    # at a tab position.
     target = page.eval_on_selector(
-        f'[data-dock-group="{gid}"]',
+        f'[data-dock-group="{gid}"] [data-dock-minimize]',
         "e => { const r = e.getBoundingClientRect(); "
         "return { x: r.x + r.width/2, y: r.y + r.height/2 }; }",
     )
@@ -225,8 +229,8 @@ def test_drop_on_minimized_group_expands(dock_context, vite_server) -> None:
     if "inspector" not in merged:
         pytest.skip("merge didn't land this run; geometry off by a few px")
     assert page.evaluate(
-        "(gid) => window.__dockLayout.groups[gid].collapsed !== true", gid
-    ), "merging into a minimized group should expand it"
+        "(gid) => window.__dockLayout.groups[gid].collapsed === true", gid
+    ), "merging into a minimized group must keep it minimized"
     page.close()
 
 
@@ -353,7 +357,7 @@ def test_minus_button_drag_moves_panel(dock_context, vite_server) -> None:
     page.close()
 
 
-def test_plus_drag_tears_out_expanded(dock_context, vite_server) -> None:
+def test_plus_drag_tears_out_still_minimized(dock_context, vite_server) -> None:
     page = _open(dock_context, vite_server)
     # Arrange: controls docked right (the minimize + drag-from-+ below are the
     # subject; the canvas is otherwise empty so the drop floats).
@@ -373,15 +377,15 @@ def test_plus_drag_tears_out_expanded(dock_context, vite_server) -> None:
         "return { x: r.x + r.width/2, y: r.y + r.height/2 }; }",
     )
     _drag(page, (btn["x"], btn["y"]), (700, 250))
-    # The drop may land on empty canvas (float) or, if geometry drifts, on
-    # another surface -- either way the panel must end up EXPANDED. Re-resolve
-    # the group id: a merge would have moved the panel to a new group.
+    # Dragging the + moves the panel AS-IS: it floats but stays MINIMIZED
+    # (expanding is a click-only gesture). Re-resolve the group id in case
+    # geometry drifted it into another surface.
     gid = _group_id_for_panel(page, "controls")
     assert page.evaluate(
-        "(gid) => window.__dockLayout.groups[gid].collapsed !== true", gid
-    ), "a drag from the + should EXPAND the panel"
+        "(gid) => window.__dockLayout.groups[gid].collapsed === true", gid
+    ), "a drag from the + must NOT expand the panel"
     assert _floating_window_for_panel(page, "controls") is not None, (
-        "the expanded panel should now float"
+        "the minimized panel should now float"
     )
     page.close()
 
@@ -423,11 +427,11 @@ def test_column_handle_persists_fully_minimized(dock_context, vite_server) -> No
 
 
 # ---------------------------------------------------------------------------
-# 11. Dropping an expanded panel BELOW a minimized strip restores the region
-#     to a usable width (regression: the region used to stay at strip width,
-#     squeezing the new panel into 36px).
+# 11. Dropping an expanded panel as a new cell BELOW a minimized strip adopts
+#     the strip's minimized state: the region stays a uniform narrow strip
+#     (both cells minimized) rather than one expanded + one squeezed.
 # ---------------------------------------------------------------------------
-def test_drop_below_strip_restores_region_width(dock_context, vite_server) -> None:
+def test_drop_below_strip_adopts_minimized(dock_context, vite_server) -> None:
     page = _open(dock_context, vite_server)
     # Arrange: controls docked right + inspector floating (the minimize and the
     # drop-below-the-strip gesture are the subject).
@@ -448,19 +452,16 @@ def test_drop_below_strip_restores_region_width(dock_context, vite_server) -> No
         "e => { const r = e.getBoundingClientRect(); "
         "return { x: r.x + r.width/2, bottom: r.bottom }; }",
     )
-    # Drop inspector on the strip's BOTTOM band -> column[strip, inspector].
-    _drag(page, _grip(page, "inspector"), (strip["x"], strip["bottom"] - 30))
+    # Drop inspector below the strip's rows -> column[strip, inspector], where
+    # the new inspector cell adopts the minimized state.
+    _drag(page, _grip(page, "inspector"), (strip["x"], strip["bottom"] - 10))
     tree = _layout(page)["docked"]["right"]
     if tree is None or tree.get("dir") != "column":
         pytest.skip("below-split didn't land this run")
-    widths = page.evaluate(
-        """() => [...document.querySelectorAll(
-            '[data-dock-leaf][data-dock-edge="right"]')]
-            .map(l => Math.round(l.getBoundingClientRect().width))"""
-    )
-    assert all(w >= 200 for w in widths), (
-        f"region must restore to a usable width after the drop, got {widths}"
-    )
+    igid = _group_id_for_panel(page, "inspector")
+    assert page.evaluate(
+        "(g) => window.__dockLayout.groups[g].collapsed === true", igid
+    ), "a new cell dropped beside an all-minimized strip should adopt minimized"
 
 
 # ---------------------------------------------------------------------------

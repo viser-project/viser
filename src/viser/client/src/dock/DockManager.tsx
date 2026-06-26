@@ -759,6 +759,12 @@ export function DockManager({
           applyOp(ops.moveWindow(base, windowId, finalX, finalY));
           return;
         }
+        // Dropping a NEW cell (split/snap) beside an all-minimized neighbor
+        // adopts its minimized state: the dragged stack lands collapsed too, so
+        // a minimized column/window stays uniformly minimized. (Merge/insertTab
+        // already inherit the target group's collapsed flag.)
+        const adoptMinimized = (l: DockLayout, neighborAllMin: boolean) =>
+          neighborAllMin ? ops.minimizeStack(l, stack) : l;
         // Widths are reconciled centrally in applyOp, so these just apply the
         // structural op (no per-path region-width juggling).
         if (result.kind === "edge") {
@@ -767,38 +773,33 @@ export function DockManager({
           applyOp(ops.dockToRegionEdge(base, stack, result.edge, result.side));
         } else if (result.kind === "split") {
           applyOp(
-            ops.dropOnDockedLeaf(
-              base,
-              stack,
-              result.edge,
-              result.nodeId,
-              result.region,
+            adoptMinimized(
+              ops.dropOnDockedLeaf(
+                base,
+                stack,
+                result.edge,
+                result.nodeId,
+                result.region,
+              ),
+              ops.nodeAllMinimized(base, result.nodeId),
             ),
           );
         } else if (result.kind === "merge") {
-          // Expanding a collapsed target makes the drop visible -- merging
-          // into a minimized handle would silently hide the dropped panel.
-          applyOp(
-            ops.expandGroup(
-              ops.mergeGroupsInto(base, result.targetGroupId, stack),
-              result.targetGroupId,
-            ),
-          );
+          // Merge into the target as-is: a MINIMIZED target stays minimized
+          // (the dropped panel becomes another tab in the collapsed group),
+          // matching the user's mental model that organizing minimized panels
+          // never expands them. The new tab is reachable via the strip's tabs.
+          applyOp(ops.mergeGroupsInto(base, result.targetGroupId, stack));
         } else if (result.kind === "insertTab") {
           applyOp(
-            ops.expandGroup(
-              ops.insertTabsInto(
-                base,
-                result.targetGroupId,
-                stack,
-                result.index,
-              ),
-              result.targetGroupId,
-            ),
+            ops.insertTabsInto(base, result.targetGroupId, stack, result.index),
           );
         } else {
           applyOp(
-            ops.snapToWindowStack(base, stack, result.windowId, result.index),
+            adoptMinimized(
+              ops.snapToWindowStack(base, stack, result.windowId, result.index),
+              ops.windowAllMinimized(base, result.windowId),
+            ),
           );
         }
       },
@@ -1007,7 +1008,6 @@ export function DockManager({
     // A no-motion press drags nothing but fires opts.onClick (the unmergeable
     // header uses this to toggle minimize on click, like the live FloatingPanel).
     const onClick = opts?.onClick;
-    const expandOnDrag = opts?.expandOnDrag === true;
     const loc = ops.findGroupLocation(layoutRef.current, groupId);
     // A group alone in its floating window just moves that window on drag.
     if (loc?.kind === "floating") {
@@ -1031,27 +1031,16 @@ export function DockManager({
               win.x,
               win.y,
             );
-            if (expandOnDrag) {
-              // A drag from the expand (+) button tears out the FULL panel:
-              // expand first (flushed so the window height renders), then
-              // drag. The expand is an up-front COMMIT, so it goes through
-              // dragAfterCommit and Escape restores the minimized state.
-              dragAfterCommit(e, () => {
-                flushSync(() =>
-                  applyOp(ops.expandGroup(layoutRef.current, groupId)),
-                );
-                return { windowId, groupIdForDim: null, grabX, grabY };
-              });
-            } else {
-              beginWindowDrag(
-                windowId,
-                null,
-                e.pointerId,
-                e.pointerType,
-                grabX,
-                grabY,
-              );
-            }
+            // Dragging a minimized panel moves it AS-IS (still minimized);
+            // expanding is a click-only gesture. So no expand-on-drag here.
+            beginWindowDrag(
+              windowId,
+              null,
+              e.pointerId,
+              e.pointerType,
+              grabX,
+              grabY,
+            );
           },
           onClick,
         );
@@ -1094,14 +1083,10 @@ export function DockManager({
         if (res.windowId === null) return null;
         // applyOp reconciles region widths: undocking this column removes it
         // from the region's column set, so siblings keep their widths and the
-        // region shrinks by the removed column's width. A drag from the
-        // expand (+) button floats the panel EXPANDED -- dragging it should
-        // produce a full panel, not a minimized stub.
-        flushSync(() =>
-          applyOp(
-            expandOnDrag ? ops.expandGroup(res.layout, groupId) : res.layout,
-          ),
-        );
+        // region shrinks by the removed column's width. A minimized panel
+        // floats out STILL minimized (it renders as a one-cell strip window) --
+        // expanding is click-only, never a side effect of dragging.
+        flushSync(() => applyOp(res.layout));
         // Clamp the grab into the floated window: the source (a region-tall
         // minimized strip / docked column) can be far bigger than the result.
         return {

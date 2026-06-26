@@ -47,13 +47,7 @@ export interface DockContextValue {
   startGroupDrag: (
     event: React.PointerEvent<HTMLElement>,
     groupId: GroupId,
-    opts?: {
-      onClick?: () => void;
-      /** Expand a collapsed group when the press becomes a DRAG (motion past
-       * the threshold). Used when the drag starts on an expand (+) button:
-       * dragging it should tear out the full panel, not a minimized stub. */
-      expandOnDrag?: boolean;
-    },
+    opts?: { onClick?: () => void },
   ) => void;
   /** Begin dragging a whole top-level docked column by its slim handle: floats
    * the column as one stacked window, then drags it. A no-motion press fires

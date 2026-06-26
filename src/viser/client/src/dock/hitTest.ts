@@ -32,6 +32,10 @@ const EDGE_ZONE_PX = 48;
 const REGION_EDGE_PX = 8;
 // Wider band at a region's left/right edges -> full-height column beside all.
 const REGION_SIDE_PX = 40;
+// Thin left/right side band (pixels) on a MINIMIZED vertical strip: small so the
+// two edges don't swallow a ~36px strip's whole width, leaving the middle free
+// for its tab-insert / merge zones while the true edges still dock a column.
+const MINIMIZED_SIDE_BAND_PX = 8;
 // Band fraction (of the content area) for a per-panel left/right split, capped
 // in pixels so it doesn't balloon on a wide panel.
 const SPLIT_BAND = 0.22;
@@ -208,6 +212,37 @@ export const tabInsertion = (
   };
 };
 
+/** Vertical analog of tabInsertion for a MINIMIZED strip's stacked spine-label
+ * rows: pick the nearest row by Y and return the insert index plus a HORIZONTAL
+ * insertion line (between rows / above the first / below the last). Lets a drop
+ * land at a specific position in a minimized tab set, mirroring how dropping
+ * between expanded horizontal tabs works. */
+export const verticalTabInsertion = (
+  tabs: { rect: DOMRect }[],
+  y: number,
+): { index: number; lineLeft: number; lineTop: number; lineWidth: number } | null => {
+  if (tabs.length === 0) return null;
+  let best = 0;
+  let bestDy = Infinity;
+  let after = false;
+  tabs.forEach((t, i) => {
+    const r = t.rect;
+    const dy = y - (r.top + r.height / 2);
+    if (Math.abs(dy) < bestDy) {
+      bestDy = Math.abs(dy);
+      best = i;
+      after = dy > 0;
+    }
+  });
+  const r = tabs[best].rect;
+  return {
+    index: after ? best + 1 : best,
+    lineLeft: r.left,
+    lineTop: after ? r.bottom : r.top,
+    lineWidth: r.width,
+  };
+};
+
 /** Resolve the drop result + visual hint for a pointer position. Hints are
  * sized to the true post-drop geometry (respecting the min panel width) so they
  * preview the result without reflowing real panes. */
@@ -324,13 +359,15 @@ export function hitTest(
     // per-panel split, just region-wide. (Previously a translucent half-region
     // "ghost" rectangle, which read inconsistently next to the per-panel lines.)
     const t = 3;
-    // Cap each left/right side band at HALF the region width so the inner and
-    // outer bands never overlap. A fully-minimized region renders as a ~36px
-    // strip -- narrower than REGION_SIDE_PX (40) -- so without the cap the inner
-    // (canvas-facing) band would cover the whole strip and the OUTER edge could
-    // never be hit (you couldn't dock a new outer column beside a minimized
-    // region). With the cap the outer half resolves to the outer-edge dock.
-    const sideBand = Math.min(REGION_SIDE_PX, w / 2);
+    // Cap each left/right side band at a THIRD of the region width so the two
+    // bands leave the middle third for the per-panel zones underneath. A
+    // fully-minimized region renders as a ~36px strip -- narrower than
+    // REGION_SIDE_PX (40) -- and an uncapped (or half-width) band would cover
+    // the whole strip, so a drop ALWAYS resolved to "dock a new column beside"
+    // and never reached the strip cell's own tab/stack zones (merge + above/
+    // below). With the third-cap the strip's middle falls through to those
+    // cell zones while its outer/inner thirds still dock a sibling column.
+    const sideBand = Math.min(REGION_SIDE_PX, w / 3);
 
     // Top / bottom: full-width line above/below everything.
     if (cy < REGION_EDGE_PX && !edgeIsSingleLeaf(tree, "top")) {
@@ -529,33 +566,61 @@ export function hitTest(
     return { result: { kind: "merge", targetGroupId: g.groupId }, hint: rel(r, "merge") };
   }
 
-  // 3z. A minimized target has no content area, so its whole bar is a 5-way
-  // drop zone: edges split (docked) / snap (floating), center merges.
+  // 3z. A minimized target renders as a narrow vertical strip (a + cap atop a
+  // column of spine-label rows). It is a drop target the same way an expanded
+  // panel is, just rotated 90 degrees:
+  //   - thin OUTER/INNER side bands  -> dock a new column beside it (docked) /
+  //   - over a spine-label row       -> insert at THAT tab position (begin /
+  //                                     between / end), like dropping between
+  //                                     expanded horizontal tabs
+  //   - thin top/bottom bands        -> stack a new cell above/below (docked) /
+  //                                     snap above/below (floating)
+  //   - anything else (the + cap)    -> merge (append a tab)
   if (g.collapsed) {
     const rx = (clientX - r.left) / r.width;
-    const ry = (clientY - r.top) / r.height;
-    // Pixel-cap the vertical zones: a minimized VERTICAL strip is narrow but
-    // region-tall, and 30% of that height would be a huge "split above/below"
-    // band. (A no-op for the short horizontal handle bars, where the cap
-    // exceeds 30%.)
+    // Thin pixel side bands so on a ~36px strip the two edges don't swallow the
+    // whole width -- the middle stays free for the tab/split zones.
+    const H = Math.min(0.3, MINIMIZED_SIDE_BAND_PX / Math.max(r.width, 1));
+    // The spine-label rows ARE the strip: their vertical span is the
+    // tab-insertion region (begin/between/end), exactly like an expanded
+    // panel's horizontal tab strip. Above the rows (the + cap) splits/snaps a
+    // new cell ABOVE; below them splits/snaps a new cell BELOW; the cap also
+    // merges when no edge band wins. Suppressed for an unmergeable drag (it
+    // can't become tabs) or an unmergeable target. With no rows measured, fall
+    // back to fractional top/bottom split bands (pixel-capped for a tall strip).
+    const canInsert = !draggingUnmergeable && !g.unmergeable && g.tabs.length > 0;
     const V = Math.min(0.3, SPLIT_BAND_V_MAX_PX / Math.max(r.height, 1));
-    const H = 0.3;
+    const tabsTop = canInsert ? g.tabs[0].rect.top : r.top + V * r.height;
+    const tabsBottom = canInsert
+      ? g.tabs[g.tabs.length - 1].rect.bottom
+      : r.bottom - V * r.height;
+    const ins =
+      canInsert && clientY >= tabsTop && clientY <= tabsBottom
+        ? verticalTabInsertion(g.tabs, clientY)
+        : null;
+    const insHint = (i: { index: number; lineLeft: number; lineTop: number; lineWidth: number }) =>
+      rel({ left: i.lineLeft, top: i.lineTop - 1, width: i.lineWidth, height: 2 }, "line");
     if (g.ctx.kind === "docked") {
       const e = g.ctx.edge;
       const n = g.ctx.nodeId;
-      if (ry < V) return { result: { kind: "split", edge: e, nodeId: n, region: "top" }, hint: splitLine("top") };
-      if (ry > 1 - V) return { result: { kind: "split", edge: e, nodeId: n, region: "bottom" }, hint: splitLine("bottom") };
       if (rx < H) return { result: { kind: "split", edge: e, nodeId: n, region: "left" }, hint: splitLine("left") };
       if (rx > 1 - H) return { result: { kind: "split", edge: e, nodeId: n, region: "right" }, hint: splitLine("right") };
+      if (ins !== null)
+        return { result: { kind: "insertTab", targetGroupId: g.groupId, index: ins.index }, hint: insHint(ins) };
+      if (clientY < tabsTop) return { result: { kind: "split", edge: e, nodeId: n, region: "top" }, hint: splitLine("top") };
+      if (clientY > tabsBottom) return { result: { kind: "split", edge: e, nodeId: n, region: "bottom" }, hint: splitLine("bottom") };
       return mergeResult();
     }
-    // Floating minimized: snap above/below; left/right & center merge.
-    if (ry < V)
+    // Floating minimized: rows insert at a tab position; above/below them snaps
+    // a new cell; the rest merges (no docked region to split into).
+    if (ins !== null)
+      return { result: { kind: "insertTab", targetGroupId: g.groupId, index: ins.index }, hint: insHint(ins) };
+    if (clientY < tabsTop)
       return {
         result: { kind: "snap", windowId: g.ctx.windowId, index: g.ctx.index },
         hint: rel({ left: r.left, top: r.top - 2, width: r.width, height: 4 }, "line"),
       };
-    if (ry > 1 - V)
+    if (clientY > tabsBottom)
       return {
         result: { kind: "snap", windowId: g.ctx.windowId, index: g.ctx.index + 1 },
         hint: rel({ left: r.left, top: r.bottom - 2, width: r.width, height: 4 }, "line"),

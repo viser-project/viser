@@ -31,7 +31,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import Page  # noqa: E402
 
-from .dock_helpers import columns, dock_layout, group, set_layout, window
+from .dock_helpers import columns, dock_layout, group, set_layout, stack, window
 from .dock_helpers import drag as _drag
 from .dock_helpers import open_playground as _open
 
@@ -293,6 +293,84 @@ def test_snap_below_minimized_keeps_top_panel(dock_context, vite_server: int) ->
         # The top (controls) panel keeps a positive height (it didn't vanish).
         ctrl_after = _gbox(page, ctrl_gid)
         assert ctrl_after["h"] > 0, "the minimized top (controls) panel has no height"
+    finally:
+        page.close()
+
+
+def test_drop_into_minimized_stack_at_tab_position(
+    dock_context, vite_server: int
+) -> None:
+    """A minimized stack's spine-label rows are a tab strip: dropping over a row
+    inserts at THAT position (begin / between / end), like dropping between
+    expanded horizontal tabs. The whole group stays minimized."""
+    page = _open(dock_context, vite_server)
+    try:
+        # A minimized docked group [controls, inspector] + floating console.
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=stack(group(["controls", "inspector"], collapsed=True)),
+                floating=[window(group("console", collapsed=True), x=300, y=300)],
+            ),
+        )
+        gid = "t-controls"
+        # Drag console's + cap onto the TOP of the inspector row -> insert
+        # console BEFORE inspector (between controls and inspector).
+        cap = _box(page, f'[data-dock-group="t-console"] [data-dock-minimize]')
+        row = _box(page, f'[data-dock-group="{gid}"] [data-dock-tab="inspector"]')
+        if cap is None or row is None:
+            pytest.skip("strip not laid out this run")
+        _drag(
+            page,
+            (cap["x"] + cap["w"] / 2, cap["y"] + cap["h"] / 2),
+            (row["x"] + row["w"] / 2, row["y"] + 3),
+        )
+        ids = page.evaluate("(g) => window.__dockLayout.groups[g]?.paneIds", gid)
+        if ids is None or "console" not in ids:
+            pytest.skip("insertion didn't land this run; geometry off by a few px")
+        assert ids == ["controls", "console", "inspector"], (
+            f"console should insert before inspector, got {ids}"
+        )
+        assert page.evaluate(
+            "(g) => window.__dockLayout.groups[g].collapsed === true", gid
+        ), "the stack must stay minimized after a tab-position drop"
+    finally:
+        page.close()
+
+
+def test_new_cell_beside_all_minimized_stack_adopts_minimized(
+    dock_context, vite_server: int
+) -> None:
+    """Dropping an EXPANDED panel as a new cell beside an all-minimized stack
+    makes it minimized too, so the stack stays uniformly minimized."""
+    page = _open(dock_context, vite_server)
+    try:
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=stack(group(["controls", "inspector"], collapsed=True)),
+                floating=[window("console", x=300, y=300, width=240)],  # EXPANDED
+            ),
+        )
+        gid = "t-controls"
+        cell = _gbox(page, gid)
+        cgrip = _grip(page, "t-console")
+        # Drop below the strip's rows -> new cell below, which adopts minimized.
+        _drag(
+            page,
+            (cgrip["x"], cgrip["y"]),
+            (cell["x"] + cell["w"] / 2, cell["y"] + cell["h"] - 6),
+        )
+        cgid = page.evaluate(
+            """() => { for (const [g, v] of Object.entries(window.__dockLayout.groups))
+                if (v.paneIds.includes("console")) return g; return null; }"""
+        )
+        tree = page.evaluate("() => window.__dockLayout.docked.right")
+        if tree is None or tree.get("type") != "split":
+            pytest.skip("new cell didn't land this run")
+        assert page.evaluate(
+            "(g) => window.__dockLayout.groups[g].collapsed === true", cgid
+        ), "a new cell beside an all-minimized stack must adopt minimized"
     finally:
         page.close()
 

@@ -96,8 +96,8 @@ export function VerticalMinimizedCell({
           //    tears out ONLY that pane into its own floating window (the rest of
           //    the stack stays docked) -- startTabTearOut.
           //  - The cap / + button / empty area: a click expands the whole group;
-          //    a drag tears out the WHOLE group (a drag from the + button tears
-          //    it out EXPANDED) -- startGroupDrag, as before.
+          //    a drag tears out the WHOLE group, STILL minimized (expanding is a
+          //    click-only gesture -- dragging the + never expands) -- startGroupDrag.
           const target = event.target as HTMLElement;
           const rowPane = target
             .closest("[data-dock-tab]")
@@ -108,7 +108,6 @@ export function VerticalMinimizedCell({
           }
           dock.startGroupDrag(event, group.id, {
             onClick: () => dock.toggleCollapsed(group.id),
-            expandOnDrag: target.closest("[data-dock-minimize]") !== null,
           });
         }}
         style={{
@@ -155,8 +154,10 @@ export function VerticalMinimizedCell({
         <Box
           role="tablist"
           aria-orientation="vertical"
-          // Breathing room between the + handle cap and the tab/panel labels.
-          style={{ width: "100%", marginTop: "0.6em" }}
+          // Breathing room above (between the + handle cap and the labels) AND
+          // below the labels, so the spine titles sit centered in the strip
+          // rather than crammed against the bottom edge.
+          style={{ width: "100%", marginTop: "0.6em", marginBottom: "0.6em" }}
         >
           {group.paneIds.map((paneId) => {
             const spec = dock.panes[paneId];

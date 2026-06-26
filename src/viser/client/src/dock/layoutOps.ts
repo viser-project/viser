@@ -168,6 +168,31 @@ export function isColumnMinimized(
   return node.children.every((c) => isColumnMinimized(c, groups));
 }
 
+/** True when the subtree at `nodeId` (in either docked tree) is fully
+ * minimized -- used to decide whether a new cell dropped beside it should adopt
+ * the minimized state. False if the node isn't found. */
+export function nodeAllMinimized(layout: DockLayout, nodeId: NodeId): boolean {
+  for (const edge of ["left", "right"] as const) {
+    const tree = layout.docked[edge];
+    const node = tree && treeFindNode(tree, nodeId);
+    if (node) return isColumnMinimized(node, layout.groups);
+  }
+  return false;
+}
+
+/** True when every group in a floating window's stack is minimized. */
+export function windowAllMinimized(
+  layout: DockLayout,
+  windowId: WindowId,
+): boolean {
+  const win = layout.floating.find((w) => w.id === windowId);
+  return (
+    win !== undefined &&
+    win.stack.length > 0 &&
+    win.stack.every((g) => layout.groups[g]?.collapsed === true)
+  );
+}
+
 /** In-order group ids of every leaf in a subtree. */
 export function collectLeafGroups(node: DockNode): GroupId[] {
   if (node.type === "leaf") return [node.group];

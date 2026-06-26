@@ -122,7 +122,7 @@ function GripBar({
   onToggle: () => void;
   startDrag: (
     event: React.PointerEvent<HTMLDivElement>,
-    opts?: { onClick?: () => void; expandOnDrag?: boolean },
+    opts?: { onClick?: () => void },
   ) => void;
 }) {
   return (
@@ -133,16 +133,10 @@ function GripBar({
         // A motionless tap ANYWHERE on the handle toggles minimize/expand --
         // matching the main panel's header, so every panel handle behaves the
         // same (the +/- button is then a redundant, explicit cue). A real drag
-        // (motion past threshold) still moves the panel instead; the click-vs-
-        // drag split in armPress means a tap can't be mistaken for a drag. A
-        // press starting on the + button while collapsed also expands-then-drags.
-        const fromButton =
-          (event.target as HTMLElement).closest("[data-dock-minimize]") !==
-          null;
-        startDrag(event, {
-          onClick: onToggle,
-          expandOnDrag: fromButton && collapsed,
-        });
+        // (motion past threshold) moves the panel AS-IS instead -- a collapsed
+        // panel drags out still collapsed; expanding is click-only. The click-
+        // vs-drag split in armPress means a tap can't be mistaken for a drag.
+        startDrag(event, { onClick: onToggle });
       }}
       style={{
         position: "relative",
