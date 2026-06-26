@@ -320,6 +320,12 @@ export function DockManager({
   // it, so the closure's captured `containerHeight` stays valid.
   const containerWidthRef = React.useRef(0);
   containerWidthRef.current = containerWidth;
+  // True only while a region-resize drag is committing a width this frame. The
+  // drag owns float movement itself (pushFloatsAheadOfSeam, applied flush with
+  // the seam), so the inset effect must NOT also re-clamp unanchored floats then
+  // -- that re-clamp is for DISCRETE inset changes (dock/minimize/undock), where
+  // nothing else moves an unanchored float out from under the new chrome.
+  const regionResizeDraggingRef = React.useRef(false);
 
   // Keep floating windows sensibly placed when the container resizes. Each
   // axis anchors to the NEARER container edge (matching the original
@@ -1642,15 +1648,55 @@ export function DockManager({
     });
   }, [readFloatBounds]);
 
-  // USER-placed floats are pushed out of a GROWING region's way directly in the
-  // region-resize handler (pushFloatsAheadOfSeam) -- not here; a discrete inset
-  // change (docking/minimizing) leaves user floats where they are. But
-  // SERVER-anchored floats still re-resolve against the new bounds on any inset
-  // or container change, so e.g. the anchored control panel stays correctly
-  // placed when a docked region's width changes.
+  // A DISCRETE inset change (dock / minimize / undock) that wasn't produced by a
+  // region-resize drag: pull any UNANCHORED float whose horizontal span now
+  // overhangs the docked chrome back fully onto the canvas, so its body -- and,
+  // crucially, its resize handles -- can't sit over (and intercept the pointer
+  // of) a docked region's strip. A region-resize DRAG is excluded: it moves
+  // floats itself via pushFloatsAheadOfSeam (flush with the live seam), and
+  // re-clamping mid-drag is exactly the float-yanking 4c3facf1 removed. Anchored
+  // floats are handled by reanchorFloats; the dragged window is left alone.
+  const clampUnanchoredFloatsToInsets = React.useCallback(() => {
+    if (regionResizeDraggingRef.current) return;
+    const m = readFloatBounds();
+    if (m === null || m.bounds.width === 0) return;
+    setLayout((cur) => {
+      let changed = false;
+      const floating = cur.floating.map((w) => {
+        if (w.id === draggingWindowIdRef.current || w.anchor !== undefined)
+          return w;
+        const maxX = Math.max(
+          m.bounds.leftInset,
+          m.bounds.width - m.bounds.rightInset - w.width,
+        );
+        const x = Math.min(Math.max(w.x, m.bounds.leftInset), maxX);
+        if (x === w.x) return w;
+        changed = true;
+        return { ...w, x };
+      });
+      if (!changed) return cur;
+      const next = { ...cur, floating };
+      layoutRef.current = next;
+      return next;
+    });
+  }, [readFloatBounds]);
+
+  // Inset change (dock / minimize / undock): re-resolve SERVER-anchored floats
+  // against the new bounds (so e.g. a top-right-anchored panel tracks the
+  // corner) AND pull any unanchored float clear of the docked chrome -- but the
+  // latter only for DISCRETE changes, never a region-resize drag (which moves
+  // floats itself; see clampUnanchoredFloatsToInsets).
   React.useEffect(() => {
     reanchorFloats();
-  }, [leftInset, rightInset, containerWidth, containerHeight, reanchorFloats]);
+    clampUnanchoredFloatsToInsets();
+  }, [leftInset, rightInset, reanchorFloats, clampUnanchoredFloatsToInsets]);
+
+  // Container/window resize: re-resolve SERVER-anchored floats only. Unanchored
+  // floats are edge-anchored + shrink-clamped by the container ResizeObserver
+  // above; double-handling here would fight it.
+  React.useEffect(() => {
+    reanchorFloats();
+  }, [containerWidth, containerHeight, reanchorFloats]);
 
   // A floating window's RENDERED size changing (e.g. an auto-height panel
   // finishing its first layout, or content growing) re-resolves requested floats
@@ -1817,10 +1863,18 @@ export function DockManager({
                       );
                       // Flush the width commit so this render updates
                       // reservedWidthRef (the canvas wrapper's new insets) before
-                      // we tell the host the canvas's new size.
-                      flushSync(() =>
-                        applyOp(ops.setRegionWidth(next, edge, total)),
-                      );
+                      // we tell the host the canvas's new size. Mark the commit as
+                      // drag-originated so the inset effect (which fires inside
+                      // this flushSync) doesn't ALSO re-clamp unanchored floats --
+                      // the drag already moved them flush with the seam.
+                      regionResizeDraggingRef.current = true;
+                      try {
+                        flushSync(() =>
+                          applyOp(ops.setRegionWidth(next, edge, total)),
+                        );
+                      } finally {
+                        regionResizeDraggingRef.current = false;
+                      }
                       // Hand the host (the 3D canvas) the AUTHORITATIVE new
                       // canvas size we just produced -- containerWidth minus the
                       // freshly-committed insets -- so it resizes the GL
