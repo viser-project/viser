@@ -97,6 +97,48 @@ export function anyBindingMatches(
   return bindings.some((b) => matchesDragBinding(b, input));
 }
 
+/** Plan emitted by :func:`planModifierTransition`: which lifecycle
+ * messages a mid-drag modifier change should produce. */
+export type DragModifierTransition = {
+  /** Send a ``phase="end"`` for the *current* (pre-switch) modifier
+   * before switching ownership. True iff a segment is currently active. */
+  emitEnd: boolean;
+  /** Send a ``phase="start"`` under the *new* modifier after switching.
+   * True iff the new combo matches a registered binding. */
+  emitStart: boolean;
+};
+
+/** Decide how an in-progress drag reacts to a mid-gesture modifier change.
+ *
+ * A single physical drag is partitioned into one logical segment per
+ * (button, modifier) combo. When the held modifier changes, the current
+ * segment is ended and -- if the new combo matches a registered binding --
+ * a fresh segment is started under it. The grab geometry (plane, grab
+ * point, instance) is preserved across the boundary by the caller, so the
+ * drag continues without a visual jump; only which callback set is
+ * addressed changes.
+ *
+ * If the new combo matches no binding the drag goes *dormant*: the
+ * physical gesture stays alive (camera locked, geometry retained) but no
+ * messages are sent, so the user's callbacks see properly paired
+ * start/end per bound combo. Re-entering a bound combo before release
+ * starts a fresh segment.
+ *
+ * Returns ``null`` when the modifier is unchanged (a no-op). */
+export function planModifierTransition(
+  current: KeyModifier | null,
+  next: KeyModifier | null,
+  bindings: DragBinding[],
+  button: PointerButton,
+  segmentActive: boolean,
+): DragModifierTransition | null {
+  if (next === current) return null;
+  return {
+    emitEnd: segmentActive,
+    emitStart: anyBindingMatches(bindings, { button, modifier: next }),
+  };
+}
+
 /** True when the held modifier includes cmd/ctrl. Used to gate browser
  * context-menu suppression: macOS raises a ``contextmenu`` event on
  * ctrl+click, and we only want to suppress it when the gesture is a
@@ -167,7 +209,20 @@ export type ActiveDragState = {
    * compute ``end_screen_pos`` and re-cast the pointer ray each
    * pointermove. */
   endPointerXy: [number, number];
+  /** Current (button, modifier) the drag is owned by. ``button`` is
+   * frozen at drag-start; ``modifier`` is *live* -- it switches when the
+   * held modifier changes mid-drag, partitioning the gesture into one
+   * segment per combo (see :func:`planModifierTransition`). */
   input: DragInput;
+  /** Registered drag bindings for this node, captured at drag-start.
+   * Used to decide whether a new modifier combo owns a segment or is
+   * dormant when the held modifier changes mid-drag. */
+  bindings: DragBinding[];
+  /** Whether an in-flight segment is currently active (a ``start`` was
+   * sent and its ``end`` hasn't). ``false`` while dormant -- the gesture
+   * is physically held but the current modifier matches no binding, so
+   * no messages are sent. */
+  segmentActive: boolean;
   /** Release for the camera-control lock held for the lifetime of
    * this drag. Called in `stopActiveDrag` (and on every cancel
    * path). Routing through `cameraLock` keeps a concurrent
