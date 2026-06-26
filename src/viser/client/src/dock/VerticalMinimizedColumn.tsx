@@ -158,7 +158,10 @@ export function VerticalMinimizedCell({
           }}
         >
           {inStack ? (
-            <GripPill width="1.2em" />
+            // Smaller + more subtle than a full grip pill: the cell is just a
+            // label in a minimized stack, and the parent handle is the primary
+            // drag/expand affordance.
+            <GripPill width="0.9em" opacity={0.35} />
           ) : (
             <HandleIconButton
               attrs={{ "data-dock-minimize": "true" }}

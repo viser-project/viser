@@ -5,7 +5,7 @@ import { Box, Collapse, ScrollArea } from "@mantine/core";
 import { IconMinus, IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
-import { stackGroupIdsOf } from "./layoutOps";
+import { findGroupLocation, stackGroupIdsOf } from "./layoutOps";
 import {
   dockBodyScroll,
   focusRing,
@@ -214,6 +214,10 @@ export function TabGroupFrame({
   const unmergeable = group.paneIds.some(
     (p) => panes[p]?.unmergeable === true,
   );
+  // Docked (vs floating/area): a DOCKED titleNode header (the main panel's
+  // connection-status bar) gets a thin top rule so it reads as separated from
+  // the region's top edge -- a floating window has its own chrome above it.
+  const docked = findGroupLocation(dock.layout, group.id)?.kind === "docked";
 
   // FLIP animation: when the tab order changes, each tab slides from its old
   // slot to its new one. We record each tab's offsetLeft and play the inverted
@@ -397,6 +401,14 @@ export function TabGroupFrame({
                   lineHeight: "1.5em",
                   padding: "0 0.75em",
                   fontWeight: 400,
+                  // Docked: a thin top rule separates the header from the
+                  // region's top edge (a floating window has its own chrome
+                  // above). Same gray as the bottom headerRule.
+                  ...(docked
+                    ? {
+                        borderTop: "1px solid var(--mantine-color-default-border)",
+                      }
+                    : {}),
                 }
               : {
                   height: TAB_ROW_EM,
