@@ -477,7 +477,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                       }}
                     />
                   )}
-                  <VerticalMinimizedCell group={group} />
+                  <VerticalMinimizedCell group={group} inStack={multi} />
                 </React.Fragment>
               );
             })}

@@ -10,7 +10,7 @@ import React from "react";
 import { useDock } from "./DockContext";
 import { gripBarBg, focusRing } from "./DockStyles.css";
 import { tabListKeyDown } from "./gestures";
-import { HandleIconButton } from "./handles";
+import { GripPill, HandleIconButton } from "./handles";
 import { DockEdge, DockNode, NodeId, TabGroup } from "./types";
 import { collectLeaves } from "./layoutOps";
 
@@ -56,7 +56,12 @@ export function VerticalMinimizedColumn({
                 }}
               />
             )}
-            <VerticalMinimizedCell nodeId={id} edge={edge} group={g} />
+            <VerticalMinimizedCell
+              nodeId={id}
+              edge={edge}
+              group={g}
+              inStack={leaves.length > 1}
+            />
           </React.Fragment>
         );
       })}
@@ -76,6 +81,7 @@ export function VerticalMinimizedCell({
   nodeId,
   edge,
   group,
+  inStack = false,
 }: {
   /** Docked only: the leaf's node id + region edge, emitted as
    * data-dock-leaf/-edge so collectTargets offers the cell as a docked drop
@@ -83,6 +89,11 @@ export function VerticalMinimizedCell({
   nodeId?: NodeId;
   edge?: DockEdge;
   group: TabGroup;
+  /** True when this cell is one of 2+ in a minimized stack. Then minimize/
+   * expand is owned by the parent stack handle, so the cell's cap is a plain
+   * drag-grip bar (no +) -- matching an expanded stacked panel's grip. A LONE
+   * minimized cell keeps its own + expand button. */
+  inStack?: boolean;
 }) {
   const dock = useDock();
   const docked = nodeId !== undefined && edge !== undefined;
@@ -95,9 +106,10 @@ export function VerticalMinimizedCell({
           //  - A specific tab ROW: a no-motion click expands to THAT tab; a drag
           //    tears out ONLY that pane into its own floating window (the rest of
           //    the stack stays docked) -- startTabTearOut.
-          //  - The cap / + button / empty area: a click expands the whole group;
-          //    a drag tears out the WHOLE group, STILL minimized (expanding is a
-          //    click-only gesture -- dragging the + never expands) -- startGroupDrag.
+          //  - The cap / empty area: drag tears out the WHOLE group, STILL
+          //    minimized. A LONE cell also expands on a no-motion click (its cap
+          //    is the + button); a STACKED cell does not -- minimize/expand is
+          //    owned by the parent stack handle, so its cap is a drag-only grip.
           const target = event.target as HTMLElement;
           const rowPane = target
             .closest("[data-dock-tab]")
@@ -106,9 +118,11 @@ export function VerticalMinimizedCell({
             dock.startTabTearOut(event, group.id, rowPane);
             return;
           }
-          dock.startGroupDrag(event, group.id, {
-            onClick: () => dock.toggleCollapsed(group.id),
-          });
+          dock.startGroupDrag(
+            event,
+            group.id,
+            inStack ? undefined : { onClick: () => dock.toggleCollapsed(group.id) },
+          );
         }}
         style={{
           width: "100%",
@@ -123,26 +137,42 @@ export function VerticalMinimizedCell({
           opacity: dock.draggingGroupId === group.id ? 0.4 : 1,
         }}
       >
-        {/* Gray cap holding just the expand button -- no grip pill: the +
-        IS the handle here (drag-through: motion drags the panel, dragging
-        from the + tears out the EXPANDED panel, a motionless click expands
-        in place; data-dock-minimize keeps the e2e helpers working). */}
+        {/* Gray cap. For a LONE minimized cell it holds the + expand button (the
+        + IS the handle: drag-through tears out the panel, a motionless click
+        expands in place). For a cell in a 2+ STACK, minimize/expand is owned by
+        the PARENT stack handle, so the cap is just a drag-grip pill -- no + --
+        matching an expanded stacked panel's grip bar. */}
         <Box
           className={gripBarBg}
-          style={{ flexShrink: 0, width: "100%" }}
+          style={{
+            flexShrink: 0,
+            width: "100%",
+            ...(inStack
+              ? {
+                  height: "1em",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }
+              : {}),
+          }}
         >
-          <HandleIconButton
-            attrs={{ "data-dock-minimize": "true" }}
-            label="Expand panel"
-            title="Expand"
-            expanded={false}
-            onActivate={() => dock.toggleCollapsed(group.id)}
-            dragThrough
-            // Static placement filling the cap (not bar-anchored).
-            placement={{ width: "100%", height: "1.7em" }}
-          >
-            <IconPlus size={12} />
-          </HandleIconButton>
+          {inStack ? (
+            <GripPill width="1.2em" />
+          ) : (
+            <HandleIconButton
+              attrs={{ "data-dock-minimize": "true" }}
+              label="Expand panel"
+              title="Expand"
+              expanded={false}
+              onActivate={() => dock.toggleCollapsed(group.id)}
+              dragThrough
+              // Static placement filling the cap (not bar-anchored).
+              placement={{ width: "100%", height: "1.7em" }}
+            >
+              <IconPlus size={12} />
+            </HandleIconButton>
+          )}
         </Box>
         {/* One row PER TAB: upright icon + rotated (book-spine) label. Each row
         is its own tab control -- click, or keyboard (Enter/Space to expand to
