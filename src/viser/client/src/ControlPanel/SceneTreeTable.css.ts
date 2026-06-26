@@ -4,7 +4,8 @@ import { vars } from "../AppTheme";
 export const tableWrapper = style({
   borderRadius: vars.radius.xs,
   padding: "0.1em 0",
-  overflowX: "auto",
+  // No own horizontal scroll: wide rows overflow into the panel body's single
+  // scrollbar instead of stacking a second one inside it (see SceneTreeTable).
   display: "flex",
   flexDirection: "column",
   gap: "0",
