@@ -945,6 +945,19 @@ export function DockManager({
     };
   };
 
+  // Width to float a docked item at. A MINIMIZED docked group/column renders as
+  // a ~strip-narrow cell, so its measured rect width is a useless panel width;
+  // float at the region's preserved EXPANDED width instead (regionWidth survives
+  // minimization) so it isn't strip-narrow after expanding. Expanded items keep
+  // their measured width. Shared by startGroupDrag (single tear-out) and
+  // startColumnDrag (whole-column undock) so neither re-introduces the bug.
+  const dockedFloatWidth = (
+    edge: DockEdge,
+    collapsed: boolean,
+    measuredWidth: number,
+  ): number =>
+    collapsed ? regionWidthsOf(layoutRef.current)[edge] : measuredWidth;
+
   // The grab offset = where in the dragged window the cursor pressed (so the
   // window tracks the cursor 1:1). `originX/originY` is the source's top-left in
   // container coords. When `winId` is given, clamp the offset into that floated
@@ -1063,18 +1076,12 @@ export function DockManager({
     armPress(event, (e) => {
       dragAfterCommit(e, () => {
         const rect = floatRectFor(`[data-dock-group="${groupId}"]`);
-        // A MINIMIZED docked group renders as a ~strip-narrow cell, so its
-        // measured width is meaningless as a panel width. Float it at the
-        // region's preserved EXPANDED width instead (regionWidth survives
-        // minimization for exactly this kind of restore) -- otherwise tearing
-        // out a minimized panel produces a ~96px-wide window that stays narrow
-        // after expand. Expanded groups keep their measured width.
         const loc = ops.findGroupLocation(layoutRef.current, groupId);
         const collapsed =
           layoutRef.current.groups[groupId]?.collapsed === true;
         const floatWidth =
           collapsed && loc?.kind === "docked"
-            ? regionWidthsOf(layoutRef.current)[loc.edge]
+            ? dockedFloatWidth(loc.edge, true, rect.width)
             : rect.width;
         // A panel whose body is a full-bleed nested area needs a definite
         // height to fill (it collapses to 0 in an auto-height window). Give
@@ -1124,17 +1131,10 @@ export function DockManager({
         // Measure the COLUMN wrapper (not the 1em handle): floatRectFor clamps
         // width/height into sane floating ranges, same as a group undock.
         const rect = floatRectFor(`[data-dock-column="${columnNodeId}"]`);
-        // A MINIMIZED column renders as a ~36px strip, so its measured width is
-        // a useless panel width; float at the region's preserved EXPANDED width
-        // instead (regionWidth survives minimization) -- otherwise undocking a
-        // minimized stack produces a strip-narrow window that stays tiny after
-        // expand. Expanded columns keep their measured width.
         const colNode = ops.treeFindNode(layoutRef.current.docked[edge], columnNodeId);
         const collapsed =
           colNode !== null && ops.isColumnMinimized(colNode, layoutRef.current.groups);
-        const floatWidth = collapsed
-          ? regionWidthsOf(layoutRef.current)[edge]
-          : rect.width;
+        const floatWidth = dockedFloatWidth(edge, collapsed, rect.width);
         const res = ops.floatColumn(
           layoutRef.current,
           edge,
