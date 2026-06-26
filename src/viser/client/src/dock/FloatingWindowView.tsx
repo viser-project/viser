@@ -70,6 +70,13 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
   const collapsed = win.stack.every(
     (id) => dock.groups[id]?.collapsed === true,
   );
+  // Minimize-all / expand-all for the whole stack: collapse every group (tagging
+  // those that were expanded) or restore that remembered min/max mix. Shared by
+  // the expanded header and the minimized-strip parent handle.
+  const toggleAll = () =>
+    dock.api.apply((l) =>
+      collapsed ? expandStack(l, win.stack) : minimizeStack(l, win.stack),
+    );
   // The pinned px height, or undefined when the window auto-sizes to content.
   const pinnedPx = pinnedPxOf(win.height);
   const fixedHeight = pinnedPx !== undefined && !collapsed;
@@ -429,10 +436,14 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         {collapsed ? (
           // Fully-minimized FLOATING window: render as a narrow vertical strip
           // -- one book-spine cell per group -- exactly like a minimized DOCKED
-          // column, for visual consistency. No window header: each cell's own +
-          // cap expands it (and the cell is the drag/tear-out handle), matching
-          // the docked strip. The window is already a drop target via its
-          // [data-floating-window] scan, so the cells pass no nodeId/edge.
+          // column, for visual consistency. A MULTI-group stack keeps its parent
+          // header (the same StackHandleBar as docked / expanded), so the whole
+          // stack stays draggable and expandable-as-one from a single + above
+          // the cells; each cell's own + cap still expands/tears just that
+          // group. A single group needs no parent header -- its own cell cap
+          // expands it and drags the window. The window is already a drop target
+          // via its [data-floating-window] scan, so the cells pass no
+          // nodeId/edge.
           <Box
             style={{
               display: "flex",
@@ -441,6 +452,17 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
               backgroundColor: "var(--mantine-color-body)",
             }}
           >
+            {multi && (
+              <StackHandleBar
+                attrs={{ "data-floating-handle": win.id }}
+                onPointerDown={(event) =>
+                  dock.startWindowDrag(event, win.id, { onClick: toggleAll })
+                }
+                collapsed
+                narrow
+                onToggle={toggleAll}
+              />
+            )}
             {win.stack.map((groupId, index) => {
               const group = dock.groups[groupId];
               if (group === undefined) return null;
@@ -468,19 +490,16 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         group also keeps its own grip bar (which tears it out). A single group
         needs no header -- its own grip bar moves the window. The header's
         minimize-all button collapses every group at once (and restores the
-        previous min/max mix on expand). */}
+        previous min/max mix on expand). A motionless press toggles (via the
+        drag-starter's onClick, since the + is dragThrough); motion drags. */}
         {multi && (
           <StackHandleBar
             attrs={{ "data-floating-handle": win.id }}
-            onPointerDown={(event) => dock.startWindowDrag(event, win.id)}
-            collapsed={collapsed}
-            onToggle={() =>
-              dock.api.apply((l) =>
-                collapsed
-                  ? expandStack(l, win.stack)
-                  : minimizeStack(l, win.stack),
-              )
+            onPointerDown={(event) =>
+              dock.startWindowDrag(event, win.id, { onClick: toggleAll })
             }
+            collapsed={collapsed}
+            onToggle={toggleAll}
           />
         )}
 

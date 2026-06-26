@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from playwright.sync_api import Page  # noqa: E402
 
-from .dock_helpers import columns, dock_layout, set_layout, stack, window
+from .dock_helpers import columns, dock_layout, group, set_layout, stack, window
 from .dock_helpers import drag as _drag
 from .dock_helpers import group_id_for_panel as _group_id_for_panel
 from .dock_helpers import open_playground as _open
@@ -138,6 +138,105 @@ def test_column_handle_floats_whole_stack(dock_context, vite_server: int) -> Non
         assert state["dockedRight"] is None
         assert state["hasWeights"]
         assert page.locator("[data-dock-column-handle]").count() == 0
+    finally:
+        page.close()
+
+
+def test_minimized_column_parent_handle_tears_out_whole_stack(
+    dock_context, vite_server: int
+) -> None:
+    """A FULLY-minimized docked column keeps its parent handle (the + above the
+    cells); DRAGGING that handle tears the whole stack out as one floating
+    window (it must not just toggle). Regression: the parent +'s button used to
+    swallow the press, so the stack couldn't be dragged out at all."""
+    page = _open(dock_context, vite_server)
+    try:
+        # Arrange: a 2-leaf vertical column docked right, both minimized.
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=stack(
+                    group("inspector", collapsed=True),
+                    group("controls", collapsed=True),
+                )
+            ),
+        )
+        handle = page.locator("[data-dock-column-handle]")
+        assert handle.count() == 1
+        box = handle.first.bounding_box()
+        assert box is not None
+        _drag(
+            page,
+            (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2),
+            (450, 450),
+            steps=18,
+        )
+        state = page.evaluate(
+            """() => {
+                const l = window.__dockLayout;
+                const win = l.floating.find((w) => w.stack.length === 2);
+                return {
+                    dockedRight: l.docked.right,
+                    panes: win
+                        ? win.stack.flatMap((g) => l.groups[g].paneIds)
+                        : [],
+                };
+            }"""
+        )
+        assert state["dockedRight"] is None, "whole column should have left the dock"
+        assert set(state["panes"]) == {"inspector", "controls"}
+    finally:
+        page.close()
+
+
+def test_floating_minimized_stack_has_draggable_parent_handle(
+    dock_context, vite_server: int
+) -> None:
+    """A fully-minimized FLOATING multi-group stack shows the SAME parent + handle
+    as docked/expanded (for consistency); dragging it moves the whole window and
+    clicking it expands every group."""
+    page = _open(dock_context, vite_server)
+    try:
+        set_layout(
+            page,
+            dock_layout(
+                floating=[
+                    window(
+                        group("controls", collapsed=True),
+                        group("inspector", collapsed=True),
+                        x=300,
+                        y=200,
+                        width=280,
+                    )
+                ]
+            ),
+        )
+        handle = page.locator("[data-floating-handle]")
+        assert handle.count() == 1, "minimized floating stack should show a parent +"
+
+        # Dragging the parent handle moves the whole window.
+        box = handle.first.bounding_box()
+        assert box is not None
+        before = page.evaluate("() => window.__dockLayout.floating[0].x")
+        _drag(
+            page,
+            (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2),
+            (700, 500),
+            steps=18,
+        )
+        after = page.evaluate("() => window.__dockLayout.floating[0].x")
+        assert abs(after - before) > 50, "dragging the parent handle should move it"
+
+        # Clicking the parent handle's + (synthetic click) expands every group.
+        page.eval_on_selector(
+            "[data-floating-handle] [data-dock-minimize-all]", "e => e.click()"
+        )
+        page.wait_for_timeout(150)
+        all_expanded = page.evaluate(
+            """() => window.__dockLayout.floating[0].stack.every(
+                (g) => window.__dockLayout.groups[g].collapsed !== true)"""
+        )
+        assert all_expanded, "clicking the parent + should expand all groups"
     finally:
         page.close()
 

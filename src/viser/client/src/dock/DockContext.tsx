@@ -56,11 +56,14 @@ export interface DockContextValue {
     },
   ) => void;
   /** Begin dragging a whole top-level docked column by its slim handle: floats
-   * the column as one stacked window, then drags it. */
+   * the column as one stacked window, then drags it. A no-motion press fires
+   * `opts.onClick` if given -- the minimized stack's parent + handle uses this
+   * to expand-all on click while still dragging the whole column on motion. */
   startColumnDrag: (
     event: React.PointerEvent<HTMLElement>,
     edge: DockEdge,
     columnNodeId: NodeId,
+    opts?: { onClick?: () => void },
   ) => void;
   /** Begin a press on a tab: a click activates it, a drag tears the panel out
    * into its own floating window. */
@@ -79,10 +82,14 @@ export interface DockContextValue {
     groupId: GroupId,
     paneId: PaneId,
   ) => void;
-  /** Drag the entire floating window (its whole snap-stack) by its header. */
+  /** Drag the entire floating window (its whole snap-stack) by its header. A
+   * no-motion press fires `opts.onClick` if given -- the minimized floating
+   * stack's parent + handle uses this to expand-all on click while still
+   * dragging the whole window on motion. */
   startWindowDrag: (
     event: React.PointerEvent<HTMLElement>,
     windowId: string,
+    opts?: { onClick?: () => void },
   ) => void;
   activateTab: (groupId: GroupId, paneId: PaneId) => void;
   /** Select a tab AND expand the group if minimized -- clicking a tab to read it

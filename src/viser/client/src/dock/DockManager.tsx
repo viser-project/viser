@@ -967,6 +967,7 @@ export function DockManager({
   const startWindowDrag: DockContextValue["startWindowDrag"] = (
     event,
     windowId,
+    opts,
   ) => {
     if (layoutRef.current.floating.every((w) => w.id !== windowId)) return;
     // Press-time POINTER coordinates, but the window's CURRENT model position
@@ -975,16 +976,27 @@ export function DockManager({
     // position would teleport it back on the first drag frame.
     const pressX = event.clientX;
     const pressY = event.clientY;
-    armPress(event, (e) => {
-      const win = layoutRef.current.floating.find((w) => w.id === windowId);
-      if (win === undefined) return;
-      const { grabX, grabY } = grabOffset(
-        { clientX: pressX, clientY: pressY },
-        win.x,
-        win.y,
-      );
-      beginWindowDrag(windowId, null, e.pointerId, e.pointerType, grabX, grabY);
-    });
+    armPress(
+      event,
+      (e) => {
+        const win = layoutRef.current.floating.find((w) => w.id === windowId);
+        if (win === undefined) return;
+        const { grabX, grabY } = grabOffset(
+          { clientX: pressX, clientY: pressY },
+          win.x,
+          win.y,
+        );
+        beginWindowDrag(
+          windowId,
+          null,
+          e.pointerId,
+          e.pointerType,
+          grabX,
+          grabY,
+        );
+      },
+      opts?.onClick,
+    );
   };
 
   const startGroupDrag: DockContextValue["startGroupDrag"] = (
@@ -1105,8 +1117,11 @@ export function DockManager({
     event,
     edge,
     columnNodeId,
+    opts,
   ) => {
-    armPress(event, (e) => {
+    armPress(
+      event,
+      (e) => {
       dragAfterCommit(e, () => {
         // Measure the COLUMN wrapper (not the 1em handle): floatRectFor clamps
         // width/height into sane floating ranges, same as a group undock.
@@ -1137,7 +1152,9 @@ export function DockManager({
           ...grabOffset(e, rect.x, rect.y, res.windowId),
         };
       });
-    });
+      },
+      opts?.onClick,
+    );
   };
 
   const startTabDrag: DockContextValue["startTabDrag"] = (

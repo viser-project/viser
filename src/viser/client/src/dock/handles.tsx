@@ -118,7 +118,14 @@ export function HandleIconButton({
  * With `onToggle`, the bar gets a minimize-ALL button: it minimizes every
  * child group (tagging the ones that were expanded), and -- when every child
  * is minimized -- expands them back to that remembered mix (see
- * minimizeStack/expandStack in layoutOps). */
+ * minimizeStack/expandStack in layoutOps).
+ *
+ * The toggle button is `dragThrough`: a real pointer press flows to the bar's
+ * own onPointerDown (the click-vs-drag arbiter), so dragging the + still drags
+ * the whole stack out and only a motionless click toggles. Callers must
+ * therefore pass `onToggle` as the drag-starter's `onClick` too (the bar's
+ * onPointerDown), so the motionless-press toggle fires; `onActivate` here then
+ * only handles keyboard / synthetic activation. */
 export function StackHandleBar({
   onPointerDown,
   attrs,
@@ -160,6 +167,9 @@ export function StackHandleBar({
           title={collapsed ? "Expand all" : "Minimize all"}
           expanded={!collapsed}
           onActivate={onToggle}
+          // Press flows to the bar's drag gesture (drag = tear out the whole
+          // stack; motionless click = toggle, via the drag-starter's onClick).
+          dragThrough
           placement={
             narrow
               ? { position: "relative", width: "100%", height: "100%" }
