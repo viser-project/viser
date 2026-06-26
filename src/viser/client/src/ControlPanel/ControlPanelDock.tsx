@@ -31,7 +31,6 @@ import { shallowArrayEqual } from "../utils/shallowArrayEqual";
 import { controlWidthPx } from "./controlWidth";
 import { CONTROL_PANEL_ID } from "./controlPanelId";
 import type { PanelPlacementState } from "./GuiState";
-import logoSvg from "../assets/logo.svg";
 
 // Memoized so a torn-out tab's whole GUI tree doesn't re-render every time
 // unrelated dock state changes (it only depends on its container uuid).
@@ -108,13 +107,6 @@ export function ControlPanelDockSurface({
       [CONTROL_PANEL_ID]: {
         id: CONTROL_PANEL_ID,
         title: label || "Control panel",
-        icon: (
-          <img
-            src={logoSvg}
-            alt=""
-            style={{ width: "1.1em", height: "auto", display: "block" }}
-          />
-        ),
         unmergeable: true,
         unpadded: true,
         titleNode: (
