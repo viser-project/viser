@@ -523,6 +523,54 @@ describe("dropOnDockedLeaf", () => {
   });
 });
 
+// Seam equivalence: in a side-by-side region [b | a], inserting a new column on
+// the A|B seam must resolve to the SAME order whether the user aims at the RIGHT
+// band of the left panel (split right of b) or the LEFT band of the right panel
+// (split left of a). Both are the "between b and a" insert -> [b, c, a].
+//
+// This is the pure-layout counterpart of the e2e
+// test_right_of_A_and_left_of_B_are_the_same_seam_insert (dropzones), which
+// opened TWO full browser sessions to assert the same equivalence by reading
+// rendered column geometry. Here it is deterministic and free.
+describe("dropOnDockedLeaf seam equivalence (right-of-left == left-of-right)", () => {
+  // Left region holds row [b | a] with fixed leaf ids Lb / La.
+  function sideBySide(): DockLayout {
+    const l = emptyLayout();
+    l.docked.left = {
+      type: "split",
+      id: "S",
+      dir: "row",
+      weight: 1,
+      children: [
+        { type: "leaf", id: "Lb", group: "b", weight: 1 },
+        { type: "leaf", id: "La", group: "a", weight: 1 },
+      ],
+    };
+    l.groups = { a: group("a"), b: group("b"), c: group("c") };
+    l.floating = [
+      { id: "w", x: 0, y: 0, width: 280, height: { mode: "auto" }, stack: ["c"] },
+    ];
+    return l;
+  }
+
+  it("both seam approaches insert c between b and a -> [b, c, a]", () => {
+    // Aim at the RIGHT band of the left panel (b): split right of b.
+    const rightOfB = dropOnDockedLeaf(sideBySide(), ["c"], "left", "Lb", "right");
+    // Aim at the LEFT band of the right panel (a): split left of a.
+    const leftOfA = dropOnDockedLeaf(sideBySide(), ["c"], "left", "La", "left");
+
+    const order = (l: DockLayout) => groupsInTree(l.docked.left);
+    expect(order(rightOfB)).toEqual(["b", "c", "a"]);
+    expect(order(leftOfA)).toEqual(["b", "c", "a"]);
+    // The equivalence claim itself: identical left-to-right column order.
+    expect(order(rightOfB)).toEqual(order(leftOfA));
+    // c lands in the MIDDLE (between the two originals), and no panel is lost.
+    expect(order(rightOfB)[1]).toBe("c");
+    expect(refCount(rightOfB, "c")).toBe(1);
+    expect(rightOfB.floating).toHaveLength(0);
+  });
+});
+
 // regression: dropOnDockedLeaf with a non-center region, where the dragged set
 // includes the target leaf's own group, used to orphan/lose the dragged group
 // (was HIGH). FIX: re-find the target leaf AFTER detach; if it's gone (a
