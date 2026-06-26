@@ -41,8 +41,11 @@ def main() -> None:
 
     server.scene.add_frame("/axes", axes_length=1.0, axes_radius=0.02)
 
-    # A panel docked to the right edge, with two tabs.
-    stats_panel = server.gui.add_panel()
+    # A panel docked to the right edge, with two tabs. All panels here start
+    # minimized via the one-shot `expand_by_default=False` hint -- they render as
+    # handles/strips the user can click to expand; the user controls collapse and
+    # expand thereafter.
+    stats_panel = server.gui.add_panel(expand_by_default=False)
     with stats_panel.add_tab("Stats", viser.Icon.CHART_BAR):
         counter = server.gui.add_number("Counter", initial_value=0, disabled=True)
         server.gui.add_markdown("Live values update in this docked panel.")
@@ -54,14 +57,12 @@ def main() -> None:
     # A floating panel at an explicit position. x/y are viewport-relative (the
     # canvas inside docked panels), so this stays clear of the left-docked main
     # panel below and shifts if the docked regions change.
-    tools_panel = server.gui.add_panel()
+    tools_panel = server.gui.add_panel(expand_by_default=False)
     with tools_panel.add_tab("Tools", viser.Icon.TOOL):
         randomize = server.gui.add_button("Randomize point cloud")
     tools_panel.float(x=30, y=30, width=260)
 
-    # A panel stacked below the docked stats panel (a column split). It starts
-    # minimized via the one-shot `expand_by_default=False` hint; the user can
-    # expand it by clicking its handle.
+    # A panel stacked below the docked stats panel (a column split).
     log_panel = server.gui.add_panel(expand_by_default=False)
     with log_panel.add_tab("Log", viser.Icon.TERMINAL):
         log = server.gui.add_markdown("Waiting for events...")
