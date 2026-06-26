@@ -510,6 +510,11 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                   minHeight: 0,
                   display: "flex",
                   flexDirection: "column",
+                  // If the pinned height is too short to fit every cell at its
+                  // min-content (e.g. a 3-panel stack squeezed very short), the
+                  // stack SCROLLS rather than letting cells collapse below their
+                  // headers and overlap each other.
+                  overflowY: "auto",
                 }
               : {}
           }
@@ -565,7 +570,12 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                       flexGrow: collapsedCell ? 0 : weight,
                       flexShrink: collapsedCell ? 0 : 1,
                       flexBasis: collapsedCell ? "auto" : 0,
-                      minHeight: 0,
+                      // Never shrink below a cell's header: minHeight:0 let an
+                      // over-short window collapse a cell under its header,
+                      // clipping it and overlapping the next cell. Floor at the
+                      // min stack-cell height; the stack scrolls when the sum
+                      // exceeds the window.
+                      minHeight: collapsedCell ? 0 : MIN_STACK_CELL_PX,
                       display: "flex",
                       flexDirection: "column",
                     }}
