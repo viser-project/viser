@@ -69,6 +69,16 @@ export interface DockContextValue {
     groupId: GroupId,
     paneId: PaneId,
   ) => void;
+  /** Begin a press on ONE tab row of a MINIMIZED docked stack: a drag tears out
+   * just that pane into its own floating window (the rest of the stack stays
+   * docked); a no-motion click expands the group to that tab. Unlike
+   * startTabDrag this has no reorder phase -- a minimized strip is vertical and
+   * its tabs are wayfinding rows, not a horizontal reorder strip. */
+  startTabTearOut: (
+    event: React.PointerEvent<HTMLElement>,
+    groupId: GroupId,
+    paneId: PaneId,
+  ) => void;
   /** Drag the entire floating window (its whole snap-stack) by its header. */
   startWindowDrag: (
     event: React.PointerEvent<HTMLElement>,

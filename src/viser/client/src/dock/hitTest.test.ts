@@ -365,6 +365,71 @@ describe("region edge zones", () => {
 });
 
 // ===========================================================================
+// Docking to the OUTER edge of a fully-minimized region (a narrow strip).
+// A minimized region renders as a ~36px strip -- narrower than REGION_SIDE_PX
+// (40) -- so the inner and outer side bands would overlap. They're capped at
+// half the region width so the OUTER edge stays reachable (dock a new outer
+// column beside the minimized strip), matching an expanded region.
+// ===========================================================================
+describe("outer-edge dock beside a minimized region strip", () => {
+  const STRIP = 36; // MINIMIZED_STRIP_PX
+  // Rendered reserved width of a fully-minimized region is the strip width.
+  const STRIP_W: Record<DockEdge, number> = { left: STRIP, right: STRIP };
+  const stripLeft = CONTAINER.width - STRIP; // right region flush at screen edge
+
+  function collapsedRightTarget(
+    groupId: GroupId,
+    nodeId: string,
+    r: DOMRect,
+  ): GroupTarget {
+    return {
+      groupId,
+      rect: r,
+      stripRect: null,
+      tabs: [],
+      ctx: { kind: "docked", nodeId, edge: "right" },
+      collapsed: true,
+    };
+  }
+
+  it("multi-panel minimized strip: outer half -> regionEdge right (new outer column)", () => {
+    const top = leaf("g1");
+    const bot = leaf("g2");
+    const tree = colSplit([top, bot]); // two stacked rows -> left/right span both
+    const layout = layoutWith({ right: tree });
+    const t1 = collapsedRightTarget("g1", (top as any).id, rect(stripLeft, 0, STRIP, 400));
+    const t2 = collapsedRightTarget("g2", (bot as any).id, rect(stripLeft, 400, STRIP, 400));
+    // At the very outer (screen) edge: previously the 40px inner band swallowed
+    // the whole 36px strip and this resolved to regionEdge "left" -- there was
+    // no way to dock a new outer column. Now the outer half wins.
+    const out = run(layout, [t1, t2], CONTAINER.width - 1, 200, STRIP_W)!;
+    expect(out.result).toEqual({ kind: "regionEdge", edge: "right", side: "right" });
+  });
+
+  it("multi-panel minimized strip: inner half still -> regionEdge left", () => {
+    const top = leaf("g1");
+    const bot = leaf("g2");
+    const tree = colSplit([top, bot]);
+    const layout = layoutWith({ right: tree });
+    const t1 = collapsedRightTarget("g1", (top as any).id, rect(stripLeft, 0, STRIP, 400));
+    const t2 = collapsedRightTarget("g2", (bot as any).id, rect(stripLeft, 400, STRIP, 400));
+    const out = run(layout, [t1, t2], stripLeft + 1, 200, STRIP_W)!;
+    expect(out.result).toEqual({ kind: "regionEdge", edge: "right", side: "left" });
+  });
+
+  it("single-leaf minimized strip: outer edge -> split right (new outer column)", () => {
+    const node = leaf("g");
+    const layout = layoutWith({ right: node });
+    const tgt = collapsedRightTarget("g", node.id, rect(stripLeft, 0, STRIP, 800));
+    // A single leaf suppresses the region-edge bands, so the collapsed 5-way
+    // (3z) handles it: the outer band maps to a per-panel "right" split, which
+    // builds [target, dragged] -> the dragged panel becomes the new outer column.
+    const out = run(layout, [tgt], CONTAINER.width - 1, 400, STRIP_W)!;
+    expect(out.result).toMatchObject({ kind: "split", region: "right" });
+  });
+});
+
+// ===========================================================================
 // Per-panel 5-way for a docked group
 // ===========================================================================
 describe("docked group per-panel zones", () => {

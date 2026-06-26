@@ -324,6 +324,13 @@ export function hitTest(
     // per-panel split, just region-wide. (Previously a translucent half-region
     // "ghost" rectangle, which read inconsistently next to the per-panel lines.)
     const t = 3;
+    // Cap each left/right side band at HALF the region width so the inner and
+    // outer bands never overlap. A fully-minimized region renders as a ~36px
+    // strip -- narrower than REGION_SIDE_PX (40) -- so without the cap the inner
+    // (canvas-facing) band would cover the whole strip and the OUTER edge could
+    // never be hit (you couldn't dock a new outer column beside a minimized
+    // region). With the cap the outer half resolves to the outer-edge dock.
+    const sideBand = Math.min(REGION_SIDE_PX, w / 2);
 
     // Top / bottom: full-width line above/below everything.
     if (cy < REGION_EDGE_PX && !edgeIsSingleLeaf(tree, "top")) {
@@ -345,13 +352,13 @@ export function hitTest(
       };
     }
     // Left / right (inner *and* outer): full-height line beside all rows.
-    if (cx - regionLeft < REGION_SIDE_PX && !edgeIsSingleLeaf(tree, "left")) {
+    if (cx - regionLeft < sideBand && !edgeIsSingleLeaf(tree, "left")) {
       return {
         result: { kind: "regionEdge", edge, side: "left" },
         hint: { left: regionLeft, top: 0, width: t, height: crect.height, variant: "line" },
       };
     }
-    if (regionRight - cx < REGION_SIDE_PX && !edgeIsSingleLeaf(tree, "right")) {
+    if (regionRight - cx < sideBand && !edgeIsSingleLeaf(tree, "right")) {
       return {
         result: { kind: "regionEdge", edge, side: "right" },
         hint: {

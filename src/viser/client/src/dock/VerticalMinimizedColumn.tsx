@@ -64,44 +64,50 @@ export function VerticalMinimizedColumn({
   );
 }
 
-function VerticalMinimizedCell({
+/** One fully-minimized group rendered as a narrow vertical strip cell: an
+ * upright + cap and one book-spine row per tab. Used both for DOCKED minimized
+ * columns (pass nodeId/edge so the cell becomes a 5-way docked drop target) and
+ * for a minimized FLOATING window (no nodeId/edge -- the floating window is
+ * already a drop target via its own [data-floating-window] scan). The
+ * click/drag gestures are identical in both contexts: the dock context resolves
+ * group.id's current location, so startGroupDrag moves/tears the floating
+ * window and startTabTearOut tears a single pane out of either. */
+export function VerticalMinimizedCell({
   nodeId,
   edge,
   group,
 }: {
-  nodeId: NodeId;
-  edge: DockEdge;
+  /** Docked only: the leaf's node id + region edge, emitted as
+   * data-dock-leaf/-edge so collectTargets offers the cell as a docked drop
+   * target. Omitted for a floating cell. */
+  nodeId?: NodeId;
+  edge?: DockEdge;
   group: TabGroup;
 }) {
   const dock = useDock();
-  return (
-    // data-dock-leaf/-edge on the cell so collectTargets offers it as a docked
-    // target; hitTest's collapsed branch gives it the 5-way drop zones.
-    <Box
-      data-dock-leaf={nodeId}
-      data-dock-edge={edge}
-      // flexShrink:0 so cells keep their content height and the column SCROLLS
-      // (via the Paper's overflowY) when they don't all fit, rather than
-      // compressing and clipping. flexGrow:1 still lets a few cells share the
-      // space when there's room.
-      style={{ flexGrow: 1, flexShrink: 0, minHeight: 0, display: "flex", width: "100%" }}
-    >
+  const docked = nodeId !== undefined && edge !== undefined;
+  const inner = (
       <Box
         data-dock-group={group.id}
         data-dock-collapsed="true"
         onPointerDown={(event) => {
-          // Which tab row was pressed (if any)? A no-motion click expands to
-          // THAT tab; a press elsewhere (cap/empty area) just expands. A drag
-          // tears the panel out; a drag from the + button tears it out expanded.
+          // Which tab row was pressed (if any)? Two distinct drag behaviors:
+          //  - A specific tab ROW: a no-motion click expands to THAT tab; a drag
+          //    tears out ONLY that pane into its own floating window (the rest of
+          //    the stack stays docked) -- startTabTearOut.
+          //  - The cap / + button / empty area: a click expands the whole group;
+          //    a drag tears out the WHOLE group (a drag from the + button tears
+          //    it out EXPANDED) -- startGroupDrag, as before.
           const target = event.target as HTMLElement;
           const rowPane = target
             .closest("[data-dock-tab]")
             ?.getAttribute("data-dock-tab");
+          if (rowPane !== null && rowPane !== undefined) {
+            dock.startTabTearOut(event, group.id, rowPane);
+            return;
+          }
           dock.startGroupDrag(event, group.id, {
-            onClick: () =>
-              rowPane !== null && rowPane !== undefined
-                ? dock.expandToTab(group.id, rowPane)
-                : dock.toggleCollapsed(group.id),
+            onClick: () => dock.toggleCollapsed(group.id),
             expandOnDrag: target.closest("[data-dock-minimize]") !== null,
           });
         }}
@@ -234,6 +240,25 @@ function VerticalMinimizedCell({
           })}
         </Box>
       </Box>
+  );
+  // Docked: wrap in a data-dock-leaf/-edge Box so collectTargets offers the cell
+  // as a docked drop target (hitTest's collapsed branch then gives it the 5-way
+  // drop zones). Floating: no wrapper attrs -- the floating window is already a
+  // drop target via the [data-floating-window] scan, and the cell must fill the
+  // window's width.
+  return docked ? (
+    <Box
+      data-dock-leaf={nodeId}
+      data-dock-edge={edge}
+      // flexShrink:0 so cells keep their content height and the column SCROLLS
+      // (via the Paper's overflowY) when they don't all fit, rather than
+      // compressing and clipping. flexGrow:1 still lets a few cells share the
+      // space when there's room.
+      style={{ flexGrow: 1, flexShrink: 0, minHeight: 0, display: "flex", width: "100%" }}
+    >
+      {inner}
     </Box>
+  ) : (
+    inner
   );
 }

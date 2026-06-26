@@ -15,12 +15,14 @@ import {
 } from "./layoutOps";
 import { StackHandleBar } from "./handles";
 import { TabGroupFrame } from "./TabGroupFrame";
+import { VerticalMinimizedCell } from "./VerticalMinimizedColumn";
 import {
   clamp,
   FloatingWindow,
   GroupId,
   MIN_REGION_GRAB_PX,
   MIN_WINDOW_HEIGHT_PX,
+  MINIMIZED_STRIP_PX,
   pinnedPxOf,
   TabGroup,
 } from "./types";
@@ -359,7 +361,12 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         position: "absolute",
         left: win.x,
         top: win.y,
-        width: win.width,
+        // A fully-minimized window renders as a narrow vertical strip (matching a
+        // minimized DOCKED column), so it ignores the panel width just like it
+        // ignores the pinned height. win.width is preserved for restore on
+        // expand (handled by the per-cell + cap, which floats at the region/panel
+        // width).
+        width: collapsed ? MINIMIZED_STRIP_PX : win.width,
         height: collapsed ? undefined : renderedHeight,
         zIndex,
         overflow: "visible",
@@ -371,10 +378,14 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
           : {}),
       }}
     >
-      {/* Edge resize grips. */}
-      <ResizeGrip edge="left" onPointerDown={widthResizeHandler("left")} />
-      <ResizeGrip edge="right" onPointerDown={widthResizeHandler("right")} />
-      {/* No vertical / corner resize when minimized -- nothing to resize. */}
+      {/* Edge resize grips. None when minimized -- the strip is fixed-size
+      chrome (matching a docked minimized column), nothing to resize. */}
+      {!collapsed && (
+        <>
+          <ResizeGrip edge="left" onPointerDown={widthResizeHandler("left")} />
+          <ResizeGrip edge="right" onPointerDown={widthResizeHandler("right")} />
+        </>
+      )}
       {!collapsed && (
         <>
           <ResizeGrip
@@ -415,6 +426,44 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
             : {}),
         }}
       >
+        {collapsed ? (
+          // Fully-minimized FLOATING window: render as a narrow vertical strip
+          // -- one book-spine cell per group -- exactly like a minimized DOCKED
+          // column, for visual consistency. No window header: each cell's own +
+          // cap expands it (and the cell is the drag/tear-out handle), matching
+          // the docked strip. The window is already a drop target via its
+          // [data-floating-window] scan, so the cells pass no nodeId/edge.
+          <Box
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              width: "100%",
+              backgroundColor: "var(--mantine-color-body)",
+            }}
+          >
+            {win.stack.map((groupId, index) => {
+              const group = dock.groups[groupId];
+              if (group === undefined) return null;
+              return (
+                <React.Fragment key={groupId}>
+                  {index > 0 && (
+                    <Box
+                      style={{
+                        height: 1,
+                        flexShrink: 0,
+                        backgroundColor:
+                          "var(--mantine-color-default-border)",
+                        opacity: 0.5,
+                      }}
+                    />
+                  )}
+                  <VerticalMinimizedCell group={group} />
+                </React.Fragment>
+              );
+            })}
+          </Box>
+        ) : (
+        <>
         {/* For a multi-group stack, a window header drags the whole window; each
         group also keeps its own grip bar (which tears it out). A single group
         needs no header -- its own grip bar moves the window. The header's
@@ -513,6 +562,8 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
             );
           })}
         </Box>
+        </>
+        )}
       </Box>
     </Paper>
   );

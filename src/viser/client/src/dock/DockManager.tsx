@@ -1401,12 +1401,73 @@ export function DockManager({
     );
   };
 
+  // Tear ONE pane out of a minimized docked stack. The minimized strip shows
+  // each tab as a row; dragging a row should float JUST that pane (leaving the
+  // rest of the stack docked), while a motionless click expands the group to
+  // that tab. Mirrors the docked tear path of startGroupDrag (armPress ->
+  // dragAfterCommit, with the new window floated at the region's preserved
+  // EXPANDED width so the result isn't a strip-narrow stub), but tears a single
+  // pane via tearOutPane instead of floating the whole group. No reorder phase:
+  // a vertical strip's rows aren't a horizontal reorder surface.
+  const startTabTearOut: DockContextValue["startTabTearOut"] = (
+    event,
+    groupId,
+    paneId,
+  ) => {
+    armPress(
+      event,
+      (e) => {
+        dragAfterCommit(e, () => {
+          const rect = floatRectFor(`[data-dock-group="${groupId}"]`);
+          // A minimized cell is strip-narrow, so its measured width is a poor
+          // panel width; float at the region's preserved expanded width.
+          const loc = ops.findGroupLocation(layoutRef.current, groupId);
+          const collapsed =
+            layoutRef.current.groups[groupId]?.collapsed === true;
+          const floatWidth =
+            collapsed && loc?.kind === "docked"
+              ? regionWidthsOf(layoutRef.current)[loc.edge]
+              : rect.width;
+          const res = ops.tearOutPane(
+            layoutRef.current,
+            groupId,
+            paneId,
+            rect.x,
+            rect.y,
+            floatWidth,
+          );
+          // No-op (pane not in the group / area group): nothing floated.
+          if (res.windowId === null) return null;
+          const newWindowId = res.windowId;
+          // The torn pane floats EXPANDED -- a minimized stub would be useless.
+          flushSync(() =>
+            applyOp(
+              res.floatingGroupId !== null
+                ? ops.expandGroup(res.layout, res.floatingGroupId)
+                : res.layout,
+            ),
+          );
+          // Clamp the grab into the freshly-floated window (the source strip is
+          // region-tall; the result is a short window).
+          return {
+            windowId: newWindowId,
+            groupIdForDim: res.floatingGroupId,
+            ...grabOffset(e, rect.x, rect.y, newWindowId),
+          };
+        });
+      },
+      // No-motion click: expand the group to this tab (reveal its content).
+      () => expandToTab(groupId, paneId),
+    );
+  };
+
   // The gesture starters above are recreated each render (they close over
   // fresh props); expose STABLE wrappers so the memoized context value below
   // doesn't churn identity on every render.
   const gestureImpls = {
     startGroupDrag,
     startTabDrag,
+    startTabTearOut,
     startWindowDrag,
     startColumnDrag,
   };
@@ -1418,6 +1479,8 @@ export function DockManager({
         startGroupDrag: (...args) =>
           gestureRef.current.startGroupDrag(...args),
         startTabDrag: (...args) => gestureRef.current.startTabDrag(...args),
+        startTabTearOut: (...args) =>
+          gestureRef.current.startTabTearOut(...args),
         startWindowDrag: (...args) =>
           gestureRef.current.startWindowDrag(...args),
         startColumnDrag: (...args) =>
@@ -1426,6 +1489,7 @@ export function DockManager({
         DockContextValue,
         | "startGroupDrag"
         | "startTabDrag"
+        | "startTabTearOut"
         | "startWindowDrag"
         | "startColumnDrag"
       >,

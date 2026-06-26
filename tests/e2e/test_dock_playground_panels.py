@@ -230,11 +230,20 @@ def test_main_panel_click_header_toggles_collapsed(
             "clicking the main panel header did not toggle collapsed"
         )
 
-        # Toggle back.
+        # Toggle back. Once collapsed, the floating main panel renders as a
+        # vertical strip (consistent with docked minimized panels) -- the header
+        # is gone, so expand via the strip's cell/+ cap, not the old header spot.
+        strip = page.query_selector(
+            f'[data-dock-group="{main_gid}"][data-dock-collapsed="true"]'
+        )
+        assert strip is not None, "collapsed main panel should render a strip"
+        sb = strip.bounding_box()
+        assert sb is not None
+        page.mouse.move(sb["x"] + sb["width"] / 2, sb["y"] + 12)
         page.mouse.down()
         page.mouse.up()
         page.wait_for_timeout(120)
-        assert _collapsed() == was, "second header click did not toggle collapsed back"
+        assert _collapsed() == was, "clicking the collapsed strip did not expand it"
     finally:
         page.close()
 
