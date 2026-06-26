@@ -1376,7 +1376,6 @@ export function setActiveTab(
 export type PanelPlacement = NonNullable<
   GuiPanelMessage["props"]["placement"]
 >;
-export type PanelPlacementPosition = PanelPlacement["position"];
 
 /** Default float geometry when the server leaves x/y/size unspecified: the
  * top-left corner of the canvas (inset by the same 15px pad the control panel
