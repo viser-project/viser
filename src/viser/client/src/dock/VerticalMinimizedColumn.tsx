@@ -136,7 +136,7 @@ function VerticalMinimizedCell({
             // Static placement filling the cap (not bar-anchored).
             placement={{ width: "100%", height: "1.7em" }}
           >
-            <IconPlus size={14} />
+            <IconPlus size={12} />
           </HandleIconButton>
         </Box>
         {/* One row PER TAB: upright icon + rotated (book-spine) label. Each row
