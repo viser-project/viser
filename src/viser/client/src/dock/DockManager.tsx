@@ -594,6 +594,14 @@ export function DockManager({
       resetLeafPreview();
       return;
     }
+    // A MINIMIZED cell has no content half to vacate: the "shrink to 50% + tint
+    // the freed half" preview would just flood the narrow strip (region-tall) in
+    // blue. The thin split line already shows where the new cell lands, so skip
+    // the leaf preview for a collapsed target.
+    if (el.querySelector("[data-dock-collapsed='true']") !== null) {
+      resetLeafPreview();
+      return;
+    }
     if (previewLeaf.current !== null && previewLeaf.current !== el) {
       resetLeafPreview();
     }

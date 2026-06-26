@@ -309,6 +309,53 @@ def test_snap_below_minimized_keeps_top_panel(dock_context, vite_server: int) ->
         page.close()
 
 
+def test_minimized_cell_split_preview_has_no_blue_flood(
+    dock_context, vite_server: int
+) -> None:
+    """Hovering a split band on a MINIMIZED strip shows only the thin insertion
+    line -- never the 'shrink + tint the vacated half' leaf preview, which on a
+    region-tall strip floods the whole region light-blue (regression)."""
+    page = _open(dock_context, vite_server)
+    try:
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=stack(group(["controls", "inspector"], collapsed=True)),
+                floating=[window(group("console", collapsed=True), x=200, y=300)],
+            ),
+        )
+        gid = "t-controls"
+        cell = _box(page, f'[data-dock-group="{gid}"]')
+        cap = _box(page, '[data-dock-group="t-console"] [data-dock-minimize]')
+        if cell is None or cap is None:
+            pytest.skip("strip not laid out this run")
+        # Start dragging console's cap, then hover the strip's thin TOP edge band
+        # (resolves to split-top, which is what used to trigger the leaf tint).
+        page.mouse.move(cap["x"] + cap["w"] / 2, cap["y"] + cap["h"] / 2)
+        page.mouse.down()
+        page.mouse.move(cap["x"] + cap["w"] / 2 + 10, cap["y"] + cap["h"] / 2 + 10, steps=4)
+        page.mouse.move(cell["x"] + cell["w"] / 2, cell["y"] + 2, steps=4)
+        page.wait_for_timeout(120)
+        # The minimized cell's leaf wrapper must NOT be tinted blue.
+        bg = page.evaluate(
+            """(g) => {
+                const leaf = document
+                    .querySelector(`[data-dock-group="${g}"]`)
+                    .closest('[data-dock-leaf]');
+                return leaf ? getComputedStyle(leaf.parentElement).backgroundColor : null;
+            }""",
+            gid,
+        )
+        page.mouse.up()
+        # Tinted preview is rgba(34,139,230,0.1); accept any non-blue (white /
+        # transparent). Assert it's not the primary-color tint.
+        assert bg is not None and "34, 139, 230" not in bg, (
+            f"minimized cell should not show the blue split-preview flood, got {bg}"
+        )
+    finally:
+        page.close()
+
+
 def test_tear_tab_from_minimized_strip_stays_minimized(
     dock_context, vite_server: int
 ) -> None:
