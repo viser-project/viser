@@ -325,13 +325,12 @@ export function DockManager({
   // Container width, exposed via metrics so float coords (incl. negative
   // gap-from-right) can be resolved against the live canvas.
   const [containerWidth, setContainerWidth] = React.useState(0);
-  // Ref mirrors so the region-resize drag closure reads the CURRENT container
-  // size synchronously (it computes the canvas's new size from these + the
-  // freshly-committed insets).
+  // Ref mirror so the region-resize drag closure reads the CURRENT container
+  // width synchronously (it computes the canvas's new width from this minus the
+  // freshly-committed insets). Height isn't mirrored: a width drag never changes
+  // it, so the closure's captured `containerHeight` stays valid.
   const containerWidthRef = React.useRef(0);
   containerWidthRef.current = containerWidth;
-  const containerHeightRef = React.useRef(0);
-  containerHeightRef.current = containerHeight;
 
   // Keep floating windows sensibly placed when the container resizes. Each
   // axis anchors to the NEARER container edge (matching the original
@@ -1594,30 +1593,10 @@ export function DockManager({
   // (which excludes the strips and preserves widths through minimization).
   reservedWidthRef.current = { left: leftInset, right: rightInset };
 
-  // Keep floating windows positioned correctly as the canvas changes (docked
-  // insets grow/shrink, or the container resizes):
-  // - Server-anchored panels (those carrying an `anchor`) RE-RESOLVE
-  //   their canvas-relative anchor against the live canvas + measured window
-  //   size -- this is what makes negative coords (gap-from-far-edge, e.g.
-  //   top-right `x:-15`) track the edge, and what places auto-height panels with
-  //   a negative y once their height is known.
-  // - Other (user-dragged) windows are CLAMPED inward so a growing docked region
-  //   pushes a float it would otherwise cover; a float comfortably inside is left
-  //   alone, so undocking/dragging isn't second-guessed.
-  // Fires on every inset/size change, including each frame of an interactive
-  // region resize -- safe because it only touches `floating`, not docked widths.
-  // Re-resolve requested-coord windows + clamp dragged ones. Idempotent: given
-  // the same canvas + measured sizes it produces the same positions, so it never
-  // loops. Reads measured heights so a negative y (gap-from-bottom) on an
-  // auto-height panel lands correctly once the panel has rendered.
-  // Re-resolve requested-coord windows (always) and optionally clamp dragged
-  // ones. `clampDragged` is set ONLY for inset changes: a growing docked region
-  // PUSHES a covered float inward (the requested behavior). On a plain container
-  // resize or a window-size change we must NOT clamp dragged floats -- the
-  // container ResizeObserver already anchors them and preserves deliberate
-  // overhang (clampCorner); double-clamping here would yank an overhanging
-  // user float fully inside on every resize.
-  // Read the live bounds + measured float heights for repositioning.
+  // Read the live canvas bounds + measured float heights, for repositioning
+  // floats when the canvas changes. (User floats are pushed out of a growing
+  // region's path in the region-resize handler; server-anchored floats are
+  // re-resolved by reanchorFloats below. Both use these bounds.)
   const readFloatBounds = React.useCallback(() => {
     const el = containerRef.current;
     if (el === null) return null;
@@ -1863,7 +1842,7 @@ export function DockManager({
                       const reserved = reservedWidthRef.current;
                       onRegionResizeFrameRef.current?.(
                         Math.max(0, containerWidthRef.current - reserved.left - reserved.right),
-                        containerHeightRef.current,
+                        containerHeight,
                       );
                     };
                   }}
