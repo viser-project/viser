@@ -273,6 +273,10 @@ export function DockManager({
   const applyOp = React.useCallback(
     (next: DockLayout) => {
       if (next === layoutRef.current) return; // no-op op: nothing to commit.
+      // Enforce the stack-uniform-collapse invariant BEFORE width reconciliation
+      // (it can flip cells expanded, which changes the width math). `next` is a
+      // fresh draft here, so in-place mutation is safe.
+      ops.normalizeStackCollapse(next);
       reconcileRegionWidths(layoutRef.current, next);
       commit(next);
     },
@@ -1509,8 +1513,23 @@ export function DockManager({
     [applyOp],
   );
   const toggleCollapsed = React.useCallback(
-    (groupId: GroupId) =>
-      applyOp(ops.toggleCollapsed(layoutRef.current, groupId)),
+    (groupId: GroupId) => {
+      // Minimize at the right granularity: a group in a 2+ stack toggles the
+      // WHOLE stack (stacks are uniform -- there's no per-cell minimize); a lone
+      // group toggles itself.
+      const l = layoutRef.current;
+      const siblings = ops.stackGroupIdsOf(l, groupId);
+      if (siblings.length >= 2) {
+        const allMin = siblings.every(
+          (g) => l.groups[g]?.collapsed === true,
+        );
+        applyOp(
+          allMin ? ops.expandStack(l, siblings) : ops.minimizeStack(l, siblings),
+        );
+      } else {
+        applyOp(ops.toggleCollapsed(l, groupId));
+      }
+    },
     [applyOp],
   );
   // Memoized so renders driven by HIGH-CHURN state (region widths during a

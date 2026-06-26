@@ -157,20 +157,35 @@ export function invariantViolations(layout: DockLayout): string[] {
   const wids = layout.floating.map((w) => w.id);
   if (new Set(wids).size !== wids.length) v.push(`duplicate floating window ids`);
 
-  // 12. collapsed / collapsedByParent are booleans when present.
+  // 12. collapsed is a boolean when present.
   for (const [gid, group] of Object.entries(layout.groups)) {
     if (group.collapsed !== undefined && typeof group.collapsed !== "boolean")
       v.push(`group ${gid} collapsed is not boolean`);
-    if (
-      group.collapsedByParent !== undefined &&
-      typeof group.collapsedByParent !== "boolean"
-    )
-      v.push(`group ${gid} collapsedByParent is not boolean`);
   }
 
   // 13. Each area is keyed by its own id (areas[k].id === k).
   for (const [k, area] of Object.entries(layout.areas ?? {}))
     if (area.id !== k) v.push(`area key ${k} != area.id ${area.id}`);
+
+  // 14. A stack of 2+ groups is uniform-collapse: every member shares one
+  // collapsed state (a lone group may differ). Enforced by
+  // normalizeStackCollapse; checked here so any op that violates it is caught.
+  const checkStackUniform = (gids: GroupId[], where: string): void => {
+    if (gids.length < 2) return;
+    const states = gids.map((g) => layout.groups[g]?.collapsed === true);
+    if (states.some((s) => s !== states[0]))
+      v.push(`stack ${where} has mixed collapsed states`);
+  };
+  for (const edge of ["left", "right"] as DockEdge[])
+    for (const n of walkNodes(layout.docked[edge]))
+      if (n.type === "split" && n.dir === "column")
+        checkStackUniform(
+          n.children
+            .filter((c) => c.type === "leaf")
+            .map((c) => (c as Extract<DockNode, { type: "leaf" }>).group),
+          `column ${n.id}`,
+        );
+  for (const w of layout.floating) checkStackUniform(w.stack, `window ${w.id}`);
 
   return v;
 }

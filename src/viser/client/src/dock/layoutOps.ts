@@ -452,6 +452,47 @@ export function findGroupLocation(
   return null;
 }
 
+/** The group ids that share a STACK with `groupId` (including itself): a
+ * floating window's whole stack, or the leaf children of the column split that
+ * directly contains the group. A LONE group (its own window, or a leaf not in a
+ * multi-leaf column) returns just `[groupId]`. Used to route a minimize toggle
+ * to the right granularity -- a stack toggles all-or-nothing, a lone group
+ * toggles itself (see the uniform-collapse invariant). */
+export function stackGroupIdsOf(
+  layout: DockLayout,
+  groupId: GroupId,
+): GroupId[] {
+  const win = layout.floating.find((w) => w.stack.includes(groupId));
+  if (win !== undefined) return win.stack.length >= 2 ? [...win.stack] : [groupId];
+  // Docked: find the column split whose DIRECT children include this group's
+  // leaf; its leaf children are the stack.
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const tree = layout.docked[edge];
+    if (tree === null) continue;
+    let found: GroupId[] | null = null;
+    const walk = (node: DockNode): void => {
+      if (node.type !== "split") return;
+      if (node.dir === "column") {
+        const leafChildren = node.children.filter((c) => c.type === "leaf");
+        if (
+          leafChildren.some(
+            (c) => (c as Extract<DockNode, { type: "leaf" }>).group === groupId,
+          ) &&
+          leafChildren.length >= 2
+        ) {
+          found = leafChildren.map(
+            (c) => (c as Extract<DockNode, { type: "leaf" }>).group,
+          );
+        }
+      }
+      node.children.forEach(walk);
+    };
+    walk(tree);
+    if (found !== null) return found;
+  }
+  return [groupId];
+}
+
 /** Remove a group from wherever it currently lives, mutating `draft` in place.
  * The group object itself stays in `draft.groups`; the caller re-inserts it
  * elsewhere (or deletes it). Empty splits and empty floating windows are
@@ -459,10 +500,6 @@ export function findGroupLocation(
 function detachInPlace(draft: DockLayout, groupId: GroupId): void {
   const loc = findGroupLocation(draft, groupId);
   if (loc === null) return;
-  // The minimize-all restore tag belongs to the stack the group is LEAVING:
-  // in its next home, "expand this stack" shouldn't resurrect state from the
-  // old one (a relocated fully-minimized stack just expands everything).
-  delete draft.groups[groupId]?.collapsedByParent;
   // An area group is a fixed fixture -- it is never moved or removed. Panels are
   // added to / torn out of it individually; the group itself stays put (this
   // should not be reached, since area groups are only ever drop TARGETS or the
@@ -1244,7 +1281,9 @@ export function reorderTab(
   return draft;
 }
 
-/** Toggle a group's minimized (collapsed) state. */
+/** Toggle a group's minimized (collapsed) state. Only ever invoked on a LONE
+ * group (a stack toggles via minimizeStack/expandStack); the commit-time
+ * normalization keeps a 2+ stack uniform regardless. */
 export function toggleCollapsed(
   layout: DockLayout,
   groupId: GroupId,
@@ -1253,80 +1292,103 @@ export function toggleCollapsed(
   const group = draft.groups[groupId];
   if (group === undefined) return layout;
   group.collapsed = !group.collapsed;
-  // The user took individual control; this group no longer belongs to the
-  // last minimize-all (see minimizeStack/expandStack).
-  delete group.collapsedByParent;
   return draft;
 }
 
-/** Expand a collapsed group (no-op when already expanded or unknown). Used
- * after dropping panes INTO a collapsed group: the drop would otherwise land
- * invisibly inside a minimized handle. */
+/** Expand a collapsed group (no-op when already expanded or unknown). */
 export function expandGroup(layout: DockLayout, groupId: GroupId): DockLayout {
   if (layout.groups[groupId]?.collapsed !== true) return layout;
   const draft = clone(layout);
   draft.groups[groupId].collapsed = false;
-  delete draft.groups[groupId].collapsedByParent;
   return draft;
 }
 
-/** Minimize every group of a stack (a floating window's stack or a docked
- * column's leaves) -- the stack handle's minimize-all button. Groups that
- * were EXPANDED right now are tagged `collapsedByParent`; groups that were
- * already minimized lose any stale tag. The matching expandStack then
- * restores exactly the min/max mix the user had before THIS click. */
+/** Minimize a whole stack (a floating window's stack or a docked column's
+ * leaves) -- the stack handle's minimize-all button. A stack is uniform by
+ * invariant (see normalizeStackCollapse), so this just collapses every group. */
 export function minimizeStack(
   layout: DockLayout,
   groupIds: GroupId[],
 ): DockLayout {
-  const needsWork = groupIds.some((gid) => {
-    const group = layout.groups[gid];
-    return (
-      group !== undefined &&
-      (group.collapsed !== true || group.collapsedByParent === true)
-    );
-  });
-  if (!needsWork) return layout;
+  if (groupIds.every((gid) => layout.groups[gid]?.collapsed === true))
+    return layout;
   const draft = clone(layout);
   for (const gid of groupIds) {
     const group = draft.groups[gid];
-    if (group === undefined) continue;
-    if (group.collapsed !== true) {
-      group.collapsed = true;
-      group.collapsedByParent = true;
-    } else {
-      delete group.collapsedByParent;
-    }
+    if (group !== undefined) group.collapsed = true;
   }
   return draft;
 }
 
-/** Expand a stack from its handle button. Groups tagged by the last
- * minimizeStack expand (restoring the pre-minimize mix); when nothing is
- * tagged (every group was minimized individually) ALL groups expand. */
+/** Expand a whole stack -- the inverse of minimizeStack. */
 export function expandStack(
   layout: DockLayout,
   groupIds: GroupId[],
 ): DockLayout {
-  const present = groupIds
-    .map((gid) => layout.groups[gid])
-    .filter((g): g is TabGroup => g !== undefined);
-  const tagged = present.filter((g) => g.collapsedByParent === true);
-  const targets = tagged.length > 0 ? tagged : present;
-  if (
-    !targets.some(
-      (g) => g.collapsed === true || g.collapsedByParent === true,
-    )
-  ) {
+  if (groupIds.every((gid) => layout.groups[gid]?.collapsed !== true))
     return layout;
-  }
   const draft = clone(layout);
-  for (const target of targets) {
-    const group = draft.groups[target.id];
-    group.collapsed = false;
-    delete group.collapsedByParent;
+  for (const gid of groupIds) {
+    const group = draft.groups[gid];
+    if (group !== undefined) group.collapsed = false;
   }
   return draft;
+}
+
+/** Enforce the stack-uniform-collapse invariant: in any stack of 2+ groups (a
+ * column split's leaf children, or a floating window's stack) every member
+ * shares one collapsed state. A LONE group (its own column/window) may be
+ * independently minimized. When a stack is non-uniform, EXPANDED dominates: the
+ * whole stack expands. This makes the "some panels minimized, some short inside
+ * one stack" state -- the source of the per-cell weight/render pathology --
+ * unrepresentable by construction. Run on every commit (see applyOp), so any op
+ * that would leave a mixed stack is corrected before render. Mutates `layout` in
+ * place; returns whether anything changed.
+ *
+ * Only `collapsed` is cleared here -- a lone group keeps its own collapse, and a
+ * uniformly-minimized stack is left alone (so minimizeStack's all-collapsed
+ * result survives). */
+export function normalizeStackCollapse(layout: DockLayout): boolean {
+  let changed = false;
+  const expandAll = (groupIds: GroupId[]): void => {
+    for (const gid of groupIds) {
+      const g = layout.groups[gid];
+      if (g !== undefined && g.collapsed === true) {
+        g.collapsed = false;
+        changed = true;
+      }
+    }
+  };
+  // A column split's DIRECT leaf children form one vertical stack.
+  const walk = (node: DockNode): void => {
+    if (node.type !== "split") return;
+    if (node.dir === "column") {
+      const leafGroups = node.children
+        .filter((c) => c.type === "leaf")
+        .map((c) => (c as Extract<DockNode, { type: "leaf" }>).group);
+      if (
+        leafGroups.length >= 2 &&
+        leafGroups.some((gid) => layout.groups[gid]?.collapsed !== true)
+      ) {
+        expandAll(leafGroups);
+      }
+    }
+    node.children.forEach(walk);
+  };
+  for (const edge of ["left", "right"] as const) {
+    const tree = layout.docked[edge];
+    if (tree !== null) walk(tree);
+  }
+  // Floating windows: the stack array is the unit.
+  for (const win of layout.floating) {
+    if (
+      win.stack.length >= 2 &&
+      win.stack.some((gid) => layout.groups[gid]?.collapsed !== true)
+    ) {
+      expandAll(win.stack);
+    }
+  }
+  return changed;
 }
 
 /** Set node weights by node id (anywhere in a docked region's tree). Robust to
@@ -1527,14 +1589,12 @@ function ensurePanelGroup(
     applyMembership(draft, groupId, paneIds);
   }
   // Apply the collapsed field (always applied -- no prevCollapsed): true sets
-  // the group's collapsed flag (and clears any minimize-all tag); false expands
-  // it; null/undefined leaves it untouched.
+  // the group's collapsed flag; false expands it; null/undefined leaves it
+  // untouched.
   if (collapsed === true) {
     draft.groups[groupId].collapsed = true;
-    delete draft.groups[groupId].collapsedByParent;
   } else if (collapsed === false) {
     draft.groups[groupId].collapsed = false;
-    delete draft.groups[groupId].collapsedByParent;
   }
   return groupId;
 }

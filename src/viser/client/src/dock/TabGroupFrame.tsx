@@ -5,6 +5,7 @@ import { Box, Collapse, ScrollArea } from "@mantine/core";
 import { IconMinus, IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
+import { stackGroupIdsOf } from "./layoutOps";
 import {
   dockBodyScroll,
   focusRing,
@@ -117,6 +118,7 @@ function GripBar({
   collapsed,
   onToggle,
   startDrag,
+  showMinimize,
 }: {
   collapsed: boolean;
   onToggle: () => void;
@@ -124,19 +126,21 @@ function GripBar({
     event: React.PointerEvent<HTMLDivElement>,
     opts?: { onClick?: () => void },
   ) => void;
+  /** Whether this group shows its OWN minimize button + click-to-minimize. Only
+   * a LONE group does; a group in a 2+ stack minimizes via the parent stack
+   * handle, so its individual +/- disappears (the bar still drags). */
+  showMinimize: boolean;
 }) {
   return (
     <Box
       data-dock-griphandle
       className={gripBarBg}
       onPointerDown={(event) => {
-        // A motionless tap ANYWHERE on the handle toggles minimize/expand --
-        // matching the main panel's header, so every panel handle behaves the
-        // same (the +/- button is then a redundant, explicit cue). A real drag
-        // (motion past threshold) moves the panel AS-IS instead -- a collapsed
-        // panel drags out still collapsed; expanding is click-only. The click-
-        // vs-drag split in armPress means a tap can't be mistaken for a drag.
-        startDrag(event, { onClick: onToggle });
+        // A motionless tap toggles minimize/expand ONLY for a lone group (the
+        // +/- is a redundant explicit cue for the same action). In a stack the
+        // bar just drags -- minimize lives on the parent handle. A real drag
+        // moves the panel AS-IS either way (expanding is click-only).
+        startDrag(event, showMinimize ? { onClick: onToggle } : undefined);
       }}
       style={{
         position: "relative",
@@ -155,17 +159,20 @@ function GripBar({
     >
       {/* Drag affordance. */}
       <GripPill />
-      {/* Minimize / expand button: drag-through (see GripBar doc). */}
-      <HandleIconButton
-        attrs={{ "data-dock-minimize": "true" }}
-        label={collapsed ? "Expand panel" : "Minimize panel"}
-        title={collapsed ? "Expand" : "Minimize"}
-        expanded={!collapsed}
-        onActivate={onToggle}
-        dragThrough
-      >
-        {collapsed ? <IconPlus size={12} /> : <IconMinus size={12} />}
-      </HandleIconButton>
+      {/* Minimize / expand button: drag-through (see GripBar doc). Hidden in a
+      stack -- the parent handle owns minimize there. */}
+      {showMinimize && (
+        <HandleIconButton
+          attrs={{ "data-dock-minimize": "true" }}
+          label={collapsed ? "Expand panel" : "Minimize panel"}
+          title={collapsed ? "Expand" : "Minimize"}
+          expanded={!collapsed}
+          onActivate={onToggle}
+          dragThrough
+        >
+          {collapsed ? <IconPlus size={12} /> : <IconMinus size={12} />}
+        </HandleIconButton>
+      )}
     </Box>
   );
 }
@@ -198,6 +205,10 @@ export function TabGroupFrame({
   const { panes } = dock;
   const dimmed = dock.draggingGroupId === group.id;
   const collapsed = group.collapsed ?? false;
+  // A LONE group shows its own +/- (and click-to-minimize); a group in a 2+
+  // stack minimizes via the parent stack handle, so its individual control is
+  // hidden (the grip bar still drags it).
+  const lone = stackGroupIdsOf(dock.layout, group.id).length < 2;
   // An unmergeable group always holds a single panel and renders its label as a
   // full-width header (never a tab); nothing can be merged into it.
   const unmergeable = group.paneIds.some(
@@ -330,6 +341,7 @@ export function TabGroupFrame({
       {stripDragsGroup && !unmergeable && (
         <GripBar
           collapsed={collapsed}
+          showMinimize={lone}
           onToggle={() => dock.toggleCollapsed(group.id)}
           startDrag={(event, opts) =>
             dock.startGroupDrag(event, group.id, opts)

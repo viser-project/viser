@@ -676,44 +676,70 @@ describe("seam between vertically-stacked docked panels is one stable target", (
   });
 });
 
-// regression: collapsed-target vertical zones are pixel-capped. A minimized
-// VERTICAL strip is narrow but region-tall; 30% of that height would be a huge
-// "split above/below" band. (No-op for short horizontal handle bars.)
-describe("collapsed-target vertical zone pixel cap", () => {
-  it("tall narrow strip: top split only near the top; mid-height merges", () => {
+// A content-sized minimized strip reads top-to-bottom: a thin top/bottom EDGE
+// band stacks a new cell above/below, the spine-label rows insert at a tab
+// position, and the + cap (just inside the top edge) merges. The cap must NOT be
+// swallowed by the "above" zone -- that was the merge-unreachable regression.
+describe("collapsed-target vertical zones (content-sized strip)", () => {
+  const mkStrip = (tabs: { paneId: string; rect: DOMRect }[]): GroupTarget => ({
+    groupId: "s",
+    rect: rect(960, 0, 40, 80), // content-sized: cap + two ~30px rows
+    stripRect: null,
+    tabs,
+    ctx: { kind: "docked", nodeId: "Ls", edge: "right" },
+    collapsed: true,
+  });
+  // Single-leaf region: the region-edge bands are suppressed, so the cell's own
+  // 3z zones are reachable (a multi-column region's top band would otherwise
+  // shadow the cell's thin top-edge split -- correct precedence, but it hides
+  // what this test checks). The strip sits a little below the region top.
+  const baseLayout = () => {
     const l = emptyLayout();
-    l.groups = {
-      s: group("s", 1, true),
-      o: group("o"),
-    };
-    l.docked.right = {
-      type: "split",
-      id: "R",
-      dir: "row",
-      weight: 1,
-      children: [
-        { type: "leaf", id: "Lo", group: "o", weight: 1 },
-        { type: "leaf", id: "Ls", group: "s", weight: 1 },
-      ],
-    };
-    const strip: GroupTarget = {
-      groupId: "s",
-      rect: rect(960, 0, 40, 800),
-      stripRect: null,
-      tabs: [],
-      ctx: { kind: "docked", nodeId: "Ls", edge: "right" },
-      collapsed: true,
-    };
+    l.groups = { s: group("s", 1, true) };
+    l.docked.right = { type: "leaf", id: "Ls", group: "s", weight: 1 };
+    return l;
+  };
+  const offStrip = (tabs: { paneId: string; rect: DOMRect }[]): GroupTarget => ({
+    ...mkStrip(tabs),
+    rect: rect(960, 100, 40, 80), // top at y=100, clear of the region top band
+  });
+
+  it("the + cap (just inside the top edge) -> add to the group, not split-above", () => {
+    const l = baseLayout();
+    const strip = offStrip([
+      { paneId: "p0", rect: rect(960, 124, 40, 26) },
+      { paneId: "p1", rect: rect(960, 152, 40, 26) },
+    ]);
     const targets: DropTargets = { groups: [strip] };
-    // y=40 (< 70px cap) -> split top.
-    expect(hitTest(l, REGION_W, CONTAINER, targets, 980, 40)?.result).toMatchObject({
+    // y=115: the + cap, above the first row (at y=124) but past the 6px edge
+    // band (ends at y=106). It must ADD the panel to the group (insertTab at the
+    // top), NOT a split-above -- regression: the cap used to be swallowed by the
+    // "above" split zone, leaving no way to drop INTO a minimized strip.
+    const out = hitTest(l, REGION_W, CONTAINER, targets, 980, 115)?.result;
+    expect(out).toMatchObject({ kind: "insertTab", targetGroupId: "s", index: 0 });
+  });
+
+  it("thin top/bottom edges -> split; over a row -> insertTab", () => {
+    const l = baseLayout();
+    const strip = offStrip([
+      { paneId: "p0", rect: rect(960, 124, 40, 26) },
+      { paneId: "p1", rect: rect(960, 152, 40, 26) },
+    ]);
+    const targets: DropTargets = { groups: [strip] };
+    // y=101: thin top edge -> split top.
+    expect(hitTest(l, REGION_W, CONTAINER, targets, 980, 101)?.result).toMatchObject({
       kind: "split",
       region: "top",
     });
-    // y=300 (way past the cap, mid-strip, center x) -> merge, NOT a split.
-    expect(hitTest(l, REGION_W, CONTAINER, targets, 980, 300)?.result).toMatchObject({
-      kind: "merge",
+    // y=130: over the first row -> insertTab.
+    expect(hitTest(l, REGION_W, CONTAINER, targets, 980, 130)?.result).toMatchObject({
+      kind: "insertTab",
       targetGroupId: "s",
+    });
+    // y=179: thin bottom edge -> split bottom.
+    expect(hitTest(l, REGION_W, CONTAINER, targets, 980, 179)?.result).toMatchObject({
+      kind: "split",
+      region: "bottom",
     });
   });
 });

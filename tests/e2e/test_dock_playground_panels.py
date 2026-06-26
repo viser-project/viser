@@ -266,7 +266,7 @@ def test_snap_below_minimized_keeps_top_panel(dock_context, vite_server: int) ->
             ),
         )
         ctrl_win = "t-w-controls"
-        ctrl_gid, insp_gid = "t-controls", "t-inspector"
+        insp_gid = "t-inspector"
 
         # Snap inspector BELOW the (minimized) controls window.
         ctrl_box = _box(page, f'[data-floating-window="{ctrl_win}"]')
@@ -282,17 +282,29 @@ def test_snap_below_minimized_keeps_top_panel(dock_context, vite_server: int) ->
         stacked = _floating_window_id_for_panel(page, "controls")
         insp_after = _floating_window_id_for_panel(page, "inspector")
         if stacked is None or insp_after != stacked:
-            pytest.skip("inspector did not snap below controls this run")
+            pytest.skip("inspector did not land on controls this run")
 
-        # Both panels present in the stacked window.
-        n_groups = page.eval_on_selector_all(
-            f'[data-floating-window="{stacked}"] [data-dock-group]',
-            "els => els.length",
+        # Both panels ended up in the same window -- controls wasn't lost. The
+        # drop may snap a new cell (2 groups) or insert a tab into the strip (1
+        # group, 2 panes); either way both panels are present and reachable.
+        panes = page.evaluate(
+            """(w) => { const l = window.__dockLayout;
+                const win = l.floating.find((f) => f.id === w);
+                return win.stack.flatMap((g) => l.groups[g].paneIds); }""",
+            stacked,
         )
-        assert n_groups == 2, f"expected a 2-group stack, got {n_groups}"
-        # The top (controls) panel keeps a positive height (it didn't vanish).
-        ctrl_after = _gbox(page, ctrl_gid)
-        assert ctrl_after["h"] > 0, "the minimized top (controls) panel has no height"
+        assert "controls" in panes and "inspector" in panes, (
+            f"both panels should be in the window, got {panes}"
+        )
+        # Stack-uniform invariant: if it formed a 2-group stack, the two groups
+        # share one collapsed state (expanded wins, since inspector was expanded).
+        states = page.evaluate(
+            """(w) => { const l = window.__dockLayout;
+                const win = l.floating.find((f) => f.id === w);
+                return win.stack.map((g) => l.groups[g].collapsed === true); }""",
+            stacked,
+        )
+        assert len(set(states)) == 1, f"stack must be uniform-collapse, got {states}"
     finally:
         page.close()
 
@@ -347,7 +359,7 @@ def test_drop_into_minimized_stack_at_tab_position(
         gid = "t-controls"
         # Drag console's + cap onto the TOP of the inspector row -> insert
         # console BEFORE inspector (between controls and inspector).
-        cap = _box(page, f'[data-dock-group="t-console"] [data-dock-minimize]')
+        cap = _box(page, '[data-dock-group="t-console"] [data-dock-minimize]')
         row = _box(page, f'[data-dock-group="{gid}"] [data-dock-tab="inspector"]')
         if cap is None or row is None:
             pytest.skip("strip not laid out this run")

@@ -148,11 +148,11 @@ def test_minimize_click_on_background_overlapping_window(page: Page) -> None:
 # ===========================================================================
 # Height correctness.
 # ===========================================================================
-def test_collapsed_vertical_stack_sibling_expands(page: Page) -> None:
-    """In a vertical docked stack, minimizing one panel must shrink it to ~its
-    handle+strip and let the sibling expand to fill the freed height."""
-    # Arrange: a vertical right-edge stack [a above b] (the minimize toggle and
-    # the resulting heights are the subject).
+def test_vertical_stack_minimizes_as_a_unit(page: Page) -> None:
+    """A vertical docked stack minimizes ALL-OR-NOTHING: the individual panels
+    have no per-cell +/- (only the parent stack handle), and toggling that
+    handle collapses/expands every panel together -- there's no mixed
+    'one minimized, one short' state."""
     a, b = "t-controls", "t-inspector"
     set_layout(page, dock_layout(docked_right=stack("controls", "inspector")))
     docked_right = page.eval_on_selector_all(
@@ -161,23 +161,30 @@ def test_collapsed_vertical_stack_sibling_expands(page: Page) -> None:
     )
     assert a in docked_right and b in docked_right
 
-    b_box_before = _box(page, f'[data-dock-group="{b}"]')
-    assert b_box_before is not None
+    # No individual minimize buttons inside a stack -- only the parent handle.
+    def n_individual_btns(gid: str) -> int:
+        return page.eval_on_selector_all(
+            f'[data-dock-group="{gid}"] [data-dock-minimize]', "els => els.length"
+        )
 
-    # Minimize a; b should grow taller (a freed its content height).
-    _minimize_btn(page, a).click()
-    page.wait_for_timeout(120)
-    assert _is_collapsed(page, a)
-    a_box_after = _box(page, f'[data-dock-group="{a}"]')
-    b_box_after = _box(page, f'[data-dock-group="{b}"]')
-    assert a_box_after is not None and b_box_after is not None
-    # Collapsed a is short (just handle+strip, well under 120px).
-    assert a_box_after["height"] < 120, (
-        f"collapsed panel too tall: {a_box_after['height']}"
+    assert n_individual_btns(a) == 0 and n_individual_btns(b) == 0, (
+        "stacked panels must not show individual +/- buttons"
     )
-    # Sibling b expanded.
-    assert b_box_after["height"] > b_box_before["height"] + 20, (
-        f"sibling did not expand: {b_box_before['height']} -> {b_box_after['height']}"
+    parent = page.query_selector("[data-dock-column-handle] [data-dock-minimize-all]")
+    assert parent is not None, "a stack must show a parent minimize-all handle"
+
+    # The parent handle minimizes BOTH; clicking again expands BOTH.
+    parent.click()
+    page.wait_for_timeout(120)
+    assert _is_collapsed(page, a) and _is_collapsed(page, b), (
+        "the parent handle must minimize the whole stack"
+    )
+    page.query_selector(
+        "[data-dock-column-handle] [data-dock-minimize-all]"
+    ).click()
+    page.wait_for_timeout(120)
+    assert not _is_collapsed(page, a) and not _is_collapsed(page, b), (
+        "the parent handle must expand the whole stack"
     )
 
 

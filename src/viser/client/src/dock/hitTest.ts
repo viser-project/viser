@@ -39,6 +39,11 @@ const MINIMIZED_SIDE_BAND_PX = 8;
 // Horizontal inset for a minimized strip's tab-insertion line, so it reads as a
 // marker between rows rather than a full-width rule against the strip's borders.
 const INSERT_LINE_INSET_PX = 4;
+// Thin top/bottom edge band (px) on a content-sized minimized strip: a drop in
+// this band stacks a new cell above/below, while the + cap just inside the top
+// edge stays a MERGE target (capped to a third of the cell so a short strip
+// keeps a merge zone).
+const MINIMIZED_EDGE_BAND_PX = 6;
 // Band fraction (of the content area) for a per-panel left/right split, capped
 // in pixels so it doesn't balloon on a wide panel.
 const SPLIT_BAND = 0.22;
@@ -587,21 +592,21 @@ export function hitTest(
     // Thin pixel side bands so on a ~36px strip the two edges don't swallow the
     // whole width -- the middle stays free for the tab/split zones.
     const H = Math.min(0.3, MINIMIZED_SIDE_BAND_PX / Math.max(r.width, 1));
-    // The spine-label rows ARE the strip: their vertical span is the
-    // tab-insertion region (begin/between/end), exactly like an expanded
-    // panel's horizontal tab strip. Above the rows (the + cap) splits/snaps a
-    // new cell ABOVE; below them splits/snaps a new cell BELOW; the cap also
-    // merges when no edge band wins. Suppressed for an unmergeable drag (it
-    // can't become tabs) or an unmergeable target. With no rows measured, fall
-    // back to fractional top/bottom split bands (pixel-capped for a tall strip).
+    // The content-sized cell reads top-to-bottom like a rotated expanded panel:
+    //   - thin top/bottom EDGE bands   -> stack a new cell above/below (docked)
+    //                                     / snap above/below (floating)
+    //   - over a spine-label row       -> insert at that tab position
+    //   - everything else (the + cap)  -> merge (append a tab)
+    // The edge bands are thin pixel strips at the cell's very top/bottom, so the
+    // + cap (just inside the top edge) stays a MERGE target rather than being
+    // swallowed by an "above" zone. Insertion is suppressed for an unmergeable
+    // drag (can't become tabs) or an unmergeable target.
     const canInsert = !draggingUnmergeable && !g.unmergeable && g.tabs.length > 0;
-    const V = Math.min(0.3, SPLIT_BAND_V_MAX_PX / Math.max(r.height, 1));
-    const tabsTop = canInsert ? g.tabs[0].rect.top : r.top + V * r.height;
-    const tabsBottom = canInsert
-      ? g.tabs[g.tabs.length - 1].rect.bottom
-      : r.bottom - V * r.height;
+    const edge = Math.min(MINIMIZED_EDGE_BAND_PX, r.height / 3);
+    const inTopEdge = clientY < r.top + edge;
+    const inBottomEdge = clientY > r.bottom - edge;
     const ins =
-      canInsert && clientY >= tabsTop && clientY <= tabsBottom
+      canInsert && !inTopEdge && !inBottomEdge
         ? verticalTabInsertion(g.tabs, clientY)
         : null;
     const insHint = (i: { index: number; lineLeft: number; lineTop: number; lineWidth: number }) =>
@@ -611,26 +616,26 @@ export function hitTest(
       const n = g.ctx.nodeId;
       if (rx < H) return { result: { kind: "split", edge: e, nodeId: n, region: "left" }, hint: splitLine("left") };
       if (rx > 1 - H) return { result: { kind: "split", edge: e, nodeId: n, region: "right" }, hint: splitLine("right") };
+      if (inTopEdge) return { result: { kind: "split", edge: e, nodeId: n, region: "top" }, hint: splitLine("top") };
+      if (inBottomEdge) return { result: { kind: "split", edge: e, nodeId: n, region: "bottom" }, hint: splitLine("bottom") };
       if (ins !== null)
         return { result: { kind: "insertTab", targetGroupId: g.groupId, index: ins.index }, hint: insHint(ins) };
-      if (clientY < tabsTop) return { result: { kind: "split", edge: e, nodeId: n, region: "top" }, hint: splitLine("top") };
-      if (clientY > tabsBottom) return { result: { kind: "split", edge: e, nodeId: n, region: "bottom" }, hint: splitLine("bottom") };
       return mergeResult();
     }
-    // Floating minimized: rows insert at a tab position; above/below them snaps
-    // a new cell; the rest merges (no docked region to split into).
-    if (ins !== null)
-      return { result: { kind: "insertTab", targetGroupId: g.groupId, index: ins.index }, hint: insHint(ins) };
-    if (clientY < tabsTop)
+    // Floating minimized: thin edge bands snap a new cell above/below; rows
+    // insert at a tab position; the rest merges (no docked region to split into).
+    if (inTopEdge)
       return {
         result: { kind: "snap", windowId: g.ctx.windowId, index: g.ctx.index },
         hint: rel({ left: r.left, top: r.top - 2, width: r.width, height: 4 }, "line"),
       };
-    if (clientY > tabsBottom)
+    if (inBottomEdge)
       return {
         result: { kind: "snap", windowId: g.ctx.windowId, index: g.ctx.index + 1 },
         hint: rel({ left: r.left, top: r.bottom - 2, width: r.width, height: 4 }, "line"),
       };
+    if (ins !== null)
+      return { result: { kind: "insertTab", targetGroupId: g.groupId, index: ins.index }, hint: insHint(ins) };
     return mergeResult();
   }
 

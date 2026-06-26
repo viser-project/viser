@@ -60,6 +60,8 @@ import {
   toggleCollapsed,
   minimizeStack,
   expandStack,
+  normalizeStackCollapse,
+  stackGroupIdsOf,
   setActiveTab,
   cascadeResize,
   resizeRegionColumns,
@@ -1211,86 +1213,100 @@ describe("toggleCollapsed", () => {
     expect(toggleCollapsed(layout, "zzz")).toBe(layout);
   });
 
-  it("clears the parent-minimize tag (user takes individual control)", () => {
-    let layout = makeLayout({ floating: [{ id: "w1", stack: ["a", "b"] }] });
-    layout = minimizeStack(layout, ["a", "b"]);
-    const out = toggleCollapsed(layout, "a");
-    expect(out.groups["a"].collapsed).toBe(false);
-    expect(out.groups["a"].collapsedByParent).toBeUndefined();
-    // b keeps its tag: it is still "minimized by the parent".
-    expect(out.groups["b"].collapsedByParent).toBe(true);
-  });
 });
 
 // ===========================================================================
-// minimizeStack / expandStack (the stack handle's minimize-all button)
+// minimizeStack / expandStack (the stack handle's minimize-all button) -- a
+// stack is uniform-collapse, so these are simple all/none toggles.
 // ===========================================================================
 
 describe("minimizeStack / expandStack", () => {
   const stacked = () =>
     makeLayout({ floating: [{ id: "w1", stack: ["a", "b", "c"] }] });
 
-  it("all expanded: minimize collapses + tags all; expand restores all", () => {
+  it("minimize collapses every group; expand expands every group", () => {
     const min = minimizeStack(stacked(), ["a", "b", "c"]);
-    for (const g of ["a", "b", "c"]) {
-      expect(min.groups[g].collapsed).toBe(true);
-      expect(min.groups[g].collapsedByParent).toBe(true);
-    }
+    for (const g of ["a", "b", "c"]) expect(min.groups[g].collapsed).toBe(true);
     const max = expandStack(min, ["a", "b", "c"]);
-    for (const g of ["a", "b", "c"]) {
-      expect(max.groups[g].collapsed).toBe(false);
-      expect(max.groups[g].collapsedByParent).toBeUndefined();
-    }
+    for (const g of ["a", "b", "c"]) expect(max.groups[g].collapsed).toBe(false);
   });
 
-  it("a mixed min/max arrangement round-trips through minimize/expand", () => {
-    // a + b minimized individually, c expanded.
-    let layout = toggleCollapsed(toggleCollapsed(stacked(), "a"), "b");
-    layout = minimizeStack(layout, ["a", "b", "c"]);
-    for (const g of ["a", "b", "c"])
-      expect(layout.groups[g].collapsed).toBe(true);
-    // Only c (expanded at minimize time) is tagged for restore.
-    expect(layout.groups["a"].collapsedByParent).toBeUndefined();
-    expect(layout.groups["b"].collapsedByParent).toBeUndefined();
-    expect(layout.groups["c"].collapsedByParent).toBe(true);
-
-    const out = expandStack(layout, ["a", "b", "c"]);
-    expect(out.groups["a"].collapsed).toBe(true);
-    expect(out.groups["b"].collapsed).toBe(true);
-    expect(out.groups["c"].collapsed).toBe(false);
-  });
-
-  it("re-minimizing re-tags from the CURRENT mix, not stale history", () => {
-    // Minimize all (everything tagged), then the user expands b by hand.
-    let layout = minimizeStack(stacked(), ["a", "b", "c"]);
-    layout = toggleCollapsed(layout, "b");
-    // Second minimize-all: only b was expanded, so only b is tagged; a and
-    // c's tags from the FIRST minimize are reset.
-    layout = minimizeStack(layout, ["a", "b", "c"]);
-    expect(layout.groups["a"].collapsedByParent).toBeUndefined();
-    expect(layout.groups["b"].collapsedByParent).toBe(true);
-    expect(layout.groups["c"].collapsedByParent).toBeUndefined();
-    const out = expandStack(layout, ["a", "b", "c"]);
-    expect(out.groups["a"].collapsed).toBe(true);
-    expect(out.groups["b"].collapsed).toBe(false);
-    expect(out.groups["c"].collapsed).toBe(true);
-  });
-
-  it("expand with no tags (all minimized individually) expands everything", () => {
-    let layout = stacked();
-    for (const g of ["a", "b", "c"]) layout = toggleCollapsed(layout, g);
-    const out = expandStack(layout, ["a", "b", "c"]);
-    for (const g of ["a", "b", "c"])
-      expect(out.groups[g].collapsed).toBe(false);
+  it("minimize from a partial state still collapses all", () => {
+    const layout = toggleCollapsed(stacked(), "a"); // a minimized, b/c expanded
+    const min = minimizeStack(layout, ["a", "b", "c"]);
+    for (const g of ["a", "b", "c"]) expect(min.groups[g].collapsed).toBe(true);
   });
 
   it("no-ops return the input layout unchanged", () => {
-    let layout = stacked();
-    for (const g of ["a", "b", "c"]) layout = toggleCollapsed(layout, g);
-    // Everything already minimized and untagged -> minimize is a no-op.
-    expect(minimizeStack(layout, ["a", "b", "c"])).toBe(layout);
     const allExpanded = stacked();
     expect(expandStack(allExpanded, ["a", "b", "c"])).toBe(allExpanded);
+    const allMin = minimizeStack(allExpanded, ["a", "b", "c"]);
+    expect(minimizeStack(allMin, ["a", "b", "c"])).toBe(allMin);
+  });
+});
+
+// ===========================================================================
+// normalizeStackCollapse: a 2+ stack is uniform; expanded dominates.
+// ===========================================================================
+
+describe("normalizeStackCollapse", () => {
+  it("a mixed floating stack -> all expanded (expanded dominates)", () => {
+    const layout = makeLayout({ floating: [{ id: "w1", stack: ["a", "b"] }] });
+    layout.groups["a"].collapsed = true; // a minimized, b expanded -> mixed
+    const changed = normalizeStackCollapse(layout);
+    expect(changed).toBe(true);
+    expect(layout.groups["a"].collapsed).not.toBe(true);
+    expect(layout.groups["b"].collapsed).not.toBe(true);
+  });
+
+  it("a uniformly-minimized stack is left alone", () => {
+    const layout = makeLayout({ floating: [{ id: "w1", stack: ["a", "b"] }] });
+    layout.groups["a"].collapsed = true;
+    layout.groups["b"].collapsed = true;
+    expect(normalizeStackCollapse(layout)).toBe(false);
+    expect(layout.groups["a"].collapsed).toBe(true);
+    expect(layout.groups["b"].collapsed).toBe(true);
+  });
+
+  it("a LONE group keeps its own minimized state", () => {
+    const layout = makeLayout({ left: leaf("a") });
+    layout.groups["a"].collapsed = true;
+    expect(normalizeStackCollapse(layout)).toBe(false);
+    expect(layout.groups["a"].collapsed).toBe(true);
+  });
+
+  it("a mixed docked column -> all expanded", () => {
+    const layout = makeLayout({ left: col([leaf("a"), leaf("b")]) });
+    layout.groups["a"].collapsed = true; // mixed within the column
+    normalizeStackCollapse(layout);
+    expect(layout.groups["a"].collapsed).not.toBe(true);
+    expect(layout.groups["b"].collapsed).not.toBe(true);
+  });
+});
+
+// ===========================================================================
+// stackGroupIdsOf: a group's stack siblings (or just itself when lone).
+// ===========================================================================
+
+describe("stackGroupIdsOf", () => {
+  it("a floating multi-stack returns the whole stack", () => {
+    const layout = makeLayout({ floating: [{ id: "w1", stack: ["a", "b"] }] });
+    expect(stackGroupIdsOf(layout, "a").sort()).toEqual(["a", "b"]);
+  });
+
+  it("a docked column returns its leaf groups", () => {
+    const layout = makeLayout({ left: col([leaf("a"), leaf("b")]) });
+    expect(stackGroupIdsOf(layout, "b").sort()).toEqual(["a", "b"]);
+  });
+
+  it("a lone group returns just itself", () => {
+    const layout = makeLayout({ left: leaf("a") });
+    expect(stackGroupIdsOf(layout, "a")).toEqual(["a"]);
+  });
+
+  it("a lone floating group returns just itself", () => {
+    const layout = makeLayout({ floating: [{ id: "w1", stack: ["a"] }] });
+    expect(stackGroupIdsOf(layout, "a")).toEqual(["a"]);
   });
 });
 

@@ -124,14 +124,10 @@ export interface TabGroup {
   paneIds: PaneId[];
   activeId: PaneId;
   /** When true, the group is minimized: only its handle + tab strip show, with
-   * the contents hidden. */
+   * the contents hidden. In a stack of 2+ groups this is uniform across the
+   * stack (enforced by normalizeStackCollapse); a lone group minimizes on its
+   * own. */
   collapsed?: boolean;
-  /** Set by minimizeStack on groups that were EXPANDED when the user clicked
-   * the stack handle's minimize-all button. expandStack expands exactly the
-   * tagged groups, so a mixed min/max arrangement round-trips through a
-   * parent minimize/expand. Cleared whenever the user takes individual
-   * control of the group (toggleCollapsed / expandGroup). */
-  collapsedByParent?: boolean;
 }
 
 interface DockNodeBase {
