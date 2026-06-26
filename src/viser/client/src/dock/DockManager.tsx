@@ -1441,14 +1441,10 @@ export function DockManager({
           // No-op (pane not in the group / area group): nothing floated.
           if (res.windowId === null) return null;
           const newWindowId = res.windowId;
-          // The torn pane floats EXPANDED -- a minimized stub would be useless.
-          flushSync(() =>
-            applyOp(
-              res.floatingGroupId !== null
-                ? ops.expandGroup(res.layout, res.floatingGroupId)
-                : res.layout,
-            ),
-          );
+          // The torn pane floats AS-IS: a pane torn from a minimized strip stays
+          // minimized (tearOutPane copies the source's collapsed flag). Dragging
+          // never expands -- only the no-motion click below (expandToTab) does.
+          flushSync(() => applyOp(res.layout));
           // Clamp the grab into the freshly-floated window (the source strip is
           // region-tall; the result is a short window).
           return {

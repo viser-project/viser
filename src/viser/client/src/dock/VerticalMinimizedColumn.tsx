@@ -251,11 +251,19 @@ export function VerticalMinimizedCell({
     <Box
       data-dock-leaf={nodeId}
       data-dock-edge={edge}
-      // flexShrink:0 so cells keep their content height and the column SCROLLS
-      // (via the Paper's overflowY) when they don't all fit, rather than
-      // compressing and clipping. flexGrow:1 still lets a few cells share the
-      // space when there's room.
-      style={{ flexGrow: 1, flexShrink: 0, minHeight: 0, display: "flex", width: "100%" }}
+      // Size to content (flexGrow:0, flexShrink:0): the cell's bounding rect must
+      // equal its VISIBLE strip, or hitTest computes drop zones/hints against a
+      // region-tall box (phantom "bottom split" far below the rows, merge
+      // highlight over empty canvas). The column's Paper scrolls (overflowY) when
+      // the cells don't all fit, rather than stretching them.
+      style={{
+        flexGrow: 0,
+        flexShrink: 0,
+        minHeight: 0,
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+      }}
     >
       {inner}
     </Box>

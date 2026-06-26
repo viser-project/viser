@@ -258,7 +258,7 @@ def test_sandwiched_minimized_column_renders_vertical_strip(
                     for (const l of document.querySelectorAll('[data-dock-leaf]')) {
                         if (l.textContent.includes(label)) {
                             const r = l.getBoundingClientRect();
-                            return { x: r.x, w: r.width, h: r.height };
+                            return { x: r.x, y: r.y, w: r.width, h: r.height };
                         }
                     }
                     return null;
@@ -288,16 +288,26 @@ def test_sandwiched_minimized_column_renders_vertical_strip(
         strip = leaf_rect("Controls")
         assert strip is not None
         assert strip["w"] < 50, f"strip not narrow: {strip['w']}px"
-        assert strip["h"] > 200, f"strip not tall: {strip['h']}px"
+        # The strip's drop-target leaf sizes to its VISIBLE content (cap + spine
+        # rows), NOT the full region height -- so hitTest zones align with what's
+        # drawn instead of a phantom region-tall box. A 2-row strip is well under
+        # half the 800px viewport.
+        assert 40 < strip["h"] < 300, f"strip should be content-tall: {strip['h']}px"
 
         # Expand restores the full-width panel.
         click_minimize("Controls")
         assert leaf_rect("Controls")["w"] > 150
 
-        # Minimize again and drag the strip out -> floats.
+        # Minimize again and drag the strip out -> floats. Grab the strip's own
+        # (content) box, not a fixed y, since it no longer spans the viewport.
         click_minimize("Controls")
         s = leaf_rect("Controls")
-        _drag(page, (s["x"] + s["w"] / 2, 400), (750, 250), steps=18)
+        _drag(
+            page,
+            (s["x"] + s["w"] / 2, s["y"] + s["h"] / 2),
+            (750, 250),
+            steps=18,
+        )
         floated = page.evaluate(
             """() => {
                 for (const w of document.querySelectorAll('[data-floating-window]')) {

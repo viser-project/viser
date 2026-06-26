@@ -36,6 +36,9 @@ const REGION_SIDE_PX = 40;
 // two edges don't swallow a ~36px strip's whole width, leaving the middle free
 // for its tab-insert / merge zones while the true edges still dock a column.
 const MINIMIZED_SIDE_BAND_PX = 8;
+// Horizontal inset for a minimized strip's tab-insertion line, so it reads as a
+// marker between rows rather than a full-width rule against the strip's borders.
+const INSERT_LINE_INSET_PX = 4;
 // Band fraction (of the content area) for a per-panel left/right split, capped
 // in pixels so it doesn't balloon on a wide panel.
 const SPLIT_BAND = 0.22;
@@ -235,11 +238,14 @@ export const verticalTabInsertion = (
     }
   });
   const r = tabs[best].rect;
+  // Inset the horizontal line from both strip edges so it reads as an insertion
+  // marker, not a full-width rule hugging the ~36px strip's borders (mirrors the
+  // horizontal path, which nudges its line in from the leftmost tab edge).
   return {
     index: after ? best + 1 : best,
-    lineLeft: r.left,
+    lineLeft: r.left + INSERT_LINE_INSET_PX,
     lineTop: after ? r.bottom : r.top,
-    lineWidth: r.width,
+    lineWidth: Math.max(2, r.width - 2 * INSERT_LINE_INSET_PX),
   };
 };
 

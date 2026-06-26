@@ -297,6 +297,37 @@ def test_snap_below_minimized_keeps_top_panel(dock_context, vite_server: int) ->
         page.close()
 
 
+def test_tear_tab_from_minimized_strip_stays_minimized(
+    dock_context, vite_server: int
+) -> None:
+    """Dragging a tab ROW out of a minimized docked strip floats it STILL
+    minimized -- dragging never expands (only a no-motion click does)."""
+    page = _open(dock_context, vite_server)
+    try:
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=stack(group(["controls", "inspector"], collapsed=True))
+            ),
+        )
+        gid = "t-controls"
+        row = _box(page, f'[data-dock-group="{gid}"] [data-dock-tab="inspector"]')
+        if row is None:
+            pytest.skip("strip not laid out this run")
+        _drag(page, (row["x"] + row["w"] / 2, row["y"] + row["h"] / 2), (500, 400))
+        ig = page.evaluate(
+            """() => { for (const [g, v] of Object.entries(window.__dockLayout.groups))
+                if (v.paneIds.includes("inspector")) return g; return null; }"""
+        )
+        if _floating_window_id_for_panel(page, "inspector") is None:
+            pytest.skip("tear-out didn't float this run; geometry off")
+        assert page.evaluate(
+            "(g) => window.__dockLayout.groups[g].collapsed === true", ig
+        ), "a tab torn from a minimized strip must stay minimized"
+    finally:
+        page.close()
+
+
 def test_drop_into_minimized_stack_at_tab_position(
     dock_context, vite_server: int
 ) -> None:

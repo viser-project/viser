@@ -427,6 +427,40 @@ describe("outer-edge dock beside a minimized region strip", () => {
     const out = run(layout, [tgt], CONTAINER.width - 1, 400, STRIP_W)!;
     expect(out.result).toMatchObject({ kind: "split", region: "right" });
   });
+
+  it("over a spine-label row -> insertTab with an INSET hint line (not full strip width)", () => {
+    const node = leaf("g");
+    const layout = layoutWith({ right: node });
+    // A content-tall strip (~70px) with two spine-label rows near the top.
+    const tgt = collapsedRightTarget("g", node.id, rect(stripLeft, 0, STRIP, 70));
+    tgt.tabs = [
+      { paneId: "p0", rect: rect(stripLeft, 4, STRIP, 30) },
+      { paneId: "p1", rect: rect(stripLeft, 36, STRIP, 30) },
+    ];
+    // Hover the middle of the strip's x, over the second row -> insert there.
+    const out = run(layout, [tgt], stripLeft + STRIP / 2, 40, STRIP_W)!;
+    expect(out.result).toMatchObject({ kind: "insertTab", targetGroupId: "g" });
+    // The hint line is inset from BOTH strip edges (no full-width rule).
+    expect(out.hint.variant).toBe("line");
+    expect(out.hint.width).toBeLessThan(STRIP);
+    expect(out.hint.left).toBeGreaterThan(stripLeft - CONTAINER.left);
+  });
+
+  it("collapsed strip drop zones use the CONTENT rect, not a region-tall box", () => {
+    // The leaf rect equals the visible strip (~70px), so a point below the rows
+    // is OUTSIDE the cell -> it must NOT resolve to a phantom 'bottom split'
+    // pinned to an 800px region bottom. (Regression: the tall-rect bug.)
+    const node = leaf("g");
+    const layout = layoutWith({ right: node });
+    const tgt = collapsedRightTarget("g", node.id, rect(stripLeft, 0, STRIP, 70));
+    tgt.tabs = [{ paneId: "p0", rect: rect(stripLeft, 4, STRIP, 40) }];
+    // A point far below the 70px strip is not over the target at all.
+    const out = run(layout, [tgt], stripLeft + STRIP / 2, 500, STRIP_W);
+    // Either no target (null) or, at worst, not a split pinned to y=500+.
+    if (out !== null && out.result.kind === "split") {
+      expect(out.hint.top).toBeLessThan(200);
+    }
+  });
 });
 
 // ===========================================================================

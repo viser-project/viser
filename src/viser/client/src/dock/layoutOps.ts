@@ -1115,6 +1115,11 @@ export function tearOutPane(
   if (src.paneIds.length > 0 && src.activeId === paneId)
     src.activeId = src.paneIds[0];
   const newGroup = makeGroup([paneId]);
+  // The torn pane inherits the source's minimized state: dragging a tab out of
+  // a minimized strip floats it STILL minimized (expanding is a click-only
+  // gesture). Same as the 1-pane wholesale-float branch above, which floats the
+  // source group with its collapsed flag intact.
+  if (src.collapsed === true) newGroup.collapsed = true;
   draft.groups[newGroup.id] = newGroup;
   const win = makeFloatingWindow(x, y, width, [newGroup.id]);
   draft.floating.push(win);
