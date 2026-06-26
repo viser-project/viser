@@ -1192,13 +1192,15 @@ function SceneContextSetter() {
   // CSS box on the SAME tick. R3F's own observer fires moments later and finds
   // the size already current, so the two never fight.
   useEffect(() => {
-    mutable.current.syncCanvasSize = () => {
-      const canvas = gl.domElement;
-      const cssW = canvas.clientWidth;
-      const cssH = canvas.clientHeight;
-      // setSize updates the renderer's drawing buffer AND the camera's aspect +
-      // projection; it no-ops internally if the size is unchanged.
-      if (cssW > 0 && cssH > 0) setSize(cssW, cssH);
+    mutable.current.syncCanvasSize = (width: number, height: number) => {
+      if (width <= 0 || height <= 0) return;
+      // setSize updates the drawing buffer + R3F's size store + camera aspect.
+      setSize(width, height);
+      // Paint THIS frame into the freshly-sized buffer (don't wait for R3F's
+      // next rAF), so the scene doesn't trail the panel edge during the drag.
+      const scene = mutable.current.scene;
+      const camera = mutable.current.camera;
+      if (scene !== null && camera !== null) gl.render(scene, camera);
     };
     return () => {
       mutable.current.syncCanvasSize = null;

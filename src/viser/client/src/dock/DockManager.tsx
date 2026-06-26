@@ -82,6 +82,55 @@ function clampCorner(
     clamp(y, 0, containerH - KEEP_VISIBLE_PX),
   ];
 }
+
+/** As a docked region's edge sweeps inward during a resize (reserved width
+ * `oldReserved` -> `newReserved`), push floats it sweeps PAST so they stay fully
+ * on the canvas. The decision is purely local to this drag frame -- the seam's
+ * before/after position -- no accumulated history:
+ *   - The seam moved from `oldSeam` to `newSeam` (toward the canvas when growing).
+ *   - A float whose canvas-facing edge was clear of `oldSeam` (fully on the
+ *     canvas) but would be past `newSeam` (covered) is pushed flush to `newSeam`,
+ *     keeping it fully on the canvas.
+ *   - A float already past `oldSeam` (overlapping before this frame) is left
+ *     alone -- the region just slides over it.
+ *   - A receding seam (region shrinking) sweeps past nothing, so pushes nothing.
+ *   - We never push a float's far edge off the opposite side of the canvas.
+ * Returns the same layout reference when nothing moved. */
+function pushFloatsAheadOfSeam(
+  layout: DockLayout,
+  edge: DockEdge,
+  containerWidth: number,
+  oldReserved: number,
+  newReserved: number,
+  draggingId: WindowId | null,
+): DockLayout {
+  if (newReserved <= oldReserved) return layout; // shrinking: sweeps past nothing
+  let changed = false;
+  const floating = layout.floating.map((w) => {
+    if (w.id === draggingId) return w;
+    let x = w.x;
+    if (edge === "right") {
+      const oldSeam = containerWidth - oldReserved;
+      const newSeam = containerWidth - newReserved;
+      // Was fully on the canvas (right edge clear of old seam) and the new seam
+      // now covers that edge: push left to sit flush, but not off the left side.
+      if (w.x + w.width <= oldSeam && w.x + w.width > newSeam)
+        x = Math.max(0, newSeam - w.width);
+    } else {
+      const oldSeam = oldReserved;
+      const newSeam = newReserved;
+      // Was fully on the canvas (left edge clear of old seam) and the new seam
+      // now covers it: push right to sit flush, but not off the right side.
+      if (w.x >= oldSeam && w.x < newSeam)
+        x = Math.min(newSeam, containerWidth - w.width);
+    }
+    if (x === w.x) return w;
+    changed = true;
+    return { ...w, x };
+  });
+  if (!changed) return layout;
+  return { ...layout, floating };
+}
 // How far past a tab strip's edge the pointer must travel before a tab reorder
 // becomes a tear-out into a floating window.
 const TAB_TEAR_PX = 30;
@@ -112,7 +161,7 @@ export function DockManager({
    * inset has been flushed to the DOM. Lets the host (e.g. the 3D canvas)
    * synchronously react to the canvas's new size on the SAME tick instead of
    * waiting for a ResizeObserver -- see ControlPanelDock / syncCanvasSize. */
-  onRegionResizeFrame?: () => void;
+  onRegionResizeFrame?: (canvasWidth: number, canvasHeight: number) => void;
 }) {
   const onRegionResizeFrameRef = React.useRef(onRegionResizeFrame);
   onRegionResizeFrameRef.current = onRegionResizeFrame;
@@ -276,6 +325,13 @@ export function DockManager({
   // Container width, exposed via metrics so float coords (incl. negative
   // gap-from-right) can be resolved against the live canvas.
   const [containerWidth, setContainerWidth] = React.useState(0);
+  // Ref mirrors so the region-resize drag closure reads the CURRENT container
+  // size synchronously (it computes the canvas's new size from these + the
+  // freshly-committed insets).
+  const containerWidthRef = React.useRef(0);
+  containerWidthRef.current = containerWidth;
+  const containerHeightRef = React.useRef(0);
+  containerHeightRef.current = containerHeight;
 
   // Keep floating windows sensibly placed when the container resizes. Each
   // axis anchors to the NEARER container edge (matching the original
@@ -1561,9 +1617,10 @@ export function DockManager({
   // container ResizeObserver already anchors them and preserves deliberate
   // overhang (clampCorner); double-clamping here would yank an overhanging
   // user float fully inside on every resize.
-  const resolveFloatingPositions = React.useCallback((clampDragged: boolean) => {
+  // Read the live bounds + measured float heights for repositioning.
+  const readFloatBounds = React.useCallback(() => {
     const el = containerRef.current;
-    if (el === null) return;
+    if (el === null) return null;
     const rect = el.getBoundingClientRect();
     const heights = new Map<string, number>();
     el.querySelectorAll<HTMLElement>("[data-floating-window]").forEach(
@@ -1572,39 +1629,36 @@ export function DockManager({
         if (id !== null) heights.set(id, winEl.offsetHeight);
       },
     );
-    const bounds = {
-      width: rect.width,
-      height: rect.height,
-      leftInset: reservedWidthRef.current.left,
-      rightInset: reservedWidthRef.current.right,
+    return {
+      heights,
+      bounds: {
+        width: rect.width,
+        height: rect.height,
+        leftInset: reservedWidthRef.current.left,
+        rightInset: reservedWidthRef.current.right,
+      },
     };
+  }, []);
+
+  // Container/window resize: re-resolve SERVER-anchored floats against the new
+  // bounds (so e.g. a top-right-anchored panel tracks the corner). User-placed
+  // floats are left where the user put them.
+  const reanchorFloats = React.useCallback(() => {
+    const m = readFloatBounds();
+    if (m === null) return;
     setLayout((cur) => {
       let changed = false;
       const floating = cur.floating.map((w) => {
-        if (w.id === draggingWindowIdRef.current) return w;
-        const winHeight = heights.get(w.id) ?? pinnedPxOf(w.height) ?? 0;
-        let x: number;
-        let y: number;
-        if (w.anchor !== undefined) {
-          // Server-anchored: re-resolve the (possibly negative) anchor.
-          ({ x, y } = ops.resolveRequestedFloatPosition(
-            w.anchor.x,
-            w.anchor.y,
-            w.width,
-            winHeight,
-            bounds,
-          ));
-        } else if (clampDragged) {
-          // User-dragged, inset grew: push inward so the chrome doesn't cover it.
-          const maxX = Math.max(
-            bounds.leftInset,
-            rect.width - bounds.rightInset - w.width,
-          );
-          x = Math.min(Math.max(w.x, bounds.leftInset), maxX);
-          y = w.y;
-        } else {
+        if (w.id === draggingWindowIdRef.current || w.anchor === undefined)
           return w;
-        }
+        const winHeight = m.heights.get(w.id) ?? pinnedPxOf(w.height) ?? 0;
+        const { x, y } = ops.resolveRequestedFloatPosition(
+          w.anchor.x,
+          w.anchor.y,
+          w.width,
+          winHeight,
+          m.bounds,
+        );
         if (x === w.x && y === w.y) return w;
         changed = true;
         return { ...w, x, y };
@@ -1614,18 +1668,21 @@ export function DockManager({
       layoutRef.current = next;
       return next;
     });
-  }, []);
+  }, [readFloatBounds]);
 
-  // Inset change (docking): re-resolve requested + push dragged floats inward.
+  // USER-placed floats are pushed out of a GROWING region's way directly in the
+  // region-resize handler (pushFloatsAheadOfSeam) -- not here; a discrete inset
+  // change (docking/minimizing) leaves user floats where they are. But
+  // SERVER-anchored floats still re-resolve against the new bounds on any inset
+  // or container change, so e.g. the anchored control panel stays correctly
+  // placed when a docked region's width changes.
   React.useEffect(() => {
-    resolveFloatingPositions(true);
-  }, [leftInset, rightInset, resolveFloatingPositions]);
+    reanchorFloats();
+  }, [leftInset, rightInset, reanchorFloats]);
 
-  // Container resize: re-resolve requested floats only (the container
-  // ResizeObserver handles dragged-float anchoring + overhang).
   React.useEffect(() => {
-    resolveFloatingPositions(false);
-  }, [containerWidth, containerHeight, resolveFloatingPositions]);
+    reanchorFloats();
+  }, [containerWidth, containerHeight, reanchorFloats]);
 
   // A floating window's RENDERED size changing (e.g. an auto-height panel
   // finishing its first layout, or content growing) re-resolves requested floats
@@ -1643,13 +1700,13 @@ export function DockManager({
   React.useEffect(() => {
     const el = containerRef.current;
     if (el === null) return;
-    const observer = new ResizeObserver(() => resolveFloatingPositions(false));
+    const observer = new ResizeObserver(() => reanchorFloats());
     el.querySelectorAll("[data-floating-window]").forEach((winEl) =>
       observer.observe(winEl),
     );
     return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [floatingWindowIds, resolveFloatingPositions]);
+  }, [floatingWindowIds, reanchorFloats]);
 
   return (
     <DockContext.Provider value={contextValue}>
@@ -1774,16 +1831,40 @@ export function DockManager({
                         });
                         next = ops.setNodeWeights(next, edge, byId);
                       }
-                      // Flush the width commit so the canvas wrapper's new
-                      // inset is in the DOM before the host reads it. The host
-                      // (the 3D canvas) then resizes its GL backbuffer to the
-                      // new CSS box on THIS tick, so the rendered scene tracks
-                      // the divider instead of trailing R3F's async
-                      // ResizeObserver by a frame on a fast drag.
+                      // Push floats out of the way of THIS region's edge as it
+                      // sweeps inward, using the before/after seam of this very
+                      // drag frame -- no history needed. A float that was fully
+                      // on the canvas (its edge clear of the OLD seam) and would
+                      // now be covered (past the NEW seam) is pushed flush, so it
+                      // stays fully on the canvas; one already overlapping (edge
+                      // past the old seam) is left alone, and a receding seam
+                      // pushes nothing.
+                      next = pushFloatsAheadOfSeam(
+                        next,
+                        edge,
+                        containerWidthRef.current,
+                        reservedWidthRef.current[edge], // old reserved (pre-commit)
+                        total + plan.chromePx, // new reserved (cols + chrome)
+                        draggingWindowIdRef.current,
+                      );
+                      // Flush the width commit so this render updates
+                      // reservedWidthRef (the canvas wrapper's new insets) before
+                      // we tell the host the canvas's new size.
                       flushSync(() =>
                         applyOp(ops.setRegionWidth(next, edge, total)),
                       );
-                      onRegionResizeFrameRef.current?.();
+                      // Hand the host (the 3D canvas) the AUTHORITATIVE new
+                      // canvas size we just produced -- containerWidth minus the
+                      // freshly-committed insets -- so it resizes the GL
+                      // backbuffer on THIS tick. We must NOT let the host read
+                      // canvas.clientWidth instead: the new inset isn't reliably
+                      // reflowed yet mid-drag, so a re-measure lags and the scene
+                      // trails the divider (and only snaps on release).
+                      const reserved = reservedWidthRef.current;
+                      onRegionResizeFrameRef.current?.(
+                        Math.max(0, containerWidthRef.current - reserved.left - reserved.right),
+                        containerHeightRef.current,
+                      );
                     };
                   }}
                 />
