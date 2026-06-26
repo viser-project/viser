@@ -31,9 +31,12 @@ import { useThrottledMessageSender } from "./WebsocketUtils";
 import {
   ActiveDragState,
   DragScratches,
+  KeyModifier,
   anyBindingMatches,
   computeInstanceWorldMatrix,
   isInstancedMesh2VendoredMessage,
+  keyModifierFromEvent,
+  planModifierTransition,
 } from "./dragUtils";
 import { DragLayerApi, DragLayerContext } from "./dragLayerContext";
 import { useDragArrow } from "./useDragArrow";
@@ -231,19 +234,56 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
 
   // Build + send a drag message in one call, no-op if ``buildDragMessage``
   // returns null (live grab point unavailable). Wraps the duplicated
-  // null-check pattern at the three send sites. */
+  // null-check pattern at the send sites. Returns whether a message was
+  // actually sent -- callers use this to keep ``segmentActive`` honest
+  // (a ``start`` that couldn't build must not be paired with a later
+  // ``end``). */
   const sendDragMessage = React.useCallback(
     (
       activeDrag: ActiveDragState,
       phase: "start" | "update" | "end",
       throttle: boolean,
-    ) => {
+    ): boolean => {
       const message = buildDragMessage(activeDrag, phase);
-      if (message === null) return;
+      if (message === null) return false;
       if (throttle) sendDragsThrottled(message);
       else viewerMutable.sendMessage(message);
+      return true;
     },
     [buildDragMessage, sendDragsThrottled, viewerMutable],
+  );
+
+  // Apply a mid-drag modifier change. Ends the current segment (if any),
+  // switches ownership to ``nextModifier``, and starts a fresh segment
+  // when the new combo is bound. Geometry is untouched, so the drag
+  // continues without a visual jump -- only the addressed callback set
+  // changes. Dormant (unbound) modifiers send nothing; see
+  // ``planModifierTransition``. */
+  const transitionDragModifier = React.useCallback(
+    (activeDrag: ActiveDragState, nextModifier: KeyModifier | null) => {
+      const plan = planModifierTransition(
+        activeDrag.input.modifier,
+        nextModifier,
+        activeDrag.bindings,
+        activeDrag.input.button,
+        activeDrag.segmentActive,
+      );
+      if (plan === null) return;
+      if (plan.emitEnd) {
+        // Flush queued throttled updates so the old segment's pending
+        // update lands *before* its synthetic end -- preserves wire
+        // ordering across the segment boundary.
+        flushDragsThrottled();
+        sendDragMessage(activeDrag, "end", false);
+      }
+      // Switch ownership before emitting the new ``start`` so the start
+      // message carries the new modifier. ``button`` is unchanged.
+      activeDrag.input = { ...activeDrag.input, modifier: nextModifier };
+      activeDrag.segmentActive = plan.emitStart
+        ? sendDragMessage(activeDrag, "start", false)
+        : false;
+    },
+    [flushDragsThrottled, sendDragMessage],
   );
 
   type EndInfo = {
@@ -264,15 +304,14 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
       }
 
       flushDragsThrottled();
-      if (sendEndMessage) {
-        // Modifier state is frozen at drag_start: a drag is "owned" by
-        // whichever (button, modifiers) combo was held when the user
-        // pressed the mouse, and stays owned by that combo until release
-        // regardless of modifier changes mid-drag. This guarantees the
-        // drag_start / drag_end callbacks see the same dispatch and
-        // avoids a class of footguns where a key-up arrives a beat
-        // before mouse-up (downgrading the gesture at the last moment)
-        // or a modifier is accidentally pressed mid-drag.
+      if (sendEndMessage && activeDrag.segmentActive) {
+        // End the currently-active segment. A drag is partitioned into
+        // one segment per (button, modifier) combo; the modifier can
+        // switch mid-drag (see ``transitionDragModifier``), and each
+        // switch already emitted the prior segment's ``end``. So here we
+        // only emit when a segment is still active -- a release while
+        // dormant (current modifier matches no binding) has nothing left
+        // to end.
         sendDragMessage(activeDrag, "end", false);
       }
 
@@ -362,14 +401,40 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
           if (event.pointerId !== activeDrag.pointerId) return;
           if (!updateActiveDragEnd(event.clientX, event.clientY)) return;
 
-          // Modifier/button state is frozen at drag_start and reused on
-          // every update/end -- see the note in `stopActiveDrag` above.
+          // A modifier change carried on this move ends the current
+          // segment and starts a new one under the new combo. Run it
+          // *after* refreshing the end position so the synthetic end
+          // reports the latest pointer location, and *before* the update
+          // so the update is attributed to the new segment.
+          const liveModifier = keyModifierFromEvent(event);
+          if (liveModifier !== activeDrag.input.modifier) {
+            transitionDragModifier(activeDrag, liveModifier);
+          }
+
           // ``start_position`` is recomputed live inside buildDragMessage,
           // so the wire payload always reflects the click point's
-          // current world position (tracking the moving object).
-          sendDragMessage(activeDrag, "update", true);
+          // current world position (tracking the moving object). Skip
+          // while dormant -- the current modifier matches no binding.
+          if (activeDrag.segmentActive) {
+            sendDragMessage(activeDrag, "update", true);
+          }
           // The per-frame useFrame updates the arrow tail from target
           // transforms; no manual update needed here.
+        };
+
+        // Modifier changes can also arrive with the pointer stationary
+        // (the user taps a modifier key without moving the mouse). Listen
+        // for key transitions during the drag and re-evaluate ownership
+        // using the last-known pointer position. ``keyModifierFromEvent``
+        // reads ``ctrl/meta/shift/alt`` off the KeyboardEvent, so both
+        // keydown and keyup resolve the current combo.
+        const handleWindowKeyChange = (event: KeyboardEvent) => {
+          const activeDrag = activeDragRef.current;
+          if (activeDrag === null) return;
+          const liveModifier = keyModifierFromEvent(event);
+          if (liveModifier !== activeDrag.input.modifier) {
+            transitionDragModifier(activeDrag, liveModifier);
+          }
         };
 
         const handleWindowPointerUp = (event: PointerEvent) => {
@@ -393,6 +458,8 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
           window.removeEventListener("pointerup", handleWindowPointerUp);
           window.removeEventListener("pointercancel", handleWindowPointerUp);
           window.removeEventListener("blur", handleWindowBlur);
+          window.removeEventListener("keydown", handleWindowKeyChange);
+          window.removeEventListener("keyup", handleWindowKeyChange);
         };
 
         // Plane parallel to the camera image plane, through the start
@@ -424,6 +491,13 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
           endPointWorld: startWorld.clone(),
           endPointerXy: [pointerXy[0], pointerXy[1]],
           input,
+          bindings,
+          // Set from the initial ``start`` send below. The pointerdown
+          // path only calls ``beginDrag`` when ``input`` matches a
+          // binding, so the opening segment is bound -- but the send can
+          // still fail if the live grab point is unavailable, so we trust
+          // its return value rather than assuming ``true``.
+          segmentActive: false,
           releaseCameraLock: null,
           cleanup,
         };
@@ -434,7 +508,13 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
         window.addEventListener("pointerup", handleWindowPointerUp);
         window.addEventListener("pointercancel", handleWindowPointerUp);
         window.addEventListener("blur", handleWindowBlur);
-        sendDragMessage(activeDragRef.current, "start", false);
+        window.addEventListener("keydown", handleWindowKeyChange);
+        window.addEventListener("keyup", handleWindowKeyChange);
+        activeDragRef.current.segmentActive = sendDragMessage(
+          activeDragRef.current,
+          "start",
+          false,
+        );
         return true;
       },
       stopIfNodeIs: (nodeName) => {
@@ -449,6 +529,7 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
       frameScratches,
       sendDragMessage,
       stopActiveDrag,
+      transitionDragModifier,
       updateActiveDragEnd,
       viewer,
       viewerMutable,

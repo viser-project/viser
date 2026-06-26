@@ -205,6 +205,76 @@ def test_scene_node_drag_callbacks(
         assert event.modifier == "cmd/ctrl", event.modifier
 
 
+def test_scene_node_drag_modifier_switch_mid_drag(
+    page: Page,
+    viser_server: viser.ViserServer,
+) -> None:
+    """Changing the held modifier mid-drag ends the current segment and
+    starts a new one under the new combo, routing each segment to the
+    callback bound to it. Holding Ctrl, dragging, then adding Shift while
+    still dragging should: end the ``cmd/ctrl`` segment, then run a full
+    ``cmd/ctrl+shift`` segment -- all within one physical button press."""
+    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
+
+    ctrl_started = threading.Event()
+    ctrl_ended = threading.Event()
+    ctrl_shift_started = threading.Event()
+    ctrl_shift_ended = threading.Event()
+
+    box = viser_server.scene.add_box(
+        "/switch_box",
+        dimensions=(4.0, 4.0, 0.2),
+        color=(200, 100, 255),
+    )
+
+    # The server routes each segment to the callback bound to its combo,
+    # so a fired event is itself proof the segment carried that modifier.
+    _on_drag_phase(box, "start", "left", modifier="cmd/ctrl")(
+        lambda _: ctrl_started.set()
+    )
+    _on_drag_phase(box, "end", "left", modifier="cmd/ctrl")(lambda _: ctrl_ended.set())
+    _on_drag_phase(box, "start", "left", modifier="cmd/ctrl+shift")(
+        lambda _: ctrl_shift_started.set()
+    )
+    _on_drag_phase(box, "end", "left", modifier="cmd/ctrl+shift")(
+        lambda _: ctrl_shift_ended.set()
+    )
+
+    wait_for_connection(page, viser_server.get_port())
+    wait_for_scene_node(page, "/switch_box")
+
+    (start_x, start_y), (end_x, end_y) = _get_canvas_drag_points(page)
+    mid_x = (start_x + end_x) / 2
+    mid_y = (start_y + end_y) / 2
+
+    # cmd/ctrl segment: press and drag halfway.
+    page.keyboard.down("Control")
+    page.mouse.move(start_x, start_y)
+    page.mouse.down()
+    page.mouse.move(mid_x, mid_y, steps=8)
+    assert ctrl_started.wait(timeout=5.0), "cmd/ctrl segment didn't start"
+
+    # Add Shift mid-drag -- the keydown alone (no further motion) ends the
+    # cmd/ctrl segment and starts the cmd/ctrl+shift one. Asserting
+    # ctrl_ended *before* mouse-up is the crux: it proves the segment
+    # ended from the modifier switch, not from the release.
+    page.keyboard.down("Shift")
+    assert ctrl_ended.wait(timeout=5.0), "cmd/ctrl segment didn't end on modifier add"
+    assert ctrl_shift_started.wait(timeout=5.0), (
+        "cmd/ctrl+shift segment didn't start when Shift was added mid-drag"
+    )
+
+    # Keep dragging under the new combo, then release.
+    page.mouse.move(end_x, end_y, steps=8)
+    page.mouse.up()
+    page.keyboard.up("Shift")
+    page.keyboard.up("Control")
+    assert ctrl_shift_ended.wait(timeout=5.0), (
+        "cmd/ctrl+shift segment didn't end on release"
+    )
+
+
 def test_scene_node_drag_filter_rejects_wrong_modifier(
     page: Page,
     viser_server: viser.ViserServer,
