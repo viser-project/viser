@@ -74,7 +74,6 @@ from ._gui_handles import (
     UploadedFile,
     _colors_to_int_tuple,
     _CommandHandleState,
-    _empty_placement,
     _GuiButtonHandleState,
     _GuiHandleState,
     _GuiInputHandle,
@@ -268,10 +267,6 @@ class GuiApi:
         self._panel_handle_from_uuid: dict[str, PanelHandle] = {}
         self._command_handle_from_uuid: dict[str, CommandHandle] = {}
         self._current_file_upload_states: dict[str, _FileUploadState] = {}
-
-        # Coalesced placement state for the main (control) panel. Owned here
-        # rather than on a handle, since `main_panel` returns throwaway handles.
-        self._main_panel_placement = _empty_placement()
 
         # Set to True when plotly.min.js has been sent to client.
         self._setup_plotly_js: bool = False
@@ -586,28 +581,29 @@ class GuiApi:
         while self._command_handle_from_uuid:
             next(iter(self._command_handle_from_uuid.values())).remove()
 
-        # Clear any server-authored main-panel placement (from `main_panel`
-        # commands or the deprecated `control_layout`). Without this, a prior
-        # placement persists in the broadcast buffer and replays to clients that
-        # connect after the reset -- a stale layout the user never asked for. We
-        # send the cleared placement so connected clients revert to the default
-        # control-panel position too.
-        if self._main_panel_placement != _empty_placement():
-            # Clear IN PLACE (not a rebind): every `MainPanelHandle` aliases this
-            # exact dict (handles are throwaway and capture it by reference), so
-            # rebinding would orphan handles obtained before reset() -- their
-            # later commands would mutate the dead dict and never reach the api.
-            placement_dict = cast(dict, self._main_panel_placement)
-            placement_dict.clear()
-            placement_dict.update(_empty_placement())
-            # The queued message gets its OWN fresh dict, not the live one (the
-            # snapshot rationale in `_send_placement`).
-            self._websock_interface.queue_message(
-                _messages.GuiUpdateMessage(
-                    CONTROL_PANEL_ID,
-                    {"placement": _empty_placement()},
-                )
+        # Reset any server-authored main-panel placement (from `main_panel`
+        # commands or the deprecated `control_layout`) back to the default. The
+        # per-axis placement messages persist in the broadcast buffer and replay
+        # to clients that connect after the reset; sending the defaults here
+        # coalesces over the stale ones (same redundancy key per message type) so
+        # late joiners -- and connected clients -- get the default control panel
+        # (a top-right float, expanded) instead of a layout the user never asked
+        # for. Placement is write-only, so we just send; there's no state to read.
+        self._websock_interface.queue_message(
+            _messages.GuiSetPanelPositionMessage(
+                CONTROL_PANEL_ID, {"kind": "float", "x": None, "y": None}
             )
+        )
+        self._websock_interface.queue_message(
+            _messages.GuiSetPanelCollapsedMessage(CONTROL_PANEL_ID, False)
+        )
+        # Clear any width/height override (None -> default / theme width).
+        self._websock_interface.queue_message(
+            _messages.GuiSetPanelWidthMessage(CONTROL_PANEL_ID, None)
+        )
+        self._websock_interface.queue_message(
+            _messages.GuiSetPanelHeightMessage(CONTROL_PANEL_ID, None)
+        )
 
     def set_panel_label(self, label: str | None) -> None:
         """Set the main label that appears in the GUI panel.
@@ -984,9 +980,7 @@ class GuiApi:
             )
         )
 
-    def add_panel(
-        self, *, visible: bool = True, expand_by_default: bool = True
-    ) -> PanelHandle:
+    def add_panel(self, *, visible: bool = True) -> PanelHandle:
         """Add a standalone panel: a **movable** window (dockable / floating)
         that lives outside the main control panel. A panel is the *container*;
         its tabs (added with :meth:`PanelHandle.add_tab`) hold the content.
@@ -1003,11 +997,11 @@ class GuiApi:
         :meth:`PanelHandle.remove` (there is no UI close button). See also
         :attr:`main_panel` to place the main control panel.
 
+        To start a panel minimized, call :meth:`PanelHandle.minimize` (an
+        imperative command like ``dock_*``).
+
         Args:
             visible: Whether the panel is visible.
-            expand_by_default: Whether the panel starts expanded. Set False to
-                start it minimized. A one-shot initial hint (like a folder's
-                ``expand_by_default``) -- the user owns the collapsed state after.
 
         Returns:
             A handle used to add tabs to and place the panel.
@@ -1029,11 +1023,6 @@ class GuiApi:
                 visible=visible,
                 _tab_icons_html=(),
                 _tab_container_ids=(),
-                # Seed placement on the create message so the wire always carries
-                # a non-null placement, even before any verb is called (the client
-                # never has to handle a null placement for a panel).
-                placement=_empty_placement(),
-                expand_by_default=expand_by_default,
             ),
         )
         self._websock_interface.queue_message(message)

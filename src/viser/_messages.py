@@ -1745,16 +1745,66 @@ class FloatPlacement(TypedDict):
     y: Optional[float]
 
 
-class GuiDockPlacement(TypedDict):
-    """Imperative placement state for a standalone panel.
+# Panel placement is WRITE-ONLY from the server: each command fires one of the
+# per-axis messages below. There is no server-side placement state to read back;
+# all placement state lives on the client. Each message is an `update_simple`
+# entity update (entity "gui"), so they coalesce latest-wins PER MESSAGE TYPE
+# (position / width / height / collapsed stay in independent slots, never
+# clobbering each other), persist in the buffer, replay to late-joining clients,
+# and are purged when the panel is removed. This is the same lifecycle used by
+# scene SetPositionMessage / SetOrientationMessage. Because e.g. set_width emits
+# only GuiSetPanelWidthMessage (never a position), resizing can't re-dock a panel
+# the user has moved -- no before/after gating needed.
 
-    Orthogonal fields so independent commands (dock/float, set_width, set_height)
-    coalesce without clobbering each other. Delivered via GuiUpdateMessage and
-    replayed to late-joining clients."""
 
-    position: Optional[Union[EdgePlacement, SplitPlacement, FloatPlacement]]
+@dataclasses.dataclass
+class GuiSetPanelPositionMessage(
+    Message,
+    entity=EntityLifecycle("gui", "update_simple", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """Dock/float a panel (or the main control panel). Write-only."""
+
+    uuid: str
+    position: Union[EdgePlacement, SplitPlacement, FloatPlacement]
+
+
+@dataclasses.dataclass
+class GuiSetPanelWidthMessage(
+    Message,
+    entity=EntityLifecycle("gui", "update_simple", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """Set a panel's width in pixels (None clears the override -> default/theme
+    width). Write-only."""
+
+    uuid: str
     width: Optional[float]
+
+
+@dataclasses.dataclass
+class GuiSetPanelHeightMessage(
+    Message,
+    entity=EntityLifecycle("gui", "update_simple", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """Set a panel's height in pixels (floating panels only; None clears the
+    override -> auto). Write-only."""
+
+    uuid: str
     height: Optional[float]
+
+
+@dataclasses.dataclass
+class GuiSetPanelCollapsedMessage(
+    Message,
+    entity=EntityLifecycle("gui", "update_simple", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """Minimize (collapse) or expand a panel. Write-only."""
+
+    uuid: str
+    collapsed: bool
 
 
 @dataclasses.dataclass
@@ -1780,8 +1830,8 @@ class GuiTabGroupMessage(_CreateGuiComponentMessage):
 @dataclasses.dataclass
 class GuiPanelProps:
     """Props for a standalone panel (`server.gui.add_panel()`). A panel carries
-    its own tabs (it IS the tab container), plus placement and an initial
-    collapsed hint."""
+    its own tabs (it IS the tab container). Placement is NOT a prop: it is
+    write-only client state, driven by the GuiSetPanel* messages above."""
 
     _tab_labels: Tuple[str, ...]
     """(Private) Tuple of labels for each tab."""
@@ -1794,13 +1844,6 @@ class GuiPanelProps:
     visible: bool
     """Visibility state of the panel: when False the panel renders nothing (its
     panes are removed from the dock layout) without being destroyed."""
-    placement: GuiDockPlacement
-    """Imperative placement for the panel. Seeded empty on create, then updated
-    by dock/float/size commands (coalesced via GuiUpdateMessage)."""
-    expand_by_default: bool = True
-    """One-shot initial collapsed state: when False, the panel starts minimized.
-    Applied once at creation (like a folder's expand_by_default); the user owns
-    the collapsed state thereafter."""
 
 
 @dataclasses.dataclass

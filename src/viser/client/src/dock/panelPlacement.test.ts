@@ -1,6 +1,7 @@
-// Tests for applyPanelPlacement: the server-authored placement of standalone
+// Tests for applyPanelPlacement: the client-owned placement of standalone
 // panels (Python `server.gui.add_panel()`), covering edge / split / float
-// placement, width/height, expand-by-default, multi-pane grouping, repositioning.
+// placement, width/height, collapse, multi-pane grouping, repositioning. Each
+// axis is a write-only field that is always applied when present.
 
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -30,7 +31,15 @@ const EMPTY: PanelPlacement = {
   position: null,
   width: null,
   height: null,
+  collapsed: null,
 };
+
+/** A placement carrying a position but no size/collapse (every other axis
+ * null). Most position tests use this so they read like the wire shape. */
+const at = (position: PanelPlacement["position"]): PanelPlacement => ({
+  ...EMPTY,
+  position,
+});
 
 /** anchorGroupOf that resolves a uuid to the group currently holding the pane
  * of the same name (for tests where the anchor's pane id == its uuid). */
@@ -67,7 +76,7 @@ describe("applyPanelPlacement", () => {
     const out = applyPanelPlacement(
       emptyLayout(),
       ["p"],
-      { position: { kind: "float", x: 42, y: 84 }, width: 350, height: 250 },
+      { position: { kind: "float", x: 42, y: 84 }, width: 350, height: 250, collapsed: null },
       () => null,
     );
     expect(out.floating).toHaveLength(1);
@@ -84,7 +93,7 @@ describe("applyPanelPlacement", () => {
     const out = applyPanelPlacement(
       emptyLayout(),
       ["p"],
-      { position: { kind: "float", x: 40, y: 20 }, width: null, height: null },
+      { position: { kind: "float", x: 40, y: 20 }, width: null, height: null, collapsed: null },
       () => null,
       {
         canvasBounds: {
@@ -108,7 +117,7 @@ describe("applyPanelPlacement", () => {
     const out = applyPanelPlacement(
       emptyLayout(),
       ["p"],
-      { position: { kind: "float", x: -15, y: 15 }, width: 240, height: null },
+      { position: { kind: "float", x: -15, y: 15 }, width: 240, height: null, collapsed: null },
       () => null,
       { canvasBounds: { width: 1000, height: 800, leftInset: 0, rightInset: 0 } },
     );
@@ -123,7 +132,7 @@ describe("applyPanelPlacement", () => {
     const out = applyPanelPlacement(
       emptyLayout(),
       ["p"],
-      { position: { kind: "float", x: 15, y: -15 }, width: 240, height: 200 },
+      { position: { kind: "float", x: 15, y: -15 }, width: 240, height: 200, collapsed: null },
       () => null,
       { canvasBounds: { width: 1000, height: 800, leftInset: 0, rightInset: 0 } },
     );
@@ -235,7 +244,7 @@ describe("applyPanelPlacement", () => {
     const out = applyPanelPlacement(
       emptyLayout(),
       ["p"],
-      { position: { kind: "float", x: 0, y: 0 }, width: 480, height: 360 },
+      { position: { kind: "float", x: 0, y: 0 }, width: 480, height: 360, collapsed: null },
       () => null,
     );
     expect(out.floating[0].width).toBe(480);
@@ -257,42 +266,55 @@ describe("applyPanelPlacement", () => {
     expect(out.floating).toHaveLength(0);
   });
 
-  it("starts the group collapsed when expandByDefault is false (one-shot)", () => {
+  it("collapses the group when collapsed:true (a plainly applied field)", () => {
     const out = applyPanelPlacement(
       emptyLayout(),
       ["p"],
-      { ...EMPTY, position: { kind: "edge", edge: "right" } },
+      { ...at({ kind: "edge", edge: "right" }), collapsed: true },
       () => null,
-      { expandByDefault: false },
     );
     const gid = findPaneGroup(out, "p")!;
     expect(out.groups[gid].collapsed).toBe(true);
   });
 
-  it("expandByDefault is a one-shot create hint -- not re-applied on reuse", () => {
-    // Create collapsed, then a later apply (user expanded it in between) must
-    // NOT re-collapse it: the hint only applies when the group is first created.
+  it("expands the group when collapsed:false", () => {
+    // Create collapsed, then re-apply with collapsed:false -> expanded. The
+    // collapsed field is always applied (no one-shot/prev gating).
     let layout = applyPanelPlacement(
       emptyLayout(),
       ["p"],
-      { ...EMPTY, position: { kind: "edge", edge: "right" } },
+      { ...at({ kind: "edge", edge: "right" }), collapsed: true },
       () => null,
-      { expandByDefault: false },
     );
     const gid = findPaneGroup(layout, "p")!;
     expect(layout.groups[gid].collapsed).toBe(true);
-    // Simulate the user expanding it.
-    layout.groups[gid].collapsed = false;
-    // A subsequent placement apply with expandByDefault:false again...
     layout = applyPanelPlacement(
       layout,
       ["p"],
-      { ...EMPTY, position: { kind: "edge", edge: "left" } },
+      { ...at({ kind: "edge", edge: "right" }), collapsed: false },
       () => null,
-      { expandByDefault: false },
     );
-    // ...must leave the user's expanded state alone (one-shot, not re-asserted).
     expect(layout.groups[findPaneGroup(layout, "p")!].collapsed).toBe(false);
+  });
+
+  it("leaves the collapsed state untouched when collapsed is null", () => {
+    // collapsed:null = the server never sent a collapse command -> the group's
+    // current collapsed state is preserved (here: the user collapsed it).
+    let layout = applyPanelPlacement(
+      emptyLayout(),
+      ["p"],
+      at({ kind: "edge", edge: "right" }),
+      () => null,
+    );
+    const gid = findPaneGroup(layout, "p")!;
+    layout.groups[gid].collapsed = true;
+    layout = applyPanelPlacement(
+      layout,
+      ["p"],
+      { ...at({ kind: "edge", edge: "right" }), width: 300 },
+      () => null,
+    );
+    expect(layout.groups[findPaneGroup(layout, "p")!].collapsed).toBe(true);
   });
 
   it("repositions an already-placed panel (float -> dock right)", () => {
@@ -425,7 +447,7 @@ describe("requested float coordinates", () => {
     applyPanelPlacement(
       emptyLayout(),
       ["p"],
-      { position: { kind: "float", x, y }, width, height },
+      { position: { kind: "float", x, y }, width, height, collapsed: null },
       () => null,
       { canvasBounds: BOUNDS_1000 },
     );
@@ -516,14 +538,14 @@ describe("removing a panel removes its tabs even when borrowed elsewhere", () =>
     let layout = applyPanelPlacement(
       emptyLayout(),
       ["a1", "a2"],
-      { position: { kind: "edge", edge: "right" }, width: null, height: null },
+      { position: { kind: "edge", edge: "right" }, width: null, height: null, collapsed: null },
       () => null,
       { canvasBounds: BOUNDS_1000 },
     );
     layout = applyPanelPlacement(
       layout,
       ["b1"],
-      { position: { kind: "float", x: 40, y: 40 }, width: 240, height: null },
+      { position: { kind: "float", x: 40, y: 40 }, width: 240, height: null, collapsed: null },
       () => null,
       { canvasBounds: BOUNDS_1000 },
     );
@@ -553,7 +575,7 @@ describe("removing a panel removes its tabs even when borrowed elsewhere", () =>
     let layout = applyPanelPlacement(
       emptyLayout(),
       ["b1"],
-      { position: { kind: "float", x: 40, y: 40 }, width: 240, height: null },
+      { position: { kind: "float", x: 40, y: 40 }, width: 240, height: null, collapsed: null },
       () => null,
       { canvasBounds: BOUNDS_1000 },
     );
@@ -582,7 +604,7 @@ describe("resizeWindowHeight pin / un-pin (auto-height)", () => {
     applyPanelPlacement(
       emptyLayout(),
       ["p"],
-      { position: { kind: "float", x: 40, y: 40 }, width: 240, height: null },
+      { position: { kind: "float", x: 40, y: 40 }, width: 240, height: null, collapsed: null },
       () => null,
       { canvasBounds: BOUNDS_1000 },
     );
@@ -614,7 +636,7 @@ describe("placement re-gathers tabs dragged out of the panel", () => {
     let layout = applyPanelPlacement(
       emptyLayout(),
       ["a", "b"],
-      { position: { kind: "edge", edge: "right" }, width: null, height: null },
+      { position: { kind: "edge", edge: "right" }, width: null, height: null, collapsed: null },
       () => null,
       { canvasBounds: BOUNDS_1000 },
     );
@@ -632,7 +654,7 @@ describe("placement re-gathers tabs dragged out of the panel", () => {
     layout = applyPanelPlacement(
       layout,
       ["a", "b"],
-      { position: { kind: "float", x: 100, y: 100 }, width: 260, height: null },
+      { position: { kind: "float", x: 100, y: 100 }, width: 260, height: null, collapsed: null },
       () => null,
       { canvasBounds: BOUNDS_1000 },
     );
@@ -658,7 +680,7 @@ describe("re-placing an already-floating panel reuses its window", () => {
     applyPanelPlacement(
       l,
       ["p"],
-      { position: { kind: "float", x: 80, y: 80 }, width: 240, height },
+      { position: { kind: "float", x: 80, y: 80 }, width: 240, height, collapsed: null },
       () => null,
       { canvasBounds: BOUNDS },
     );
@@ -700,7 +722,7 @@ describe("re-placing an already-DOCKED panel applies the new size", () => {
     applyPanelPlacement(
       l,
       ["p"],
-      { position: { kind: "edge", edge: "right" }, width, height: null },
+      { position: { kind: "edge", edge: "right" }, width, height: null, collapsed: null },
       () => null,
     );
 
@@ -727,17 +749,15 @@ describe("re-placing an already-DOCKED panel applies the new size", () => {
   });
 });
 
-describe("size-only re-placement does not relocate a user-moved panel", () => {
-  it("a torn-out (floated) edge-docked panel stays floating on set_width", () => {
-    // dock_right(): position = edge/right.
-    const edgeRight = {
-      position: { kind: "edge", edge: "right" } as const,
-      width: null,
-      height: null,
-    };
-    let layout = applyPanelPlacement(emptyLayout(), ["p"], edgeRight, () => null, {
-      prevPosition: undefined,
-    });
+describe("write-only per-axis model: position is always applied, size never re-docks", () => {
+  it("a width-only placement (position null) does NOT relocate a user-moved panel", () => {
+    // dock_right(): a position command docks the panel.
+    let layout = applyPanelPlacement(
+      emptyLayout(),
+      ["p"],
+      at({ kind: "edge", edge: "right" }),
+      () => null,
+    );
     expect(findGroupLocation(layout, findPaneGroup(layout, "p")!)?.kind).toBe(
       "docked",
     );
@@ -746,41 +766,66 @@ describe("size-only re-placement does not relocate a user-moved panel", () => {
     layout = floatGroup(layout, gid, 200, 150, 280).layout;
     expect(findGroupLocation(layout, gid)?.kind).toBe("floating");
 
-    // Server set_width(420): SAME position (edge/right, coalesced), new width.
-    // prevPosition === the position -> size-only -> must NOT re-dock it.
+    // set_width is its OWN message: it carries width but NO position. Applying
+    // it can never re-dock -- the panel stays where the user put it (floating),
+    // and the width is applied to the float in place.
     layout = applyPanelPlacement(
       layout,
       ["p"],
-      { position: { kind: "edge", edge: "right" }, width: 420, height: null },
+      { ...EMPTY, width: 420 },
       () => null,
-      { prevPosition: { kind: "edge", edge: "right" } },
     );
     expect(findGroupLocation(layout, findPaneGroup(layout, "p")!)?.kind).toBe(
       "floating",
     );
+    expect(layout.floating[0].width).toBe(420);
   });
 
-  it("a genuine position change DOES relocate (dock_left after float)", () => {
+  it("a position command ALWAYS relocates (dock_left after float)", () => {
     let layout = applyPanelPlacement(
       emptyLayout(),
       ["p"],
-      { position: { kind: "float", x: 50, y: 50 }, width: 240, height: null },
+      { ...at({ kind: "float", x: 50, y: 50 }), width: 240 },
       () => null,
-      { canvasBounds: BOUNDS_1000, prevPosition: undefined },
+      { canvasBounds: BOUNDS_1000 },
     );
     expect(findGroupLocation(layout, findPaneGroup(layout, "p")!)?.kind).toBe(
       "floating",
     );
-    // Server dock_left(): position CHANGED (float -> edge/left) -> relocate.
+    // Server dock_left(): a position command -> always relocate.
     layout = applyPanelPlacement(
       layout,
       ["p"],
-      { position: { kind: "edge", edge: "left" }, width: null, height: null },
+      at({ kind: "edge", edge: "left" }),
       () => null,
-      { prevPosition: { kind: "float", x: 50, y: 50 } },
     );
     const loc = findGroupLocation(layout, findPaneGroup(layout, "p")!);
     expect(loc?.kind).toBe("docked");
     expect((loc as { edge: string }).edge).toBe("left");
+  });
+
+  it("re-docks even after the user tore the panel out (position re-applied every call)", () => {
+    // The old model gated re-docking on a position CHANGE; the new model always
+    // applies a position when present. So re-sending the SAME dock_right after a
+    // user float DOES pull it back -- positions are idempotent commands, deduped
+    // by the caller, not by the dock.
+    let layout = applyPanelPlacement(
+      emptyLayout(),
+      ["p"],
+      at({ kind: "edge", edge: "right" }),
+      () => null,
+    );
+    const gid = findPaneGroup(layout, "p")!;
+    layout = floatGroup(layout, gid, 200, 150, 280).layout;
+    expect(findGroupLocation(layout, gid)?.kind).toBe("floating");
+    layout = applyPanelPlacement(
+      layout,
+      ["p"],
+      at({ kind: "edge", edge: "right" }),
+      () => null,
+    );
+    expect(findGroupLocation(layout, findPaneGroup(layout, "p")!)?.kind).toBe(
+      "docked",
+    );
   });
 });

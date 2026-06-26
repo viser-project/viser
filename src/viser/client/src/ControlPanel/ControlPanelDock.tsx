@@ -30,6 +30,8 @@ import { GuiDockContext } from "./GuiDockContext";
 import { shallowArrayEqual } from "../utils/shallowArrayEqual";
 import { controlWidthPx } from "./controlWidth";
 import { CONTROL_PANEL_ID } from "./controlPanelId";
+import type { PanelPlacementState } from "./GuiState";
+import logoSvg from "../assets/logo.svg";
 
 // Memoized so a torn-out tab's whole GUI tree doesn't re-render every time
 // unrelated dock state changes (it only depends on its container uuid).
@@ -37,6 +39,19 @@ const MemoizedGeneratedGuiContainer = React.memo(GeneratedGuiContainer);
 
 // Match the original FloatingPanel's 15px boundary pad for initial placement.
 const PANEL_PAD_PX = 15;
+
+/** Build the dock's PanelPlacement (every axis present, null when unset) from a
+ * client-owned placement store entry. The dock applies whatever is non-null. */
+function placementFromEntry(
+  entry: PanelPlacementState | undefined,
+): ops.PanelPlacement {
+  return {
+    position: entry?.position ?? null,
+    width: entry?.width ?? null,
+    height: entry?.height ?? null,
+    collapsed: entry?.collapsed ?? null,
+  };
+}
 
 /** The canvas bounds (for resolving float placements) from the dock metrics. */
 function canvasBoundsFromMetrics(metrics: DockMetrics): CanvasBounds {
@@ -75,6 +90,9 @@ export function ControlPanelDockSurface({
   );
   const widthPx = controlWidthPx(controlWidthString);
   const [showSettings, { toggle }] = useDisclosure(false);
+  // The control panel's title (shown e.g. on its minimized strip): the
+  // server-set label, falling back to "Control panel".
+  const label = viewer.useGui((state) => state.label);
 
   // GUI tab groups rendered inside the dock surface register here (via
   // GuiDockContext); the registry hook owns the lifetime of their tabs' panel
@@ -89,7 +107,14 @@ export function ControlPanelDockSurface({
     () => ({
       [CONTROL_PANEL_ID]: {
         id: CONTROL_PANEL_ID,
-        title: "Control panel",
+        title: label || "Control panel",
+        icon: (
+          <img
+            src={logoSvg}
+            alt=""
+            style={{ width: "1.1em", height: "auto", display: "block" }}
+          />
+        ),
         unmergeable: true,
         unpadded: true,
         titleNode: (
@@ -117,7 +142,7 @@ export function ControlPanelDockSurface({
         render: () => <ControlPanelContents showSettings={showSettings} />,
       },
     }),
-    [showSettings, toggle],
+    [showSettings, toggle, label],
   );
   const panes: PaneRegistry = React.useMemo(
     () => ({ ...guiPanels, ...controlPanelSpec }),
@@ -327,9 +352,11 @@ function ControlPanelDockSync({
   const markerRef = React.useRef<HTMLSpanElement>(null);
   const resolveAnchor = useAnchorResolver();
 
-  // Server-authored placement for the control panel (`main_panel` commands and
-  // the deprecated `control_layout`). Overrides the default top-right float.
-  const mainPanelPlacement = viewer.useGui((state) => state.mainPanelPlacement);
+  // Client-owned placement for the control panel (`main_panel` commands).
+  // Overrides the default top-right float.
+  const mainPlacementEntry = viewer.useGui(
+    (state) => state.panelPlacement[CONTROL_PANEL_ID],
+  );
 
   // Narrow containers (small browser windows, split screens): shrink the
   // panel to fit with its padding rather than spilling past the right edge.
@@ -369,39 +396,50 @@ function ControlPanelDockSync({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Server-authored placement (main_panel.dock_* / float / minimize / set_*,
-  // and the deprecated control_layout). Re-applies whenever the command changes.
-  // `null` = the server never placed it (leave the default top-right float). An
-  // empty placement OBJECT (position null, not collapsed, no size) = gui.reset()
-  // cleared a prior placement: revert to the default float so a connected client
-  // doesn't keep a now-stale dock.
+  // Client-owned placement (main_panel.dock_* / float / minimize / set_*).
+  // Re-applies whenever the placement bundle changes. `undefined` = the server
+  // never placed it (leave the default top-right float). gui.reset() makes the
+  // server re-send a default float position (x/y null) + collapsed=false, which
+  // we route to the top-right default geometry below -- the same place the
+  // initial placement uses.
+  const mainPlacement = React.useMemo(
+    () => placementFromEntry(mainPlacementEntry),
+    [mainPlacementEntry],
+  );
   const mainPlacementKey = React.useMemo(
-    () => JSON.stringify(mainPanelPlacement),
-    [mainPanelPlacement],
+    () => JSON.stringify(mainPlacementEntry ?? null),
+    [mainPlacementEntry],
   );
   React.useEffect(() => {
-    if (mainPanelPlacement === null) return;
-    const isCleared =
-      mainPanelPlacement.position === null &&
-      mainPanelPlacement.width === null &&
-      mainPanelPlacement.height === null;
-    if (isCleared) {
-      // Re-float at the default top-right position (same geometry as the initial
-      // placement).
+    if (mainPlacementEntry === undefined) return;
+    // A DEFAULT float (kind float, both coords null) means "return to the
+    // default top-right float" -- the dock's bare float default is top-LEFT, so
+    // the control panel resolves it to its own top-right geometry instead.
+    const pos = mainPlacement.position;
+    const defaultFloat =
+      pos !== null && pos.kind === "float" && pos.x === null && pos.y === null;
+    if (defaultFloat) {
       const { x, y, width } = topRightGeometry();
-      dock.api.apply((layout) => {
-        const gid = ops.findPaneGroup(layout, CONTROL_PANEL_ID);
-        return gid === null
-          ? layout
-          : ops.floatGroup(layout, gid, x, y, width).layout;
-      });
+      dock.api.apply((layout) =>
+        ops.applyPanelPlacement(
+          layout,
+          [CONTROL_PANEL_ID],
+          {
+            ...mainPlacement,
+            position: { kind: "float", x, y },
+            width: mainPlacement.width ?? width,
+          },
+          (anchorUuid) => resolveAnchor(layout, anchorUuid),
+          { floatIfUnplaced: false, canvasBounds: canvasBoundsFromMetrics(metrics) },
+        ),
+      );
       return;
     }
     dock.api.apply((layout) =>
       ops.applyPanelPlacement(
         layout,
         [CONTROL_PANEL_ID],
-        mainPanelPlacement,
+        mainPlacement,
         (anchorUuid) => resolveAnchor(layout, anchorUuid),
         // The control panel is floated separately (initial-placement effect);
         // don't let a no-position placement double-place it. A main_panel.float()
@@ -443,7 +481,7 @@ function ControlPanelDockSync({
   // width on narrow containers). We read `fitToContainer` INSIDE a layout
   // effect (ref attached) and skip the first run, since the initial-placement
   // effect above already sized the window.
-  const placementWidth = mainPanelPlacement?.width ?? null;
+  const placementWidth = mainPlacementEntry?.width ?? null;
   const widthKey = `${placementWidth ?? "theme"}:${widthPx}`;
   const appliedWidthKey = React.useRef<string | null>(null);
   React.useLayoutEffect(() => {
@@ -603,21 +641,20 @@ function StandalonePanelPlacement({
     registerTabGroup(uuid, "panel");
   }, [uuid, registerTabGroup]);
 
-  // Subscribe to this panel's tab list + placement (from the panels store).
+  // Subscribe to this panel's tab list (panels store) and its client-owned
+  // placement (placementPlacement store).
   const tabIds = viewer.useGui(
     (state) => state.panels[uuid]?.props._tab_container_ids ?? [],
     shallowArrayEqual,
   );
-  const placement = viewer.useGui(
-    (state) => state.panels[uuid]?.props.placement ?? null,
-  );
-  const expandByDefault = viewer.useGui(
-    (state) => state.panels[uuid]?.props.expand_by_default ?? true,
-  );
+  const placementEntry = viewer.useGui((state) => state.panelPlacement[uuid]);
   const visible = viewer.useGui(
     (state) => state.panels[uuid]?.props.visible ?? true,
   );
-
+  const placement = React.useMemo(
+    () => placementFromEntry(placementEntry),
+    [placementEntry],
+  );
   // The panel's panes must be registered (specs created) before we can place or
   // reconcile -- placing earlier races the registry reconciliation.
   const ready =
@@ -626,55 +663,44 @@ function StandalonePanelPlacement({
   // this component re-renders on every dock-layout commit, so avoid re-stringify
   // on unrelated churn.
   const placementKey = React.useMemo(
-    () => JSON.stringify(placement),
-    [placement],
+    () => JSON.stringify(placementEntry ?? null),
+    [placementEntry],
   );
   const orderKey = tabIds.join("\n");
 
-  // (1) Apply PLACEMENT only when the placement command itself changes (once
-  // panes are ready). Crucially NOT on tab-list changes, and NOT merely because
-  // `ready` flipped: re-docking on a tab add/remove would yank a panel the user
-  // has since dragged elsewhere, breaking the "imperative, not continuous"
-  // contract. We track the last-APPLIED placementKey in a ref, so a `ready`
-  // false->true transition (which happens whenever a tab is added, since the new
-  // pane registers a render later) re-runs this effect but is a no-op unless the
-  // placement value actually changed.
-  // Position from the LAST applied placement, so applyPanelPlacement can tell a
-  // size-only re-placement (set_width: position unchanged) from a real move and
-  // not yank a user-relocated panel back. Cleared on hide (re-show re-places).
-  const appliedPosition = React.useRef<
-    ops.PanelPlacement["position"] | undefined
-  >(undefined);
   // Re-create + place this panel's group from its panes (used by the placement
-  // effect and the ungrouped-recovery fallback below).
+  // effect and the ungrouped-recovery fallback below). Always applies whatever
+  // fields the placement bundle carries; with no placement command yet (a bare
+  // add_panel()), floatIfUnplaced floats it at a default so it's still visible.
   const placePanel = (layout: DockLayout) =>
-    placement === null
-      ? layout
-      : ops.applyPanelPlacement(
-          layout,
-          tabIds,
-          placement,
-          (anchorUuid) => resolveAnchor(layout, anchorUuid),
-          {
-            canvasBounds: canvasBoundsFromMetrics(metrics),
-            expandByDefault,
-            prevPosition: appliedPosition.current,
-          },
-        );
+    ops.applyPanelPlacement(
+      layout,
+      tabIds,
+      placement,
+      (anchorUuid) => resolveAnchor(layout, anchorUuid),
+      { canvasBounds: canvasBoundsFromMetrics(metrics), floatIfUnplaced: true },
+    );
 
+  // (1) Apply PLACEMENT only when the placement bundle itself changes (once
+  // panes are ready). Crucially NOT on tab-list changes, and NOT merely because
+  // `ready` flipped: re-applying on a tab add/remove would re-run the same
+  // command and (e.g.) re-dock a panel the user has dragged elsewhere. We track
+  // the last-APPLIED placementKey in a ref, so a `ready` false->true transition
+  // (which happens whenever a tab is added, since the new pane registers a render
+  // later) re-runs this effect but is a no-op unless the placement actually
+  // changed. This is per-command idempotency, independent of the dock's
+  // always-apply model.
   const appliedPlacementKey = React.useRef<string | null>(null);
   React.useEffect(() => {
     // When hidden, drop the applied-key so re-showing re-places the panel.
     if (!visible) {
       appliedPlacementKey.current = null;
-      appliedPosition.current = undefined;
       return;
     }
-    if (!ready || placement === null) return;
+    if (!ready) return;
     if (appliedPlacementKey.current === placementKey) return;
     appliedPlacementKey.current = placementKey;
     dock.api.apply(placePanel);
-    appliedPosition.current = placement.position;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, placementKey, visible, dock.api]);
 
@@ -720,7 +746,6 @@ function StandalonePanelPlacement({
       return next;
     });
     appliedPlacementKey.current = null;
-    appliedPosition.current = undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, orderKey, dock.api]);
 
@@ -734,7 +759,7 @@ function StandalonePanelPlacement({
   React.useEffect(() => {
     if (!ready || !visible) return;
     dock.api.apply((layout) =>
-      placement !== null && ops.findPaneGroup(layout, tabIds[0]) === null
+      ops.findPaneGroup(layout, tabIds[0]) === null
         ? placePanel(layout)
         : ops.reconcilePanelMembership(layout, tabIds),
     );

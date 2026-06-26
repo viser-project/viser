@@ -6,17 +6,22 @@ import {
   GuiComponentMessage,
   GuiModalMessage,
   GuiPanelMessage,
+  GuiSetPanelPositionMessage,
   RegisterCommandMessage,
   ThemeConfigurationMessage,
 } from "../WebsocketMessages";
 
-/** Server placement for a standalone panel / the main panel (the `placement`
- * field on a panel's props). */
-export type GuiDockPlacement = GuiPanelMessage["props"]["placement"];
-
-/** Main-panel placement, which is null until the server places it (the panel
- * placement field is always non-null on a real panel). */
-export type MainPanelPlacement = GuiDockPlacement | null;
+/** Client-owned placement state for a single panel (a standalone panel keyed by
+ * its uuid, or the main control panel keyed by CONTROL_PANEL_ID). Each of the
+ * four write-only `GuiSetPanel*` messages merges its single field here; the dock
+ * applies whatever is present. */
+export interface PanelPlacementState {
+  position?: GuiSetPanelPositionMessage["position"];
+  // null = override cleared (revert to the default / theme width; auto height).
+  width?: number | null;
+  height?: number | null;
+  collapsed?: boolean;
+}
 
 export interface GuiState {
   theme: ThemeConfigurationMessage;
@@ -48,10 +53,10 @@ export interface GuiState {
   };
   /** Registered command palette actions, keyed by UUID. */
   commands: { [uuid: string]: RegisterCommandMessage };
-  /** Server-authored placement for the main (control) panel, or null when the
-   * server hasn't placed it (default top-right floating). Set via a
-   * GuiUpdateMessage targeting CONTROL_PANEL_ID. */
-  mainPanelPlacement: MainPanelPlacement;
+  /** Client-owned placement state, keyed by panel uuid (and CONTROL_PANEL_ID
+   * for the main panel). Built up by the four write-only `GuiSetPanel*`
+   * messages; the dock applies whatever fields are present. */
+  panelPlacement: { [uuid: string]: PanelPlacementState };
 }
 
 export interface GuiActions {
@@ -77,7 +82,13 @@ export interface GuiActions {
   addCommand: (command: RegisterCommandMessage) => void;
   updateCommand: (uuid: string, updates: { [key: string]: any }) => void;
   removeCommand: (uuid: string) => void;
-  setMainPanelPlacement: (placement: MainPanelPlacement) => void;
+  setPanelPosition: (
+    uuid: string,
+    position: GuiSetPanelPositionMessage["position"],
+  ) => void;
+  setPanelWidth: (uuid: string, width: number | null) => void;
+  setPanelHeight: (uuid: string, height: number | null) => void;
+  setPanelCollapsed: (uuid: string, collapsed: boolean) => void;
 }
 
 const searchParams = new URLSearchParams(window.location.search);
@@ -106,7 +117,7 @@ const cleanGuiState: GuiState = {
   dirtyFormUuids: {},
   uploadsInProgress: {},
   commands: {},
-  mainPanelPlacement: null,
+  panelPlacement: {},
 };
 
 export function computeRelativeLuminance(color: string) {
@@ -233,7 +244,10 @@ export function useGuiState(initialServer: string) {
           if (state.panels[id] === undefined) return {};
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { [id]: _removed, ...rest } = state.panels;
-          return { panels: rest };
+          // Drop its client-owned placement entry too (avoid a leak).
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { [id]: _placement, ...restPlacement } = state.panelPlacement;
+          return { panels: rest, panelPlacement: restPlacement };
         });
       },
       removeGui: (id) => {
@@ -282,7 +296,7 @@ export function useGuiState(initialServer: string) {
           dirtyFormUuids: cleanGuiState.dirtyFormUuids,
           uploadsInProgress: cleanGuiState.uploadsInProgress,
           commands: cleanGuiState.commands,
-          mainPanelPlacement: cleanGuiState.mainPanelPlacement,
+          panelPlacement: cleanGuiState.panelPlacement,
         });
         configStore.setAll({}, true);
       },
@@ -344,8 +358,37 @@ export function useGuiState(initialServer: string) {
           return { commands: next };
         });
       },
-      setMainPanelPlacement: (placement) => {
-        store.set({ mainPanelPlacement: placement });
+      setPanelPosition: (uuid, position) => {
+        store.set((state) => ({
+          panelPlacement: {
+            ...state.panelPlacement,
+            [uuid]: { ...state.panelPlacement[uuid], position },
+          },
+        }));
+      },
+      setPanelWidth: (uuid, width) => {
+        store.set((state) => ({
+          panelPlacement: {
+            ...state.panelPlacement,
+            [uuid]: { ...state.panelPlacement[uuid], width },
+          },
+        }));
+      },
+      setPanelHeight: (uuid, height) => {
+        store.set((state) => ({
+          panelPlacement: {
+            ...state.panelPlacement,
+            [uuid]: { ...state.panelPlacement[uuid], height },
+          },
+        }));
+      },
+      setPanelCollapsed: (uuid, collapsed) => {
+        store.set((state) => ({
+          panelPlacement: {
+            ...state.panelPlacement,
+            [uuid]: { ...state.panelPlacement[uuid], collapsed },
+          },
+        }));
       },
       updateGuiProps: (id, updates) => {
         const config = configStore.get(id);

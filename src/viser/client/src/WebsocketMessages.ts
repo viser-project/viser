@@ -1626,6 +1626,47 @@ export interface GuiFormDirtyMessage {
   type: "GuiFormDirtyMessage";
   uuid: string;
 }
+/** Dock/float a panel (or the main control panel). Write-only.
+ *
+ * (automatically generated)
+ */
+export interface GuiSetPanelPositionMessage {
+  type: "GuiSetPanelPositionMessage";
+  uuid: string;
+  position:
+    | { kind: "edge"; edge: "left" | "right" }
+    | { kind: "split"; anchor_uuid: string; side: "above" | "below" }
+    | { kind: "float"; x: number | null; y: number | null };
+}
+/** Set a panel's width in pixels (None clears the override -> default/theme
+ * width). Write-only.
+ *
+ * (automatically generated)
+ */
+export interface GuiSetPanelWidthMessage {
+  type: "GuiSetPanelWidthMessage";
+  uuid: string;
+  width: number | null;
+}
+/** Set a panel's height in pixels (floating panels only; None clears the
+ * override -> auto). Write-only.
+ *
+ * (automatically generated)
+ */
+export interface GuiSetPanelHeightMessage {
+  type: "GuiSetPanelHeightMessage";
+  uuid: string;
+  height: number | null;
+}
+/** Minimize (collapse) or expand a panel. Write-only.
+ *
+ * (automatically generated)
+ */
+export interface GuiSetPanelCollapsedMessage {
+  type: "GuiSetPanelCollapsedMessage";
+  uuid: string;
+  collapsed: boolean;
+}
 /** A standalone panel: a dockable / floating GUI container that lives outside
  * the control panel. Deliberately NOT a GuiComponentMessage -- it is a
  * top-level entity (like a modal), so it never enters the inline GUI tree.
@@ -1641,16 +1682,6 @@ export interface GuiPanelMessage {
     _tab_container_ids: string[];
     order: number;
     visible: boolean;
-    placement: {
-      position:
-        | { kind: "edge"; edge: "left" | "right" }
-        | { kind: "split"; anchor_uuid: string; side: "above" | "below" }
-        | { kind: "float"; x: number | null; y: number | null }
-        | null;
-      width: number | null;
-      height: number | null;
-    };
-    expand_by_default: boolean;
   };
 }
 /** Sent server->client to remove a standalone panel.
@@ -2046,6 +2077,10 @@ export type Message =
   | ResetGuiMessage
   | GuiFormSubmitMessage
   | GuiFormDirtyMessage
+  | GuiSetPanelPositionMessage
+  | GuiSetPanelWidthMessage
+  | GuiSetPanelHeightMessage
+  | GuiSetPanelCollapsedMessage
   | GuiPanelMessage
   | GuiPanelRemoveMessage
   | GuiModalMessage

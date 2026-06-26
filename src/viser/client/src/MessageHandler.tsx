@@ -22,7 +22,6 @@ import { IconCheck, IconDownload } from "@tabler/icons-react";
 import { computeT_threeworld_world } from "./WorldTransformUtils";
 import { rootNodeTemplate, SceneNode } from "./SceneTreeState";
 import { applyGuiConfigUpdate } from "./ControlPanel/GuiState";
-import { CONTROL_PANEL_ID } from "./ControlPanel/controlPanelId";
 import { GaussianSplatsContext } from "./Splatting/GaussianSplatsHelpers";
 
 /** Swap a background-material uniform to a new texture (or null), disposing the
@@ -248,6 +247,26 @@ function useMessageHandler() {
       // Set the GUI panel label.
       case "SetGuiPanelLabelMessage": {
         viewer.useGui.set({ label: message.label ?? "" });
+        return;
+      }
+      // Write-only, per-axis panel placement commands. Each merges its single
+      // field into the client-owned placement entry (keyed by panel uuid, or
+      // CONTROL_PANEL_ID for the main control panel); the dock applies whatever
+      // is present.
+      case "GuiSetPanelPositionMessage": {
+        viewer.guiActions.setPanelPosition(message.uuid, message.position);
+        return;
+      }
+      case "GuiSetPanelWidthMessage": {
+        viewer.guiActions.setPanelWidth(message.uuid, message.width);
+        return;
+      }
+      case "GuiSetPanelHeightMessage": {
+        viewer.guiActions.setPanelHeight(message.uuid, message.height);
+        return;
+      }
+      case "GuiSetPanelCollapsedMessage": {
+        viewer.guiActions.setPanelCollapsed(message.uuid, message.collapsed);
         return;
       }
       // Configure the theme.
@@ -1127,18 +1146,9 @@ export function FrameSynchronizedMessageHandler() {
             {};
           const panelSnapshot = viewer.useGui.get().panels;
           for (const { uuid, updates } of guiUpdates) {
-            // The control panel isn't a GUI component (it has no config), but
-            // `main_panel` placement is delivered as a GuiUpdateMessage to its
-            // fixed id. Route that to dedicated GUI state instead of erroring.
-            if (uuid === CONTROL_PANEL_ID) {
-              if ("placement" in updates) {
-                viewer.guiActions.setMainPanelPlacement(updates.placement);
-              }
-              continue;
-            }
             // Standalone panels live in their own store (not configStore), and
-            // their placement/tab/visibility updates also arrive as
-            // GuiUpdateMessages. Route those to updatePanel.
+            // their tab/visibility updates also arrive as GuiUpdateMessages.
+            // Route those to updatePanel.
             if (uuid in panelSnapshot) {
               viewer.guiActions.updatePanel(uuid, updates);
               continue;

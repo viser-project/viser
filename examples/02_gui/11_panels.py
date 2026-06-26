@@ -17,8 +17,8 @@ A panel is a dockable container; tabs are its content. Placement is imperative:
   the docked regions change.
 * :meth:`viser.PanelHandle.set_width` / :meth:`viser.PanelHandle.set_height`
   size a panel (``set_height`` applies to floating panels only).
-* ``add_panel(expand_by_default=False)`` starts a panel minimized (a one-shot
-  initial hint, like a folder's; the user controls collapse/expand thereafter).
+* :meth:`viser.PanelHandle.minimize` minimizes a panel (an imperative command
+  like ``dock_*``); the user can expand/re-collapse it thereafter.
 
 Placement is replayed to clients that connect later, but is not continuously
 synchronized: once a panel is placed, users can freely drag, dock, and minimize
@@ -41,11 +41,11 @@ def main() -> None:
 
     server.scene.add_frame("/axes", axes_length=1.0, axes_radius=0.02)
 
-    # A panel docked to the right edge, with two tabs. All panels here start
-    # minimized via the one-shot `expand_by_default=False` hint -- they render as
-    # handles/strips the user can click to expand; the user controls collapse and
-    # expand thereafter.
-    stats_panel = server.gui.add_panel(expand_by_default=False)
+    # A panel docked to the right edge, with two tabs. minimize() starts it
+    # collapsed -- it renders as a handle/strip the user can click to expand; the
+    # user controls collapse/expand thereafter. minimize() is imperative like the
+    # dock_*/float commands (the server can re-minimize a panel later too).
+    stats_panel = server.gui.add_panel()
     with stats_panel.add_tab("Stats", viser.Icon.CHART_BAR):
         counter = server.gui.add_number("Counter", initial_value=0, disabled=True)
         server.gui.add_markdown("Live values update in this docked panel.")
@@ -53,20 +53,22 @@ def main() -> None:
         server.gui.add_markdown("A second tab in the same panel.")
     stats_panel.dock_right()
     stats_panel.set_width(320)
+    stats_panel.minimize()
 
     # A floating panel at an explicit position. x/y are viewport-relative (the
     # canvas inside docked panels), so this stays clear of the left-docked main
-    # panel below and shifts if the docked regions change.
-    tools_panel = server.gui.add_panel(expand_by_default=False)
+    # panel below and shifts if the docked regions change. Left expanded.
+    tools_panel = server.gui.add_panel()
     with tools_panel.add_tab("Tools", viser.Icon.TOOL):
         randomize = server.gui.add_button("Randomize point cloud")
     tools_panel.float(x=30, y=30, width=260)
 
-    # A panel stacked below the docked stats panel (a column split).
-    log_panel = server.gui.add_panel(expand_by_default=False)
+    # A panel stacked below the docked stats panel (a column split), minimized.
+    log_panel = server.gui.add_panel()
     with log_panel.add_tab("Log", viser.Icon.TERMINAL):
         log = server.gui.add_markdown("Waiting for events...")
     log_panel.dock_below(stats_panel)
+    log_panel.minimize()
 
     # The main control panel can be placed too -- here, docked to the left.
     server.gui.main_panel.dock_left()

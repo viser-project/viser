@@ -40,7 +40,6 @@ from ._messages import (
     GuiCheckboxProps,
     GuiCloseModalMessage,
     GuiDividerProps,
-    GuiDockPlacement,
     GuiDropdownProps,
     GuiFolderProps,
     GuiFormSubmitMessage,
@@ -56,6 +55,10 @@ from ._messages import (
     GuiRemoveMessage,
     GuiRgbaProps,
     GuiRgbProps,
+    GuiSetPanelCollapsedMessage,
+    GuiSetPanelHeightMessage,
+    GuiSetPanelPositionMessage,
+    GuiSetPanelWidthMessage,
     GuiSliderProps,
     GuiTabGroupProps,
     GuiTextProps,
@@ -64,6 +67,7 @@ from ._messages import (
     GuiUplotProps,
     GuiVector2Props,
     GuiVector3Props,
+    Message,
     RemoveCommandMessage,
     SplitPlacement,
 )
@@ -836,11 +840,6 @@ class GuiTabHandle:
 CONTROL_PANEL_ID = "viser-control-panel"
 
 
-def _empty_placement() -> GuiDockPlacement:
-    """A placement with no position/size set."""
-    return {"position": None, "width": None, "height": None}
-
-
 def _check_dimension(value: float | None, name: str) -> None:
     """Reject non-positive / non-finite panel sizes before they reach the client.
 
@@ -862,48 +861,36 @@ def _check_coordinate(value: float | None, name: str) -> None:
 class _PlacementMixin:
     """Shared placement / sizing commands for panel handles.
 
-    A panel's placement is a single coalesced ``placement`` prop (see
-    `GuiDockPlacement`). Each command mutates one field of the persisted dict and
-    re-sends the WHOLE dict, because `update_dict` messages coalesce per
-    prop-name (latest-wins): a partial update would drop the other fields. The
-    persisted value is replayed to late-joining clients.
+    Placement is WRITE-ONLY from the server: there is no placement state stored
+    or read back here. Each command fires one per-axis message
+    (``GuiSetPanel{Position,Width,Height,Collapsed}Message``); the client owns all
+    placement state. The messages are ``update_simple`` updates that coalesce
+    per-type, persist, and replay to late joiners -- so e.g. ``set_width`` never
+    carries a position and cannot re-dock a panel the user has moved.
 
     Subclasses provide ``_placement_uuid`` (the tab-group uuid to target) and
-    ``_placement_gui_api``. Standalone panels store the dict on their props (so
-    it serializes with the create message too); the main panel has no props
-    object, so it stores it on the mixin.
+    ``_placement_gui_api``.
     """
 
     _placement_uuid: str
     _placement_gui_api: GuiApi
-    _placement: GuiDockPlacement
-    """The live, coalesced placement dict. Commands mutate it; `_send_placement`
-    snapshots + queues it. Held directly (not behind a getter) and aliased by the
-    handle's create-message props (standalone) or the api (main panel)."""
 
-    def _send_placement(self) -> None:
-        # Single guard point for every command (all route through here): reject
-        # placement on a removed panel, which would otherwise queue an update
-        # against a dead uuid (the ghost-entity hazard `props_setattr` guards --
-        # the placement path bypasses it). `MainPanelHandle` has no `_impl` and
-        # can't be removed, so it is never blocked.
+    def _queue_placement(self, message: Message) -> None:
+        # Single guard point for every command: reject placement on a removed
+        # panel, which would otherwise queue an update against a dead uuid.
+        # `MainPanelHandle` has no `_impl` and can't be removed, so it's never
+        # blocked.
         impl = getattr(self, "_impl", None)
         if impl is not None and impl.removed:
             raise RuntimeError(f"Cannot place a removed {type(self).__name__}.")
-        # Snapshot: the message serializes later (async) and is captured by the
-        # state recorder, so sending the live dict would let a later command's
-        # mutation corrupt an already-queued message. Shallow suffices --
-        # `position` is always replaced wholesale, never mutated in place.
-        snapshot: GuiDockPlacement = dict(self._placement)  # type: ignore[assignment]
-        self._placement_gui_api._websock_interface.queue_message(
-            GuiUpdateMessage(self._placement_uuid, {"placement": snapshot})
-        )
+        self._placement_gui_api._websock_interface.queue_message(message)
 
     def _set_position(
         self, position: EdgePlacement | SplitPlacement | FloatPlacement
     ) -> None:
-        self._placement["position"] = position
-        self._send_placement()
+        self._queue_placement(
+            GuiSetPanelPositionMessage(self._placement_uuid, position)
+        )
 
     def _resolve_anchor_uuid(self, anchor: PlaceableHandle) -> str:
         """Validate an anchor and return its tab-group uuid.
@@ -1010,19 +997,17 @@ class _PlacementMixin:
         _check_coordinate(y, "y")
         _check_dimension(width, "width")
         _check_dimension(height, "height")
-        self._placement["position"] = {"kind": "float", "x": x, "y": y}
+        self._set_position({"kind": "float", "x": x, "y": y})
         if width is not None:
-            self._placement["width"] = width
+            self.set_width(width)
         if height is not None:
-            self._placement["height"] = height
-        self._send_placement()
+            self.set_height(height)
 
     def set_width(self, width: float) -> None:
         """Set the panel width in pixels (region width when docked, window width
         when floating)."""
         _check_dimension(width, "width")
-        self._placement["width"] = width
-        self._send_placement()
+        self._queue_placement(GuiSetPanelWidthMessage(self._placement_uuid, width))
 
     def set_height(self, height: float) -> None:
         """Set the panel height in pixels.
@@ -1032,8 +1017,25 @@ class _PlacementMixin:
         :meth:`dock_below` -- sizes to its split weights, so ``set_height`` has no
         effect there."""
         _check_dimension(height, "height")
-        self._placement["height"] = height
-        self._send_placement()
+        self._queue_placement(
+            GuiSetPanelHeightMessage(self._placement_uuid, height)
+        )
+
+    def minimize(self) -> None:
+        """Minimize the panel (collapse it to a handle / strip).
+
+        Imperative, like the ``dock_*`` / :meth:`float` commands: it always
+        minimizes -- the first call sets the initial collapsed state, and a later
+        call re-minimizes a panel even if the user expanded it in the browser.
+        Replayed to clients that connect later.
+
+        TODO: add a matching imperative collapse/expand method for folders
+        (:meth:`GuiApi.add_folder`), which today only has the
+        ``expand_by_default`` creation kwarg.
+        """
+        self._queue_placement(
+            GuiSetPanelCollapsedMessage(self._placement_uuid, True)
+        )
 
 
 class PanelHandle(
@@ -1074,15 +1076,6 @@ class PanelHandle(
         # themselves in `_container_handle_from_uuid` (keyed by tab id), so the
         # panel itself doesn't need a container entry.
         _impl.gui_api._panel_handle_from_uuid[_impl.uuid] = self
-
-    @property
-    def _placement(self) -> GuiDockPlacement:
-        # Single source of truth: the props dict (which also rides the create
-        # message). Reading it live -- rather than caching a separate reference --
-        # means the placement commands and the serialized/replayed state can never
-        # diverge, even if `props.placement` is reassigned.
-        assert isinstance(self._impl.props, GuiPanelProps)
-        return self._impl.props.placement
 
     @override
     def _queue_update(self, name: str, value: Any) -> None:
@@ -1155,12 +1148,11 @@ class MainPanelHandle(_PlacementMixin):
     control panel's fixed uuid, so handles are interchangeable."""
 
     def __init__(self, gui_api: GuiApi) -> None:
+        # Placement is write-only (per-axis messages keyed by CONTROL_PANEL_ID);
+        # no state to hold, so the throwaway handles `main_panel` returns are all
+        # equivalent.
         self._placement_uuid = CONTROL_PANEL_ID
         self._placement_gui_api = gui_api
-        # The main panel has no props object; placement lives on the api (one
-        # shared dict) so it persists across the throwaway handles `main_panel`
-        # returns -- every handle points at and mutates the same object.
-        self._placement = gui_api._main_panel_placement
 
 
 PlaceableHandle: TypeAlias = "PanelHandle | MainPanelHandle"

@@ -30,7 +30,7 @@ import {
   WindowId,
 } from "./types";
 import { freshId } from "./gestures";
-import { GuiPanelMessage } from "../WebsocketMessages";
+import { GuiSetPanelPositionMessage } from "../WebsocketMessages";
 
 // A typed recursive deep-clone, ~10x faster than structuredClone for the
 // layout's plain JSON-ish shape (objects/arrays/numbers/strings/booleans --
@@ -1370,12 +1370,18 @@ export function setActiveTab(
 // repositions it again (imperative, not continuous sync).
 // ---------------------------------------------------------------------------
 
-/** Server placement for a standalone panel. Aliased from the GENERATED wire type
- * (Python `GuiDockPlacement`) so the two can't drift -- a change to the Python
- * placement shape flows through `WebsocketMessages.ts` to here automatically. */
-export type PanelPlacement = NonNullable<
-  GuiPanelMessage["props"]["placement"]
->;
+/** The placement state the dock applies to a panel: a per-axis bundle the
+ * caller assembles from the client-owned placement store. Each field is the
+ * latest value the server wrote (or null when never set). `position` is the
+ * wire shape of `GuiSetPanelPositionMessage`. Each command is independent and
+ * always applied -- a set_width carries no position, so applying width can never
+ * re-dock a panel. */
+export interface PanelPlacement {
+  position: GuiSetPanelPositionMessage["position"] | null;
+  width: number | null;
+  height: number | null;
+  collapsed: boolean | null;
+}
 
 /** Default float geometry when the server leaves x/y/size unspecified: the
  * top-left corner of the canvas (inset by the same 15px pad the control panel
@@ -1471,23 +1477,45 @@ function reconcileMembershipInPlace(group: TabGroup, paneIds: PaneId[]): void {
 }
 
 /** Ensure this panel's panes live together in a single group, returning that
- * group's id. Creates the group (initially unplaced) if the panes aren't placed
- * yet; if they're already grouped, reuses it and reconciles membership.
- * `startCollapsed` is a ONE-SHOT initial hint applied only when the group is
- * first created (the user owns the collapsed state thereafter). */
+ * group's id. Creates the group (expanded) if the panes aren't placed yet; if
+ * they're already grouped, reuses it and reconciles membership. `collapsed` is
+ * the latest server-written value (or null when never set): true collapses the
+ * group, false expands it, null leaves it as-is -- a plainly applied field, no
+ * one-shot/prev gating. */
 function ensurePanelGroup(
   draft: DockLayout,
   paneIds: PaneId[],
-  startCollapsed: boolean,
+  collapsed: boolean | null,
 ): GroupId | null {
   if (paneIds.length === 0) return null;
-  const groupId = panelGroupOf(draft, paneIds);
+  let groupId = panelGroupOf(draft, paneIds);
   if (groupId === null) {
     const group = makeGroup(paneIds);
-    if (startCollapsed) group.collapsed = true;
     draft.groups[group.id] = group;
-    return group.id;
+    groupId = group.id;
+  } else {
+    applyMembership(draft, groupId, paneIds);
   }
+  // Apply the collapsed field (always applied -- no prevCollapsed): true sets
+  // the group's collapsed flag (and clears any minimize-all tag); false expands
+  // it; null/undefined leaves it untouched.
+  if (collapsed === true) {
+    draft.groups[groupId].collapsed = true;
+    delete draft.groups[groupId].collapsedByParent;
+  } else if (collapsed === false) {
+    draft.groups[groupId].collapsed = false;
+    delete draft.groups[groupId].collapsedByParent;
+  }
+  return groupId;
+}
+
+/** Re-assemble a panel's panes into its existing group and reconcile its
+ * membership in place (the reuse branch of ensurePanelGroup). */
+function applyMembership(
+  draft: DockLayout,
+  groupId: GroupId,
+  paneIds: PaneId[],
+): void {
   // A placement command re-assembles the WHOLE panel into its home group. Any
   // pane the user dragged out into another group/window is MOVED back here via
   // the single move primitive (detach-then-insert), so a pane can't be left in
@@ -1495,7 +1523,6 @@ function ensurePanelGroup(
   // panel and fixes order/activeId.
   for (const paneId of paneIds) movePaneInPlace(draft, paneId, groupId);
   reconcileMembershipInPlace(draft.groups[groupId], paneIds);
-  return groupId;
 }
 
 /** Reconcile a standalone panel's group membership (tabs added/removed) WITHOUT
@@ -1526,12 +1553,19 @@ function resolveAnchorLeaf(
   return { edge: loc.edge, nodeId: loc.nodeId };
 }
 
-/** Apply a server `placement` to a standalone panel, (re)positioning it.
+/** Apply the client-owned `placement` bundle to a panel, (re)positioning it.
  *
  * `paneIds` are the panel's tabs (its container ids), `anchorGroupOf` maps an
  * anchor panel uuid to its current group id (the caller knows how to resolve
- * both standalone panels and the control panel). Idempotent-ish: re-applying
- * the same placement detaches and re-docks, which is a no-op in practice.
+ * both standalone panels and the control panel).
+ *
+ * Each field of `placement` is the latest value the server wrote, and is ALWAYS
+ * applied when present -- there is no before/after gating. Because the four
+ * write-only commands are independent (a set_width carries no position), applying
+ * any single field can never re-dock a panel: a position re-docks/re-floats only
+ * when `position != null`, and that only happens when the server actually sent a
+ * position command. The caller's per-command dedup (appliedPlacementKey) keeps an
+ * unrelated re-render from re-applying the same bundle.
  *
  * Options:
  * - `floatIfUnplaced` (default true): when the placement has no position AND the
@@ -1543,34 +1577,7 @@ function resolveAnchorLeaf(
  *   requested values are also stashed on the window so the position re-resolves
  *   as the canvas changes (see resolveRequestedFloatPosition + the DockManager
  *   effect). Defaults to a zero-inset canvas if omitted.
- * - `expandByDefault` (default true): one-shot initial collapsed hint, applied
- *   only when the panel's group is first created.
- * - `prevPosition`: the position from the LAST applied placement. When it equals
- *   the incoming position, this is a SIZE-ONLY re-placement (e.g. set_width
- *   re-sends the coalesced placement, whose `position` is unchanged) -- so a
- *   panel the user has locally moved (e.g. torn a docked panel out to a float)
- *   must NOT be relocated; only its size is applied. A genuine position CHANGE
- *   (dock_left after dock_right) still relocates. The float branch enforces this
- *   per-window via the `anchor` flag; edge/split have no per-panel ownership bit,
- *   so they compare positions instead.
  */
-/** Whether two placement positions are the same (so a re-placement that only
- * changed width/height -- a set_width/set_height -- can be detected and left from
- * relocating the panel). */
-function positionsEqual(
-  a: PanelPlacement["position"] | undefined,
-  b: PanelPlacement["position"],
-): boolean {
-  if (a == null || b == null) return a == null && b == null;
-  if (a.kind !== b.kind) return false;
-  if (a.kind === "edge" && b.kind === "edge") return a.edge === b.edge;
-  if (a.kind === "float" && b.kind === "float")
-    return a.x === b.x && a.y === b.y;
-  if (a.kind === "split" && b.kind === "split")
-    return a.anchor_uuid === b.anchor_uuid && a.side === b.side;
-  return false;
-}
-
 export function applyPanelPlacement(
   layout: DockLayout,
   paneIds: PaneId[],
@@ -1579,8 +1586,6 @@ export function applyPanelPlacement(
   opts: {
     floatIfUnplaced?: boolean;
     canvasBounds?: CanvasBounds;
-    expandByDefault?: boolean;
-    prevPosition?: PanelPlacement["position"];
   } = {},
 ): DockLayout {
   const floatIfUnplaced = opts.floatIfUnplaced ?? true;
@@ -1590,10 +1595,9 @@ export function applyPanelPlacement(
     leftInset: 0,
     rightInset: 0,
   };
-  const expandByDefault = opts.expandByDefault ?? true;
   if (paneIds.length === 0) return layout;
   let draft = clone(layout);
-  const groupId = ensurePanelGroup(draft, paneIds, !expandByDefault);
+  const groupId = ensurePanelGroup(draft, paneIds, placement.collapsed);
   if (groupId === null) return layout;
 
   // Float a group at the given REQUESTED coords: record them on the window (so
@@ -1667,22 +1671,14 @@ export function applyPanelPlacement(
   } else {
     if (position.kind === "edge") {
       const loc = findGroupLocation(draft, groupId);
-      // Skip the re-dock when the group is ALREADY docked on this edge: a
-      // size-only re-placement (set_width) re-runs this branch, and re-docking
-      // would detach + recreate the leaf with a fresh node id -- which makes the
-      // width reconciler treat it as a new column and reset its width to the
-      // default, dropping the requested width (and needlessly reordering a
-      // multi-panel region). Leaving it in place keeps the column id stable so
-      // the size branch below applies the new width.
+      // ALWAYS dock to the requested edge (a position command means "dock here").
+      // Skip only the redundant re-dock when the group is ALREADY docked on this
+      // edge: re-docking would detach + recreate the leaf with a fresh node id,
+      // which makes the width reconciler treat it as a new column and reset its
+      // width to the default (and needlessly reorder a multi-panel region).
+      // Leaving it in place keeps the column id stable.
       const alreadyHere = loc?.kind === "docked" && loc.edge === position.edge;
-      // Relocate only on a genuine position CHANGE. When the position is
-      // unchanged (a size-only re-placement, e.g. set_width re-sending the
-      // coalesced placement), leave the panel where it is -- so a panel the user
-      // locally tore out to a float isn't yanked back to the server's edge; the
-      // size branch below still resizes it in place.
-      const positionChanged = !positionsEqual(opts.prevPosition, position);
-      if (!alreadyHere && positionChanged)
-        draft = dockToEdge(draft, [groupId], position.edge);
+      if (!alreadyHere) draft = dockToEdge(draft, [groupId], position.edge);
     } else if (position.kind === "float") {
       // Canvas-relative coords; negatives are gaps from the far edge. Resolved
       // against the live canvas + window size (and re-resolved on canvas changes
@@ -1693,11 +1689,9 @@ export function applyPanelPlacement(
         placement.width ?? DEFAULT_FLOAT_WIDTH,
         placement.height ?? undefined,
       );
-    } else if (!positionsEqual(opts.prevPosition, position)) {
+    } else {
       // split: dock above/below the anchor's docked leaf. Fall back to a right
       // edge dock when the anchor isn't docked (floating / not yet placed).
-      // Guarded by a genuine position change, like the edge branch: a size-only
-      // re-placement (set_width) must not re-split a panel the user has moved.
       const anchorGroupId = anchorGroupOf(position.anchor_uuid);
       const leaf =
         anchorGroupId === null

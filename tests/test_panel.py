@@ -1,7 +1,8 @@
 """Unit tests for the standalone panel API (add_panel / main_panel).
 
-These cover the Python handle layer: that placement commands produce the right
-coalesced `placement` prop, that the placement state persists on the message
+These cover the Python handle layer: that placement commands (dock/float/size/
+minimize) each queue the right per-axis message (placement is write-only -- no
+server-side state to read back), that those messages persist in the broadcast
 buffer for replay to late-joining clients, and that scope / anchor validation
 raises as specified.
 """
@@ -29,32 +30,34 @@ def _props(panel: viser.PanelHandle) -> m.GuiPanelProps:
     return props
 
 
-def _placement(panel: viser.PanelHandle) -> m.GuiDockPlacement:
-    """The panel's current placement dict (always present on a panel)."""
-    return _props(panel).placement
-
-
-def _position(panel: viser.PanelHandle) -> dict[str, Any]:
-    """The panel's current (non-None) position, as a plain dict for assertions."""
-    position = _placement(panel)["position"]
-    assert position is not None
-    return dict(position)
-
-
-def _latest_placement_update(server: viser.ViserServer, uuid: str) -> dict[str, Any]:
-    """The coalesced `placement` value currently sitting in the broadcast buffer
-    for `uuid` (i.e. what a newly-connected client would replay)."""
+def _latest(server: viser.ViserServer, uuid: str, message_type: type) -> Any:
+    """The latest buffered message of `message_type` targeting `uuid` (i.e. what a
+    newly-connected client would replay). Placement is write-only: each command
+    queues a per-axis message that coalesces latest-wins per type, so this is the
+    panel's effective state for that axis. Asserts one exists."""
     buffer = server._websock_server._broadcast_buffer.message_from_id
-    found: dict[str, Any] | None = None
+    found = None
     for msg in buffer.values():
-        if (
-            isinstance(msg, m.GuiUpdateMessage)
-            and msg.uuid == uuid
-            and "placement" in msg.updates
-        ):
-            found = msg.updates["placement"]
-    assert found is not None, f"No placement update buffered for {uuid}."
+        if isinstance(msg, message_type) and getattr(msg, "uuid", None) == uuid:
+            found = msg
+    assert found is not None, f"No {message_type.__name__} buffered for {uuid}."
     return found
+
+
+def _position(server: viser.ViserServer, uuid: str) -> dict[str, Any]:
+    """The panel's latest buffered position, as a plain dict for assertions."""
+    return dict(_latest(server, uuid, m.GuiSetPanelPositionMessage).position)
+
+
+def _buffered_types(server: viser.ViserServer, uuid: str) -> set[type]:
+    """The set of message types currently buffered for `uuid` (to assert a command
+    sends ONLY its own axis -- e.g. set_width must not queue a position)."""
+    buffer = server._websock_server._broadcast_buffer.message_from_id
+    return {
+        type(msg)
+        for msg in buffer.values()
+        if getattr(msg, "uuid", None) == uuid
+    }
 
 
 def test_add_panel_is_dedicated_entity() -> None:
@@ -67,12 +70,9 @@ def test_add_panel_is_dedicated_entity() -> None:
         assert panel._impl.uuid in server.gui._panel_handle_from_uuid
         root = server.gui._container_handle_from_uuid["root"]
         assert panel._impl.uuid not in root._children
-        # Empty placement until a command is issued.
-        assert _placement(panel) == {
-            "position": None,
-            "width": None,
-            "height": None,
-        }
+        # No placement messages until a command is issued (write-only: state
+        # only exists once a dock/float/size/minimize command is called).
+        assert _buffered_types(server, panel._impl.uuid) == {m.GuiPanelMessage}
     finally:
         server.stop()
 
@@ -118,41 +118,19 @@ def test_dock_edges_set_position_and_buffer() -> None:
     server = _make_server()
     try:
         panel = server.gui.add_panel()
+        uuid = panel._impl.uuid
         panel.dock_right()
-        assert _position(panel) == {
+        # The dock command queues a Position message (buffered for replay).
+        assert _latest(server, uuid, m.GuiSetPanelPositionMessage).position == {
             "kind": "edge",
             "edge": "right",
         }
-        # Buffered for replay.
-        assert _latest_placement_update(server, panel._impl.uuid)["position"] == {
-            "kind": "edge",
-            "edge": "right",
-        }
-        # Repositioning overwrites.
+        # Repositioning coalesces latest-wins (same message type).
         panel.dock_left()
-        assert _position(panel) == {
+        assert _latest(server, uuid, m.GuiSetPanelPositionMessage).position == {
             "kind": "edge",
             "edge": "left",
         }
-    finally:
-        server.stop()
-
-
-def test_placement_is_single_source_of_truth() -> None:
-    """`_placement` reads through props.placement, so a (discouraged) direct
-    reassignment of `panel.placement` can't desync the command stream from the
-    serialized/replayed state."""
-    server = _make_server()
-    try:
-        panel = server.gui.add_panel()
-        panel.dock_right()
-        # Rebind placement directly (props_setattr path).
-        panel.placement = {"position": None, "width": None, "height": None}
-        panel.set_width(500)
-        # The command wrote through to props.placement (the create-message + the
-        # mixin's _placement are the same object).
-        assert panel._placement is _props(panel).placement
-        assert _props(panel).placement["width"] == 500
     finally:
         server.stop()
 
@@ -162,174 +140,162 @@ def test_dock_above_below_split_against_panel() -> None:
     try:
         anchor = server.gui.add_panel()
         panel = server.gui.add_panel()
+        uuid = panel._impl.uuid
         panel.dock_above(anchor)
-        assert _position(panel) == {
+        assert _latest(server, uuid, m.GuiSetPanelPositionMessage).position == {
             "kind": "split",
             "anchor_uuid": anchor._impl.uuid,
             "side": "above",
         }
         panel.dock_below(anchor)
-        assert _position(panel)["side"] == "below"
+        assert (
+            _latest(server, uuid, m.GuiSetPanelPositionMessage).position["side"]
+            == "below"
+        )
     finally:
         server.stop()
 
 
-def test_float_and_size_commands_coalesce_orthogonally() -> None:
-    """dock/float (position) and width/height are orthogonal fields: setting one
-    must not clear the others."""
+def test_placement_axes_are_independent() -> None:
+    """Each axis is its own message type, so they coalesce independently: a
+    set_width after a dock_right leaves the position message intact (and a
+    set_width queues NO position -- it can't re-dock a user-moved panel)."""
     server = _make_server()
     try:
         panel = server.gui.add_panel()
+        uuid = panel._impl.uuid
+        panel.dock_right()
         panel.set_width(400)
-        panel.float(x=10, y=20)
-        placement = _placement(panel)
-        assert placement["position"] == {"kind": "float", "x": 10, "y": 20}
-        assert placement["width"] == 400  # not clobbered by float
-        # float(width=, height=) also writes the size fields.
-        panel.float(width=300, height=200)
-        assert _placement(panel)["width"] == 300
-        assert _placement(panel)["height"] == 200
+        # Position survives the later set_width (independent coalescing slots).
+        assert _latest(server, uuid, m.GuiSetPanelPositionMessage).position == {
+            "kind": "edge",
+            "edge": "right",
+        }
+        assert _latest(server, uuid, m.GuiSetPanelWidthMessage).width == 400
     finally:
         server.stop()
 
 
-def test_set_width_and_set_height_write_placement() -> None:
-    """set_width / set_height are standalone commands that write the coalesced
-    placement size fields (orthogonal to position)."""
+def test_set_width_sends_only_width() -> None:
+    """set_width queues ONLY a width message -- no position. (This is what makes
+    resizing unable to yank a panel the user has dragged elsewhere.)"""
     server = _make_server()
     try:
         panel = server.gui.add_panel()
+        uuid = panel._impl.uuid
         panel.set_width(512)
         panel.set_height(384)
-        placement = _placement(panel)
-        assert placement["width"] == 512
-        assert placement["height"] == 384
-        # Position untouched (size is orthogonal).
-        assert placement["position"] is None
-        # The latest coalesced placement is buffered for replay.
-        buffered = _latest_placement_update(server, panel._impl.uuid)
-        assert buffered["width"] == 512 and buffered["height"] == 384
+        assert _latest(server, uuid, m.GuiSetPanelWidthMessage).width == 512
+        assert _latest(server, uuid, m.GuiSetPanelHeightMessage).height == 384
+        # No position message was queued by size commands.
+        assert m.GuiSetPanelPositionMessage not in _buffered_types(server, uuid)
     finally:
         server.stop()
 
 
-def test_expand_by_default_rides_create_message() -> None:
-    """add_panel(expand_by_default=False) sets the one-shot initial collapsed hint
-    on the create message props (not the coalesced placement)."""
+def test_float_sends_position_and_optional_size() -> None:
+    """float() queues a float Position, plus Width/Height only when given."""
     server = _make_server()
     try:
-        collapsed = server.gui.add_panel(expand_by_default=False)
-        assert _props(collapsed).expand_by_default is False
-        expanded = server.gui.add_panel()
-        assert _props(expanded).expand_by_default is True
+        panel = server.gui.add_panel()
+        uuid = panel._impl.uuid
+        panel.float(x=10, y=20)
+        assert _latest(server, uuid, m.GuiSetPanelPositionMessage).position == {
+            "kind": "float",
+            "x": 10,
+            "y": 20,
+        }
+        # No size yet (x/y only).
+        assert m.GuiSetPanelWidthMessage not in _buffered_types(server, uuid)
+        panel.float(width=300, height=200)
+        assert _latest(server, uuid, m.GuiSetPanelWidthMessage).width == 300
+        assert _latest(server, uuid, m.GuiSetPanelHeightMessage).height == 200
     finally:
         server.stop()
 
 
-def test_main_panel_placement_persists_across_handles() -> None:
-    """main_panel returns throwaway handles; placement is owned by the api."""
+def test_minimize_sends_collapsed_message() -> None:
+    """minimize() queues a Collapsed(True) message; a fresh panel queues none."""
+    server = _make_server()
+    try:
+        panel = server.gui.add_panel()
+        uuid = panel._impl.uuid
+        assert m.GuiSetPanelCollapsedMessage not in _buffered_types(server, uuid)
+        panel.minimize()
+        assert _latest(server, uuid, m.GuiSetPanelCollapsedMessage).collapsed is True
+    finally:
+        server.stop()
+
+
+def test_main_panel_placement_targets_control_panel_uuid() -> None:
+    """main_panel returns throwaway handles; its commands target the fixed
+    control-panel uuid via the same per-axis messages."""
     server = _make_server()
     try:
         server.gui.main_panel.dock_right()
-        # A fresh handle still sees the placement.
-        assert server.gui.main_panel._placement["position"] == {
-            "kind": "edge",
-            "edge": "right",
-        }
-        # Targeted at the fixed control-panel uuid.
-        assert _latest_placement_update(server, CONTROL_PANEL_ID)["position"] == {
-            "kind": "edge",
-            "edge": "right",
-        }
+        # A fresh handle issues the same command, targeting CONTROL_PANEL_ID.
+        assert _latest(
+            server, CONTROL_PANEL_ID, m.GuiSetPanelPositionMessage
+        ).position == {"kind": "edge", "edge": "right"}
     finally:
         server.stop()
 
 
 def test_main_panel_float_after_dock() -> None:
-    """main_panel.float() after a dock_* writes a float position (the command
-    behind the 05_theming "floating" option). The placement must flip from an
-    edge dock back to a float so the client undocks."""
+    """main_panel.float() after a dock_* queues a float Position (the command
+    behind the 05_theming "floating" option), coalescing over the edge dock so
+    the client undocks."""
     server = _make_server()
     try:
         server.gui.main_panel.dock_left()
-        assert server.gui.main_panel._placement["position"] == {
-            "kind": "edge",
-            "edge": "left",
-        }
+        assert _latest(
+            server, CONTROL_PANEL_ID, m.GuiSetPanelPositionMessage
+        ).position == {"kind": "edge", "edge": "left"}
         server.gui.main_panel.float()
-        assert server.gui.main_panel._placement["position"] == {
-            "kind": "float",
-            "x": None,
-            "y": None,
-        }
-        # The latest buffered placement (what a late joiner replays) is the float.
-        assert _latest_placement_update(server, CONTROL_PANEL_ID)["position"] == {
-            "kind": "float",
-            "x": None,
-            "y": None,
-        }
+        # The latest Position (what a late joiner replays) is now the float.
+        assert _latest(
+            server, CONTROL_PANEL_ID, m.GuiSetPanelPositionMessage
+        ).position == {"kind": "float", "x": None, "y": None}
     finally:
         server.stop()
 
 
-def test_reset_clears_main_panel_placement() -> None:
-    """gui.reset() must clear a prior main-panel placement and broadcast the
-    cleared value, so it doesn't replay to clients that connect after the
-    reset (regression: placement persisted across reset)."""
+def test_reset_resets_main_panel_placement_to_default() -> None:
+    """gui.reset() returns the control panel to its default (top-right float,
+    expanded) by sending default per-axis messages. These coalesce over any prior
+    main-panel placement, so a stale dock/minimize doesn't replay to clients that
+    connect after the reset (regression: placement persisted across reset)."""
     server = _make_server()
     try:
         server.gui.main_panel.dock_left()
-        assert server.gui._main_panel_placement["position"] is not None
+        server.gui.main_panel.minimize()
         server.gui.reset()
-        # Server state cleared.
-        assert server.gui._main_panel_placement == {
-            "position": None,
-            "width": None,
-            "height": None,
-        }
-        # The cleared placement is buffered for replay (overrides the old dock).
-        assert _latest_placement_update(server, CONTROL_PANEL_ID)["position"] is None
+        # The latest buffered Position is the default float; collapsed is cleared.
+        assert _latest(
+            server, CONTROL_PANEL_ID, m.GuiSetPanelPositionMessage
+        ).position == {"kind": "float", "x": None, "y": None}
+        assert (
+            _latest(server, CONTROL_PANEL_ID, m.GuiSetPanelCollapsedMessage).collapsed
+            is False
+        )
     finally:
         server.stop()
 
 
 def test_main_panel_handle_held_across_reset_stays_in_sync() -> None:
-    """A MainPanelHandle obtained BEFORE reset() must keep working after it.
-    reset() clears the placement dict in place (not a rebind), so the held
-    handle still aliases the api's live dict; a later command on it persists to
-    the api (regression: rebinding orphaned held handles)."""
+    """A MainPanelHandle obtained BEFORE reset() must keep working after it. The
+    handle holds no state (placement is write-only, keyed by CONTROL_PANEL_ID), so
+    a later command on a held handle still drives the (post-reset) state."""
     server = _make_server()
     try:
-        mp = server.gui.main_panel  # captures the live placement dict
+        mp = server.gui.main_panel
         mp.dock_left()
         server.gui.reset()
-        assert server.gui._main_panel_placement["position"] is None
-        # The held handle still drives the api's state.
+        # The held handle still drives placement.
         mp.dock_right()
-        assert server.gui._main_panel_placement["position"] == {
-            "kind": "edge",
-            "edge": "right",
-        }
-    finally:
-        server.stop()
-
-
-def test_reset_without_main_panel_placement_sends_nothing() -> None:
-    """reset() with no prior main-panel placement must not emit a spurious
-    placement update."""
-    server = _make_server()
-    try:
-        server.gui.add_panel()  # a panel, but no main-panel placement
-        server.gui.reset()
-        buffer = server._websock_server._broadcast_buffer.message_from_id
-        main_updates = [
-            msg
-            for msg in buffer.values()
-            if isinstance(msg, m.GuiUpdateMessage)
-            and msg.uuid == CONTROL_PANEL_ID
-            and "placement" in msg.updates
-        ]
-        assert main_updates == []
+        assert _latest(
+            server, CONTROL_PANEL_ID, m.GuiSetPanelPositionMessage
+        ).position == {"kind": "edge", "edge": "right"}
     finally:
         server.stop()
 
@@ -339,9 +305,7 @@ def test_main_panel_is_legal_anchor() -> None:
     try:
         panel = server.gui.add_panel()
         panel.dock_above(server.gui.main_panel)
-        assert (
-            _position(panel)["anchor_uuid"] == CONTROL_PANEL_ID
-        )
+        assert _position(server, panel._impl.uuid)["anchor_uuid"] == CONTROL_PANEL_ID
     finally:
         server.stop()
 
@@ -412,7 +376,10 @@ def test_cross_scope_anchor_raises() -> None:
             # anchor from ANY scope -- even server2's panel anchoring server's
             # main panel must NOT raise.
             panel_b.dock_below(server.gui.main_panel)
-            assert _position(panel_b)["anchor_uuid"] == CONTROL_PANEL_ID
+            assert (
+                _position(server2, panel_b._impl.uuid)["anchor_uuid"]
+                == CONTROL_PANEL_ID
+            )
         finally:
             server2.stop()
     finally:
@@ -438,17 +405,16 @@ def test_control_layout_deprecation_translates_to_dock_right() -> None:
     server = viser.ViserServer()
     try:
         for layout in ("collapsible", "fixed"):
-            server.gui._main_panel_placement["position"] = None
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always")
                 server.gui.configure_theme(control_layout=layout)  # type: ignore[arg-type]
             assert any(
                 issubclass(w.category, DeprecationWarning) for w in caught
             ), f"{layout} did not warn"
-            assert server.gui._main_panel_placement["position"] == {
-                "kind": "edge",
-                "edge": "right",
-            }
+            # The deprecation docks the control panel to the right.
+            assert _latest(
+                server, CONTROL_PANEL_ID, m.GuiSetPanelPositionMessage
+            ).position == {"kind": "edge", "edge": "right"}
     finally:
         server.stop()
 
@@ -461,7 +427,12 @@ def test_control_layout_floating_does_not_warn_or_place() -> None:
             warnings.simplefilter("always")
             server.gui.configure_theme(control_layout="floating")
         assert not any(issubclass(w.category, DeprecationWarning) for w in caught)
-        assert server.gui._main_panel_placement["position"] is None
+        # "floating" issues no DOCK -- the control panel's position stays the
+        # default float (server init resets it to a default float; floating must
+        # not turn that into an edge dock).
+        assert _latest(
+            server, CONTROL_PANEL_ID, m.GuiSetPanelPositionMessage
+        ).position == {"kind": "float", "x": None, "y": None}
     finally:
         server.stop()
 
@@ -540,8 +511,9 @@ def test_invalid_dimensions_raise() -> None:
         # Valid values still work.
         panel.set_width(300.0)
         panel.set_height(200.0)
-        assert _placement(panel)["width"] == 300.0
-        assert _placement(panel)["height"] == 200.0
+        uuid = panel._impl.uuid
+        assert _latest(server, uuid, m.GuiSetPanelWidthMessage).width == 300.0
+        assert _latest(server, uuid, m.GuiSetPanelHeightMessage).height == 200.0
     finally:
         server.stop()
 
@@ -557,7 +529,7 @@ def test_float_coordinates_allow_negative_reject_nonfinite() -> None:
         panel = server.gui.add_panel()
         # Negatives + zero are valid coordinates.
         panel.float(x=-15.0, y=0.0)
-        assert _placement(panel)["position"] == {
+        assert _position(server, panel._impl.uuid) == {
             "kind": "float",
             "x": -15.0,
             "y": 0.0,

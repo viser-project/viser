@@ -184,18 +184,19 @@ def test_multi_tab_panel_shows_all_tabs(
     expect(_tab(viser_page, "Two")).to_be_visible()
 
 
-def test_expand_by_default_false_starts_collapsed(
+def test_minimize_starts_panel_collapsed(
     viser_page: Page, viser_server: viser.ViserServer
 ) -> None:
-    """add_panel(expand_by_default=False) starts the panel minimized (its group
-    carries the collapsed marker)."""
+    """panel.minimize() starts the panel minimized (its group carries the
+    collapsed marker)."""
     viser_page.set_viewport_size(_VIEWPORT)
     viser_page.wait_for_timeout(300)
 
-    panel = viser_server.gui.add_panel(expand_by_default=False)
+    panel = viser_server.gui.add_panel()
     with panel.add_tab("Mini"):
         viser_server.gui.add_markdown("body text that hides when collapsed")
     panel.dock_right()
+    panel.minimize()
     # The panel starts collapsed: exactly one group carries the collapsed marker,
     # and its label shows on the minimized strip (a collapsed group hides its tab
     # strip, so we check the label text, not a [data-dock-tab]).
@@ -719,12 +720,13 @@ def test_minimized_multitab_strip_rows_expand_to_tab(
     viser_page.set_viewport_size(_VIEWPORT)
     viser_page.wait_for_timeout(300)
 
-    panel = viser_server.gui.add_panel(expand_by_default=False)
+    panel = viser_server.gui.add_panel()
     with panel.add_tab("Alpha"):
         viser_server.gui.add_markdown("alpha body")
     with panel.add_tab("Beta"):
         viser_server.gui.add_markdown("beta body")
     panel.dock_right()
+    panel.minimize()
 
     strip = viser_page.locator("[data-dock-group][data-dock-collapsed]")
     expect(strip).to_have_count(1, timeout=5_000)
