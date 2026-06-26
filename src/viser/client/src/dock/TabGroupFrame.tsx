@@ -5,7 +5,7 @@ import { Box, Collapse, ScrollArea } from "@mantine/core";
 import { IconMinus, IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
-import { findGroupLocation, stackGroupIdsOf } from "./layoutOps";
+import { stackGroupIdsOf } from "./layoutOps";
 import {
   dockBodyScroll,
   focusRing,
@@ -215,12 +215,11 @@ export function TabGroupFrame({
   const unmergeable = group.paneIds.some(
     (p) => panes[p]?.unmergeable === true,
   );
-  // A DOCKED + STACKED titleNode header (the main panel's connection-status bar
-  // sitting below another docked panel) gets a thin top rule so it reads as
-  // separated from the panel above. Not needed when docked ALONE (nothing above
-  // it) or floating (its own chrome sits above).
-  const dockedStacked =
-    !lone && findGroupLocation(dock.layout, group.id)?.kind === "docked";
+  // A STACKED titleNode header (the main panel's connection-status bar sitting
+  // below another panel in a 2+ stack, docked OR floating) gets a thin top rule
+  // so it reads as separated from the panel above. Not needed when LONE (nothing
+  // above it).
+  const stacked = !lone;
 
   // FLIP animation: when the tab order changes, each tab slides from its old
   // slot to its new one. We record each tab's offsetLeft and play the inverted
@@ -380,7 +379,7 @@ export function TabGroupFrame({
           // the panel above.
           className={
             panes[group.activeId]?.titleNode
-              ? [!collapsed && headerRule, dockedStacked && headerRuleTop]
+              ? [!collapsed && headerRule, stacked && headerRuleTop]
                   .filter(Boolean)
                   .join(" ") || undefined
               : undefined
