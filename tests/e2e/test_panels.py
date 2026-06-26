@@ -889,3 +889,62 @@ def test_unminimize_after_sibling_resize_keeps_panel_onscreen(
     assert box["y"] + box["height"] <= vh + 5, (
         f"bottom panel off-screen: y={box['y']} h={box['height']} (viewport {vh})"
     )
+
+
+def test_docked_resize_pushes_fully_on_canvas_float(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """Resizing a docked region pushes a float that is FULLY on the canvas out of
+    its way, keeping it flush with the advancing seam (no lag, no jump). A float
+    already overlapping the region is left alone -- see the companion test."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(300)
+
+    docked = viser_server.gui.add_panel()
+    with docked.add_tab("DockEdge"):
+        viser_server.gui.add_markdown("docked")
+    docked.dock_right()
+    floater = viser_server.gui.add_panel()
+    with floater.add_tab("Floaty"):
+        viser_server.gui.add_markdown("floaty")
+    floater.float(x=500, y=300, width=200)  # fully on canvas, right edge 700
+    expect(_tab(viser_page, "Floaty")).to_be_visible(timeout=5_000)
+
+    def float_right() -> float:
+        box = (
+            viser_page.locator("[data-floating-window]")
+            .filter(has=_tab(viser_page, "Floaty"))
+            .first.bounding_box()
+        )
+        assert box is not None
+        return box["x"] + box["width"]
+
+    before_right = float_right()
+
+    # Drag the region's inner edge left, sweeping past the float's right edge.
+    handle = viser_page.locator("[data-dock-region-resize='right']").first.bounding_box()
+    assert handle is not None
+    cx = handle["x"] + handle["width"] / 2
+    cy = handle["y"] + handle["height"] / 2
+    viser_page.mouse.move(cx, cy)
+    viser_page.mouse.down()
+    viser_page.mouse.move(cx - 2, cy, steps=2)
+    viser_page.mouse.move(cx - 320, cy, steps=14)
+    viser_page.mouse.move(cx - 320, cy)
+    viser_page.mouse.up()
+    viser_page.wait_for_timeout(150)
+
+    after_right = float_right()
+    seam = viser_page.eval_on_selector(
+        "[data-dock-leaf][data-dock-edge='right']",
+        "e => e.getBoundingClientRect().x",
+    )
+    assert after_right < before_right - 20, (
+        f"float should be pushed left as the region sweeps past it: "
+        f"{before_right} -> {after_right}"
+    )
+    # Kept flush with the seam (still fully on the canvas), not shoved past it.
+    assert abs(after_right - seam) <= 10, (
+        f"pushed float right edge {after_right} should sit flush with the seam "
+        f"{seam}"
+    )

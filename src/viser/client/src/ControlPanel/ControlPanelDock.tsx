@@ -141,7 +141,9 @@ export function ControlPanelDockSurface({
           // Resize the 3D canvas's GL backbuffer synchronously as a docked
           // region's width handle is dragged, so the scene tracks the divider
           // instead of trailing R3F's async ResizeObserver by a frame.
-          onRegionResizeFrame={() => viewer.mutable.current.syncCanvasSize?.()}
+          onRegionResizeFrame={(w, h) =>
+            viewer.mutable.current.syncCanvasSize?.(w, h)
+          }
         >
           {children}
           <ControlPanelDockSync
