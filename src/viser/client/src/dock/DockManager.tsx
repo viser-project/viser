@@ -1124,13 +1124,24 @@ export function DockManager({
         // Measure the COLUMN wrapper (not the 1em handle): floatRectFor clamps
         // width/height into sane floating ranges, same as a group undock.
         const rect = floatRectFor(`[data-dock-column="${columnNodeId}"]`);
+        // A MINIMIZED column renders as a ~36px strip, so its measured width is
+        // a useless panel width; float at the region's preserved EXPANDED width
+        // instead (regionWidth survives minimization) -- otherwise undocking a
+        // minimized stack produces a strip-narrow window that stays tiny after
+        // expand. Expanded columns keep their measured width.
+        const colNode = ops.treeFindNode(layoutRef.current.docked[edge], columnNodeId);
+        const collapsed =
+          colNode !== null && ops.isColumnMinimized(colNode, layoutRef.current.groups);
+        const floatWidth = collapsed
+          ? regionWidthsOf(layoutRef.current)[edge]
+          : rect.width;
         const res = ops.floatColumn(
           layoutRef.current,
           edge,
           columnNodeId,
           rect.x,
           rect.y,
-          rect.width,
+          floatWidth,
           rect.height,
         );
         // Null when the column was restructured under us or isn't a pure

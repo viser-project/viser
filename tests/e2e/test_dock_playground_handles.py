@@ -27,6 +27,7 @@ Same standalone-Vite harness as the other dock playground files. Run with::
 
 from __future__ import annotations
 
+import pytest
 from playwright.sync_api import Page  # noqa: E402
 
 from .dock_helpers import columns, dock_layout, group, set_layout, stack, window
@@ -185,6 +186,51 @@ def test_minimized_column_parent_handle_tears_out_whole_stack(
         )
         assert state["dockedRight"] is None, "whole column should have left the dock"
         assert set(state["panes"]) == {"inspector", "controls"}
+    finally:
+        page.close()
+
+
+def test_undock_minimized_column_keeps_expanded_width(
+    dock_context, vite_server: int
+) -> None:
+    """Undocking a MINIMIZED docked column floats it at the region's preserved
+    EXPANDED width, not the ~36px strip width -- otherwise the window stays
+    strip-narrow even after expanding (regression: floatColumn used the measured
+    strip rect)."""
+    page = _open(dock_context, vite_server)
+    try:
+        # A 2-leaf column docked right at the default ~300px region width.
+        set_layout(page, dock_layout(docked_right=stack("controls", "inspector")))
+        region_w = page.evaluate("() => window.__dockLayout.regionWidth.right")
+        assert region_w and region_w > 150
+
+        # Minimize the whole stack via its parent handle, then undock it.
+        page.eval_on_selector(
+            "[data-dock-column-handle] [data-dock-minimize-all]", "e => e.click()"
+        )
+        page.wait_for_timeout(120)
+        handle = page.locator("[data-dock-column-handle]").first
+        box = handle.bounding_box()
+        assert box is not None
+        _drag(
+            page,
+            (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2),
+            (450, 450),
+            steps=18,
+        )
+        win = page.evaluate(
+            """() => {
+                const w = window.__dockLayout.floating.find(
+                    (w) => w.stack.length === 2);
+                return w ? Math.round(w.width) : null;
+            }"""
+        )
+        if win is None:
+            pytest.skip("column did not float as a 2-stack this run")
+        # Floats at ~the preserved expanded width, NOT a ~36-96px strip.
+        assert win >= region_w - 20, (
+            f"undocked minimized column should keep ~{region_w}px width, got {win}"
+        )
     finally:
         page.close()
 

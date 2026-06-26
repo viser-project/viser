@@ -104,8 +104,13 @@ function treeReplaceNode(
   };
 }
 
-/** Find any node (leaf or split) by node id. */
-function treeFindNode(node: DockNode, nodeId: NodeId): DockNode | null {
+/** Find any node (leaf or split) by node id. Accepts a null tree (empty edge)
+ * for convenience at call sites that hold a possibly-empty region. */
+export function treeFindNode(
+  node: DockNode | null,
+  nodeId: NodeId,
+): DockNode | null {
+  if (node === null) return null;
   if (node.id === nodeId) return node;
   if (node.type === "leaf") return null;
   for (const child of node.children) {
