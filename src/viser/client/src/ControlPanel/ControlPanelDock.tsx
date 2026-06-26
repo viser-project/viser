@@ -13,12 +13,11 @@ import { useDisclosure } from "@mantine/hooks";
 import React from "react";
 import { ViewerContext, ViewerContextContents } from "../ViewerContext";
 import { htmlIconWrapper } from "../components/ComponentStyles.css";
-import { DockMetricsContext, useDock } from "../dock/DockContext";
+import { DockMetrics, DockMetricsContext, useDock } from "../dock/DockContext";
 import { DockManager } from "../dock/DockManager";
 import * as ops from "../dock/layoutOps";
 import { DockLayout, PaneRegistry, emptyLayout } from "../dock/types";
 import type { CanvasBounds } from "../dock/layoutOps";
-import { DockMetrics } from "../dock/DockContext";
 import {
   CommandsButton,
   ConnectionStatus,

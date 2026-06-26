@@ -279,17 +279,6 @@ export function DockManager({
     [commit],
   );
 
-  // Restore a previously COMMITTED layout exactly (Escape after a drag that
-  // committed an op up front). No reconciliation: the snapshot already
-  // carries valid widths -- regionWidth lives in the layout, so "put the
-  // pre-drag layout back" restores geometry by construction, where the
-  // reconciler's content-matching would treat restored columns as new and
-  // reset them to defaults.
-  const restoreLayout = React.useCallback(
-    (snapshot: DockLayout) => commit(snapshot),
-    [commit],
-  );
-
   // Imperative panel lifecycle API (exposed via context). Stable identity so
   // sync layers can list it in effect deps without re-running.
   const api = React.useMemo(
@@ -745,8 +734,12 @@ export function DockManager({
         if (cancelled) {
           // A deferred-float drag already committed its float op; put the
           // pre-drag layout back so Escape really means "never mind" --
-          // including region widths, which the snapshot carries.
-          if (restoreOnCancel !== undefined) restoreLayout(restoreOnCancel);
+          // including region widths, which the snapshot carries. Restore via
+          // commit (NOT applyOp): the snapshot already carries valid widths, so
+          // "put the pre-drag layout back" restores geometry by construction --
+          // the reconciler's content-matching would treat restored columns as
+          // new and reset them to defaults.
+          if (restoreOnCancel !== undefined) commit(restoreOnCancel);
           return;
         }
 
@@ -1657,11 +1650,7 @@ export function DockManager({
   // placed when a docked region's width changes.
   React.useEffect(() => {
     reanchorFloats();
-  }, [leftInset, rightInset, reanchorFloats]);
-
-  React.useEffect(() => {
-    reanchorFloats();
-  }, [containerWidth, containerHeight, reanchorFloats]);
+  }, [leftInset, rightInset, containerWidth, containerHeight, reanchorFloats]);
 
   // A floating window's RENDERED size changing (e.g. an auto-height panel
   // finishing its first layout, or content growing) re-resolves requested floats
