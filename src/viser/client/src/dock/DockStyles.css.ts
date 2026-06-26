@@ -56,3 +56,16 @@ globalStyle(
   `:where([data-mantine-color-scheme="dark"]) ${headerRule}`,
   { borderBottom: "1px solid var(--mantine-color-dark-4)" },
 );
+
+/** Top rule above a DOCKED+STACKED unmergeable header. Same gray as headerRule
+ * (gray-3 light / dark-4 dark), just on the top edge, so it matches the bottom
+ * rule between docked panels. */
+export const headerRuleTop = style({});
+globalStyle(
+  `:where([data-mantine-color-scheme="light"]) ${headerRuleTop}`,
+  { borderTop: "1px solid var(--mantine-color-gray-3)" },
+);
+globalStyle(
+  `:where([data-mantine-color-scheme="dark"]) ${headerRuleTop}`,
+  { borderTop: "1px solid var(--mantine-color-dark-4)" },
+);

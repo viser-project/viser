@@ -11,6 +11,7 @@ import {
   focusRing,
   gripBarBg,
   headerRule,
+  headerRuleTop,
 } from "./DockStyles.css";
 import { prefersReducedMotion, tabListKeyDown } from "./gestures";
 import { GripPill, HandleIconButton } from "./handles";
@@ -214,10 +215,12 @@ export function TabGroupFrame({
   const unmergeable = group.paneIds.some(
     (p) => panes[p]?.unmergeable === true,
   );
-  // Docked (vs floating/area): a DOCKED titleNode header (the main panel's
-  // connection-status bar) gets a thin top rule so it reads as separated from
-  // the region's top edge -- a floating window has its own chrome above it.
-  const docked = findGroupLocation(dock.layout, group.id)?.kind === "docked";
+  // A DOCKED + STACKED titleNode header (the main panel's connection-status bar
+  // sitting below another docked panel) gets a thin top rule so it reads as
+  // separated from the panel above. Not needed when docked ALONE (nothing above
+  // it) or floating (its own chrome sits above).
+  const dockedStacked =
+    !lone && findGroupLocation(dock.layout, group.id)?.kind === "docked";
 
   // FLIP animation: when the tab order changes, each tab slides from its old
   // slot to its new one. We record each tab's offsetLeft and play the inverted
@@ -370,12 +373,16 @@ export function TabGroupFrame({
               ? undefined
               : (panes[group.activeId]?.title ?? group.activeId)
           }
-          // The 1px bottom rule separates the header from the content below, so
+          // The 1px BOTTOM rule separates the header from the content below, so
           // only show it when EXPANDED -- a collapsed panel is header-only, and
-          // the rule would read as a stray border on its bottom edge.
+          // the rule would read as a stray border on its bottom edge. A 1px TOP
+          // rule (same gray) is added when docked+stacked to separate it from
+          // the panel above.
           className={
-            panes[group.activeId]?.titleNode && !collapsed
-              ? headerRule
+            panes[group.activeId]?.titleNode
+              ? [!collapsed && headerRule, dockedStacked && headerRuleTop]
+                  .filter(Boolean)
+                  .join(" ") || undefined
               : undefined
           }
           onPointerDown={(event) => {
@@ -401,14 +408,7 @@ export function TabGroupFrame({
                   lineHeight: "1.5em",
                   padding: "0 0.75em",
                   fontWeight: 400,
-                  // Docked: a thin top rule separates the header from the
-                  // region's top edge (a floating window has its own chrome
-                  // above). Same gray as the bottom headerRule.
-                  ...(docked
-                    ? {
-                        borderTop: "1px solid var(--mantine-color-default-border)",
-                      }
-                    : {}),
+                  // The top rule (docked+stacked) is the headerRuleTop class.
                 }
               : {
                   height: TAB_ROW_EM,
