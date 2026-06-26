@@ -12,6 +12,7 @@ import {
   cascadeResize,
   expandStack,
   minimizeStack,
+  windowAllMinimized,
 } from "./layoutOps";
 import { StackHandleBar } from "./handles";
 import { TabGroupFrame } from "./TabGroupFrame";
@@ -67,12 +68,9 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
   const stackRef = React.useRef<HTMLDivElement>(null);
   // A fully-minimized window shrinks to its handle(s); it ignores any fixed
   // height and offers no vertical resize (there's nothing to resize).
-  const collapsed = win.stack.every(
-    (id) => dock.groups[id]?.collapsed === true,
-  );
-  // Minimize-all / expand-all for the whole stack: collapse every group (tagging
-  // those that were expanded) or restore that remembered min/max mix. Shared by
-  // the expanded header and the minimized-strip parent handle.
+  const collapsed = windowAllMinimized(dock.layout, win.id);
+  // Minimize-all / expand-all for the whole stack (a stack is uniform-collapse).
+  // Shared by the expanded header and the minimized-strip parent handle.
   const toggleAll = () =>
     dock.api.apply((l) =>
       collapsed ? expandStack(l, win.stack) : minimizeStack(l, win.stack),

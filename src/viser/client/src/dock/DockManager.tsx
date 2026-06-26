@@ -587,18 +587,19 @@ export function DockManager({
       resetLeafPreview();
       return;
     }
+    // A MINIMIZED cell has no content half to vacate: the "shrink to 50% + tint
+    // the freed half" preview would just flood the narrow strip (region-tall) in
+    // blue. The thin split line already shows where the new cell lands, so skip
+    // the leaf preview for a collapsed target. Read collapse from the model (not
+    // a DOM marker) -- the layout is the source of truth.
+    if (ops.nodeAllMinimized(layoutRef.current, nodeId)) {
+      resetLeafPreview();
+      return;
+    }
     const el = containerRef.current?.querySelector<HTMLElement>(
       `[data-dock-leaf="${nodeId}"]`,
     );
     if (el == null) {
-      resetLeafPreview();
-      return;
-    }
-    // A MINIMIZED cell has no content half to vacate: the "shrink to 50% + tint
-    // the freed half" preview would just flood the narrow strip (region-tall) in
-    // blue. The thin split line already shows where the new cell lands, so skip
-    // the leaf preview for a collapsed target.
-    if (el.querySelector("[data-dock-collapsed='true']") !== null) {
       resetLeafPreview();
       return;
     }

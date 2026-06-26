@@ -199,6 +199,17 @@ export function collectLeafGroups(node: DockNode): GroupId[] {
   return node.children.flatMap(collectLeafGroups);
 }
 
+/** The group ids of a COLUMN split's DIRECT leaf children -- i.e. the leaves
+ * that render as one vertical stack. Empty for a leaf, a row split, or a column
+ * whose children are all nested splits. The shared notion of "a docked stack's
+ * members" used by the collapse-uniformity helpers. */
+function columnLeafGroups(node: DockNode): GroupId[] {
+  if (node.type !== "split" || node.dir !== "column") return [];
+  return node.children
+    .filter((c): c is Extract<DockNode, { type: "leaf" }> => c.type === "leaf")
+    .map((c) => c.group);
+}
+
 /** In-order leaf nodes (id + group) of a subtree. */
 export function collectLeaves(
   node: DockNode,
@@ -472,19 +483,8 @@ export function stackGroupIdsOf(
     let found: GroupId[] | null = null;
     const walk = (node: DockNode): void => {
       if (node.type !== "split") return;
-      if (node.dir === "column") {
-        const leafChildren = node.children.filter((c) => c.type === "leaf");
-        if (
-          leafChildren.some(
-            (c) => (c as Extract<DockNode, { type: "leaf" }>).group === groupId,
-          ) &&
-          leafChildren.length >= 2
-        ) {
-          found = leafChildren.map(
-            (c) => (c as Extract<DockNode, { type: "leaf" }>).group,
-          );
-        }
-      }
+      const stack = columnLeafGroups(node);
+      if (stack.length >= 2 && stack.includes(groupId)) found = stack;
       node.children.forEach(walk);
     };
     walk(tree);
@@ -1362,16 +1362,12 @@ export function normalizeStackCollapse(layout: DockLayout): boolean {
   // A column split's DIRECT leaf children form one vertical stack.
   const walk = (node: DockNode): void => {
     if (node.type !== "split") return;
-    if (node.dir === "column") {
-      const leafGroups = node.children
-        .filter((c) => c.type === "leaf")
-        .map((c) => (c as Extract<DockNode, { type: "leaf" }>).group);
-      if (
-        leafGroups.length >= 2 &&
-        leafGroups.some((gid) => layout.groups[gid]?.collapsed !== true)
-      ) {
-        expandAll(leafGroups);
-      }
+    const stack = columnLeafGroups(node);
+    if (
+      stack.length >= 2 &&
+      stack.some((gid) => layout.groups[gid]?.collapsed !== true)
+    ) {
+      expandAll(stack);
     }
     node.children.forEach(walk);
   };

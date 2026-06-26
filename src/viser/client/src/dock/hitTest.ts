@@ -609,8 +609,20 @@ export function hitTest(
       canInsert && !inTopEdge && !inBottomEdge
         ? verticalTabInsertion(g.tabs, clientY)
         : null;
-    const insHint = (i: { index: number; lineLeft: number; lineTop: number; lineWidth: number }) =>
-      rel({ left: i.lineLeft, top: i.lineTop - 1, width: i.lineWidth, height: 2 }, "line");
+    const insertResult = () =>
+      ins === null
+        ? null
+        : {
+            result: {
+              kind: "insertTab" as const,
+              targetGroupId: g.groupId,
+              index: ins.index,
+            },
+            hint: rel(
+              { left: ins.lineLeft, top: ins.lineTop - 1, width: ins.lineWidth, height: 2 },
+              "line" as const,
+            ),
+          };
     if (g.ctx.kind === "docked") {
       const e = g.ctx.edge;
       const n = g.ctx.nodeId;
@@ -618,9 +630,7 @@ export function hitTest(
       if (rx > 1 - H) return { result: { kind: "split", edge: e, nodeId: n, region: "right" }, hint: splitLine("right") };
       if (inTopEdge) return { result: { kind: "split", edge: e, nodeId: n, region: "top" }, hint: splitLine("top") };
       if (inBottomEdge) return { result: { kind: "split", edge: e, nodeId: n, region: "bottom" }, hint: splitLine("bottom") };
-      if (ins !== null)
-        return { result: { kind: "insertTab", targetGroupId: g.groupId, index: ins.index }, hint: insHint(ins) };
-      return mergeResult();
+      return insertResult() ?? mergeResult();
     }
     // Floating minimized: thin edge bands snap a new cell above/below; rows
     // insert at a tab position; the rest merges (no docked region to split into).
@@ -634,9 +644,7 @@ export function hitTest(
         result: { kind: "snap", windowId: g.ctx.windowId, index: g.ctx.index + 1 },
         hint: rel({ left: r.left, top: r.bottom - 2, width: r.width, height: 4 }, "line"),
       };
-    if (ins !== null)
-      return { result: { kind: "insertTab", targetGroupId: g.groupId, index: ins.index }, hint: insHint(ins) };
-    return mergeResult();
+    return insertResult() ?? mergeResult();
   }
 
   // 3a. Above the tab strip -> dock above (docked) / snap above (floating).
