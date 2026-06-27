@@ -144,7 +144,8 @@ def _right_group_ids(page: Page) -> list[str]:
 
 def _minimize(page: Page, gid: str) -> None:
     page.locator(f'[data-dock-group="{gid}"] [data-dock-minimize]').first.click()
-    page.wait_for_timeout(120)
+    # Wait out the minimize width-animation so widths measured after are settled.
+    page.wait_for_timeout(350)
 
 
 def _setup_two_side_by_side(page: Page) -> tuple[str, str]:

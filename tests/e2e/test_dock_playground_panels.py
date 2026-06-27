@@ -158,7 +158,8 @@ def test_minimize_docked_scene_collapses_width_to_overlay_rail(
         page.locator(
             f'[data-dock-group="{scene_gid}"] [data-dock-minimize]'
         ).first.click()
-        page.wait_for_timeout(120)
+        # Wait out the minimize width-animation before measuring the strip width.
+        page.wait_for_timeout(350)
 
         # The collapsed Scene is now a narrow vertical strip (~32px, NOT the
         # full docked-column width). Its rendered group box must be much narrower.
@@ -175,7 +176,7 @@ def test_minimize_docked_scene_collapses_width_to_overlay_rail(
         page.locator(
             f'[data-dock-group="{scene_gid}"] [data-dock-minimize]'
         ).first.click()
-        page.wait_for_timeout(120)
+        page.wait_for_timeout(350)
         restored = _gbox(page, scene_gid)
         assert restored["w"] > mini["w"] + 20, (
             f"restoring did not widen the Scene back (mini {mini['w']} -> "
