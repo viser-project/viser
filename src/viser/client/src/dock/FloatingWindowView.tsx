@@ -167,6 +167,10 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
   // second finger on another grip is ignored while one is running).
   const activeGrip = React.useRef<(() => void) | null>(null);
   React.useEffect(() => () => activeGrip.current?.(), []);
+  // True while a height resize is magnetized to the content-height detent (the
+  // "revert to auto" position). Drives the bottom-edge highlight so the snap is
+  // visible. Reset when the gesture ends.
+  const [snappedToContent, setSnappedToContent] = React.useState(false);
 
   // Container-relative width cap: like the original FloatingPanel, a resize
   // always leaves a sliver of canvas visible (it may never consume the whole
@@ -236,16 +240,21 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     return paper.offsetHeight - clientSum + scrollSum;
   };
 
+  // The resize ceiling is the CONTAINER edge only -- never the content height.
+  // A window (single panel OR stack) can be dragged taller than its content;
+  // the extra space is empty for a lone panel and shared by weight in a stack,
+  // exactly like a docked panel filling its region. (Previously content height
+  // was the max, so a freshly-floated stack snapped SMALLER when grown.)
   const measureMaxHeight = () => {
     const paper = paperRef.current;
-    const containerMax = (paper?.parentElement?.clientHeight ?? 2000) - 16;
-    if (paper === null) return containerMax;
-    return clamp(measureContentHeight(), MIN_HEIGHT_PX, containerMax);
+    return (paper?.parentElement?.clientHeight ?? 2000) - 16;
   };
 
-  // Px tolerance for "dragged back to the content height" -- absorbs sub-pixel
-  // rounding and scrollbar width so the revert-to-auto reliably triggers.
-  const AUTO_REVERT_EPSILON_PX = 4;
+  // Magnetic detent at the natural content height: dragging the edge within this
+  // band of the content height snaps it exactly there, which is the single
+  // "revert to auto" position (the window then tracks its content again). The
+  // grip highlights while snapped so the snap is discoverable.
+  const CONTENT_SNAP_BAND_PX = 12;
 
   // Start-of-gesture math shared by every vertical resize: top-side grips
   // hold the BOTTOM edge fixed by moving y with the height (the vertical
@@ -263,20 +272,31 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     // panel (e.g. one button) can shrink back to its natural size rather than
     // being trapped at the 100px minimum.
     const minHeight = Math.min(MIN_HEIGHT_PX, contentHeight);
+    // True when `h` landed in the content-height detent (so it equals content).
+    const snappedToContent = (h: number) =>
+      Math.abs(h - contentHeight) < 0.5 && contentHeight <= maxHeight;
     return {
       startHeight,
-      heightFrom: (dy: number) =>
-        clamp(
+      heightFrom: (dy: number) => {
+        const raw = clamp(
           vside === "top" ? startHeight - dy : startHeight + dy,
           minHeight,
           maxHeight,
-        ),
+        );
+        // Magnetize to the content height when within the snap band.
+        return Math.abs(raw - contentHeight) <= CONTENT_SNAP_BAND_PX &&
+          contentHeight >= minHeight &&
+          contentHeight <= maxHeight
+          ? contentHeight
+          : raw;
+      },
+      snappedToContent,
       yFor: (h: number) => (vside === "top" ? startBottom - h : undefined),
-      // At/above the natural content height -> revert to auto (undefined) so the
-      // window tracks its content again instead of pinning a height the user
-      // can't escape. Otherwise pin the dragged height.
+      // Snapped to the content detent -> revert to auto (undefined) so the
+      // window tracks its content again. Any other height pins (taller =
+      // empty/weight-shared space; shorter = the body scrolls).
       heightToCommit: (h: number): number | undefined =>
-        h >= contentHeight - AUTO_REVERT_EPSILON_PX ? undefined : h,
+        snappedToContent(h) ? undefined : h,
     };
   };
 
@@ -287,7 +307,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       if (activeGrip.current !== null) return;
       event.stopPropagation();
       const startY = event.clientY;
-      const { startHeight, heightFrom, yFor, heightToCommit } =
+      const { startHeight, heightFrom, snappedToContent, yFor, heightToCommit } =
         vResizeStart(vside);
 
       let pending = startHeight;
@@ -296,11 +316,13 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         pointerId: event.pointerId,
         update: (e) => {
           pending = heightFrom(e.clientY - startY);
+          setSnappedToContent(snappedToContent(pending));
         },
         flush: () =>
           onResizeHeight(win.id, heightToCommit(pending), yFor(pending)),
         onEnd: (cancelled) => {
           activeGrip.current = null;
+          setSnappedToContent(false);
           if (cancelled)
             onResizeHeight(win.id, startHeight, yFor(startHeight));
         },
@@ -319,7 +341,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       const startY = event.clientY;
       const startWidth = win.width;
       const startRight = win.x + win.width;
-      const { startHeight, heightFrom, yFor, heightToCommit } =
+      const { startHeight, heightFrom, snappedToContent, yFor, heightToCommit } =
         vResizeStart(vside);
       const maxW = maxResizeWidth();
 
@@ -335,6 +357,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
           pendingW = clamp(raw, MIN_REGION_GRAB_PX, maxW);
           pendingX = side === "left" ? startRight - pendingW : undefined;
           pendingH = heightFrom(e.clientY - startY);
+          setSnappedToContent(snappedToContent(pendingH));
         },
         flush: () => {
           onResize(win.id, pendingW, pendingX);
@@ -342,6 +365,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         },
         onEnd: (cancelled) => {
           activeGrip.current = null;
+          setSnappedToContent(false);
           if (cancelled) {
             onResize(
               win.id,
@@ -415,6 +439,24 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
             onPointerDown={cornerResizeHandler("right", "top")}
           />
         </>
+      )}
+
+      {/* Snap cue: while a height resize is magnetized to the content-height
+      detent (the "revert to auto" position), highlight the bottom edge so the
+      snap is visible -- the window is back to hugging its content. */}
+      {snappedToContent && (
+        <Box
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 2,
+            backgroundColor: "var(--mantine-primary-color-filled)",
+            zIndex: 14,
+            pointerEvents: "none",
+          }}
+        />
       )}
 
       <Box
