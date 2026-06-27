@@ -19,7 +19,7 @@ PLAYGROUND_PATH = "/dock_test.html"
 # Python mirrors of the dock's TS layout constants (src/viser/client/src/dock/):
 MIN_PANEL_WIDTH_PX = 220  # types.ts
 MAX_PANEL_WIDTH_PX = 600  # types.ts
-MIN_CELL_HEIGHT_PX = 80  # SplitView.tsx
+MIN_CELL_HEIGHT_PX = 50  # SplitView.tsx
 
 
 def open_playground(dock_context, port: int, w: int = 1280, h: int = 800) -> Page:

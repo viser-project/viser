@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import { cappedWindowHeight } from "./layoutOps";
+import { MIN_WINDOW_HEIGHT_PX } from "./types";
 
 describe("cappedWindowHeight", () => {
   it("returns the pinned height when it fits the container", () => {
@@ -15,15 +16,16 @@ describe("cappedWindowHeight", () => {
     expect(cappedWindowHeight(700, 400)).toBe(392);
   });
 
-  it("floors at MIN_HEIGHT_PX (100) for a tall window in a tiny container", () => {
-    // container-8 = 32, but a 300px window stays usable at 100, scrolling.
-    expect(cappedWindowHeight(300, 40)).toBe(100);
+  it("floors at MIN_WINDOW_HEIGHT_PX for a tall window in a tiny container", () => {
+    // container-8 is tiny, but a 300px window stays usable at the floor, scrolling.
+    expect(cappedWindowHeight(300, 40)).toBe(MIN_WINDOW_HEIGHT_PX);
   });
 
   it("does NOT inflate a small window above its pinned height (the bug)", () => {
-    // A 90px window in a 40px container: the old floor (max(100, 32)) would have
-    // rendered it at 100 -- TALLER than 90. Now the floor is capped at 90.
-    expect(cappedWindowHeight(90, 40)).toBe(90);
+    // A pinned height BELOW the floor in a tiny container: the result must never
+    // exceed the pinned height (the window shrinks, doesn't overhang).
+    const pinned = MIN_WINDOW_HEIGHT_PX - 10;
+    expect(cappedWindowHeight(pinned, 40)).toBeLessThanOrEqual(pinned);
   });
 
   it("a small window in a comfortable container keeps its pinned height", () => {

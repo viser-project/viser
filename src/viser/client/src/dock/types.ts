@@ -67,7 +67,7 @@ export const MIN_CANVAS_PX = 120;
  * is kept at so it stays usable (its contents scroll) when the container is too
  * small for its pinned height. A window whose pinned height is below this is
  * left as-is (the floor never inflates a window above its pinned height). */
-export const MIN_WINDOW_HEIGHT_PX = 100;
+export const MIN_WINDOW_HEIGHT_PX = 50;
 
 /** Clamp `v` into [lo, hi]. Shared by every place a size/position is bounded
  * (resize gestures, width reconciliation, hint geometry). */

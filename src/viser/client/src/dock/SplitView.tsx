@@ -27,7 +27,7 @@ import {
 } from "./types";
 
 // Minimum height for a stacked (column) cell; row cells use the per-panel width.
-const MIN_CELL_HEIGHT_PX = 80;
+const MIN_CELL_HEIGHT_PX = 50;
 
 /** Dispatches to a leaf or split renderer. Kept hook-free so the leaf/split
  * branches don't violate the Rules of Hooks when a node changes type.
