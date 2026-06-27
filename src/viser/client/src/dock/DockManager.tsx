@@ -144,18 +144,6 @@ const AREA_HIT_INSET_PX = 40;
 // it must stay droppable), and well above the collapsed case (~0px).
 const AREA_MIN_TARGET_PX = 24;
 
-// Duration (ms) of the docked region-width ease when a region minimizes/expands
-// to/from its strip. Matches the column collapse/flex transitions elsewhere.
-const MINIMIZE_ANIM_MS = 200;
-
-// A stable signature of which groups are collapsed, to detect a minimize/expand
-// between two layouts (so only that change animates the region width).
-const collapsedSignature = (layout: DockLayout): string =>
-  Object.keys(layout.groups)
-    .filter((id) => layout.groups[id]?.collapsed === true)
-    .sort()
-    .join(",");
-
 export function DockManager({
   initialLayout,
   panes,
@@ -198,26 +186,6 @@ export function DockManager({
   );
   const [draggingTabId, setDraggingTabId] = React.useState<PaneId | null>(null);
   const [resizing, setResizing] = React.useState(false);
-
-  // Brief flag enabling the docked region-width CSS transition, pulsed only when
-  // an op flips a group's collapsed state (minimize/expand). Default off so all
-  // other width changes (resize, dock, tear-out) snap 1:1. Auto-clears after the
-  // transition so a later resize never eases.
-  const [animatingMinimize, setAnimatingMinimize] = React.useState(false);
-  const minimizeAnimTimer = React.useRef<ReturnType<typeof setTimeout>>();
-  const pulseMinimizeAnimation = React.useCallback(() => {
-    setAnimatingMinimize(true);
-    clearTimeout(minimizeAnimTimer.current);
-    minimizeAnimTimer.current = setTimeout(
-      () => setAnimatingMinimize(false),
-      MINIMIZE_ANIM_MS + 40,
-    );
-  }, []);
-  const cancelMinimizeAnimation = React.useCallback(() => {
-    clearTimeout(minimizeAnimTimer.current);
-    setAnimatingMinimize((on) => (on ? false : on));
-  }, []);
-  React.useEffect(() => () => clearTimeout(minimizeAnimTimer.current), []);
 
   // Drop hint, driven IMPERATIVELY (style mutations on a persistent element)
   // rather than via state: the hint updates on every pointer move during a
@@ -310,20 +278,8 @@ export function DockManager({
       // fresh draft here, so in-place mutation is safe.
       ops.normalizeStackCollapse(next);
       reconcileRegionWidths(layoutRef.current, next);
-      // Animate the region-width change ONLY when this op flips a group's
-      // collapsed state (minimize/expand) -- so a docked region eases to/from its
-      // strip width. Any OTHER op (resize, tear-out, dock) instead CANCELS an
-      // in-flight pulse, so a width change immediately following a minimize
-      // (e.g. grab the divider right after collapsing) snaps 1:1 instead of
-      // riding the leftover ease. The setState batches with commit() below, so
-      // the transition flips in the same render that applies the new width.
-      if (collapsedSignature(next) !== collapsedSignature(layoutRef.current))
-        pulseMinimizeAnimation();
-      else cancelMinimizeAnimation();
       commit(next);
     },
-    // pulseMinimizeAnimation is stable (useCallback); commit is the only dep.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [commit],
   );
 
@@ -1732,15 +1688,6 @@ export function DockManager({
   }
   const leftInset = regions[0].reservedWidth;
   const rightInset = regions[1].reservedWidth;
-  // Ease the docked region width (and the canvas inset it drives) ONLY while a
-  // minimize/expand animation is pulsing -- so a region glides to/from its strip
-  // width. Off for every other width change (resize, dock, tear-out), which snap
-  // 1:1. During the ease the canvas's ResizeObserver follows a beat behind (the
-  // accepted minimize-only canvas lag).
-  const widthTransition =
-    animatingMinimize && !resizing
-      ? `width ${MINIMIZE_ANIM_MS}ms ease, left ${MINIMIZE_ANIM_MS}ms ease, right ${MINIMIZE_ANIM_MS}ms ease`
-      : undefined;
   // Rendered region widths, for hit-testing during drags: drop zones and
   // their hints must align to what's on screen, not to the MODEL regionWidth
   // (which excludes the strips and preserves widths through minimization).
@@ -1897,7 +1844,6 @@ export function DockManager({
             bottom: 0,
             left: leftInset,
             right: rightInset,
-            transition: widthTransition,
           }}
         >
           {children}
@@ -1921,7 +1867,6 @@ export function DockManager({
                   zIndex: 1,
                   pointerEvents: "none",
                   boxShadow: "0 0 1em 0 rgba(0,0,0,0.1)",
-                  transition: widthTransition,
                 }}
               />
             )}
@@ -1936,7 +1881,6 @@ export function DockManager({
                   display: "flex",
                   backgroundColor: "var(--mantine-color-body)",
                   zIndex: 5,
-                  transition: widthTransition,
                 }}
               >
                 <SplitView node={tree} edge={edge} topLevel />
