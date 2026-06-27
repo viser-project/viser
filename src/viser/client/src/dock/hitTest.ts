@@ -399,17 +399,21 @@ export function hitTest(
     const sideBand = Math.min(REGION_SIDE_PX, w / 3);
     // A single-leaf region normally suppresses these region-wide bands (its own
     // per-panel split is identical, full leaf height). But a MINIMIZED region
-    // renders as a SHORT strip, so the per-panel zone is only strip-tall and the
-    // large empty region area below it has no "dock beside" target at all. So
-    // when the region is minimized, keep the full-height left/right bands --
-    // EXCEPT directly over the strip cell, which owns its own tab/merge zones.
+    // renders as a SHORT strip, so the per-panel split is only strip-tall and
+    // the large empty region area below it has no "dock beside" target. So when
+    // the region is minimized, keep the FULL-HEIGHT left/right bands:
+    //  - over the EMPTY area below the strip: the whole column width docks a
+    //    sibling (no dead center stripe),
+    //  - over the strip CELL itself: only the outer/inner thirds dock beside
+    //    (full height), leaving the middle third for the cell's own tab-insert /
+    //    merge zones.
     const regionMinimized = isColumnMinimized(tree, layout.groups);
-    const keepSideBand = regionMinimized && !overCollapsedCell(edge);
-    // Over the EMPTY region area of a minimized strip (not the strip cell), the
-    // WHOLE column width docks a sibling beside it -- the middle-third cell
-    // reservation only matters over the strip itself, so don't leave a dead
-    // center stripe in the empty area.
-    const effSideBand = keepSideBand ? w : sideBand;
+    const keepSideBand = regionMinimized;
+    const effSideBand = !keepSideBand
+      ? sideBand
+      : overCollapsedCell(edge)
+        ? sideBand // over the strip: thirds (center falls through to the cell)
+        : w; // empty area: full column width
 
     // Top / bottom: full-width line above/below everything.
     if (cy < REGION_EDGE_PX && !edgeIsSingleLeaf(tree, "top")) {
@@ -441,7 +445,7 @@ export function hitTest(
       };
     }
     if (
-      regionRight - cx < sideBand &&
+      regionRight - cx < effSideBand &&
       (!edgeIsSingleLeaf(tree, "right") || keepSideBand)
     ) {
       return {

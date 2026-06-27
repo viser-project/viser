@@ -709,63 +709,64 @@ describe("seam between vertically-stacked docked panels is one stable target", (
 // position, and the + cap (just inside the top edge) merges. The cap must NOT be
 // swallowed by the "above" zone -- that was the merge-unreachable regression.
 describe("collapsed-target vertical zones (content-sized strip)", () => {
+  // A minimized RIGHT region renders as a strip flush at the screen edge, with
+  // the rendered (reserved) region width == the strip width -- that's what
+  // hitTest receives. Center the probes on the strip's MIDDLE third so they hit
+  // the cell's own zones (the outer/inner thirds are the region "dock beside"
+  // band, full height). The strip sits below the region top band.
+  const STRIP = 40;
+  const SW: Record<DockEdge, number> = { left: STRIP, right: STRIP };
+  const left = CONTAINER.width - STRIP; // flush right
+  const midX = left + STRIP / 2;
   const mkStrip = (tabs: { paneId: string; rect: DOMRect }[]): GroupTarget => ({
     groupId: "s",
-    rect: rect(960, 0, 40, 80), // content-sized: cap + two ~30px rows
+    rect: rect(left, 100, STRIP, 80), // top at y=100, clear of the region top band
     stripRect: null,
     tabs,
     ctx: { kind: "docked", nodeId: "Ls", edge: "right" },
     collapsed: true,
   });
-  // Single-leaf region: the region-edge bands are suppressed, so the cell's own
-  // 3z zones are reachable (a multi-column region's top band would otherwise
-  // shadow the cell's thin top-edge split -- correct precedence, but it hides
-  // what this test checks). The strip sits a little below the region top.
   const baseLayout = () => {
     const l = emptyLayout();
     l.groups = { s: group("s", 1, true) };
     l.docked.right = { type: "leaf", id: "Ls", group: "s", weight: 1 };
     return l;
   };
-  const offStrip = (tabs: { paneId: string; rect: DOMRect }[]): GroupTarget => ({
-    ...mkStrip(tabs),
-    rect: rect(960, 100, 40, 80), // top at y=100, clear of the region top band
-  });
 
   it("the + cap (just inside the top edge) -> add to the group, not split-above", () => {
     const l = baseLayout();
-    const strip = offStrip([
-      { paneId: "p0", rect: rect(960, 124, 40, 26) },
-      { paneId: "p1", rect: rect(960, 152, 40, 26) },
+    const strip = mkStrip([
+      { paneId: "p0", rect: rect(left, 124, STRIP, 26) },
+      { paneId: "p1", rect: rect(left, 152, STRIP, 26) },
     ]);
     const targets: DropTargets = { groups: [strip] };
     // y=115: the + cap, above the first row (at y=124) but past the 6px edge
     // band (ends at y=106). It must ADD the panel to the group (insertTab at the
     // top), NOT a split-above -- regression: the cap used to be swallowed by the
     // "above" split zone, leaving no way to drop INTO a minimized strip.
-    const out = hitTest(l, REGION_W, CONTAINER, targets, 980, 115)?.result;
+    const out = hitTest(l, SW, CONTAINER, targets, midX, 115)?.result;
     expect(out).toMatchObject({ kind: "insertTab", targetGroupId: "s", index: 0 });
   });
 
   it("thin top/bottom edges -> split; over a row -> insertTab", () => {
     const l = baseLayout();
-    const strip = offStrip([
-      { paneId: "p0", rect: rect(960, 124, 40, 26) },
-      { paneId: "p1", rect: rect(960, 152, 40, 26) },
+    const strip = mkStrip([
+      { paneId: "p0", rect: rect(left, 124, STRIP, 26) },
+      { paneId: "p1", rect: rect(left, 152, STRIP, 26) },
     ]);
     const targets: DropTargets = { groups: [strip] };
     // y=101: thin top edge -> split top.
-    expect(hitTest(l, REGION_W, CONTAINER, targets, 980, 101)?.result).toMatchObject({
+    expect(hitTest(l, SW, CONTAINER, targets, midX, 101)?.result).toMatchObject({
       kind: "split",
       region: "top",
     });
     // y=130: over the first row -> insertTab.
-    expect(hitTest(l, REGION_W, CONTAINER, targets, 980, 130)?.result).toMatchObject({
+    expect(hitTest(l, SW, CONTAINER, targets, midX, 130)?.result).toMatchObject({
       kind: "insertTab",
       targetGroupId: "s",
     });
     // y=179: thin bottom edge -> split bottom.
-    expect(hitTest(l, REGION_W, CONTAINER, targets, 980, 179)?.result).toMatchObject({
+    expect(hitTest(l, SW, CONTAINER, targets, midX, 179)?.result).toMatchObject({
       kind: "split",
       region: "bottom",
     });
