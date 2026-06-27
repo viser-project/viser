@@ -272,9 +272,14 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     // panel (e.g. one button) can shrink back to its natural size rather than
     // being trapped at the 100px minimum.
     const minHeight = Math.min(MIN_HEIGHT_PX, contentHeight);
-    // True when `h` landed in the content-height detent (so it equals content).
+    // The content-height detent only exists when content fits the resize range
+    // (it can be outside it for a top grip whose bottom edge is fixed, or when
+    // content is below the min floor).
+    const contentReachable =
+      contentHeight >= minHeight && contentHeight <= maxHeight;
+    // True when `h` landed in the detent (so it equals content height).
     const snappedToContent = (h: number) =>
-      Math.abs(h - contentHeight) < 0.5 && contentHeight <= maxHeight;
+      contentReachable && Math.abs(h - contentHeight) < 0.5;
     return {
       startHeight,
       heightFrom: (dy: number) => {
@@ -284,9 +289,8 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
           maxHeight,
         );
         // Magnetize to the content height when within the snap band.
-        return Math.abs(raw - contentHeight) <= CONTENT_SNAP_BAND_PX &&
-          contentHeight >= minHeight &&
-          contentHeight <= maxHeight
+        return contentReachable &&
+          Math.abs(raw - contentHeight) <= CONTENT_SNAP_BAND_PX
           ? contentHeight
           : raw;
       },
