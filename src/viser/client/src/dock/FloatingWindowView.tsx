@@ -33,7 +33,7 @@ import {
 const RESIZE_KEEP_CANVAS_PX = 100;
 const MIN_HEIGHT_PX = MIN_WINDOW_HEIGHT_PX;
 // Minimum height for one group in a resizable snap-stack.
-const MIN_STACK_CELL_PX = 60;
+const MIN_STACK_CELL_PX = 50;
 
 export const FloatingWindowView = React.memo(function FloatingWindowView({
   win,
@@ -219,25 +219,26 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       });
     };
 
-  // Largest height the panel may take: the smaller of the container and the
-  // natural content height (so it can't be dragged taller than its contents).
-  // scrollHeight on each scroll viewport gives its full uncapped content; the
-  // rest of the paper (strips, headers, dividers, borders) is chrome.
-  // The window's NATURAL content height: what it would auto-size to. The paper
-  // minus each scroll viewport's visible (client) height plus its full
-  // (scroll) content -- i.e. chrome + uncapped content. Used as both the resize
-  // FLOOR (a panel must be shrinkable back to its content, even when that's
-  // below MIN_HEIGHT_PX) and the revert-to-auto threshold below.
+  // The window's NATURAL content height: what it would auto-size to, INVARIANT
+  // of the current window height. For each scroll viewport, the chrome around it
+  // (paper - viewport client) plus the viewport's CONTENT wrapper height. We use
+  // the `.mantine-ScrollArea-content` wrapper's offsetHeight, NOT the viewport's
+  // scrollHeight: when the window is TALLER than its content the viewport
+  // stretches and scrollHeight collapses to clientHeight (== the window height),
+  // so scrollHeight would wrongly report "content == current height" and the
+  // revert-to-auto detent would fire everywhere. The content wrapper keeps its
+  // true height regardless. Used as the resize FLOOR and the detent target.
   const measureContentHeight = () => {
     const paper = paperRef.current;
     if (paper === null) return MIN_HEIGHT_PX;
-    let scrollSum = 0;
+    let contentSum = 0;
     let clientSum = 0;
     paper.querySelectorAll(".mantine-ScrollArea-viewport").forEach((v) => {
-      scrollSum += (v as HTMLElement).scrollHeight;
+      const content = v.querySelector<HTMLElement>(".mantine-ScrollArea-content");
+      contentSum += content?.offsetHeight ?? (v as HTMLElement).scrollHeight;
       clientSum += (v as HTMLElement).clientHeight;
     });
-    return paper.offsetHeight - clientSum + scrollSum;
+    return paper.offsetHeight - clientSum + contentSum;
   };
 
   // The resize ceiling is the CONTAINER edge only -- never the content height.
