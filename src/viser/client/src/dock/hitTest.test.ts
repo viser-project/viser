@@ -428,6 +428,34 @@ describe("outer-edge dock beside a minimized region strip", () => {
     expect(out.result).toMatchObject({ kind: "split", region: "right" });
   });
 
+  it("single minimized strip: the EMPTY area below it docks a full-height column beside", () => {
+    // The strip cell is content-tall (~120px) but the region is 800px tall, so
+    // there's a large empty area below. A drop there must offer a full-height
+    // "dock a column beside" zone (regionEdge) -- not a dead None.
+    const node = leaf("g");
+    const layout = layoutWith({ right: node });
+    layout.groups["g"] = group("g", 1, true); // mark the region's group collapsed
+    // Content-tall strip at the top of the region; empty below.
+    const tgt = collapsedRightTarget("g", node.id, rect(stripLeft, 0, STRIP, 120));
+    const out = run(layout, [tgt], stripLeft + STRIP / 2, 500, STRIP_W);
+    expect(out).not.toBeNull();
+    expect(out!.result).toMatchObject({ kind: "regionEdge", edge: "right" });
+    // Full-height hint line (spans the container), not a strip-tall sliver.
+    expect(out!.hint.height).toBeGreaterThan(400);
+  });
+
+  it("single minimized strip: over the strip's own rows still inserts a tab (cell wins)", () => {
+    const node = leaf("g");
+    const layout = layoutWith({ right: node });
+    layout.groups["g"] = group("g", 1, true);
+    const tgt = collapsedRightTarget("g", node.id, rect(stripLeft, 0, STRIP, 120));
+    tgt.tabs = [{ paneId: "p", rect: rect(stripLeft, 40, STRIP, 30) }];
+    // Over a row (inside the strip cell) -> the cell's tab-insert wins, not the
+    // region-beside band.
+    const out = run(layout, [tgt], stripLeft + STRIP / 2, 55, STRIP_W);
+    expect(out!.result).toMatchObject({ kind: "insertTab", targetGroupId: "g" });
+  });
+
   it("over a spine-label row -> insertTab with an INSET hint line (not full strip width)", () => {
     const node = leaf("g");
     const layout = layoutWith({ right: node });

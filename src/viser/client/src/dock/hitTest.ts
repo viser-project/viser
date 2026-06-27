@@ -5,7 +5,7 @@
 // drop a pointer position maps to, plus the geometry of the visual hint. It is
 // intentionally DOM-free so it can be unit tested with synthetic rects.
 
-import { edgeIsSingleLeaf } from "./layoutOps";
+import { edgeIsSingleLeaf, isColumnMinimized } from "./layoutOps";
 import {
   AreaId,
   clamp,
@@ -353,6 +353,24 @@ export function hitTest(
   };
   const skipRegionEdges = overInsertableStrip();
 
+  // Is the pointer over a COLLAPSED strip cell of the given docked edge? Such a
+  // cell owns its own (short, content-tall) drop zones -- tab-insert / merge /
+  // stack -- so the region-wide "dock beside" band must yield to it there. Used
+  // to let a sole minimized strip's EMPTY region area below/around it still dock
+  // a full-height sibling column without the band eating the strip's own zones.
+  const overCollapsedCell = (edge: DockEdge): boolean => {
+    for (const t of targets.groups) {
+      if (
+        t.collapsed === true &&
+        t.ctx.kind === "docked" &&
+        t.ctx.edge === edge &&
+        inside(t.rect, clientX, clientY)
+      )
+        return true;
+    }
+    return false;
+  };
+
   // 2. Region edges -> dock a full-span band beside everything in the region.
   // Checked before per-panel zones so an outermost panel's edge means "span
   // all" rather than "split just this one"; an interior panel is past these
@@ -379,6 +397,19 @@ export function hitTest(
     // below). With the third-cap the strip's middle falls through to those
     // cell zones while its outer/inner thirds still dock a sibling column.
     const sideBand = Math.min(REGION_SIDE_PX, w / 3);
+    // A single-leaf region normally suppresses these region-wide bands (its own
+    // per-panel split is identical, full leaf height). But a MINIMIZED region
+    // renders as a SHORT strip, so the per-panel zone is only strip-tall and the
+    // large empty region area below it has no "dock beside" target at all. So
+    // when the region is minimized, keep the full-height left/right bands --
+    // EXCEPT directly over the strip cell, which owns its own tab/merge zones.
+    const regionMinimized = isColumnMinimized(tree, layout.groups);
+    const keepSideBand = regionMinimized && !overCollapsedCell(edge);
+    // Over the EMPTY region area of a minimized strip (not the strip cell), the
+    // WHOLE column width docks a sibling beside it -- the middle-third cell
+    // reservation only matters over the strip itself, so don't leave a dead
+    // center stripe in the empty area.
+    const effSideBand = keepSideBand ? w : sideBand;
 
     // Top / bottom: full-width line above/below everything.
     if (cy < REGION_EDGE_PX && !edgeIsSingleLeaf(tree, "top")) {
@@ -400,13 +431,19 @@ export function hitTest(
       };
     }
     // Left / right (inner *and* outer): full-height line beside all rows.
-    if (cx - regionLeft < sideBand && !edgeIsSingleLeaf(tree, "left")) {
+    if (
+      cx - regionLeft < effSideBand &&
+      (!edgeIsSingleLeaf(tree, "left") || keepSideBand)
+    ) {
       return {
         result: { kind: "regionEdge", edge, side: "left" },
         hint: { left: regionLeft, top: 0, width: t, height: crect.height, variant: "line" },
       };
     }
-    if (regionRight - cx < sideBand && !edgeIsSingleLeaf(tree, "right")) {
+    if (
+      regionRight - cx < sideBand &&
+      (!edgeIsSingleLeaf(tree, "right") || keepSideBand)
+    ) {
       return {
         result: { kind: "regionEdge", edge, side: "right" },
         hint: {
