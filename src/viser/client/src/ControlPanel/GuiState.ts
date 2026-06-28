@@ -73,6 +73,11 @@ export interface GuiState {
   panelLayoutTracking: {
     [stableKey: string]: { appliedCounter: number; userTouched: boolean };
   };
+  /** Bumped by `resetPanelLayout` to force the dock to re-apply server placement
+   * for every panel from scratch (the placement effects watch it and clear their
+   * per-panel applied-key). Paired with clearing `panelLayoutTracking` so the
+   * counter/dirty-bit gate lets every panel re-seed. */
+  layoutResetNonce: number;
 }
 
 export interface GuiActions {
@@ -116,6 +121,9 @@ export interface GuiActions {
   /** Mark the panel with this stable key as user-moved, so server placement is
    * no longer auto-applied unless its counter increments. */
   markPanelUserTouched: (stableKey: string) => void;
+  /** Discard all user rearrangement: clear the touched/applied tracking and bump
+   * `layoutResetNonce` so the dock re-applies every panel's server placement. */
+  resetPanelLayout: () => void;
 }
 
 const searchParams = new URLSearchParams(window.location.search);
@@ -146,6 +154,7 @@ const cleanGuiState: GuiState = {
   commands: {},
   panelPlacement: {},
   panelLayoutTracking: {},
+  layoutResetNonce: 0,
 };
 
 export function computeRelativeLuminance(color: string) {
@@ -475,6 +484,12 @@ export function useGuiState(initialServer: string) {
             },
           };
         });
+      },
+      resetPanelLayout: () => {
+        store.set((state) => ({
+          panelLayoutTracking: {},
+          layoutResetNonce: state.layoutResetNonce + 1,
+        }));
       },
       updateGuiProps: (id, updates) => {
         const config = configStore.get(id);

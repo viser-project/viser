@@ -158,3 +158,85 @@ def test_server_can_reassert_moved_panel(
     assert after is not None and after["docked"], (
         f"server re-assert did not re-dock the user-moved panel: {after}"
     )
+
+
+def _open_dev_settings(page: Page) -> None:
+    """Open the control panel's settings view and enable the Dev Settings
+    section (where the Reset Panel Layout button lives)."""
+    page.evaluate(
+        """() => {
+            const ai = [...document.querySelectorAll('button')].find(
+                (e) => e.querySelector('svg.tabler-icon-adjustments'));
+            if (ai) ai.click();
+        }"""
+    )
+    page.wait_for_timeout(300)
+    page.evaluate(
+        """() => {
+            const lab = [...document.querySelectorAll('*')].find(
+                (e) => e.children.length === 0 && /^Dev Settings$/.test(e.textContent));
+            if (!lab) return;
+            const root = lab.closest('label') || lab.parentElement;
+            const inp = root.querySelector('input[type=checkbox]')
+                || root.parentElement.querySelector('input[type=checkbox]');
+            if (inp && !inp.checked) inp.click();
+        }"""
+    )
+    page.wait_for_timeout(400)
+
+
+def _reset_button(page: Page) -> dict:
+    """The Reset Panel Layout button's presence + disabled state."""
+    return page.evaluate(
+        """() => {
+            const b = [...document.querySelectorAll('button')].find(
+                (b) => /Reset Panel Layout/.test(b.textContent));
+            return b ? { exists: true, disabled: b.disabled } : { exists: false };
+        }"""
+    )
+
+
+def test_reset_layout_restores_server_placement(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """The Dev Settings "Reset Panel Layout" button is disabled until the user
+    moves a panel, then re-applies the server's placement when clicked."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(200)
+    # A GUI component is needed for the settings (generated) view to be available.
+    viser_server.gui.add_number("dummy", 0)
+    _make_docked_panel(viser_server)
+    viser_page.wait_for_selector("[data-dock-tab]", timeout=8_000)
+    viser_page.wait_for_timeout(400)
+
+    _open_dev_settings(viser_page)
+    btn = _reset_button(viser_page)
+    assert btn["exists"], "Reset Panel Layout button not found in Dev Settings"
+    assert btn["disabled"], "reset button should be disabled before any change"
+
+    _drag_panel_out(viser_page)
+    floated = _panel_box(viser_page)
+    assert floated is not None and not floated["docked"], (
+        f"drag did not float the panel: {floated}"
+    )
+    assert not _reset_button(viser_page)["disabled"], (
+        "reset button should enable after the user moves a panel"
+    )
+
+    # Click reset: the panel snaps back to the server's docked placement and the
+    # button disables again (no outstanding changes).
+    viser_page.evaluate(
+        """() => {
+            const b = [...document.querySelectorAll('button')].find(
+                (b) => /Reset Panel Layout/.test(b.textContent));
+            if (b) b.click();
+        }"""
+    )
+    viser_page.wait_for_timeout(700)
+    after = _panel_box(viser_page)
+    assert after is not None and after["docked"], (
+        f"reset did not restore the server's docked placement: {after}"
+    )
+    assert _reset_button(viser_page)["disabled"], (
+        "reset button should disable again after reset"
+    )
