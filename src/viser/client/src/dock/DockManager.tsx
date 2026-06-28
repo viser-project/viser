@@ -149,6 +149,7 @@ export function DockManager({
   panes,
   children,
   onLayoutChange,
+  onCommit,
   onRegionResizeFrame,
 }: {
   initialLayout: DockLayout;
@@ -157,6 +158,14 @@ export function DockManager({
   children?: React.ReactNode;
   /** Observe every committed layout (e.g. for persistence or test probes). */
   onLayoutChange?: (layout: DockLayout) => void;
+  /** Fired on every commit with the previous + next layout and whether the
+   * change was PROGRAMMATIC (the sync layer's api.apply) vs a user gesture. Used
+   * to flag panels the user has manually rearranged. */
+  onCommit?: (
+    prev: DockLayout,
+    next: DockLayout,
+    programmatic: boolean,
+  ) => void;
   /** Called after each per-frame region-width resize is committed AND its new
    * inset has been flushed to the DOM. Lets the host (e.g. the 3D canvas)
    * synchronously react to the canvas's new size on the SAME tick instead of
@@ -170,6 +179,8 @@ export function DockManager({
   layoutRef.current = layout;
   const onLayoutChangeRef = React.useRef(onLayoutChange);
   onLayoutChangeRef.current = onLayoutChange;
+  const onCommitRef = React.useRef(onCommit);
+  onCommitRef.current = onCommit;
   React.useEffect(() => {
     onLayoutChangeRef.current?.(layout);
   }, [layout]);
@@ -258,6 +269,11 @@ export function DockManager({
   // committed layout is structurally checked in dev. The invariant check (one
   // location per group, one group per pane, ...) is stripped from production
   // builds; the fuzz test asserts the same function over random op sequences.
+  // >0 while a PROGRAMMATIC layout change is running (the sync layer's
+  // api.apply, used to apply server placement). User gestures commit with this
+  // at 0, so `commit` can tell a user rearrangement from a programmatic one --
+  // which drives the "user touched this panel" flag for layout persistence.
+  const programmaticDepth = React.useRef(0);
   const commit = React.useCallback((next: DockLayout) => {
     if (import.meta.env.DEV) {
       const violations = invariantViolations(next);
@@ -266,8 +282,10 @@ export function DockManager({
           "[dock] layout invariant violation:\n" + violations.join("\n"),
         );
     }
+    const prev = layoutRef.current;
     layoutRef.current = next;
     setLayout(next);
+    onCommitRef.current?.(prev, next, programmaticDepth.current > 0);
   }, []);
 
   const applyOp = React.useCallback(
@@ -283,16 +301,29 @@ export function DockManager({
     [commit],
   );
 
+  // Run `fn` with the programmatic flag raised, so commits it causes aren't
+  // counted as user gestures.
+  const runProgrammatic = React.useCallback((fn: () => void) => {
+    programmaticDepth.current += 1;
+    try {
+      fn();
+    } finally {
+      programmaticDepth.current -= 1;
+    }
+  }, []);
+
   // Imperative panel lifecycle API (exposed via context). Stable identity so
   // sync layers can list it in effect deps without re-running.
   const api = React.useMemo(
     () => ({
       apply: (fn: (l: DockLayout) => DockLayout) =>
-        applyOp(fn(layoutRef.current)),
+        runProgrammatic(() => applyOp(fn(layoutRef.current))),
       addPaneToArea: (areaId: string, paneId: PaneId, index?: number) =>
-        applyOp(ops.addPaneToArea(layoutRef.current, areaId, paneId, index)),
+        runProgrammatic(() =>
+          applyOp(ops.addPaneToArea(layoutRef.current, areaId, paneId, index)),
+        ),
     }),
-    [applyOp],
+    [applyOp, runProgrammatic],
   );
 
   // Registry reconciliation: a panel whose spec disappears from `panes` (e.g.

@@ -21,6 +21,12 @@ export interface PanelPlacementState {
   width?: number | null;
   height?: number | null;
   collapsed?: boolean;
+  /** Highest per-panel layout-update counter seen across this panel's placement
+   * messages. The dock applies a placement only when this exceeds the count it
+   * last applied for the panel -- OR the user hasn't moved the panel yet -- so a
+   * reconnect/re-run replay (same counter) doesn't clobber a user-rearranged
+   * layout. 0 when no counter has arrived (e.g. injected test layouts). */
+  counter: number;
 }
 
 export interface GuiState {
@@ -57,6 +63,16 @@ export interface GuiState {
    * for the main panel). Built up by the four write-only `GuiSetPanel*`
    * messages; the dock applies whatever fields are present. */
   panelPlacement: { [uuid: string]: PanelPlacementState };
+  /** Per-panel layout-application tracking, keyed by STABLE KEY (not uuid -- a
+   * panel's uuid is random per run; the stable key is derived from its tab
+   * labels + creation order). Deliberately SURVIVES `resetGui`, so a reconnect
+   * or program re-run can decide -- per panel -- whether to re-apply server
+   * placement: apply only if the panel's placement counter exceeds the last
+   * applied OR the user hasn't moved the panel. Entries for stable keys no
+   * longer present are pruned as the layout settles. */
+  panelLayoutTracking: {
+    [stableKey: string]: { appliedCounter: number; userTouched: boolean };
+  };
 }
 
 export interface GuiActions {
@@ -85,10 +101,21 @@ export interface GuiActions {
   setPanelPosition: (
     uuid: string,
     position: GuiSetPanelPositionMessage["position"],
+    counter: number,
   ) => void;
-  setPanelWidth: (uuid: string, width: number | null) => void;
-  setPanelHeight: (uuid: string, height: number | null) => void;
-  setPanelCollapsed: (uuid: string, collapsed: boolean) => void;
+  setPanelWidth: (uuid: string, width: number | null, counter: number) => void;
+  setPanelHeight: (uuid: string, height: number | null, counter: number) => void;
+  setPanelCollapsed: (
+    uuid: string,
+    collapsed: boolean,
+    counter: number,
+  ) => void;
+  /** Record that server placement at `counter` has been applied for the panel
+   * with this stable key (so a later replay at the same counter is ignored). */
+  recordPanelLayoutApplied: (stableKey: string, counter: number) => void;
+  /** Mark the panel with this stable key as user-moved, so server placement is
+   * no longer auto-applied unless its counter increments. */
+  markPanelUserTouched: (stableKey: string) => void;
 }
 
 const searchParams = new URLSearchParams(window.location.search);
@@ -118,6 +145,7 @@ const cleanGuiState: GuiState = {
   uploadsInProgress: {},
   commands: {},
   panelPlacement: {},
+  panelLayoutTracking: {},
 };
 
 export function computeRelativeLuminance(color: string) {
@@ -358,37 +386,95 @@ export function useGuiState(initialServer: string) {
           return { commands: next };
         });
       },
-      setPanelPosition: (uuid, position) => {
-        store.set((state) => ({
-          panelPlacement: {
-            ...state.panelPlacement,
-            [uuid]: { ...state.panelPlacement[uuid], position },
-          },
-        }));
+      setPanelPosition: (uuid, position, counter) => {
+        store.set((state) => {
+          const prev = state.panelPlacement[uuid];
+          return {
+            panelPlacement: {
+              ...state.panelPlacement,
+              [uuid]: {
+                ...prev,
+                position,
+                counter: Math.max(prev?.counter ?? 0, counter),
+              },
+            },
+          };
+        });
       },
-      setPanelWidth: (uuid, width) => {
-        store.set((state) => ({
-          panelPlacement: {
-            ...state.panelPlacement,
-            [uuid]: { ...state.panelPlacement[uuid], width },
-          },
-        }));
+      setPanelWidth: (uuid, width, counter) => {
+        store.set((state) => {
+          const prev = state.panelPlacement[uuid];
+          return {
+            panelPlacement: {
+              ...state.panelPlacement,
+              [uuid]: {
+                ...prev,
+                width,
+                counter: Math.max(prev?.counter ?? 0, counter),
+              },
+            },
+          };
+        });
       },
-      setPanelHeight: (uuid, height) => {
-        store.set((state) => ({
-          panelPlacement: {
-            ...state.panelPlacement,
-            [uuid]: { ...state.panelPlacement[uuid], height },
-          },
-        }));
+      setPanelHeight: (uuid, height, counter) => {
+        store.set((state) => {
+          const prev = state.panelPlacement[uuid];
+          return {
+            panelPlacement: {
+              ...state.panelPlacement,
+              [uuid]: {
+                ...prev,
+                height,
+                counter: Math.max(prev?.counter ?? 0, counter),
+              },
+            },
+          };
+        });
       },
-      setPanelCollapsed: (uuid, collapsed) => {
-        store.set((state) => ({
-          panelPlacement: {
-            ...state.panelPlacement,
-            [uuid]: { ...state.panelPlacement[uuid], collapsed },
-          },
-        }));
+      setPanelCollapsed: (uuid, collapsed, counter) => {
+        store.set((state) => {
+          const prev = state.panelPlacement[uuid];
+          return {
+            panelPlacement: {
+              ...state.panelPlacement,
+              [uuid]: {
+                ...prev,
+                collapsed,
+                counter: Math.max(prev?.counter ?? 0, counter),
+              },
+            },
+          };
+        });
+      },
+      recordPanelLayoutApplied: (stableKey, counter) => {
+        store.set((state) => {
+          const prev = state.panelLayoutTracking[stableKey];
+          if (prev !== undefined && prev.appliedCounter === counter) return {};
+          return {
+            panelLayoutTracking: {
+              ...state.panelLayoutTracking,
+              [stableKey]: {
+                appliedCounter: counter,
+                userTouched: prev?.userTouched ?? false,
+              },
+            },
+          };
+        });
+      },
+      markPanelUserTouched: (stableKey) => {
+        store.set((state) => {
+          const prev = state.panelLayoutTracking[stableKey];
+          if (prev?.userTouched === true) return {};
+          return {
+            panelLayoutTracking: {
+              ...state.panelLayoutTracking,
+              [stableKey]: {
+                appliedCounter: prev?.appliedCounter ?? 0,
+                userTouched: true,
+              },
+            },
+          };
+        });
       },
       updateGuiProps: (id, updates) => {
         const config = configStore.get(id);

@@ -254,19 +254,35 @@ function useMessageHandler() {
       // CONTROL_PANEL_ID for the main control panel); the dock applies whatever
       // is present.
       case "GuiSetPanelPositionMessage": {
-        viewer.guiActions.setPanelPosition(message.uuid, message.position);
+        viewer.guiActions.setPanelPosition(
+          message.uuid,
+          message.position,
+          message.counter,
+        );
         return;
       }
       case "GuiSetPanelWidthMessage": {
-        viewer.guiActions.setPanelWidth(message.uuid, message.width);
+        viewer.guiActions.setPanelWidth(
+          message.uuid,
+          message.width,
+          message.counter,
+        );
         return;
       }
       case "GuiSetPanelHeightMessage": {
-        viewer.guiActions.setPanelHeight(message.uuid, message.height);
+        viewer.guiActions.setPanelHeight(
+          message.uuid,
+          message.height,
+          message.counter,
+        );
         return;
       }
       case "GuiSetPanelCollapsedMessage": {
-        viewer.guiActions.setPanelCollapsed(message.uuid, message.collapsed);
+        viewer.guiActions.setPanelCollapsed(
+          message.uuid,
+          message.collapsed,
+          message.counter,
+        );
         return;
       }
       // Configure the theme.
