@@ -765,15 +765,19 @@ def test_undock_minimized_panel_keeps_width(
     docked_w = leaf.bounding_box()["width"]
     assert docked_w > 200, f"docked panel should be wide, got {docked_w}"
 
-    # Minimize, then drag the strip out into the canvas to float it.
+    # Minimize, then drag the strip out into the canvas to float it. Drop it in
+    # the LOWER-LEFT canvas -- clear of the control panel (top-right corner), so
+    # the strip tears out to a SOLO floating window instead of snapping into the
+    # control panel's stack.
     leaf.locator("[data-dock-minimize]").first.click()
     viser_page.wait_for_timeout(400)
     strip = viser_page.locator("[data-dock-group][data-dock-collapsed]").first
     sb = strip.bounding_box()
+    drop_x, drop_y = 320, _VIEWPORT["height"] - 160
     viser_page.mouse.move(sb["x"] + sb["width"] / 2, sb["y"] + 40)
     viser_page.mouse.down()
-    viser_page.mouse.move(sb["x"] - 400, sb["y"] + 220, steps=12)
-    viser_page.mouse.move(sb["x"] - 400, sb["y"] + 220)
+    viser_page.mouse.move(drop_x, drop_y, steps=12)
+    viser_page.mouse.move(drop_x, drop_y)
     viser_page.mouse.up()
     viser_page.wait_for_timeout(400)
 
@@ -828,11 +832,17 @@ def test_emptied_docked_panel_revives(
 def test_unminimize_after_sibling_resize_keeps_panel_onscreen(
     viser_page: Page, viser_server: viser.ViserServer
 ) -> None:
-    """Regression: in a docked column [Top, Mid, minimized Bottom], resizing the
-    Top/Mid divider rewrites the expanded cells' weights to a px scale. The
-    minimized Bottom's preserved (restore) weight must be rescaled to the same
-    basis, or on expand it renders at a tiny flex-unit weight beside px-magnitude
-    siblings and collapses to ~0 height -- off the bottom of the viewport."""
+    """Regression: in a docked column [Top, Mid, Bottom], resizing the Top/Mid
+    divider rewrites the expanded cells' weights to a px scale. When the column
+    is minimized and re-expanded, each cell's preserved (restore) weight must be
+    rescaled to that same basis, or a cell renders at a tiny flex-unit weight
+    beside px-magnitude siblings and collapses to ~0 height -- off the bottom of
+    the viewport.
+
+    Minimize is whole-column under the stack-uniform-collapse model (a 2+ docked
+    stack collapses/expands as one via its column handle), so we exercise the
+    rescale by minimizing+expanding the WHOLE column after the resize and
+    asserting every panel returns on-screen with real height."""
     viser_page.set_viewport_size(_VIEWPORT)
     viser_page.wait_for_timeout(300)
     vh = _VIEWPORT["height"]
@@ -841,26 +851,17 @@ def test_unminimize_after_sibling_resize_keeps_panel_onscreen(
     with top.add_tab("ColTop"):
         viser_server.gui.add_markdown("top")
     top.dock_right()
-    bottom = viser_server.gui.add_panel()
-    with bottom.add_tab("ColBot"):
-        viser_server.gui.add_markdown("bottom")
-    bottom.dock_below(top)
-    expect(_tab(viser_page, "ColBot")).to_be_visible(timeout=5_000)
-
-    # Minimize the bottom panel.
-    viser_page.locator("[data-dock-leaf][data-dock-edge='right']").filter(
-        has=_tab(viser_page, "ColBot")
-    ).locator("[data-dock-minimize]").first.click()
-    viser_page.wait_for_timeout(300)
-
-    # Insert a middle panel between them.
     mid = viser_server.gui.add_panel()
     with mid.add_tab("ColMid"):
         viser_server.gui.add_markdown("mid")
     mid.dock_below(top)
-    expect(_tab(viser_page, "ColMid")).to_be_visible(timeout=5_000)
+    bottom = viser_server.gui.add_panel()
+    with bottom.add_tab("ColBot"):
+        viser_server.gui.add_markdown("bottom")
+    bottom.dock_below(mid)
+    expect(_tab(viser_page, "ColBot")).to_be_visible(timeout=5_000)
 
-    # Drag the Top/Mid divider down (rewrites their weights to px).
+    # Drag the Top/Mid divider down (rewrites the expanded cells' weights to px).
     top_box = (
         viser_page.locator("[data-dock-leaf]")
         .filter(has=_tab(viser_page, "ColTop"))
@@ -875,22 +876,30 @@ def test_unminimize_after_sibling_resize_keeps_panel_onscreen(
     viser_page.mouse.up()
     viser_page.wait_for_timeout(300)
 
-    # Unminimize the bottom panel: it must come back ON-SCREEN with real height.
-    viser_page.locator("[data-dock-group][data-dock-collapsed]").first.locator(
-        "[data-dock-minimize]"
-    ).first.click()
+    # Minimize the WHOLE column (the column handle owns collapse for a 2+ stack),
+    # then expand it: every cell's restore weight must rescale to the post-resize
+    # px basis so all three come back on-screen with real height.
+    # The column handle's minimize-all button collapses the whole column to a
+    # strip; clicking it again expands. (It sits on the column shell, which wraps
+    # ABOVE the edge-tagged leaves, so it isn't under [data-dock-edge].)
+    viser_page.locator("[data-dock-minimize-all]").first.click()
+    viser_page.wait_for_timeout(300)
+    viser_page.locator("[data-dock-minimize-all]").first.click()
     viser_page.wait_for_timeout(400)
 
-    box = (
-        viser_page.locator("[data-dock-leaf]")
-        .filter(has=_tab(viser_page, "ColBot"))
-        .first.bounding_box()
-    )
-    assert box is not None, "bottom panel not rendered after unminimize"
-    assert box["height"] > 40, f"bottom panel collapsed to {box['height']}px"
-    assert box["y"] + box["height"] <= vh + 5, (
-        f"bottom panel off-screen: y={box['y']} h={box['height']} (viewport {vh})"
-    )
+    for label in ("ColTop", "ColMid", "ColBot"):
+        box = (
+            viser_page.locator("[data-dock-leaf]")
+            .filter(has=_tab(viser_page, label))
+            .first.bounding_box()
+        )
+        assert box is not None, f"{label} panel not rendered after expand"
+        assert box["height"] > 40, (
+            f"{label} panel collapsed to {box['height']}px after expand"
+        )
+        assert box["y"] + box["height"] <= vh + 5, (
+            f"{label} panel off-screen: y={box['y']} h={box['height']} (vh {vh})"
+        )
 
 
 def test_docked_resize_pushes_fully_on_canvas_float(
