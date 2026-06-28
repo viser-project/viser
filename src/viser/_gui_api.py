@@ -265,6 +265,12 @@ class GuiApi:
         }
         self._modal_handle_from_uuid: dict[str, GuiModalHandle] = {}
         self._panel_handle_from_uuid: dict[str, PanelHandle] = {}
+        # Per-panel layout-update counter, bumped on every placement command and
+        # stamped onto the placement message (see _PlacementMixin._queue_placement
+        # / GuiSetPanelPositionMessage.counter). Lets the client ignore replayed
+        # placement for a panel the user has rearranged. Keyed by panel uuid (the
+        # main panel uses CONTROL_PANEL_ID).
+        self._layout_update_count_from_uuid: dict[str, int] = {}
         self._command_handle_from_uuid: dict[str, CommandHandle] = {}
         self._current_file_upload_states: dict[str, _FileUploadState] = {}
 
@@ -589,20 +595,35 @@ class GuiApi:
         # late joiners -- and connected clients -- get the default control panel
         # (a top-right float, expanded) instead of a layout the user never asked
         # for. Placement is write-only, so we just send; there's no state to read.
+        # Bump the main panel's layout counter once and stamp it on all four
+        # reset messages, so a connected client that had rearranged the control
+        # panel still sees this deliberate reset (counter increment beats its
+        # last-applied), while a normal reconnect replay -- same counter -- is
+        # ignored. (None width/height clears any override -> default/theme.)
+        counts = self._layout_update_count_from_uuid
+        counts[CONTROL_PANEL_ID] = counts.get(CONTROL_PANEL_ID, 0) + 1
+        reset_counter = counts[CONTROL_PANEL_ID]
         self._websock_interface.queue_message(
             _messages.GuiSetPanelPositionMessage(
-                CONTROL_PANEL_ID, {"kind": "float", "x": None, "y": None}
+                CONTROL_PANEL_ID,
+                {"kind": "float", "x": None, "y": None},
+                counter=reset_counter,
             )
         )
         self._websock_interface.queue_message(
-            _messages.GuiSetPanelCollapsedMessage(CONTROL_PANEL_ID, False)
-        )
-        # Clear any width/height override (None -> default / theme width).
-        self._websock_interface.queue_message(
-            _messages.GuiSetPanelWidthMessage(CONTROL_PANEL_ID, None)
+            _messages.GuiSetPanelCollapsedMessage(
+                CONTROL_PANEL_ID, False, counter=reset_counter
+            )
         )
         self._websock_interface.queue_message(
-            _messages.GuiSetPanelHeightMessage(CONTROL_PANEL_ID, None)
+            _messages.GuiSetPanelWidthMessage(
+                CONTROL_PANEL_ID, None, counter=reset_counter
+            )
+        )
+        self._websock_interface.queue_message(
+            _messages.GuiSetPanelHeightMessage(
+                CONTROL_PANEL_ID, None, counter=reset_counter
+            )
         )
 
     def set_panel_label(self, label: str | None) -> None:

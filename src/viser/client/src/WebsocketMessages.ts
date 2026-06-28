@@ -1637,6 +1637,7 @@ export interface GuiSetPanelPositionMessage {
     | { kind: "edge"; edge: "left" | "right" }
     | { kind: "split"; anchor_uuid: string; side: "above" | "below" }
     | { kind: "float"; x: number | null; y: number | null };
+  counter: number;
 }
 /** Set a panel's width in pixels (None clears the override -> default/theme
  * width). Write-only.
@@ -1647,6 +1648,7 @@ export interface GuiSetPanelWidthMessage {
   type: "GuiSetPanelWidthMessage";
   uuid: string;
   width: number | null;
+  counter: number;
 }
 /** Set a panel's height in pixels (floating panels only; None clears the
  * override -> auto). Write-only.
@@ -1657,6 +1659,7 @@ export interface GuiSetPanelHeightMessage {
   type: "GuiSetPanelHeightMessage";
   uuid: string;
   height: number | null;
+  counter: number;
 }
 /** Minimize (collapse) or expand a panel. Write-only.
  *
@@ -1666,6 +1669,7 @@ export interface GuiSetPanelCollapsedMessage {
   type: "GuiSetPanelCollapsedMessage";
   uuid: string;
   collapsed: boolean;
+  counter: number;
 }
 /** A standalone panel: a dockable / floating GUI container that lives outside
  * the control panel. Deliberately NOT a GuiComponentMessage -- it is a

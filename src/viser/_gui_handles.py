@@ -883,13 +883,24 @@ class _PlacementMixin:
         impl = getattr(self, "_impl", None)
         if impl is not None and impl.removed:
             raise RuntimeError(f"Cannot place a removed {type(self).__name__}.")
-        self._placement_gui_api._websock_interface.queue_message(message)
+        # Stamp the per-panel layout-update counter, bumped on EVERY placement
+        # command. The client uses it to ignore replayed/late placement for a
+        # panel the user has since rearranged (see the message's `counter` doc).
+        # Methods construct the message with a placeholder counter=0; the
+        # authoritative value is assigned here, the single chokepoint.
+        api = self._placement_gui_api
+        counts = api._layout_update_count_from_uuid
+        counts[self._placement_uuid] = counts.get(self._placement_uuid, 0) + 1
+        stamped = dataclasses.replace(
+            cast(Any, message), counter=counts[self._placement_uuid]
+        )
+        api._websock_interface.queue_message(stamped)
 
     def _set_position(
         self, position: EdgePlacement | SplitPlacement | FloatPlacement
     ) -> None:
         self._queue_placement(
-            GuiSetPanelPositionMessage(self._placement_uuid, position)
+            GuiSetPanelPositionMessage(self._placement_uuid, position, counter=0)
         )
 
     def _resolve_anchor_uuid(self, anchor: PlaceableHandle) -> str:
@@ -1007,7 +1018,9 @@ class _PlacementMixin:
         """Set the panel width in pixels (region width when docked, window width
         when floating)."""
         _check_dimension(width, "width")
-        self._queue_placement(GuiSetPanelWidthMessage(self._placement_uuid, width))
+        self._queue_placement(
+            GuiSetPanelWidthMessage(self._placement_uuid, width, counter=0)
+        )
 
     def set_height(self, height: float) -> None:
         """Set the panel height in pixels.
@@ -1018,7 +1031,7 @@ class _PlacementMixin:
         effect there."""
         _check_dimension(height, "height")
         self._queue_placement(
-            GuiSetPanelHeightMessage(self._placement_uuid, height)
+            GuiSetPanelHeightMessage(self._placement_uuid, height, counter=0)
         )
 
     def minimize(self) -> None:
@@ -1034,7 +1047,7 @@ class _PlacementMixin:
         ``expand_by_default`` creation kwarg.
         """
         self._queue_placement(
-            GuiSetPanelCollapsedMessage(self._placement_uuid, True)
+            GuiSetPanelCollapsedMessage(self._placement_uuid, True, counter=0)
         )
 
 

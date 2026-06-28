@@ -1767,6 +1767,12 @@ class GuiSetPanelPositionMessage(
 
     uuid: str
     position: Union[EdgePlacement, SplitPlacement, FloatPlacement]
+    counter: int
+    """Per-panel layout-update counter (bumped on EVERY placement call). The
+    client applies a replayed/late placement only if this exceeds the last it
+    applied for the panel -- OR the user hasn't manually moved the panel yet --
+    so a reconnect/re-run doesn't clobber a layout the user rearranged, while the
+    server can still re-assert by calling a placement method again."""
 
 
 @dataclasses.dataclass
@@ -1780,6 +1786,8 @@ class GuiSetPanelWidthMessage(
 
     uuid: str
     width: Optional[float]
+    counter: int
+    """Per-panel layout-update counter; see GuiSetPanelPositionMessage."""
 
 
 @dataclasses.dataclass
@@ -1793,6 +1801,8 @@ class GuiSetPanelHeightMessage(
 
     uuid: str
     height: Optional[float]
+    counter: int
+    """Per-panel layout-update counter; see GuiSetPanelPositionMessage."""
 
 
 @dataclasses.dataclass
@@ -1805,6 +1815,8 @@ class GuiSetPanelCollapsedMessage(
 
     uuid: str
     collapsed: bool
+    counter: int
+    """Per-panel layout-update counter; see GuiSetPanelPositionMessage."""
 
 
 @dataclasses.dataclass
