@@ -29,6 +29,24 @@ export interface PanelPlacementState {
   counter: number;
 }
 
+/** Merge one placement field into a panel's entry, keeping the highest counter
+ * seen (an out-of-order/replayed message can't lower it). Returns the partial
+ * state update for `store.set`. */
+function mergePlacement(
+  state: { panelPlacement: { [uuid: string]: PanelPlacementState } },
+  uuid: string,
+  patch: Partial<PanelPlacementState>,
+  counter: number,
+): { panelPlacement: { [uuid: string]: PanelPlacementState } } {
+  const prev = state.panelPlacement[uuid];
+  return {
+    panelPlacement: {
+      ...state.panelPlacement,
+      [uuid]: { ...prev, ...patch, counter: Math.max(prev?.counter ?? 0, counter) },
+    },
+  };
+}
+
 export interface GuiState {
   theme: ThemeConfigurationMessage;
   label: string;
@@ -395,66 +413,19 @@ export function useGuiState(initialServer: string) {
           return { commands: next };
         });
       },
-      setPanelPosition: (uuid, position, counter) => {
-        store.set((state) => {
-          const prev = state.panelPlacement[uuid];
-          return {
-            panelPlacement: {
-              ...state.panelPlacement,
-              [uuid]: {
-                ...prev,
-                position,
-                counter: Math.max(prev?.counter ?? 0, counter),
-              },
-            },
-          };
-        });
-      },
-      setPanelWidth: (uuid, width, counter) => {
-        store.set((state) => {
-          const prev = state.panelPlacement[uuid];
-          return {
-            panelPlacement: {
-              ...state.panelPlacement,
-              [uuid]: {
-                ...prev,
-                width,
-                counter: Math.max(prev?.counter ?? 0, counter),
-              },
-            },
-          };
-        });
-      },
-      setPanelHeight: (uuid, height, counter) => {
-        store.set((state) => {
-          const prev = state.panelPlacement[uuid];
-          return {
-            panelPlacement: {
-              ...state.panelPlacement,
-              [uuid]: {
-                ...prev,
-                height,
-                counter: Math.max(prev?.counter ?? 0, counter),
-              },
-            },
-          };
-        });
-      },
-      setPanelCollapsed: (uuid, collapsed, counter) => {
-        store.set((state) => {
-          const prev = state.panelPlacement[uuid];
-          return {
-            panelPlacement: {
-              ...state.panelPlacement,
-              [uuid]: {
-                ...prev,
-                collapsed,
-                counter: Math.max(prev?.counter ?? 0, counter),
-              },
-            },
-          };
-        });
-      },
+      // The four write-only GuiSetPanel* messages each merge their single field
+      // here, keeping the panel's highest counter (so an out-of-order replay
+      // can't lower it). One helper, one field apiece.
+      setPanelPosition: (uuid, position, counter) =>
+        store.set((state) => mergePlacement(state, uuid, { position }, counter)),
+      setPanelWidth: (uuid, width, counter) =>
+        store.set((state) => mergePlacement(state, uuid, { width }, counter)),
+      setPanelHeight: (uuid, height, counter) =>
+        store.set((state) => mergePlacement(state, uuid, { height }, counter)),
+      setPanelCollapsed: (uuid, collapsed, counter) =>
+        store.set((state) =>
+          mergePlacement(state, uuid, { collapsed }, counter),
+        ),
       recordPanelLayoutApplied: (stableKey, counter) => {
         store.set((state) => {
           const prev = state.panelLayoutTracking[stableKey];

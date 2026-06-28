@@ -337,8 +337,11 @@ export function DockManager({
         if (panes[p] === undefined) next = ops.removePane(next, p);
       }
     }
-    if (next !== current) applyOp(next);
-  }, [panes, layout, applyOp]);
+    // Reconciliation is internal, not a user gesture -- run it programmatic so
+    // it can't spuriously mark surviving panels "user-touched" (a removed
+    // panel's collapse can shift siblings' placement signatures).
+    if (next !== current) runProgrammatic(() => applyOp(next));
+  }, [panes, layout, applyOp, runProgrammatic]);
 
   const containerRect = () =>
     containerRef.current?.getBoundingClientRect() ?? new DOMRect();
@@ -2001,8 +2004,14 @@ export function DockManager({
                       // the drag already moved them flush with the seam.
                       regionResizeDraggingRef.current = true;
                       try {
+                        // Region width isn't a per-panel placement the dirty-bit
+                        // tracks (and these fire per drag frame), so commit as
+                        // programmatic -- avoids running the user-gesture commit
+                        // handler ~60x/s for a change it ignores anyway.
                         flushSync(() =>
-                          applyOp(ops.setRegionWidth(next, edge, total)),
+                          runProgrammatic(() =>
+                            applyOp(ops.setRegionWidth(next, edge, total)),
+                          ),
                         );
                       } finally {
                         regionResizeDraggingRef.current = false;
