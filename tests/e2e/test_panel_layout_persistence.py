@@ -160,6 +160,45 @@ def test_server_can_reassert_moved_panel(
     )
 
 
+def test_removed_then_readded_panel_does_not_inherit_touched_state(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """Tracking is keyed by a STABLE key (tab labels + order). When a panel is
+    removed and a new one with the SAME labels is added, the new panel must NOT
+    inherit the removed panel's user-touched/applied state -- otherwise its
+    server placement would be wrongly suppressed. Verifies the tracking is
+    pruned when a panel goes away."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(200)
+    panel = viser_server.gui.add_panel()
+    with panel.add_tab("Reuse"):
+        viser_server.gui.add_markdown("a")
+    panel.dock_right()
+    viser_page.wait_for_selector("[data-dock-tab]", timeout=8_000)
+    viser_page.wait_for_timeout(400)
+
+    # Touch it (drag out), then remove it.
+    _drag_panel_out(viser_page)
+    floated = _panel_box(viser_page)
+    assert floated is not None and not floated["docked"], (
+        f"drag did not float the panel: {floated}"
+    )
+    panel.remove()
+    viser_page.wait_for_timeout(400)
+
+    # A NEW panel with the same labels, docked right, must dock (not inherit the
+    # removed panel's floated/touched state).
+    panel2 = viser_server.gui.add_panel()
+    with panel2.add_tab("Reuse"):
+        viser_server.gui.add_markdown("b")
+    panel2.dock_right()
+    viser_page.wait_for_timeout(800)
+    after = _panel_box(viser_page)
+    assert after is not None and after["docked"], (
+        f"re-added same-label panel inherited stale touched state: {after}"
+    )
+
+
 def _open_dev_settings(page: Page) -> None:
     """Open the control panel's settings view and enable the Dev Settings
     section (where the Reset Panel Layout button lives)."""

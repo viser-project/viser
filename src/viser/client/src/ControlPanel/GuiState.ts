@@ -139,6 +139,10 @@ export interface GuiActions {
   /** Mark the panel with this stable key as user-moved, so server placement is
    * no longer auto-applied unless its counter increments. */
   markPanelUserTouched: (stableKey: string) => void;
+  /** Drop tracking entries whose stable key is not in `activeKeys` (panels that
+   * no longer exist), so a removed panel's state can't be inherited by a later
+   * panel that happens to resolve to the same stable key. */
+  pruneLayoutTracking: (activeKeys: ReadonlySet<string>) => void;
   /** Discard all user rearrangement: clear the touched/applied tracking and bump
    * `layoutResetNonce` so the dock re-applies every panel's server placement. */
   resetPanelLayout: () => void;
@@ -454,6 +458,16 @@ export function useGuiState(initialServer: string) {
               },
             },
           };
+        });
+      },
+      pruneLayoutTracking: (activeKeys) => {
+        store.set((state) => {
+          const entries = Object.entries(state.panelLayoutTracking).filter(
+            ([key]) => activeKeys.has(key),
+          );
+          if (entries.length === Object.keys(state.panelLayoutTracking).length)
+            return {}; // nothing to prune.
+          return { panelLayoutTracking: Object.fromEntries(entries) };
         });
       },
       resetPanelLayout: () => {
