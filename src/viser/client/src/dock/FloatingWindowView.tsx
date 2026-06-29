@@ -19,6 +19,7 @@ import { TabGroupFrame } from "./TabGroupFrame";
 import { VerticalMinimizedCell } from "./VerticalMinimizedColumn";
 import {
   clamp,
+  DOCK_ANIM_MS,
   FloatingWindow,
   GroupId,
   MIN_REGION_GRAB_PX,
@@ -401,6 +402,15 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         // expand (handled by the per-cell + cap, which floats at the region/panel
         // width).
         width: collapsed ? MINIMIZED_STRIP_PX : win.width,
+        // Ease the width on minimize/expand (full <-> strip), so a floating panel
+        // collapses like a docked one. Width changes only on collapse or a
+        // width-resize drag, so suppress it mid-resize (track 1:1) and under
+        // reduced-motion. (Height is animated separately -- the FLIP above for
+        // pinned windows, the content <Collapse> for auto-height ones.)
+        transition:
+          dock.resizing || prefersReducedMotion()
+            ? undefined
+            : `width ${DOCK_ANIM_MS}ms ease`,
         height: collapsed ? undefined : renderedHeight,
         zIndex,
         overflow: "visible",

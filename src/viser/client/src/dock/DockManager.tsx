@@ -211,6 +211,10 @@ export function DockManager({
   );
   const [draggingTabId, setDraggingTabId] = React.useState<PaneId | null>(null);
   const [resizing, setResizing] = React.useState(false);
+  // True only during a region-divider drag (per-frame width commits). Used to
+  // skip the minimize-animation bookkeeping on those ~60fps commits, which can't
+  // flip a collapsed bit. (Also read by the float re-clamp effect below.)
+  const regionResizeDraggingRef = React.useRef(false);
   // True for ~one animation's duration after a commit that flips some group's
   // collapsed state. Gates the region/canvas-inset WIDTH transition so ONLY a
   // minimize/expand eases the region width (a lone docked panel's 300<->36px
@@ -326,16 +330,15 @@ export function DockManager({
         );
     }
     const prev = layoutRef.current;
-    // Ease the region width only on a USER minimize/expand: a group's collapsed
-    // state actually flipped, and this isn't a programmatic apply (server-driven
-    // placement / reconnect replay shouldn't play the user-facing animation).
-    // Other commits (drag/dock/resize/remove) stay instant and cancel any
-    // in-flight pulse so they don't inherit the ease. The programmatic check also
-    // skips the O(groups) collapseFlipped scan on the ~60fps region-resize commit
-    // (which runs programmatic and can't flip a collapsed bit).
-    if (programmaticDepth.current === 0 && collapseFlipped(prev, next))
+    // Ease the region width whenever a group's collapsed state actually flipped
+    // (minimize/expand) -- whether that came from a per-panel toggle (applyOp) or
+    // a whole-column minimize-all (api.apply); both are user gestures and must
+    // animate consistently. Skip only region-resize-drag commits (~60fps,
+    // can't flip a collapsed bit). Other commits (drag/dock/remove) leave it
+    // unchanged and cancel any in-flight pulse so they don't inherit the ease.
+    if (!regionResizeDraggingRef.current && collapseFlipped(prev, next))
       pulseMinimizeAnimation();
-    else cancelMinimizeAnimation();
+    else if (!regionResizeDraggingRef.current) cancelMinimizeAnimation();
     layoutRef.current = next;
     setLayout(next);
     onCommitRef.current?.(prev, next, programmaticDepth.current > 0);
@@ -416,7 +419,7 @@ export function DockManager({
   // the seam), so the inset effect must NOT also re-clamp unanchored floats then
   // -- that re-clamp is for DISCRETE inset changes (dock/minimize/undock), where
   // nothing else moves an unanchored float out from under the new chrome.
-  const regionResizeDraggingRef = React.useRef(false);
+  // (regionResizeDraggingRef is declared earlier, with the animation refs.)
 
   // Keep floating windows sensibly placed when the container resizes. Each
   // axis anchors to the NEARER container edge (matching the original
