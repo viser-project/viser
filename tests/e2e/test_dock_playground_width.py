@@ -144,7 +144,8 @@ def _right_group_ids(page: Page) -> list[str]:
 
 def _minimize(page: Page, gid: str) -> None:
     page.locator(f'[data-dock-group="{gid}"] [data-dock-minimize]').first.click()
-    page.wait_for_timeout(120)
+    # Wait out the minimize width animation so widths are measured once settled.
+    page.wait_for_timeout(350)
 
 
 def _setup_two_side_by_side(page: Page) -> tuple[str, str]:
@@ -548,3 +549,69 @@ def test_dock_above_two_columns_spans_and_preserves_widths(
         )
     finally:
         page.close()
+
+
+# ===========================================================================
+# (scroll) A docked column dragged narrower than the panel-content minimum
+# (220px) does NOT clamp -- the layout floor is now a tiny grabbable sliver.
+# Instead the panel BODY holds the content minimum and overflows, so a
+# horizontal scrollbar appears, pinned to the BOTTOM of the panel (the scroll
+# viewport fills the panel height) even when the content is short.
+# ===========================================================================
+def _body_viewport(page: Page, gid: str) -> dict:
+    """The docked panel body's scroll viewport metrics + its bottom relative to
+    the leaf bottom (so we can assert the horizontal scrollbar sits at the
+    panel's bottom, not floating under short content)."""
+    return page.eval_on_selector(
+        f'[data-dock-group="{gid}"]',
+        """e => {
+            const vp = e.querySelector('.mantine-ScrollArea-viewport');
+            const leaf = e.closest('[data-dock-leaf]');
+            const vr = vp.getBoundingClientRect();
+            const lr = leaf.getBoundingClientRect();
+            return {
+                scrollW: Math.round(vp.scrollWidth),
+                clientW: Math.round(vp.clientWidth),
+                vpBottom: Math.round(vr.bottom),
+                leafBottom: Math.round(lr.bottom),
+            };
+        }""",
+    )
+
+
+def test_narrow_region_scrolls_body_with_bottom_scrollbar(page: Page) -> None:
+    a = "t-controls"
+    set_layout(page, dock_layout(docked_right=columns("controls")))
+    assert not _is_float(page, a)
+
+    leaf = _box(page, a)
+    wide = _body_viewport(page, a)
+    # At a comfortable width the body fits -- no horizontal overflow.
+    assert wide["scrollW"] <= wide["clientW"] + 2, (
+        f"unexpected overflow at full width: {wide}"
+    )
+
+    # Drag the region's canvas-facing (left) edge rightward to ~120px wide --
+    # well below the 220px content minimum. The layout floor (MIN_REGION_GRAB_PX,
+    # 96px) lets it commit this narrow instead of clamping at 220.
+    vw = page.viewport_size["width"]  # type: ignore[index]
+    region_left = leaf["x"]
+    target_left = vw - 120
+    _raw_drag(page, (region_left, 400), (target_left, 400))
+
+    narrow_w = _width(page, a)
+    assert narrow_w < 200, (
+        f"region did not shrink below the old 220 floor: width {narrow_w}"
+    )
+
+    vp = _body_viewport(page, a)
+    # The body holds its content minimum and overflows -> horizontal scrollbar.
+    assert vp["scrollW"] > vp["clientW"] + 2, (
+        f"narrow panel body did not overflow horizontally: {vp}"
+    )
+    # The scroll viewport fills to the panel's bottom, so the horizontal
+    # scrollbar sits at the bottom of the panel (not mid-panel under short
+    # content). Allow a few px for the scrollbar track / sub-pixel rounding.
+    assert abs(vp["vpBottom"] - vp["leafBottom"]) <= 18, (
+        f"scroll viewport does not reach the panel bottom: {vp}"
+    )

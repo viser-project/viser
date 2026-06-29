@@ -1,9 +1,15 @@
-import { useDisclosure, useMediaQuery } from "@mantine/hooks";
-import GeneratedGuiContainer from "./Generated";
+import { useDisclosure } from "@mantine/hooks";
+import GeneratedGuiContainer, {
+  GuiComponentContextProvider,
+} from "./Generated";
 import { ViewerContext } from "../ViewerContext";
 
 import QRCode from "react-qr-code";
 import ServerControls from "./ServerControls";
+import { PlainTabGroup } from "../components/TabGroup";
+import { GuiDockContext } from "./GuiDockContext";
+import { DockContext } from "../dock/DockContext";
+import { shallowObjectKeysEqual } from "../utils/shallowObjectKeysEqual";
 import {
   ActionIcon,
   Anchor,
@@ -20,7 +26,6 @@ import {
   Tooltip,
   Transition,
   useMantineColorScheme,
-  useMantineTheme,
 } from "@mantine/core";
 import {
   IconAdjustments,
@@ -39,21 +44,43 @@ import { spotlight } from "@mantine/spotlight";
 import { isMac } from "../utils/platform";
 import React from "react";
 import BottomPanel from "./BottomPanel";
-import { controlWidthEm } from "./controlWidth";
-import { ThemeConfigurationMessage } from "../WebsocketMessages";
-import SidebarPanel from "./SidebarPanel";
 
 // Must match constant in Python.
 const ROOT_CONTAINER_ID = "root";
 
 const MemoizedGeneratedGuiContainer = React.memo(GeneratedGuiContainer);
 
-/** True when the root container has any generated GUI to show. */
+/** True when the root container has any inline generated GUI to show. Standalone
+ * panels are a separate top-level entity (never in the root set), so they don't
+ * affect this. */
 function useShowGenerated(): boolean {
   const viewer = React.useContext(ViewerContext)!;
   return viewer.useGui(
     (state) =>
       Object.keys(state.guiUuidSetFromContainerUuid["root"] ?? {}).length > 0,
+  );
+}
+
+/** Standalone panels rendered INLINE, for chromes with no dock surface (the
+ * mobile bottom sheet). On the desktop dock surface, panels are placed as their
+ * own dock groups by StandalonePanelSync instead; here they would otherwise be
+ * invisible (they are not part of the root GUI tree). Each renders as plain
+ * tabs, the same fallback inline tab groups use off the dock surface. */
+function PanelsFallback() {
+  const viewer = React.useContext(ViewerContext)!;
+  const panels = viewer.useGui((state) => state.panels, shallowObjectKeysEqual);
+  // On the dock surface, StandalonePanelSync places panels as dock groups -- so
+  // this inline fallback must NOT also render them (that would double-render).
+  const dockCtx = React.useContext(DockContext);
+  const guiDockCtx = React.useContext(GuiDockContext);
+  if (dockCtx !== null && guiDockCtx !== null) return null;
+  if (Object.keys(panels).length === 0) return null;
+  return (
+    <GuiComponentContextProvider>
+      {Object.values(panels).map((panel) => (
+        <PlainTabGroup key={panel.uuid} {...panel.props} />
+      ))}
+    </GuiComponentContextProvider>
   );
 }
 
@@ -79,6 +106,7 @@ export function ControlPanelContents({
       <Collapse in={showGenerated && !showSettings} keepMounted>
         <MemoizedGeneratedGuiContainer containerUuid={ROOT_CONTAINER_ID} />
       </Collapse>
+      {!showSettings && <PanelsFallback />}
     </>
   );
 }
@@ -119,20 +147,8 @@ export function SettingsToggleIcon({
   );
 }
 
-export default function ControlPanel(props: {
-  control_layout: ThemeConfigurationMessage["control_layout"];
-}) {
-  const theme = useMantineTheme();
-  const useMobileView = useMediaQuery(`(max-width: ${theme.breakpoints.xs})`);
-
-  // TODO: will result in unnecessary re-renders.
-  const viewer = React.useContext(ViewerContext)!;
+export default function ControlPanel() {
   const [showSettings, { toggle }] = useDisclosure(false);
-
-  const controlWidthString = viewer.useGui(
-    (state) => state.theme.control_width,
-  );
-  const controlWidth = controlWidthEm(controlWidthString);
 
   const generatedServerToggleButton = (
     <SettingsToggleIcon showSettings={showSettings} onToggle={toggle} />
@@ -140,41 +156,26 @@ export default function ControlPanel(props: {
 
   const panelContents = <ControlPanelContents showSettings={showSettings} />;
 
-  // NOTE: the "floating" layout never reaches this component -- App renders it
-  // on the docking surface (see ControlPanelDock.tsx). This component covers
-  // the mobile bottom sheet and the sidebar layouts.
-  if (useMobileView) {
-    /* Mobile layout. */
-    return (
-      <BottomPanel>
-        <BottomPanel.Handle>
-          <ConnectionStatus />
-          <BottomPanel.HideWhenCollapsed>
-            <CommandsButton />
-            <ShareButton />
-            {generatedServerToggleButton}
-          </BottomPanel.HideWhenCollapsed>
-        </BottomPanel.Handle>
-        <BottomPanel.Contents>{panelContents}</BottomPanel.Contents>
-      </BottomPanel>
-    );
-  } else {
-    /* Sidebar view. */
-    return (
-      <SidebarPanel
-        width={controlWidth}
-        collapsible={props.control_layout === "collapsible"}
-      >
-        <SidebarPanel.Handle>
-          <ConnectionStatus />
+  // The "floating" control layout never reaches this component -- App renders it
+  // on the docking surface (see ControlPanelDock.tsx). This component is now the
+  // mobile bottom sheet only: App only mounts it when not in the floating dock
+  // layout, which (since `control_layout` always resolves to "floating") happens
+  // exclusively on the mobile breakpoint. The old desktop sidebar layouts
+  // (`collapsible`/`fixed`) were removed when `control_layout` was deprecated in
+  // favor of `main_panel` placement.
+  return (
+    <BottomPanel>
+      <BottomPanel.Handle>
+        <ConnectionStatus />
+        <BottomPanel.HideWhenCollapsed>
           <CommandsButton />
           <ShareButton />
           {generatedServerToggleButton}
-        </SidebarPanel.Handle>
-        <SidebarPanel.Contents>{panelContents}</SidebarPanel.Contents>
-      </SidebarPanel>
-    );
-  }
+        </BottomPanel.HideWhenCollapsed>
+      </BottomPanel.Handle>
+      <BottomPanel.Contents>{panelContents}</BottomPanel.Contents>
+    </BottomPanel>
+  );
 }
 
 /* Icon and label telling us the current status of the websocket connection. */
@@ -185,7 +186,11 @@ export function ConnectionStatus() {
 
   return (
     <>
-      <div style={{ width: "1.1em" }} /> {/* Spacer. */}
+      {/* Spacer reserving room for the absolutely-positioned status icon (which
+      crossfades between the connected/reconnecting/inactive variants in this
+      spot), plus a small gap before the label. */}
+      <div style={{ width: "1.25em", flexShrink: 0 }} />
+      <div style={{ width: "0.4em", flexShrink: 0 }} />
       <Transition transition="fade" mounted={websocketState === "connected"}>
         {(styles) => (
           <IconCloudCheck
@@ -228,7 +233,21 @@ export function ConnectionStatus() {
           />
         )}
       </Transition>
-      <Box px="xs" style={{ flexGrow: 1, letterSpacing: "-0.5px" }} pt="0.1em">
+      <Box
+        pr="xs"
+        pt="0.1em"
+        style={{
+          flexGrow: 1,
+          letterSpacing: "-0.5px",
+          // Truncate instead of wrapping/pushing the action icons off the edge
+          // when the panel is narrow. minWidth:0 lets the flex item shrink below
+          // its content width.
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
         {label !== ""
           ? label
           : websocketState === "connected"

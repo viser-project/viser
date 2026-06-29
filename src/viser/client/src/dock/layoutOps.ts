@@ -17,17 +17,20 @@ import {
   FloatingWindow,
   GroupId,
   GroupLocation,
-  MAX_PANEL_WIDTH_PX,
-  MIN_PANEL_WIDTH_PX,
+  MIN_REGION_GRAB_PX,
+  MIN_WINDOW_HEIGHT_PX,
   NodeId,
-  PanelId,
-  PanelRegistry,
+  PaneId,
+  PaneRegistry,
+  pinnedPxOf,
   regionWidthsOf,
   SPLIT_DIVIDER_PX,
   TabGroup,
+  windowHeight,
   WindowId,
 } from "./types";
 import { freshId } from "./gestures";
+import { GuiSetPanelPositionMessage } from "../WebsocketMessages";
 
 // A typed recursive deep-clone, ~10x faster than structuredClone for the
 // layout's plain JSON-ish shape (objects/arrays/numbers/strings/booleans --
@@ -101,8 +104,13 @@ function treeReplaceNode(
   };
 }
 
-/** Find any node (leaf or split) by node id. */
-function treeFindNode(node: DockNode, nodeId: NodeId): DockNode | null {
+/** Find any node (leaf or split) by node id. Accepts a null tree (empty edge)
+ * for convenience at call sites that hold a possibly-empty region. */
+export function treeFindNode(
+  node: DockNode | null,
+  nodeId: NodeId,
+): DockNode | null {
+  if (node === null) return null;
   if (node.id === nodeId) return node;
   if (node.type === "leaf") return null;
   for (const child of node.children) {
@@ -165,10 +173,46 @@ export function isColumnMinimized(
   return node.children.every((c) => isColumnMinimized(c, groups));
 }
 
+/** True when the subtree at `nodeId` (in either docked tree) is fully
+ * minimized -- used to decide whether a new cell dropped beside it should adopt
+ * the minimized state. False if the node isn't found. */
+export function nodeAllMinimized(layout: DockLayout, nodeId: NodeId): boolean {
+  for (const edge of ["left", "right"] as const) {
+    const tree = layout.docked[edge];
+    const node = tree && treeFindNode(tree, nodeId);
+    if (node) return isColumnMinimized(node, layout.groups);
+  }
+  return false;
+}
+
+/** True when every group in a floating window's stack is minimized. */
+export function windowAllMinimized(
+  layout: DockLayout,
+  windowId: WindowId,
+): boolean {
+  const win = layout.floating.find((w) => w.id === windowId);
+  return (
+    win !== undefined &&
+    win.stack.length > 0 &&
+    win.stack.every((g) => layout.groups[g]?.collapsed === true)
+  );
+}
+
 /** In-order group ids of every leaf in a subtree. */
 export function collectLeafGroups(node: DockNode): GroupId[] {
   if (node.type === "leaf") return [node.group];
   return node.children.flatMap(collectLeafGroups);
+}
+
+/** The group ids of a COLUMN split's DIRECT leaf children -- i.e. the leaves
+ * that render as one vertical stack. Empty for a leaf, a row split, or a column
+ * whose children are all nested splits. The shared notion of "a docked stack's
+ * members" used by the collapse-uniformity helpers. */
+function columnLeafGroups(node: DockNode): GroupId[] {
+  if (node.type !== "split" || node.dir !== "column") return [];
+  return node.children
+    .filter((c): c is Extract<DockNode, { type: "leaf" }> => c.type === "leaf")
+    .map((c) => c.group);
 }
 
 /** In-order leaf nodes (id + group) of a subtree. */
@@ -195,19 +239,29 @@ export function topColumns(tree: DockNode): DockNode[] {
  * collapsing the whole stack to one column's worth (the LEAD 1 bug). */
 export function widthColumns(tree: DockNode): DockNode[] {
   if (tree.type === "leaf" || tree.dir === "row") return topColumns(tree);
-  // Column (stacked) root: the width-bearing child is the widest one. Pick by
-  // maxRegionWidth (its full horizontal extent) so a nested row wins over a
-  // stacked leaf, then recurse to surface that row's columns.
+  // Column (stacked) root: the width-bearing child is the one with the most
+  // side-by-side columns (a nested row of N leaves outranks a stacked leaf), so
+  // we recurse into it to surface those columns.
   let widest = tree.children[0];
   let widestExtent = -Infinity;
   for (const child of tree.children) {
-    const extent = maxRegionWidth(child);
+    const extent = columnExtent(child);
     if (extent > widestExtent) {
       widestExtent = extent;
       widest = child;
     }
   }
   return widthColumns(widest);
+}
+
+/** Number of side-by-side columns a node spans: leaf = 1, row = sum of its
+ * children, column = max of its children. A pure ORDINAL comparator for
+ * widthColumns (which stacked child is "widest") -- no pixels, no cap. */
+function columnExtent(node: DockNode): number {
+  if (node.type === "leaf") return 1;
+  if (node.dir === "row")
+    return node.children.reduce((s, c) => s + columnExtent(c), 0);
+  return Math.max(...node.children.map(columnExtent));
 }
 
 /** Whether a region's given edge is a single full-span leaf. When true, a "span
@@ -241,14 +295,16 @@ export function edgeIsSingleLeaf(
   );
 }
 
-/** Minimum width a docked region needs so every panel in it clears the
- * per-panel minimum. Row splits sum their children's minimums (plus dividers);
- * column splits take the max (panels stacked vertically share one width). */
+/** Minimum width a docked region may be resized to in the layout model. A leaf
+ * floors at MIN_REGION_GRAB_PX (a tiny grabbable sliver, NOT the panel-content
+ * minimum -- a too-narrow panel scrolls its body instead). Row splits sum their
+ * children's minimums (plus dividers); column splits take the max (panes
+ * stacked vertically share one width). */
 export function minRegionWidth(
   node: DockNode,
   dividerPx = SPLIT_DIVIDER_PX,
 ): number {
-  if (node.type === "leaf") return MIN_PANEL_WIDTH_PX;
+  if (node.type === "leaf") return MIN_REGION_GRAB_PX;
   if (node.dir === "row") {
     return (
       node.children.reduce((sum, c) => sum + minRegionWidth(c, dividerPx), 0) +
@@ -256,24 +312,6 @@ export function minRegionWidth(
     );
   }
   return Math.max(...node.children.map((c) => minRegionWidth(c, dividerPx)));
-}
-
-/** Maximum width a docked region may take while keeping the per-panel maximum.
- * Mirrors minRegionWidth: row splits sum their children's maxima (plus
- * dividers) so each column can independently reach its own max; column splits
- * take the max (stacked panels share one width). */
-export function maxRegionWidth(
-  node: DockNode,
-  dividerPx = SPLIT_DIVIDER_PX,
-): number {
-  if (node.type === "leaf") return MAX_PANEL_WIDTH_PX;
-  if (node.dir === "row") {
-    return (
-      node.children.reduce((sum, c) => sum + maxRegionWidth(c, dividerPx), 0) +
-      dividerPx * (node.children.length - 1)
-    );
-  }
-  return Math.max(...node.children.map((c) => maxRegionWidth(c, dividerPx)));
 }
 
 /** The area id whose tab group is `groupId`, or null. A group that backs a
@@ -296,7 +334,7 @@ export function isAreaGroup(layout: DockLayout, groupId: GroupId): boolean {
 /** A "pure column": a column split whose children are ALL leaves (2+). Only
  * pure columns get a float-the-whole-column handle: a column containing a
  * nested row has no crisp linearization into a vertical floating stack --
- * flattening would silently reorder side-by-side panels into a top-to-bottom
+ * flattening would silently reorder side-by-side panes into a top-to-bottom
  * order that can't round-trip back. Keeping the affordance to pure columns
  * keeps the gesture's semantics obvious. */
 export function isPureColumn(node: DockNode): node is DockSplit {
@@ -430,6 +468,36 @@ export function findGroupLocation(
   return null;
 }
 
+/** The group ids that share a STACK with `groupId` (including itself): a
+ * floating window's whole stack, or the leaf children of the column split that
+ * directly contains the group. A LONE group (its own window, or a leaf not in a
+ * multi-leaf column) returns just `[groupId]`. Used to route a minimize toggle
+ * to the right granularity -- a stack toggles all-or-nothing, a lone group
+ * toggles itself (see the uniform-collapse invariant). */
+export function stackGroupIdsOf(
+  layout: DockLayout,
+  groupId: GroupId,
+): GroupId[] {
+  const win = layout.floating.find((w) => w.stack.includes(groupId));
+  if (win !== undefined) return win.stack.length >= 2 ? [...win.stack] : [groupId];
+  // Docked: find the column split whose DIRECT children include this group's
+  // leaf; its leaf children are the stack.
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const tree = layout.docked[edge];
+    if (tree === null) continue;
+    let found: GroupId[] | null = null;
+    const walk = (node: DockNode): void => {
+      if (node.type !== "split") return;
+      const stack = columnLeafGroups(node);
+      if (stack.length >= 2 && stack.includes(groupId)) found = stack;
+      node.children.forEach(walk);
+    };
+    walk(tree);
+    if (found !== null) return found;
+  }
+  return [groupId];
+}
+
 /** Remove a group from wherever it currently lives, mutating `draft` in place.
  * The group object itself stays in `draft.groups`; the caller re-inserts it
  * elsewhere (or deletes it). Empty splits and empty floating windows are
@@ -437,14 +505,10 @@ export function findGroupLocation(
 function detachInPlace(draft: DockLayout, groupId: GroupId): void {
   const loc = findGroupLocation(draft, groupId);
   if (loc === null) return;
-  // The minimize-all restore tag belongs to the stack the group is LEAVING:
-  // in its next home, "expand this stack" shouldn't resurrect state from the
-  // old one (a relocated fully-minimized stack just expands everything).
-  delete draft.groups[groupId]?.collapsedByParent;
   // An area group is a fixed fixture -- it is never moved or removed. Panels are
   // added to / torn out of it individually; the group itself stays put (this
   // should not be reached, since area groups are only ever drop TARGETS or the
-  // source of a tearOutPanel, never floated as a whole -- but guard anyway).
+  // source of a tearOutPane, never floated as a whole -- but guard anyway).
   if (loc.kind === "area") return;
   if (loc.kind === "docked") {
     const tree = draft.docked[loc.edge];
@@ -476,32 +540,32 @@ function withoutAreaGroups(layout: DockLayout, groupIds: GroupId[]): GroupId[] {
 // Group + panel construction.
 // ---------------------------------------------------------------------------
 
-export function makeGroup(panelIds: PanelId[]): TabGroup {
+export function makeGroup(paneIds: PaneId[]): TabGroup {
   return {
     id: freshId("group"),
-    panelIds: [...panelIds],
-    activeId: panelIds[0],
+    paneIds: [...paneIds],
+    activeId: paneIds[0],
   };
 }
 
 /** Whether a panel is flagged unmergeable in the registry. */
-export function isPanelUnmergeable(
-  panels: PanelRegistry,
-  panelId: PanelId,
+export function isPaneUnmergeable(
+  panes: PaneRegistry,
+  paneId: PaneId,
 ): boolean {
-  return panels[panelId]?.unmergeable === true;
+  return panes[paneId]?.unmergeable === true;
 }
 
-/** Whether a group holds an unmergeable panel. Unmergeable panels always live
+/** Whether a group holds an unmergeable panel. Unmergeable panes always live
  * alone, so any panel in the group being unmergeable marks the whole group. */
 export function isGroupUnmergeable(
   layout: DockLayout,
-  panels: PanelRegistry,
+  panes: PaneRegistry,
   groupId: GroupId,
 ): boolean {
   const group = layout.groups[groupId];
   if (group === undefined) return false;
-  return group.panelIds.some((p) => isPanelUnmergeable(panels, p));
+  return group.paneIds.some((p) => isPaneUnmergeable(panes, p));
 }
 
 function makeLeaf(groupId: GroupId, weight = 1): DockNode {
@@ -635,7 +699,7 @@ export function dropOnDockedLeaf(
   // Re-find the target leaf AFTER detach. If a dragged group shared this edge,
   // detaching it may have collapsed/removed the target node; if the target is
   // gone (a self-drop), abort rather than dropping the dragged groups into a
-  // node that no longer exists (which would orphan them and lose the panels).
+  // node that no longer exists (which would orphan them and lose the panes).
   const liveTree = draft.docked[edge];
   if (liveTree === null) return layout;
   const liveTarget = treeFindLeaf(liveTree, targetNodeId);
@@ -676,29 +740,29 @@ export function insertTabsInto(
   const draft = clone(layout);
   const target = draft.groups[targetGroupId];
   if (target === undefined) return layout;
-  const incoming: PanelId[] = [];
+  const incoming: PaneId[] = [];
   let active = target.activeId;
   for (const sourceId of sourceGroupIds) {
     if (sourceId === targetGroupId) continue;
     const source = draft.groups[sourceId];
     if (source === undefined) continue;
     detachInPlace(draft, sourceId);
-    incoming.push(...source.panelIds);
+    incoming.push(...source.paneIds);
     active = source.activeId;
     delete draft.groups[sourceId];
   }
   if (incoming.length === 0) return layout;
-  const i = Math.max(0, Math.min(target.panelIds.length, index));
-  target.panelIds = [
-    ...target.panelIds.slice(0, i),
+  const i = Math.max(0, Math.min(target.paneIds.length, index));
+  target.paneIds = [
+    ...target.paneIds.slice(0, i),
     ...incoming,
-    ...target.panelIds.slice(i),
+    ...target.paneIds.slice(i),
   ];
   // Guard against a source carrying a stale/empty activeId (e.g. an emptied
   // group consumed mid-merge): the active tab must be one of the result's tabs.
-  target.activeId = target.panelIds.includes(active)
+  target.activeId = target.paneIds.includes(active)
     ? active
-    : target.panelIds[0];
+    : target.paneIds[0];
   return draft;
 }
 
@@ -721,12 +785,31 @@ export function setStackWeights(
   return draft;
 }
 
-/** Set a floating window's explicit height (px). Switches it from auto-height
- * to fixed-height, with its contents scrolling. */
+/** Cap a pinned window height to the container (so it stays usable -- contents
+ * scroll -- when the browser shrinks below the saved height). In a tiny
+ * container the cap is floored at MIN_WINDOW_HEIGHT_PX to keep the window
+ * usable, but that floor is itself capped at the pinned height: we never render
+ * a window TALLER than it was pinned to, so a small panel in a tiny container
+ * shrinks rather than overhanging. Independent of position: moving never
+ * resizes. `containerHeight <= 0` (unmeasured) returns the pinned height. */
+export function cappedWindowHeight(
+  pinnedHeight: number,
+  containerHeight: number,
+): number {
+  if (containerHeight <= 0) return pinnedHeight;
+  const floor = Math.min(MIN_WINDOW_HEIGHT_PX, pinnedHeight);
+  return Math.min(pinnedHeight, Math.max(floor, containerHeight - 8));
+}
+
+/** Set a floating window's explicit height (px), switching it from auto-height
+ * to fixed-height with its contents scrolling -- OR pass `undefined` to clear
+ * the pin and RETURN it to auto-height (the window tracks its content again).
+ * Reverting to auto is the user's escape hatch from a fixed height (e.g.
+ * dragging the bottom grip back down to the natural content height). */
 export function resizeWindowHeight(
   layout: DockLayout,
   windowId: WindowId,
-  height: number,
+  height: number | undefined,
   /** New top edge, for resizes that grab the TOP grips (the bottom edge stays
    * fixed by moving y as the height changes -- the vertical analog of
    * resizeWindow's `x`). */
@@ -735,8 +818,32 @@ export function resizeWindowHeight(
   const draft = clone(layout);
   const win = draft.floating.find((w) => w.id === windowId);
   if (win === undefined) return layout;
-  win.height = height;
+  win.height = windowHeight(height);
   if (y !== undefined) win.y = y;
+  return draft;
+}
+
+/** Mark a (draft) window user-owned by dropping its server anchor, so it stops
+ * re-anchoring to the canvas edges. The single home for "a user gesture took
+ * manual control" -- every gesture op that commits a user-chosen geometry (move,
+ * resize, snap) calls this, so a new gesture can't silently forget to un-anchor.
+ * Mutates in place; the caller owns the draft. */
+function markWindowUserOwned(win: FloatingWindow): void {
+  delete win.anchor;
+}
+
+/** Release a window's server anchor so it stops re-anchoring on canvas changes
+ * -- it becomes a plainly user-owned float at its current absolute position.
+ * Called when a USER gesture (drag, any resize grip) takes manual control of the
+ * window. No-op if it had none. */
+export function releaseAnchor(
+  layout: DockLayout,
+  windowId: WindowId,
+): DockLayout {
+  const win = layout.floating.find((w) => w.id === windowId);
+  if (win === undefined || win.anchor === undefined) return layout;
+  const draft = clone(layout);
+  markWindowUserOwned(draft.floating.find((x) => x.id === windowId)!);
   return draft;
 }
 
@@ -746,7 +853,7 @@ export function mergeGroupsInto(
   targetGroupId: GroupId,
   sourceGroupIds: GroupId[],
 ): DockLayout {
-  const end = layout.groups[targetGroupId]?.panelIds.length ?? 0;
+  const end = layout.groups[targetGroupId]?.paneIds.length ?? 0;
   return insertTabsInto(layout, targetGroupId, sourceGroupIds, end);
 }
 
@@ -760,14 +867,14 @@ export function mergeGroupsInto(
 // removing one that isn't are both no-ops, so a sync layer can re-run them.
 // ---------------------------------------------------------------------------
 
-/** The group currently holding `panelId`, or null when the panel isn't placed
+/** The group currently holding `paneId`, or null when the panel isn't placed
  * anywhere in the layout. */
-export function findPanelGroup(
+export function findPaneGroup(
   layout: DockLayout,
-  panelId: PanelId,
+  paneId: PaneId,
 ): GroupId | null {
   for (const group of Object.values(layout.groups)) {
-    if (group.panelIds.includes(panelId)) return group.id;
+    if (group.paneIds.includes(paneId)) return group.id;
   }
   return null;
 }
@@ -781,8 +888,8 @@ export function ensureArea(layout: DockLayout, areaId: AreaId): DockLayout {
   }
   const draft = clone(layout);
   // An empty group's activeId is meaningless (rendering guards on
-  // panelIds.length); it becomes real when the first panel is added.
-  const group: TabGroup = { id: freshId("group"), panelIds: [], activeId: "" };
+  // paneIds.length); it becomes real when the first panel is added.
+  const group: TabGroup = { id: freshId("group"), paneIds: [], activeId: "" };
   draft.groups[group.id] = group;
   draft.areas = {
     ...(draft.areas ?? {}),
@@ -795,39 +902,39 @@ export function ensureArea(layout: DockLayout, areaId: AreaId): DockLayout {
  * area if needed. No-op when the panel is already placed ANYWHERE in the
  * layout -- the user may have dragged it out of the area, and re-adding it
  * would duplicate it; callers that really want to move it back should
- * removePanel first. */
-export function addPanelToArea(
+ * removePane first. */
+export function addPaneToArea(
   layout: DockLayout,
   areaId: AreaId,
-  panelId: PanelId,
+  paneId: PaneId,
   index?: number,
 ): DockLayout {
-  if (findPanelGroup(layout, panelId) !== null) return layout;
+  if (findPaneGroup(layout, paneId) !== null) return layout;
   const draft = clone(ensureArea(layout, areaId));
   const group = draft.groups[draft.areas![areaId].group];
-  const i = clampIndex(index, group.panelIds.length);
-  group.panelIds.splice(i, 0, panelId);
-  if (group.panelIds.length === 1 || !group.panelIds.includes(group.activeId)) {
-    group.activeId = panelId;
+  const i = clampIndex(index, group.paneIds.length);
+  group.paneIds.splice(i, 0, paneId);
+  if (group.paneIds.length === 1 || !group.paneIds.includes(group.activeId)) {
+    group.activeId = paneId;
   }
   return draft;
 }
 
 /** Add a not-yet-placed panel as its own floating window. No-op when the panel
  * is already placed. Returns the new window's id (null on no-op). */
-export function addFloatingPanel(
+export function addFloatingPane(
   layout: DockLayout,
-  panelId: PanelId,
+  paneId: PaneId,
   x: number,
   y: number,
   width: number,
   height?: number,
 ): { layout: DockLayout; windowId: WindowId | null } {
-  if (findPanelGroup(layout, panelId) !== null) {
+  if (findPaneGroup(layout, paneId) !== null) {
     return { layout, windowId: null };
   }
   const draft = clone(layout);
-  const group = makeGroup([panelId]);
+  const group = makeGroup([paneId]);
   draft.groups[group.id] = group;
   const win = makeFloatingWindow(x, y, width, [group.id], height);
   draft.floating.push(win);
@@ -839,44 +946,72 @@ export function addFloatingPanel(
  * deleted -- its window or docked cell collapses like a tear-out would; an
  * area's backing group persists empty as a drop affordance. No-op when the
  * panel isn't placed. */
-export function removePanel(layout: DockLayout, panelId: PanelId): DockLayout {
-  const groupId = findPanelGroup(layout, panelId);
-  if (groupId === null) return layout;
+export function removePane(layout: DockLayout, paneId: PaneId): DockLayout {
+  if (findPaneGroup(layout, paneId) === null) return layout;
   const draft = clone(layout);
+  removePaneInPlace(draft, paneId);
+  return draft;
+}
+
+/** In-place pane removal (the body of removePane; the caller owns the draft).
+ * Drops `paneId` from its group, collapsing an emptied non-area group's window
+ * or docked cell. No-op if the pane isn't placed. */
+function removePaneInPlace(draft: DockLayout, paneId: PaneId): void {
+  const groupId = findPaneGroup(draft, paneId);
+  if (groupId === null) return;
   const group = draft.groups[groupId];
-  group.panelIds = group.panelIds.filter((p) => p !== panelId);
-  if (group.panelIds.length === 0) {
+  group.paneIds = group.paneIds.filter((p) => p !== paneId);
+  if (group.paneIds.length === 0) {
     if (!isAreaGroup(draft, groupId)) {
       detachInPlace(draft, groupId);
       delete draft.groups[groupId];
     }
-    return draft;
+    return;
   }
-  if (group.activeId === panelId) group.activeId = group.panelIds[0];
-  return draft;
+  if (group.activeId === paneId) group.activeId = group.paneIds[0];
+}
+
+/** Move `paneId` into `destGroupId` at `index` (append if omitted), in place.
+ * Detaches the pane from wherever it currently lives FIRST (collapsing any group
+ * it empties), so a pane can never end up in two groups -- the single primitive
+ * for relocating a pane. No-op if it's already in dest. The caller owns the
+ * draft and must ensure `destGroupId` exists. */
+function movePaneInPlace(
+  draft: DockLayout,
+  paneId: PaneId,
+  destGroupId: GroupId,
+  index?: number,
+): void {
+  if (findPaneGroup(draft, paneId) === destGroupId) return;
+  removePaneInPlace(draft, paneId); // detach first -> no duplication possible
+  const dest = draft.groups[destGroupId];
+  if (dest === undefined) return;
+  const i = index === undefined ? dest.paneIds.length : index;
+  dest.paneIds.splice(Math.max(0, Math.min(dest.paneIds.length, i)), 0, paneId);
+  if (dest.paneIds.length === 1) dest.activeId = paneId;
 }
 
 /** Reorder an area's tabs to match `order` (e.g. a server-driven tab list).
- * Panels the user dragged OUT of the area aren't touched; panels in the area
+ * Panels the user dragged OUT of the area aren't touched; panes in the area
  * but not in `order` (shouldn't happen) keep their position at the end. No-op
  * when the area doesn't exist or the order already matches. */
 export function setAreaTabOrder(
   layout: DockLayout,
   areaId: AreaId,
-  order: PanelId[],
+  order: PaneId[],
 ): DockLayout {
   const area = layout.areas?.[areaId];
   if (area === undefined) return layout;
   const group = layout.groups[area.group];
   if (group === undefined) return layout;
-  const present = new Set(group.panelIds);
+  const present = new Set(group.paneIds);
   const next = [
     ...order.filter((p) => present.has(p)),
-    ...group.panelIds.filter((p) => !order.includes(p)),
+    ...group.paneIds.filter((p) => !order.includes(p)),
   ];
-  if (next.every((p, i) => p === group.panelIds[i])) return layout;
+  if (next.every((p, i) => p === group.paneIds[i])) return layout;
   const draft = clone(layout);
-  draft.groups[area.group].panelIds = next;
+  draft.groups[area.group].paneIds = next;
   return draft;
 }
 
@@ -904,7 +1039,7 @@ function makeFloatingWindow(
     x,
     y,
     width,
-    ...(height !== undefined ? { height } : {}),
+    height: windowHeight(height),
     stack,
     ...(stackWeights !== undefined ? { stackWeights } : {}),
   };
@@ -979,21 +1114,33 @@ export function floatColumn(
  * panel was the only one in its group, the whole group floats instead (no new
  * group is created). Returns the new layout and the id of the group that ended
  * up floating, so the caller can immediately drive its drag. */
-export function tearOutPanel(
+export function tearOutPane(
   layout: DockLayout,
   groupId: GroupId,
-  panelId: PanelId,
+  paneId: PaneId,
   x: number,
   y: number,
   width: number,
-): { layout: DockLayout; windowId: WindowId; floatingGroupId: GroupId } {
+): {
+  layout: DockLayout;
+  windowId: WindowId | null;
+  floatingGroupId: GroupId | null;
+} {
   const group = layout.groups[groupId];
+  // No-op when the pane isn't actually in this group: tearing out a pane the
+  // group doesn't hold would otherwise CONJURE it -- the split branch below
+  // wraps `paneId` in a fresh group regardless, so an absent (or undefined)
+  // paneId materializes a phantom panel and breaks conservation. The pane must
+  // already live here for there to be anything to tear out.
+  if (group !== undefined && !group.paneIds.includes(paneId)) {
+    return { layout, windowId: null, floatingGroupId: null };
+  }
   // An area group is a fixed fixture: never float it as a whole, even when it
   // holds a single panel. Always split the torn panel into its OWN new group and
   // leave the area group in place (it may end up empty -- it persists as a drop
   // affordance). A normal group with <=1 panel floats wholesale as before.
   const area = isAreaGroup(layout, groupId);
-  if (group === undefined || (!area && group.panelIds.length <= 1)) {
+  if (group === undefined || (!area && group.paneIds.length <= 1)) {
     const res = floatGroup(layout, groupId, x, y, width);
     // Non-area by the check above, so floatGroup always created a window.
     return {
@@ -1004,12 +1151,17 @@ export function tearOutPanel(
   }
   const draft = clone(layout);
   const src = draft.groups[groupId];
-  src.panelIds = src.panelIds.filter((p) => p !== panelId);
-  // Keep activeId valid when panels remain; if the area is now empty, leave the
-  // (stale) activeId -- rendering guards on panelIds.length, so it's harmless.
-  if (src.panelIds.length > 0 && src.activeId === panelId)
-    src.activeId = src.panelIds[0];
-  const newGroup = makeGroup([panelId]);
+  src.paneIds = src.paneIds.filter((p) => p !== paneId);
+  // Keep activeId valid when panes remain; if the area is now empty, leave the
+  // (stale) activeId -- rendering guards on paneIds.length, so it's harmless.
+  if (src.paneIds.length > 0 && src.activeId === paneId)
+    src.activeId = src.paneIds[0];
+  const newGroup = makeGroup([paneId]);
+  // The torn pane inherits the source's minimized state: dragging a tab out of
+  // a minimized strip floats it STILL minimized (expanding is a click-only
+  // gesture). Same as the 1-pane wholesale-float branch above, which floats the
+  // source group with its collapsed flag intact.
+  if (src.collapsed === true) newGroup.collapsed = true;
   draft.groups[newGroup.id] = newGroup;
   const win = makeFloatingWindow(x, y, width, [newGroup.id]);
   draft.floating.push(win);
@@ -1028,6 +1180,9 @@ export function moveWindow(
   if (win === undefined) return layout;
   win.x = x;
   win.y = y;
+  // A user-positioned window is absolute: drop any server-requested coords so it
+  // isn't re-resolved (snapped back) when the canvas changes.
+  markWindowUserOwned(win);
   return draft;
 }
 
@@ -1042,7 +1197,10 @@ export function resizeWindow(
   const draft = clone(layout);
   const win = draft.floating.find((w) => w.id === windowId);
   if (win === undefined) return layout;
-  win.width = width;
+  // Floor at the grab-min so a server set_width(0)/negative can't produce a
+  // zero- or ungrabbable-width window (the interactive drag path clamps too).
+  // No max here -- like docked regions, float width is otherwise uncapped.
+  win.width = Math.max(MIN_REGION_GRAB_PX, width);
   if (x !== undefined) win.x = x;
   return draft;
 }
@@ -1070,7 +1228,7 @@ export function snapToWindowStack(
   groupIds.forEach((g) => detachInPlace(draft, g));
   // Re-find the target after detach: if the dragged groups were its entire
   // stack, the window is now gone -- abort rather than splice into a stale
-  // object (which would orphan the groups and lose the panels).
+  // object (which would orphan the groups and lose the panes).
   const target = draft.floating.find((w) => w.id === targetWindowId);
   if (target === undefined) return layout;
   const i =
@@ -1078,8 +1236,15 @@ export function snapToWindowStack(
       ? target.stack.length
       : Math.max(0, Math.min(target.stack.length, index));
   target.stack.splice(i, 0, ...groupIds);
-  if (target.height === undefined && sourceHeight !== undefined)
-    target.height = sourceHeight;
+  // Copy (don't alias) the source's height object: sourceHeight is read from the
+  // ORIGINAL layout, so assigning it directly would share a reference between the
+  // committed draft and the prior (immutable) state.
+  if (target.height.mode === "auto" && sourceHeight?.mode === "pinned")
+    target.height = { ...sourceHeight };
+  // The user reshaped this window by snapping content into it -> it's now
+  // user-owned; drop any server-requested coords so it isn't re-anchored against
+  // its (now larger) size on the next canvas change.
+  markWindowUserOwned(target);
   return draft;
 }
 
@@ -1098,30 +1263,32 @@ export function bringToFront(
 
 /** Set the flex weights of a split node's children (used by split resizers).
  * `weights` must match the child count; mismatches are ignored. */
-/** Move `panelId` to `insertIndex` within its group's tab order. Returns the
+/** Move `paneId` to `insertIndex` within its group's tab order. Returns the
  * input layout unchanged (same reference) when the order wouldn't change, so
  * callers can skip the re-render on no-op drag frames. */
 export function reorderTab(
   layout: DockLayout,
   groupId: GroupId,
-  panelId: PanelId,
+  paneId: PaneId,
   insertIndex: number,
 ): DockLayout {
   const group = layout.groups[groupId];
-  if (group === undefined || !group.panelIds.includes(panelId)) return layout;
-  const without = group.panelIds.filter((p) => p !== panelId);
+  if (group === undefined || !group.paneIds.includes(paneId)) return layout;
+  const without = group.paneIds.filter((p) => p !== paneId);
   const clamped = Math.max(0, Math.min(without.length, insertIndex));
-  without.splice(clamped, 0, panelId);
+  without.splice(clamped, 0, paneId);
   const unchanged =
-    without.length === group.panelIds.length &&
-    without.every((p, i) => p === group.panelIds[i]);
+    without.length === group.paneIds.length &&
+    without.every((p, i) => p === group.paneIds[i]);
   if (unchanged) return layout;
   const draft = clone(layout);
-  draft.groups[groupId].panelIds = without;
+  draft.groups[groupId].paneIds = without;
   return draft;
 }
 
-/** Toggle a group's minimized (collapsed) state. */
+/** Toggle a group's minimized (collapsed) state. Only ever invoked on a LONE
+ * group (a stack toggles via minimizeStack/expandStack); the commit-time
+ * normalization keeps a 2+ stack uniform regardless. */
 export function toggleCollapsed(
   layout: DockLayout,
   groupId: GroupId,
@@ -1130,80 +1297,99 @@ export function toggleCollapsed(
   const group = draft.groups[groupId];
   if (group === undefined) return layout;
   group.collapsed = !group.collapsed;
-  // The user took individual control; this group no longer belongs to the
-  // last minimize-all (see minimizeStack/expandStack).
-  delete group.collapsedByParent;
   return draft;
 }
 
-/** Expand a collapsed group (no-op when already expanded or unknown). Used
- * after dropping panels INTO a collapsed group: the drop would otherwise land
- * invisibly inside a minimized handle. */
+/** Expand a collapsed group (no-op when already expanded or unknown). */
 export function expandGroup(layout: DockLayout, groupId: GroupId): DockLayout {
   if (layout.groups[groupId]?.collapsed !== true) return layout;
   const draft = clone(layout);
   draft.groups[groupId].collapsed = false;
-  delete draft.groups[groupId].collapsedByParent;
   return draft;
 }
 
-/** Minimize every group of a stack (a floating window's stack or a docked
- * column's leaves) -- the stack handle's minimize-all button. Groups that
- * were EXPANDED right now are tagged `collapsedByParent`; groups that were
- * already minimized lose any stale tag. The matching expandStack then
- * restores exactly the min/max mix the user had before THIS click. */
+/** Minimize a whole stack (a floating window's stack or a docked column's
+ * leaves) -- the stack handle's minimize-all button. A stack is uniform by
+ * invariant (see normalizeStackCollapse), so this just collapses every group. */
 export function minimizeStack(
   layout: DockLayout,
   groupIds: GroupId[],
 ): DockLayout {
-  const needsWork = groupIds.some((gid) => {
-    const group = layout.groups[gid];
-    return (
-      group !== undefined &&
-      (group.collapsed !== true || group.collapsedByParent === true)
-    );
-  });
-  if (!needsWork) return layout;
+  if (groupIds.every((gid) => layout.groups[gid]?.collapsed === true))
+    return layout;
   const draft = clone(layout);
   for (const gid of groupIds) {
     const group = draft.groups[gid];
-    if (group === undefined) continue;
-    if (group.collapsed !== true) {
-      group.collapsed = true;
-      group.collapsedByParent = true;
-    } else {
-      delete group.collapsedByParent;
-    }
+    if (group !== undefined) group.collapsed = true;
   }
   return draft;
 }
 
-/** Expand a stack from its handle button. Groups tagged by the last
- * minimizeStack expand (restoring the pre-minimize mix); when nothing is
- * tagged (every group was minimized individually) ALL groups expand. */
+/** Expand a whole stack -- the inverse of minimizeStack. */
 export function expandStack(
   layout: DockLayout,
   groupIds: GroupId[],
 ): DockLayout {
-  const present = groupIds
-    .map((gid) => layout.groups[gid])
-    .filter((g): g is TabGroup => g !== undefined);
-  const tagged = present.filter((g) => g.collapsedByParent === true);
-  const targets = tagged.length > 0 ? tagged : present;
-  if (
-    !targets.some(
-      (g) => g.collapsed === true || g.collapsedByParent === true,
-    )
-  ) {
+  if (groupIds.every((gid) => layout.groups[gid]?.collapsed !== true))
     return layout;
-  }
   const draft = clone(layout);
-  for (const target of targets) {
-    const group = draft.groups[target.id];
-    group.collapsed = false;
-    delete group.collapsedByParent;
+  for (const gid of groupIds) {
+    const group = draft.groups[gid];
+    if (group !== undefined) group.collapsed = false;
   }
   return draft;
+}
+
+/** Enforce the stack-uniform-collapse invariant: in any stack of 2+ groups (a
+ * column split's leaf children, or a floating window's stack) every member
+ * shares one collapsed state. A LONE group (its own column/window) may be
+ * independently minimized. When a stack is non-uniform, EXPANDED dominates: the
+ * whole stack expands. This makes the "some panels minimized, some short inside
+ * one stack" state -- the source of the per-cell weight/render pathology --
+ * unrepresentable by construction. Run on every commit (see applyOp), so any op
+ * that would leave a mixed stack is corrected before render. Mutates `layout` in
+ * place; returns whether anything changed.
+ *
+ * Only `collapsed` is cleared here -- a lone group keeps its own collapse, and a
+ * uniformly-minimized stack is left alone (so minimizeStack's all-collapsed
+ * result survives). */
+export function normalizeStackCollapse(layout: DockLayout): boolean {
+  let changed = false;
+  const expandAll = (groupIds: GroupId[]): void => {
+    for (const gid of groupIds) {
+      const g = layout.groups[gid];
+      if (g !== undefined && g.collapsed === true) {
+        g.collapsed = false;
+        changed = true;
+      }
+    }
+  };
+  // A column split's DIRECT leaf children form one vertical stack.
+  const walk = (node: DockNode): void => {
+    if (node.type !== "split") return;
+    const stack = columnLeafGroups(node);
+    if (
+      stack.length >= 2 &&
+      stack.some((gid) => layout.groups[gid]?.collapsed !== true)
+    ) {
+      expandAll(stack);
+    }
+    node.children.forEach(walk);
+  };
+  for (const edge of ["left", "right"] as const) {
+    const tree = layout.docked[edge];
+    if (tree !== null) walk(tree);
+  }
+  // Floating windows: the stack array is the unit.
+  for (const win of layout.floating) {
+    if (
+      win.stack.length >= 2 &&
+      win.stack.some((gid) => layout.groups[gid]?.collapsed !== true)
+    ) {
+      expandAll(win.stack);
+    }
+  }
+  return changed;
 }
 
 /** Set node weights by node id (anywhere in a docked region's tree). Robust to
@@ -1257,11 +1443,386 @@ export function setRegionWidth(
 export function setActiveTab(
   layout: DockLayout,
   groupId: GroupId,
-  panelId: PanelId,
+  paneId: PaneId,
 ): DockLayout {
   const draft = clone(layout);
   const group = draft.groups[groupId];
-  if (group === undefined || !group.panelIds.includes(panelId)) return layout;
-  group.activeId = panelId;
+  if (group === undefined || !group.paneIds.includes(paneId)) return layout;
+  group.activeId = paneId;
+  return draft;
+}
+
+// ---------------------------------------------------------------------------
+// Standalone panels (server-authored placement).
+//
+// A standalone panel (from Python `server.gui.add_panel()`) is a tab group that
+// lives as its OWN top-level dock group rather than nested in the control panel.
+// The server sends a coalesced `placement` describing where it should go; the
+// ops below seed and re-apply that placement. After the initial placement the
+// user may drag the panel anywhere -- a later server placement command
+// repositions it again (imperative, not continuous sync).
+// ---------------------------------------------------------------------------
+
+/** The placement state the dock applies to a panel: a per-axis bundle the
+ * caller assembles from the client-owned placement store. Each field is the
+ * latest value the server wrote (or null when never set). `position` is the
+ * wire shape of `GuiSetPanelPositionMessage`. Each command is independent and
+ * always applied -- a set_width carries no position, so applying width can never
+ * re-dock a panel. */
+export interface PanelPlacement {
+  position: GuiSetPanelPositionMessage["position"] | null;
+  width: number | null;
+  height: number | null;
+  collapsed: boolean | null;
+}
+
+/** Default float geometry when the server leaves x/y/size unspecified: the
+ * top-left corner of the canvas (inset by the same 15px pad the control panel
+ * floats with). `float()` with no coords lands here. */
+const DEFAULT_FLOAT_X = 15;
+const DEFAULT_FLOAT_Y = 15;
+const DEFAULT_FLOAT_WIDTH = 300;
+
+/** The canvas geometry needed to resolve a (possibly negative) requested float
+ * position into an absolute, parent-relative window position. */
+export interface CanvasBounds {
+  /** Full dock-root width / height in px. */
+  width: number;
+  height: number;
+  /** Docked-region insets (the canvas is the area between them). */
+  leftInset: number;
+  rightInset: number;
+}
+
+/** Resolve a server-requested float coordinate pair (canvas-relative, possibly
+ * negative) into an absolute parent-relative window position, given the window's
+ * rendered size and the canvas bounds. Semantics:
+ * - x >= 0: `leftInset + x` (x px from the canvas LEFT boundary).
+ * - x <  0: right edge `|x|`px from the canvas RIGHT boundary, i.e.
+ *   `(width - rightInset) - winWidth + x`.
+ * - y >= 0: `y` (from the top).
+ * - y <  0: bottom edge `|y|`px from the bottom, i.e. `height - winHeight + y`.
+ * When the canvas is measured (width/height > 0), the result is clamped to keep
+ * the window's top-left within it (a window larger than the canvas pins to the
+ * canvas left/top). When the canvas isn't measured yet (width/height 0, e.g. a
+ * first apply before layout), a NEGATIVE coord can't be resolved against a
+ * missing far edge, so it falls back to the canvas-left/top (positive raw values
+ * pass through unclamped); the post-render effect re-resolves once measured. */
+export function resolveRequestedFloatPosition(
+  anchorX: number,
+  anchorY: number,
+  winWidth: number,
+  winHeight: number,
+  bounds: CanvasBounds,
+): { x: number; y: number } {
+  const canvasRight = bounds.width - bounds.rightInset;
+  // A negative coord is a gap from the FAR edge -- but that needs a measured
+  // canvas. When unmeasured (width/height 0, e.g. the first apply before
+  // layout), fall back to the near edge (left/top) so the window isn't placed
+  // off-screen; the post-render effect re-resolves once the canvas is measured.
+  let x: number;
+  if (anchorX < 0) {
+    x = bounds.width > 0 ? canvasRight - winWidth + anchorX : bounds.leftInset;
+  } else {
+    x = bounds.leftInset + anchorX;
+  }
+  let y: number;
+  if (anchorY < 0) {
+    y = bounds.height > 0 ? bounds.height - winHeight + anchorY : 0;
+  } else {
+    y = anchorY;
+  }
+  // Clamp against a measured canvas (a too-big window pins to the near edge); an
+  // unmeasured canvas can't clamp meaningfully.
+  if (bounds.width > 0) {
+    x = clamp(x, bounds.leftInset, Math.max(bounds.leftInset, canvasRight - winWidth));
+  }
+  if (bounds.height > 0) {
+    y = clamp(y, 0, Math.max(0, bounds.height - winHeight));
+  }
+  return { x, y };
+}
+
+/** Find the group whose paneIds are exactly this panel's panes (the standalone
+ * panel's own group), or null if its panes aren't yet grouped together. We key
+ * off the FIRST pane: a standalone panel always owns its panes, so whatever
+ * group holds the first pane is the panel's group. */
+function panelGroupOf(layout: DockLayout, paneIds: PaneId[]): GroupId | null {
+  if (paneIds.length === 0) return null;
+  return findPaneGroup(layout, paneIds[0]);
+}
+
+/** Reconcile a panel group's membership against the server's pane list, IN
+ * PLACE, preserving the user's existing tab order for panes that remain. Panes
+ * the server added are appended (in server order); panes the server removed are
+ * dropped; `activeId` is kept unless it was removed. Does NOT reorder existing
+ * panes to match the server (the user may have reordered tabs locally). */
+function reconcileMembershipInPlace(group: TabGroup, paneIds: PaneId[]): void {
+  const wanted = new Set(paneIds);
+  // Keep current panes that still exist (preserves user order), then append any
+  // newly-added server panes not already present (in server order).
+  const kept = group.paneIds.filter((p) => wanted.has(p));
+  const added = paneIds.filter((p) => !group.paneIds.includes(p));
+  group.paneIds = [...kept, ...added];
+  if (group.paneIds.length > 0 && !group.paneIds.includes(group.activeId)) {
+    group.activeId = group.paneIds[0];
+  }
+}
+
+/** Ensure this panel's panes live together in a single group, returning that
+ * group's id. Creates the group (expanded) if the panes aren't placed yet; if
+ * they're already grouped, reuses it and reconciles membership. `collapsed` is
+ * the latest server-written value (or null when never set): true collapses the
+ * group, false expands it, null leaves it as-is -- a plainly applied field, no
+ * one-shot/prev gating. */
+function ensurePanelGroup(
+  draft: DockLayout,
+  paneIds: PaneId[],
+  collapsed: boolean | null,
+): GroupId | null {
+  if (paneIds.length === 0) return null;
+  let groupId = panelGroupOf(draft, paneIds);
+  if (groupId === null) {
+    const group = makeGroup(paneIds);
+    draft.groups[group.id] = group;
+    groupId = group.id;
+  } else {
+    applyMembership(draft, groupId, paneIds);
+  }
+  // Apply the collapsed field (always applied -- no prevCollapsed): true sets
+  // the group's collapsed flag; false expands it; null/undefined leaves it
+  // untouched.
+  if (collapsed === true) {
+    draft.groups[groupId].collapsed = true;
+  } else if (collapsed === false) {
+    draft.groups[groupId].collapsed = false;
+  }
+  return groupId;
+}
+
+/** Re-assemble a panel's panes into its existing group and reconcile its
+ * membership in place (the reuse branch of ensurePanelGroup). */
+function applyMembership(
+  draft: DockLayout,
+  groupId: GroupId,
+  paneIds: PaneId[],
+): void {
+  // A placement command re-assembles the WHOLE panel into its home group. Any
+  // pane the user dragged out into another group/window is MOVED back here via
+  // the single move primitive (detach-then-insert), so a pane can't be left in
+  // two places. reconcileMembershipInPlace then drops any panes no longer in the
+  // panel and fixes order/activeId.
+  for (const paneId of paneIds) movePaneInPlace(draft, paneId, groupId);
+  reconcileMembershipInPlace(draft.groups[groupId], paneIds);
+}
+
+/** Reconcile a standalone panel's group membership (tabs added/removed) WITHOUT
+ * repositioning it. Used on tab-list changes so a user-moved panel isn't yanked
+ * back to its server placement just because a tab was added. No-op until the
+ * panel's group exists (placement creates it). */
+export function reconcilePanelMembership(
+  layout: DockLayout,
+  paneIds: PaneId[],
+): DockLayout {
+  if (paneIds.length === 0) return layout;
+  const groupId = panelGroupOf(layout, paneIds);
+  if (groupId === null) return layout;
+  const draft = clone(layout);
+  reconcileMembershipInPlace(draft.groups[groupId], paneIds);
+  return draft;
+}
+
+/** Resolve an anchor panel uuid to its current docked leaf, so a split can be
+ * placed against it. Returns null when the anchor isn't docked (e.g. floating,
+ * or not yet placed) -- the caller falls back to a plain edge dock. */
+function resolveAnchorLeaf(
+  layout: DockLayout,
+  anchorGroupId: GroupId,
+): { edge: DockEdge; nodeId: NodeId } | null {
+  const loc = findGroupLocation(layout, anchorGroupId);
+  if (loc === null || loc.kind !== "docked") return null;
+  return { edge: loc.edge, nodeId: loc.nodeId };
+}
+
+/** Apply the client-owned `placement` bundle to a panel, (re)positioning it.
+ *
+ * `paneIds` are the panel's tabs (its container ids), `anchorGroupOf` maps an
+ * anchor panel uuid to its current group id (the caller knows how to resolve
+ * both standalone panels and the control panel).
+ *
+ * Each field of `placement` is the latest value the server wrote, and is ALWAYS
+ * applied when present -- there is no before/after gating. Because the four
+ * write-only commands are independent (a set_width carries no position), applying
+ * any single field can never re-dock a panel: a position re-docks/re-floats only
+ * when `position != null`, and that only happens when the server actually sent a
+ * position command. The caller's per-command dedup (appliedPlacementKey) keeps an
+ * unrelated re-render from re-applying the same bundle.
+ *
+ * Options:
+ * - `floatIfUnplaced` (default true): when the placement has no position AND the
+ *   panel isn't placed yet, float it at the default so a bare `add_panel()` is
+ *   visible. Pass false for the control panel, which is placed separately.
+ * - `canvasBounds`: canvas size + docked insets, used to resolve a float's
+ *   (possibly negative) requested coords into an absolute position. Server float
+ *   coords are canvas-relative (and negatives are gaps from the far edge); the
+ *   requested values are also stashed on the window so the position re-resolves
+ *   as the canvas changes (see resolveRequestedFloatPosition + the DockManager
+ *   effect). Defaults to a zero-inset canvas if omitted.
+ */
+export function applyPanelPlacement(
+  layout: DockLayout,
+  paneIds: PaneId[],
+  placement: PanelPlacement,
+  anchorGroupOf: (uuid: string) => GroupId | null,
+  opts: {
+    floatIfUnplaced?: boolean;
+    canvasBounds?: CanvasBounds;
+  } = {},
+): DockLayout {
+  const floatIfUnplaced = opts.floatIfUnplaced ?? true;
+  const bounds: CanvasBounds = opts.canvasBounds ?? {
+    width: 0,
+    height: 0,
+    leftInset: 0,
+    rightInset: 0,
+  };
+  if (paneIds.length === 0) return layout;
+  let draft = clone(layout);
+  const groupId = ensurePanelGroup(draft, paneIds, placement.collapsed);
+  if (groupId === null) return layout;
+
+  // Float a group at the given REQUESTED coords: record them on the window (so
+  // the position re-resolves on canvas changes) and set an initial absolute
+  // position from the current bounds + window size.
+  //
+  // If the group is ALREADY the sole occupant of a floating window, reuse that
+  // window (preserving its id, z-order, and -- when the user has taken manual
+  // control of its position via a drag, i.e. anchor was cleared -- its current
+  // position). This is what makes a later size-only re-placement (set_width /
+  // set_height) update the size without recreating the window or yanking a
+  // user-dragged panel back to its server anchor. A fresh float (group docked or
+  // unplaced) makes a new window as before.
+  const floatAtRequested = (
+    reqX: number,
+    reqY: number,
+    width: number,
+    height: number | undefined,
+  ): void => {
+    const loc = findGroupLocation(draft, groupId);
+    const reusable =
+      loc?.kind === "floating"
+        ? draft.floating.find((w) => w.id === loc.windowId)
+        : undefined;
+    let win: FloatingWindow | undefined;
+    // Reuse only a SOLO window (this group is its whole stack) -- a multi-group
+    // stack must keep its other groups, so re-float into a fresh window.
+    if (reusable !== undefined && reusable.stack.length === 1) {
+      win = reusable;
+      win.width = width;
+      win.height = windowHeight(height);
+    } else {
+      const result = floatGroup(draft, groupId, reqX, reqY, width, height);
+      draft = result.layout;
+      if (result.windowId === null) return;
+      win = draft.floating.find((w) => w.id === result.windowId);
+      if (win === undefined) return;
+    }
+    // A user-dragged window (anchor cleared) keeps its position on a size-only
+    // re-placement; otherwise (re)anchor and resolve against the live canvas.
+    const userOwnsPosition = win === reusable && win.anchor === undefined;
+    if (!userOwnsPosition) {
+      win.anchor = { x: reqX, y: reqY };
+      const resolved = resolveRequestedFloatPosition(
+        reqX,
+        reqY,
+        win.width,
+        pinnedPxOf(win.height) ?? 0,
+        bounds,
+      );
+      win.x = resolved.x;
+      win.y = resolved.y;
+    }
+  };
+
+  const position = placement.position;
+  if (position === null) {
+    // No explicit position. If the panel isn't placed anywhere yet, float it at
+    // the default so a freshly-created `add_panel()` (no placement verb called)
+    // is still VISIBLE rather than an orphaned group rendered nowhere. A panel
+    // the user already moved is left alone. `floatIfUnplaced` is opt-in so the
+    // control panel (placed separately by ControlPanelDockSync) isn't affected.
+    if (floatIfUnplaced && findGroupLocation(draft, groupId) === null) {
+      floatAtRequested(
+        DEFAULT_FLOAT_X,
+        DEFAULT_FLOAT_Y,
+        placement.width ?? DEFAULT_FLOAT_WIDTH,
+        placement.height ?? undefined,
+      );
+    }
+  } else {
+    if (position.kind === "edge") {
+      const loc = findGroupLocation(draft, groupId);
+      // ALWAYS dock to the requested edge (a position command means "dock here").
+      // Skip only the redundant re-dock when the group is ALREADY docked on this
+      // edge: re-docking would detach + recreate the leaf with a fresh node id,
+      // which makes the width reconciler treat it as a new column and reset its
+      // width to the default (and needlessly reorder a multi-panel region).
+      // Leaving it in place keeps the column id stable.
+      const alreadyHere = loc?.kind === "docked" && loc.edge === position.edge;
+      if (!alreadyHere) draft = dockToEdge(draft, [groupId], position.edge);
+    } else if (position.kind === "float") {
+      // Canvas-relative coords; negatives are gaps from the far edge. Resolved
+      // against the live canvas + window size (and re-resolved on canvas changes
+      // via the stored anchor).
+      floatAtRequested(
+        position.x ?? DEFAULT_FLOAT_X,
+        position.y ?? DEFAULT_FLOAT_Y,
+        placement.width ?? DEFAULT_FLOAT_WIDTH,
+        placement.height ?? undefined,
+      );
+    } else {
+      // split: dock above/below the anchor's docked leaf. Fall back to a right
+      // edge dock when the anchor isn't docked (floating / not yet placed).
+      const anchorGroupId = anchorGroupOf(position.anchor_uuid);
+      const leaf =
+        anchorGroupId === null
+          ? null
+          : resolveAnchorLeaf(draft, anchorGroupId);
+      if (leaf === null) {
+        // The dock model can only split against a DOCKED anchor; the anchor here
+        // is floating, not yet placed, or gone. Surface it (a silent fallback
+        // reads as "dock_above/below did nothing sensible") and fall back to a
+        // right-edge dock so the panel is at least visible.
+        console.warn(
+          `[viser] dock_above/dock_below: anchor "${position.anchor_uuid}" is not ` +
+            `docked, so the panel can't split against it. Falling back to the ` +
+            `right edge. Dock the anchor first (only docked panels are valid ` +
+            `split anchors).`,
+        );
+        draft = dockToEdge(draft, [groupId], "right");
+      } else {
+        const region: DropRegion = position.side === "above" ? "top" : "bottom";
+        draft = dropOnDockedLeaf(draft, [groupId], leaf.edge, leaf.nodeId, region);
+      }
+    }
+  }
+
+  // Size: width is region width when docked / window width when floating; height
+  // only applies to a floating window. Neither op relocates the group, so one
+  // location lookup serves both.
+  if (placement.width !== null || placement.height !== null) {
+    const loc = findGroupLocation(draft, groupId);
+    if (loc?.kind === "docked" && placement.width !== null) {
+      draft = setRegionWidth(draft, loc.edge, placement.width);
+    } else if (loc?.kind === "floating") {
+      if (placement.width !== null) {
+        draft = resizeWindow(draft, loc.windowId, placement.width);
+      }
+      if (placement.height !== null) {
+        draft = resizeWindowHeight(draft, loc.windowId, placement.height);
+      }
+    }
+  }
+
   return draft;
 }

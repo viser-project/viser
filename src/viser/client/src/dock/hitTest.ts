@@ -5,7 +5,7 @@
 // drop a pointer position maps to, plus the geometry of the visual hint. It is
 // intentionally DOM-free so it can be unit tested with synthetic rects.
 
-import { edgeIsSingleLeaf } from "./layoutOps";
+import { edgeIsSingleLeaf, isColumnMinimized } from "./layoutOps";
 import {
   AreaId,
   clamp,
@@ -14,7 +14,8 @@ import {
   DropRegion,
   GroupId,
   NodeId,
-  PanelId,
+  PaneId,
+  SPLIT_DIVIDER_PX,
   WindowId,
 } from "./types";
 
@@ -25,12 +26,24 @@ import { DEFAULT_REGION_PX } from "./types";
 // Screen-edge zone width (only active on an empty edge).
 const EDGE_ZONE_PX = 48;
 // Thin band at a docked region's outer top/bottom edge -> full-span row above/
-// below ALL columns. Kept thin so it doesn't shadow the topmost panels' grip
+// below ALL columns. Kept thin so it doesn't shadow the topmost panes' grip
 // bars (where per-panel "above this one" lives); it sits at the screen edge for
 // left/right regions, so it's still easy to hit by slamming the cursor up/down.
 const REGION_EDGE_PX = 8;
 // Wider band at a region's left/right edges -> full-height column beside all.
 const REGION_SIDE_PX = 40;
+// Thin left/right side band (pixels) on a MINIMIZED vertical strip: small so the
+// two edges don't swallow a ~36px strip's whole width, leaving the middle free
+// for its tab-insert / merge zones while the true edges still dock a column.
+const MINIMIZED_SIDE_BAND_PX = 8;
+// Horizontal inset for a minimized strip's tab-insertion line, so it reads as a
+// marker between rows rather than a full-width rule against the strip's borders.
+const INSERT_LINE_INSET_PX = 4;
+// Thin top/bottom edge band (px) on a content-sized minimized strip: a drop in
+// this band stacks a new cell above/below, while the + cap just inside the top
+// edge stays a MERGE target (capped to a third of the cell so a short strip
+// keeps a merge zone).
+const MINIMIZED_EDGE_BAND_PX = 6;
 // Band fraction (of the content area) for a per-panel left/right split, capped
 // in pixels so it doesn't balloon on a wide panel.
 const SPLIT_BAND = 0.22;
@@ -39,6 +52,10 @@ const SPLIT_BAND_H_MAX_PX = 70;
 // balloon on a tall panel -- the bulk of the content area stays "merge".
 const SPLIT_BAND_V = 0.15;
 const SPLIT_BAND_V_MAX_PX = 70;
+// Max vertical gap between two stacked docked panels still treated as ONE seam
+// (the divider). Slightly above SPLIT_DIVIDER_PX for sub-px layout slack; small
+// enough that two genuinely separated panels aren't fused.
+const SEAM_GAP_MAX_PX = SPLIT_DIVIDER_PX + 3;
 
 /** Where a drop will land, resolved from the pointer during a drag.
  * - edge: dock as a new outer column on an empty screen edge.
@@ -82,7 +99,7 @@ export interface GroupTarget {
    * falls through to the host panel's edge zones. Defaults to `rect`. */
   hitRect?: DOMRect;
   stripRect: DOMRect | null;
-  tabs: { panelId: PanelId; rect: DOMRect }[];
+  tabs: { paneId: PaneId; rect: DOMRect }[];
   ctx: GroupContext;
   /** True when the group is minimized (only its handle shows). Such a target
    * has no content area, so its whole bar is treated as a 5-way drop zone.
@@ -203,9 +220,43 @@ export const tabInsertion = (
   };
 };
 
+/** Vertical analog of tabInsertion for a MINIMIZED strip's stacked spine-label
+ * rows: pick the nearest row by Y and return the insert index plus a HORIZONTAL
+ * insertion line (between rows / above the first / below the last). Lets a drop
+ * land at a specific position in a minimized tab set, mirroring how dropping
+ * between expanded horizontal tabs works. */
+export const verticalTabInsertion = (
+  tabs: { rect: DOMRect }[],
+  y: number,
+): { index: number; lineLeft: number; lineTop: number; lineWidth: number } | null => {
+  if (tabs.length === 0) return null;
+  let best = 0;
+  let bestDy = Infinity;
+  let after = false;
+  tabs.forEach((t, i) => {
+    const r = t.rect;
+    const dy = y - (r.top + r.height / 2);
+    if (Math.abs(dy) < bestDy) {
+      bestDy = Math.abs(dy);
+      best = i;
+      after = dy > 0;
+    }
+  });
+  const r = tabs[best].rect;
+  // Inset the horizontal line from both strip edges so it reads as an insertion
+  // marker, not a full-width rule hugging the ~36px strip's borders (mirrors the
+  // horizontal path, which nudges its line in from the leftmost tab edge).
+  return {
+    index: after ? best + 1 : best,
+    lineLeft: r.left + INSERT_LINE_INSET_PX,
+    lineTop: after ? r.bottom : r.top,
+    lineWidth: Math.max(2, r.width - 2 * INSERT_LINE_INSET_PX),
+  };
+};
+
 /** Resolve the drop result + visual hint for a pointer position. Hints are
  * sized to the true post-drop geometry (respecting the min panel width) so they
- * preview the result without reflowing real panels. */
+ * preview the result without reflowing real panes. */
 export function hitTest(
   layout: DockLayout,
   regionWidth: Record<DockEdge, number>,
@@ -269,12 +320,63 @@ export function hitTest(
     };
   }
 
+  // A region-edge band spans the WHOLE region, including the strip of a panel
+  // that sits flush at the region's top/left/right. But a drop directly over a
+  // panel's tab STRIP is a more specific intent -- "insert at this tab
+  // position" -- than the region-wide "span all beside everything". Without
+  // this, the leftmost tab of a stacked (column) region always sits inside the
+  // 40px left region-side band and the topmost panel's strip sits inside the
+  // 8px top band, so dropping there docks a region span (or wrong index)
+  // instead of inserting at index 0. So: if the pointer is over a tab strip
+  // where a tab-insert WOULD actually resolve (a mergeable docked/floating
+  // group, the drag itself is mergeable, and the pointer maps to a tab), let
+  // section 3 handle it and skip the region-edge bands. Outermost region-edge
+  // docking is unaffected: the content area, grip bar, and screen edges are
+  // not strips, so they still hit the region bands.
+  const overInsertableStrip = (): boolean => {
+    if (draggingUnmergeable) return false;
+    for (const t of targets.groups) {
+      if (
+        t.stripRect === null ||
+        t.unmergeable === true ||
+        t.collapsed === true ||
+        t.ctx.kind === "area"
+      )
+        continue;
+      if (
+        inside(t.stripRect, clientX, clientY) &&
+        tabInsertion(t.tabs, clientX, clientY) !== null
+      )
+        return true;
+    }
+    return false;
+  };
+  const skipRegionEdges = overInsertableStrip();
+
+  // Is the pointer over a COLLAPSED strip cell of the given docked edge? Such a
+  // cell owns its own (short, content-tall) drop zones -- tab-insert / merge /
+  // stack -- so the region-wide "dock beside" band must yield to it there. Used
+  // to let a sole minimized strip's EMPTY region area below/around it still dock
+  // a full-height sibling column without the band eating the strip's own zones.
+  const overCollapsedCell = (edge: DockEdge): boolean => {
+    for (const t of targets.groups) {
+      if (
+        t.collapsed === true &&
+        t.ctx.kind === "docked" &&
+        t.ctx.edge === edge &&
+        inside(t.rect, clientX, clientY)
+      )
+        return true;
+    }
+    return false;
+  };
+
   // 2. Region edges -> dock a full-span band beside everything in the region.
   // Checked before per-panel zones so an outermost panel's edge means "span
   // all" rather than "split just this one"; an interior panel is past these
   // bands, so its own split wins. Each is suppressed when the edge is a single
   // full-span leaf (then it would be identical to the per-panel split).
-  for (const edge of ["left", "right"] as DockEdge[]) {
+  for (const edge of skipRegionEdges ? [] : (["left", "right"] as DockEdge[])) {
     const tree = layout.docked[edge];
     if (tree === null) continue;
     const w = regionWidth[edge];
@@ -286,6 +388,32 @@ export function hitTest(
     // per-panel split, just region-wide. (Previously a translucent half-region
     // "ghost" rectangle, which read inconsistently next to the per-panel lines.)
     const t = 3;
+    // Cap each left/right side band at a THIRD of the region width so the two
+    // bands leave the middle third for the per-panel zones underneath. A
+    // fully-minimized region renders as a ~36px strip -- narrower than
+    // REGION_SIDE_PX (40) -- and an uncapped (or half-width) band would cover
+    // the whole strip, so a drop ALWAYS resolved to "dock a new column beside"
+    // and never reached the strip cell's own tab/stack zones (merge + above/
+    // below). With the third-cap the strip's middle falls through to those
+    // cell zones while its outer/inner thirds still dock a sibling column.
+    const sideBand = Math.min(REGION_SIDE_PX, w / 3);
+    // A single-leaf region normally suppresses these region-wide bands (its own
+    // per-panel split is identical, full leaf height). But a MINIMIZED region
+    // renders as a SHORT strip, so the per-panel split is only strip-tall and
+    // the large empty region area below it has no "dock beside" target. So when
+    // the region is minimized, keep the FULL-HEIGHT left/right bands:
+    //  - over the EMPTY area below the strip: the whole column width docks a
+    //    sibling (no dead center stripe),
+    //  - over the strip CELL itself: only the outer/inner thirds dock beside
+    //    (full height), leaving the middle third for the cell's own tab-insert /
+    //    merge zones.
+    const regionMinimized = isColumnMinimized(tree, layout.groups);
+    const keepSideBand = regionMinimized;
+    const effSideBand = !keepSideBand
+      ? sideBand
+      : overCollapsedCell(edge)
+        ? sideBand // over the strip: thirds (center falls through to the cell)
+        : w; // empty area: full column width
 
     // Top / bottom: full-width line above/below everything.
     if (cy < REGION_EDGE_PX && !edgeIsSingleLeaf(tree, "top")) {
@@ -307,13 +435,19 @@ export function hitTest(
       };
     }
     // Left / right (inner *and* outer): full-height line beside all rows.
-    if (cx - regionLeft < REGION_SIDE_PX && !edgeIsSingleLeaf(tree, "left")) {
+    if (
+      cx - regionLeft < effSideBand &&
+      (!edgeIsSingleLeaf(tree, "left") || keepSideBand)
+    ) {
       return {
         result: { kind: "regionEdge", edge, side: "left" },
         hint: { left: regionLeft, top: 0, width: t, height: crect.height, variant: "line" },
       };
     }
-    if (regionRight - cx < REGION_SIDE_PX && !edgeIsSingleLeaf(tree, "right")) {
+    if (
+      regionRight - cx < effSideBand &&
+      (!edgeIsSingleLeaf(tree, "right") || keepSideBand)
+    ) {
       return {
         result: { kind: "regionEdge", edge, side: "right" },
         hint: {
@@ -335,7 +469,93 @@ export function hitTest(
   for (const t of targets.groups) {
     if (hitsTarget(t, clientX, clientY)) g = t;
   }
-  if (g === undefined) return null;
+
+  // The visual SEAM between two vertically-stacked docked panels [A above B] is
+  // split across three slivers that all mean the same thing -- "insert a leaf
+  // between A and B": A's content bottom band (3c, region "bottom"), the
+  // ~SPLIT_DIVIDER_PX divider gap (a target-less strip), and B's grip bar (3a,
+  // region "top"). To make the hint feel like ONE stable target we (1) snap the
+  // line for both bands to the gap CENTER so it doesn't jump A.bottom<->B.top,
+  // and (2) treat the divider gap itself as part of the seam so there is no
+  // NONE dead frame as the pointer crosses it.
+  //
+  // dockedSeamSibling: given a docked group `g` and which side ("top"/"bottom")
+  // a split would land on, find the immediately-adjacent docked sibling across
+  // a small vertical gap (same edge, horizontally overlapping). Returns the
+  // sibling and the gap-center y, or null when `g` is at the region's outer edge
+  // (single panel / region boundary), where the existing r.top/r.bottom +
+  // on-screen clamp behavior must be preserved.
+  const dockedSeamSibling = (
+    self: GroupTarget,
+    side: "top" | "bottom",
+  ): { gapCenter: number } | null => {
+    if (self.ctx.kind !== "docked") return null;
+    const edge = self.ctx.edge;
+    const sr = self.rect;
+    const selfBoundary = side === "top" ? sr.top : sr.bottom;
+    let best: { gapCenter: number; gap: number } | null = null;
+    for (const t of targets.groups) {
+      if (t === self || t.ctx.kind !== "docked" || t.ctx.edge !== edge) continue;
+      const tr = t.rect;
+      // Must horizontally overlap (same column) to be a vertical neighbor.
+      if (tr.right <= sr.left || tr.left >= sr.right) continue;
+      // The neighbor sits on the relevant side, just across the divider gap.
+      const otherBoundary = side === "top" ? tr.bottom : tr.top;
+      const gap = side === "top" ? sr.top - tr.bottom : tr.top - sr.bottom;
+      // Only an immediately-adjacent panel across a small gap counts (skip far
+      // panels / overlaps). The divider is SPLIT_DIVIDER_PX; allow a little slack.
+      if (gap < -1 || gap > SEAM_GAP_MAX_PX) continue;
+      if (best === null || gap < best.gap)
+        best = { gapCenter: (selfBoundary + otherBoundary) / 2, gap };
+    }
+    return best;
+  };
+
+  if (g === undefined) {
+    // Divider dead-spot recovery: the pointer is over the ~SPLIT_DIVIDER_PX gap
+    // between two stacked docked panels (the divider has no group target). Map
+    // it to the seam split it sits in the middle of, so the hint stays stable
+    // and gap-free instead of blinking to NONE.
+    let seam: { lower: GroupTarget; gapCenter: number } | null = null;
+    for (const t of targets.groups) {
+      if (t.ctx.kind !== "docked") continue;
+      const sib = dockedSeamSibling(t, "top");
+      if (sib === null) continue;
+      const tr = t.rect;
+      // `t` is the LOWER panel of the pair; the gap is just above it. Confirm
+      // the pointer is in that gap (and horizontally within the column).
+      if (
+        clientX >= tr.left &&
+        clientX <= tr.right &&
+        clientY < tr.top &&
+        clientY >= sib.gapCenter - SEAM_GAP_MAX_PX
+      ) {
+        if (seam === null || sib.gapCenter > seam.gapCenter)
+          seam = { lower: t, gapCenter: sib.gapCenter };
+      }
+    }
+    if (seam !== null && seam.lower.ctx.kind === "docked") {
+      const t = 3;
+      return {
+        result: {
+          kind: "split",
+          edge: seam.lower.ctx.edge,
+          nodeId: seam.lower.ctx.nodeId,
+          region: "top",
+        },
+        hint: rel(
+          {
+            left: seam.lower.rect.left,
+            top: seam.gapCenter - t / 2,
+            width: seam.lower.rect.width,
+            height: t,
+          },
+          "line",
+        ),
+      };
+    }
+    return null;
+  }
   const r = g.rect;
   const strip = g.stripRect;
 
@@ -348,10 +568,17 @@ export function hitTest(
     // Center the line on the seam, then clamp it fully inside the container so it
     // stays visible. A panel docked at the region's outer edge sits flush with the
     // screen edge, so a seam-centered line there would otherwise be half-clipped;
-    // a seam between two stacked/side-by-side panels is mid-region, so no clamp
+    // a seam between two stacked/side-by-side panes is mid-region, so no clamp
     // applies and "right of A" / "left of B" still draw the same line.
     if (region === "top" || region === "bottom") {
-      const raw = (region === "top" ? r.top : r.bottom) - t / 2;
+      // When this split lands on a SEAM shared with an adjacent stacked sibling
+      // (a divider gap between two docked panels), draw the line at the gap
+      // CENTER so "below A" and "above B" coincide instead of jumping the
+      // ~SPLIT_DIVIDER_PX divider width. With no sibling (region's outer edge),
+      // fall back to the panel boundary + on-screen clamp.
+      const seam = g!.ctx.kind === "docked" ? dockedSeamSibling(g!, region) : null;
+      const edgeY = region === "top" ? r.top : r.bottom;
+      const raw = (seam !== null ? seam.gapCenter : edgeY) - t / 2;
       const top = clamp(raw, crect.top, crect.top + crect.height - t);
       return rel({ left: r.left, top, width: r.width, height: t }, "line");
     }
@@ -391,42 +618,78 @@ export function hitTest(
     return { result: { kind: "merge", targetGroupId: g.groupId }, hint: rel(r, "merge") };
   }
 
-  // 3z. A minimized target has no content area, so its whole bar is a 5-way
-  // drop zone: edges split (docked) / snap (floating), center merges.
+  // 3z. A minimized target renders as a narrow vertical strip (a + cap atop a
+  // column of spine-label rows). It is a drop target the same way an expanded
+  // panel is, just rotated 90 degrees:
+  //   - thin OUTER/INNER side bands  -> dock a new column beside it (docked) /
+  //   - over a spine-label row       -> insert at THAT tab position (begin /
+  //                                     between / end), like dropping between
+  //                                     expanded horizontal tabs
+  //   - thin top/bottom bands        -> stack a new cell above/below (docked) /
+  //                                     snap above/below (floating)
+  //   - anything else (the + cap)    -> merge (append a tab)
   if (g.collapsed) {
     const rx = (clientX - r.left) / r.width;
-    const ry = (clientY - r.top) / r.height;
-    // Pixel-cap the vertical zones: a minimized VERTICAL strip is narrow but
-    // region-tall, and 30% of that height would be a huge "split above/below"
-    // band. (A no-op for the short horizontal handle bars, where the cap
-    // exceeds 30%.)
-    const V = Math.min(0.3, SPLIT_BAND_V_MAX_PX / Math.max(r.height, 1));
-    const H = 0.3;
+    // Thin pixel side bands so on a ~36px strip the two edges don't swallow the
+    // whole width -- the middle stays free for the tab/split zones.
+    const H = Math.min(0.3, MINIMIZED_SIDE_BAND_PX / Math.max(r.width, 1));
+    // The content-sized cell reads top-to-bottom like a rotated expanded panel:
+    //   - thin top/bottom EDGE bands   -> stack a new cell above/below (docked)
+    //                                     / snap above/below (floating)
+    //   - over a spine-label row       -> insert at that tab position
+    //   - everything else (the + cap)  -> merge (append a tab)
+    // The edge bands are thin pixel strips at the cell's very top/bottom, so the
+    // + cap (just inside the top edge) stays a MERGE target rather than being
+    // swallowed by an "above" zone. Insertion is suppressed for an unmergeable
+    // drag (can't become tabs) or an unmergeable target.
+    const canInsert = !draggingUnmergeable && !g.unmergeable && g.tabs.length > 0;
+    const edge = Math.min(MINIMIZED_EDGE_BAND_PX, r.height / 3);
+    const inTopEdge = clientY < r.top + edge;
+    const inBottomEdge = clientY > r.bottom - edge;
+    const ins =
+      canInsert && !inTopEdge && !inBottomEdge
+        ? verticalTabInsertion(g.tabs, clientY)
+        : null;
+    const insertResult = () =>
+      ins === null
+        ? null
+        : {
+            result: {
+              kind: "insertTab" as const,
+              targetGroupId: g.groupId,
+              index: ins.index,
+            },
+            hint: rel(
+              { left: ins.lineLeft, top: ins.lineTop - 1, width: ins.lineWidth, height: 2 },
+              "line" as const,
+            ),
+          };
     if (g.ctx.kind === "docked") {
       const e = g.ctx.edge;
       const n = g.ctx.nodeId;
-      if (ry < V) return { result: { kind: "split", edge: e, nodeId: n, region: "top" }, hint: splitLine("top") };
-      if (ry > 1 - V) return { result: { kind: "split", edge: e, nodeId: n, region: "bottom" }, hint: splitLine("bottom") };
       if (rx < H) return { result: { kind: "split", edge: e, nodeId: n, region: "left" }, hint: splitLine("left") };
       if (rx > 1 - H) return { result: { kind: "split", edge: e, nodeId: n, region: "right" }, hint: splitLine("right") };
-      return mergeResult();
+      if (inTopEdge) return { result: { kind: "split", edge: e, nodeId: n, region: "top" }, hint: splitLine("top") };
+      if (inBottomEdge) return { result: { kind: "split", edge: e, nodeId: n, region: "bottom" }, hint: splitLine("bottom") };
+      return insertResult() ?? mergeResult();
     }
-    // Floating minimized: snap above/below; left/right & center merge.
-    if (ry < V)
+    // Floating minimized: thin edge bands snap a new cell above/below; rows
+    // insert at a tab position; the rest merges (no docked region to split into).
+    if (inTopEdge)
       return {
         result: { kind: "snap", windowId: g.ctx.windowId, index: g.ctx.index },
         hint: rel({ left: r.left, top: r.top - 2, width: r.width, height: 4 }, "line"),
       };
-    if (ry > 1 - V)
+    if (inBottomEdge)
       return {
         result: { kind: "snap", windowId: g.ctx.windowId, index: g.ctx.index + 1 },
         hint: rel({ left: r.left, top: r.bottom - 2, width: r.width, height: 4 }, "line"),
       };
-    return mergeResult();
+    return insertResult() ?? mergeResult();
   }
 
   // 3a. Above the tab strip -> dock above (docked) / snap above (floating).
-  // For docked panels this is "span all above" territory at the very top (the
+  // For docked panes this is "span all above" territory at the very top (the
   // region-edge zone, checked earlier, usually wins for a multi-column row);
   // per-panel "above THIS one" lives in the content top band (3c).
   //

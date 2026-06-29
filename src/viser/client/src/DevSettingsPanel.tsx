@@ -1,5 +1,6 @@
 import React from "react";
-import { Switch, Select, Stack, Paper, Tooltip } from "@mantine/core";
+import { Button, Switch, Select, Stack, Paper, Tooltip } from "@mantine/core";
+import { IconLayoutDistributeHorizontal } from "@tabler/icons-react";
 import { ViewerContext } from "./ViewerContext";
 
 interface DevSettingsPanelProps {
@@ -17,6 +18,13 @@ export function DevSettingsPanel({ devSettingsStore }: DevSettingsPanelProps) {
   const logCamera = devSettingsStore((state) => state.logCamera);
   const enableOrbitCrosshair = devSettingsStore(
     (state) => state.enableOrbitCrosshair,
+  );
+
+  // The panel layout is "changed" once the user has manually moved/resized any
+  // panel (the dirty bit set by dock gestures). Reset discards that so the
+  // server's placement re-applies.
+  const layoutChanged = viewer.useGui((state) =>
+    Object.values(state.panelLayoutTracking).some((t) => t.userTouched),
   );
 
   const darkMode = viewer.useGui((state) => state.theme.dark_mode);
@@ -139,6 +147,26 @@ export function DevSettingsPanel({ devSettingsStore }: DevSettingsPanelProps) {
             radius="xs"
             clearable={false}
           />
+        </Tooltip>
+
+        <Tooltip
+          label={
+            layoutChanged
+              ? "Discard your panel rearrangement and restore the layout the server set."
+              : "No panel changes to reset."
+          }
+          refProp="rootRef"
+        >
+          <Button
+            size="xs"
+            radius="xs"
+            variant="default"
+            leftSection={<IconLayoutDistributeHorizontal size={14} />}
+            disabled={!layoutChanged}
+            onClick={() => viewer.guiActions.resetPanelLayout()}
+          >
+            Reset Panel Layout
+          </Button>
         </Tooltip>
       </Stack>
     </Paper>

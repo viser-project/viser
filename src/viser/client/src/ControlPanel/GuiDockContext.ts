@@ -6,15 +6,17 @@
 // config -- independent of whether the tab group component is currently
 // mounted (it unmounts whenever an ancestor tab is inactive). When the server
 // removes the tab group, the surface drops its specs and the dock layout
-// removes the panels from wherever the user moved them.
+// removes the panes from wherever the user moved them.
 
 import React from "react";
 
 export interface GuiDockContextValue {
-  /** Register a GUI tab group (by uuid) as a source of dock panels. Idempotent;
-   * safe to call on every render. There is deliberately no unregister -- spec
-   * lifetime follows the SERVER config, not component mount state. */
-  registerTabGroup: (uuid: string) => void;
+  /** Register a tab container (by uuid) as a source of dock panes. `source`
+   * selects where its tab content lives: "gui" for an inline tab group (config
+   * store), "panel" for a standalone panel (panels store). Idempotent; safe to
+   * call on every render. There is deliberately no unregister -- spec lifetime
+   * follows the SERVER config, not component mount state. */
+  registerTabGroup: (uuid: string, source?: "gui" | "panel") => void;
 }
 
 /** Null outside the dock surface (sidebar/mobile layouts, modals): GUI tab

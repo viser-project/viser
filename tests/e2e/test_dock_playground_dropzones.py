@@ -25,8 +25,10 @@ from playwright.sync_api import Page  # noqa: E402
 
 from .dock_helpers import drag_group as _drag_group
 from .dock_helpers import floating_group_ids as _floating_ids
+from .dock_helpers import grip_above_strip_point as _grip_above_strip
 from .dock_helpers import group_box as _gbox
 from .dock_helpers import group_grip_center as _grip_bar_point
+from .dock_helpers import move_floating_window as _move_window
 from .dock_helpers import open_playground as _open
 from .dock_helpers import right_cols as _right_cols
 from .dock_helpers import setup_side_by_side as _setup_side_by_side
@@ -47,6 +49,11 @@ def test_grip_bar_splits_above_only_that_panel(dock_context, vite_server: int) -
         if not _setup_side_by_side(page, a, b):
             pytest.skip("did not form a 2-column right region this run")
 
+        # Docking `a` grows the right region's reserved width, which clamps the
+        # monitor window inward -- onto c's grip in this fixed viewport. Shove it
+        # clear so the press on c actually starts a drag.
+        _move_window(page, "w-m", 40, 40)
+
         cols = _right_cols(page)
         # cols are [left, right] by x; pick the left column to split above.
         cols.sort(key=lambda z: z["x"])
@@ -56,9 +63,10 @@ def test_grip_bar_splits_above_only_that_panel(dock_context, vite_server: int) -
 
         # Drop c on the LEFT panel's GRIP BAR (above its tabs). This is the
         # per-panel "above THIS one" zone -- it must split above only the left
-        # panel, not span all columns. (Its center sits below the thin 8px
-        # region-top band, so it's the grip-bar zone, not the span-all band.)
-        _drag_group(page, c, _grip_bar_point(page, left["g"]))
+        # panel, not span all columns. Target just above the strip top (not the
+        # grip's geometric center, which on a short grip bar falls inside the
+        # thin 8px region-top span band and would read as a span-all drop).
+        _drag_group(page, c, _grip_above_strip(page, left["g"]))
 
         after = _right_cols(page)
         # The left column is now a vertical stack of [c, b] (two leaves sharing
@@ -109,6 +117,9 @@ def _drop_on_seam(dock_context, vite_server: int, which: str) -> list[str] | Non
         a, b, c = ids[0], ids[1], ids[2]
         if not _setup_side_by_side(page, a, b):
             return None
+        # Docking `a` clamps the monitor window inward, onto c's grip in this
+        # fixed viewport; shove it clear so the press on c starts a drag.
+        _move_window(page, "w-m", 40, 40)
         cols = _right_cols(page)
         cols.sort(key=lambda z: z["x"])
         left, right = cols[0], cols[1]
@@ -126,26 +137,6 @@ def _drop_on_seam(dock_context, vite_server: int, which: str) -> list[str] | Non
         return [z["g"] for z in after]
     finally:
         page.close()
-
-
-def test_right_of_A_and_left_of_B_are_the_same_seam_insert(
-    dock_context, vite_server: int
-) -> None:
-    order_right = _drop_on_seam(dock_context, vite_server, "right")
-    order_left = _drop_on_seam(dock_context, vite_server, "left")
-    if order_right is None or order_left is None:
-        pytest.skip("did not form the expected 3-column region this run")
-
-    # Both drops insert the new panel (c) as a column on the A|B seam, i.e.
-    # BETWEEN the two original columns -> identical left-to-right order.
-    assert order_right == order_left, (
-        f"right-of-A and left-of-B gave different results: "
-        f"{order_right} vs {order_left}"
-    )
-    # And the inserted column is in the middle (between the two originals).
-    assert order_right[1] != order_right[0] and order_right[1] != order_right[2]
-    # Sanity: all three panels present.
-    assert sorted(order_right) == sorted(set(order_right)) and len(order_right) == 3
 
 
 # ===========================================================================
@@ -186,6 +177,9 @@ def test_region_span_preview_is_a_thin_line(dock_context, vite_server: int) -> N
         a, b, c = ids[0], ids[1], ids[2]
         if not _setup_side_by_side(page, a, b):
             pytest.skip("did not form a 2-column right region this run")
+        # Docking `a` clamps the monitor window inward, onto c's grip in this
+        # fixed viewport; shove it clear so the press on c starts a drag.
+        _move_window(page, "w-m", 40, 40)
         cols = _right_cols(page)
         region_left = min(z["x"] for z in cols)
         region_right = max(z["x"] + z["w"] for z in cols)

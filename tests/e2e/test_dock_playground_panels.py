@@ -31,7 +31,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import Page  # noqa: E402
 
-from .dock_helpers import columns, dock_layout, group, set_layout, window
+from .dock_helpers import columns, dock_layout, group, set_layout, stack, window
 from .dock_helpers import drag as _drag
 from .dock_helpers import open_playground as _open
 
@@ -158,7 +158,7 @@ def test_minimize_docked_scene_collapses_width_to_overlay_rail(
         page.locator(
             f'[data-dock-group="{scene_gid}"] [data-dock-minimize]'
         ).first.click()
-        page.wait_for_timeout(120)
+        page.wait_for_timeout(350)  # wait out the minimize width animation
 
         # The collapsed Scene is now a narrow vertical strip (~32px, NOT the
         # full docked-column width). Its rendered group box must be much narrower.
@@ -175,7 +175,7 @@ def test_minimize_docked_scene_collapses_width_to_overlay_rail(
         page.locator(
             f'[data-dock-group="{scene_gid}"] [data-dock-minimize]'
         ).first.click()
-        page.wait_for_timeout(120)
+        page.wait_for_timeout(350)  # wait out the expand width animation
         restored = _gbox(page, scene_gid)
         assert restored["w"] > mini["w"] + 20, (
             f"restoring did not widen the Scene back (mini {mini['w']} -> "
@@ -230,11 +230,20 @@ def test_main_panel_click_header_toggles_collapsed(
             "clicking the main panel header did not toggle collapsed"
         )
 
-        # Toggle back.
+        # Toggle back. Once collapsed, the floating main panel renders as a
+        # vertical strip (consistent with docked minimized panels) -- the header
+        # is gone, so expand via the strip's cell/+ cap, not the old header spot.
+        strip = page.query_selector(
+            f'[data-dock-group="{main_gid}"][data-dock-collapsed="true"]'
+        )
+        assert strip is not None, "collapsed main panel should render a strip"
+        sb = strip.bounding_box()
+        assert sb is not None
+        page.mouse.move(sb["x"] + sb["width"] / 2, sb["y"] + 12)
         page.mouse.down()
         page.mouse.up()
         page.wait_for_timeout(120)
-        assert _collapsed() == was, "second header click did not toggle collapsed back"
+        assert _collapsed() == was, "clicking the collapsed strip did not expand it"
     finally:
         page.close()
 
@@ -257,7 +266,7 @@ def test_snap_below_minimized_keeps_top_panel(dock_context, vite_server: int) ->
             ),
         )
         ctrl_win = "t-w-controls"
-        ctrl_gid, insp_gid = "t-controls", "t-inspector"
+        insp_gid = "t-inspector"
 
         # Snap inspector BELOW the (minimized) controls window.
         ctrl_box = _box(page, f'[data-floating-window="{ctrl_win}"]')
@@ -273,17 +282,187 @@ def test_snap_below_minimized_keeps_top_panel(dock_context, vite_server: int) ->
         stacked = _floating_window_id_for_panel(page, "controls")
         insp_after = _floating_window_id_for_panel(page, "inspector")
         if stacked is None or insp_after != stacked:
-            pytest.skip("inspector did not snap below controls this run")
+            pytest.skip("inspector did not land on controls this run")
 
-        # Both panels present in the stacked window.
-        n_groups = page.eval_on_selector_all(
-            f'[data-floating-window="{stacked}"] [data-dock-group]',
-            "els => els.length",
+        # Both panels ended up in the same window -- controls wasn't lost. The
+        # drop may snap a new cell (2 groups) or insert a tab into the strip (1
+        # group, 2 panes); either way both panels are present and reachable.
+        panes = page.evaluate(
+            """(w) => { const l = window.__dockLayout;
+                const win = l.floating.find((f) => f.id === w);
+                return win.stack.flatMap((g) => l.groups[g].paneIds); }""",
+            stacked,
         )
-        assert n_groups == 2, f"expected a 2-group stack, got {n_groups}"
-        # The top (controls) panel keeps a positive height (it didn't vanish).
-        ctrl_after = _gbox(page, ctrl_gid)
-        assert ctrl_after["h"] > 0, "the minimized top (controls) panel has no height"
+        assert "controls" in panes and "inspector" in panes, (
+            f"both panels should be in the window, got {panes}"
+        )
+        # Stack-uniform invariant: if it formed a 2-group stack, the two groups
+        # share one collapsed state (expanded wins, since inspector was expanded).
+        states = page.evaluate(
+            """(w) => { const l = window.__dockLayout;
+                const win = l.floating.find((f) => f.id === w);
+                return win.stack.map((g) => l.groups[g].collapsed === true); }""",
+            stacked,
+        )
+        assert len(set(states)) == 1, f"stack must be uniform-collapse, got {states}"
+    finally:
+        page.close()
+
+
+def test_minimized_cell_split_preview_has_no_blue_flood(
+    dock_context, vite_server: int
+) -> None:
+    """Hovering a split band on a MINIMIZED strip shows only the thin insertion
+    line -- never the 'shrink + tint the vacated half' leaf preview, which on a
+    region-tall strip floods the whole region light-blue (regression)."""
+    page = _open(dock_context, vite_server)
+    try:
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=stack(group(["controls", "inspector"], collapsed=True)),
+                floating=[window(group("console", collapsed=True), x=200, y=300)],
+            ),
+        )
+        gid = "t-controls"
+        cell = _box(page, f'[data-dock-group="{gid}"]')
+        cap = _box(page, '[data-dock-group="t-console"] [data-dock-minimize]')
+        if cell is None or cap is None:
+            pytest.skip("strip not laid out this run")
+        # Start dragging console's cap, then hover the strip's thin TOP edge band
+        # (resolves to split-top, which is what used to trigger the leaf tint).
+        page.mouse.move(cap["x"] + cap["w"] / 2, cap["y"] + cap["h"] / 2)
+        page.mouse.down()
+        page.mouse.move(
+            cap["x"] + cap["w"] / 2 + 10, cap["y"] + cap["h"] / 2 + 10, steps=4
+        )
+        page.mouse.move(cell["x"] + cell["w"] / 2, cell["y"] + 2, steps=4)
+        page.wait_for_timeout(120)
+        # The minimized cell's leaf wrapper must NOT be tinted blue.
+        bg = page.evaluate(
+            """(g) => {
+                const leaf = document
+                    .querySelector(`[data-dock-group="${g}"]`)
+                    .closest('[data-dock-leaf]');
+                return leaf ? getComputedStyle(leaf.parentElement).backgroundColor : null;
+            }""",
+            gid,
+        )
+        page.mouse.up()
+        # Tinted preview is rgba(34,139,230,0.1); accept any non-blue (white /
+        # transparent). Assert it's not the primary-color tint.
+        assert bg is not None and "34, 139, 230" not in bg, (
+            f"minimized cell should not show the blue split-preview flood, got {bg}"
+        )
+    finally:
+        page.close()
+
+
+def test_tear_tab_from_minimized_strip_stays_minimized(
+    dock_context, vite_server: int
+) -> None:
+    """Dragging a tab ROW out of a minimized docked strip floats it STILL
+    minimized -- dragging never expands (only a no-motion click does)."""
+    page = _open(dock_context, vite_server)
+    try:
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=stack(group(["controls", "inspector"], collapsed=True))
+            ),
+        )
+        gid = "t-controls"
+        row = _box(page, f'[data-dock-group="{gid}"] [data-dock-tab="inspector"]')
+        if row is None:
+            pytest.skip("strip not laid out this run")
+        _drag(page, (row["x"] + row["w"] / 2, row["y"] + row["h"] / 2), (500, 400))
+        ig = page.evaluate(
+            """() => { for (const [g, v] of Object.entries(window.__dockLayout.groups))
+                if (v.paneIds.includes("inspector")) return g; return null; }"""
+        )
+        if _floating_window_id_for_panel(page, "inspector") is None:
+            pytest.skip("tear-out didn't float this run; geometry off")
+        assert page.evaluate(
+            "(g) => window.__dockLayout.groups[g].collapsed === true", ig
+        ), "a tab torn from a minimized strip must stay minimized"
+    finally:
+        page.close()
+
+
+def test_drop_into_minimized_stack_at_tab_position(
+    dock_context, vite_server: int
+) -> None:
+    """A minimized stack's spine-label rows are a tab strip: dropping over a row
+    inserts at THAT position (begin / between / end), like dropping between
+    expanded horizontal tabs. The whole group stays minimized."""
+    page = _open(dock_context, vite_server)
+    try:
+        # A minimized docked group [controls, inspector] + floating console.
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=stack(group(["controls", "inspector"], collapsed=True)),
+                floating=[window(group("console", collapsed=True), x=300, y=300)],
+            ),
+        )
+        gid = "t-controls"
+        # Drag console's + cap onto the TOP of the inspector row -> insert
+        # console BEFORE inspector (between controls and inspector).
+        cap = _box(page, '[data-dock-group="t-console"] [data-dock-minimize]')
+        row = _box(page, f'[data-dock-group="{gid}"] [data-dock-tab="inspector"]')
+        if cap is None or row is None:
+            pytest.skip("strip not laid out this run")
+        _drag(
+            page,
+            (cap["x"] + cap["w"] / 2, cap["y"] + cap["h"] / 2),
+            (row["x"] + row["w"] / 2, row["y"] + 3),
+        )
+        ids = page.evaluate("(g) => window.__dockLayout.groups[g]?.paneIds", gid)
+        if ids is None or "console" not in ids:
+            pytest.skip("insertion didn't land this run; geometry off by a few px")
+        assert ids == ["controls", "console", "inspector"], (
+            f"console should insert before inspector, got {ids}"
+        )
+        assert page.evaluate(
+            "(g) => window.__dockLayout.groups[g].collapsed === true", gid
+        ), "the stack must stay minimized after a tab-position drop"
+    finally:
+        page.close()
+
+
+def test_new_cell_beside_all_minimized_stack_adopts_minimized(
+    dock_context, vite_server: int
+) -> None:
+    """Dropping an EXPANDED panel as a new cell beside an all-minimized stack
+    makes it minimized too, so the stack stays uniformly minimized."""
+    page = _open(dock_context, vite_server)
+    try:
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=stack(group(["controls", "inspector"], collapsed=True)),
+                floating=[window("console", x=300, y=300, width=240)],  # EXPANDED
+            ),
+        )
+        gid = "t-controls"
+        cell = _gbox(page, gid)
+        cgrip = _grip(page, "t-console")
+        # Drop below the strip's rows -> new cell below, which adopts minimized.
+        _drag(
+            page,
+            (cgrip["x"], cgrip["y"]),
+            (cell["x"] + cell["w"] / 2, cell["y"] + cell["h"] - 6),
+        )
+        cgid = page.evaluate(
+            """() => { for (const [g, v] of Object.entries(window.__dockLayout.groups))
+                if (v.paneIds.includes("console")) return g; return null; }"""
+        )
+        tree = page.evaluate("() => window.__dockLayout.docked.right")
+        if tree is None or tree.get("type") != "split":
+            pytest.skip("new cell didn't land this run")
+        assert page.evaluate(
+            "(g) => window.__dockLayout.groups[g].collapsed === true", cgid
+        ), "a new cell beside an all-minimized stack must adopt minimized"
     finally:
         page.close()
 

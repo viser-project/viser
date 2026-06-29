@@ -7,6 +7,7 @@ import dataclasses
 import functools
 import threading
 import time
+import warnings
 from asyncio import AbstractEventLoop
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -37,6 +38,7 @@ from viser._backwards_compat_shims import deprecated_positional_shim
 
 from . import _messages, uplot
 from ._gui_handles import (
+    CONTROL_PANEL_ID,
     CommandEvent,
     CommandHandle,
     GuiButtonGroupHandle,
@@ -66,6 +68,8 @@ from ._gui_handles import (
     GuiUplotHandle,
     GuiVector2Handle,
     GuiVector3Handle,
+    MainPanelHandle,
+    PanelHandle,
     SupportsRemoveProtocol,
     UploadedFile,
     _colors_to_int_tuple,
@@ -260,6 +264,13 @@ class GuiApi:
             "root": _RootGuiContainer({})
         }
         self._modal_handle_from_uuid: dict[str, GuiModalHandle] = {}
+        self._panel_handle_from_uuid: dict[str, PanelHandle] = {}
+        # Per-panel layout-update counter, bumped on every placement command and
+        # stamped onto the placement message (see _PlacementMixin._queue_placement
+        # / GuiSetPanelPositionMessage.counter). Lets the client ignore replayed
+        # placement for a panel the user has rearranged. Keyed by panel uuid (the
+        # main panel uses CONTROL_PANEL_ID).
+        self._layout_update_count_from_uuid: dict[str, int] = {}
         self._command_handle_from_uuid: dict[str, CommandHandle] = {}
         self._current_file_upload_states: dict[str, _FileUploadState] = {}
 
@@ -569,8 +580,51 @@ class GuiApi:
             next(iter(root_container._children.values())).remove()
         while self._modal_handle_from_uuid:
             next(iter(self._modal_handle_from_uuid.values())).close()
+        # Panels are top-level entities (not under `root`), so drain them
+        # explicitly -- otherwise they leak and replay to late joiners.
+        while self._panel_handle_from_uuid:
+            next(iter(self._panel_handle_from_uuid.values())).remove()
         while self._command_handle_from_uuid:
             next(iter(self._command_handle_from_uuid.values())).remove()
+
+        # Reset any server-authored main-panel placement (from `main_panel`
+        # commands or the deprecated `control_layout`) back to the default. The
+        # per-axis placement messages persist in the broadcast buffer and replay
+        # to clients that connect after the reset; sending the defaults here
+        # coalesces over the stale ones (same redundancy key per message type) so
+        # late joiners -- and connected clients -- get the default control panel
+        # (a top-right float, expanded) instead of a layout the user never asked
+        # for. Placement is write-only, so we just send; there's no state to read.
+        # Bump the main panel's layout counter once and stamp it on all four
+        # reset messages, so a connected client that had rearranged the control
+        # panel still sees this deliberate reset (counter increment beats its
+        # last-applied), while a normal reconnect replay -- same counter -- is
+        # ignored. (None width/height clears any override -> default/theme.)
+        counts = self._layout_update_count_from_uuid
+        counts[CONTROL_PANEL_ID] = counts.get(CONTROL_PANEL_ID, 0) + 1
+        reset_counter = counts[CONTROL_PANEL_ID]
+        self._websock_interface.queue_message(
+            _messages.GuiSetPanelPositionMessage(
+                CONTROL_PANEL_ID,
+                {"kind": "float", "x": None, "y": None},
+                counter=reset_counter,
+            )
+        )
+        self._websock_interface.queue_message(
+            _messages.GuiSetPanelCollapsedMessage(
+                CONTROL_PANEL_ID, False, counter=reset_counter
+            )
+        )
+        self._websock_interface.queue_message(
+            _messages.GuiSetPanelWidthMessage(
+                CONTROL_PANEL_ID, None, counter=reset_counter
+            )
+        )
+        self._websock_interface.queue_message(
+            _messages.GuiSetPanelHeightMessage(
+                CONTROL_PANEL_ID, None, counter=reset_counter
+            )
+        )
 
     def set_panel_label(self, label: str | None) -> None:
         """Set the main label that appears in the GUI panel.
@@ -604,6 +658,23 @@ class GuiApi:
             show_share_button: A boolean indicating if the share button should be displayed.
             brand_color: An optional tuple of integers (RGB) representing the brand color.
         """
+
+        # `control_layout` is soft-deprecated in favor of `main_panel` placement.
+        # "collapsible"/"fixed" both map to docking the control panel to the
+        # right edge; the dock system makes every docked panel user-collapsible,
+        # so the old fixed/collapsible distinction no longer applies. We send
+        # "floating" to the client (the dock surface) and issue the dock command.
+        if control_layout != "floating":
+            warnings.warn(
+                "`control_layout` is deprecated; use `main_panel` placement"
+                " instead, e.g. `server.gui.main_panel.dock_right()`. Both"
+                ' "collapsible" and "fixed" now dock the control panel to the'
+                " right edge.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.main_panel.dock_right()
+            control_layout = "floating"
 
         colors_cast: LengthTenStrTuple | None = None
 
@@ -738,7 +809,11 @@ class GuiApi:
         expand_by_default: bool = True,
         visible: bool = True,
     ) -> GuiFolderHandle:
-        """Add a folder, and return a handle that can be used to populate it.
+        """Add a folder: a single **inline** collapsible section. Return a handle
+        that can be used to populate it.
+
+        For inline *tabs* use :meth:`add_tab_group`; for content in a *movable*
+        window (dockable / floating) use :meth:`add_panel`.
 
         Args:
             label: Label to display on the folder. If ``None``, the folder is
@@ -887,7 +962,12 @@ class GuiApi:
         order: float | None = None,
         visible: bool = True,
     ) -> GuiTabGroupHandle:
-        """Add a tab group.
+        """Add a tab group: **inline** tabs that stay put where they are added
+        (in the control panel or a folder).
+
+        For tabs in a *movable* window the user can dock or float, use
+        :meth:`add_panel` instead; for a single inline collapsible section, use
+        :meth:`add_folder`.
 
         Args:
             order: Optional ordering, smallest values will be displayed first.
@@ -920,6 +1000,80 @@ class GuiApi:
                 parent_container_id=message.container_uuid,
             )
         )
+
+    def add_panel(self, *, visible: bool = True) -> PanelHandle:
+        """Add a standalone panel: a **movable** window (dockable / floating)
+        that lives outside the main control panel. A panel is the *container*;
+        its tabs (added with :meth:`PanelHandle.add_tab`) hold the content.
+
+        Choosing a container: use :meth:`add_folder` for an inline collapsible
+        section, :meth:`add_tab_group` for inline tabs that stay put inside the
+        control panel, and ``add_panel`` for tabs in a window the user can move,
+        dock, or float. (A panel is essentially a tab group you can place.)
+
+        A panel is a top-level entity (like :meth:`add_modal`): it is not placed
+        in the current container context. Add content with
+        :meth:`PanelHandle.add_tab`, place it with the imperative ``dock_*`` /
+        :meth:`PanelHandle.float` commands, and remove it with
+        :meth:`PanelHandle.remove` (there is no UI close button). See also
+        :attr:`main_panel` to place the main control panel.
+
+        To start a panel minimized, call :meth:`PanelHandle.minimize` (an
+        imperative command like ``dock_*``).
+
+        Args:
+            visible: Whether the panel is visible.
+
+        Returns:
+            A handle used to add tabs to and place the panel.
+
+        Example::
+
+            panel = server.gui.add_panel()
+            with panel.add_tab("Stats", viser.Icon.CHART_BAR):
+                server.gui.add_number("Counter", 0, disabled=True)
+            panel.dock_right()
+            panel.set_width(320)
+        """
+        panel_id = _make_uuid()
+        message = _messages.GuiPanelMessage(
+            uuid=panel_id,
+            props=_messages.GuiPanelProps(
+                order=_apply_default_order(None),
+                _tab_labels=(),
+                visible=visible,
+                _tab_icons_html=(),
+                _tab_container_ids=(),
+            ),
+        )
+        self._websock_interface.queue_message(message)
+        return PanelHandle(
+            _GuiHandleState(
+                message.uuid,
+                self,
+                value=None,
+                props=message.props,
+                # A panel is a top-level entity (not nested in a container); it
+                # registers itself in `_panel_handle_from_uuid`. The
+                # parent_container_id is unused for panels, but the handle state
+                # requires one -- "root" is a harmless placeholder.
+                parent_container_id="root",
+            )
+        )
+
+    @property
+    def main_panel(self) -> MainPanelHandle:
+        """Handle for the main control panel.
+
+        Supports the same placement / sizing / minimize commands as a standalone
+        panel (see :class:`MainPanelHandle` and :meth:`add_panel`). It can be a
+        dock anchor for :meth:`PanelHandle.dock_above` / :meth:`dock_below` from
+        any scope, but ONLY while it is itself docked (e.g. after
+        ``main_panel.dock_left()``); the control panel floats by default, and
+        splitting against a floating anchor falls back to a right-edge dock. A
+        fresh handle is returned on each access. This is the supported replacement
+        for the deprecated ``configure_theme(control_layout=...)``."""
+        return MainPanelHandle(self)
 
     @deprecated_positional_shim
     def add_markdown(

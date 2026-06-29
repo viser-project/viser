@@ -8,7 +8,13 @@
 
 import { describe, expect, it } from "vitest";
 import { toggleCollapsed } from "./layoutOps";
-import { DockEdge, DockLayout, emptyLayout, regionWidthsOf } from "./types";
+import {
+  DockEdge,
+  DockLayout,
+  emptyLayout,
+  MIN_REGION_GRAB_PX,
+  regionWidthsOf,
+} from "./types";
 import { reconcileRegionWidths } from "./widthReconciliation";
 import { leaf, row, group } from "./testUtils";
 
@@ -103,18 +109,60 @@ describe("reconcileRegionWidths with minimized columns", () => {
   });
 });
 
+describe("reconcileRegionWidths width clamp (no max ceiling)", () => {
+  it("preserves a deliberately wide single-column width (no per-panel cap)", () => {
+    // There is no fixed max panel width: a server set_width(2000) on a docked
+    // column keeps its requested width. (Render-time MIN_CANVAS_PX keeps a canvas
+    // sliver visible; the model width itself is uncapped.) Same-set commit -> the
+    // clamp runs every commit but only enforces the grab-min floor.
+    const prev = emptyLayout();
+    prev.groups = { a: group("a") };
+    prev.docked.right = leaf("a", 1);
+    prev.regionWidth = { left: 0, right: 400 };
+    const next = structuredClone(prev);
+    next.regionWidth = { left: 0, right: 2000 };
+    expect(recon(prev, next).right).toBe(2000);
+  });
+
+  it("preserves a deliberately wide multi-column width (no colsMax cap)", () => {
+    const prev = threeColumns([300, 300, 300]);
+    const next = structuredClone(prev);
+    next.regionWidth = { left: 0, right: 5000 };
+    expect(recon(prev, next).right).toBe(5000);
+  });
+});
+
 describe("reconcileRegionWidths min-width floor", () => {
-  it("raises a too-narrow width to the expanded columns' summed minimum", () => {
-    // Two 220px-minimum columns + divider = 447; a carried width of 300 is
-    // unrepresentable and must be floored on commit (replaces the old
-    // auto-grow effect).
+  it("raises a too-narrow carried width to the grab minimum (pure-internal)", () => {
+    // A carried regionWidth below the layout floor is unrepresentable and must
+    // be floored on commit (replaces the old auto-grow effect). Same column set
+    // (a single leaf), so this exercises clampRegionWidth directly rather than
+    // the structural default-width path. The floor is MIN_REGION_GRAB_PX -- the
+    // grabbable sliver -- NOT the panel-content minimum (a narrower region
+    // scrolls its body instead).
     const prev = emptyLayout();
     prev.groups = { a: group("a") };
     prev.docked.right = leaf("a", 1);
     prev.regionWidth = { left: 0, right: 300 };
     const next = structuredClone(prev);
+    next.regionWidth = { left: 0, right: 20 }; // deliberately below the floor.
+    expect(recon(prev, next).right).toBe(MIN_REGION_GRAB_PX);
+  });
+
+  it("floors a too-narrow multi-column width to the summed grab minimum", () => {
+    // Structural change (1 leaf -> 2-column row) carrying a width below the
+    // two-column floor: must be raised to 2*grab. NO divider term -- regionWidth
+    // is the divider-free expanded sum; the inter-column divider is chrome
+    // (added once via chromePx at render), so the floor must not include it too.
+    const prev = emptyLayout();
+    prev.groups = { a: group("a") };
+    prev.docked.right = leaf("a", 1);
+    prev.regionWidth = { left: 0, right: 10 };
+    const next = structuredClone(prev);
     next.groups["b"] = group("b");
-    next.docked.right = row([leaf("a", 300), leaf("b", 300)]);
-    expect(recon(prev, next).right).toBeGreaterThanOrEqual(447);
+    next.docked.right = row([leaf("a", 5), leaf("b", 5)]);
+    expect(recon(prev, next).right).toBeGreaterThanOrEqual(
+      MIN_REGION_GRAB_PX * 2,
+    );
   });
 });

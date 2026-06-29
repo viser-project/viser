@@ -30,8 +30,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import Page  # noqa: E402
 
-from .dock_helpers import collapsed as _collapsed
-from .dock_helpers import columns, dock_layout, set_layout, stack, window
+from .dock_helpers import columns, dock_layout, group, set_layout, stack, window
 from .dock_helpers import drag as _drag
 from .dock_helpers import group_id_for_panel as _group_id_for_panel
 from .dock_helpers import open_playground as _open
@@ -82,21 +81,6 @@ def _resize_grip(page: Page, window_id: str, edge: str) -> tuple[float, float]:
         "return { x: r.x + r.width/2, y: r.y + r.height/2 }; }",
     )
     return box["x"], box["y"]
-
-
-def _make_stack(page: Page) -> str | None:
-    """Inject one floating window stacking controls above inspector. Returns
-    the window id (from the [data-floating-handle] header)."""
-    set_layout(
-        page,
-        dock_layout(
-            floating=[window("controls", "inspector", x=400, y=120, width=300)]
-        ),
-    )
-    handle = page.query_selector("[data-floating-handle]")
-    if handle is None:
-        return None
-    return handle.get_attribute("data-floating-handle")
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +141,150 @@ def test_column_handle_floats_whole_stack(dock_context, vite_server: int) -> Non
         page.close()
 
 
+def test_minimized_column_parent_handle_tears_out_whole_stack(
+    dock_context, vite_server: int
+) -> None:
+    """A FULLY-minimized docked column keeps its parent handle (the + above the
+    cells); DRAGGING that handle tears the whole stack out as one floating
+    window (it must not just toggle). Regression: the parent +'s button used to
+    swallow the press, so the stack couldn't be dragged out at all."""
+    page = _open(dock_context, vite_server)
+    try:
+        # Arrange: a 2-leaf vertical column docked right, both minimized.
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=stack(
+                    group("inspector", collapsed=True),
+                    group("controls", collapsed=True),
+                )
+            ),
+        )
+        handle = page.locator("[data-dock-column-handle]")
+        assert handle.count() == 1
+        box = handle.first.bounding_box()
+        assert box is not None
+        _drag(
+            page,
+            (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2),
+            (450, 450),
+            steps=18,
+        )
+        state = page.evaluate(
+            """() => {
+                const l = window.__dockLayout;
+                const win = l.floating.find((w) => w.stack.length === 2);
+                return {
+                    dockedRight: l.docked.right,
+                    panes: win
+                        ? win.stack.flatMap((g) => l.groups[g].paneIds)
+                        : [],
+                };
+            }"""
+        )
+        assert state["dockedRight"] is None, "whole column should have left the dock"
+        assert set(state["panes"]) == {"inspector", "controls"}
+    finally:
+        page.close()
+
+
+def test_undock_minimized_column_keeps_expanded_width(
+    dock_context, vite_server: int
+) -> None:
+    """Undocking a MINIMIZED docked column floats it at the region's preserved
+    EXPANDED width, not the ~36px strip width -- otherwise the window stays
+    strip-narrow even after expanding (regression: floatColumn used the measured
+    strip rect)."""
+    page = _open(dock_context, vite_server)
+    try:
+        # A 2-leaf column docked right at the default ~300px region width.
+        set_layout(page, dock_layout(docked_right=stack("controls", "inspector")))
+        region_w = page.evaluate("() => window.__dockLayout.regionWidth.right")
+        assert region_w and region_w > 150
+
+        # Minimize the whole stack via its parent handle, then undock it.
+        page.eval_on_selector(
+            "[data-dock-column-handle] [data-dock-minimize-all]", "e => e.click()"
+        )
+        page.wait_for_timeout(120)
+        handle = page.locator("[data-dock-column-handle]").first
+        box = handle.bounding_box()
+        assert box is not None
+        _drag(
+            page,
+            (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2),
+            (450, 450),
+            steps=18,
+        )
+        win = page.evaluate(
+            """() => {
+                const w = window.__dockLayout.floating.find(
+                    (w) => w.stack.length === 2);
+                return w ? Math.round(w.width) : null;
+            }"""
+        )
+        if win is None:
+            pytest.skip("column did not float as a 2-stack this run")
+        # Floats at ~the preserved expanded width, NOT a ~36-96px strip.
+        assert win >= region_w - 20, (
+            f"undocked minimized column should keep ~{region_w}px width, got {win}"
+        )
+    finally:
+        page.close()
+
+
+def test_floating_minimized_stack_has_draggable_parent_handle(
+    dock_context, vite_server: int
+) -> None:
+    """A fully-minimized FLOATING multi-group stack shows the SAME parent + handle
+    as docked/expanded (for consistency); dragging it moves the whole window and
+    clicking it expands every group."""
+    page = _open(dock_context, vite_server)
+    try:
+        set_layout(
+            page,
+            dock_layout(
+                floating=[
+                    window(
+                        group("controls", collapsed=True),
+                        group("inspector", collapsed=True),
+                        x=300,
+                        y=200,
+                        width=280,
+                    )
+                ]
+            ),
+        )
+        handle = page.locator("[data-floating-handle]")
+        assert handle.count() == 1, "minimized floating stack should show a parent +"
+
+        # Dragging the parent handle moves the whole window.
+        box = handle.first.bounding_box()
+        assert box is not None
+        before = page.evaluate("() => window.__dockLayout.floating[0].x")
+        _drag(
+            page,
+            (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2),
+            (700, 500),
+            steps=18,
+        )
+        after = page.evaluate("() => window.__dockLayout.floating[0].x")
+        assert abs(after - before) > 50, "dragging the parent handle should move it"
+
+        # Clicking the parent handle's + (synthetic click) expands every group.
+        page.eval_on_selector(
+            "[data-floating-handle] [data-dock-minimize-all]", "e => e.click()"
+        )
+        page.wait_for_timeout(150)
+        all_expanded = page.evaluate(
+            """() => window.__dockLayout.floating[0].stack.every(
+                (g) => window.__dockLayout.groups[g].collapsed !== true)"""
+        )
+        assert all_expanded, "clicking the parent + should expand all groups"
+    finally:
+        page.close()
+
+
 def test_sandwiched_minimized_column_renders_vertical_strip(
     dock_context, vite_server: int
 ) -> None:
@@ -174,7 +302,7 @@ def test_sandwiched_minimized_column_renders_vertical_strip(
                     for (const l of document.querySelectorAll('[data-dock-leaf]')) {
                         if (l.textContent.includes(label)) {
                             const r = l.getBoundingClientRect();
-                            return { x: r.x, w: r.width, h: r.height };
+                            return { x: r.x, y: r.y, w: r.width, h: r.height };
                         }
                     }
                     return null;
@@ -194,7 +322,7 @@ def test_sandwiched_minimized_column_renders_vertical_strip(
                 }""",
                 label,
             )
-            page.wait_for_timeout(120)
+            page.wait_for_timeout(350)  # wait out the minimize width animation
 
         # Minimize the OUTER Controls so it's stranded behind the expanded
         # Inspector.
@@ -204,16 +332,26 @@ def test_sandwiched_minimized_column_renders_vertical_strip(
         strip = leaf_rect("Controls")
         assert strip is not None
         assert strip["w"] < 50, f"strip not narrow: {strip['w']}px"
-        assert strip["h"] > 200, f"strip not tall: {strip['h']}px"
+        # The strip's drop-target leaf sizes to its VISIBLE content (cap + spine
+        # rows), NOT the full region height -- so hitTest zones align with what's
+        # drawn instead of a phantom region-tall box. A 2-row strip is well under
+        # half the 800px viewport.
+        assert 40 < strip["h"] < 300, f"strip should be content-tall: {strip['h']}px"
 
         # Expand restores the full-width panel.
         click_minimize("Controls")
         assert leaf_rect("Controls")["w"] > 150
 
-        # Minimize again and drag the strip out -> floats.
+        # Minimize again and drag the strip out -> floats. Grab the strip's own
+        # (content) box, not a fixed y, since it no longer spans the viewport.
         click_minimize("Controls")
         s = leaf_rect("Controls")
-        _drag(page, (s["x"] + s["w"] / 2, 400), (750, 250), steps=18)
+        _drag(
+            page,
+            (s["x"] + s["w"] / 2, s["y"] + s["h"] / 2),
+            (750, 250),
+            steps=18,
+        )
         floated = page.evaluate(
             """() => {
                 for (const w of document.querySelectorAll('[data-floating-window]')) {
@@ -334,67 +472,34 @@ def test_top_left_corner_resize(dock_context, vite_server) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 3. Stack handle minimize-all toggles every child group.
+# An auto-height floating window can be GROWN past its content (it pins taller),
+# rather than snapping back to content height. Regression: content height used
+# to be the resize max, so dragging the bottom grip down "snapped smaller".
 # ---------------------------------------------------------------------------
-def test_stack_minimize_all_and_expand_all(dock_context, vite_server) -> None:
+def test_grow_auto_height_window_past_content_pins(dock_context, vite_server) -> None:
     page = _open(dock_context, vite_server)
-    win_id = _make_stack(page)
-    if win_id is None:
-        pytest.skip("stack snap didn't land this run")
-    a = _group_id_for_panel(page, "controls")
-    b = _group_id_for_panel(page, "inspector")
-
-    page.eval_on_selector(
-        f'[data-floating-handle="{win_id}"] [data-dock-minimize-all]',
-        "e => e.click()",
-    )
-    page.wait_for_timeout(120)
-    assert _collapsed(page, a) and _collapsed(page, b), (
-        "minimize-all should collapse every group in the stack"
-    )
-
-    page.eval_on_selector(
-        f'[data-floating-handle="{win_id}"] [data-dock-minimize-all]',
-        "e => e.click()",
-    )
-    page.wait_for_timeout(120)
-    assert not _collapsed(page, a) and not _collapsed(page, b), (
-        "expand-all should restore both groups (all were expanded before)"
-    )
-    page.close()
-
-
-# ---------------------------------------------------------------------------
-# 4. Mixed arrangement round-trips through parent minimize/expand.
-# ---------------------------------------------------------------------------
-def test_stack_minimize_restores_previous_mix(dock_context, vite_server) -> None:
-    page = _open(dock_context, vite_server)
-    win_id = _make_stack(page)
-    if win_id is None:
-        pytest.skip("stack snap didn't land this run")
-    a = _group_id_for_panel(page, "controls")
-    b = _group_id_for_panel(page, "inspector")
-
-    # Minimize inspector INDIVIDUALLY first -> mix is [controls: max, inspector: min].
-    page.eval_on_selector(
-        f'[data-dock-group="{b}"] [data-dock-minimize]', "e => e.click()"
-    )
-    page.wait_for_timeout(120)
-    assert _collapsed(page, b) and not _collapsed(page, a)
-
-    # Parent minimize-all -> both minimized; parent expand -> the previous mix
-    # comes back (controls expands, inspector STAYS minimized).
-    page.eval_on_selector(
-        f'[data-floating-handle="{win_id}"] [data-dock-minimize-all]',
-        "e => e.click()",
-    )
-    page.wait_for_timeout(120)
-    assert _collapsed(page, a) and _collapsed(page, b)
-    page.eval_on_selector(
-        f'[data-floating-handle="{win_id}"] [data-dock-minimize-all]',
-        "e => e.click()",
-    )
-    page.wait_for_timeout(120)
-    assert not _collapsed(page, a), "controls was expanded before; must restore"
-    assert _collapsed(page, b), "inspector was minimized by the USER; must stay"
-    page.close()
+    try:
+        set_layout(
+            page,
+            dock_layout(floating=[window("controls", x=320, y=80, width=280)]),
+        )
+        page.wait_for_timeout(120)
+        before = _window_box(page, "controls")
+        # The window starts auto-height (no pinned px).
+        assert (
+            page.evaluate("() => window.__dockLayout.floating[0].height.mode") == "auto"
+        )
+        gx, gy = _resize_grip(page, before["id"], "bottom")
+        # Drag the bottom edge DOWN 150px to GROW it.
+        _drag(page, (gx, gy), (gx, gy + 150))
+        after = _window_box(page, "controls")
+        # It actually grew (didn't snap back to content) and pinned the height.
+        assert after["h"] > before["h"] + 80, (
+            f"window should grow, not snap smaller ({before['h']} -> {after['h']})"
+        )
+        assert (
+            page.evaluate("() => window.__dockLayout.floating[0].height.mode")
+            == "pinned"
+        ), "growing past content should pin the height"
+    finally:
+        page.close()

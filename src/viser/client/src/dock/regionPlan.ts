@@ -1,6 +1,6 @@
 // THE single source of truth for how a docked region's tree maps to rendered
 // width: which width-determining columns render as fixed-width minimized
-// strips, which are expanded panels, and how much fixed "chrome" (strips +
+// strips, which are expanded panes, and how much fixed "chrome" (strips +
 // inter-column dividers) sits on top of the expanded columns' regionWidth.
 //
 // Every width consumer derives from this one classification -- the region box
@@ -27,6 +27,7 @@ import {
   widthColumns,
 } from "./layoutOps";
 import {
+  DockEdge,
   DockNode,
   GroupId,
   MINIMIZED_STRIP_PX,
@@ -112,4 +113,34 @@ export function plannedReservedWidth(
   regionWidthPx: number,
 ): number {
   return (plan.hasExpanded ? regionWidthPx : 0) + plan.chromePx;
+}
+
+/** Width (px) of the contiguous run of minimized strips on the region's
+ * CANVAS-FACING side -- the strips between the region's outer (resize) edge and
+ * its first expanded column. The region resizer is offset inward by this so the
+ * handle sits on the boundary of the panel it actually resizes
+ * (`[strip]│[panel]`), not on the far side of the strip (`│[strip][panel]`).
+ *
+ * Render order in `columns` is left->right. The canvas is on the LEFT of a right
+ * region (so leading columns are canvas-facing) and on the RIGHT of a left
+ * region (so trailing columns are). Each leading strip contributes its strip
+ * width plus the divider that follows it (the divider between it and the next
+ * column). Returns 0 when there are no expanded columns (nothing to resize) or
+ * no canvas-facing strips. */
+export function canvasFacingStripOffsetPx(
+  plan: RegionPlan,
+  edge: DockEdge,
+): number {
+  if (!plan.hasExpanded) return 0;
+  // Walk from the canvas-facing end toward the first expanded column.
+  const order =
+    edge === "right"
+      ? plan.isStrip.map((_, i) => i) // leading
+      : plan.isStrip.map((_, i) => plan.isStrip.length - 1 - i); // trailing
+  let offset = 0;
+  for (const i of order) {
+    if (!plan.isStrip[i]) break; // reached the first expanded column
+    offset += MINIMIZED_STRIP_PX + SPLIT_DIVIDER_PX;
+  }
+  return offset;
 }

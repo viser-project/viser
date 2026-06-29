@@ -112,13 +112,19 @@ export function HandleIconButton({
 
 /** Slim header bar that drags a whole stack of groups: a floating multi-group
  * window or a docked pure column. Body-colored so it reads as the stack's
- * *container*, distinct from the child groups' gray grip bars; the bottom rule
- * keeps it visible against the first child's grip bar.
+ * *container*, distinct from the child groups' gray grip bars.
  *
- * With `onToggle`, the bar gets a minimize-ALL button: it minimizes every
- * child group (tagging the ones that were expanded), and -- when every child
- * is minimized -- expands them back to that remembered mix (see
- * minimizeStack/expandStack in layoutOps). */
+ * With `onToggle`, the bar gets a minimize-ALL button: it minimizes or expands
+ * every child group at once (a stack is uniform -- see minimizeStack/
+ * expandStack in layoutOps). This is the ONLY minimize control for a stack;
+ * individual child grip bars hide their +/-.
+ *
+ * The toggle button is `dragThrough`: a real pointer press flows to the bar's
+ * own onPointerDown (the click-vs-drag arbiter), so dragging the + still drags
+ * the whole stack out and only a motionless click toggles. Callers must
+ * therefore pass `onToggle` as the drag-starter's `onClick` too (the bar's
+ * onPointerDown), so the motionless-press toggle fires; `onActivate` here then
+ * only handles keyboard / synthetic activation. */
 export function StackHandleBar({
   onPointerDown,
   attrs,
@@ -145,7 +151,6 @@ export function StackHandleBar({
         height: "1em",
         cursor: "grab",
         backgroundColor: "var(--mantine-color-body)",
-        borderBottom: "1px solid var(--mantine-color-default-border)",
         touchAction: "none",
         display: "flex",
         alignItems: "center",
@@ -156,17 +161,20 @@ export function StackHandleBar({
       {onToggle !== undefined && (
         <HandleIconButton
           attrs={{ "data-dock-minimize-all": "true" }}
-          label={collapsed ? "Expand all panels" : "Minimize all panels"}
+          label={collapsed ? "Expand all panes" : "Minimize all panes"}
           title={collapsed ? "Expand all" : "Minimize all"}
           expanded={!collapsed}
           onActivate={onToggle}
+          // Press flows to the bar's drag gesture (drag = tear out the whole
+          // stack; motionless click = toggle, via the drag-starter's onClick).
+          dragThrough
           placement={
             narrow
               ? { position: "relative", width: "100%", height: "100%" }
               : undefined
           }
         >
-          {collapsed ? <IconPlus size={14} /> : <IconMinus size={14} />}
+          {collapsed ? <IconPlus size={12} /> : <IconMinus size={12} />}
         </HandleIconButton>
       )}
     </Box>

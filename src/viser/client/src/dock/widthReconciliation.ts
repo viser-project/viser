@@ -1,4 +1,4 @@
-// Region-width reconciliation across layout ops: keeps docked panels at their
+// Region-width reconciliation across layout ops: keeps docked panes at their
 // pixel widths when the layout's STRUCTURE changes. Pure except for mutating
 // `next` (the caller owns it, a fresh draft): top-column weights may be
 // rewritten to pixels, and `next.regionWidth` is always (re)written.
@@ -17,43 +17,32 @@
 // writer. Layouts that bypassed the ops (test literals, injected layouts)
 // simply lack the field and get defaults here.
 
-import {
-  collectLeafGroups,
-  maxRegionWidth,
-  minRegionWidth,
-  widthColumns,
-} from "./layoutOps";
+import { collectLeafGroups, minRegionWidth, widthColumns } from "./layoutOps";
 import { planRegion, RegionPlan } from "./regionPlan";
 import {
-  clamp,
   DEFAULT_REGION_PX,
   DockEdge,
   DockLayout,
   DockNode,
-  MIN_PANEL_WIDTH_PX,
   regionWidthsOf,
-  SPLIT_DIVIDER_PX,
 } from "./types";
 
-const DIVIDER_PX = SPLIT_DIVIDER_PX;
+// regionWidth is the EXPANDED columns' summed widths with NO dividers -- the
+// inter-column dividers (and strips) are chrome, added on top via the render
+// plan's chromePx (see regionPlan.plannedReservedWidth). So the bounds that
+// clamp regionWidth must NOT include dividers either, or the divider px would
+// be double-counted (once in the floor, once again in chromePx).
 
-/** Sum of `cols`' minimum widths (with dividers), for clamping regionWidth. */
+/** Sum of `cols`' minimum widths (no dividers -- those are chrome), for
+ * clamping regionWidth. */
 function colsMin(cols: DockNode[]): number {
-  if (cols.length === 0) return 0;
-  return (
-    cols.reduce((s, c) => s + minRegionWidth(c), 0) +
-    DIVIDER_PX * (cols.length - 1)
-  );
+  return cols.reduce((s, c) => s + minRegionWidth(c), 0);
 }
 
-/** Sum of `cols`' maximum widths (with dividers), for clamping regionWidth. */
-function colsMax(cols: DockNode[]): number {
-  if (cols.length === 0) return 0;
-  return (
-    cols.reduce((s, c) => s + maxRegionWidth(c), 0) +
-    DIVIDER_PX * (cols.length - 1)
-  );
-}
+// There is no upper bound on region width -- a docked region may be dragged as
+// wide as the user likes. Only the grab-min floor is enforced (below + in
+// clampRegionWidth); the render-time MIN_CANVAS_PX guard keeps a canvas sliver
+// visible.
 
 /** Reconcile docked region widths across a layout transition, writing the
  * result into `next.regionWidth` (and, for structural changes, into the
@@ -72,8 +61,9 @@ function colsMax(cols: DockNode[]): number {
  *   that deliberately wrote `next.regionWidth` (setRegionWidth) is trusted:
  *   its value is the carry-over base.
  * - INVARIANT, enforced on every commit: regionWidth is never below the
- *   expanded columns' summed minimum (so docking a panel into a region grows
- *   it instead of squeezing panels below their per-panel minimum). */
+ *   expanded columns' summed minimum -- now just a tiny grabbable sliver per
+ *   column (MIN_REGION_GRAB_PX), NOT the panel-content minimum. A region narrower
+ *   than its panes' content simply scrolls the body; it does not auto-grow. */
 export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void {
   // Carry-over base: the op's own value when it set one (clones inherit
   // prev's, so a differing value is a deliberate write), else prev's.
@@ -115,14 +105,10 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
         if (expanded.length > 0) {
           // Fully minimized would keep the width for restore; otherwise:
           const sum = expanded.reduce((s, c) => s + c.weight, 0);
-          nextRW[edge] = clamp(
-            sum,
-            colsMin(expanded),
-            Math.max(MIN_PANEL_WIDTH_PX, colsMax(expanded)),
-          );
+          nextRW[edge] = Math.max(sum, colsMin(expanded));
         }
       }
-      applyMinFloor(nextRW, edge, nextPlan);
+      clampRegionWidth(nextRW, edge, nextPlan);
       return;
     }
 
@@ -156,18 +142,18 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
         // column's contents may have changed shape across the op (e.g. a lone
         // leaf becoming row-rooted raises its per-panel minimum), so the old
         // pixel width isn't automatically still legal for it.
-        return clamp(match.px, minRegionWidth(c), maxRegionWidth(c));
+        return Math.max(match.px, minRegionWidth(c));
       }
       // New column, previously EMPTY edge: the edge's preserved regionWidth
       // IS this content's width -- e.g. a layout snapshot being restored
       // (Escape after an undock), where the carried width must round-trip
       // exactly rather than reset to the default.
       if (prevCols.length === 0 && nextCols.length === 1) {
-        return clamp(nextRW[edge], minRegionWidth(c), maxRegionWidth(c));
+        return Math.max(nextRW[edge], minRegionWidth(c));
       }
       // New column joining existing content: a sensible default, clamped to
-      // its panels' min/max.
-      return clamp(DEFAULT_REGION_PX, minRegionWidth(c), maxRegionWidth(c));
+      // its panes' min/max.
+      return Math.max(DEFAULT_REGION_PX, minRegionWidth(c));
     });
     // Set the columns' weights to their pixel widths so each renders at
     // `intended` px within the summed region width. ONLY when there are
@@ -196,13 +182,9 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
     const expandedCols = expandedIdx.map(({ c }) => c);
     nextRW[edge] =
       expandedCols.length > 0
-        ? clamp(
-            summed,
-            colsMin(expandedCols),
-            Math.max(MIN_PANEL_WIDTH_PX, colsMax(expandedCols)),
-          )
+        ? Math.max(summed, colsMin(expandedCols))
         : summed;
-    applyMinFloor(nextRW, edge, nextPlan);
+    clampRegionWidth(nextRW, edge, nextPlan);
   });
 
   next.regionWidth = nextRW;
@@ -212,13 +194,17 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
  * columns' summed minimum. Subsumes the old auto-grow effect (which watched
  * for this after the fact) -- with the floor applied here, a too-narrow
  * region is unrepresentable in committed state. */
-function applyMinFloor(
+function clampRegionWidth(
   rw: Record<DockEdge, number>,
   edge: DockEdge,
   plan: RegionPlan,
 ): void {
   const expanded = plan.expandedColumns;
   if (expanded.length === 0) return; // fully minimized: width kept for restore.
+  // Floor the width on EVERY commit so a server set_width can't drive the region
+  // below its panes' summed grab-min (interactive resize already clamps; this
+  // guards the server-driven path). The floor is the grabbable sliver, not the
+  // content min -- a narrower region scrolls its body. There is no max ceiling.
   const min = colsMin(expanded);
   if (rw[edge] < min) rw[edge] = min;
 }

@@ -5,15 +5,17 @@ import { Box, Collapse, ScrollArea } from "@mantine/core";
 import { IconMinus, IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
+import { stackGroupIdsOf } from "./layoutOps";
 import {
   dockBodyScroll,
   focusRing,
   gripBarBg,
   headerRule,
+  headerRuleTop,
 } from "./DockStyles.css";
-import { keyActivate, prefersReducedMotion } from "./gestures";
+import { prefersReducedMotion, tabListKeyDown } from "./gestures";
 import { GripPill, HandleIconButton } from "./handles";
-import { PanelSpec, TabGroup } from "./types";
+import { DOCK_ANIM_MS, PaneSpec, TabGroup } from "./types";
 
 // The active panel's BODY, memoized so it is rebuilt/reconciled only when its
 // OWN inputs change -- not on every unrelated dock op. A tab switch or a
@@ -28,10 +30,17 @@ const PanelBody = React.memo(function PanelBody({
   panel,
   fill,
   maxContentHeight,
+  persistentScrollbar,
 }: {
-  panel: PanelSpec | undefined;
+  panel: PaneSpec | undefined;
   fill: boolean;
   maxContentHeight?: number;
+  /** When true (docked leaves), the fill-height ScrollArea shows its scrollbars
+   * whenever content overflows (`type="auto"`) -- so the horizontal bar that
+   * appears when the panel is squeezed below its content minimum stays visible
+   * at the panel bottom. Floating windows leave this false to keep Mantine's
+   * default hover-reveal bars. */
+  persistentScrollbar?: boolean;
 }) {
   if (panel?.fullBleed === true) {
     // Full-bleed: render the content directly with no padding and no ScrollArea
@@ -56,22 +65,40 @@ const PanelBody = React.memo(function PanelBody({
       </Box>
     );
   }
-  return (
-    <ScrollArea.Autosize
-      mah={fill ? undefined : maxContentHeight}
-      className={dockBodyScroll}
-      style={
-        fill ? { flexGrow: 1, minHeight: 0, width: "100%" } : { width: "100%" }
-      }
+  const inner = (
+    <Box
+      style={{
+        padding: panel?.unpadded === true ? undefined : "0.6em 0.75em",
+        width: "100%",
+      }}
     >
-      <Box
-        style={{
-          padding: panel?.unpadded === true ? undefined : "0.6em 0.75em",
-          width: "100%",
-        }}
-      >
-        {panel?.render() ?? null}
-      </Box>
+      {panel?.render() ?? null}
+    </Box>
+  );
+  // Fill (docked leaves, and fixed-height floating windows): a plain ScrollArea
+  // that FILLS the panel's height, so the horizontal scrollbar (shown when the
+  // body is narrower than its content minimum) pins to the BOTTOM of the panel
+  // rather than floating just under short content. The flex parent (flexGrow:1,
+  // minHeight:0) gives it the definite height it needs to scroll. Docked leaves
+  // pass persistentScrollbar so the bar stays visible; floating windows keep the
+  // default hover-reveal.
+  // Non-fill (auto-height floating): ScrollArea.Autosize so the window sizes to
+  // its content up to the maxContentHeight cap (a fill ScrollArea has no height).
+  return fill ? (
+    <ScrollArea
+      type={persistentScrollbar === true ? "auto" : "hover"}
+      className={dockBodyScroll}
+      style={{ flexGrow: 1, minHeight: 0, width: "100%" }}
+    >
+      {inner}
+    </ScrollArea>
+  ) : (
+    <ScrollArea.Autosize
+      mah={maxContentHeight}
+      className={dockBodyScroll}
+      style={{ width: "100%" }}
+    >
+      {inner}
     </ScrollArea.Autosize>
   );
 });
@@ -79,9 +106,6 @@ const PanelBody = React.memo(function PanelBody({
 // Tab handle height, also the band height for the strip's repeating bottom-rule
 // gradient. In em relative to the strip's own font-size so the two stay aligned.
 const TAB_ROW_EM = "2.4em";
-// Minimize/expand animation duration (ms). Matches Mantine's <Collapse> default
-// feel and the FloatingPanel transitions in the original control panel.
-const COLLAPSE_MS = 200;
 
 /** Slim handle bar above the tab strip (docked or floating). The bar itself is
  * a drag handle (centered grip line + grab cursor); a button on the right
@@ -92,31 +116,29 @@ function GripBar({
   collapsed,
   onToggle,
   startDrag,
+  showMinimize,
 }: {
   collapsed: boolean;
   onToggle: () => void;
   startDrag: (
     event: React.PointerEvent<HTMLDivElement>,
-    opts?: { onClick?: () => void; expandOnDrag?: boolean },
+    opts?: { onClick?: () => void },
   ) => void;
+  /** Whether this group shows its OWN minimize button + click-to-minimize. Only
+   * a LONE group does; a group in a 2+ stack minimizes via the parent stack
+   * handle, so its individual +/- disappears (the bar still drags). */
+  showMinimize: boolean;
 }) {
   return (
     <Box
       data-dock-griphandle
       className={gripBarBg}
       onPointerDown={(event) => {
-        // Presses that start ON the button get a motionless-click toggle (the
-        // bar itself deliberately has none -- see
-        // test_handle_tap_does_not_minimize); a drag from the + also expands.
-        const fromButton =
-          (event.target as HTMLElement).closest("[data-dock-minimize]") !==
-          null;
-        startDrag(
-          event,
-          fromButton
-            ? { onClick: onToggle, expandOnDrag: collapsed }
-            : undefined,
-        );
+        // A motionless tap toggles minimize/expand ONLY for a lone group (the
+        // +/- is a redundant explicit cue for the same action). In a stack the
+        // bar just drags -- minimize lives on the parent handle. A real drag
+        // moves the panel AS-IS either way (expanding is click-only).
+        startDrag(event, showMinimize ? { onClick: onToggle } : undefined);
       }}
       style={{
         position: "relative",
@@ -124,7 +146,7 @@ function GripBar({
         alignItems: "center",
         justifyContent: "center",
         flexShrink: 0,
-        height: "1.2em",
+        height: "0.9em",
         // Light gray fill marks the handle (one step lighter than the border
         // gray -- see gripBarBg) and separates it from the tabs.
         cursor: "grab",
@@ -135,17 +157,20 @@ function GripBar({
     >
       {/* Drag affordance. */}
       <GripPill />
-      {/* Minimize / expand button: drag-through (see GripBar doc). */}
-      <HandleIconButton
-        attrs={{ "data-dock-minimize": "true" }}
-        label={collapsed ? "Expand panel" : "Minimize panel"}
-        title={collapsed ? "Expand" : "Minimize"}
-        expanded={!collapsed}
-        onActivate={onToggle}
-        dragThrough
-      >
-        {collapsed ? <IconPlus size={14} /> : <IconMinus size={14} />}
-      </HandleIconButton>
+      {/* Minimize / expand button: drag-through (see GripBar doc). Hidden in a
+      stack -- the parent handle owns minimize there. */}
+      {showMinimize && (
+        <HandleIconButton
+          attrs={{ "data-dock-minimize": "true" }}
+          label={collapsed ? "Expand panel" : "Minimize panel"}
+          title={collapsed ? "Expand" : "Minimize"}
+          expanded={!collapsed}
+          onActivate={onToggle}
+          dragThrough
+        >
+          {collapsed ? <IconPlus size={12} /> : <IconMinus size={12} />}
+        </HandleIconButton>
+      )}
     </Box>
   );
 }
@@ -163,21 +188,35 @@ export function TabGroupFrame({
   /** Controls whether the tab strip itself acts as a move handle (docked) vs.
    * deferring to the window header (floating, multi-group stacks). */
   stripDragsGroup = true,
+  /** Docked leaves set this so the body's fill-height scrollbars stay visible
+   * whenever content overflows (the persistent horizontal bar at the panel
+   * bottom); floating windows leave it off for hover-reveal bars. */
+  persistentScrollbar = false,
 }: {
   group: TabGroup;
   fill?: boolean;
   maxContentHeight?: number;
   stripDragsGroup?: boolean;
+  persistentScrollbar?: boolean;
 }) {
   const dock = useDock();
-  const { panels } = dock;
+  const { panes } = dock;
   const dimmed = dock.draggingGroupId === group.id;
   const collapsed = group.collapsed ?? false;
+  // A LONE group shows its own +/- (and click-to-minimize); a group in a 2+
+  // stack minimizes via the parent stack handle, so its individual control is
+  // hidden (the grip bar still drags it).
+  const lone = stackGroupIdsOf(dock.layout, group.id).length < 2;
   // An unmergeable group always holds a single panel and renders its label as a
   // full-width header (never a tab); nothing can be merged into it.
-  const unmergeable = group.panelIds.some(
-    (p) => panels[p]?.unmergeable === true,
+  const unmergeable = group.paneIds.some(
+    (p) => panes[p]?.unmergeable === true,
   );
+  // A STACKED titleNode header (the main panel's connection-status bar sitting
+  // below another panel in a 2+ stack, docked OR floating) gets a thin top rule
+  // so it reads as separated from the panel above. Not needed when LONE (nothing
+  // above it).
+  const stacked = !lone;
 
   // FLIP animation: when the tab order changes, each tab slides from its old
   // slot to its new one. We record each tab's offsetLeft and play the inverted
@@ -192,29 +231,19 @@ export function TabGroupFrame({
   // paying layout reads per render.
   // Tablist keyboard pattern: ArrowLeft/Right activate the neighbor tab and
   // move focus with it; Enter/Space activate the focused tab.
-  const tabKeyDown =
-    (panelId: string) => (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-        event.preventDefault();
-        event.stopPropagation();
-        const i = group.panelIds.indexOf(panelId);
-        const next = group.panelIds[event.key === "ArrowLeft" ? i - 1 : i + 1];
-        if (next !== undefined) {
-          dock.activateTab(group.id, next);
-          event.currentTarget.parentElement
-            ?.querySelector<HTMLElement>(
-              `[data-dock-tab="${CSS.escape(next)}"]`,
-            )
-            ?.focus();
-        }
-        return;
-      }
-      keyActivate(() => dock.activateTab(group.id, panelId))(event);
-    };
+  const tabKeyDown = (paneId: string) =>
+    tabListKeyDown({
+      paneId,
+      paneIds: group.paneIds,
+      prevKey: "ArrowLeft",
+      nextKey: "ArrowRight",
+      onActivate: (id) => dock.activateTab(group.id, id),
+      onMove: (id) => dock.activateTab(group.id, id),
+    });
 
   const stripRef = React.useRef<HTMLDivElement>(null);
   const prevLefts = React.useRef<Map<string, number>>(new Map());
-  const orderKey = group.panelIds.join("\n");
+  const orderKey = group.paneIds.join("\n");
   React.useLayoutEffect(() => {
     const strip = stripRef.current;
     if (strip === null) return;
@@ -247,9 +276,10 @@ export function TabGroupFrame({
   //   column Paper) animate the height; when collapsed we just hide the body.
   const body = (
     <PanelBody
-      panel={panels[group.activeId]}
+      panel={panes[group.activeId]}
       fill={fill}
       maxContentHeight={maxContentHeight}
+      persistentScrollbar={persistentScrollbar}
     />
   );
   const contents = fill ? (
@@ -273,7 +303,7 @@ export function TabGroupFrame({
   ) : (
     <Collapse
       in={!collapsed}
-      transitionDuration={prefersReducedMotion() ? 0 : COLLAPSE_MS}
+      transitionDuration={prefersReducedMotion() ? 0 : DOCK_ANIM_MS}
     >
       {body}
     </Collapse>
@@ -314,6 +344,7 @@ export function TabGroupFrame({
       {stripDragsGroup && !unmergeable && (
         <GripBar
           collapsed={collapsed}
+          showMinimize={lone}
           onToggle={() => dock.toggleCollapsed(group.id)}
           startDrag={(event, opts) =>
             dock.startGroupDrag(event, group.id, opts)
@@ -334,36 +365,52 @@ export function TabGroupFrame({
           // Full label on hover -- the plain-title header ellipsizes. (With a
           // custom titleNode the panel renders its own content; no tooltip.)
           title={
-            panels[group.activeId]?.titleNode
+            panes[group.activeId]?.titleNode
               ? undefined
-              : (panels[group.activeId]?.title ?? group.activeId)
+              : (panes[group.activeId]?.title ?? group.activeId)
           }
-          className={panels[group.activeId]?.titleNode ? headerRule : undefined}
+          // The 1px BOTTOM rule separates the header from the content below, so
+          // only show it when EXPANDED -- a collapsed panel is header-only, and
+          // the rule would read as a stray border on its bottom edge. A 1px TOP
+          // rule (same gray) is added when docked+stacked to separate it from
+          // the panel above.
+          className={
+            panes[group.activeId]?.titleNode
+              ? [!collapsed && headerRule, stacked && headerRuleTop]
+                  .filter(Boolean)
+                  .join(" ") || undefined
+              : undefined
+          }
           onPointerDown={(event) => {
-            if (stripDragsGroup)
-              dock.startGroupDrag(event, group.id, {
-                onClick: () => dock.toggleCollapsed(group.id),
-              });
+            if (!stripDragsGroup) return;
+            // Click-to-minimize only when LONE: a tap on a stacked header would
+            // otherwise collapse the WHOLE stack (uniform collapse), which is
+            // unintuitive. Stacked => drag-only (relocate); minimize is via the
+            // parent stack handle.
+            dock.startGroupDrag(
+              event,
+              group.id,
+              lone ? { onClick: () => dock.toggleCollapsed(group.id) } : undefined,
+            );
           }}
           style={{
             display: "flex",
             alignItems: "center",
             flexShrink: 0,
-            whiteSpace: "nowrap",
             overflow: "hidden",
-            textOverflow: "ellipsis",
             // With a custom titleNode (e.g. the connection-status bar), match the
             // live FloatingPanel handle EXACTLY: 2.75em tall, 1.5em line-height,
             // default font size, weight 400, 0.75em side padding, and just a
             // subtle 1px bottom divider (the headerRule class -- Divider's
             // gray-3/dark-4, NOT default-border; no thick primary rule, no tab
             // gradient). The plain-title case keeps the compact bold look + rule.
-            ...(panels[group.activeId]?.titleNode
+            ...(panes[group.activeId]?.titleNode
               ? {
                   height: "2.75em",
                   lineHeight: "1.5em",
                   padding: "0 0.75em",
                   fontWeight: 400,
+                  // The top rule (docked+stacked) is the headerRuleTop class.
                 }
               : {
                   height: TAB_ROW_EM,
@@ -382,12 +429,22 @@ export function TabGroupFrame({
             WebkitUserSelect: "none",
           }}
         >
-          {panels[group.activeId]?.titleNode ? (
+          {panes[group.activeId]?.titleNode ? (
             <Box style={{ display: "flex", alignItems: "center", width: "100%" }}>
-              {panels[group.activeId]?.titleNode}
+              {panes[group.activeId]?.titleNode}
             </Box>
           ) : (
-            (panels[group.activeId]?.title ?? group.activeId)
+            // Ellipsis on a non-flex child (see the tab-strip note below).
+            <span
+              style={{
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {panes[group.activeId]?.title ?? group.activeId}
+            </span>
           )}
         </Box>
       ) : (
@@ -424,23 +481,23 @@ export function TabGroupFrame({
             overflow: "hidden",
           }}
         >
-          {group.panelIds.map((panelId) => {
-            const active = panelId === group.activeId;
-            const dragging = panelId === dock.draggingTabId;
-            const spec = panels[panelId];
+          {group.paneIds.map((paneId) => {
+            const active = paneId === group.activeId;
+            const dragging = paneId === dock.draggingTabId;
+            const spec = panes[paneId];
             return (
               <Box
-                key={panelId}
-                data-dock-tab={panelId}
+                key={paneId}
+                data-dock-tab={paneId}
                 role="tab"
                 aria-selected={active}
                 tabIndex={0}
                 className={focusRing}
                 // Full label on hover -- tabs ellipsize at maxWidth.
-                title={spec?.title ?? panelId}
-                onKeyDown={tabKeyDown(panelId)}
+                title={spec?.title ?? paneId}
+                onKeyDown={tabKeyDown(paneId)}
                 onPointerDown={(event) =>
-                  dock.startTabDrag(event, group.id, panelId)
+                  dock.startTabDrag(event, group.id, paneId)
                 }
                 style={{
                   display: "flex",
@@ -450,9 +507,7 @@ export function TabGroupFrame({
                   padding: "0 0.9em",
                   maxWidth: "14em",
                   fontWeight: active ? 600 : 500,
-                  whiteSpace: "nowrap",
                   overflow: "hidden",
-                  textOverflow: "ellipsis",
                   cursor: "pointer",
                   userSelect: "none",
                   touchAction: "none",
@@ -477,12 +532,26 @@ export function TabGroupFrame({
                       display: "flex",
                       alignItems: "center",
                       marginRight: "0.5em",
+                      flexShrink: 0,
                     }}
                   >
                     {spec.icon}
                   </Box>
                 )}
-                {spec?.title ?? panelId}
+                {/* Ellipsis must live on a NON-flex (block) element, not the flex
+                    tab Box -- text-overflow is ignored on a flex container, so a
+                    raw text child would hard-clip with no "...". minWidth:0 lets
+                    this item shrink below its content width inside the flex row. */}
+                <span
+                  style={{
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {spec?.title ?? paneId}
+                </span>
               </Box>
             );
           })}

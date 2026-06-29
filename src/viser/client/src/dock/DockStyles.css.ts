@@ -1,19 +1,23 @@
 import { globalStyle, style } from "@vanilla-extract/css";
 
+import { MIN_PANEL_WIDTH_PX } from "./types";
+
 /** Marker class for a panel body's ScrollArea. */
 export const dockBodyScroll = style({});
 
-// Pin the ScrollArea's content wrapper to the viewport width. Mantine's
-// default (min-width: min-content) lets fixed-pixel content -- e.g. a plot
-// canvas that sizes itself from a measure of this very wrapper -- ratchet the
-// wrapper wider in a measure->resize feedback loop, churning the content
-// width on every panel/container resize. (The `styles` prop can't express
-// this: it applies inline styles, and the wrapper div is an unnamed Radix
-// child of the viewport.)
+// Size the ScrollArea's content wrapper to `max(100%, MIN_PANEL_WIDTH_PX)`:
+// it fills the viewport when the panel is at least the content minimum, but
+// holds that minimum and OVERFLOWS (the viewport then shows a horizontal
+// scrollbar) once the region is dragged narrower -- the panel body never
+// squeezes below MIN_PANEL_WIDTH_PX. The floor is a FIXED pixel constant, not
+// Mantine's default `min-content`: min-content lets fixed-pixel content -- e.g.
+// a plot canvas that sizes itself from a measure of this very wrapper -- ratchet
+// the wrapper wider in a measure->resize feedback loop; a constant floor keeps
+// the measured width stable. (The `styles` prop can't express this: it applies
+// inline styles, and the wrapper div is an unnamed Radix child of the viewport.)
 globalStyle(`${dockBodyScroll} .mantine-ScrollArea-viewport > div`, {
   display: "block",
-  minWidth: "100%",
-  maxWidth: "100%",
+  minWidth: `max(100%, ${MIN_PANEL_WIDTH_PX}px)`,
 });
 
 /** Grip bar background: one step lighter than --mantine-color-default-border
@@ -51,4 +55,17 @@ globalStyle(
 globalStyle(
   `:where([data-mantine-color-scheme="dark"]) ${headerRule}`,
   { borderBottom: "1px solid var(--mantine-color-dark-4)" },
+);
+
+/** Top rule above a DOCKED+STACKED unmergeable header. Same gray as headerRule
+ * (gray-3 light / dark-4 dark), just on the top edge, so it matches the bottom
+ * rule between docked panels. */
+export const headerRuleTop = style({});
+globalStyle(
+  `:where([data-mantine-color-scheme="light"]) ${headerRuleTop}`,
+  { borderTop: "1px solid var(--mantine-color-gray-3)" },
+);
+globalStyle(
+  `:where([data-mantine-color-scheme="dark"]) ${headerRuleTop}`,
+  { borderTop: "1px solid var(--mantine-color-dark-4)" },
 );

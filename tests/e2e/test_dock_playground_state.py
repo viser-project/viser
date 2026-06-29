@@ -148,11 +148,11 @@ def test_minimize_click_on_background_overlapping_window(page: Page) -> None:
 # ===========================================================================
 # Height correctness.
 # ===========================================================================
-def test_collapsed_vertical_stack_sibling_expands(page: Page) -> None:
-    """In a vertical docked stack, minimizing one panel must shrink it to ~its
-    handle+strip and let the sibling expand to fill the freed height."""
-    # Arrange: a vertical right-edge stack [a above b] (the minimize toggle and
-    # the resulting heights are the subject).
+def test_vertical_stack_minimizes_as_a_unit(page: Page) -> None:
+    """A vertical docked stack minimizes ALL-OR-NOTHING: the individual panels
+    have no per-cell +/- (only the parent stack handle), and toggling that
+    handle collapses/expands every panel together -- there's no mixed
+    'one minimized, one short' state."""
     a, b = "t-controls", "t-inspector"
     set_layout(page, dock_layout(docked_right=stack("controls", "inspector")))
     docked_right = page.eval_on_selector_all(
@@ -161,23 +161,28 @@ def test_collapsed_vertical_stack_sibling_expands(page: Page) -> None:
     )
     assert a in docked_right and b in docked_right
 
-    b_box_before = _box(page, f'[data-dock-group="{b}"]')
-    assert b_box_before is not None
+    # No individual minimize buttons inside a stack -- only the parent handle.
+    def n_individual_btns(gid: str) -> int:
+        return page.eval_on_selector_all(
+            f'[data-dock-group="{gid}"] [data-dock-minimize]', "els => els.length"
+        )
 
-    # Minimize a; b should grow taller (a freed its content height).
-    _minimize_btn(page, a).click()
-    page.wait_for_timeout(120)
-    assert _is_collapsed(page, a)
-    a_box_after = _box(page, f'[data-dock-group="{a}"]')
-    b_box_after = _box(page, f'[data-dock-group="{b}"]')
-    assert a_box_after is not None and b_box_after is not None
-    # Collapsed a is short (just handle+strip, well under 120px).
-    assert a_box_after["height"] < 120, (
-        f"collapsed panel too tall: {a_box_after['height']}"
+    assert n_individual_btns(a) == 0 and n_individual_btns(b) == 0, (
+        "stacked panels must not show individual +/- buttons"
     )
-    # Sibling b expanded.
-    assert b_box_after["height"] > b_box_before["height"] + 20, (
-        f"sibling did not expand: {b_box_before['height']} -> {b_box_after['height']}"
+    parent = page.query_selector("[data-dock-column-handle] [data-dock-minimize-all]")
+    assert parent is not None, "a stack must show a parent minimize-all handle"
+
+    # The parent handle minimizes BOTH; clicking again expands BOTH.
+    parent.click()
+    page.wait_for_timeout(120)
+    assert _is_collapsed(page, a) and _is_collapsed(page, b), (
+        "the parent handle must minimize the whole stack"
+    )
+    page.query_selector("[data-dock-column-handle] [data-dock-minimize-all]").click()
+    page.wait_for_timeout(120)
+    assert not _is_collapsed(page, a) and not _is_collapsed(page, b), (
+        "the parent handle must expand the whole stack"
     )
 
 
@@ -281,7 +286,9 @@ def test_drag_does_not_resize_pinned_height_window(page: Page) -> None:
     after = _box(page, "[data-floating-window]")
     assert win is not None and after is not None
     assert win["y"] > 500, "drag should have moved the window down"
-    assert win["height"] == 360, "model height must be untouched by a move"
+    assert win["height"] == {"mode": "pinned", "px": 360}, (
+        "model height must be untouched by a move"
+    )
     assert abs(after["height"] - before["height"]) < 2, (
         f"drag visually resized the window: {before['height']} -> {after['height']}"
     )
@@ -300,7 +307,7 @@ def test_width_only_viewport_resize_keeps_bottom_window_y(page: Page) -> None:
     page.wait_for_timeout(150)  # let ResizeObserver fire + React commit
     win = floating_window_for_panel(page, "controls")
     assert win is not None
-    assert win["height"] == 300
+    assert win["height"] == {"mode": "pinned", "px": 300}
     assert win["y"] == 620, f"width-only resize moved the window up: y={win['y']}"
 
 
@@ -528,7 +535,7 @@ def test_overlaid_region_divider_tracks_without_jump(page: Page) -> None:
     # For a RIGHT region the canvas-adjacent column is the FIRST one; minimize it.
     inner = cols[0]
     _minimize_btn(page, inner).click()
-    page.wait_for_timeout(120)
+    page.wait_for_timeout(350)  # wait out the minimize width animation
     if not _is_collapsed(page, inner):
         pytest.skip("inner column did not collapse this run")
 
@@ -591,10 +598,13 @@ def test_width_only_shrink_keeps_collapsed_strip_in_place(page: Page) -> None:
     page.wait_for_timeout(150)
     win = floating_window_for_panel(page, "controls")
     assert win is not None
-    # Bottom-half anchor: distance to the bottom edge is preserved (was 100px
-    # in an 800px container -> y=650 in a 750px one). The old model-height
-    # pull would have yanked it to 750 - 380 = 370.
-    assert abs(win["y"] - 650) < 10, f"strip moved wrongly: y={win['y']}"
+    # Bottom-half anchor: the strip's distance to the bottom edge is preserved
+    # across the shrink (~640px in the 750px container, set by the strip's
+    # rendered height). The key contrast is with the OLD model-height pull, which
+    # would have yanked it up to 750 - 380 = 370; anything near the bottom half
+    # confirms the rendered-height anchor. (Loose bound: the exact y tracks the
+    # strip's rendered height, which is layout/font dependent.)
+    assert 600 < win["y"] < 680, f"strip moved wrongly: y={win['y']}"
 
 
 def test_flip_expand_of_pinned_height_window_keeps_height(

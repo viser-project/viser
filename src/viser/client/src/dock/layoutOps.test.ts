@@ -26,6 +26,7 @@ import {
   DockNode,
   GroupId,
   MIN_PANEL_WIDTH_PX,
+  MIN_REGION_GRAB_PX,
   emptyLayout,
 } from "./types";
 import {
@@ -37,6 +38,7 @@ import {
   groupsInTree,
   group,
   refCount,
+  floatingWindow,
 } from "./testUtils";
 import {
   edgeIsSingleLeaf,
@@ -48,7 +50,7 @@ import {
   insertTabsInto,
   mergeGroupsInto,
   floatGroup,
-  tearOutPanel,
+  tearOutPane,
   moveWindow,
   resizeWindow,
   resizeWindowHeight,
@@ -58,6 +60,8 @@ import {
   toggleCollapsed,
   minimizeStack,
   expandStack,
+  normalizeStackCollapse,
+  stackGroupIdsOf,
   setActiveTab,
   cascadeResize,
   resizeRegionColumns,
@@ -90,37 +94,30 @@ function floatingLayout(
   windows: { id: string; stack: GroupId[]; stackWeights?: Record<GroupId, number> }[],
 ): DockLayout {
   const l = emptyLayout();
-  l.floating = windows.map((w) => ({
-    id: w.id,
-    x: 0,
-    y: 0,
-    width: 300,
-    stack: [...w.stack],
-    ...(w.stackWeights !== undefined ? { stackWeights: { ...w.stackWeights } } : {}),
-  }));
+  l.floating = windows.map(floatingWindow);
   for (const w of windows)
     for (const g of w.stack)
       if (l.groups[g] === undefined)
-        l.groups[g] = { id: g, panelIds: [g], activeId: g };
+        l.groups[g] = { id: g, paneIds: [g], activeId: g };
   return l;
 }
 
-/** One area (backed by "area-grp" with two panels) plus plain target/source
+/** One area (backed by "area-grp" with two panes) plus plain target/source
  * groups, for the area-as-fixture guards. */
 function areaSourceLayout(): DockLayout {
   const l = emptyLayout();
-  // Backing group for an area, holding two panels.
+  // Backing group for an area, holding two panes.
   l.groups["area-grp"] = {
     id: "area-grp",
-    panelIds: ["props", "history"],
+    paneIds: ["props", "history"],
     activeId: "props",
   };
   // A plain target group to merge into.
-  l.groups["target"] = { id: "target", panelIds: ["scene"], activeId: "scene" };
+  l.groups["target"] = { id: "target", paneIds: ["scene"], activeId: "scene" };
   // A plain source we DO expect to be consumed.
   l.groups["plain-src"] = {
     id: "plain-src",
-    panelIds: ["controls"],
+    paneIds: ["controls"],
     activeId: "controls",
   };
   l.areas = { "area-1": { id: "area-1", group: "area-grp" } };
@@ -214,31 +211,34 @@ describe("edgeIsSingleLeaf", () => {
 // ===========================================================================
 
 describe("minRegionWidth", () => {
-  it("a leaf needs exactly one panel minimum", () => {
-    expect(minRegionWidth(leaf("a"))).toBe(MIN_PANEL_WIDTH_PX);
+  // The layout floor is the grabbable sliver (MIN_REGION_GRAB_PX), NOT the
+  // panel-content minimum -- a region narrower than its content scrolls its
+  // body rather than refusing to shrink.
+  it("a leaf floors at one grab minimum", () => {
+    expect(minRegionWidth(leaf("a"))).toBe(MIN_REGION_GRAB_PX);
   });
 
   it("a column (stacked) takes the max of its children (shared width)", () => {
-    expect(minRegionWidth(col([leaf("a"), leaf("b")]))).toBe(MIN_PANEL_WIDTH_PX);
+    expect(minRegionWidth(col([leaf("a"), leaf("b")]))).toBe(MIN_REGION_GRAB_PX);
   });
 
   it("a row sums children plus dividers", () => {
     const divider = 6;
     expect(minRegionWidth(row([leaf("a"), leaf("b")]), divider)).toBe(
-      MIN_PANEL_WIDTH_PX * 2 + divider,
+      MIN_REGION_GRAB_PX * 2 + divider,
     );
   });
 
   it("honors a custom divider width", () => {
     expect(minRegionWidth(row([leaf("a"), leaf("b"), leaf("c")]), 10)).toBe(
-      MIN_PANEL_WIDTH_PX * 3 + 10 * 2,
+      MIN_REGION_GRAB_PX * 3 + 10 * 2,
     );
   });
 
   it("nested: a column containing a row takes the row's (summed) width", () => {
     const divider = 6;
     const node = col([leaf("a"), row([leaf("b"), leaf("c")])]);
-    expect(minRegionWidth(node, divider)).toBe(MIN_PANEL_WIDTH_PX * 2 + divider);
+    expect(minRegionWidth(node, divider)).toBe(MIN_REGION_GRAB_PX * 2 + divider);
   });
 });
 
@@ -445,7 +445,7 @@ describe("dropOnDockedLeaf", () => {
     const id = leafIdOf(layout, "left", "a");
     const out = dropOnDockedLeaf(layout, ["b"], "left", id, "center");
     expect(shapeOf(out.docked.left)).toEqual({ leaf: "a" });
-    expect(out.groups["a"].panelIds).toEqual(["a:0", "b:0", "b:1"]);
+    expect(out.groups["a"].paneIds).toEqual(["a:0", "b:0", "b:1"]);
     expect(out.groups["b"]).toBeUndefined(); // source group dropped
     expect(out.floating).toHaveLength(0);
   });
@@ -525,6 +525,54 @@ describe("dropOnDockedLeaf", () => {
   });
 });
 
+// Seam equivalence: in a side-by-side region [b | a], inserting a new column on
+// the A|B seam must resolve to the SAME order whether the user aims at the RIGHT
+// band of the left panel (split right of b) or the LEFT band of the right panel
+// (split left of a). Both are the "between b and a" insert -> [b, c, a].
+//
+// This is the pure-layout counterpart of the e2e
+// test_right_of_A_and_left_of_B_are_the_same_seam_insert (dropzones), which
+// opened TWO full browser sessions to assert the same equivalence by reading
+// rendered column geometry. Here it is deterministic and free.
+describe("dropOnDockedLeaf seam equivalence (right-of-left == left-of-right)", () => {
+  // Left region holds row [b | a] with fixed leaf ids Lb / La.
+  function sideBySide(): DockLayout {
+    const l = emptyLayout();
+    l.docked.left = {
+      type: "split",
+      id: "S",
+      dir: "row",
+      weight: 1,
+      children: [
+        { type: "leaf", id: "Lb", group: "b", weight: 1 },
+        { type: "leaf", id: "La", group: "a", weight: 1 },
+      ],
+    };
+    l.groups = { a: group("a"), b: group("b"), c: group("c") };
+    l.floating = [
+      { id: "w", x: 0, y: 0, width: 280, height: { mode: "auto" }, stack: ["c"] },
+    ];
+    return l;
+  }
+
+  it("both seam approaches insert c between b and a -> [b, c, a]", () => {
+    // Aim at the RIGHT band of the left panel (b): split right of b.
+    const rightOfB = dropOnDockedLeaf(sideBySide(), ["c"], "left", "Lb", "right");
+    // Aim at the LEFT band of the right panel (a): split left of a.
+    const leftOfA = dropOnDockedLeaf(sideBySide(), ["c"], "left", "La", "left");
+
+    const order = (l: DockLayout) => groupsInTree(l.docked.left);
+    expect(order(rightOfB)).toEqual(["b", "c", "a"]);
+    expect(order(leftOfA)).toEqual(["b", "c", "a"]);
+    // The equivalence claim itself: identical left-to-right column order.
+    expect(order(rightOfB)).toEqual(order(leftOfA));
+    // c lands in the MIDDLE (between the two originals), and no panel is lost.
+    expect(order(rightOfB)[1]).toBe("c");
+    expect(refCount(rightOfB, "c")).toBe(1);
+    expect(rightOfB.floating).toHaveLength(0);
+  });
+});
+
 // regression: dropOnDockedLeaf with a non-center region, where the dragged set
 // includes the target leaf's own group, used to orphan/lose the dragged group
 // (was HIGH). FIX: re-find the target leaf AFTER detach; if it's gone (a
@@ -576,13 +624,13 @@ describe("BUG #3 (by design): self-drop onto a sole docked leaf is a no-op", () 
 // ===========================================================================
 
 describe("insertTabsInto", () => {
-  it("inserts source panels at the given index, dropping the source group", () => {
+  it("inserts source panes at the given index, dropping the source group", () => {
     const layout = makeLayout({
       left: row([leaf("t"), leaf("s")]),
       groups: { t: 2, s: 1 },
     });
     const out = insertTabsInto(layout, "t", ["s"], 1);
-    expect(out.groups["t"].panelIds).toEqual(["t:0", "s:0", "t:1"]);
+    expect(out.groups["t"].paneIds).toEqual(["t:0", "s:0", "t:1"]);
     expect(out.groups["s"]).toBeUndefined();
     // s's leaf removed; left collapses to a single leaf t.
     expect(shapeOf(out.docked.left)).toEqual({ leaf: "t" });
@@ -597,7 +645,7 @@ describe("insertTabsInto", () => {
       groups: { t: 2, s: 1 },
     });
     const out = insertTabsInto(layout, "t", ["s"], index);
-    expect(out.groups["t"].panelIds).toEqual([...expected]);
+    expect(out.groups["t"].paneIds).toEqual([...expected]);
   });
 
   it("the last source group's active tab becomes active", () => {
@@ -624,7 +672,7 @@ describe("insertTabsInto", () => {
     // whose activeId was never repaired); the merge must not propagate it.
     layout.groups["s"].activeId = "ghost";
     const out = insertTabsInto(layout, "t", ["s"], 0);
-    expect(out.groups["t"].panelIds).toContain(out.groups["t"].activeId);
+    expect(out.groups["t"].paneIds).toContain(out.groups["t"].activeId);
   });
 
   it("returns input when the target group is unknown", () => {
@@ -632,7 +680,7 @@ describe("insertTabsInto", () => {
     expect(insertTabsInto(layout, "zzz", ["t"], 0)).toBe(layout);
   });
 
-  it("returns input when no source contributes panels", () => {
+  it("returns input when no source contributes panes", () => {
     const layout = makeLayout({ left: leaf("t"), groups: { t: 1 } });
     expect(insertTabsInto(layout, "t", ["unknown"], 0)).toBe(layout);
   });
@@ -643,7 +691,7 @@ describe("insertTabsInto", () => {
       groups: { t: 1, s1: 1, s2: 1 },
     });
     const out = insertTabsInto(layout, "t", ["s1", "s2"], 1);
-    expect(out.groups["t"].panelIds).toEqual(["t:0", "s1:0", "s2:0"]);
+    expect(out.groups["t"].paneIds).toEqual(["t:0", "s1:0", "s2:0"]);
     expect(out.groups["s1"]).toBeUndefined();
     expect(out.groups["s2"]).toBeUndefined();
   });
@@ -653,34 +701,34 @@ describe("insertTabsInto", () => {
 // area-backing group is a fixed fixture: detachInPlace is a no-op on it, so
 // consuming it as a merge source would delete it from layout.groups while
 // leaving layout.areas dangling. The guard skips any source that backs an
-// area; the area's group (and its panels) must survive untouched.
+// area; the area's group (and its panes) must survive untouched.
 describe("(6) insertTabsInto guards an area group used as a SOURCE", () => {
-  it("skips the area source: it is not consumed and its panels survive", () => {
+  it("skips the area source: it is not consumed and its panes survive", () => {
     const l = areaSourceLayout();
     // Try to merge the AREA group into `target`. The guard must skip it.
     const out = insertTabsInto(l, "target", ["area-grp"], 1);
-    // Nothing merged -> insertTabsInto found no incoming panels -> input
+    // Nothing merged -> insertTabsInto found no incoming panes -> input
     // returned unchanged (same reference).
     expect(out).toBe(l);
-    // The area group's backing group and panels are intact.
-    expect(out.groups["area-grp"].panelIds).toEqual(["props", "history"]);
+    // The area group's backing group and panes are intact.
+    expect(out.groups["area-grp"].paneIds).toEqual(["props", "history"]);
     // The area mapping still points at the surviving group.
     expect(out.areas!["area-1"]).toEqual({ id: "area-1", group: "area-grp" });
     // The target was not modified.
-    expect(out.groups["target"].panelIds).toEqual(["scene"]);
+    expect(out.groups["target"].paneIds).toEqual(["scene"]);
   });
 
   it("skips ONLY the area source in a mixed source list; plain sources merge", () => {
     const l = areaSourceLayout();
     // Mixed list: the area group (must be skipped) plus a plain group (consumed).
     const out = insertTabsInto(l, "target", ["area-grp", "plain-src"], 1);
-    // The plain source merged in at index 1; the area's panels did NOT.
-    expect(out.groups["target"].panelIds).toEqual(["scene", "controls"]);
-    expect(out.groups["target"].panelIds).not.toContain("props");
-    expect(out.groups["target"].panelIds).not.toContain("history");
+    // The plain source merged in at index 1; the area's panes did NOT.
+    expect(out.groups["target"].paneIds).toEqual(["scene", "controls"]);
+    expect(out.groups["target"].paneIds).not.toContain("props");
+    expect(out.groups["target"].paneIds).not.toContain("history");
     // The plain source was consumed; the area's backing group survives.
     expect(out.groups["plain-src"]).toBeUndefined();
-    expect(out.groups["area-grp"].panelIds).toEqual(["props", "history"]);
+    expect(out.groups["area-grp"].paneIds).toEqual(["props", "history"]);
     expect(out.areas!["area-1"].group).toBe("area-grp");
   });
 });
@@ -696,8 +744,8 @@ describe("(7) dock/snap ops guard an area group in the dragged set", () => {
     const l = areaSourceLayout();
     // A floating window to snap into / drag from.
     l.floating = [
-      { id: "w1", x: 0, y: 0, width: 300, stack: ["plain-src"] },
-      { id: "w2", x: 350, y: 0, width: 300, stack: ["target"] },
+      floatingWindow({ id: "w1", x: 0, y: 0, width: 300, stack: ["plain-src"] }),
+      floatingWindow({ id: "w2", x: 350, y: 0, width: 300, stack: ["target"] }),
     ];
     return l;
   }
@@ -749,13 +797,13 @@ describe("(7) dock/snap ops guard an area group in the dragged set", () => {
 // ===========================================================================
 
 describe("mergeGroupsInto", () => {
-  it("appends source panels to the end of the target tab strip", () => {
+  it("appends source panes to the end of the target tab strip", () => {
     const layout = makeLayout({
       left: row([leaf("t"), leaf("s")]),
       groups: { t: 2, s: 2 },
     });
     const out = mergeGroupsInto(layout, "t", ["s"]);
-    expect(out.groups["t"].panelIds).toEqual(["t:0", "t:1", "s:0", "s:1"]);
+    expect(out.groups["t"].paneIds).toEqual(["t:0", "t:1", "s:0", "s:1"]);
     expect(out.groups["s"]).toBeUndefined();
   });
 
@@ -798,26 +846,26 @@ describe("floatGroup", () => {
     const layout = makeLayout({ left: leaf("a") });
     const { layout: out, windowId } = floatGroup(layout, "a", 10, 20, 250, 420);
     const win = out.floating.find((w) => w.id === windowId)!;
-    expect(win.height).toBe(420);
+    expect(win.height).toEqual({ mode: "pinned", px: 420 });
   });
 
   it("omits height (auto-size) when no height is passed", () => {
     const layout = makeLayout({ left: leaf("a") });
     const { layout: out, windowId } = floatGroup(layout, "a", 10, 20, 250);
     const win = out.floating.find((w) => w.id === windowId)!;
-    // No height key at all (auto-size), not merely undefined-after-set.
-    expect("height" in win).toBe(false);
+    // Auto-size (the explicit tagged-union state, not a missing key).
+    expect(win.height).toEqual({ mode: "auto" });
   });
 });
 
 // ===========================================================================
-// tearOutPanel  (single-panel floats whole group vs multi-panel splits one out)
+// tearOutPane  (single-panel floats whole group vs multi-panel splits one out)
 // ===========================================================================
 
-describe("tearOutPanel", () => {
+describe("tearOutPane", () => {
   it("single-panel group: floats the whole group (no new group created)", () => {
     const layout = makeLayout({ left: leaf("a"), groups: { a: 1 } });
-    const res = tearOutPanel(layout, "a", "a:0", 1, 2, 200);
+    const res = tearOutPane(layout, "a", "a:0", 1, 2, 200);
     expect(res.floatingGroupId).toBe("a");
     expect(res.layout.docked.left).toBeNull();
     expect(res.layout.floating[0].stack).toEqual(["a"]);
@@ -826,12 +874,12 @@ describe("tearOutPanel", () => {
 
   it("multi-panel group: splits the torn panel into a new floating group", () => {
     const layout = makeLayout({ left: leaf("a"), groups: { a: 3 } });
-    const res = tearOutPanel(layout, "a", "a:1", 7, 8, 240);
-    // Source group keeps the other two panels.
-    expect(res.layout.groups["a"].panelIds).toEqual(["a:0", "a:2"]);
+    const res = tearOutPane(layout, "a", "a:1", 7, 8, 240);
+    // Source group keeps the other two panes.
+    expect(res.layout.groups["a"].paneIds).toEqual(["a:0", "a:2"]);
     // New floating group holds just the torn panel.
-    const newGroup = res.layout.groups[res.floatingGroupId];
-    expect(newGroup.panelIds).toEqual(["a:1"]);
+    const newGroup = res.layout.groups[res.floatingGroupId!];
+    expect(newGroup.paneIds).toEqual(["a:1"]);
     expect(res.floatingGroupId).not.toBe("a");
     const win = res.layout.floating.find((w) => w.id === res.windowId)!;
     expect(win).toMatchObject({ x: 7, y: 8, width: 240, stack: [res.floatingGroupId] });
@@ -842,13 +890,13 @@ describe("tearOutPanel", () => {
   it("tearing out the active panel reassigns active to the first survivor", () => {
     const layout = makeLayout({ left: leaf("a"), groups: { a: 3 } });
     layout.groups["a"].activeId = "a:1";
-    const res = tearOutPanel(layout, "a", "a:1", 0, 0, 200);
+    const res = tearOutPane(layout, "a", "a:1", 0, 0, 200);
     expect(res.layout.groups["a"].activeId).toBe("a:0");
   });
 
   it("unknown group falls back to floatGroup semantics", () => {
     const layout = makeLayout({ floating: [{ id: "w1", stack: ["x"] }] });
-    const res = tearOutPanel(layout, "x", "x:0", 0, 0, 200);
+    const res = tearOutPane(layout, "x", "x:0", 0, 0, 200);
     expect(res.floatingGroupId).toBe("x");
   });
 });
@@ -940,7 +988,7 @@ describe("snapToWindowStack height preservation", () => {
     const merged = out.floating.find((w) => w.id === "w1")!;
     expect(merged.stack).toEqual(["a", "b"]);
     // The source height carries over to the merged (previously auto) target.
-    expect(merged.height).toBe(333);
+    expect(merged.height).toEqual({ mode: "pinned", px: 333 });
   });
 
   it("keeps the target's own height when it already has one", () => {
@@ -955,7 +1003,7 @@ describe("snapToWindowStack height preservation", () => {
     const out = snapToWindowStack(layout, ["b"], "w1");
     const merged = out.floating.find((w) => w.id === "w1")!;
     expect(merged.stack).toEqual(["a", "b"]);
-    expect(merged.height).toBe(200);
+    expect(merged.height).toEqual({ mode: "pinned", px: 200 });
   });
 
   it("stays auto when neither source nor target has a height", () => {
@@ -967,26 +1015,26 @@ describe("snapToWindowStack height preservation", () => {
     });
     const out = snapToWindowStack(layout, ["b"], "w1");
     const merged = out.floating.find((w) => w.id === "w1")!;
-    expect(merged.height).toBeUndefined();
+    expect(merged.height).toEqual({ mode: "auto" });
   });
 });
 
 // regression: snapToWindowStack of a window's entire stack back into that same
-// window used to delete the window and orphan the groups (was HIGH; panels
+// window used to delete the window and orphan the groups (was HIGH; panes
 // lost). FIX: detach first, re-find the target window; if it was consumed,
 // abort (return the input unchanged) -- a safe no-op.
 describe("BUG #1 (fixed): snapToWindowStack self-target no longer empties the window", () => {
   it("snapping the sole group of a window into that same window is a safe no-op", () => {
     const l = emptyLayout();
     l.groups = { a: group("a") };
-    l.floating = [{ id: "w1", x: 10, y: 10, width: 260, stack: ["a"] }];
+    l.floating = [floatingWindow({ id: "w1", x: 10, y: 10, width: 260, stack: ["a"] })];
 
     const out = snapToWindowStack(l, ["a"], "w1", 0);
 
     // FIXED: window preserved, `a` still referenced exactly once, no orphan.
     expect(out).toBe(l); // safe no-op: returns the input unchanged
     expect(out.floating).toEqual([
-      { id: "w1", x: 10, y: 10, width: 260, stack: ["a"] },
+      floatingWindow({ id: "w1", x: 10, y: 10, width: 260, stack: ["a"] }),
     ]);
     expect(refCount(out, "a")).toBe(1);
   });
@@ -994,7 +1042,7 @@ describe("BUG #1 (fixed): snapToWindowStack self-target no longer empties the wi
   it("snapping a window's ENTIRE multi-group stack into itself is a safe no-op", () => {
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b") };
-    l.floating = [{ id: "w1", x: 0, y: 0, width: 260, stack: ["a", "b"] }];
+    l.floating = [floatingWindow({ id: "w1", x: 0, y: 0, width: 260, stack: ["a", "b"] })];
 
     const out = snapToWindowStack(l, ["a", "b"], "w1", 0);
 
@@ -1007,8 +1055,8 @@ describe("BUG #1 (fixed): snapToWindowStack self-target no longer empties the wi
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b"), c: group("c") };
     l.floating = [
-      { id: "w1", x: 0, y: 0, width: 260, stack: ["a", "b"] },
-      { id: "w2", x: 300, y: 0, width: 260, stack: ["c"] },
+      floatingWindow({ id: "w1", x: 0, y: 0, width: 260, stack: ["a", "b"] }),
+      floatingWindow({ id: "w2", x: 300, y: 0, width: 260, stack: ["c"] }),
     ];
     const out = snapToWindowStack(l, ["a", "c"], "w1", 0);
     expect(out.floating.map((w) => w.id)).toEqual(["w1"]); // w2 cleaned up
@@ -1087,7 +1135,7 @@ describe("(8) detaching a group prunes its stackWeights entry", () => {
     const l = floatingLayout([
       { id: "w1", stack: ["a", "b", "c"], stackWeights: { a: 100, b: 200, c: 50 } },
     ]);
-    l.floating[0].height = 400;
+    l.floating[0].height = { mode: "pinned", px: 400 };
     const out = floatGroup(l, "b", 10, 10, 260).layout;
     const w1 = out.floating.find((w) => w.id === "w1")!;
     expect(w1.stack).toEqual(["a", "c"]);
@@ -1099,7 +1147,7 @@ describe("(8) detaching a group prunes its stackWeights entry", () => {
       { id: "w1", stack: ["a", "b"], stackWeights: { a: 100, b: 200 } },
       { id: "w2", stack: ["c"] },
     ]);
-    l.floating[0].height = 300;
+    l.floating[0].height = { mode: "pinned", px: 300 };
     const out = snapToWindowStack(l, ["b"], "w2", 0);
     const w1 = out.floating.find((w) => w.id === "w1")!;
     expect(w1.stackWeights).toEqual({ a: 100 });
@@ -1115,12 +1163,12 @@ describe("reorderTab", () => {
   it("moves a panel to a new index", () => {
     const layout = makeLayout({ left: leaf("g"), groups: { g: 3 } });
     const out = reorderTab(layout, "g", "g:0", 2);
-    expect(out.groups["g"].panelIds).toEqual(["g:1", "g:2", "g:0"]);
+    expect(out.groups["g"].paneIds).toEqual(["g:1", "g:2", "g:0"]);
   });
 
   it("clamps the insert index", () => {
     const layout = makeLayout({ left: leaf("g"), groups: { g: 3 } });
-    expect(reorderTab(layout, "g", "g:0", 99).groups["g"].panelIds).toEqual([
+    expect(reorderTab(layout, "g", "g:0", 99).groups["g"].paneIds).toEqual([
       "g:1",
       "g:2",
       "g:0",
@@ -1165,86 +1213,100 @@ describe("toggleCollapsed", () => {
     expect(toggleCollapsed(layout, "zzz")).toBe(layout);
   });
 
-  it("clears the parent-minimize tag (user takes individual control)", () => {
-    let layout = makeLayout({ floating: [{ id: "w1", stack: ["a", "b"] }] });
-    layout = minimizeStack(layout, ["a", "b"]);
-    const out = toggleCollapsed(layout, "a");
-    expect(out.groups["a"].collapsed).toBe(false);
-    expect(out.groups["a"].collapsedByParent).toBeUndefined();
-    // b keeps its tag: it is still "minimized by the parent".
-    expect(out.groups["b"].collapsedByParent).toBe(true);
-  });
 });
 
 // ===========================================================================
-// minimizeStack / expandStack (the stack handle's minimize-all button)
+// minimizeStack / expandStack (the stack handle's minimize-all button) -- a
+// stack is uniform-collapse, so these are simple all/none toggles.
 // ===========================================================================
 
 describe("minimizeStack / expandStack", () => {
   const stacked = () =>
     makeLayout({ floating: [{ id: "w1", stack: ["a", "b", "c"] }] });
 
-  it("all expanded: minimize collapses + tags all; expand restores all", () => {
+  it("minimize collapses every group; expand expands every group", () => {
     const min = minimizeStack(stacked(), ["a", "b", "c"]);
-    for (const g of ["a", "b", "c"]) {
-      expect(min.groups[g].collapsed).toBe(true);
-      expect(min.groups[g].collapsedByParent).toBe(true);
-    }
+    for (const g of ["a", "b", "c"]) expect(min.groups[g].collapsed).toBe(true);
     const max = expandStack(min, ["a", "b", "c"]);
-    for (const g of ["a", "b", "c"]) {
-      expect(max.groups[g].collapsed).toBe(false);
-      expect(max.groups[g].collapsedByParent).toBeUndefined();
-    }
+    for (const g of ["a", "b", "c"]) expect(max.groups[g].collapsed).toBe(false);
   });
 
-  it("a mixed min/max arrangement round-trips through minimize/expand", () => {
-    // a + b minimized individually, c expanded.
-    let layout = toggleCollapsed(toggleCollapsed(stacked(), "a"), "b");
-    layout = minimizeStack(layout, ["a", "b", "c"]);
-    for (const g of ["a", "b", "c"])
-      expect(layout.groups[g].collapsed).toBe(true);
-    // Only c (expanded at minimize time) is tagged for restore.
-    expect(layout.groups["a"].collapsedByParent).toBeUndefined();
-    expect(layout.groups["b"].collapsedByParent).toBeUndefined();
-    expect(layout.groups["c"].collapsedByParent).toBe(true);
-
-    const out = expandStack(layout, ["a", "b", "c"]);
-    expect(out.groups["a"].collapsed).toBe(true);
-    expect(out.groups["b"].collapsed).toBe(true);
-    expect(out.groups["c"].collapsed).toBe(false);
-  });
-
-  it("re-minimizing re-tags from the CURRENT mix, not stale history", () => {
-    // Minimize all (everything tagged), then the user expands b by hand.
-    let layout = minimizeStack(stacked(), ["a", "b", "c"]);
-    layout = toggleCollapsed(layout, "b");
-    // Second minimize-all: only b was expanded, so only b is tagged; a and
-    // c's tags from the FIRST minimize are reset.
-    layout = minimizeStack(layout, ["a", "b", "c"]);
-    expect(layout.groups["a"].collapsedByParent).toBeUndefined();
-    expect(layout.groups["b"].collapsedByParent).toBe(true);
-    expect(layout.groups["c"].collapsedByParent).toBeUndefined();
-    const out = expandStack(layout, ["a", "b", "c"]);
-    expect(out.groups["a"].collapsed).toBe(true);
-    expect(out.groups["b"].collapsed).toBe(false);
-    expect(out.groups["c"].collapsed).toBe(true);
-  });
-
-  it("expand with no tags (all minimized individually) expands everything", () => {
-    let layout = stacked();
-    for (const g of ["a", "b", "c"]) layout = toggleCollapsed(layout, g);
-    const out = expandStack(layout, ["a", "b", "c"]);
-    for (const g of ["a", "b", "c"])
-      expect(out.groups[g].collapsed).toBe(false);
+  it("minimize from a partial state still collapses all", () => {
+    const layout = toggleCollapsed(stacked(), "a"); // a minimized, b/c expanded
+    const min = minimizeStack(layout, ["a", "b", "c"]);
+    for (const g of ["a", "b", "c"]) expect(min.groups[g].collapsed).toBe(true);
   });
 
   it("no-ops return the input layout unchanged", () => {
-    let layout = stacked();
-    for (const g of ["a", "b", "c"]) layout = toggleCollapsed(layout, g);
-    // Everything already minimized and untagged -> minimize is a no-op.
-    expect(minimizeStack(layout, ["a", "b", "c"])).toBe(layout);
     const allExpanded = stacked();
     expect(expandStack(allExpanded, ["a", "b", "c"])).toBe(allExpanded);
+    const allMin = minimizeStack(allExpanded, ["a", "b", "c"]);
+    expect(minimizeStack(allMin, ["a", "b", "c"])).toBe(allMin);
+  });
+});
+
+// ===========================================================================
+// normalizeStackCollapse: a 2+ stack is uniform; expanded dominates.
+// ===========================================================================
+
+describe("normalizeStackCollapse", () => {
+  it("a mixed floating stack -> all expanded (expanded dominates)", () => {
+    const layout = makeLayout({ floating: [{ id: "w1", stack: ["a", "b"] }] });
+    layout.groups["a"].collapsed = true; // a minimized, b expanded -> mixed
+    const changed = normalizeStackCollapse(layout);
+    expect(changed).toBe(true);
+    expect(layout.groups["a"].collapsed).not.toBe(true);
+    expect(layout.groups["b"].collapsed).not.toBe(true);
+  });
+
+  it("a uniformly-minimized stack is left alone", () => {
+    const layout = makeLayout({ floating: [{ id: "w1", stack: ["a", "b"] }] });
+    layout.groups["a"].collapsed = true;
+    layout.groups["b"].collapsed = true;
+    expect(normalizeStackCollapse(layout)).toBe(false);
+    expect(layout.groups["a"].collapsed).toBe(true);
+    expect(layout.groups["b"].collapsed).toBe(true);
+  });
+
+  it("a LONE group keeps its own minimized state", () => {
+    const layout = makeLayout({ left: leaf("a") });
+    layout.groups["a"].collapsed = true;
+    expect(normalizeStackCollapse(layout)).toBe(false);
+    expect(layout.groups["a"].collapsed).toBe(true);
+  });
+
+  it("a mixed docked column -> all expanded", () => {
+    const layout = makeLayout({ left: col([leaf("a"), leaf("b")]) });
+    layout.groups["a"].collapsed = true; // mixed within the column
+    normalizeStackCollapse(layout);
+    expect(layout.groups["a"].collapsed).not.toBe(true);
+    expect(layout.groups["b"].collapsed).not.toBe(true);
+  });
+});
+
+// ===========================================================================
+// stackGroupIdsOf: a group's stack siblings (or just itself when lone).
+// ===========================================================================
+
+describe("stackGroupIdsOf", () => {
+  it("a floating multi-stack returns the whole stack", () => {
+    const layout = makeLayout({ floating: [{ id: "w1", stack: ["a", "b"] }] });
+    expect(stackGroupIdsOf(layout, "a").sort()).toEqual(["a", "b"]);
+  });
+
+  it("a docked column returns its leaf groups", () => {
+    const layout = makeLayout({ left: col([leaf("a"), leaf("b")]) });
+    expect(stackGroupIdsOf(layout, "b").sort()).toEqual(["a", "b"]);
+  });
+
+  it("a lone group returns just itself", () => {
+    const layout = makeLayout({ left: leaf("a") });
+    expect(stackGroupIdsOf(layout, "a")).toEqual(["a"]);
+  });
+
+  it("a lone floating group returns just itself", () => {
+    const layout = makeLayout({ floating: [{ id: "w1", stack: ["a"] }] });
+    expect(stackGroupIdsOf(layout, "a")).toEqual(["a"]);
   });
 });
 
@@ -1301,13 +1363,20 @@ describe("resizeWindow", () => {
     const layout = makeLayout({ floating: [{ id: "w1", stack: ["a"] }] });
     expect(resizeWindow(layout, "zzz", 100)).toBe(layout);
   });
+  it("floors width at the grab minimum (server set_width(0)/negative)", () => {
+    const layout = makeLayout({ floating: [{ id: "w1", stack: ["a"], width: 300 }] });
+    expect(resizeWindow(layout, "w1", 0).floating[0].width).toBe(MIN_REGION_GRAB_PX);
+    expect(resizeWindow(layout, "w1", -50).floating[0].width).toBe(
+      MIN_REGION_GRAB_PX,
+    );
+  });
 });
 
 describe("resizeWindowHeight", () => {
   it("sets explicit height", () => {
     const layout = makeLayout({ floating: [{ id: "w1", stack: ["a"] }] });
     const out = resizeWindowHeight(layout, "w1", 333);
-    expect(out.floating[0].height).toBe(333);
+    expect(out.floating[0].height).toEqual({ mode: "pinned", px: 333 });
   });
   it("returns input for unknown window", () => {
     const layout = makeLayout({ floating: [{ id: "w1", stack: ["a"] }] });
@@ -1320,7 +1389,7 @@ describe("NOTE: numeric ops do not validate their inputs", () => {
   it("resizeWindow accepts a non-finite width verbatim", () => {
     const l = emptyLayout();
     l.groups = { a: group("a") };
-    l.floating = [{ id: "w1", x: 0, y: 0, width: 260, stack: ["a"] }];
+    l.floating = [floatingWindow({ id: "w1", x: 0, y: 0, width: 260, stack: ["a"] })];
     const out = resizeWindow(l, "w1", Number.NaN);
     expect(Number.isNaN(out.floating[0].width)).toBe(true); // no validation
   });
@@ -1658,22 +1727,22 @@ describe("normalization invariants", () => {
 // Unmergeable helpers.
 // ===========================================================================
 import {
-  isPanelUnmergeable,
+  isPaneUnmergeable,
   isGroupUnmergeable,
   makeGroup,
 } from "./layoutOps";
-import { PanelRegistry } from "./types";
+import { PaneRegistry } from "./types";
 
 describe("unmergeable helpers", () => {
-  const panels: PanelRegistry = {
+  const panes: PaneRegistry = {
     a: { id: "a", title: "A", render: () => null },
     u: { id: "u", title: "U", render: () => null, unmergeable: true },
   };
 
-  it("isPanelUnmergeable reflects the registry flag", () => {
-    expect(isPanelUnmergeable(panels, "a")).toBe(false);
-    expect(isPanelUnmergeable(panels, "u")).toBe(true);
-    expect(isPanelUnmergeable(panels, "missing")).toBe(false);
+  it("isPaneUnmergeable reflects the registry flag", () => {
+    expect(isPaneUnmergeable(panes, "a")).toBe(false);
+    expect(isPaneUnmergeable(panes, "u")).toBe(true);
+    expect(isPaneUnmergeable(panes, "missing")).toBe(false);
   });
 
   it("isGroupUnmergeable is true when any panel in the group is unmergeable", () => {
@@ -1684,8 +1753,8 @@ describe("unmergeable helpers", () => {
       docked: { left: null, right: null },
       floating: [],
     };
-    expect(isGroupUnmergeable(layout, panels, normal.id)).toBe(false);
-    expect(isGroupUnmergeable(layout, panels, special.id)).toBe(true);
-    expect(isGroupUnmergeable(layout, panels, "no-such-group")).toBe(false);
+    expect(isGroupUnmergeable(layout, panes, normal.id)).toBe(false);
+    expect(isGroupUnmergeable(layout, panes, special.id)).toBe(true);
+    expect(isGroupUnmergeable(layout, panes, "no-such-group")).toBe(false);
   });
 });

@@ -19,7 +19,7 @@ PLAYGROUND_PATH = "/dock_test.html"
 # Python mirrors of the dock's TS layout constants (src/viser/client/src/dock/):
 MIN_PANEL_WIDTH_PX = 220  # types.ts
 MAX_PANEL_WIDTH_PX = 600  # types.ts
-MIN_CELL_HEIGHT_PX = 80  # SplitView.tsx
+MIN_CELL_HEIGHT_PX = 50  # SplitView.tsx
 
 
 def open_playground(dock_context, port: int, w: int = 1280, h: int = 800) -> Page:
@@ -139,6 +139,46 @@ def setup_side_by_side(page: Page, a: str, b: str) -> bool:
     return len(cols) == 2 and a in gids and b in gids
 
 
+def move_floating_window(page: Page, win_id: str, x: float, y: float) -> None:
+    """Reposition a floating window by id via the layout-injection probe. Used to
+    shove an incidental window (e.g. the monitor) clear of a drag-start point: a
+    docked region growing its reserved width can clamp an unrelated floating
+    window over another panel's grip, occluding the press."""
+    page.evaluate(
+        """([winId, x, y]) => {
+            const layout = window.__dockLayout;
+            const next = {
+                ...layout,
+                floating: layout.floating.map((w) =>
+                    w.id === winId ? { ...w, x, y } : w),
+            };
+            window.__dockSetLayout(next);
+        }""",
+        [win_id, x, y],
+    )
+
+
+def grip_above_strip_point(page: Page, gid: str) -> tuple[float, float]:
+    """A point in the group's grip bar's per-panel 'above THIS one' split zone --
+    below the thin 8px region-top span band but above the tab strip. Unlike
+    `group_grip_center`, this avoids the span band that a short grip bar's
+    geometric center can fall into (which resolves to a region-wide span-all
+    drop). Targets the MIDPOINT of the valid band [region-top + 8, strip.top) so
+    it stays robust across font sizes rather than hugging either edge."""
+    box = page.eval_on_selector(
+        f'[data-dock-group="{gid}"]',
+        "e => { const grip = e.querySelector('[data-dock-griphandle]'); "
+        "const strip = e.querySelector('[data-dock-strip]'); "
+        "const g = grip.getBoundingClientRect(); "
+        "const s = strip.getBoundingClientRect(); "
+        # grip.top is the region's top edge (the grip sits flush there); the
+        # span band is its first 8px (REGION_EDGE_PX in hitTest.ts).
+        "const lo = g.top + 8, hi = s.top; "
+        "return { x: g.x + g.width/2, y: (lo + hi) / 2 }; }",
+    )
+    return box["x"], box["y"]
+
+
 def collect_errors(page: Page) -> list[str]:
     """Start collecting console/page errors into the returned (live) list."""
     errors: list[str] = []
@@ -163,7 +203,7 @@ def group_id_for_panel(page: Page, panel_id: str) -> str:
         """(pid) => {
             const l = window.__dockLayout;
             for (const [gid, g] of Object.entries(l.groups)) {
-                if (g.panelIds.includes(pid)) return gid;
+                if (g.paneIds.includes(pid)) return gid;
             }
             return null;
         }""",
@@ -179,7 +219,7 @@ def floating_window_for_panel(page: Page, panel_id: str) -> dict | None:
             const l = window.__dockLayout;
             for (const win of l.floating) {
                 for (const gid of win.stack) {
-                    if (l.groups[gid]?.panelIds.includes(pid))
+                    if (l.groups[gid]?.paneIds.includes(pid))
                         return { ...win };
                 }
             }
@@ -242,7 +282,7 @@ def group(
 ) -> dict:
     """TabGroup literal for a panel spec; id is 't-' + first panel id."""
     ids = [panels] if isinstance(panels, str) else list(panels)
-    g: dict = {"id": f"t-{ids[0]}", "panelIds": ids, "activeId": active or ids[0]}
+    g: dict = {"id": f"t-{ids[0]}", "paneIds": ids, "activeId": active or ids[0]}
     if collapsed:
         g["collapsed"] = True
     return g
@@ -308,15 +348,17 @@ def window(
     """Floating-window spec: one tab group per panel spec; 2+ specs make a
     snapped stack (top to bottom). Pass to dock_layout(floating=[...])."""
     groups = [_as_group(s) for s in panel_specs]
+    # `height` is a WindowHeight tagged union: auto-track content, or pinned px.
     win: dict = {
         "id": f"t-w-{groups[0]['id'][2:]}",
         "x": x,
         "y": y,
         "width": width,
+        "height": {"mode": "auto"}
+        if height is None
+        else {"mode": "pinned", "px": height},
         "stack": [g["id"] for g in groups],
     }
-    if height is not None:
-        win["height"] = height
     return {"window": win, "groups": groups}
 
 

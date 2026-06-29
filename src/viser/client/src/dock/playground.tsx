@@ -20,7 +20,7 @@ import { DockArea } from "./DockArea";
 import { useDock } from "./DockContext";
 import { DockManager } from "./DockManager";
 import { makeGroup } from "./layoutOps";
-import { DockLayout, PanelRegistry, TabGroup } from "./types";
+import { DockLayout, PaneRegistry, TabGroup } from "./types";
 
 // Mock of the live control panel's title bar (see ControlPanel.tsx's
 // ConnectionStatus + ShareButton + the "Configuration & diagnostics" toggle).
@@ -72,7 +72,7 @@ function ConnectedTitle() {
   );
 }
 
-// A handful of demo panels with throwaway content.
+// A handful of demo panes with throwaway content.
 function demoBody(label: string, lines: number) {
   return (
     <Box>
@@ -85,8 +85,8 @@ function demoBody(label: string, lines: number) {
   );
 }
 
-// Inner panels available to drop into the nested dockable areas.
-const panels: PanelRegistry = {
+// Inner panes available to drop into the nested dockable areas.
+const panes: PaneRegistry = {
   scene: {
     id: "scene",
     title: "Scene",
@@ -132,8 +132,8 @@ const panels: PanelRegistry = {
     fullBleed: true,
     render: () => <DockArea areaId="area-main" fill />,
   },
-  // Inner panels: ordinary panels that happen to start inside nested areas.
-  // There is no difference between these and the "standard" panels above.
+  // Inner panes: ordinary panes that happen to start inside nested areas.
+  // There is no difference between these and the "standard" panes above.
   layers: { id: "layers", title: "Layers", render: () => demoBody("Layers", 5) },
   props: {
     id: "props",
@@ -147,14 +147,14 @@ const panels: PanelRegistry = {
   },
 };
 
-// Build the initial layout: a few floating panels, one already-docked panel, and
+// Build the initial layout: a few floating panes, one already-docked panel, and
 // two nested dockable areas (each backed by a flat tab group in `groups`).
 const dockedGroup: TabGroup = makeGroup(["scene"]);
 const floatA: TabGroup = makeGroup(["controls"]);
 const floatB: TabGroup = makeGroup(["inspector"]);
 const floatC: TabGroup = makeGroup(["console"]);
 const floatM: TabGroup = makeGroup(["monitor"]);
-// Area-backing groups (flat tabs). Their panels start docked inside the areas.
+// Area-backing groups (flat tabs). Their panes start docked inside the areas.
 const areaSceneGroup: TabGroup = makeGroup(["layers"]);
 const areaMainGroup: TabGroup = makeGroup(["props", "history"]);
 
@@ -173,10 +173,10 @@ const initialLayout: DockLayout = {
     right: null,
   },
   floating: [
-    { id: "w-a", x: 360, y: 40, width: 280, stack: [floatA.id] },
-    { id: "w-b", x: 680, y: 120, width: 260, stack: [floatB.id] },
-    { id: "w-c", x: 480, y: 320, width: 300, stack: [floatC.id] },
-    { id: "w-m", x: 900, y: 60, width: 300, height: 380, stack: [floatM.id] },
+    { id: "w-a", x: 360, y: 40, width: 280, height: { mode: "auto" }, stack: [floatA.id] },
+    { id: "w-b", x: 680, y: 120, width: 260, height: { mode: "auto" }, stack: [floatB.id] },
+    { id: "w-c", x: 480, y: 320, width: 300, height: { mode: "auto" }, stack: [floatC.id] },
+    { id: "w-m", x: 900, y: 60, width: 300, height: { mode: "pinned", px: 380 }, stack: [floatM.id] },
   ],
   areas: {
     "area-scene": { id: "area-scene", group: areaSceneGroup.id },
@@ -221,9 +221,9 @@ function Playground() {
       <Box style={{ width: "100vw", height: "100vh" }}>
         <DockManager
           initialLayout={initialLayout}
-          panels={panels}
+          panes={panes}
           // Test probe: e2e suites read the committed layout model directly
-          // (DOM scans miss panels whose host tab is inactive, e.g. tabs inside
+          // (DOM scans miss panes whose host tab is inactive, e.g. tabs inside
           // a nested area when the area's host panel body is hidden).
           onLayoutChange={(l) => {
             (window as unknown as { __dockLayout: unknown }).__dockLayout = l;

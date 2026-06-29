@@ -7,26 +7,33 @@ import { Box, Paper } from "@mantine/core";
 import React from "react";
 import { useDock } from "./DockContext";
 import { dragGesture, prefersReducedMotion } from "./gestures";
-import { cascadeResize, expandStack, minimizeStack } from "./layoutOps";
+import {
+  cappedWindowHeight,
+  cascadeResize,
+  expandStack,
+  minimizeStack,
+  windowAllMinimized,
+} from "./layoutOps";
 import { StackHandleBar } from "./handles";
 import { TabGroupFrame } from "./TabGroupFrame";
+import { VerticalMinimizedCell } from "./VerticalMinimizedColumn";
 import {
   clamp,
   FloatingWindow,
   GroupId,
-  MAX_PANEL_WIDTH_PX,
-  MIN_PANEL_WIDTH_PX,
+  MIN_REGION_GRAB_PX,
+  MIN_WINDOW_HEIGHT_PX,
+  MINIMIZED_STRIP_PX,
+  pinnedPxOf,
   TabGroup,
 } from "./types";
 
-const MIN_WIDTH_PX = MIN_PANEL_WIDTH_PX;
-const MAX_WIDTH_PX = MAX_PANEL_WIDTH_PX;
 // A width-resize always leaves this much canvas visible (the original
 // FloatingPanel's resizeParentPad).
 const RESIZE_KEEP_CANVAS_PX = 100;
-const MIN_HEIGHT_PX = 100;
+const MIN_HEIGHT_PX = MIN_WINDOW_HEIGHT_PX;
 // Minimum height for one group in a resizable snap-stack.
-const MIN_STACK_CELL_PX = 60;
+const MIN_STACK_CELL_PX = 50;
 
 export const FloatingWindowView = React.memo(function FloatingWindowView({
   win,
@@ -48,7 +55,9 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
    * All handlers are windowId-first and STABLE, so this component can be
    * memoized (a re-render of the manager with an unchanged window skips it). */
   onResize: (windowId: string, width: number, x?: number) => void;
-  onResizeHeight: (windowId: string, height: number, y?: number) => void;
+  /** Set the window's pinned height in px, or `undefined` to revert it to
+   * auto-height (tracks content). */
+  onResizeHeight: (windowId: string, height: number | undefined, y?: number) => void;
   /** Merge per-group stack height weights (groupId -> weight). */
   onSetStackWeights: (windowId: string, weights: Record<GroupId, number>) => void;
   onFront: (windowId: string) => void;
@@ -59,20 +68,20 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
   const stackRef = React.useRef<HTMLDivElement>(null);
   // A fully-minimized window shrinks to its handle(s); it ignores any fixed
   // height and offers no vertical resize (there's nothing to resize).
-  const collapsed = win.stack.every(
-    (id) => dock.groups[id]?.collapsed === true,
-  );
-  const fixedHeight = win.height !== undefined && !collapsed;
-  // A pinned height is capped to the container so the window stays usable when
-  // the browser shrinks below the saved height (the groups inside scroll).
-  // Deliberately independent of win.y: moving a window must never change its
-  // size, so a pinned-height window dragged low simply overhangs the bottom
-  // edge -- exactly like an auto-height window does. Floored at MIN_HEIGHT_PX
-  // for tiny containers.
+  const collapsed = windowAllMinimized(dock.layout, win.id);
+  // Minimize-all / expand-all for the whole stack (a stack is uniform-collapse).
+  // Shared by the expanded header and the minimized-strip parent handle.
+  const toggleAll = () =>
+    dock.api.apply((l) =>
+      collapsed ? expandStack(l, win.stack) : minimizeStack(l, win.stack),
+    );
+  // The pinned px height, or undefined when the window auto-sizes to content.
+  const pinnedPx = pinnedPxOf(win.height);
+  const fixedHeight = pinnedPx !== undefined && !collapsed;
   const renderedHeight =
-    win.height !== undefined && containerHeight > 0
-      ? Math.min(win.height, Math.max(MIN_HEIGHT_PX, containerHeight - 8))
-      : win.height;
+    pinnedPx !== undefined
+      ? cappedWindowHeight(pinnedPx, containerHeight)
+      : undefined;
 
   // Animate collapse/expand by FLIP-ing the window height: each render notes
   // the Paper's resting height; when the collapsed state flips we replay the
@@ -91,7 +100,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     if (p === null) return;
     const flipped = prevCollapsedRef.current !== collapsed;
     prevCollapsedRef.current = collapsed;
-    if (win.height === undefined) {
+    if (pinnedPx === undefined) {
       flipCancelRef.current?.();
       prevHeightRef.current = null;
       return;
@@ -158,16 +167,18 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
   // second finger on another grip is ignored while one is running).
   const activeGrip = React.useRef<(() => void) | null>(null);
   React.useEffect(() => () => activeGrip.current?.(), []);
+  // True while a height resize is magnetized to the content-height detent (the
+  // "revert to auto" position). Drives the bottom-edge highlight so the snap is
+  // visible. Reset when the gesture ends.
+  const [snappedToContent, setSnappedToContent] = React.useState(false);
 
   // Container-relative width cap: like the original FloatingPanel, a resize
   // always leaves a sliver of canvas visible (it may never consume the whole
-  // container), on top of the absolute MAX_WIDTH_PX.
+  // container). There is no absolute max width -- the only ceiling is the
+  // container minus a canvas sliver.
   const maxResizeWidth = () => {
     const containerW = paperRef.current?.parentElement?.clientWidth ?? Infinity;
-    return Math.max(
-      MIN_WIDTH_PX,
-      Math.min(MAX_WIDTH_PX, containerW - RESIZE_KEEP_CANVAS_PX),
-    );
+    return Math.max(MIN_REGION_GRAB_PX, containerW - RESIZE_KEEP_CANVAS_PX);
   };
 
   const widthResizeHandler =
@@ -190,7 +201,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         update: (e) => {
           const delta = e.clientX - startX;
           const raw = side === "right" ? startWidth + delta : startWidth - delta;
-          pending = clamp(raw, MIN_WIDTH_PX, maxW);
+          pending = clamp(raw, MIN_REGION_GRAB_PX, maxW);
           // Left-edge resize: keep the right edge fixed by moving x.
           pendingX = side === "left" ? startRight - pending : undefined;
         },
@@ -208,44 +219,89 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       });
     };
 
-  // Largest height the panel may take: the smaller of the container and the
-  // natural content height (so it can't be dragged taller than its contents).
-  // scrollHeight on each scroll viewport gives its full uncapped content; the
-  // rest of the paper (strips, headers, dividers, borders) is chrome.
-  const measureMaxHeight = () => {
+  // The window's NATURAL content height: what it would auto-size to, INVARIANT
+  // of the current window height. For each scroll viewport, the chrome around it
+  // (paper - viewport client) plus the viewport's CONTENT wrapper height. We use
+  // the `.mantine-ScrollArea-content` wrapper's offsetHeight, NOT the viewport's
+  // scrollHeight: when the window is TALLER than its content the viewport
+  // stretches and scrollHeight collapses to clientHeight (== the window height),
+  // so scrollHeight would wrongly report "content == current height" and the
+  // revert-to-auto detent would fire everywhere. The content wrapper keeps its
+  // true height regardless. Used as the resize FLOOR and the detent target.
+  const measureContentHeight = () => {
     const paper = paperRef.current;
-    const containerMax = (paper?.parentElement?.clientHeight ?? 2000) - 16;
-    if (paper === null) return containerMax;
-    let scrollSum = 0;
+    if (paper === null) return MIN_HEIGHT_PX;
+    let contentSum = 0;
     let clientSum = 0;
     paper.querySelectorAll(".mantine-ScrollArea-viewport").forEach((v) => {
-      scrollSum += (v as HTMLElement).scrollHeight;
+      const content = v.querySelector<HTMLElement>(".mantine-ScrollArea-content");
+      contentSum += content?.offsetHeight ?? (v as HTMLElement).scrollHeight;
       clientSum += (v as HTMLElement).clientHeight;
     });
-    const contentMax = paper.offsetHeight - clientSum + scrollSum;
-    return clamp(contentMax, MIN_HEIGHT_PX, containerMax);
+    return paper.offsetHeight - clientSum + contentSum;
   };
+
+  // The resize ceiling is the CONTAINER edge only -- never the content height.
+  // A window (single panel OR stack) can be dragged taller than its content;
+  // the extra space is empty for a lone panel and shared by weight in a stack,
+  // exactly like a docked panel filling its region. (Previously content height
+  // was the max, so a freshly-floated stack snapped SMALLER when grown.)
+  const measureMaxHeight = () => {
+    const paper = paperRef.current;
+    return (paper?.parentElement?.clientHeight ?? 2000) - 16;
+  };
+
+  // Magnetic detent at the natural content height: dragging the edge within this
+  // band of the content height snaps it exactly there, which is the single
+  // "revert to auto" position (the window then tracks its content again). The
+  // grip highlights while snapped so the snap is discoverable.
+  const CONTENT_SNAP_BAND_PX = 12;
 
   // Start-of-gesture math shared by every vertical resize: top-side grips
   // hold the BOTTOM edge fixed by moving y with the height (the vertical
   // analog of a left-edge width resize), with the height additionally capped
   // at the start bottom so the top edge can't leave the container.
   const vResizeStart = (vside: "top" | "bottom") => {
-    const startHeight = paperRef.current?.offsetHeight ?? win.height ?? 200;
+    const startHeight = paperRef.current?.offsetHeight ?? pinnedPx ?? 200;
     const startBottom = win.y + startHeight;
+    const contentHeight = measureContentHeight();
     const maxHeight =
       vside === "top"
         ? Math.min(measureMaxHeight(), startBottom)
         : measureMaxHeight();
+    // Floor at the content height when it's below MIN_HEIGHT_PX, so a short
+    // panel (e.g. one button) can shrink back to its natural size rather than
+    // being trapped at the 100px minimum.
+    const minHeight = Math.min(MIN_HEIGHT_PX, contentHeight);
+    // The content-height detent only exists when content fits the resize range
+    // (it can be outside it for a top grip whose bottom edge is fixed, or when
+    // content is below the min floor).
+    const contentReachable =
+      contentHeight >= minHeight && contentHeight <= maxHeight;
+    // True when `h` landed in the detent (so it equals content height).
+    const snappedToContent = (h: number) =>
+      contentReachable && Math.abs(h - contentHeight) < 0.5;
     return {
       startHeight,
-      heightFrom: (dy: number) =>
-        clamp(
+      heightFrom: (dy: number) => {
+        const raw = clamp(
           vside === "top" ? startHeight - dy : startHeight + dy,
-          MIN_HEIGHT_PX,
+          minHeight,
           maxHeight,
-        ),
+        );
+        // Magnetize to the content height when within the snap band.
+        return contentReachable &&
+          Math.abs(raw - contentHeight) <= CONTENT_SNAP_BAND_PX
+          ? contentHeight
+          : raw;
+      },
+      snappedToContent,
       yFor: (h: number) => (vside === "top" ? startBottom - h : undefined),
+      // Snapped to the content detent -> revert to auto (undefined) so the
+      // window tracks its content again. Any other height pins (taller =
+      // empty/weight-shared space; shorter = the body scrolls).
+      heightToCommit: (h: number): number | undefined =>
+        snappedToContent(h) ? undefined : h,
     };
   };
 
@@ -256,7 +312,8 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       if (activeGrip.current !== null) return;
       event.stopPropagation();
       const startY = event.clientY;
-      const { startHeight, heightFrom, yFor } = vResizeStart(vside);
+      const { startHeight, heightFrom, snappedToContent, yFor, heightToCommit } =
+        vResizeStart(vside);
 
       let pending = startHeight;
       activeGrip.current = dragGesture({
@@ -264,10 +321,13 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         pointerId: event.pointerId,
         update: (e) => {
           pending = heightFrom(e.clientY - startY);
+          setSnappedToContent(snappedToContent(pending));
         },
-        flush: () => onResizeHeight(win.id, pending, yFor(pending)),
+        flush: () =>
+          onResizeHeight(win.id, heightToCommit(pending), yFor(pending)),
         onEnd: (cancelled) => {
           activeGrip.current = null;
+          setSnappedToContent(false);
           if (cancelled)
             onResizeHeight(win.id, startHeight, yFor(startHeight));
         },
@@ -286,7 +346,8 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       const startY = event.clientY;
       const startWidth = win.width;
       const startRight = win.x + win.width;
-      const { startHeight, heightFrom, yFor } = vResizeStart(vside);
+      const { startHeight, heightFrom, snappedToContent, yFor, heightToCommit } =
+        vResizeStart(vside);
       const maxW = maxResizeWidth();
 
       let pendingW = startWidth;
@@ -298,16 +359,18 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         update: (e) => {
           const dx = e.clientX - startX;
           const raw = side === "right" ? startWidth + dx : startWidth - dx;
-          pendingW = clamp(raw, MIN_WIDTH_PX, maxW);
+          pendingW = clamp(raw, MIN_REGION_GRAB_PX, maxW);
           pendingX = side === "left" ? startRight - pendingW : undefined;
           pendingH = heightFrom(e.clientY - startY);
+          setSnappedToContent(snappedToContent(pendingH));
         },
         flush: () => {
           onResize(win.id, pendingW, pendingX);
-          onResizeHeight(win.id, pendingH, yFor(pendingH));
+          onResizeHeight(win.id, heightToCommit(pendingH), yFor(pendingH));
         },
         onEnd: (cancelled) => {
           activeGrip.current = null;
+          setSnappedToContent(false);
           if (cancelled) {
             onResize(
               win.id,
@@ -332,7 +395,12 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         position: "absolute",
         left: win.x,
         top: win.y,
-        width: win.width,
+        // A fully-minimized window renders as a narrow vertical strip (matching a
+        // minimized DOCKED column), so it ignores the panel width just like it
+        // ignores the pinned height. win.width is preserved for restore on
+        // expand (handled by the per-cell + cap, which floats at the region/panel
+        // width).
+        width: collapsed ? MINIMIZED_STRIP_PX : win.width,
         height: collapsed ? undefined : renderedHeight,
         zIndex,
         overflow: "visible",
@@ -344,10 +412,14 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
           : {}),
       }}
     >
-      {/* Edge resize grips. */}
-      <ResizeGrip edge="left" onPointerDown={widthResizeHandler("left")} />
-      <ResizeGrip edge="right" onPointerDown={widthResizeHandler("right")} />
-      {/* No vertical / corner resize when minimized -- nothing to resize. */}
+      {/* Edge resize grips. None when minimized -- the strip is fixed-size
+      chrome (matching a docked minimized column), nothing to resize. */}
+      {!collapsed && (
+        <>
+          <ResizeGrip edge="left" onPointerDown={widthResizeHandler("left")} />
+          <ResizeGrip edge="right" onPointerDown={widthResizeHandler("right")} />
+        </>
+      )}
       {!collapsed && (
         <>
           <ResizeGrip
@@ -374,6 +446,24 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         </>
       )}
 
+      {/* Snap cue: while a height resize is magnetized to the content-height
+      detent (the "revert to auto" position), highlight the bottom edge so the
+      snap is visible -- the window is back to hugging its content. */}
+      {snappedToContent && (
+        <Box
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 2,
+            backgroundColor: "var(--mantine-primary-color-filled)",
+            zIndex: 14,
+            pointerEvents: "none",
+          }}
+        />
+      )}
+
       <Box
         style={{
           overflow: "hidden",
@@ -388,23 +478,73 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
             : {}),
         }}
       >
+        {collapsed ? (
+          // Fully-minimized FLOATING window: render as a narrow vertical strip
+          // -- one book-spine cell per group -- exactly like a minimized DOCKED
+          // column, for visual consistency. A MULTI-group stack keeps its parent
+          // header (the same StackHandleBar as docked / expanded), so the whole
+          // stack stays draggable and expandable-as-one from a single + above
+          // the cells; each cell's own + cap still expands/tears just that
+          // group. A single group needs no parent header -- its own cell cap
+          // expands it and drags the window. The window is already a drop target
+          // via its [data-floating-window] scan, so the cells pass no
+          // nodeId/edge.
+          <Box
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              width: "100%",
+              backgroundColor: "var(--mantine-color-body)",
+            }}
+          >
+            {multi && (
+              <StackHandleBar
+                attrs={{ "data-floating-handle": win.id }}
+                onPointerDown={(event) =>
+                  dock.startWindowDrag(event, win.id, { onClick: toggleAll })
+                }
+                collapsed
+                narrow
+                onToggle={toggleAll}
+              />
+            )}
+            {win.stack.map((groupId, index) => {
+              const group = dock.groups[groupId];
+              if (group === undefined) return null;
+              return (
+                <React.Fragment key={groupId}>
+                  {index > 0 && (
+                    <Box
+                      style={{
+                        height: 1,
+                        flexShrink: 0,
+                        backgroundColor:
+                          "var(--mantine-color-default-border)",
+                        opacity: 0.5,
+                      }}
+                    />
+                  )}
+                  <VerticalMinimizedCell group={group} inStack={multi} />
+                </React.Fragment>
+              );
+            })}
+          </Box>
+        ) : (
+        <>
         {/* For a multi-group stack, a window header drags the whole window; each
         group also keeps its own grip bar (which tears it out). A single group
         needs no header -- its own grip bar moves the window. The header's
         minimize-all button collapses every group at once (and restores the
-        previous min/max mix on expand). */}
+        previous min/max mix on expand). A motionless press toggles (via the
+        drag-starter's onClick, since the + is dragThrough); motion drags. */}
         {multi && (
           <StackHandleBar
             attrs={{ "data-floating-handle": win.id }}
-            onPointerDown={(event) => dock.startWindowDrag(event, win.id)}
-            collapsed={collapsed}
-            onToggle={() =>
-              dock.api.apply((l) =>
-                collapsed
-                  ? expandStack(l, win.stack)
-                  : minimizeStack(l, win.stack),
-              )
+            onPointerDown={(event) =>
+              dock.startWindowDrag(event, win.id, { onClick: toggleAll })
             }
+            collapsed={collapsed}
+            onToggle={toggleAll}
           />
         )}
 
@@ -417,6 +557,11 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                   minHeight: 0,
                   display: "flex",
                   flexDirection: "column",
+                  // If the pinned height is too short to fit every cell at its
+                  // min-content (e.g. a 3-panel stack squeezed very short), the
+                  // stack SCROLLS rather than letting cells collapse below their
+                  // headers and overlap each other.
+                  overflowY: "auto",
                 }
               : {}
           }
@@ -472,7 +617,12 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                       flexGrow: collapsedCell ? 0 : weight,
                       flexShrink: collapsedCell ? 0 : 1,
                       flexBasis: collapsedCell ? "auto" : 0,
-                      minHeight: 0,
+                      // Never shrink below a cell's header: minHeight:0 let an
+                      // over-short window collapse a cell under its header,
+                      // clipping it and overlapping the next cell. Floor at the
+                      // min stack-cell height; the stack scrolls when the sum
+                      // exceeds the window.
+                      minHeight: collapsedCell ? 0 : MIN_STACK_CELL_PX,
                       display: "flex",
                       flexDirection: "column",
                     }}
@@ -486,6 +636,8 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
             );
           })}
         </Box>
+        </>
+        )}
       </Box>
     </Paper>
   );
