@@ -303,6 +303,7 @@ def test_region_resize_ignores_minimized_columns(dock_context, vite_server) -> N
             f'[data-dock-group="{gid}"] [data-dock-minimize]', "e => e.click()"
         )
         page.wait_for_timeout(120)
+    page.wait_for_timeout(350)  # wait out the minimize width animation
 
     before = leaf_width("console")
     strip_before = leaf_width("inspector")

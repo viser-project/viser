@@ -206,16 +206,15 @@ function SplitNode({
               minWidth: 0,
               minHeight: 0,
               display: "flex",
-              // Animate the collapse/expand in a column stack: transitioning
-              // flex-grow + flex-basis lets the leaf shrink to its handle and its
-              // siblings grow smoothly, matching the content's <Collapse>.
-              // (Row stacks don't collapse cells this way, so no transition.)
-              // Suppressed during an active divider drag so a resize tracks the
-              // cursor 1:1 instead of easing 200ms behind it.
-              transition:
-                isRow || resizing
-                  ? undefined
-                  : "flex-grow 200ms ease, flex-basis 200ms ease",
+              // Animate collapse/expand: transitioning flex-grow + flex-basis
+              // lets the cell shrink to its handle (vertically in a column, to a
+              // narrow strip horizontally in a row) while its siblings grow
+              // smoothly, matching the content's <Collapse>. Suppressed during an
+              // active divider drag so a resize tracks the cursor 1:1 instead of
+              // easing 200ms behind it.
+              transition: resizing
+                ? undefined
+                : "flex-grow 200ms ease, flex-basis 200ms ease",
             }}
           >
             {collapsedInRow ? (

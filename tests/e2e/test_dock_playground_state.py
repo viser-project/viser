@@ -537,7 +537,7 @@ def test_overlaid_region_divider_tracks_without_jump(page: Page) -> None:
     # For a RIGHT region the canvas-adjacent column is the FIRST one; minimize it.
     inner = cols[0]
     _minimize_btn(page, inner).click()
-    page.wait_for_timeout(120)
+    page.wait_for_timeout(350)  # wait out the minimize width animation
     if not _is_collapsed(page, inner):
         pytest.skip("inner column did not collapse this run")
 

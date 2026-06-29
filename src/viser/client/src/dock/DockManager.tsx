@@ -68,6 +68,21 @@ import {
 // its handle stays reachable (panes may otherwise overflow off-screen).
 const KEEP_VISIBLE_PX = 40;
 
+// Minimize/expand animation duration (ms). Matches SplitView's per-cell flex
+// transition and TabGroupFrame's <Collapse>, so the region width, the cells, and
+// the content all ease together.
+const MINIMIZE_ANIM_MS = 200;
+
+/** The sorted set of collapsed group ids, as a string. A change between commits
+ * means some group minimized or expanded -- the cue to animate the region width
+ * (vs a drag/dock/resize, which leaves the collapsed set unchanged). */
+function collapsedSignature(layout: DockLayout): string {
+  return Object.keys(layout.groups)
+    .filter((id) => layout.groups[id]?.collapsed === true)
+    .sort()
+    .join(",");
+}
+
 /** Clamp a floating window's top-left corner so the handle stays reachable. The
  * corner stays within the container (no off-top/left), but the window body may
  * extend past the right/bottom edges. */
@@ -197,6 +212,30 @@ export function DockManager({
   );
   const [draggingTabId, setDraggingTabId] = React.useState<PaneId | null>(null);
   const [resizing, setResizing] = React.useState(false);
+  // True for ~one animation's duration after a commit that flips some group's
+  // collapsed state. Gates the region/canvas-inset WIDTH transition so ONLY a
+  // minimize/expand eases the region width (a lone docked panel's 300<->36px
+  // collapse + the canvas inset that follows it); drag/dock/tear-out/resize stay
+  // instant. Multi-column minimize is animated per-cell in SplitView instead, so
+  // the expanded siblings don't wobble.
+  const [animatingMinimize, setAnimatingMinimize] = React.useState(false);
+  const minimizeAnimTimer = React.useRef<ReturnType<typeof setTimeout>>();
+  const pulseMinimizeAnimation = React.useCallback(() => {
+    setAnimatingMinimize(true);
+    if (minimizeAnimTimer.current !== undefined)
+      clearTimeout(minimizeAnimTimer.current);
+    minimizeAnimTimer.current = setTimeout(
+      () => setAnimatingMinimize(false),
+      MINIMIZE_ANIM_MS + 40,
+    );
+  }, []);
+  React.useEffect(
+    () => () => {
+      if (minimizeAnimTimer.current !== undefined)
+        clearTimeout(minimizeAnimTimer.current);
+    },
+    [],
+  );
 
   // Drop hint, driven IMPERATIVELY (style mutations on a persistent element)
   // rather than via state: the hint updates on every pointer move during a
@@ -283,10 +322,14 @@ export function DockManager({
         );
     }
     const prev = layoutRef.current;
+    // Ease the region width only when a group's collapsed state actually flipped
+    // (minimize/expand); other commits (drag/dock/resize) leave it instant.
+    if (collapsedSignature(next) !== collapsedSignature(prev))
+      pulseMinimizeAnimation();
     layoutRef.current = next;
     setLayout(next);
     onCommitRef.current?.(prev, next, programmaticDepth.current > 0);
-  }, []);
+  }, [pulseMinimizeAnimation]);
 
   const applyOp = React.useCallback(
     (next: DockLayout) => {
@@ -1727,6 +1770,14 @@ export function DockManager({
   // (which excludes the strips and preserves widths through minimization).
   reservedWidthRef.current = { left: leftInset, right: rightInset };
 
+  // Ease the region width + canvas inset on a minimize/expand only (see
+  // animatingMinimize); never during a resize drag, where the width must track
+  // the cursor 1:1.
+  const widthTransition =
+    animatingMinimize && !resizing
+      ? `width ${MINIMIZE_ANIM_MS}ms ease, left ${MINIMIZE_ANIM_MS}ms ease, right ${MINIMIZE_ANIM_MS}ms ease`
+      : undefined;
+
   // Read the live canvas bounds + measured float heights, for repositioning
   // floats when the canvas changes. (User floats are pushed out of a growing
   // region's path in the region-resize handler; server-anchored floats are
@@ -1878,6 +1929,7 @@ export function DockManager({
             bottom: 0,
             left: leftInset,
             right: rightInset,
+            transition: widthTransition,
           }}
         >
           {children}
@@ -1901,6 +1953,7 @@ export function DockManager({
                   zIndex: 1,
                   pointerEvents: "none",
                   boxShadow: "0 0 1em 0 rgba(0,0,0,0.1)",
+                  transition: widthTransition,
                 }}
               />
             )}
@@ -1915,6 +1968,7 @@ export function DockManager({
                   display: "flex",
                   backgroundColor: "var(--mantine-color-body)",
                   zIndex: 5,
+                  transition: widthTransition,
                 }}
               >
                 <SplitView node={tree} edge={edge} topLevel />

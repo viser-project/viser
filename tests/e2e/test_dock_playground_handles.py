@@ -324,7 +324,7 @@ def test_sandwiched_minimized_column_renders_vertical_strip(
                 }""",
                 label,
             )
-            page.wait_for_timeout(120)
+            page.wait_for_timeout(350)  # wait out the minimize width animation
 
         # Minimize the OUTER Controls so it's stranded behind the expanded
         # Inspector.
