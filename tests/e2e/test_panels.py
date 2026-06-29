@@ -200,9 +200,9 @@ def test_minimize_starts_panel_collapsed(
     # The panel starts collapsed: exactly one group carries the collapsed marker,
     # and its label shows on the minimized strip (a collapsed group hides its tab
     # strip, so we check the label text, not a [data-dock-tab]).
-    expect(
-        viser_page.locator("[data-dock-group][data-dock-collapsed]")
-    ).to_have_count(1, timeout=5_000)
+    expect(viser_page.locator("[data-dock-group][data-dock-collapsed]")).to_have_count(
+        1, timeout=5_000
+    )
     expect(viser_page.get_by_text("Mini")).to_be_visible()
 
 
@@ -363,9 +363,9 @@ def test_main_panel_float_undocks(
     expect(panel).to_be_visible()
     assert panel.get_attribute("data-dock-side") == "none"
     # The left dock region is gone (the panel is no longer docked there).
-    expect(
-        viser_page.locator("[data-dock-leaf][data-dock-edge='left']")
-    ).to_have_count(0)
+    expect(viser_page.locator("[data-dock-leaf][data-dock-edge='left']")).to_have_count(
+        0
+    )
 
 
 def test_reset_reverts_main_panel_to_float(
@@ -514,21 +514,32 @@ def test_disconnect_freezes_gui_instead_of_wiping(browser: Browser) -> None:
                 1, timeout=5_000
             )
             expect(_tab(page, "StayTab")).to_have_count(1)
+
             # And the GUI body is dimmed (the disconnected gate): some ancestor of
-            # the button has opacity < 1.
-            dimmed = page.evaluate(
-                """() => {
-                  const btn = [...document.querySelectorAll('button')]
-                    .find(b => b.textContent.includes('StayButton'));
-                  let el = btn;
-                  while (el) {
-                    const o = parseFloat(getComputedStyle(el).opacity);
-                    if (o < 1) return true;
-                    el = el.parentElement;
-                  }
-                  return false;
-                }"""
-            )
+            # the button has opacity < 1. Poll -- the client applies the dim only
+            # after it detects the dropped socket (and an opacity transition), so a
+            # one-shot read can race the disconnect, especially under parallel load.
+            def _is_dimmed() -> bool:
+                return page.evaluate(
+                    """() => {
+                      const btn = [...document.querySelectorAll('button')]
+                        .find(b => b.textContent.includes('StayButton'));
+                      let el = btn;
+                      while (el) {
+                        const o = parseFloat(getComputedStyle(el).opacity);
+                        if (o < 1) return true;
+                        el = el.parentElement;
+                      }
+                      return false;
+                    }"""
+                )
+
+            dimmed = False
+            for _ in range(50):  # up to ~5s for the disconnect dim to apply
+                if _is_dimmed():
+                    dimmed = True
+                    break
+                page.wait_for_timeout(100)
             assert dimmed, "GUI should be dimmed while disconnected"
         finally:
             context.close()
@@ -566,9 +577,9 @@ def test_per_client_panel_is_isolated(browser: Browser) -> None:
             # assume which page connected first, so assert the count is 1+0.
             page1.wait_for_timeout(1_500)
             page2.wait_for_timeout(100)
-            seen_count = _tab(page1, "PrivateTab").count() + _tab(
-                page2, "PrivateTab"
-            ).count()
+            seen_count = (
+                _tab(page1, "PrivateTab").count() + _tab(page2, "PrivateTab").count()
+            )
             assert seen_count == 1, (
                 f"per-client panel leaked or vanished: visible on {seen_count} "
                 "of 2 clients (expected exactly 1)"
@@ -645,9 +656,9 @@ def test_standalone_panel_visible_on_mobile(browser: Browser) -> None:
         try:
             wait_for_connection(page, server.get_port())
             page.wait_for_timeout(1_000)
-            expect(
-                page.get_by_role("button", name="MobileButton")
-            ).to_be_visible(timeout=5_000)
+            expect(page.get_by_role("button", name="MobileButton")).to_be_visible(
+                timeout=5_000
+            )
         finally:
             ctx.close()
     finally:
@@ -933,7 +944,9 @@ def test_docked_resize_pushes_fully_on_canvas_float(
     before_right = float_right()
 
     # Drag the region's inner edge left, sweeping past the float's right edge.
-    handle = viser_page.locator("[data-dock-region-resize='right']").first.bounding_box()
+    handle = viser_page.locator(
+        "[data-dock-region-resize='right']"
+    ).first.bounding_box()
     assert handle is not None
     cx = handle["x"] + handle["width"] / 2
     cy = handle["y"] + handle["height"] / 2
@@ -956,6 +969,5 @@ def test_docked_resize_pushes_fully_on_canvas_float(
     )
     # Kept flush with the seam (still fully on the canvas), not shoved past it.
     assert abs(after_right - seam) <= 10, (
-        f"pushed float right edge {after_right} should sit flush with the seam "
-        f"{seam}"
+        f"pushed float right edge {after_right} should sit flush with the seam {seam}"
     )

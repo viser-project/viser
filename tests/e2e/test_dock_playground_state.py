@@ -179,9 +179,7 @@ def test_vertical_stack_minimizes_as_a_unit(page: Page) -> None:
     assert _is_collapsed(page, a) and _is_collapsed(page, b), (
         "the parent handle must minimize the whole stack"
     )
-    page.query_selector(
-        "[data-dock-column-handle] [data-dock-minimize-all]"
-    ).click()
+    page.query_selector("[data-dock-column-handle] [data-dock-minimize-all]").click()
     page.wait_for_timeout(120)
     assert not _is_collapsed(page, a) and not _is_collapsed(page, b), (
         "the parent handle must expand the whole stack"

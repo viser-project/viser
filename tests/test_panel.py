@@ -53,11 +53,7 @@ def _buffered_types(server: viser.ViserServer, uuid: str) -> set[type]:
     """The set of message types currently buffered for `uuid` (to assert a command
     sends ONLY its own axis -- e.g. set_width must not queue a position)."""
     buffer = server._websock_server._broadcast_buffer.message_from_id
-    return {
-        type(msg)
-        for msg in buffer.values()
-        if getattr(msg, "uuid", None) == uuid
-    }
+    return {type(msg) for msg in buffer.values() if getattr(msg, "uuid", None) == uuid}
 
 
 def test_add_panel_is_dedicated_entity() -> None:
@@ -408,9 +404,9 @@ def test_control_layout_deprecation_translates_to_dock_right() -> None:
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always")
                 server.gui.configure_theme(control_layout=layout)  # type: ignore[arg-type]
-            assert any(
-                issubclass(w.category, DeprecationWarning) for w in caught
-            ), f"{layout} did not warn"
+            assert any(issubclass(w.category, DeprecationWarning) for w in caught), (
+                f"{layout} did not warn"
+            )
             # The deprecation docks the control panel to the right.
             assert _latest(
                 server, CONTROL_PANEL_ID, m.GuiSetPanelPositionMessage

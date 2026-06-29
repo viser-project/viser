@@ -615,4 +615,3 @@ def test_narrow_region_scrolls_body_with_bottom_scrollbar(page: Page) -> None:
     assert abs(vp["vpBottom"] - vp["leafBottom"]) <= 18, (
         f"scroll viewport does not reach the panel bottom: {vp}"
     )
-

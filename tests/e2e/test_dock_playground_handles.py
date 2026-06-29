@@ -83,8 +83,6 @@ def _resize_grip(page: Page, window_id: str, edge: str) -> tuple[float, float]:
     return box["x"], box["y"]
 
 
-
-
 # ---------------------------------------------------------------------------
 # Column handle: dragging it floats the whole stack as one window.
 # ---------------------------------------------------------------------------
@@ -488,9 +486,9 @@ def test_grow_auto_height_window_past_content_pins(dock_context, vite_server) ->
         page.wait_for_timeout(120)
         before = _window_box(page, "controls")
         # The window starts auto-height (no pinned px).
-        assert page.evaluate(
-            "() => window.__dockLayout.floating[0].height.mode"
-        ) == "auto"
+        assert (
+            page.evaluate("() => window.__dockLayout.floating[0].height.mode") == "auto"
+        )
         gx, gy = _resize_grip(page, before["id"], "bottom")
         # Drag the bottom edge DOWN 150px to GROW it.
         _drag(page, (gx, gy), (gx, gy + 150))
@@ -499,9 +497,9 @@ def test_grow_auto_height_window_past_content_pins(dock_context, vite_server) ->
         assert after["h"] > before["h"] + 80, (
             f"window should grow, not snap smaller ({before['h']} -> {after['h']})"
         )
-        assert page.evaluate(
-            "() => window.__dockLayout.floating[0].height.mode"
-        ) == "pinned", "growing past content should pin the height"
+        assert (
+            page.evaluate("() => window.__dockLayout.floating[0].height.mode")
+            == "pinned"
+        ), "growing past content should pin the height"
     finally:
         page.close()
-

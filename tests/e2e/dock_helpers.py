@@ -354,7 +354,9 @@ def window(
         "x": x,
         "y": y,
         "width": width,
-        "height": {"mode": "auto"} if height is None else {"mode": "pinned", "px": height},
+        "height": {"mode": "auto"}
+        if height is None
+        else {"mode": "pinned", "px": height},
         "stack": [g["id"] for g in groups],
     }
     return {"window": win, "groups": groups}

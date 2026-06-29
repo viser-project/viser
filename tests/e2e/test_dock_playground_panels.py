@@ -333,7 +333,9 @@ def test_minimized_cell_split_preview_has_no_blue_flood(
         # (resolves to split-top, which is what used to trigger the leaf tint).
         page.mouse.move(cap["x"] + cap["w"] / 2, cap["y"] + cap["h"] / 2)
         page.mouse.down()
-        page.mouse.move(cap["x"] + cap["w"] / 2 + 10, cap["y"] + cap["h"] / 2 + 10, steps=4)
+        page.mouse.move(
+            cap["x"] + cap["w"] / 2 + 10, cap["y"] + cap["h"] / 2 + 10, steps=4
+        )
         page.mouse.move(cell["x"] + cell["w"] / 2, cell["y"] + 2, steps=4)
         page.wait_for_timeout(120)
         # The minimized cell's leaf wrapper must NOT be tinted blue.
