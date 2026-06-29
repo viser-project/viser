@@ -196,6 +196,9 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
 
       let pending = startWidth;
       let pendingX: number | undefined = undefined;
+      // Mark resizing so the window's width-ease transition is suppressed -- the
+      // width must track the cursor 1:1, not ease behind it.
+      dock.setResizing(true);
       activeGrip.current = dragGesture({
         grip: event.currentTarget,
         pointerId: event.pointerId,
@@ -209,6 +212,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         flush: () => onResize(win.id, pending, pendingX),
         onEnd: (cancelled) => {
           activeGrip.current = null;
+          dock.setResizing(false);
           // Cancel (Escape) reverts the per-frame resizes to the start size.
           if (cancelled)
             onResize(
@@ -354,6 +358,8 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       let pendingW = startWidth;
       let pendingX: number | undefined = undefined;
       let pendingH = startHeight;
+      // Suppress the width-ease while dragging the corner (width tracks 1:1).
+      dock.setResizing(true);
       activeGrip.current = dragGesture({
         grip: event.currentTarget,
         pointerId: event.pointerId,
@@ -371,6 +377,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         },
         onEnd: (cancelled) => {
           activeGrip.current = null;
+          dock.setResizing(false);
           setSnappedToContent(false);
           if (cancelled) {
             onResize(

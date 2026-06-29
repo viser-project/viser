@@ -65,9 +65,10 @@ export function RegionResizer({
         bottom: 0,
         // The canvas-facing edge of the region, pushed inward past any leading
         // minimized strips so the handle is on the resized panel's boundary. The
-        // ~12px grab area straddles that boundary (offset -6, width 12) for a
-        // comfortable target -- it's an overlay, so no layout impact.
-        [edge === "left" ? "right" : "left"]: `${stripOffset - 6}px`,
+        // ~12px grab area is biased toward the CANVAS (9px canvas-side, 3px into
+        // the panel) so it barely overlaps panel content while staying a
+        // comfortable target. Overlay, so no layout impact.
+        [edge === "left" ? "right" : "left"]: `${stripOffset - 9}px`,
         width: "12px",
         cursor: "ew-resize",
         zIndex: 15,

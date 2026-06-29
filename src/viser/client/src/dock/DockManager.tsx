@@ -227,6 +227,17 @@ export function DockManager({
     if (minimizeAnimTimer.current !== undefined)
       clearTimeout(minimizeAnimTimer.current);
   };
+  // The canvas-inset box, so the minimize rAF loop can read its LIVE (mid-CSS-
+  // transition) width and keep the 3D canvas backbuffer in step with the easing
+  // inset -- the model's reservedWidth jumps to the final value instantly, so we
+  // measure the element, not the model.
+  const canvasInsetRef = React.useRef<HTMLDivElement>(null);
+  const minimizeRafRef = React.useRef<number>();
+  const stopMinimizeRaf = () => {
+    if (minimizeRafRef.current !== undefined)
+      cancelAnimationFrame(minimizeRafRef.current);
+    minimizeRafRef.current = undefined;
+  };
   const pulseMinimizeAnimation = React.useCallback(() => {
     setAnimatingMinimize(true);
     clearMinimizeAnimTimer();
@@ -236,14 +247,38 @@ export function DockManager({
       () => setAnimatingMinimize(false),
       DOCK_ANIM_MS + 40,
     );
+    // Drive the canvas backbuffer per-frame from the easing inset box, so the 3D
+    // scene resizes smoothly with the panel (its ResizeObserver alone can lag/
+    // step behind the CSS transition). Same syncCanvasSize the resize-drag uses.
+    stopMinimizeRaf();
+    const start = performance.now();
+    const tick = () => {
+      const el = canvasInsetRef.current;
+      if (el !== null)
+        onRegionResizeFrameRef.current?.(
+          Math.round(el.getBoundingClientRect().width),
+          containerHeightRef.current,
+        );
+      if (performance.now() - start < DOCK_ANIM_MS + 40)
+        minimizeRafRef.current = requestAnimationFrame(tick);
+      else minimizeRafRef.current = undefined;
+    };
+    minimizeRafRef.current = requestAnimationFrame(tick);
   }, []);
   // End the pulse early when a NON-minimize commit lands inside its window, so a
   // drag/dock/tear-out right after a minimize doesn't inherit the width ease.
   const cancelMinimizeAnimation = React.useCallback(() => {
     clearMinimizeAnimTimer();
+    stopMinimizeRaf();
     setAnimatingMinimize((on) => (on ? false : on));
   }, []);
-  React.useEffect(() => () => clearMinimizeAnimTimer(), []);
+  React.useEffect(
+    () => () => {
+      clearMinimizeAnimTimer();
+      stopMinimizeRaf();
+    },
+    [],
+  );
 
   // Drop hint, driven IMPERATIVELY (style mutations on a persistent element)
   // rather than via state: the hint updates on every pointer move during a
@@ -414,6 +449,8 @@ export function DockManager({
   // it, so the closure's captured `containerHeight` stays valid.
   const containerWidthRef = React.useRef(0);
   containerWidthRef.current = containerWidth;
+  const containerHeightRef = React.useRef(0);
+  containerHeightRef.current = containerHeight;
   // True only while a region-resize drag is committing a width this frame. The
   // drag owns float movement itself (pushFloatsAheadOfSeam, applied flush with
   // the seam), so the inset effect must NOT also re-clamp unanchored floats then
@@ -1936,6 +1973,7 @@ export function DockManager({
       >
         {/* Center content, inset by docked regions. */}
         <Box
+          ref={canvasInsetRef}
           style={{
             position: "absolute",
             top: 0,
