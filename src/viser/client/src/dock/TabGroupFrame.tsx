@@ -333,7 +333,7 @@ export function TabGroupFrame({
         opacity: dimmed ? 0.4 : 1,
         transition:
           fill && !prefersReducedMotion()
-            ? "flex-grow 200ms ease, flex-basis 200ms ease"
+            ? `flex-grow ${DOCK_ANIM_MS}ms ease, flex-basis ${DOCK_ANIM_MS}ms ease`
             : undefined,
       }}
     >

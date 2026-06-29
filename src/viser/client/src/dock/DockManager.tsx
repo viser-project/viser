@@ -326,10 +326,15 @@ export function DockManager({
         );
     }
     const prev = layoutRef.current;
-    // Ease the region width only when a group's collapsed state actually flipped
-    // (minimize/expand); other commits (drag/dock/resize/remove) stay instant and
-    // cancel any in-flight pulse so they don't inherit the ease.
-    if (collapseFlipped(prev, next)) pulseMinimizeAnimation();
+    // Ease the region width only on a USER minimize/expand: a group's collapsed
+    // state actually flipped, and this isn't a programmatic apply (server-driven
+    // placement / reconnect replay shouldn't play the user-facing animation).
+    // Other commits (drag/dock/resize/remove) stay instant and cancel any
+    // in-flight pulse so they don't inherit the ease. The programmatic check also
+    // skips the O(groups) collapseFlipped scan on the ~60fps region-resize commit
+    // (which runs programmatic and can't flip a collapsed bit).
+    if (programmaticDepth.current === 0 && collapseFlipped(prev, next))
+      pulseMinimizeAnimation();
     else cancelMinimizeAnimation();
     layoutRef.current = next;
     setLayout(next);

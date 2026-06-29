@@ -1143,6 +1143,9 @@ class PanelHandle(
         gui_api = self._impl.gui_api
         gui_api._websock_interface.queue_message(GuiPanelRemoveMessage(self._impl.uuid))
         gui_api._panel_handle_from_uuid.pop(self._impl.uuid)
+        # Drain the panel's layout-update counter too, so a create/remove cycle
+        # doesn't leave a stale entry (matches the file's leak-hygiene elsewhere).
+        gui_api._layout_update_count_from_uuid.pop(self._impl.uuid, None)
 
 
 class MainPanelHandle(_PlacementMixin):
