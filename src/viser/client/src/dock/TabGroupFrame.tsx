@@ -385,10 +385,16 @@ export function TabGroupFrame({
               : undefined
           }
           onPointerDown={(event) => {
-            if (stripDragsGroup)
-              dock.startGroupDrag(event, group.id, {
-                onClick: () => dock.toggleCollapsed(group.id),
-              });
+            if (!stripDragsGroup) return;
+            // Click-to-minimize only when LONE: a tap on a stacked header would
+            // otherwise collapse the WHOLE stack (uniform collapse), which is
+            // unintuitive. Stacked => drag-only (relocate); minimize is via the
+            // parent stack handle.
+            dock.startGroupDrag(
+              event,
+              group.id,
+              lone ? { onClick: () => dock.toggleCollapsed(group.id) } : undefined,
+            );
           }}
           style={{
             display: "flex",
