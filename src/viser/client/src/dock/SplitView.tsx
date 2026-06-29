@@ -59,18 +59,29 @@ export const SplitView = React.memo(function SplitView({
   // case: each of its columns hits the collapsedInRow branch below). A pure
   // column keeps its handle above the strip, so minimize-all stays reversible
   // from the handle's expand button.
+  // A fully-minimized PURE COLUMN renders as a vertical strip with a ColumnShell
+  // float/expand handle above it -- at ANY depth, not just the region root, so a
+  // minimized 2+ stack nested beside/under other panels keeps a way to expand
+  // (its stacked cells have no individual +; the parent handle owns expand).
+  if (
+    node.type === "split" &&
+    node.dir === "column" &&
+    isPureColumn(node) &&
+    isColumnMinimized(node, groups)
+  ) {
+    return (
+      <ColumnShell node={node} edge={edge}>
+        <VerticalMinimizedColumn node={node} edge={edge} />
+      </ColumnShell>
+    );
+  }
+  // A minimized region ROOT that is a single leaf/column renders as the bare
+  // strip (no parent handle needed -- a lone leaf has its own + cap).
   if (
     topLevel &&
     isColumnMinimized(node, groups) &&
     (node.type === "leaf" || node.dir === "column")
   ) {
-    if (node.type === "split" && isPureColumn(node)) {
-      return (
-        <ColumnShell node={node} edge={edge}>
-          <VerticalMinimizedColumn node={node} edge={edge} />
-        </ColumnShell>
-      );
-    }
     return <VerticalMinimizedColumn node={node} edge={edge} />;
   }
   if (node.type === "leaf") {
@@ -186,13 +197,13 @@ function SplitNode({
       }}
     >
       {node.children.map((child, index) => {
-        // A minimized leaf in a vertical stack collapses to just its handle +
-        // tab strip (content height -> 0), so its siblings expand to fill. Its
-        // weight is preserved in the model and restored when expanded.
-        const collapsedInColumn =
-          !isRow &&
-          child.type === "leaf" &&
-          groups[child.group]?.collapsed === true;
+        // A fully-minimized child in a vertical stack collapses to just its
+        // handle(s) (content height -> 0), so its siblings expand to fill. Its
+        // weight is preserved in the model and restored when expanded. Uses
+        // isColumnMinimized (not a leaf-only `collapsed` check) so a minimized
+        // nested SUBTREE -- e.g. a whole row of minimized columns -- also
+        // collapses its height instead of holding a full-height empty band.
+        const collapsedInColumn = !isRow && isColumnMinimized(child, groups);
         // A fully-minimized column stranded inside a row (a minimized column
         // behind an expanded one -- it can't float over the canvas) shrinks to
         // a compact handle width instead of holding a full-width empty box.
@@ -237,10 +248,12 @@ function SplitNode({
               // The divider can resize only if there's a non-collapsed cell on
               // BOTH sides of it -- a divider between (or beside) only minimized
               // strips can't move anything, so it shows no resize cursor / drag.
-              const isCollapsed = (c: DockNode) =>
-                isRow
-                  ? isColumnMinimized(c, groups)
-                  : c.type === "leaf" && groups[c.group]?.collapsed === true;
+              // A cell is "collapsed" (excluded from resize) when its whole
+              // subtree is minimized -- a leaf, a column, OR a nested row of
+              // minimized columns. isColumnMinimized covers all of them on
+              // either axis, so the divider beside an all-minimized nested split
+              // correctly shows no resize cursor.
+              const isCollapsed = (c: DockNode) => isColumnMinimized(c, groups);
               const leftResizable = node.children
                 .slice(0, index + 1)
                 .some((c) => !isCollapsed(c));
@@ -258,10 +271,7 @@ function SplitNode({
                 // preserved): a collapsed leaf in a column stack (handle height),
                 // or a fully-minimized column in a row (handle width).
                 const collapsed = node.children.map((c) =>
-                  isRow
-                    ? isColumnMinimized(c, groups)
-                    : c.type === "leaf" &&
-                      groups[c.group]?.collapsed === true,
+                  isColumnMinimized(c, groups),
                 );
                 const next = cascadeResize({
                   weights: node.children.map((c) => c.weight),
