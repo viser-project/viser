@@ -226,6 +226,8 @@ export function DockManager({
   const pulseMinimizeAnimation = React.useCallback(() => {
     setAnimatingMinimize(true);
     clearMinimizeAnimTimer();
+    // Hold the flag a hair past the CSS duration so the transition completes
+    // before it's removed (removing mid-flight would snap to the end).
     minimizeAnimTimer.current = setTimeout(
       () => setAnimatingMinimize(false),
       DOCK_ANIM_MS + 40,

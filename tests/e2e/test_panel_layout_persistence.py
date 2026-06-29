@@ -199,6 +199,78 @@ def test_removed_then_readded_panel_does_not_inherit_touched_state(
     )
 
 
+def _labeled_box(page: Page, label: str) -> dict | None:
+    """docked/x for the panel whose tab shows `label` (multi-panel layouts)."""
+    return page.evaluate(
+        """(label) => {
+            const t = [...document.querySelectorAll('[data-dock-tab]')]
+                .find((e) => e.textContent.includes(label));
+            if (!t) return null;
+            const leaf = t.closest('[data-dock-leaf]');
+            const fw = t.closest('[data-floating-window]');
+            const el = leaf || fw;
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return { docked: leaf !== null, x: Math.round(r.x) };
+        }""",
+        label,
+    )
+
+
+def test_reconnect_with_multiple_panels_preserves_each(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """With several panels, a reconnect must preserve the TOUCHED one's user
+    arrangement AND re-apply the untouched one's server placement -- exercising
+    the prune path against a real (non-empty) panel set. Guards the fix that
+    skips pruning while panels are momentarily empty during resetGui."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(200)
+    moved = viser_server.gui.add_panel()
+    with moved.add_tab("Moved"):
+        viser_server.gui.add_markdown("m")
+    moved.dock_right()
+    kept = viser_server.gui.add_panel()
+    with kept.add_tab("Kept"):
+        viser_server.gui.add_markdown("k")
+    kept.dock_right()
+    viser_page.wait_for_selector("[data-dock-tab]", timeout=8_000)
+    viser_page.wait_for_timeout(400)
+
+    # Tear "Moved" out to float; leave "Kept" docked (untouched).
+    tabid = viser_page.evaluate(
+        """() => [...document.querySelectorAll('[data-dock-tab]')]
+            .find((e) => e.textContent.includes('Moved'))
+            .getAttribute('data-dock-tab')"""
+    )
+    grip = viser_page.eval_on_selector(
+        f'[data-dock-tab="{tabid}"]',
+        "e => { const r = e.getBoundingClientRect(); "
+        "return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }",
+    )
+    viser_page.mouse.move(grip["x"], grip["y"])
+    viser_page.mouse.down()
+    viser_page.mouse.move(300, 560, steps=18)
+    viser_page.mouse.move(300, 560)
+    viser_page.mouse.up()
+    viser_page.wait_for_timeout(400)
+    moved_floated = _labeled_box(viser_page, "Moved")
+    assert moved_floated is not None and not moved_floated["docked"], (
+        f"Moved did not float: {moved_floated}"
+    )
+
+    _reconnect(viser_page)
+
+    moved_after = _labeled_box(viser_page, "Moved")
+    kept_after = _labeled_box(viser_page, "Kept")
+    assert moved_after is not None and not moved_after["docked"], (
+        f"reconnect clobbered the touched panel's float: {moved_after}"
+    )
+    assert kept_after is not None and kept_after["docked"], (
+        f"untouched panel lost its docked placement on reconnect: {kept_after}"
+    )
+
+
 def _open_dev_settings(page: Page) -> None:
     """Open the control panel's settings view and enable the Dev Settings
     section (where the Reset Panel Layout button lives)."""
