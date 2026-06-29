@@ -51,6 +51,7 @@ import {
 } from "./hitTest";
 import {
   clamp,
+  DOCK_ANIM_MS,
   DockEdge,
   DockLayout,
   GroupId,
@@ -68,19 +69,17 @@ import {
 // its handle stays reachable (panes may otherwise overflow off-screen).
 const KEEP_VISIBLE_PX = 40;
 
-// Minimize/expand animation duration (ms). Matches SplitView's per-cell flex
-// transition and TabGroupFrame's <Collapse>, so the region width, the cells, and
-// the content all ease together.
-const MINIMIZE_ANIM_MS = 200;
-
-/** The sorted set of collapsed group ids, as a string. A change between commits
- * means some group minimized or expanded -- the cue to animate the region width
- * (vs a drag/dock/resize, which leaves the collapsed set unchanged). */
-function collapsedSignature(layout: DockLayout): string {
-  return Object.keys(layout.groups)
-    .filter((id) => layout.groups[id]?.collapsed === true)
-    .sort()
-    .join(",");
+/** Whether any group present in BOTH layouts flipped its collapsed state -- i.e.
+ * a genuine minimize/expand, the cue to ease the region width. Checking
+ * persistence in both (rather than a collapsed-set diff) means removing a
+ * collapsed group, or a drag/dock/resize, does NOT count. */
+function collapseFlipped(prev: DockLayout, next: DockLayout): boolean {
+  return Object.keys(next.groups).some(
+    (id) =>
+      id in prev.groups &&
+      (prev.groups[id]?.collapsed === true) !==
+        (next.groups[id]?.collapsed === true),
+  );
 }
 
 /** Clamp a floating window's top-left corner so the handle stays reachable. The
@@ -220,22 +219,25 @@ export function DockManager({
   // the expanded siblings don't wobble.
   const [animatingMinimize, setAnimatingMinimize] = React.useState(false);
   const minimizeAnimTimer = React.useRef<ReturnType<typeof setTimeout>>();
-  const pulseMinimizeAnimation = React.useCallback(() => {
-    setAnimatingMinimize(true);
+  const clearMinimizeAnimTimer = () => {
     if (minimizeAnimTimer.current !== undefined)
       clearTimeout(minimizeAnimTimer.current);
+  };
+  const pulseMinimizeAnimation = React.useCallback(() => {
+    setAnimatingMinimize(true);
+    clearMinimizeAnimTimer();
     minimizeAnimTimer.current = setTimeout(
       () => setAnimatingMinimize(false),
-      MINIMIZE_ANIM_MS + 40,
+      DOCK_ANIM_MS + 40,
     );
   }, []);
-  React.useEffect(
-    () => () => {
-      if (minimizeAnimTimer.current !== undefined)
-        clearTimeout(minimizeAnimTimer.current);
-    },
-    [],
-  );
+  // End the pulse early when a NON-minimize commit lands inside its window, so a
+  // drag/dock/tear-out right after a minimize doesn't inherit the width ease.
+  const cancelMinimizeAnimation = React.useCallback(() => {
+    clearMinimizeAnimTimer();
+    setAnimatingMinimize((on) => (on ? false : on));
+  }, []);
+  React.useEffect(() => () => clearMinimizeAnimTimer(), []);
 
   // Drop hint, driven IMPERATIVELY (style mutations on a persistent element)
   // rather than via state: the hint updates on every pointer move during a
@@ -323,13 +325,14 @@ export function DockManager({
     }
     const prev = layoutRef.current;
     // Ease the region width only when a group's collapsed state actually flipped
-    // (minimize/expand); other commits (drag/dock/resize) leave it instant.
-    if (collapsedSignature(next) !== collapsedSignature(prev))
-      pulseMinimizeAnimation();
+    // (minimize/expand); other commits (drag/dock/resize/remove) stay instant and
+    // cancel any in-flight pulse so they don't inherit the ease.
+    if (collapseFlipped(prev, next)) pulseMinimizeAnimation();
+    else cancelMinimizeAnimation();
     layoutRef.current = next;
     setLayout(next);
     onCommitRef.current?.(prev, next, programmaticDepth.current > 0);
-  }, [pulseMinimizeAnimation]);
+  }, [pulseMinimizeAnimation, cancelMinimizeAnimation]);
 
   const applyOp = React.useCallback(
     (next: DockLayout) => {
@@ -1771,11 +1774,11 @@ export function DockManager({
   reservedWidthRef.current = { left: leftInset, right: rightInset };
 
   // Ease the region width + canvas inset on a minimize/expand only (see
-  // animatingMinimize); never during a resize drag, where the width must track
-  // the cursor 1:1.
+  // animatingMinimize); never during a resize drag (width must track the cursor
+  // 1:1) or under reduced-motion.
   const widthTransition =
-    animatingMinimize && !resizing
-      ? `width ${MINIMIZE_ANIM_MS}ms ease, left ${MINIMIZE_ANIM_MS}ms ease, right ${MINIMIZE_ANIM_MS}ms ease`
+    animatingMinimize && !resizing && !prefersReducedMotion()
+      ? `width ${DOCK_ANIM_MS}ms ease, left ${DOCK_ANIM_MS}ms ease, right ${DOCK_ANIM_MS}ms ease`
       : undefined;
 
   // Read the live canvas bounds + measured float heights, for repositioning

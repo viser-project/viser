@@ -15,7 +15,7 @@ import {
 } from "./DockStyles.css";
 import { prefersReducedMotion, tabListKeyDown } from "./gestures";
 import { GripPill, HandleIconButton } from "./handles";
-import { PaneSpec, TabGroup } from "./types";
+import { DOCK_ANIM_MS, PaneSpec, TabGroup } from "./types";
 
 // The active panel's BODY, memoized so it is rebuilt/reconciled only when its
 // OWN inputs change -- not on every unrelated dock op. A tab switch or a
@@ -106,9 +106,6 @@ const PanelBody = React.memo(function PanelBody({
 // Tab handle height, also the band height for the strip's repeating bottom-rule
 // gradient. In em relative to the strip's own font-size so the two stay aligned.
 const TAB_ROW_EM = "2.4em";
-// Minimize/expand animation duration (ms). Matches Mantine's <Collapse> default
-// feel and the FloatingPanel transitions in the original control panel.
-const COLLAPSE_MS = 200;
 
 /** Slim handle bar above the tab strip (docked or floating). The bar itself is
  * a drag handle (centered grip line + grab cursor); a button on the right
@@ -306,7 +303,7 @@ export function TabGroupFrame({
   ) : (
     <Collapse
       in={!collapsed}
-      transitionDuration={prefersReducedMotion() ? 0 : COLLAPSE_MS}
+      transitionDuration={prefersReducedMotion() ? 0 : DOCK_ANIM_MS}
     >
       {body}
     </Collapse>

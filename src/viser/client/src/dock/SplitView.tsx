@@ -5,7 +5,7 @@
 import { Box, Paper } from "@mantine/core";
 import React from "react";
 import { useDock } from "./DockContext";
-import { dragGesture } from "./gestures";
+import { dragGesture, prefersReducedMotion } from "./gestures";
 import {
   cascadeResize,
   expandStack,
@@ -18,6 +18,7 @@ import { StackHandleBar } from "./handles";
 import { TabGroupFrame } from "./TabGroupFrame";
 import { VerticalMinimizedColumn } from "./VerticalMinimizedColumn";
 import {
+  DOCK_ANIM_MS,
   DockEdge,
   DockNode,
   DockSplit,
@@ -210,11 +211,12 @@ function SplitNode({
               // lets the cell shrink to its handle (vertically in a column, to a
               // narrow strip horizontally in a row) while its siblings grow
               // smoothly, matching the content's <Collapse>. Suppressed during an
-              // active divider drag so a resize tracks the cursor 1:1 instead of
-              // easing 200ms behind it.
-              transition: resizing
-                ? undefined
-                : "flex-grow 200ms ease, flex-basis 200ms ease",
+              // active divider drag (a resize must track the cursor 1:1) and
+              // under reduced-motion.
+              transition:
+                resizing || prefersReducedMotion()
+                  ? undefined
+                  : `flex-grow ${DOCK_ANIM_MS}ms ease, flex-basis ${DOCK_ANIM_MS}ms ease`,
             }}
           >
             {collapsedInRow ? (
