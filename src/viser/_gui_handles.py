@@ -702,9 +702,7 @@ class _TabContainerMixin:
         # inconsistent state + a leaked container entry. Applies to both mixers
         # (tab group and standalone panel).
         if self._impl.removed:
-            raise RuntimeError(
-                f"Cannot add a tab to a removed {type(self).__name__}."
-            )
+            raise RuntimeError(f"Cannot add a tab to a removed {type(self).__name__}.")
 
         uuid = _make_uuid()
 
@@ -1114,7 +1112,7 @@ class PanelHandle(
         # and this helpful message never runs.
         raise TypeError(
             "A panel is not a context manager. Add content via its tabs, e.g.\n"
-            '    panel = server.gui.add_panel()\n'
+            "    panel = server.gui.add_panel()\n"
             '    with panel.add_tab("Tab"):\n'
             "        server.gui.add_markdown(...)"
         )
@@ -1143,9 +1141,7 @@ class PanelHandle(
             tab.remove()
         self._impl.removed = True
         gui_api = self._impl.gui_api
-        gui_api._websock_interface.queue_message(
-            GuiPanelRemoveMessage(self._impl.uuid)
-        )
+        gui_api._websock_interface.queue_message(GuiPanelRemoveMessage(self._impl.uuid))
         gui_api._panel_handle_from_uuid.pop(self._impl.uuid)
 
 
