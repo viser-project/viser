@@ -219,11 +219,13 @@ function SplitNode({
                   : `flex-grow ${DOCK_ANIM_MS}ms ease, flex-basis ${DOCK_ANIM_MS}ms ease`,
             }}
           >
-            {collapsedInRow ? (
-              <VerticalMinimizedColumn node={child} edge={edge} />
-            ) : (
-              <SplitView node={child} edge={edge} topLevel={topLevel} />
-            )}
+            {/* Always recurse into SplitView (even for a minimized column in a
+            row): its own gates render a minimized pure column wrapped in
+            ColumnShell, so the parent float-the-column handle stays present --
+            instead of a bare VerticalMinimizedColumn that drops the handle. The
+            cell's flex-basis above already shrinks it to the strip width. */}
+            <SplitView node={child} edge={edge} topLevel={topLevel} />
+
           </Box>
           {index < node.children.length - 1 &&
             (() => {
