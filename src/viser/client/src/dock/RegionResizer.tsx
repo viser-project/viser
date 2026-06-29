@@ -64,9 +64,11 @@ export function RegionResizer({
         top: 0,
         bottom: 0,
         // The canvas-facing edge of the region, pushed inward past any leading
-        // minimized strips so the handle is on the resized panel's boundary.
-        [edge === "left" ? "right" : "left"]: `${stripOffset - 3}px`,
-        width: "8px",
+        // minimized strips so the handle is on the resized panel's boundary. The
+        // ~12px grab area straddles that boundary (offset -6, width 12) for a
+        // comfortable target -- it's an overlay, so no layout impact.
+        [edge === "left" ? "right" : "left"]: `${stripOffset - 6}px`,
+        width: "12px",
         cursor: "ew-resize",
         zIndex: 15,
         touchAction: "none",

@@ -30,6 +30,11 @@ import {
 // Minimum height for a stacked (column) cell; row cells use the per-panel width.
 const MIN_CELL_HEIGHT_PX = 50;
 
+// Pointer grab width for a split divider. The divider only DRAWS a 1px rule (and
+// reserves SPLIT_DIVIDER_PX of layout), but an invisible overlay widens the grab
+// zone to this so it's comfortable to hit without thickening the seam.
+const DIVIDER_GRAB_PX = 12;
+
 /** Dispatches to a leaf or split renderer. Kept hook-free so the leaf/split
  * branches don't violate the Rules of Hooks when a node changes type.
  * Memoized: with a stable dock context, region-width / container-height
@@ -404,12 +409,19 @@ function SplitDivider({
     });
   };
 
+  // Hit area wider than the divider's layout footprint: the outer box keeps its
+  // SPLIT_DIVIDER_PX so the panels don't shift, while an absolutely-positioned
+  // overlay extends the grab zone to ~DIVIDER_GRAB_PX (centered, overhanging the
+  // adjacent panels' edges by a few px) -- only when resizable. The thin 1px rule
+  // is still all that's drawn.
+  const overhang = resizable
+    ? Math.max(0, (DIVIDER_GRAB_PX - SPLIT_DIVIDER_PX) / 2)
+    : 0;
   return (
     <Box
       onPointerDown={onPointerDown}
       style={{
-        // Comfortable grab area, but only a thin faint rule is drawn so the
-        // separator doesn't overpower the shadow-based panel boundaries.
+        position: "relative",
         flexShrink: 0,
         [isRow ? "width" : "height"]: SPLIT_DIVIDER_PX,
         cursor: !resizable ? "default" : isRow ? "ew-resize" : "ns-resize",
@@ -420,6 +432,19 @@ function SplitDivider({
         zIndex: 2,
       }}
     >
+      {/* Invisible grab overlay (wider than the drawn rule), so the divider is
+      easy to grab without thickening the seam. */}
+      {resizable && (
+        <Box
+          style={{
+            position: "absolute",
+            [isRow ? "top" : "left"]: 0,
+            [isRow ? "bottom" : "right"]: 0,
+            [isRow ? "left" : "top"]: -overhang,
+            [isRow ? "width" : "height"]: SPLIT_DIVIDER_PX + 2 * overhang,
+          }}
+        />
+      )}
       <Box
         style={{
           [isRow ? "width" : "height"]: "1px",

@@ -767,17 +767,21 @@ function ResizeGrip({
 }) {
   // Corners win over edges (higher z) so the diagonal cursor + combined resize
   // take priority where they overlap.
+  // Grab areas are absolute overlays (no layout impact), biased OUTWARD past the
+  // window edge so they're easy to hit without eating into content near the
+  // border: edges ~12px (7 outside + 5 inside), corners ~18px. Corners win over
+  // edges (higher z) where they overlap.
   const corner = edge.includes("-");
   const position: React.CSSProperties = corner
     ? {
-        [edge.startsWith("top") ? "top" : "bottom"]: "-3px",
-        [edge.endsWith("left") ? "left" : "right"]: "-3px",
-        width: "14px",
-        height: "14px",
+        [edge.startsWith("top") ? "top" : "bottom"]: "-7px",
+        [edge.endsWith("left") ? "left" : "right"]: "-7px",
+        width: "18px",
+        height: "18px",
       }
     : edge === "bottom" || edge === "top"
-      ? { left: 0, right: 0, [edge]: "-3px", height: "8px" }
-      : { top: 0, bottom: 0, [edge]: "-3px", width: "8px" };
+      ? { left: 0, right: 0, [edge]: "-7px", height: "12px" }
+      : { top: 0, bottom: 0, [edge]: "-7px", width: "12px" };
   const cursor = corner
     ? edge === "bottom-left" || edge === "top-right"
       ? "nesw-resize"
