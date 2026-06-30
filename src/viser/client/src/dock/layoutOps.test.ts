@@ -31,6 +31,7 @@ import {
 import {
   leaf,
   row,
+  rows,
   col,
   makeLayout,
   shapeOf,
@@ -46,6 +47,7 @@ import {
   findGroupLocation,
   dockToEdge,
   dockToRegionEdge,
+  dockBandAtIndex,
   dropOnDockedLeaf,
   insertTabsInto,
   mergeGroupsInto,
@@ -388,6 +390,90 @@ describe("dockToRegionEdge", () => {
       children: [
         { dir: "column", children: [{ leaf: "a" }, { leaf: "b" }] },
         { leaf: "x" },
+      ],
+    });
+  });
+});
+
+// ===========================================================================
+// dockBandAtIndex  (insert a full-width band at any row index)
+// ===========================================================================
+
+describe("dockBandAtIndex", () => {
+  it("no-op for empty group list", () => {
+    const layout = makeLayout({ left: leaf("a") });
+    expect(dockBandAtIndex(layout, [], "left", 0)).toBe(layout);
+  });
+
+  it("docks into an empty edge as the region (index ignored)", () => {
+    const layout = makeLayout({ floating: [{ id: "w1", stack: ["a"] }] });
+    const out = dockBandAtIndex(layout, ["a"], "left", 5);
+    expect(shapeOf(out.docked.left)).toEqual({ leaf: "a" });
+  });
+
+  it("index 0 docks a band ABOVE everything", () => {
+    const layout = makeLayout({ left: leaf("a"), floating: [{ id: "w1", stack: ["b"] }] });
+    const out = dockBandAtIndex(layout, ["b"], "left", 0);
+    expect(shapeOf(out.docked.left)).toEqual({
+      dir: "column",
+      children: [{ leaf: "b" }, { leaf: "a" }],
+    });
+  });
+
+  it("index rows.length docks a band BELOW everything", () => {
+    const layout = makeLayout({ left: leaf("a"), floating: [{ id: "w1", stack: ["b"] }] });
+    const out = dockBandAtIndex(layout, ["b"], "left", 1);
+    expect(shapeOf(out.docked.left)).toEqual({
+      dir: "column",
+      children: [{ leaf: "a" }, { leaf: "b" }],
+    });
+  });
+
+  it("an interior index docks a band BETWEEN two existing bands", () => {
+    // Region starts with two stacked bands [a] over [b]; drop c at index 1 ->
+    // [a] over [c] over [b]. This is the cross-band-seam affordance.
+    const base = makeLayout({
+      left: rows([row([leaf("a")]), row([leaf("b")])]),
+      floating: [{ id: "wf-c", stack: ["c"] }],
+    });
+    const out = dockBandAtIndex(base, ["c"], "left", 1);
+    expect(shapeOf(out.docked.left)).toEqual({
+      dir: "column",
+      children: [{ leaf: "a" }, { leaf: "c" }, { leaf: "b" }],
+    });
+  });
+
+  it("a band is FULL WIDTH even when inserted next to a multi-column band", () => {
+    // Top band is two columns [a|b]; drop c as a band below it. c must be a
+    // full-width band (one column spanning both), NOT a stack under one column.
+    const layout = makeLayout({
+      left: row([leaf("a"), leaf("b")]),
+      floating: [{ id: "w1", stack: ["c"] }],
+    });
+    const out = dockBandAtIndex(layout, ["c"], "left", 1);
+    expect(shapeOf(out.docked.left)).toEqual({
+      dir: "column",
+      children: [{ dir: "row", children: [{ leaf: "a" }, { leaf: "b" }] }, { leaf: "c" }],
+    });
+  });
+
+  it("clamps an out-of-range index to the end", () => {
+    const layout = makeLayout({ left: leaf("a"), floating: [{ id: "w1", stack: ["b"] }] });
+    const out = dockBandAtIndex(layout, ["b"], "left", 99);
+    expect(groupsInTree(out.docked.left)).toEqual(["a", "b"]);
+  });
+
+  it("applies explicit weights (existing rescaled, dragged band weighted)", () => {
+    const layout = makeLayout({ left: leaf("a"), floating: [{ id: "w1", stack: ["b"] }] });
+    const out = dockBandAtIndex(layout, ["b"], "left", 1, { existing: 3, dragged: 1 });
+    // Two bands: a (weight 3) over b (weight 1). shapeOf reads bands as a
+    // column of rows, each one-column band reading as a weighted leaf.
+    expect(shapeOf(out.docked.left, true)).toEqual({
+      dir: "column",
+      weight: 1,
+      children: [
+        { leaf: "a", weight: 3 },
+        { leaf: "b", weight: 1 },
       ],
     });
   });

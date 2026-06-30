@@ -911,6 +911,8 @@ export function DockManager({
           applyOp(ops.dockToEdge(base, stack, result.edge));
         } else if (result.kind === "regionEdge") {
           applyOp(ops.dockToRegionEdge(base, stack, result.edge, result.side));
+        } else if (result.kind === "bandInsert") {
+          applyOp(ops.dockBandAtIndex(base, stack, result.edge, result.index));
         } else if (result.kind === "split") {
           applyOp(
             adoptMinimized(

@@ -638,28 +638,12 @@ export function dockToRegionEdge(
     return draft;
   }
   if (side === "top" || side === "bottom") {
-    // A new full-width ROW band, spanning all columns. With explicit weights the
-    // existing rows take `existing` and the new band `dragged`; otherwise both
-    // default to 1 (~50/50 for a previously single-row region).
-    const existingW = weights?.existing ?? 1;
-    const draggedW = weights?.dragged ?? 1;
-    const band = buildRow(buildColumn(ne), draggedW);
-    if (weights !== undefined) {
-      const total = existing.rows.reduce((s, r) => s + r.weight, 0) || 1;
-      existing.rows.forEach((r) => {
-        r.weight = (r.weight / total) * existingW;
-      });
-    } else {
-      existing.rows.forEach((r) => {
-        r.weight = existingW;
-      });
-    }
-    draft.docked[edge] = {
-      rows: (side === "top"
-        ? [band, ...existing.rows]
-        : [...existing.rows, band]) as NonEmpty<DockRow>,
-    };
-    return draft;
+    // A new full-width ROW band spanning all columns, at the region's outer top
+    // or bottom -- a band insert at index 0 (top) or rows.length (bottom). The
+    // band-insert mechanics (index, weight rescale) live in dockBandAtIndex; the
+    // outer top/bottom are just its boundary cases.
+    const index = side === "top" ? 0 : existing.rows.length;
+    return insertBandAtIndex(draft, ne, edge, index, weights);
   }
   // left / right: a new full-height column beside everything, in the FIRST row
   // band (a single-row region -- the common case -- is the whole region).
@@ -682,6 +666,75 @@ export function dockToRegionEdge(
     ) as NonEmpty<DockRow>,
   };
   return draft;
+}
+
+/** Insert a new full-width ROW band (a one-column row of the dragged groups) at
+ * row `index` of an edge's existing region, mutating `draft` in place. `index`
+ * 0 docks above every band; `rows.length` docks below; an interior index docks
+ * BETWEEN two existing bands (the gap a cross-band seam drop targets). The
+ * dragged groups must already be detached from `draft`. With explicit weights
+ * the existing bands collectively take `existing` (proportionally rescaled) and
+ * the new band `dragged`; without, the new band gets weight 1 alongside the
+ * existing bands' weights (left untouched). Returns `draft`.
+ *
+ * THE single place a band is created at an index -- dockToRegionEdge top/bottom
+ * are its boundary cases, and the bandInsert drop routes here, so the rescale
+ * and clamp logic lives once. */
+function insertBandAtIndex(
+  draft: DockLayout,
+  groupIds: NonEmpty<GroupId>,
+  edge: DockEdge,
+  index: number,
+  weights?: { existing: number; dragged: number },
+): DockLayout {
+  const existing = draft.docked[edge];
+  if (existing === null) {
+    // No region yet: the band IS the region (index is irrelevant).
+    draft.docked[edge] = regionOf(buildColumn(groupIds));
+    return draft;
+  }
+  const draggedW = weights?.dragged ?? 1;
+  const band = buildRow(buildColumn(groupIds), draggedW);
+  if (weights !== undefined) {
+    const total = existing.rows.reduce((s, r) => s + r.weight, 0) || 1;
+    existing.rows.forEach((r) => {
+      r.weight = (r.weight / total) * weights.existing;
+    });
+  }
+  const at = clamp(index, 0, existing.rows.length);
+  draft.docked[edge] = {
+    rows: [
+      ...existing.rows.slice(0, at),
+      band,
+      ...existing.rows.slice(at),
+    ] as NonEmpty<DockRow>,
+  };
+  return draft;
+}
+
+/** Dock a stack of groups as a new full-width band at row `index` of an edge.
+ * The public entry: detaches the dragged groups first (so a self-drop / move
+ * across the same edge stays conservative), then inserts the band. Index is
+ * clamped to [0, rows.length]; docking onto an empty edge creates the region. */
+export function dockBandAtIndex(
+  layout: DockLayout,
+  groupIds: GroupId[],
+  edge: DockEdge,
+  index: number,
+  weights?: { existing: number; dragged: number },
+): DockLayout {
+  groupIds = withoutAreaGroups(layout, groupIds);
+  const ne = asNonEmpty(groupIds);
+  if (ne === null) return layout;
+  const draft = clone(layout);
+  ne.forEach((g) => detachInPlace(draft, g));
+  // Detaching dragged groups that shared this edge can drop bands, shifting the
+  // target index. Re-clamp against the post-detach region so the band still
+  // lands in range (the caller's index was computed against the pre-detach
+  // layout; an exact "between THESE two bands" can shift, but it stays valid).
+  const after = draft.docked[edge];
+  const max = after === null ? 0 : after.rows.length;
+  return insertBandAtIndex(draft, ne, edge, clamp(index, 0, max), weights);
 }
 
 /** Drop a stack of groups onto an existing docked leaf. `center` merges every

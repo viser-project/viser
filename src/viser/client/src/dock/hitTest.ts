@@ -60,6 +60,8 @@ const SEAM_GAP_MAX_PX = SPLIT_DIVIDER_PX + 3;
 /** Where a drop will land, resolved from the pointer during a drag.
  * - edge: dock as a new outer column on an empty screen edge.
  * - regionEdge: dock a full-span band beside everything in a region.
+ * - bandInsert: dock a full-width band at a specific row index (a cross-band
+ *   seam, or the region's outer top/bottom -- index 0 / rows.length).
  * - split: split a docked leaf's cell along one side.
  * - merge: append into an existing group's tab strip.
  * - insertTab: insert into an existing group's tabs at a specific index.
@@ -71,6 +73,7 @@ export type DropResult =
       edge: DockEdge;
       side: "top" | "bottom" | "left" | "right";
     }
+  | { kind: "bandInsert"; edge: DockEdge; index: number }
   | {
       kind: "split";
       edge: DockEdge;
@@ -371,6 +374,36 @@ export function hitTest(
     return false;
   };
 
+  // Vertical extent (top, bottom) of each row band of a docked edge, derived
+  // from the band's leaves' target rects (the model has no heights; the rendered
+  // geometry does). Returns one entry per band in row order, or null when a band
+  // has no laid-out target yet. Used to place the cross-band seam drop zones.
+  const bandExtents = (
+    edge: DockEdge,
+  ): { top: number; bottom: number }[] | null => {
+    const tree = layout.docked[edge];
+    if (tree === null) return null;
+    const rectOfNode = new Map<NodeId, DOMRect>();
+    for (const t of targets.groups)
+      if (t.ctx.kind === "docked" && t.ctx.edge === edge)
+        rectOfNode.set(t.ctx.nodeId, t.rect);
+    const out: { top: number; bottom: number }[] = [];
+    for (const band of tree.rows) {
+      let top = Infinity;
+      let bottom = -Infinity;
+      for (const col of band.columns)
+        for (const lf of col.leaves) {
+          const r = rectOfNode.get(lf.id);
+          if (r === undefined) continue;
+          top = Math.min(top, r.top);
+          bottom = Math.max(bottom, r.bottom);
+        }
+      if (!Number.isFinite(top) || !Number.isFinite(bottom)) return null;
+      out.push({ top, bottom });
+    }
+    return out;
+  };
+
   // 2. Region edges -> dock a full-span band beside everything in the region.
   // Checked before per-panel zones so an outermost panel's edge means "span
   // all" rather than "split just this one"; an interior panel is past these
@@ -383,6 +416,40 @@ export function hitTest(
     const regionLeft = edge === "left" ? 0 : crect.width - w;
     const regionRight = regionLeft + w;
     if (cx < regionLeft || cx > regionRight) continue;
+
+    // 2a. Cross-band SEAM -> insert a full-width band BETWEEN two bands. A
+    // multi-band region's interior seams are the only way to dock a band between
+    // existing bands; without this the seam falls to a per-panel split, which
+    // (for a multi-column band) wrongly stacks a partial-width leaf under one
+    // column instead of inserting a full-width band. The outer top/bottom of the
+    // region stay handled by the regionEdge bands below (index 0 / rows.length).
+    // The seam claims only the MIDDLE horizontal span: the outer/inner
+    // REGION_SIDE_PX thirds still belong to the left/right "dock a column beside
+    // all bands" bands below, so dropping at the far edge -- even at a seam's
+    // height -- still docks a side column, exactly as it does away from a seam.
+    const seamSideMargin = Math.min(REGION_SIDE_PX, w / 3);
+    const inSeamSpan =
+      cx - regionLeft >= seamSideMargin && regionRight - cx >= seamSideMargin;
+    const extents =
+      tree.rows.length >= 2 && inSeamSpan ? bandExtents(edge) : null;
+    if (extents !== null) {
+      const t = 3;
+      for (let i = 0; i < extents.length - 1; i++) {
+        const gapCenter = (extents[i].bottom + extents[i + 1].top) / 2;
+        if (Math.abs(cy - gapCenter) <= REGION_EDGE_PX) {
+          return {
+            result: { kind: "bandInsert", edge, index: i + 1 },
+            hint: {
+              left: regionLeft,
+              top: gapCenter - t / 2,
+              width: w,
+              height: t,
+              variant: "line",
+            },
+          };
+        }
+      }
+    }
     // A region-edge span previews as a thin LINE along the edge it docks against,
     // spanning the whole region -- the same insertion-line affordance as a
     // per-panel split, just region-wide. (Previously a translucent half-region

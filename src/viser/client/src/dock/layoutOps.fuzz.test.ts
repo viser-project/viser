@@ -34,6 +34,7 @@ import { regionWidthsOf } from "./types";
 import {
   dockToEdge,
   dockToRegionEdge,
+  dockBandAtIndex,
   dropOnDockedLeaf,
   insertTabsInto,
   mergeGroupsInto,
@@ -286,6 +287,7 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
 type OpName =
   | "dockToEdge"
   | "dockToRegionEdge"
+  | "dockBandAtIndex"
   | "dropOnDockedLeaf"
   | "insertTabsInto"
   | "mergeGroupsInto"
@@ -356,6 +358,7 @@ function chooseOp(rng: Rng, l: DockLayout): AppliedOp | null {
   const ops: OpName[] = [
     "dockToEdge",
     "dockToRegionEdge",
+    "dockBandAtIndex",
     "dropOnDockedLeaf",
     "insertTabsInto",
     "mergeGroupsInto",
@@ -414,6 +417,21 @@ function buildOp(
       return {
         desc: `dockToRegionEdge([${gs}], ${edge}, ${side}, ${JSON.stringify(weights)})`,
         apply: (x) => dockToRegionEdge(x, gs, edge, side, weights),
+      };
+    }
+    case "dockBandAtIndex": {
+      const gs = pickGroups(rng, groups);
+      const edge = pick(rng, edges);
+      const region = l.docked[edge];
+      const maxIdx = region === null ? 0 : region.rows.length;
+      const index = int(rng, 0, maxIdx + 1); // include an out-of-range value
+      const weights =
+        rng() < 0.5
+          ? { existing: int(rng, 1, 5), dragged: int(rng, 1, 5) }
+          : undefined;
+      return {
+        desc: `dockBandAtIndex([${gs}], ${edge}, ${index}, ${JSON.stringify(weights)})`,
+        apply: (x) => dockBandAtIndex(x, gs, edge, index, weights),
       };
     }
     case "dropOnDockedLeaf": {

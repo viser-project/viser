@@ -20,13 +20,15 @@ import {
   GroupTarget,
   ContainerRect,
 } from "./hitTest";
-import { edgeIsSingleLeaf, widthColumns } from "./layoutOps";
+import { edgeIsSingleLeaf } from "./layoutOps";
 import { DockEdge, DockLayout, emptyLayout } from "./types";
 import {
   rect,
   mulberry32,
   leaf,
+  row,
   row as rowS,
+  rows,
   col as colS,
   group,
   floatingWindow,
@@ -49,38 +51,53 @@ function dockedTargets(
   const region = layout.docked[edge];
   if (region === null) return [];
   const regionLeft = edge === "left" ? 0 : CONTAINER.width - REGION_W[edge];
+  const regionW = REGION_W[edge];
   const out: GroupTarget[] = [];
-  // The flat model: the region is a row of columns (split width), each column a
-  // stack of leaves (split height).
-  const cw = REGION_W[edge] / widthColumns(region).length;
-  widthColumns(region).forEach((column, ci) => {
-    const x = regionLeft + ci * cw;
-    const ch = CONTAINER.height / column.leaves.length;
-    column.leaves.forEach((lf, li) => {
-      const y = li * ch;
-      const group = layout.groups[lf.group];
-      const r = rect(x, y, cw, ch);
-      const stripTop = y + STRIP_OFFSET;
-      // Lay tabs left-to-right, wrapping every 3 within the strip width.
-      const tabW = Math.min(80, cw / 3);
-      const tabs = (group?.paneIds ?? []).map((paneId, i) => {
-        const col = i % 3;
-        const row = Math.floor(i / 3);
-        return {
-          paneId,
-          rect: rect(x + col * tabW, stripTop + row * STRIP_H, tabW, STRIP_H),
-        };
+  // The 4-level model: the region is a VERTICAL stack of full-width row bands
+  // (split by row weight), each band a row of columns (split width), each
+  // column a stack of leaves (split height). This mirrors SplitView's real
+  // geometry, so the sweep exercises true multi-band layouts -- not just the
+  // single width-determining row the old harness laid out.
+  const rowWeightTotal =
+    region.rows.reduce((s, r) => s + r.weight, 0) || region.rows.length;
+  let bandTop = 0;
+  for (const band of region.rows) {
+    const bandH = (band.weight / rowWeightTotal) * CONTAINER.height;
+    const colWeightTotal =
+      band.columns.reduce((s, c) => s + c.weight, 0) || band.columns.length;
+    let colLeft = regionLeft;
+    for (const column of band.columns) {
+      const cw = (column.weight / colWeightTotal) * regionW;
+      const ch = bandH / column.leaves.length;
+      column.leaves.forEach((lf, li) => {
+        const x = colLeft;
+        const y = bandTop + li * ch;
+        const group = layout.groups[lf.group];
+        const r = rect(x, y, cw, ch);
+        const stripTop = y + STRIP_OFFSET;
+        // Lay tabs left-to-right, wrapping every 3 within the strip width.
+        const tabW = Math.min(80, cw / 3);
+        const tabs = (group?.paneIds ?? []).map((paneId, i) => {
+          const col = i % 3;
+          const trow = Math.floor(i / 3);
+          return {
+            paneId,
+            rect: rect(x + col * tabW, stripTop + trow * STRIP_H, tabW, STRIP_H),
+          };
+        });
+        const stripRows = Math.max(1, Math.ceil((group?.paneIds.length ?? 1) / 3));
+        out.push({
+          groupId: lf.group,
+          rect: r,
+          stripRect: rect(x, stripTop, cw, STRIP_H * stripRows),
+          tabs,
+          ctx: { kind: "docked", nodeId: lf.id, edge },
+        });
       });
-      const rows = Math.max(1, Math.ceil((group?.paneIds.length ?? 1) / 3));
-      out.push({
-        groupId: lf.group,
-        rect: r,
-        stripRect: rect(x, stripTop, cw, STRIP_H * rows),
-        tabs,
-        ctx: { kind: "docked", nodeId: lf.id, edge },
-      });
-    });
-  });
+      colLeft += cw;
+    }
+    bandTop += bandH;
+  }
   return out;
 }
 
@@ -127,9 +144,12 @@ function targetsFor(layout: DockLayout): DropTargets {
 function nodeExists(layout: DockLayout, edge: DockEdge, nodeId: string): boolean {
   const region = layout.docked[edge];
   if (region === null) return false;
-  // A drop result's nodeId addresses a leaf (a docked split target) or a column.
-  return widthColumns(region).some(
-    (c) => c.id === nodeId || c.leaves.some((l) => l.id === nodeId),
+  // A drop result's nodeId addresses a leaf (a docked split target) or a
+  // column -- in ANY band, not just the width-determining row.
+  return region.rows.some((band) =>
+    band.columns.some(
+      (c) => c.id === nodeId || c.leaves.some((l) => l.id === nodeId),
+    ),
   );
 }
 
@@ -153,6 +173,20 @@ function validateResult(
       // Suppression contract: must be a multi-cell edge for that side.
       if (edgeIsSingleLeaf(tree, result.side))
         errs.push(`regionEdge ${result.side} on a single-leaf edge (should be suppressed)`);
+      break;
+    }
+    case "bandInsert": {
+      const tree = layout.docked[result.edge];
+      if (tree === null) {
+        errs.push(`bandInsert on empty edge ${result.edge}`);
+        break;
+      }
+      // An interior seam: index must be strictly between two existing bands
+      // (the outer 0 / rows.length cases are emitted as regionEdge top/bottom).
+      if (result.index < 1 || result.index > tree.rows.length - 1)
+        errs.push(
+          `bandInsert index ${result.index} not an interior seam of ${tree.rows.length} bands on ${result.edge}`,
+        );
       break;
     }
     case "split":
@@ -322,6 +356,50 @@ function layouts(): { name: string; layout: DockLayout }[] {
     l.docked.left = toRegion(leaf("a"));
     l.docked.right = toRegion(leaf("b"));
     out.push({ name: "both edges docked leaves", layout: l });
+  }
+  {
+    // TWO stacked row bands: a full-width band (a) above a side-by-side band
+    // (b | c). The 4-level multi-band shape -- the reason the sweep harness now
+    // lays out every band, not just the width-determining row.
+    const l = emptyLayout();
+    l.groups = { a: group("a"), b: group("b", 2), c: group("c") };
+    l.docked.left = toRegion(rows([row([leaf("a")]), row([leaf("b"), leaf("c")])]));
+    out.push({ name: "two row bands (left)", layout: l });
+  }
+  {
+    // THREE bands: a wide band on top, a single full-width band, and a
+    // side-by-side band -- with a collapsed group so a band renders as a strip.
+    const l = emptyLayout();
+    l.groups = {
+      a: group("a"),
+      b: group("b"),
+      c: group("c", 2, true), // collapsed -> its band renders as a strip
+      d: group("d"),
+      e: group("e"),
+      f: group("f"),
+    };
+    l.docked.left = toRegion(
+      rows([
+        row([leaf("a"), leaf("b")]),
+        row([leaf("c")]),
+        row([leaf("d"), colS([leaf("e"), leaf("f")])]),
+      ]),
+    );
+    out.push({ name: "three bands w/ collapsed (left)", layout: l });
+  }
+  {
+    // Multi-band on BOTH edges -- the densest geometry, where left and right
+    // region bands and per-band columns all coexist.
+    const l = emptyLayout();
+    l.groups = {
+      a: group("a"),
+      b: group("b"),
+      c: group("c"),
+      d: group("d"),
+    };
+    l.docked.left = toRegion(rows([row([leaf("a")]), row([leaf("b")])]));
+    l.docked.right = toRegion(rows([row([leaf("c")]), row([leaf("d")])]));
+    out.push({ name: "two bands both edges", layout: l });
   }
   {
     // Both edges empty -> only screen-edge zones + (no group) null in middle.
