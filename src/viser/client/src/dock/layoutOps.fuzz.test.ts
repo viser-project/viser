@@ -129,12 +129,20 @@ function geometricViolations(layout: DockLayout): string[] {
     const reserved = plannedReservedWidth(plan, widths[edge]);
     if (!finite(reserved) || reserved < 0)
       v.push(`${edge}: bad reserved width ${reserved}`);
-    if (reserved + 0.001 < plan.chromePx)
+    // Chrome (the widthRow's strips beside expanded columns) is only part of the
+    // reserved width when the widthRow ITSELF has expanded columns. When the
+    // widthRow is all strips but another band is expanded, the widthRow renders
+    // as a full-width horizontal bar (no strip chrome) and reserved = regionWidth
+    // -- which may legitimately be below that (now-irrelevant) chrome value.
+    if (plan.hasExpanded && reserved + 0.001 < plan.chromePx)
       v.push(`${edge}: reserved ${reserved} < chrome ${plan.chromePx}`);
     const off = canvasFacingStripOffsetPx(plan, edge);
     if (!finite(off) || off < 0)
       v.push(`${edge}: bad strip offset ${off}`);
-    if (off > reserved + 0.001)
+    // The canvas-facing strip offset is only meaningful when the widthRow has
+    // expanded columns (it insets the resizer past leading strips). When the
+    // widthRow is all strips, there is no resizer and offset is 0.
+    if (plan.hasExpanded && off > reserved + 0.001)
       v.push(`${edge}: strip offset ${off} exceeds reserved ${reserved}`);
     // Per-band coherence: EVERY band must classify without throwing and with a
     // sensible strip count, not just the width-determining row. A band that is

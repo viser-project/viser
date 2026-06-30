@@ -21,7 +21,7 @@
 // elsewhere must not be counted as a strip. (Getting this wrong squeezed a
 // freshly docked panel into a 36px region.)
 
-import { isColumnMinimized, widthColumns } from "./layoutOps";
+import { isColumnMinimized, isRowMinimized, widthColumns } from "./layoutOps";
 import {
   DockColumn,
   DockEdge,
@@ -50,6 +50,13 @@ export interface RegionPlan {
   singleColumn: boolean;
   /** Fixed chrome on top of regionWidth: strips + inter-column dividers. */
   chromePx: number;
+  /** True when ANY band in the region has an expanded column -- not just the
+   * width-determining row `hasExpanded` reflects. A non-widthRow band can be
+   * expanded while the widthRow is all strips (e.g. a wide band minimized above
+   * a narrower expanded band); the region must still reserve its content width,
+   * or the expanded band gets squished to strip width. The reserved-width math
+   * gates on THIS, while the resizer/reconciler still use the widthRow fields. */
+  anyBandExpanded: boolean;
 }
 
 export function planRegion(
@@ -62,6 +69,9 @@ export function planRegion(
   const columns = widthColumns(region);
   const isStrip = columns.map((c) => isColumnMinimized(c, groups));
   const expandedColumns = columns.filter((_, i) => !isStrip[i]);
+  // Region-wide: any band (not just the widthRow) with an expanded column means
+  // the region must reserve its content width so that band isn't squished.
+  const anyBandExpanded = region.rows.some((r) => !isRowMinimized(r, groups));
 
   if (columns.length === 1) {
     if (isStrip[0]) {
@@ -74,6 +84,7 @@ export function planRegion(
         expandedColumns: [],
         singleColumn: true,
         chromePx: MINIMIZED_STRIP_PX,
+        anyBandExpanded,
       };
     }
     // An expanded lone column renders full-width: there is no render row for it
@@ -87,6 +98,7 @@ export function planRegion(
       expandedColumns: columns,
       singleColumn: true,
       chromePx: 0,
+      anyBandExpanded,
     };
   }
 
@@ -101,6 +113,7 @@ export function planRegion(
       chromePx:
         columns.length * MINIMIZED_STRIP_PX +
         Math.max(0, columns.length - 1) * SPLIT_DIVIDER_PX,
+      anyBandExpanded,
     };
   }
 
@@ -114,17 +127,30 @@ export function planRegion(
     chromePx:
       isStrip.filter(Boolean).length * MINIMIZED_STRIP_PX +
       Math.max(0, columns.length - 1) * SPLIT_DIVIDER_PX,
+    anyBandExpanded,
   };
 }
 
-/** Rendered width of the region: the expanded columns' regionWidth plus the
- * fixed chrome. (A fully-minimized region keeps its preserved regionWidth in
- * state for restore, but renders only the strips.) */
+/** Rendered width of the region.
+ *
+ * - widthRow has expanded columns (mixed): regionWidth (expanded cols) + chrome
+ *   (its minimized-strip columns + dividers render ON TOP).
+ * - widthRow is all strips but ANOTHER band is expanded: that band renders
+ *   full-width and the all-strip widthRow renders as a full-width horizontal
+ *   bar -- so the region reserves regionWidth with NO strip chrome (the strip
+ *   chrome only applies to strips sitting BESIDE expanded columns in the same
+ *   render row, which there are none of here).
+ * - nothing expanded anywhere: chrome only (the all-minimized region renders
+ *   just its strips; the preserved regionWidth is kept in state for restore). */
 export function plannedReservedWidth(
   plan: RegionPlan,
   regionWidthPx: number,
 ): number {
-  return (plan.hasExpanded ? regionWidthPx : 0) + plan.chromePx;
+  if (plan.hasExpanded) return regionWidthPx + plan.chromePx;
+  // widthRow all strips: if another band is expanded, reserve its content width
+  // (no strip chrome -- the minimized widthRow is a full-width bar, not strips
+  // beside expanded columns). Else fully minimized: chrome only.
+  return plan.anyBandExpanded ? regionWidthPx : plan.chromePx;
 }
 
 /** Width (px) of the contiguous run of minimized strips on the region's

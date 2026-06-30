@@ -20,6 +20,7 @@ import { reconcileRegionWidths } from "./widthReconciliation";
 import {
   leaf,
   row,
+  rows,
   col,
   groupsRecord as groups,
   toRegion,
@@ -76,6 +77,35 @@ describe("planRegion", () => {
     expect(plan.isStrip).toEqual([false]);
     expect(plan.chromePx).toBe(0);
     expect(plannedReservedWidth(plan, 320)).toBe(320);
+  });
+
+  it("REGRESSION: a minimized WIDTHROW band must not squish an expanded band", () => {
+    // The widthRow is the [a|b] band (most columns); minimize BOTH so it's all
+    // strips, with an expanded [c] band below. The widthRow reports
+    // hasExpanded=false, but the region must still reserve regionWidth (anyBand
+    // expanded) -- not collapse to chrome -- or the expanded [c] band gets
+    // squished to ~strip width.
+    const tree = rows([row([leaf("a"), leaf("b")]), row([leaf("c")])]);
+    const plan = planRegion(
+      toRegion(tree)!,
+      groups(["a", true], ["b", true], ["c"]),
+    );
+    expect(plan.hasExpanded).toBe(false); // widthRow itself is all strips
+    expect(plan.anyBandExpanded).toBe(true); // but [c] is expanded
+    // Reserves the content width (regionWidth), NOT the strip chrome.
+    expect(plannedReservedWidth(plan, 320)).toBe(320);
+  });
+
+  it("a fully-minimized MULTI-BAND region reserves only chrome (restore width kept)", () => {
+    // Every band minimized: no band expanded -> chrome only (the preserved
+    // regionWidth is held in state for restore, not rendered).
+    const tree = rows([row([leaf("a"), leaf("b")]), row([leaf("c")])]);
+    const plan = planRegion(
+      toRegion(tree)!,
+      groups(["a", true], ["b", true], ["c", true]),
+    );
+    expect(plan.anyBandExpanded).toBe(false);
+    expect(plannedReservedWidth(plan, 320)).toBe(plan.chromePx);
   });
 });
 

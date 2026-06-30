@@ -730,3 +730,41 @@ def test_band_to_band_vertical_resize(dock_context, vite_server: int) -> None:
         ) <= 16, f"band heights should conserve total: {before} -> {after}"
     finally:
         page.close()
+
+
+def test_expanded_band_not_squished_by_minimized_wider_band(
+    dock_context, vite_server: int
+) -> None:
+    """Regression: the region width is driven by the widest band (most columns).
+    When THAT band is fully minimized but a narrower band is expanded, the
+    expanded band must still get the region's content width -- it was squished to
+    strip width (~79px) because the all-strip widthRow reported hasExpanded=false
+    and reserved only chrome."""
+    page = _open(dock_context, vite_server, 1280, 900)
+    try:
+        # Right: a 2-column band [controls|inspector], BOTH minimized, over an
+        # expanded single-column [console] band.
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=rows(
+                    columns(
+                        group("controls", collapsed=True),
+                        group("inspector", collapsed=True),
+                    ),
+                    "console",
+                )
+            ),
+        )
+        w = page.evaluate(
+            """() => {
+                const leaf = document
+                    .querySelector('[data-dock-group="t-console"]')
+                    .closest('[data-dock-leaf]');
+                return Math.round(leaf.getBoundingClientRect().width);
+            }"""
+        )
+        # Full content width, not a ~79px strip.
+        assert w > 200, f"expanded console band was squished to {w}px by the minimized wider band"
+    finally:
+        page.close()
