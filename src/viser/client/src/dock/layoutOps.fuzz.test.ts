@@ -17,6 +17,7 @@ import {
   DockLayout,
   DockLeaf,
   DockRegion,
+  DockRow,
   DropRegion,
   GroupId,
   NodeId,
@@ -25,6 +26,12 @@ import {
 } from "./types";
 import { invariantViolations } from "./layoutInvariants";
 import {
+  planRegion,
+  plannedReservedWidth,
+  canvasFacingStripOffsetPx,
+} from "./regionPlan";
+import { regionWidthsOf } from "./types";
+import {
   dockToEdge,
   dockToRegionEdge,
   dropOnDockedLeaf,
@@ -32,6 +39,7 @@ import {
   mergeGroupsInto,
   floatGroup,
   floatColumn,
+  isColumnMinimized,
   isMultiLeafColumn,
   tearOutPane,
   snapToWindowStack,
@@ -42,13 +50,20 @@ import {
   resizeWindowHeight,
   bringToFront,
   setActiveTab,
+  setNodeWeights,
+  setRegionWidth,
+  minimizeStack,
+  expandStack,
+  stackGroupIdsOf,
   normalizeStackCollapse,
 } from "./layoutOps";
 import {
   mulberry32,
   nid,
   leaf,
+  row,
   row as rowS,
+  rows,
   col as colS,
   group as grp,
   floatingWindow,
@@ -78,6 +93,61 @@ function allPanels(layout: DockLayout): string[] {
   return Object.values(layout.groups)
     .flatMap((g) => g.paneIds)
     .sort();
+}
+
+/** GEOMETRIC invariants: the structural checks above prove the tree is valid,
+ * but not that it RENDERS coherently. regionPlan is THE source of truth every
+ * width consumer derives from, so we run it on every docked region and assert
+ * its output is internally consistent and finite -- and, critically, that EVERY
+ * row band (not just the representative width-row regionPlan picks) classifies
+ * coherently. The multi-band feature's fragility lives precisely here: the
+ * width model is computed from one row, so a sibling band that can't be planned
+ * is exactly the class of bug the structural invariants miss. */
+function geometricViolations(layout: DockLayout): string[] {
+  const v: string[] = [];
+  const widths = regionWidthsOf(layout);
+  const finite = (n: number) => Number.isFinite(n);
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const region = layout.docked[edge];
+    if (region === null) continue;
+    const plan = planRegion(region, layout.groups);
+    // Plan internal consistency.
+    if (plan.isStrip.length !== plan.columns.length)
+      v.push(`${edge}: isStrip length ${plan.isStrip.length} != columns ${plan.columns.length}`);
+    if (!finite(plan.chromePx) || plan.chromePx < 0)
+      v.push(`${edge}: bad chromePx ${plan.chromePx}`);
+    if (plan.expandedColumns.length > plan.columns.length)
+      v.push(`${edge}: more expanded (${plan.expandedColumns.length}) than columns (${plan.columns.length})`);
+    // expandedColumns must be exactly the non-strip columns.
+    const expectExpanded = plan.columns.filter((_, i) => !plan.isStrip[i]).length;
+    if (plan.expandedColumns.length !== expectExpanded)
+      v.push(`${edge}: expandedColumns ${plan.expandedColumns.length} != non-strip ${expectExpanded}`);
+    if (plan.hasExpanded !== plan.expandedColumns.length > 0)
+      v.push(`${edge}: hasExpanded ${plan.hasExpanded} disagrees with expandedColumns`);
+    // Derived widths must be finite and sane.
+    const reserved = plannedReservedWidth(plan, widths[edge]);
+    if (!finite(reserved) || reserved < 0)
+      v.push(`${edge}: bad reserved width ${reserved}`);
+    if (reserved + 0.001 < plan.chromePx)
+      v.push(`${edge}: reserved ${reserved} < chrome ${plan.chromePx}`);
+    const off = canvasFacingStripOffsetPx(plan, edge);
+    if (!finite(off) || off < 0)
+      v.push(`${edge}: bad strip offset ${off}`);
+    if (off > reserved + 0.001)
+      v.push(`${edge}: strip offset ${off} exceeds reserved ${reserved}`);
+    // Per-band coherence: EVERY band must classify without throwing and with a
+    // sensible strip count, not just the width-determining row. A band that is
+    // wholly collapsed is a full-width strip band; a band with any expanded
+    // column is a render row. Either way isColumnMinimized must be total.
+    for (const band of region.rows) {
+      const stripCount = band.columns.filter((c) =>
+        isColumnMinimized(c, layout.groups),
+      ).length;
+      if (stripCount < 0 || stripCount > band.columns.length)
+        v.push(`${edge}: band ${band.id} bad strip count ${stripCount}`);
+    }
+  }
+  return v;
 }
 
 // ---------------------------------------------------------------------------
@@ -127,6 +197,46 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
         l.docked.left = toRegion(rowS([leaf("a"), colS([leaf("b"), leaf("c")])]));
         l.docked.right = toRegion(colS([leaf("d"), leaf("e")]));
         l.floating = [floatingWindow({ id: "wf", x: 50, y: 50, width: 280, stack: ["f"] })];
+        return l;
+      },
+    },
+    {
+      // TWO row bands stacked vertically: a full-width band above a
+      // side-by-side band. This is the multi-band shape the 4th level exists
+      // for ("dock a band above ALL columns"). Starting here -- rather than
+      // hoping random ops build it -- forces the multi-band render/width paths
+      // (regionPlan's representative-row pick, per-band strip classification)
+      // from step 0.
+      name: "two row bands",
+      make: () => {
+        const l = emptyLayout();
+        l.groups = { a: grp("a", 1), b: grp("b", 2), c: grp("c", 1), d: grp("d", 1) };
+        // Band 1: one full-width column (a). Band 2: b beside a (c,d) stack.
+        l.docked.left = toRegion(
+          rows([row([leaf("a")]), row([leaf("b"), colS([leaf("c"), leaf("d")])])]),
+        );
+        return l;
+      },
+    },
+    {
+      // THREE bands, one of them fully minimized, plus a second edge -- the
+      // worst-case multi-band geometry: a collapsed band that must render as a
+      // fixed-height strip while sibling bands stay expanded, exercising the
+      // band-height flex rule (loneBand/stripBand) and per-band minimize.
+      name: "three bands w/ collapsed band + right edge",
+      make: () => {
+        const l = emptyLayout();
+        l.groups = {
+          a: grp("a", 1),
+          b: grp("b", 1),
+          c: grp("c", 1, true), // collapsed -> its band is a strip
+          d: grp("d", 1),
+          e: grp("e", 2),
+        };
+        l.docked.left = toRegion(
+          rows([row([leaf("a"), leaf("b")]), row([leaf("c")]), row([leaf("d")])]),
+        );
+        l.docked.right = toRegion(rowS([leaf("e")]));
         return l;
       },
     },
@@ -189,7 +299,11 @@ type OpName =
   | "resizeWindow"
   | "resizeWindowHeight"
   | "bringToFront"
-  | "setActiveTab";
+  | "setActiveTab"
+  | "setNodeWeights"
+  | "setRegionWidth"
+  | "minimizeStack"
+  | "expandStack";
 
 interface AppliedOp {
   desc: string;
@@ -256,6 +370,10 @@ function chooseOp(rng: Rng, l: DockLayout): AppliedOp | null {
     "resizeWindowHeight",
     "bringToFront",
     "setActiveTab",
+    "setNodeWeights",
+    "setRegionWidth",
+    "minimizeStack",
+    "expandStack",
   ];
   // Try ops in random order until one is applicable.
   const order = [...ops].sort(() => rng() - 0.5);
@@ -441,6 +559,54 @@ function buildOp(
         apply: (x) => setActiveTab(x, grp, panel),
       };
     }
+    case "setNodeWeights": {
+      // Pick a docked edge and randomize weights of a random subset of its
+      // nodes (rows, columns, AND leaves) -- the multi-level resize write path.
+      const edgesWithRegion = edges.filter((e) => l.docked[e] !== null);
+      if (edgesWithRegion.length === 0) return null;
+      const edge = pick(rng, edgesWithRegion);
+      const region = l.docked[edge]!;
+      const ids: NodeId[] = [];
+      for (const r of region.rows) {
+        ids.push(r.id);
+        for (const c of r.columns) {
+          ids.push(c.id);
+          for (const lf of c.leaves) ids.push(lf.id);
+        }
+      }
+      const weightsById: Record<NodeId, number> = {};
+      for (const id of ids) if (rng() < 0.6) weightsById[id] = int(rng, 1, 6);
+      return {
+        desc: `setNodeWeights(${edge}, ${JSON.stringify(weightsById)})`,
+        apply: (x) => setNodeWeights(x, edge, weightsById),
+      };
+    }
+    case "setRegionWidth": {
+      const edgesWithRegion = edges.filter((e) => l.docked[e] !== null);
+      if (edgesWithRegion.length === 0) return null;
+      const edge = pick(rng, edgesWithRegion);
+      const px = int(rng, 40, 600);
+      return {
+        desc: `setRegionWidth(${edge}, ${px})`,
+        apply: (x) => setRegionWidth(x, edge, px),
+      };
+    }
+    case "minimizeStack": {
+      const grp = g();
+      const stack = stackGroupIdsOf(l, grp);
+      return {
+        desc: `minimizeStack([${stack}])`,
+        apply: (x) => minimizeStack(x, stack),
+      };
+    }
+    case "expandStack": {
+      const grp = g();
+      const stack = stackGroupIdsOf(l, grp);
+      return {
+        desc: `expandStack([${stack}])`,
+        apply: (x) => expandStack(x, stack),
+      };
+    }
   }
 }
 
@@ -468,8 +634,10 @@ function runSequence(
   const descs: string[] = [];
   // Panel-conservation baseline: no op should ever create or destroy a panel.
   const startPanels = JSON.stringify(allPanels(layout));
-  // Sanity: the starting layout itself must be healthy.
-  const startV = invariantViolations(layout);
+  // Sanity: the starting layout itself must be healthy (structurally AND
+  // geometrically -- a multi-band fixture that can't be planned should fail
+  // here, before any op runs).
+  const startV = [...invariantViolations(layout), ...geometricViolations(layout)];
   if (startV.length > 0)
     return {
       failure: { step: -1, desc: "<start>", violations: startV, mutatedInput: false, threw: null },
@@ -502,7 +670,7 @@ function runSequence(
     // production commit path always normalizes it away, so normalize `next`
     // (a fresh op output -- safe to mutate) before checking invariants.
     if (next !== before) normalizeStackCollapse(next);
-    const violations = invariantViolations(next);
+    const violations = [...invariantViolations(next), ...geometricViolations(next)];
     // Panel conservation: the multiset of panel ids must be invariant.
     if (JSON.stringify(allPanels(next)) !== startPanels) {
       violations.push(
@@ -534,11 +702,13 @@ function randomStart(seed: number): DockLayout {
   const buckets: GroupId[][] = [[], [], []];
   for (const n of names) buckets[int(rng, 0, 2)].push(n);
 
-  // Build a random VALID flat region: partition the groups into columns, each
-  // column stacking 1-3 leaves (the fixed 3-level shape -- no deeper nesting to
-  // generate).
-  const buildTree = (gs: GroupId[]): DockRegion | null => {
-    if (gs.length === 0) return null;
+  // Build a random VALID region in the fixed 4-level shape. The groups are
+  // partitioned into 1-3 ROW BANDS (the 4th level: full-width stacked bands);
+  // each band's groups are partitioned into columns; each column stacks 1-3
+  // leaves. Generating multiple bands -- not just one -- means the randomized
+  // starts exercise the multi-band render/width paths from the first step,
+  // matching the hand-written multi-band fixtures.
+  const buildColumns = (gs: GroupId[]): NonEmpty<DockColumn> => {
     const columns: DockColumn[] = [];
     let i = 0;
     while (i < gs.length) {
@@ -547,19 +717,32 @@ function randomStart(seed: number): DockLayout {
       i += take;
       columns.push({
         id: nid(),
-        weight: 1,
+        weight: int(rng, 1, 4),
         leaves: slice.map((g) => ({
           id: nid(),
           group: g,
-          weight: 1,
+          weight: int(rng, 1, 4),
         })) as NonEmpty<DockLeaf>,
       });
     }
-    return {
-      rows: [
-        { id: nid(), weight: 1, columns: columns as NonEmpty<DockColumn> },
-      ],
-    };
+    return columns as NonEmpty<DockColumn>;
+  };
+  const buildTree = (gs: GroupId[]): DockRegion | null => {
+    if (gs.length === 0) return null;
+    // Split the groups into 1-3 contiguous bands.
+    const bandCount = int(rng, 1, Math.min(3, gs.length));
+    const bands: DockRow[] = [];
+    let i = 0;
+    for (let b = 0; b < bandCount; b++) {
+      const remainingBands = bandCount - b;
+      // Leave at least one group for each remaining band.
+      const maxTake = gs.length - i - (remainingBands - 1);
+      const take = b === bandCount - 1 ? gs.length - i : int(rng, 1, maxTake);
+      const slice = gs.slice(i, i + take);
+      i += take;
+      bands.push({ id: nid(), weight: int(rng, 1, 4), columns: buildColumns(slice) });
+    }
+    return { rows: bands as NonEmpty<DockRow> };
   };
 
   l.docked.left = buildTree(buckets[0]);
@@ -588,8 +771,8 @@ describe("layoutOps invariant fuzz", () => {
   // Tuned so all five run well under the timeout while still exploring deeply
   // (5 layouts x 500 seeds x 80 steps = 200k op applications, each fully
   // invariant- + immutability-checked).
-  const SEEDS = 500;
-  const STEPS = 80;
+  const SEEDS = 800;
+  const STEPS = 120;
 
   for (const start of starts) {
     it(`maintains invariants under random op sequences (${start.name})`, { timeout: 30000 }, () => {
