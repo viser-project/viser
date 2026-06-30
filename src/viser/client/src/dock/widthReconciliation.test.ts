@@ -16,7 +16,7 @@ import {
   regionWidthsOf,
 } from "./types";
 import { reconcileRegionWidths } from "./widthReconciliation";
-import { leaf, row, group, toRegion } from "./testUtils";
+import { leaf, row, rows, group, toRegion } from "./testUtils";
 
 /** Reconcile and return next's resulting widths (the new single source). */
 function recon(prev: DockLayout, next: DockLayout): Record<DockEdge, number> {
@@ -165,5 +165,46 @@ describe("reconcileRegionWidths min-width floor", () => {
     expect(recon(prev, next).right).toBeGreaterThanOrEqual(
       MIN_REGION_GRAB_PX * 2,
     );
+  });
+});
+
+describe("reconcileRegionWidths across multi-band (widthRow) changes", () => {
+  // The width model is driven by the widthRow (the band with the most columns).
+  // When THAT band changes -- a wider band inserted, or the widest band removed
+  // -- reconciliation must keep the region width finite, positive, and floored;
+  // the column SET changing legitimately resets new columns to a default (same
+  // as docking a new column), but it must never produce NaN or a collapsed (<=0)
+  // width.
+  it("a wider band becoming the widthRow yields a finite, floored width", () => {
+    const prev = emptyLayout();
+    prev.groups = { a: group("a"), b: group("b"), c: group("c") };
+    prev.docked.right = toRegion(leaf("a")); // single column, width 250
+    prev.regionWidth = { left: 0, right: 250 };
+    const next = emptyLayout();
+    next.groups = { a: group("a"), b: group("b"), c: group("c") };
+    // [a] over [b|c] -- the 2-column band is now the widthRow.
+    next.docked.right = toRegion(
+      rows([row([leaf("a")]), row([leaf("b"), leaf("c")])]),
+    );
+    next.regionWidth = { left: 0, right: 250 };
+    const w = recon(prev, next).right;
+    expect(Number.isFinite(w)).toBe(true);
+    expect(w).toBeGreaterThanOrEqual(MIN_REGION_GRAB_PX * 2);
+  });
+
+  it("removing the widest band keeps the survivor's width finite & positive", () => {
+    const prev = emptyLayout();
+    prev.groups = { a: group("a"), b: group("b"), c: group("c") };
+    prev.docked.right = toRegion(
+      rows([row([leaf("a", 250), leaf("b", 250)]), row([leaf("c")])]),
+    );
+    prev.regionWidth = { left: 0, right: 500 };
+    const next = emptyLayout();
+    next.groups = { c: group("c") };
+    next.docked.right = toRegion(rows([row([leaf("c")])]));
+    next.regionWidth = { left: 0, right: 500 };
+    const w = recon(prev, next).right;
+    expect(Number.isFinite(w)).toBe(true);
+    expect(w).toBeGreaterThanOrEqual(MIN_REGION_GRAB_PX);
   });
 });
