@@ -256,8 +256,15 @@ function validateHint(hint: {
 // ---------------------------------------------------------------------------
 // Representative layouts.
 // ---------------------------------------------------------------------------
-function layouts(): { name: string; layout: DockLayout }[] {
-  const out: { name: string; layout: DockLayout }[] = [];
+function layouts(): {
+  name: string;
+  layout: DockLayout;
+  /** True for fixtures with 2+ row bands on an edge: the sweep then asserts a
+   * cross-band-seam `bandInsert` is actually reachable (guards the seam zone
+   * from silently going dead). */
+  multiBand?: boolean;
+}[] {
+  const out: { name: string; layout: DockLayout; multiBand?: boolean }[] = [];
 
   {
     const l = emptyLayout();
@@ -364,7 +371,7 @@ function layouts(): { name: string; layout: DockLayout }[] {
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b", 2), c: group("c") };
     l.docked.left = toRegion(rows([row([leaf("a")]), row([leaf("b"), leaf("c")])]));
-    out.push({ name: "two row bands (left)", layout: l });
+    out.push({ name: "two row bands (left)", layout: l, multiBand: true });
   }
   {
     // THREE bands: a wide band on top, a single full-width band, and a
@@ -385,7 +392,7 @@ function layouts(): { name: string; layout: DockLayout }[] {
         row([leaf("d"), colS([leaf("e"), leaf("f")])]),
       ]),
     );
-    out.push({ name: "three bands w/ collapsed (left)", layout: l });
+    out.push({ name: "three bands w/ collapsed (left)", layout: l, multiBand: true });
   }
   {
     // Multi-band on BOTH edges -- the densest geometry, where left and right
@@ -399,7 +406,7 @@ function layouts(): { name: string; layout: DockLayout }[] {
     };
     l.docked.left = toRegion(rows([row([leaf("a")]), row([leaf("b")])]));
     l.docked.right = toRegion(rows([row([leaf("c")]), row([leaf("d")])]));
-    out.push({ name: "two bands both edges", layout: l });
+    out.push({ name: "two bands both edges", layout: l, multiBand: true });
   }
   {
     // Both edges empty -> only screen-edge zones + (no group) null in middle.
@@ -415,7 +422,7 @@ function layouts(): { name: string; layout: DockLayout }[] {
 describe("hitTest pointer sweep invariants", () => {
   const STEP = 8; // px grid resolution
 
-  for (const { name, layout } of layouts()) {
+  for (const { name, layout, multiBand } of layouts()) {
     it(`never produces an invalid result/hint (${name})`, () => {
       const targets = targetsFor(layout);
       const errors: string[] = [];
@@ -456,6 +463,15 @@ describe("hitTest pointer sweep invariants", () => {
           .filter(([k]) => k !== "null")
           .reduce((s, [, n]) => s + n, 0);
         expect(nonNull).toBeGreaterThan(0);
+      }
+      // A multi-band fixture MUST reach the cross-band-seam bandInsert zone --
+      // otherwise the seam has silently gone dead and the only sign would be a
+      // missing affordance, not a failure. Guard it explicitly.
+      if (multiBand) {
+        expect(
+          zoneTally.get("bandInsert") ?? 0,
+          `${name}: expected the cross-band seam (bandInsert) to be reachable`,
+        ).toBeGreaterThan(0);
       }
     });
   }
