@@ -27,6 +27,7 @@ import {
   setNodeWeights,
 } from "./layoutOps";
 import { StackHandleBar } from "./handles";
+import { HorizontalMinimizedBand } from "./HorizontalMinimizedBand";
 import { TabGroupFrame } from "./TabGroupFrame";
 import { VerticalMinimizedColumn } from "./VerticalMinimizedColumn";
 import {
@@ -105,7 +106,14 @@ export const SplitView = React.memo(function SplitView({
                     : `flex-grow ${DOCK_ANIM_MS}ms ease, flex-basis ${DOCK_ANIM_MS}ms ease`,
               }}
             >
-              <RowView row={row} edge={edge} />
+              {/* A collapsed band among siblings renders as a full-width
+              horizontal bar (the band-level analog of the column rail); a lone
+              band -- or an expanded one -- renders its columns normally. */}
+              {stripBand ? (
+                <HorizontalMinimizedBand row={row} edge={edge} />
+              ) : (
+                <RowView row={row} edge={edge} />
+              )}
             </Box>
             {index < rows.length - 1 &&
               (() => {

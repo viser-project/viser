@@ -30,7 +30,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import Page  # noqa: E402
 
-from .dock_helpers import columns, dock_layout, group, set_layout, stack, window
+from .dock_helpers import columns, dock_layout, group, rows, set_layout, stack, window
 from .dock_helpers import drag as _drag
 from .dock_helpers import group_id_for_panel as _group_id_for_panel
 from .dock_helpers import open_playground as _open
@@ -536,5 +536,144 @@ def test_left_panel_minimize_button_clickable_despite_resizer(
             "clicking the left panel's minimize button did not collapse it -- the "
             "region resizer likely intercepted the click"
         )
+    finally:
+        page.close()
+
+
+def test_minimized_band_among_siblings_is_horizontal_bar(
+    dock_context, vite_server: int
+) -> None:
+    """A fully-minimized BAND among sibling bands renders as a short FULL-WIDTH
+    horizontal bar (not the narrow vertical column rail), and expands back.
+
+    Regression: a minimized band reused the vertical-column renderer, showing a
+    36px-WIDE vertical rail floating in an otherwise-empty full-width band."""
+    page = _open(dock_context, vite_server, 1280, 900)
+    try:
+        # Three stacked single-column bands on the right.
+        set_layout(
+            page,
+            dock_layout(docked_right=rows("controls", "inspector", "console")),
+        )
+
+        def collapsed(gid: str) -> bool:
+            return page.evaluate(
+                "(g) => window.__dockLayout.groups[g].collapsed === true", gid
+            )
+
+        # Minimize the MIDDLE band (inspector).
+        page.evaluate(
+            """() => {
+                const g = document.querySelector('[data-dock-group="t-inspector"]');
+                g.closest('[data-dock-leaf]')
+                 .querySelector('[data-dock-minimize]').click();
+            }"""
+        )
+        page.wait_for_timeout(450)
+        assert collapsed("t-inspector"), "inspector band should be minimized"
+
+        bar = page.locator("[data-dock-minimized-band]").first
+        assert bar.count() == 1, "a minimized band should render the horizontal bar"
+        box = bar.bounding_box()
+        assert box is not None
+        # FULL width (~region width 300), SHORT height (the 36px strip) -- i.e. a
+        # horizontal bar, not a 36px-wide vertical rail.
+        assert box["width"] > 150, f"band bar should span the region width: {box}"
+        assert box["height"] < 60, f"band bar should be a short strip: {box}"
+        assert box["width"] > box["height"] * 2, (
+            f"a minimized band must be HORIZONTAL (w >> h), got {box}"
+        )
+
+        # The bar carries a chip for the minimized group; clicking it expands.
+        chip = page.locator(
+            '[data-dock-minimized-band] [data-dock-group="t-inspector"]'
+        ).first
+        assert chip.count() == 1, "the bar should show a chip for the group"
+        cbox = chip.bounding_box()
+        assert cbox is not None
+        page.mouse.click(cbox["x"] + cbox["width"] / 2, cbox["y"] + cbox["height"] / 2)
+        page.wait_for_timeout(450)
+        assert not collapsed("t-inspector"), "clicking the chip should expand the band"
+    finally:
+        page.close()
+
+
+def test_lone_minimized_band_keeps_full_height_rail(
+    dock_context, vite_server: int
+) -> None:
+    """A SOLE minimized band (the whole region minimized to one band) keeps the
+    full-height vertical rail -- the horizontal bar is only for a band that
+    shares the region with expanded siblings."""
+    page = _open(dock_context, vite_server, 1280, 900)
+    try:
+        set_layout(page, dock_layout(docked_right=rows("controls")))
+        page.evaluate(
+            """() => {
+                const g = document.querySelector('[data-dock-group="t-controls"]');
+                g.closest('[data-dock-leaf]')
+                 .querySelector('[data-dock-minimize]').click();
+            }"""
+        )
+        page.wait_for_timeout(450)
+        assert page.evaluate(
+            "() => window.__dockLayout.groups['t-controls'].collapsed === true"
+        )
+        # No horizontal band bar (lone band uses the vertical rail), and the
+        # collapsed group renders tall + narrow.
+        assert page.locator("[data-dock-minimized-band]").count() == 0, (
+            "a lone minimized band should NOT use the horizontal bar"
+        )
+        leaf = page.locator(
+            '[data-dock-leaf][data-dock-edge="right"]'
+        ).first.bounding_box()
+        assert leaf is not None
+        assert leaf["height"] > leaf["width"], (
+            f"a lone minimized band should be a tall vertical rail, got {leaf}"
+        )
+    finally:
+        page.close()
+
+
+def test_minimized_band_is_a_drop_target(dock_context, vite_server: int) -> None:
+    """A minimized band's chip is a DOCKED drop target: dropping a floating panel
+    onto it (center) merges into that band's group. Regression: the horizontal
+    bar dropped the per-leaf data-dock-leaf wrapper, so a minimized band stopped
+    being droppable (and silently disabled seam detection for the region)."""
+    page = _open(dock_context, vite_server, 1280, 900)
+    try:
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=rows("controls", "inspector"),
+                floating=[window("console", x=300, y=300)],
+            ),
+        )
+        # Minimize the top band (controls).
+        page.evaluate(
+            """() => {
+                const g = document.querySelector('[data-dock-group="t-controls"]');
+                g.closest('[data-dock-leaf]')
+                 .querySelector('[data-dock-minimize]').click();
+            }"""
+        )
+        page.wait_for_timeout(450)
+        chip = page.locator(
+            '[data-dock-minimized-band] [data-dock-group="t-controls"]'
+        ).first
+        assert chip.count() == 1
+        cbox = chip.bounding_box()
+        assert cbox is not None
+        # The chip must be a real drop target: collectTargets needs a
+        # data-dock-leaf ancestor with the group as a descendant.
+        ok = page.evaluate(
+            """() => {
+                const g = document.querySelector(
+                    '[data-dock-minimized-band] [data-dock-group="t-controls"]');
+                const leaf = g && g.closest('[data-dock-leaf]');
+                return !!(leaf && leaf.getAttribute('data-dock-edge') === 'right'
+                          && leaf.querySelector('[data-dock-group]'));
+            }"""
+        )
+        assert ok, "minimized band chip is not a valid docked drop target"
     finally:
         page.close()
