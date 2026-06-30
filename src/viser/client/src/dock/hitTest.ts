@@ -416,6 +416,18 @@ export function hitTest(
     const regionLeft = edge === "left" ? 0 : crect.width - w;
     const regionRight = regionLeft + w;
     if (cx < regionLeft || cx > regionRight) continue;
+    // Insertion-line hint thickness, shared by the seam and side-band hints.
+    const t = 3;
+    // Cap each left/right side band at a THIRD of the region width so the two
+    // bands leave the middle third for the per-panel zones underneath. A
+    // fully-minimized region renders as a ~36px strip -- narrower than
+    // REGION_SIDE_PX (40) -- and an uncapped (or half-width) band would cover the
+    // whole strip, so a drop ALWAYS resolved to "dock a new column beside" and
+    // never reached the strip cell's own tab/stack zones (merge + above/below).
+    // With the third-cap the strip's middle falls through to those cell zones
+    // while its outer/inner thirds still dock a sibling column. The cross-band
+    // seam (2a) reuses this same third as the margin it must stay clear of.
+    const sideBand = Math.min(REGION_SIDE_PX, w / 3);
 
     // 2a. Cross-band SEAM -> insert a full-width band BETWEEN two bands. A
     // multi-band region's interior seams are the only way to dock a band between
@@ -423,17 +435,15 @@ export function hitTest(
     // (for a multi-column band) wrongly stacks a partial-width leaf under one
     // column instead of inserting a full-width band. The outer top/bottom of the
     // region stay handled by the regionEdge bands below (index 0 / rows.length).
-    // The seam claims only the MIDDLE horizontal span: the outer/inner
-    // REGION_SIDE_PX thirds still belong to the left/right "dock a column beside
-    // all bands" bands below, so dropping at the far edge -- even at a seam's
-    // height -- still docks a side column, exactly as it does away from a seam.
-    const seamSideMargin = Math.min(REGION_SIDE_PX, w / 3);
+    // The seam claims only the MIDDLE horizontal span: the outer/inner `sideBand`
+    // thirds still belong to the left/right "dock a column beside all bands"
+    // bands below, so dropping at the far edge -- even at a seam's height -- still
+    // docks a side column, exactly as it does away from a seam.
     const inSeamSpan =
-      cx - regionLeft >= seamSideMargin && regionRight - cx >= seamSideMargin;
+      cx - regionLeft >= sideBand && regionRight - cx >= sideBand;
     const extents =
       tree.rows.length >= 2 && inSeamSpan ? bandExtents(edge) : null;
     if (extents !== null) {
-      const t = 3;
       for (let i = 0; i < extents.length - 1; i++) {
         const gapCenter = (extents[i].bottom + extents[i + 1].top) / 2;
         if (Math.abs(cy - gapCenter) <= REGION_EDGE_PX) {
@@ -450,20 +460,10 @@ export function hitTest(
         }
       }
     }
-    // A region-edge span previews as a thin LINE along the edge it docks against,
-    // spanning the whole region -- the same insertion-line affordance as a
-    // per-panel split, just region-wide. (Previously a translucent half-region
-    // "ghost" rectangle, which read inconsistently next to the per-panel lines.)
-    const t = 3;
-    // Cap each left/right side band at a THIRD of the region width so the two
-    // bands leave the middle third for the per-panel zones underneath. A
-    // fully-minimized region renders as a ~36px strip -- narrower than
-    // REGION_SIDE_PX (40) -- and an uncapped (or half-width) band would cover
-    // the whole strip, so a drop ALWAYS resolved to "dock a new column beside"
-    // and never reached the strip cell's own tab/stack zones (merge + above/
-    // below). With the third-cap the strip's middle falls through to those
-    // cell zones while its outer/inner thirds still dock a sibling column.
-    const sideBand = Math.min(REGION_SIDE_PX, w / 3);
+    // The region-edge span previews as a thin LINE along the edge it docks
+    // against, spanning the whole region -- the same insertion-line affordance as
+    // a per-panel split, just region-wide. (`t` and `sideBand` are hoisted above,
+    // shared with the cross-band seam.)
     // A single-leaf region normally suppresses these region-wide bands (its own
     // per-panel split is identical, full leaf height). But a MINIMIZED region
     // renders as a SHORT strip, so the per-panel split is only strip-tall and

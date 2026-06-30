@@ -67,13 +67,15 @@ export const SplitView = React.memo(function SplitView({
   const resizing = dock.resizing;
   const containerRef = React.useRef<HTMLDivElement>(null);
   const rows = region.rows;
-  const loneBand = rows.length === 1;
-  // Whether ANY band has an expanded column. When the WHOLE region is minimized
-  // (no band expanded), it collapses to the compact vertical rail -- the
-  // "collapsed region" affordance, same as a lone minimized region -- rather
-  // than a stack of full-width horizontal bars squeezed into strip width. The
+  // Per-band collapsed mask, computed ONCE: the band map, the strip decision,
+  // and every divider's resizable check all read it (instead of re-walking each
+  // band's leaves via isRowMinimized 1-3x per render). regionHasExpanded is
+  // "some band not minimized" -- when the WHOLE region is minimized it collapses
+  // to the compact vertical rail (the "collapsed region" affordance) rather than
+  // a stack of full-width horizontal bars squeezed into strip width; the
   // horizontal bar is only for a band minimized BESIDE expanded sibling bands.
-  const regionHasExpanded = rows.some((r) => !isRowMinimized(r, groups));
+  const bandMinimized = rows.map((r) => isRowMinimized(r, groups));
+  const regionHasExpanded = bandMinimized.some((m) => !m);
 
   return (
     <Box
@@ -94,13 +96,14 @@ export const SplitView = React.memo(function SplitView({
         // the full-height region wrapper, stranding its expand button. A LONE
         // minimized band still fills the region height (a full-height vertical
         // rail), matching the column rule where a lone strip fills the width.
-        const collapsedBand = isRowMinimized(row, groups);
-        // A band is a fixed-height horizontal STRIP only when it's collapsed
-        // AND some other band is expanded (so the region is at content width).
-        // A lone collapsed band, or an all-collapsed region, instead fills its
-        // share of height and renders the vertical rail (compact collapsed
-        // region), avoiding squished 36x36 bars when the region has no width.
-        const stripBand = collapsedBand && !loneBand && regionHasExpanded;
+        // A band is a fixed-height horizontal STRIP only when it's collapsed AND
+        // some OTHER band is expanded (so the region is at content width). A lone
+        // collapsed band, or an all-collapsed region, instead fills its share of
+        // height and renders the vertical rail (compact collapsed region),
+        // avoiding squished 36x36 bars when the region has no width.
+        // (regionHasExpanded already implies !loneBand here: a lone collapsed
+        // band is the whole region minimized, so regionHasExpanded is false.)
+        const stripBand = bandMinimized[index] && regionHasExpanded;
         return (
           <React.Fragment key={row.id}>
             <Box
@@ -129,10 +132,13 @@ export const SplitView = React.memo(function SplitView({
             {index < rows.length - 1 &&
               (() => {
                 // The band divider resizes only when a non-collapsed band sits
-                // on both sides of it.
-                const notMin = (r: DockRow) => !isRowMinimized(r, groups);
-                const topResizable = rows.slice(0, index + 1).some(notMin);
-                const botResizable = rows.slice(index + 1).some(notMin);
+                // on both sides of it (reusing the per-band collapsed mask).
+                const topResizable = bandMinimized
+                  .slice(0, index + 1)
+                  .some((m) => !m);
+                const botResizable = bandMinimized
+                  .slice(index + 1)
+                  .some((m) => !m);
                 return (
                   <SplitDivider
                     dir="column"
@@ -143,7 +149,7 @@ export const SplitView = React.memo(function SplitView({
                         dock,
                         edge,
                         cells: rows,
-                        collapsed: rows.map((r) => !notMin(r)),
+                        collapsed: bandMinimized,
                         index,
                         deltaPx,
                         containerPx,

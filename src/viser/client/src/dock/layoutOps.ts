@@ -640,8 +640,8 @@ export function dockToRegionEdge(
   if (side === "top" || side === "bottom") {
     // A new full-width ROW band spanning all columns, at the region's outer top
     // or bottom -- a band insert at index 0 (top) or rows.length (bottom). The
-    // band-insert mechanics (index, weight rescale) live in dockBandAtIndex; the
-    // outer top/bottom are just its boundary cases.
+    // band-insert mechanics (index, weight rescale) live in insertBandAtIndex;
+    // the outer top/bottom are just its boundary cases.
     const index = side === "top" ? 0 : existing.rows.length;
     return insertBandAtIndex(draft, ne, edge, index, weights);
   }
@@ -678,8 +678,9 @@ export function dockToRegionEdge(
  * existing bands' weights (left untouched). Returns `draft`.
  *
  * THE single place a band is created at an index -- dockToRegionEdge top/bottom
- * are its boundary cases, and the bandInsert drop routes here, so the rescale
- * and clamp logic lives once. */
+ * call it directly (already detached), and dockBandAtIndex (the public
+ * detach-then-insert wrapper the bandInsert drop routes through) calls it too, so
+ * the rescale and clamp logic lives once. */
 function insertBandAtIndex(
   draft: DockLayout,
   groupIds: NonEmpty<GroupId>,

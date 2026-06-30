@@ -16,7 +16,8 @@ import { IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
 import { focusRing, gripBarBg } from "./DockStyles.css";
-import { collectLeafGroups, collectLeaves, expandStack } from "./layoutOps";
+import { startCollapsedGroupPress } from "./collapsedPress";
+import { collectLeaves, expandStack } from "./layoutOps";
 import { DockEdge, DockRow, MINIMIZED_STRIP_PX } from "./types";
 
 export function HorizontalMinimizedBand({
@@ -32,9 +33,8 @@ export function HorizontalMinimizedBand({
   // minimized band stays a drop target -- and the seam-extent math in hitTest,
   // which reads leaf rects, still sees the band.
   const leaves = row.columns.flatMap((c) => collectLeaves(c));
-  const groupIds = row.columns.flatMap((c) => collectLeafGroups(c));
-  const expandAll = () =>
-    dock.api.apply((l) => expandStack(l, groupIds));
+  const groupIds = leaves.map((l) => l.group);
+  const expandAll = () => dock.api.apply((l) => expandStack(l, groupIds));
   return (
     <Box
       // The band box (SplitView) already sizes us to MINIMIZED_STRIP_PX tall via
@@ -100,16 +100,9 @@ export function HorizontalMinimizedBand({
               title={title}
               onPointerDown={(event) => {
                 event.stopPropagation();
-                const pane = (event.target as HTMLElement)
-                  .closest("[data-dock-tab]")
-                  ?.getAttribute("data-dock-tab");
-                if (pane !== null && pane !== undefined) {
-                  dock.startTabTearOut(event, groupId, pane);
-                  return;
-                }
-                dock.startGroupDrag(event, groupId, {
-                  onClick: () => dock.toggleCollapsed(groupId),
-                });
+                startCollapsedGroupPress(dock, event, groupId, () =>
+                  dock.toggleCollapsed(groupId),
+                );
               }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {

@@ -21,7 +21,7 @@
 // elsewhere must not be counted as a strip. (Getting this wrong squeezed a
 // freshly docked panel into a 36px region.)
 
-import { isColumnMinimized, isRowMinimized, widthColumns } from "./layoutOps";
+import { isColumnMinimized, isRegionMinimized, widthColumns } from "./layoutOps";
 import {
   DockColumn,
   DockEdge,
@@ -71,7 +71,8 @@ export function planRegion(
   const expandedColumns = columns.filter((_, i) => !isStrip[i]);
   // Region-wide: any band (not just the widthRow) with an expanded column means
   // the region must reserve its content width so that band isn't squished.
-  const anyBandExpanded = region.rows.some((r) => !isRowMinimized(r, groups));
+  // "Some band not minimized" is exactly the negation of "every band minimized".
+  const anyBandExpanded = !isRegionMinimized(region, groups);
 
   if (columns.length === 1) {
     if (isStrip[0]) {

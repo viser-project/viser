@@ -11,6 +11,7 @@ import { useDock } from "./DockContext";
 import { gripBarBg, focusRing } from "./DockStyles.css";
 import { tabListKeyDown } from "./gestures";
 import { GripPill, HandleIconButton } from "./handles";
+import { startCollapsedGroupPress } from "./collapsedPress";
 import { DockColumn, DockEdge, NodeId, TabGroup } from "./types";
 import { collectLeaves } from "./layoutOps";
 
@@ -101,29 +102,19 @@ export function VerticalMinimizedCell({
       <Box
         data-dock-group={group.id}
         data-dock-collapsed="true"
-        onPointerDown={(event) => {
-          // Which tab row was pressed (if any)? Two distinct drag behaviors:
-          //  - A specific tab ROW: a no-motion click expands to THAT tab; a drag
-          //    tears out ONLY that pane into its own floating window (the rest of
-          //    the stack stays docked) -- startTabTearOut.
-          //  - The cap / empty area: drag tears out the WHOLE group, STILL
-          //    minimized. A LONE cell also expands on a no-motion click (its cap
-          //    is the + button); a STACKED cell does not -- minimize/expand is
-          //    owned by the parent stack handle, so its cap is a drag-only grip.
-          const target = event.target as HTMLElement;
-          const rowPane = target
-            .closest("[data-dock-tab]")
-            ?.getAttribute("data-dock-tab");
-          if (rowPane !== null && rowPane !== undefined) {
-            dock.startTabTearOut(event, group.id, rowPane);
-            return;
-          }
-          dock.startGroupDrag(
+        onPointerDown={(event) =>
+          // Pressing a tab ROW tears out only that pane; pressing the cap/empty
+          // area drags the whole group (still minimized). A LONE cell toggles
+          // expand on a no-motion click (its cap is the + button); a STACKED
+          // cell passes no onClick -- minimize/expand is owned by the parent
+          // stack handle. (Shared with the minimized-band chip.)
+          startCollapsedGroupPress(
+            dock,
             event,
             group.id,
-            inStack ? undefined : { onClick: () => dock.toggleCollapsed(group.id) },
-          );
-        }}
+            inStack ? undefined : () => dock.toggleCollapsed(group.id),
+          )
+        }
         style={{
           width: "100%",
           display: "flex",
