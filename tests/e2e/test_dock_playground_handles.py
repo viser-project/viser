@@ -677,3 +677,56 @@ def test_minimized_band_is_a_drop_target(dock_context, vite_server: int) -> None
         assert ok, "minimized band chip is not a valid docked drop target"
     finally:
         page.close()
+
+
+def test_band_to_band_vertical_resize(dock_context, vite_server: int) -> None:
+    """Dragging the horizontal divider BETWEEN two row bands redistributes their
+    heights (conserving the total) -- the band-level analog of column/leaf
+    resize."""
+    page = _open(dock_context, vite_server, 1280, 900)
+    try:
+        set_layout(page, dock_layout(docked_right=rows("controls", "inspector")))
+
+        def heights() -> dict:
+            return page.evaluate(
+                """() => {
+                    const out = {};
+                    for (const gid of ['t-controls', 't-inspector']) {
+                        const g = document.querySelector(`[data-dock-group="${gid}"]`);
+                        const leaf = g && g.closest('[data-dock-leaf]');
+                        out[gid] = leaf
+                            ? Math.round(leaf.getBoundingClientRect().height) : 0;
+                    }
+                    return out;
+                }"""
+            )
+
+        before = heights()
+        # Grab the divider just below the top band's bottom edge; drag UP 100px to
+        # shrink the top band and grow the bottom one.
+        anchor = page.evaluate(
+            """() => {
+                const g = document.querySelector('[data-dock-group="t-controls"]');
+                const r = g.closest('[data-dock-leaf]').getBoundingClientRect();
+                return { x: r.x + r.width / 2, bottom: r.bottom };
+            }"""
+        )
+        _drag(
+            page,
+            (anchor["x"], anchor["bottom"] + 3),
+            (anchor["x"], anchor["bottom"] - 100),
+        )
+        after = heights()
+        assert after["t-controls"] < before["t-controls"] - 40, (
+            f"top band should shrink: {before} -> {after}"
+        )
+        assert after["t-inspector"] > before["t-inspector"] + 40, (
+            f"bottom band should grow: {before} -> {after}"
+        )
+        # Total height conserved (allow slack for the divider + sub-pixel).
+        assert abs(
+            (after["t-controls"] + after["t-inspector"])
+            - (before["t-controls"] + before["t-inspector"])
+        ) <= 16, f"band heights should conserve total: {before} -> {after}"
+    finally:
+        page.close()
