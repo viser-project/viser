@@ -154,3 +154,56 @@ def test_random_drags_conserve_panels(
             )
     finally:
         page.close()
+
+
+# Multi-band seed: start from a region with stacked bands (one multi-column, one
+# minimized) so the random storm exercises the 4-level band paths -- band
+# inserts at cross-band seams, the horizontal minimized-band bar, and dropping
+# onto/around bands -- which the playground default (no docked bands) never
+# reaches.
+@pytest.mark.parametrize("seed", [1, 2, 5])
+def test_random_drags_multiband_seed_conserve_and_no_errors(
+    dock_context, vite_server: int, seed: int
+) -> None:
+    from .dock_helpers import columns, dock_layout, group, rows, set_layout, window
+
+    vw, vh = 1280, 900
+    page = dock_context.new_page()
+    page.set_viewport_size({"width": vw, "height": vh})
+    errors = collect_errors(page)
+    try:
+        page.goto(f"http://localhost:{vite_server}{PLAYGROUND_PATH}")
+        page.wait_for_selector("[data-dock-group]")
+        # Right edge: [controls | inspector] band over a minimized [console]
+        # band; a floating `scene` to drag around. (scene is a non-area,
+        # mergeable pane -- the area panes layers/props/history can't be reused
+        # here without putting a pane in two groups.)
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=rows(
+                    columns("controls", "inspector"),
+                    group("console", collapsed=True),
+                ),
+                floating=[window("scene", x=200, y=200)],
+            ),
+        )
+        expected = _all_panel_ids(page)
+        rng = random.Random(seed)
+        for step in range(18):
+            grips = _grip_centers(page)
+            if not grips:
+                break
+            start = rng.choice(grips)
+            _drag(page, start, _random_end(rng, grips, start, vw, vh))
+            off = _floating_offscreen(page, vw, vh)
+            assert off == [], f"off-screen window at seed={seed} step={step}: {off}"
+            assert _all_panel_ids(page) == expected, (
+                f"panel set changed at seed={seed} step={step}: "
+                f"{_all_panel_ids(page)} != {expected}"
+            )
+        assert real_errors(errors) == [], (
+            f"JS errors during multiband seed={seed}: {real_errors(errors)}"
+        )
+    finally:
+        page.close()
