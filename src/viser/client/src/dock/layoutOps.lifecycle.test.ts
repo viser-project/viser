@@ -13,6 +13,7 @@ import {
   removePane,
   setAreaTabOrder,
   tearOutPane,
+  widthColumns,
 } from "./layoutOps";
 import { group } from "./testUtils";
 
@@ -120,7 +121,13 @@ describe("removePane", () => {
     const l = emptyLayout();
     l.groups["g1"] = { id: "g1", paneIds: ["p1"], activeId: "p1" };
     l.docked.left = {
-      columns: [{ id: "C1", weight: 1, leaves: [{ id: "L1", group: "g1", weight: 1 }] }],
+      rows: [
+        {
+          id: "r110",
+          weight: 1,
+          columns: [{ id: "C1", weight: 1, leaves: [{ id: "L1", group: "g1", weight: 1 }] }],
+        },
+      ],
     };
     const out = removePane(l, "p1");
     expect(out.docked.left).toBeNull();
@@ -206,7 +213,11 @@ describe("floatColumn", () => {
     l.groups["b"] = group("b");
     l.groups["x"] = group("x");
     l.docked.left = {
-      columns: [
+      rows: [
+        {
+          id: "r111",
+          weight: 1,
+          columns: [
         { id: "Cx", weight: 1, leaves: [{ id: "Lx", group: "x", weight: 1 }] },
         {
           id: "COL",
@@ -215,6 +226,8 @@ describe("floatColumn", () => {
             { id: "La", group: "a", weight: 2 },
             { id: "Lb", group: "b", weight: 1 },
           ],
+        },
+      ],
         },
       ],
     };
@@ -237,8 +250,8 @@ describe("floatColumn", () => {
     expect(win.stackWeights).toEqual({ a: 2, b: 1 });
     expect(win).toMatchObject({ x: 10, y: 20, width: 300, height: { mode: "pinned", px: 400 } });
     // The region collapsed to the surviving column (just leaf x).
-    expect(out.docked.left!.columns).toHaveLength(1);
-    expect(out.docked.left!.columns[0].leaves).toEqual([
+    expect(widthColumns(out.docked.left!)).toHaveLength(1);
+    expect(widthColumns(out.docked.left!)[0].leaves).toEqual([
       { id: "Lx", group: "x", weight: 1 },
     ]);
   });
@@ -246,7 +259,7 @@ describe("floatColumn", () => {
   it("floating the LAST column empties the region", () => {
     const l = colLayout();
     // Drop the sibling column so COL is the whole region.
-    l.docked.left = { columns: [l.docked.left!.columns[1]] };
+    l.docked.left = { rows: [{ id: "r1", weight: 1, columns: [widthColumns(l.docked.left!)[1]] }] };
     const { layout: out, windowId } = floatColumn(l, "left", "COL", 0, 0, 300);
     expect(windowId).not.toBeNull();
     expect(out.docked.left).toBeNull();

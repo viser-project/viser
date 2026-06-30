@@ -22,6 +22,7 @@ import {
   collectLeafGroups,
   expandStack,
   isColumnMinimized,
+  isRowMinimized,
   minimizeStack,
   setNodeWeights,
 } from "./layoutOps";
@@ -34,6 +35,7 @@ import {
   DockEdge,
   DockLeaf,
   DockRegion,
+  DockRow,
   MIN_REGION_GRAB_PX,
   MINIMIZED_STRIP_PX,
   SPLIT_DIVIDER_PX,
@@ -47,10 +49,11 @@ const MIN_CELL_HEIGHT_PX = 50;
 // zone to this so it's comfortable to hit without thickening the seam.
 const DIVIDER_GRAB_PX = 12;
 
-/** Render a docked region: a horizontal row of columns with vertical dividers.
- * Memoized -- with a stable dock context, region-width / container-height
- * re-renders of the manager skip the whole docked region (its props only change
- * identity when the layout itself changes). */
+/** Render a docked region: a VERTICAL stack of full-width row bands, with
+ * horizontal dividers between them. Each band is a RowView (a horizontal row of
+ * columns). The common single-band region is just one RowView filling the
+ * height. Memoized -- with a stable dock context, region-width / container-
+ * height re-renders of the manager skip the whole docked region. */
 export const SplitView = React.memo(function SplitView({
   region,
   edge,
@@ -62,7 +65,100 @@ export const SplitView = React.memo(function SplitView({
   const groups = dock.groups;
   const resizing = dock.resizing;
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const columns = region.columns;
+  const rows = region.rows;
+  const loneBand = rows.length === 1;
+
+  return (
+    <Box
+      ref={containerRef}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        height: "100%",
+        minWidth: 0,
+        minHeight: 0,
+      }}
+    >
+      {rows.map((row, index) => {
+        // A fully-minimized band (every column minimized) shrinks to a fixed
+        // strip HEIGHT so the other bands reclaim the space -- NOT to 0, which
+        // would make the strip overflow its (zero-height) box and slip behind
+        // the full-height region wrapper, stranding its expand button. A LONE
+        // minimized band still fills the region height (a full-height vertical
+        // rail), matching the column rule where a lone strip fills the width.
+        const collapsedBand = isRowMinimized(row, groups);
+        const stripBand = collapsedBand && !loneBand;
+        return (
+          <React.Fragment key={row.id}>
+            <Box
+              style={{
+                flexGrow: stripBand ? 0 : row.weight,
+                flexShrink: stripBand ? 0 : 1,
+                flexBasis: stripBand ? MINIMIZED_STRIP_PX : 0,
+                minWidth: 0,
+                minHeight: 0,
+                display: "flex",
+                transition:
+                  resizing || prefersReducedMotion()
+                    ? undefined
+                    : `flex-grow ${DOCK_ANIM_MS}ms ease, flex-basis ${DOCK_ANIM_MS}ms ease`,
+              }}
+            >
+              <RowView row={row} edge={edge} />
+            </Box>
+            {index < rows.length - 1 &&
+              (() => {
+                // The band divider resizes only when a non-collapsed band sits
+                // on both sides of it.
+                const notMin = (r: DockRow) => !isRowMinimized(r, groups);
+                const topResizable = rows.slice(0, index + 1).some(notMin);
+                const botResizable = rows.slice(index + 1).some(notMin);
+                return (
+                  <SplitDivider
+                    dir="column"
+                    resizable={topResizable && botResizable}
+                    containerRef={containerRef}
+                    onResize={(deltaPx, containerPx) =>
+                      resizeCells({
+                        dock,
+                        edge,
+                        cells: rows,
+                        collapsed: rows.map((r) => !notMin(r)),
+                        index,
+                        deltaPx,
+                        containerPx,
+                        minCell: MIN_CELL_HEIGHT_PX,
+                      })
+                    }
+                    onCancel={() =>
+                      dock.api.apply((l) =>
+                        setNodeWeights(
+                          l,
+                          edge,
+                          Object.fromEntries(rows.map((r) => [r.id, r.weight])),
+                        ),
+                      )
+                    }
+                  />
+                );
+              })()}
+          </React.Fragment>
+        );
+      })}
+    </Box>
+  );
+});
+
+/** Render one row band: a HORIZONTAL row of columns with vertical dividers
+ * between them. (This was the region renderer in the 3-level model; it now
+ * renders a single band, with the region stacking bands above it.) */
+function RowView({ row, edge }: { row: DockRow; edge: DockEdge }) {
+  const dock = useDock();
+  const groups = dock.groups;
+  const resizing = dock.resizing;
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const columns = row.columns;
 
   return (
     <Box
@@ -77,9 +173,8 @@ export const SplitView = React.memo(function SplitView({
       }}
     >
       {columns.map((column, index) => {
-        // A fully-minimized column stranded in a row (it can't float over the
-        // canvas) shrinks to a compact strip width instead of holding a
-        // full-width empty box. Its weight is preserved and restored on expand.
+        // A fully-minimized column shrinks to a compact strip width instead of
+        // holding a full-width empty box. Its weight is preserved for restore.
         const collapsedInRow = isColumnMinimized(column, groups);
         return (
           <React.Fragment key={column.id}>
@@ -91,10 +186,6 @@ export const SplitView = React.memo(function SplitView({
                 minWidth: 0,
                 minHeight: 0,
                 display: "flex",
-                // Animate collapse/expand: transitioning flex-grow + flex-basis
-                // lets the column shrink to a narrow strip while its siblings
-                // grow smoothly. Suppressed during an active divider drag (a
-                // resize must track the cursor 1:1) and under reduced-motion.
                 transition:
                   resizing || prefersReducedMotion()
                     ? undefined
@@ -105,10 +196,6 @@ export const SplitView = React.memo(function SplitView({
             </Box>
             {index < columns.length - 1 &&
               (() => {
-                // The divider can resize only when there's a non-collapsed
-                // column on BOTH sides of it -- a divider between (or beside)
-                // only minimized strips can't move anything, so it shows no
-                // resize cursor / drag.
                 const isCollapsed = (c: DockColumn) =>
                   isColumnMinimized(c, groups);
                 const leftResizable = columns
@@ -135,8 +222,6 @@ export const SplitView = React.memo(function SplitView({
                       })
                     }
                     onCancel={() =>
-                      // node.weights still hold the PRE-DRAG values (this closure
-                      // was captured at drag start), so writing them back reverts.
                       dock.api.apply((l) =>
                         setNodeWeights(
                           l,
@@ -153,7 +238,7 @@ export const SplitView = React.memo(function SplitView({
       })}
     </Box>
   );
-});
+}
 
 /** Every column's chrome: the float-the-column handle above its body. The body
  * is the stacked leaves when expanded, or the narrow VerticalMinimizedColumn

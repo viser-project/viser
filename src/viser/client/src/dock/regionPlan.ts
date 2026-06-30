@@ -21,7 +21,7 @@
 // elsewhere must not be counted as a strip. (Getting this wrong squeezed a
 // freshly docked panel into a 36px region.)
 
-import { isColumnMinimized } from "./layoutOps";
+import { isColumnMinimized, widthColumns } from "./layoutOps";
 import {
   DockColumn,
   DockEdge,
@@ -56,11 +56,10 @@ export function planRegion(
   region: DockRegion,
   groups: Record<GroupId, TabGroup>,
 ): RegionPlan {
-  const columns = region.columns;
-  // The region IS a row of columns, so the plan and the renderer iterate the
-  // SAME list -- there is no "guess the columns" step anymore. A column renders
-  // as a fixed-width minimized strip exactly when all of its leaves are
-  // collapsed (isColumnMinimized).
+  // Width is set by the widest row band's columns (a full-width band spans the
+  // region width; narrower bands ride along). A column is a fixed-width
+  // minimized strip exactly when all its leaves are collapsed.
+  const columns = widthColumns(region);
   const isStrip = columns.map((c) => isColumnMinimized(c, groups));
   const expandedColumns = columns.filter((_, i) => !isStrip[i]);
 

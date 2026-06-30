@@ -140,18 +140,23 @@ export interface TabGroup {
  * `.filter`/`.slice`, which return plain `T[]` -- re-assert after deriving.) */
 export type NonEmpty<T> = [T, ...T[]];
 
-/** The docked layout has a FIXED three-level shape, enforced by these types
+/** The docked layout has a FIXED four-level shape, enforced by these types
  * rather than by runtime normalization:
  *
- *   DockRegion  =  a ROW of columns      (side by side, vertical dividers)
- *     DockColumn  =  a STACK of leaves   (top to bottom, horizontal dividers)
- *       DockLeaf  =  one tab group
+ *   DockRegion  =  a COLUMN of rows      (full-width bands, top to bottom)
+ *     DockRow     =  a ROW of columns    (side by side, vertical dividers)
+ *       DockColumn  =  a STACK of leaves (top to bottom, horizontal dividers)
+ *         DockLeaf    =  one tab group
  *
- * A single docked panel is `Region[Column[Leaf]]` -- a count of one, not a
- * special shape. There is no arbitrary nesting and no `dir` field: the LEVEL is
- * the axis (region = horizontal, column = vertical). This makes the bad shapes
- * (a leaf directly in a row, `row>col>row...` nesting) unrepresentable, so the
- * renderer and ops never have to defend against them. */
+ * A single docked panel is `Region[Row[Column[Leaf]]]` -- counts of one, not a
+ * special shape. There is NO arbitrary nesting and NO `dir` field: the LEVEL is
+ * the axis. Each dock gesture is a single-level insert:
+ *   - dock ABOVE/BELOW the whole region  -> add a Row band (spans every column)
+ *   - dock BESIDE within a band          -> add a Column to that Row
+ *   - dock ABOVE/BELOW a panel           -> add a Leaf to that Column
+ * This makes the bad shapes (a leaf directly in a row, `row>col>row...` nesting)
+ * unrepresentable, so the renderer and ops never defend against them, while the
+ * standard "band above everything" affordance stays expressible. */
 export interface DockLeaf {
   id: NodeId;
   group: GroupId;
@@ -163,13 +168,22 @@ export interface DockColumn {
   id: NodeId;
   /** Stacked top to bottom; always at least one. */
   leaves: NonEmpty<DockLeaf>;
-  /** Flex weight relative to sibling columns within the region (horizontal). */
+  /** Flex weight relative to sibling columns within the row (horizontal). */
+  weight: number;
+}
+
+export interface DockRow {
+  id: NodeId;
+  /** Columns side by side; always at least one. */
+  columns: NonEmpty<DockColumn>;
+  /** Flex weight relative to sibling rows within the region (vertical). */
   weight: number;
 }
 
 export interface DockRegion {
-  /** Columns side by side; always at least one (an empty region is `null`). */
-  columns: NonEmpty<DockColumn>;
+  /** Full-width row bands stacked top to bottom; always at least one (an empty
+   * region is `null`). The common side-by-side case is a region with one row. */
+  rows: NonEmpty<DockRow>;
 }
 
 /** A floating window's vertical sizing. `auto` tracks content (capped per

@@ -20,7 +20,7 @@ import {
   GroupTarget,
   ContainerRect,
 } from "./hitTest";
-import { edgeIsSingleLeaf } from "./layoutOps";
+import { edgeIsSingleLeaf, widthColumns } from "./layoutOps";
 import { DockEdge, DockLayout, emptyLayout } from "./types";
 import {
   rect,
@@ -52,8 +52,8 @@ function dockedTargets(
   const out: GroupTarget[] = [];
   // The flat model: the region is a row of columns (split width), each column a
   // stack of leaves (split height).
-  const cw = REGION_W[edge] / region.columns.length;
-  region.columns.forEach((column, ci) => {
+  const cw = REGION_W[edge] / widthColumns(region).length;
+  widthColumns(region).forEach((column, ci) => {
     const x = regionLeft + ci * cw;
     const ch = CONTAINER.height / column.leaves.length;
     column.leaves.forEach((lf, li) => {
@@ -128,7 +128,7 @@ function nodeExists(layout: DockLayout, edge: DockEdge, nodeId: string): boolean
   const region = layout.docked[edge];
   if (region === null) return false;
   // A drop result's nodeId addresses a leaf (a docked split target) or a column.
-  return region.columns.some(
+  return widthColumns(region).some(
     (c) => c.id === nodeId || c.leaves.some((l) => l.id === nodeId),
   );
 }

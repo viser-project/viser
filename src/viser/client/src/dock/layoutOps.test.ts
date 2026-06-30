@@ -66,6 +66,7 @@ import {
   cascadeResize,
   resizeRegionColumns,
   setStackWeights,
+  widthColumns,
 } from "./layoutOps";
 
 // ---------------------------------------------------------------------------
@@ -77,9 +78,15 @@ function twoLeafRow(): DockLayout {
   const l = emptyLayout();
   l.groups = { a: group("a"), b: group("b") };
   l.docked.left = {
-    columns: [
+    rows: [
+      {
+        id: "r106",
+        weight: 1,
+        columns: [
       { id: "Sa", weight: 1, leaves: [{ id: "La", group: "a", weight: 1 }] },
       { id: "Sb", weight: 1, leaves: [{ id: "Lb", group: "b", weight: 1 }] },
+    ],
+      },
     ],
   };
   return l;
@@ -185,16 +192,18 @@ describe("edgeIsSingleLeaf", () => {
   });
 
   describe("a single column of stacked leaves", () => {
-    // [a / b]: one column, so top/bottom are redundant (single); left/right
-    // span the 2 stacked leaves -> not single.
+    // [a / b]: one column of 2 stacked leaves. left/right span both leaves -> not
+    // single. top/bottom add a full-width ROW BAND spanning the column -- that's
+    // distinct from a per-panel split of one of the two leaves, so NOT single
+    // either (the 4-level model makes the band a real, non-redundant target).
     const region = reg(col([leaf("a"), leaf("b")]));
     it("left/right span multiple stacked leaves -> not single", () => {
       expect(edgeIsSingleLeaf(region, "left")).toBe(false);
       expect(edgeIsSingleLeaf(region, "right")).toBe(false);
     });
-    it("top/bottom on a single-column region -> single", () => {
-      expect(edgeIsSingleLeaf(region, "top")).toBe(true);
-      expect(edgeIsSingleLeaf(region, "bottom")).toBe(true);
+    it("top/bottom band a multi-leaf column -> not single", () => {
+      expect(edgeIsSingleLeaf(region, "top")).toBe(false);
+      expect(edgeIsSingleLeaf(region, "bottom")).toBe(false);
     });
   });
 });
@@ -348,17 +357,21 @@ describe("dockToRegionEdge", () => {
     });
   });
 
-  it("docks a multi-group stack as a column band, preserving order", () => {
+  it("docks a multi-group stack as a top ROW BAND, preserving order", () => {
     const layout = makeLayout({
       left: leaf("x"),
       floating: [{ id: "w1", stack: ["a", "b"] }],
     });
-    // The dragged column band [a/b] is wrapped in a column with the existing
-    // leaf; same-axis flattening then merges them into one flat column.
+    // top adds a full-width row band [a/b] ABOVE the existing x band. The region
+    // is now two stacked bands: the [a,b] column on top, x below. (shapeOf reads
+    // a multi-band region as an outer {dir:"column"} of bands.)
     const out = dockToRegionEdge(layout, ["a", "b"], "left", "top");
     expect(shapeOf(out.docked.left)).toEqual({
       dir: "column",
-      children: [{ leaf: "a" }, { leaf: "b" }, { leaf: "x" }],
+      children: [
+        { dir: "column", children: [{ leaf: "a" }, { leaf: "b" }] },
+        { leaf: "x" },
+      ],
     });
   });
 
@@ -511,9 +524,15 @@ describe("dropOnDockedLeaf seam equivalence (right-of-left == left-of-right)", (
   function sideBySide(): DockLayout {
     const l = emptyLayout();
     l.docked.left = {
-      columns: [
+      rows: [
+        {
+          id: "r107",
+          weight: 1,
+          columns: [
         { id: "Sb", weight: 1, leaves: [{ id: "Lb", group: "b", weight: 1 }] },
         { id: "Sa", weight: 1, leaves: [{ id: "La", group: "a", weight: 1 }] },
+      ],
+        },
       ],
     };
     l.groups = { a: group("a"), b: group("b"), c: group("c") };
@@ -581,7 +600,13 @@ describe("BUG #3 (by design): self-drop onto a sole docked leaf is a no-op", () 
     const l = emptyLayout();
     l.groups = { a: group("a") };
     l.docked.left = {
-      columns: [{ id: "Ca", weight: 1, leaves: [{ id: "La", group: "a", weight: 1 }] }],
+      rows: [
+        {
+          id: "r108",
+          weight: 1,
+          columns: [{ id: "Ca", weight: 1, leaves: [{ id: "La", group: "a", weight: 1 }] }],
+        },
+      ],
     };
     const out = dropOnDockedLeaf(l, ["a"], "left", "La", "right");
     expect(out).toBe(l); // intentional no-op
@@ -741,8 +766,14 @@ describe("(7) dock/snap ops guard an area group in the dragged set", () => {
   it("dropOnDockedLeaf with only the area group is a no-op", () => {
     const l = areaDragLayout();
     l.docked.left = {
-      columns: [
+      rows: [
+        {
+          id: "r109",
+          weight: 1,
+          columns: [
         { id: "Cp", weight: 1, leaves: [{ id: "La", group: "plain-src", weight: 1 }] },
+      ],
+        },
       ],
     };
     l.floating = l.floating.filter((w) => w.id !== "w1");
@@ -1664,7 +1695,7 @@ describe("normalization invariants", () => {
     });
     // b's own leaf weight is preserved through the removal.
     const region = out.docked.left!;
-    expect(region.columns[1].leaves).toEqual([
+    expect(widthColumns(region)[1].leaves).toEqual([
       { id: expect.any(String), group: "b", weight: 5 },
     ]);
   });
@@ -1699,7 +1730,7 @@ describe("normalization invariants", () => {
       layout,
       ["b"],
       "left",
-      layout.docked.left!.columns[0].leaves[0].id,
+      widthColumns(layout.docked.left!)[0].leaves[0].id,
       "left",
     );
     expect(layout).toEqual(snapshot);

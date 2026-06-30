@@ -86,7 +86,10 @@ describe("reconcileRegionWidths with minimized columns", () => {
     // Remove a's column entirely (structural: column set changes).
     const next = structuredClone(prev);
     // Remove a's column: keep only the second column (b).
-    next.docked.right = { columns: [next.docked.right!.columns[1]] };
+    const keepRow = next.docked.right!.rows[0];
+    next.docked.right = {
+      rows: [{ ...keepRow, columns: [keepRow.columns[1]] }],
+    };
     // The only remaining column is minimized: fall back to its preserved px.
     expect(recon(prev, next).right).toBe(250);
   });

@@ -25,12 +25,14 @@ import {
 // weights, uniform-collapse per stack, and the reference/orphan/duplication
 // checks that span the whole layout.
 
-/** Every (docked) column across both edges, in order. */
+/** Every (docked) column across both edges (flattened over row bands), in
+ * order. */
 function columnsOf(layout: DockLayout): DockColumn[] {
   const out: DockColumn[] = [];
   for (const edge of ["left", "right"] as DockEdge[]) {
     const region = layout.docked[edge];
-    if (region !== null) out.push(...region.columns);
+    if (region !== null)
+      for (const row of region.rows) out.push(...row.columns);
   }
   return out;
 }
@@ -117,11 +119,14 @@ export function invariantViolations(layout: DockLayout): string[] {
   for (const edge of ["left", "right"] as DockEdge[]) {
     const region = layout.docked[edge];
     if (region === null) continue;
-    if (region.columns.length === 0)
-      v.push(`region on ${edge} has no columns`);
-    for (const c of region.columns)
-      if (c.leaves.length === 0)
-        v.push(`column ${c.id} on ${edge} has no leaves`);
+    if (region.rows.length === 0) v.push(`region on ${edge} has no rows`);
+    for (const row of region.rows) {
+      if (row.columns.length === 0)
+        v.push(`row ${row.id} on ${edge} has no columns`);
+      for (const c of row.columns)
+        if (c.leaves.length === 0)
+          v.push(`column ${c.id} on ${edge} has no leaves`);
+    }
   }
 
   // 8. Finite positive weights (columns and leaves).

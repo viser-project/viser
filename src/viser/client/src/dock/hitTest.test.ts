@@ -274,8 +274,14 @@ describe("screen-edge dock next to an occupied region", () => {
       m: { ...group("m"), collapsed },
     };
     l.docked.right = {
-      columns: [
+      rows: [
+        {
+          id: "r101",
+          weight: 1,
+          columns: [
         { id: "Cm", weight: 1, leaves: [{ id: "Lm", group: "m", weight: 1 }] },
+      ],
+        },
       ],
     };
     return l;
@@ -368,16 +374,16 @@ describe("region edge zones", () => {
     expect(out.result.kind).not.toBe("regionEdge");
   });
 
-  it("suppressed for left/right when a column's side is a single leaf", () => {
-    // A column [a/b]: top/bottom descend into single leaves (suppressed) but
-    // left/right span rows (active). Verify the top band is suppressed.
+  it("top band over a multi-leaf column is an active region-edge band", () => {
+    // A column [a/b]: top/bottom now add a full-width ROW BAND spanning the
+    // column (the 4-level affordance), so the top band is a real region-edge
+    // target -- NOT suppressed as redundant the way a lone single leaf is.
     const tree = colSplit([leaf("a"), leaf("b")]);
     const layout = layoutWith({ left: tree });
     const tgt = dockedTarget("a", leafIdsOf(tree)[0], "left", rect(0, 0, 300, 400));
-    // Pointer in the top band, but in the middle horizontally (past the side
-    // bands). Top is single-leaf -> suppressed -> falls to group split logic.
+    // Pointer in the top band, middle horizontally (past the side bands).
     const out = run(layout, [tgt], 150, REGION_EDGE_PX - 5)!;
-    expect(out.result.kind).not.toBe("regionEdge");
+    expect(out.result.kind).toBe("regionEdge");
   });
 });
 
@@ -747,8 +753,14 @@ describe("collapsed-target vertical zones (content-sized strip)", () => {
     const l = emptyLayout();
     l.groups = { s: group("s", 1, true) };
     l.docked.right = {
-      columns: [
+      rows: [
+        {
+          id: "r102",
+          weight: 1,
+          columns: [
         { id: "Cs", weight: 1, leaves: [{ id: "Ls", group: "s", weight: 1 }] },
+      ],
+        },
       ],
     };
     return l;
@@ -1112,8 +1124,14 @@ describe("BUG #4 (fixed): overlapping drop targets resolve to the one on TOP", (
       f: group("f"),
     };
     l.docked.left = {
-      columns: [
+      rows: [
+        {
+          id: "r103",
+          weight: 1,
+          columns: [
         { id: "Cd", weight: 1, leaves: [{ id: "Ld", group: "d", weight: 1 }] },
+      ],
+        },
       ],
     };
     l.floating = [floatingWindow({ id: "wf", x: 100, y: 300, width: 180, stack: ["f"] })];
@@ -1284,8 +1302,14 @@ describe("draggingUnmergeable suppresses merge/insertTab from the SOURCE side", 
   it("docked split is still offered; only the center merge is suppressed", () => {
     const l = floatingLayoutAB();
     l.docked.left = {
-      columns: [
+      rows: [
+        {
+          id: "r104",
+          weight: 1,
+          columns: [
         { id: "Ca", weight: 1, leaves: [{ id: "La", group: "a", weight: 1 }] },
+      ],
+        },
       ],
     };
     const targets: DropTargets = {
@@ -1333,8 +1357,14 @@ describe("unmergeable header acts as the dock-above / snap-above zone", () => {
     const l = emptyLayout();
     l.groups = { ctrl: { id: "ctrl", paneIds: ["c.0"], activeId: "c.0" } };
     l.docked.right = {
-      columns: [
+      rows: [
+        {
+          id: "r105",
+          weight: 1,
+          columns: [
         { id: "Cc", weight: 1, leaves: [{ id: "Lc", group: "ctrl", weight: 1 }] },
+      ],
+        },
       ],
     };
     return l;

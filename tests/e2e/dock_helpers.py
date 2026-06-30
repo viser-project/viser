@@ -325,10 +325,9 @@ def stack(*cells) -> dict:
     return _column(*cells)
 
 
-def columns(*cells) -> dict:
-    """Docked-region spec: side-by-side columns, left to right. Each cell is
-    either a panel/group (a 1-leaf column) or a stack() spec (a multi-leaf
-    column). Produces the flat Region = row-of-columns shape."""
+def _row(*cells, weight: float = 1) -> dict:
+    """A DockRow spec: side-by-side columns (a full-width band). Each cell is a
+    panel/group (1-leaf column) or a stack() spec (multi-leaf column)."""
     cols: list[dict] = []
     groups: list[dict] = []
     for cell in cells:
@@ -339,16 +338,56 @@ def columns(*cells) -> dict:
             spec = _column(cell)
             cols.append(spec["column"])
             groups.extend(spec["groups"])
-    return {"region": {"columns": cols}, "groups": groups}
+    row = {"id": f"t-r-{next(_split_counter)}", "weight": weight, "columns": cols}
+    return {"row": row, "groups": groups}
+
+
+def columns(*cells) -> dict:
+    """Docked-region spec: side-by-side columns in ONE full-width row band.
+    Produces the 4-level Region = column-of-rows shape with a single row."""
+    spec = _row(*cells)
+    return {"region": {"rows": [spec["row"]]}, "groups": spec["groups"]}
+
+
+def rows(*bands) -> dict:
+    """Docked-region spec: vertically stacked full-width ROW BANDS (top to
+    bottom). Each band is a columns()/stack() spec or a panel. Produces a
+    multi-band region."""
+    out_rows: list[dict] = []
+    groups: list[dict] = []
+    for band in bands:
+        spec = _row(band) if not (isinstance(band, dict) and "row" in band) else band
+        # columns()/stack() return region/column specs; coerce to a row band.
+        if isinstance(band, dict) and "region" in band:
+            out_rows.extend(band["region"]["rows"])
+            groups.extend(band["groups"])
+        elif isinstance(band, dict) and "column" in band:
+            out_rows.append(
+                {
+                    "id": f"t-r-{next(_split_counter)}",
+                    "weight": 1,
+                    "columns": [band["column"]],
+                }
+            )
+            groups.extend(band["groups"])
+        else:
+            out_rows.append(spec["row"])
+            groups.extend(spec["groups"])
+    return {"region": {"rows": out_rows}, "groups": groups}
 
 
 def _as_region(spec: dict | None) -> dict | None:
-    """Normalize a docked spec (from columns() or stack()) to a DockRegion."""
+    """Normalize a docked spec (from columns()/stack()/rows()) to a DockRegion."""
     if spec is None:
         return None
-    if "region" in spec:  # from columns()
+    if "region" in spec:  # from columns() / rows()
         return spec["region"]
-    return {"columns": [spec["column"]]}  # from stack() -> single column
+    # from stack() -> a single one-column row band.
+    return {
+        "rows": [
+            {"id": f"t-r-{next(_split_counter)}", "weight": 1, "columns": [spec["column"]]}
+        ]
+    }
 
 
 def window(

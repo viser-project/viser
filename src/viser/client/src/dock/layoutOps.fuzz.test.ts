@@ -66,7 +66,7 @@ const int = (rng: Rng, lo: number, hi: number) =>
 // ---------------------------------------------------------------------------
 function leaves(region: DockRegion | null): DockLeaf[] {
   if (region === null) return [];
-  return region.columns.flatMap((c) => c.leaves);
+  return region.rows.flatMap((r) => r.columns).flatMap((c) => c.leaves);
 }
 
 // THE INVARIANTS live in production (layoutInvariants.ts) so applyOp asserts the
@@ -226,7 +226,7 @@ function allPureColumnTargets(
   for (const edge of ["left", "right"] as DockEdge[]) {
     const region = l.docked[edge];
     if (region === null) continue;
-    for (const c of region.columns)
+    for (const c of region.rows.flatMap((r) => r.columns))
       if (isMultiLeafColumn(c)) out.push({ edge, nodeId: c.id });
   }
   return out;
@@ -555,7 +555,11 @@ function randomStart(seed: number): DockLayout {
         })) as NonEmpty<DockLeaf>,
       });
     }
-    return { columns: columns as NonEmpty<DockColumn> };
+    return {
+      rows: [
+        { id: nid(), weight: 1, columns: columns as NonEmpty<DockColumn> },
+      ],
+    };
   };
 
   l.docked.left = buildTree(buckets[0]);

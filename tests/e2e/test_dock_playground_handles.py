@@ -101,7 +101,7 @@ def test_column_handle_floats_whole_stack(dock_context, vite_server: int) -> Non
                 // The 2-leaf column is the region's single column; its leaves
                 // top-to-bottom are the stack order.
                 const region = window.__dockLayout.docked.right;
-                return region.columns[0].leaves.map((leaf) => leaf.group);
+                return region.rows[0].columns[0].leaves.map((leaf) => leaf.group);
             }"""
         )
         assert len(order_before) == 2

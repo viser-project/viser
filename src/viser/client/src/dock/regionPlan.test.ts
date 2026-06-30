@@ -92,7 +92,7 @@ describe("reconcile: dropping an expanded panel below a strip", () => {
     // Drop b BELOW the strip: the single column gains leaf b (collapsed a above,
     // expanded b below) -- a single-column region that renders full-width.
     const next = structuredClone(prev);
-    next.docked.right!.columns[0].leaves.push({
+    next.docked.right!.rows[0].columns[0].leaves.push({
       id: "Lb",
       group: "b",
       weight: 1,

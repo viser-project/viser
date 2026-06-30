@@ -17,6 +17,7 @@ import {
   resizeWindowHeight,
   resolveRequestedFloatPosition,
   tearOutPane,
+  widthColumns,
 } from "./layoutOps";
 import { emptyLayout, DockLayout, pinnedPxOf, regionWidthsOf } from "./types";
 
@@ -183,8 +184,8 @@ describe("applyPanelPlacement", () => {
     );
     const right = layout.docked.right!;
     // "above" inserts the new panel as a leaf into the anchor's COLUMN, above it.
-    expect(right.columns).toHaveLength(1);
-    const leaves = right.columns[0].leaves;
+    expect(widthColumns(right)).toHaveLength(1);
+    const leaves = widthColumns(right)[0].leaves;
     expect(leaves).toHaveLength(2);
     expect(leaves[0].group).toBe(findPaneGroup(layout, "p")); // new panel on top
   });
@@ -204,8 +205,8 @@ describe("applyPanelPlacement", () => {
     );
     const right = layout.docked.right!;
     // "below" inserts the new panel as the SECOND leaf in the anchor's column.
-    expect(right.columns).toHaveLength(1);
-    expect(right.columns[0].leaves[1].group).toBe(findPaneGroup(layout, "p"));
+    expect(widthColumns(right)).toHaveLength(1);
+    expect(widthColumns(right)[0].leaves[1].group).toBe(findPaneGroup(layout, "p"));
   });
 
   it("falls back to right edge (with a warning) when the split anchor is not docked", () => {

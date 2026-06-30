@@ -14,6 +14,7 @@ import {
   DockLayout,
   DockLeaf,
   DockRegion,
+  DockRow,
   DropRegion,
   FloatingWindow,
   GroupId,
@@ -69,81 +70,103 @@ const clone = <T>(value: T): T => {
 // ---------------------------------------------------------------------------
 // Flat-model accessors + structural helpers.
 //
-// The docked shape is fixed at three levels (Region = row of columns; Column =
-// stack of leaves; Leaf = one tab group), so what used to be recursive tree
-// walks are now trivial array lookups. Removal helpers maintain the invariant
-// by re-wrapping: drop an emptied column from the region, null an emptied
-// region.
+// The docked shape is fixed at FOUR levels (Region = column of rows; Row = row
+// of columns; Column = stack of leaves; Leaf = one tab group), so what used to
+// be recursive tree walks are trivial array lookups. Removal helpers maintain
+// the invariant by re-wrapping: drop an emptied column from its row, drop an
+// emptied row from the region, null an emptied region.
 // ---------------------------------------------------------------------------
 
-/** Locate the leaf holding `groupId` within a region, returning its position.
- * Null when the region is empty or doesn't hold the group. */
+/** Every column in a region, flattened across its rows, in render order
+ * (row-major: top band's columns first). The common building block for code
+ * that doesn't care which band a column is in. */
+export function allColumns(region: DockRegion): DockColumn[] {
+  return region.rows.flatMap((r) => r.columns);
+}
+
+/** Locate the leaf holding `groupId` within a region. Null when the region is
+ * empty or doesn't hold the group. */
 function findGroupInRegion(
   region: DockRegion | null,
   groupId: GroupId,
-): { columnIndex: number; leafIndex: number; leaf: DockLeaf } | null {
+): { column: DockColumn; leaf: DockLeaf } | null {
   if (region === null) return null;
-  for (let ci = 0; ci < region.columns.length; ci++) {
-    const leaves = region.columns[ci].leaves;
-    for (let li = 0; li < leaves.length; li++) {
-      if (leaves[li].group === groupId)
-        return { columnIndex: ci, leafIndex: li, leaf: leaves[li] };
+  for (const column of allColumns(region)) {
+    for (const leaf of column.leaves) {
+      if (leaf.group === groupId) return { column, leaf };
     }
   }
   return null;
 }
 
 /** Remove the leaf holding `groupId` from a region. Drops the leaf from its
- * column; drops the column if it became empty; returns null if the whole region
- * emptied. The column's weight is preserved when its sole-survivor leaf would
- * otherwise be promoted, so the region's proportions don't jump. */
+ * column; drops the column if it emptied; drops the row if IT emptied; returns
+ * null if the whole region emptied. Weights are preserved on the survivors so
+ * the region's proportions don't jump. */
 function regionRemoveGroup(
   region: DockRegion,
   groupId: GroupId,
 ): DockRegion | null {
-  const columns: DockColumn[] = [];
-  for (const column of region.columns) {
-    const leaves = column.leaves.filter((l) => l.group !== groupId);
-    const ne = asNonEmpty(leaves);
-    if (ne !== null) {
-      columns.push(leaves.length === column.leaves.length ? column : { ...column, leaves: ne });
+  const rows: DockRow[] = [];
+  for (const row of region.rows) {
+    const columns: DockColumn[] = [];
+    let columnChanged = false;
+    for (const column of row.columns) {
+      const leaves = column.leaves.filter((l) => l.group !== groupId);
+      if (leaves.length === column.leaves.length) {
+        columns.push(column); // untouched
+        continue;
+      }
+      columnChanged = true; // this column lost a leaf (or emptied)
+      const ne = asNonEmpty(leaves);
+      if (ne !== null) columns.push({ ...column, leaves: ne });
+      // else: column's last leaf removed -> drop the column.
     }
-    // else: column's last leaf was removed -> drop the whole column.
+    const cne = asNonEmpty(columns);
+    // Reuse the original row only when NOTHING inside changed -- a row with the
+    // same column COUNT can still have lost a leaf from inside a column.
+    if (cne !== null) rows.push(!columnChanged ? row : { ...row, columns: cne });
+    // else: row's last column removed -> drop the row.
   }
-  const ne = asNonEmpty(columns);
-  return ne === null ? null : { columns: ne };
+  const rne = asNonEmpty(rows);
+  return rne === null ? null : { rows: rne };
 }
 
-/** Find a column by its node id within a region. */
-function findColumn(region: DockRegion | null, nodeId: NodeId): DockColumn | null {
-  if (region === null) return null;
-  return region.columns.find((c) => c.id === nodeId) ?? null;
-}
-
-/** Find a leaf by its node id within a region, with its enclosing column. */
-function findLeaf(
+/** Find a column by its node id within a region, with its enclosing row. */
+function findColumn(
   region: DockRegion | null,
   nodeId: NodeId,
-): { column: DockColumn; columnIndex: number; leafIndex: number; leaf: DockLeaf } | null {
+): { row: DockRow; column: DockColumn } | null {
   if (region === null) return null;
-  for (let ci = 0; ci < region.columns.length; ci++) {
-    const column = region.columns[ci];
-    const li = column.leaves.findIndex((l) => l.id === nodeId);
-    if (li !== -1)
-      return { column, columnIndex: ci, leafIndex: li, leaf: column.leaves[li] };
+  for (const row of region.rows) {
+    const column = row.columns.find((c) => c.id === nodeId);
+    if (column !== undefined) return { row, column };
   }
   return null;
 }
 
-/** A column / column-id, for code that wants to address a column by node id.
- * Exposed so the manager can resolve a column the user is dragging. Returns the
- * column or null. (Kept as the public successor to the old treeFindNode, which
- * had to recurse; now a flat lookup.) */
+/** Find a leaf by its node id within a region, with its enclosing column/row. */
+function findLeaf(
+  region: DockRegion | null,
+  nodeId: NodeId,
+): { row: DockRow; column: DockColumn; leaf: DockLeaf } | null {
+  if (region === null) return null;
+  for (const row of region.rows) {
+    for (const column of row.columns) {
+      const leaf = column.leaves.find((l) => l.id === nodeId);
+      if (leaf !== undefined) return { row, column, leaf };
+    }
+  }
+  return null;
+}
+
+/** Address a column by node id (for code resolving a column the user drags).
+ * Returns the column or null. */
 export function findColumnById(
   region: DockRegion | null,
   nodeId: NodeId,
 ): DockColumn | null {
-  return findColumn(region, nodeId);
+  return findColumn(region, nodeId)?.column ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -161,12 +184,20 @@ export function isColumnMinimized(
   return column.leaves.every((l) => groups[l.group]?.collapsed === true);
 }
 
-/** A region is "minimized" when every one of its columns is minimized. */
+/** A row is "minimized" when every one of its columns is minimized. */
+export function isRowMinimized(
+  row: DockRow,
+  groups: Record<GroupId, TabGroup>,
+): boolean {
+  return row.columns.every((c) => isColumnMinimized(c, groups));
+}
+
+/** A region is "minimized" when every one of its rows is minimized. */
 export function isRegionMinimized(
   region: DockRegion,
   groups: Record<GroupId, TabGroup>,
 ): boolean {
-  return region.columns.every((c) => isColumnMinimized(c, groups));
+  return region.rows.every((r) => isRowMinimized(r, groups));
 }
 
 /** True when the column with id `nodeId` (in either docked region) is fully
@@ -175,12 +206,12 @@ export function isRegionMinimized(
 export function nodeAllMinimized(layout: DockLayout, nodeId: NodeId): boolean {
   for (const edge of ["left", "right"] as const) {
     const region = layout.docked[edge];
-    const column = findColumn(region, nodeId);
-    if (column !== null) return isColumnMinimized(column, layout.groups);
+    const found = findColumn(region, nodeId);
+    if (found !== null) return isColumnMinimized(found.column, layout.groups);
     // A leaf id may also be passed (a single-leaf column dropped beside): treat
     // a fully-minimized enclosing column as minimized.
-    const found = findLeaf(region, nodeId);
-    if (found !== null) return isColumnMinimized(found.column, layout.groups);
+    const leaf = findLeaf(region, nodeId);
+    if (leaf !== null) return isColumnMinimized(leaf.column, layout.groups);
   }
   return false;
 }
@@ -210,48 +241,63 @@ export function collectLeaves(
   return column.leaves.map((l) => ({ id: l.id, group: l.group }));
 }
 
-/** A region's columns, in render order. With the flat model the region IS a row
- * of columns, so this is the literal field -- the old "descend into the widest
- * child to guess the columns" logic is gone (region width and render now iterate
- * the SAME list, which is what fixed the regionPlan-vs-render disagreement). */
-export function topColumns(region: DockRegion): NonEmpty<DockColumn> {
-  return region.columns;
+/** The row band that DETERMINES a region's horizontal width: the one with the
+ * most side-by-side columns. A full-width band spans all columns, so the band
+ * with the most columns dictates the region's width; narrower bands ride along.
+ * (Ties -> the first such band.) */
+export function widthRow(region: DockRegion): DockRow {
+  let widest = region.rows[0];
+  for (const row of region.rows)
+    if (row.columns.length > widest.columns.length) widest = row;
+  return widest;
 }
 
-/** Alias kept for the width consumers: the width-determining columns ARE the
- * region's columns now (no guessing). */
+/** The width-determining columns of a region: the widest row band's columns.
+ * Width reconciliation and region-width math run over these (they all share the
+ * region's horizontal extent). */
 export function widthColumns(region: DockRegion): NonEmpty<DockColumn> {
-  return region.columns;
+  return widthRow(region).columns;
+}
+
+/** The region's "top-level columns" -- alias of widthColumns, kept for the width
+ * tests + any caller that thinks in terms of the side-by-side column list. */
+export function topColumns(region: DockRegion): NonEmpty<DockColumn> {
+  return widthColumns(region);
 }
 
 /** Whether a region's given edge is a single full-span leaf -- so a "span the
  * whole region" drop there would be identical to a per-panel split of that one
- * panel, and the region-edge zone is suppressed as redundant. The edge is
- * distinct only when it spans multiple cells:
- * - top/bottom span multiple cells when the region has side-by-side columns;
- * - left/right span multiple cells when the touched column stacks 2+ leaves.
- * (No recursion: the level IS the axis.) */
+ * panel, and the region-edge zone is suppressed as redundant. Distinct only when
+ * the edge spans multiple cells:
+ * - top/bottom span multiple cells when the region has 2+ row bands, OR the edge
+ *   band itself has side-by-side columns;
+ * - left/right span multiple cells when the region has 2+ rows, OR the touched
+ *   column stacks 2+ leaves. */
 export function edgeIsSingleLeaf(
   region: DockRegion,
   side: "top" | "bottom" | "left" | "right",
 ): boolean {
   const vertical = side === "top" || side === "bottom";
   if (vertical) {
-    // Top/bottom span every column; redundant only when there's a single column.
-    return region.columns.length === 1;
+    // Top/bottom add a row band; redundant only when the region is a single
+    // single-column row whose column is itself a single leaf.
+    if (region.rows.length !== 1) return false;
+    const row = region.rows[0];
+    return row.columns.length === 1 && row.columns[0].leaves.length === 1;
   }
-  // Left/right touch the outermost column; redundant only when THAT column is a
-  // single leaf (no stacked rows for the full-height band to span).
-  const column = side === "left" ? region.columns[0] : region.columns[region.columns.length - 1];
+  // Left/right span every row band; redundant only when there's one row whose
+  // outermost column is a single leaf.
+  if (region.rows.length !== 1) return false;
+  const row = region.rows[0];
+  const column =
+    side === "left" ? row.columns[0] : row.columns[row.columns.length - 1];
   return column.leaves.length === 1;
 }
 
 /** Minimum width a single docked column may be resized to in the layout model:
  * MIN_REGION_GRAB_PX -- a tiny grabbable sliver, NOT the panel-content minimum
- * (a too-narrow panel scrolls its body instead). Leaves stacked in a column
- * share one width, so a column's min is just the sliver regardless of its leaf
- * count -- a constant. (Kept as a named function, not an inlined constant, so a
- * future per-column minimum has one place to live and callers read clearly.) */
+ * (a too-narrow panel scrolls its body instead). A constant (leaves stacked in
+ * a column share one width), named so a future per-column minimum has one home. */
 export function minRegionWidth(): number {
   return MIN_REGION_GRAB_PX;
 }
@@ -420,8 +466,9 @@ export function stackGroupIdsOf(
   for (const edge of ["left", "right"] as DockEdge[]) {
     const found = findGroupInRegion(layout.docked[edge], groupId);
     if (found === null) continue;
-    const column = layout.docked[edge]!.columns[found.columnIndex];
-    return column.leaves.length >= 2 ? collectLeafGroups(column) : [groupId];
+    return found.column.leaves.length >= 2
+      ? collectLeafGroups(found.column)
+      : [groupId];
   }
   return [groupId];
 }
@@ -441,7 +488,8 @@ function detachInPlace(draft: DockLayout, groupId: GroupId): void {
   if (loc.kind === "area") return;
   if (loc.kind === "docked") {
     const region = draft.docked[loc.edge];
-    draft.docked[loc.edge] = region === null ? null : regionRemoveGroup(region, groupId);
+    const res = region === null ? null : regionRemoveGroup(region, groupId);
+    draft.docked[loc.edge] = res;
   } else {
     const win = draft.floating.find((w) => w.id === loc.windowId);
     if (win === undefined) return;
@@ -512,10 +560,15 @@ function buildColumn(groupIds: NonEmpty<GroupId>, weight = 1): DockColumn {
   };
 }
 
-/** A single-column region holding `column` -- the wrap that turns "a column" into
- * "a docked region". */
+/** A row of one column. */
+function buildRow(column: DockColumn, weight = 1): DockRow {
+  return { id: freshId("node"), weight, columns: [column] };
+}
+
+/** A single-row, single-column region holding `column` -- the wrap that turns
+ * "a column" into "a docked region" (Region[Row[Column]]). */
 function regionOf(column: DockColumn): DockRegion {
-  return { columns: [column] };
+  return { rows: [buildRow(column)] };
 }
 
 // ---------------------------------------------------------------------------
@@ -540,29 +593,33 @@ export function dockToEdge(
   if (existing === null) {
     draft.docked[edge] = regionOf(column);
   } else {
-    // Add the new column at the OUTERMOST position: far left for "left", far
-    // right for "right". (A region is a row of columns -- a new edge dock is
-    // just another column in that row.)
+    // Add the new column at the OUTERMOST position (far left for "left", far
+    // right for "right") of the FIRST row band. The common region is a single
+    // row, so this is just the row gaining a column; with multiple bands the
+    // new column joins the top band (a group lives in exactly one leaf, so it
+    // can't span every band).
+    const firstRow = existing.rows[0];
     const columns: NonEmpty<DockColumn> =
       edge === "left"
-        ? [column, ...existing.columns]
-        : [...existing.columns, column];
-    draft.docked[edge] = { columns };
+        ? [column, ...firstRow.columns]
+        : [...firstRow.columns, column];
+    draft.docked[edge] = {
+      rows: existing.rows.map((row, i) =>
+        i === 0 ? { ...row, columns } : row,
+      ) as NonEmpty<DockRow>,
+    };
   }
   return draft;
 }
 
 /** Dock a stack of groups as a band on the given outer side of everything
- * already docked in the region. With the flat 3-level model:
- * - left/right add a new full-height COLUMN at the region's outer/inner side;
- * - top/bottom add the band as leaf(s) at the TOP/BOTTOM of the region's first
- *   column. (A true "span every column" band is a 4th level the type forbids;
- *   top/bottom region-edge is only offered on a single-column region anyway --
- *   see edgeIsSingleLeaf -- where "first column" IS the whole region, so this is
- *   exactly the old full-width band. JUDGMENT CALL: on a hypothetical multi-
- *   column region it degrades to banding the first column rather than nesting.)
- * Optional weights preserve the existing content's size (left/right grow the
- * region rather than resizing). */
+ * already docked in the region. With the 4-level model each side is a clean
+ * single-level insert:
+ * - top/bottom add a new full-width ROW band spanning every column, at the
+ *   region's top/bottom (the standard "band above/below everything" affordance);
+ * - left/right add a new full-height COLUMN at the region's outer/inner side.
+ * Optional weights preserve the existing content's size (the new band/column
+ * grows the region rather than resizing what's there). */
 export function dockToRegionEdge(
   layout: DockLayout,
   groupIds: GroupId[],
@@ -580,42 +637,50 @@ export function dockToRegionEdge(
     draft.docked[edge] = regionOf(buildColumn(ne));
     return draft;
   }
-  if (side === "left" || side === "right") {
-    // A new full-height column beside everything. Weights (when given) preserve
-    // the existing columns' widths; otherwise the reconciler assigns pixels.
-    const dw = weights?.dragged ?? 1;
-    const column = buildColumn(ne, dw);
+  if (side === "top" || side === "bottom") {
+    // A new full-width ROW band, spanning all columns. With explicit weights the
+    // existing rows take `existing` and the new band `dragged`; otherwise both
+    // default to 1 (~50/50 for a previously single-row region).
+    const existingW = weights?.existing ?? 1;
+    const draggedW = weights?.dragged ?? 1;
+    const band = buildRow(buildColumn(ne), draggedW);
     if (weights !== undefined) {
-      // Scale every existing column to the "existing" share so the new column
-      // sits at the requested proportion next to them (matches the old
-      // 2-child split weight semantics for the single-column case).
-      const total = existing.columns.reduce((s, c) => s + c.weight, 0) || 1;
-      existing.columns.forEach((c) => {
-        c.weight = (c.weight / total) * weights.existing;
+      const total = existing.rows.reduce((s, r) => s + r.weight, 0) || 1;
+      existing.rows.forEach((r) => {
+        r.weight = (r.weight / total) * existingW;
+      });
+    } else {
+      existing.rows.forEach((r) => {
+        r.weight = existingW;
       });
     }
-    const columns: NonEmpty<DockColumn> =
-      side === "left"
-        ? [column, ...existing.columns]
-        : [...existing.columns, column];
-    draft.docked[edge] = { columns };
+    draft.docked[edge] = {
+      rows: (side === "top"
+        ? [band, ...existing.rows]
+        : [...existing.rows, band]) as NonEmpty<DockRow>,
+    };
     return draft;
   }
-  // top / bottom: band the FIRST column's leaf stack. With no explicit weights,
-  // EQUALIZE every leaf (existing + new) to weight 1 so a freshly docked band
-  // sits at ~50% height rather than inheriting a stale pixel weight (the old
-  // top/bottom 50/50 behavior, now a leaf-stack operation). With explicit
-  // weights, the existing leaves take `existing` and the new ones take `dragged`.
-  const first = existing.columns[0];
-  const existingW = weights?.existing ?? 1;
-  const draggedW = weights?.dragged ?? 1;
-  const banded = ne.map((g) => makeLeaf(g, draggedW));
-  first.leaves.forEach((l) => {
-    l.weight = existingW;
-  });
-  first.leaves = (
-    side === "top" ? [...banded, ...first.leaves] : [...first.leaves, ...banded]
-  ) as NonEmpty<DockLeaf>;
+  // left / right: a new full-height column beside everything, in the FIRST row
+  // band (a single-row region -- the common case -- is the whole region).
+  const dw = weights?.dragged ?? 1;
+  const column = buildColumn(ne, dw);
+  const firstRow = existing.rows[0];
+  if (weights !== undefined) {
+    const total = firstRow.columns.reduce((s, c) => s + c.weight, 0) || 1;
+    firstRow.columns.forEach((c) => {
+      c.weight = (c.weight / total) * weights.existing;
+    });
+  }
+  const columns: NonEmpty<DockColumn> =
+    side === "left"
+      ? [column, ...firstRow.columns]
+      : [...firstRow.columns, column];
+  draft.docked[edge] = {
+    rows: existing.rows.map((row, i) =>
+      i === 0 ? { ...row, columns } : row,
+    ) as NonEmpty<DockRow>,
+  };
   return draft;
 }
 
@@ -658,14 +723,16 @@ export function dropOnDockedLeaf(
 
   const dw = weights?.dragged ?? 1;
   const tw = weights?.target ?? 1;
-  const targetColumn = liveRegion.columns[live.columnIndex];
+  const targetColumn = live.column; // a reference into the cloned draft
+  const targetRow = live.row;
 
   if (region === "top" || region === "bottom") {
     // Insert the dragged leaf(s) into the target's column, above/below it. The
     // target keeps its (resized) weight; the dragged leaves take `dw`.
-    targetColumn.leaves[live.leafIndex] = { ...live.leaf, weight: tw };
+    const li = targetColumn.leaves.findIndex((l) => l.id === targetNodeId);
+    targetColumn.leaves[li] = { ...live.leaf, weight: tw };
     const banded = ne.map((g) => makeLeaf(g, dw));
-    const at = region === "top" ? live.leafIndex : live.leafIndex + 1;
+    const at = region === "top" ? li : li + 1;
     targetColumn.leaves = [
       ...targetColumn.leaves.slice(0, at),
       ...banded,
@@ -674,19 +741,17 @@ export function dropOnDockedLeaf(
     return draft;
   }
 
-  // left / right: a new column beside the target's column. The new column
-  // inherits the target column's weight basis (dw/tw split its horizontal
-  // share); the target column keeps `tw`.
+  // left / right: a new column beside the target's column, within the SAME row
+  // band. The target column keeps `tw`; the new column takes `dw`.
   targetColumn.weight = tw;
   const newColumn = buildColumn(ne, dw);
-  const at = region === "left" ? live.columnIndex : live.columnIndex + 1;
-  draft.docked[edge] = {
-    columns: [
-      ...liveRegion.columns.slice(0, at),
-      newColumn,
-      ...liveRegion.columns.slice(at),
-    ] as NonEmpty<DockColumn>,
-  };
+  const ci = targetRow.columns.findIndex((c) => c.id === targetColumn.id);
+  const at = region === "left" ? ci : ci + 1;
+  targetRow.columns = [
+    ...targetRow.columns.slice(0, at),
+    newColumn,
+    ...targetRow.columns.slice(at),
+  ] as NonEmpty<DockColumn>;
   return draft;
 }
 
@@ -1048,8 +1113,9 @@ export function floatColumn(
   width: number,
   height?: number,
 ): { layout: DockLayout; windowId: WindowId | null } {
-  const column = findColumn(layout.docked[edge], columnNodeId);
-  if (column === null) return { layout, windowId: null };
+  const found = findColumn(layout.docked[edge], columnNodeId);
+  if (found === null) return { layout, windowId: null };
+  const column = found.column;
   // Capture order + weights BEFORE detaching (detach restructures the region).
   // Sequential detachInPlace (by GROUP id) reuses the standard cleanup
   // invariants (empty region -> null edge, drop emptied columns).
@@ -1334,7 +1400,8 @@ export function normalizeStackCollapse(layout: DockLayout): boolean {
   for (const edge of ["left", "right"] as const) {
     const region = layout.docked[edge];
     if (region !== null)
-      for (const column of region.columns) reconcile(collectLeafGroups(column));
+      for (const column of allColumns(region))
+        reconcile(collectLeafGroups(column));
   }
   // Floating windows: the stack array is the unit.
   for (const win of layout.floating) reconcile(win.stack);
@@ -1357,12 +1424,16 @@ export function setNodeWeights(
     return w !== undefined && Number.isFinite(w) && w > 0 && current !== w;
   };
   // Fast path for the per-frame resize hot path: when every target weight
-  // already matches (the cursor paused), skip the clone entirely.
+  // already matches (the cursor paused), skip the clone entirely. Targets can be
+  // rows (region-band drag), columns (row drag), or leaves (column-stack drag).
   let changes = false;
-  for (const column of region.columns) {
-    if (wantsChange(column.id, column.weight)) changes = true;
-    for (const leaf of column.leaves)
-      if (wantsChange(leaf.id, leaf.weight)) changes = true;
+  for (const row of region.rows) {
+    if (wantsChange(row.id, row.weight)) changes = true;
+    for (const column of row.columns) {
+      if (wantsChange(column.id, column.weight)) changes = true;
+      for (const leaf of column.leaves)
+        if (wantsChange(leaf.id, leaf.weight)) changes = true;
+    }
   }
   if (!changes) return layout;
   const draft = clone(layout);
@@ -1370,12 +1441,16 @@ export function setNodeWeights(
     const w = weightsById[id];
     return w !== undefined && Number.isFinite(w) && w > 0 ? w : undefined;
   };
-  for (const column of draft.docked[edge]!.columns) {
-    const cw = set(column.id);
-    if (cw !== undefined) column.weight = cw;
-    for (const leaf of column.leaves) {
-      const lw = set(leaf.id);
-      if (lw !== undefined) leaf.weight = lw;
+  for (const row of draft.docked[edge]!.rows) {
+    const rw = set(row.id);
+    if (rw !== undefined) row.weight = rw;
+    for (const column of row.columns) {
+      const cw = set(column.id);
+      if (cw !== undefined) column.weight = cw;
+      for (const leaf of column.leaves) {
+        const lw = set(leaf.id);
+        if (lw !== undefined) leaf.weight = lw;
+      }
     }
   }
   return draft;
