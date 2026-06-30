@@ -44,6 +44,9 @@ const INSERT_LINE_INSET_PX = 4;
 // edge stays a MERGE target (capped to a third of the cell so a short strip
 // keeps a merge zone).
 const MINIMIZED_EDGE_BAND_PX = 6;
+// Rendered thickness (px) of an insertion-LINE hint -- the thin bar drawn for
+// every "insert here" drop (per-panel split, region-edge span, cross-band seam).
+const LINE_PX = 3;
 // Band fraction (of the content area) for a per-panel left/right split, capped
 // in pixels so it doesn't balloon on a wide panel.
 const SPLIT_BAND = 0.22;
@@ -416,8 +419,8 @@ export function hitTest(
     const regionLeft = edge === "left" ? 0 : crect.width - w;
     const regionRight = regionLeft + w;
     if (cx < regionLeft || cx > regionRight) continue;
-    // Insertion-line hint thickness, shared by the seam and side-band hints.
-    const t = 3;
+    // Insertion-line hint thickness (shared by the seam and side-band hints).
+    const t = LINE_PX;
     // Cap each left/right side band at a THIRD of the region width so the two
     // bands leave the middle third for the per-panel zones underneath. A
     // fully-minimized region renders as a ~36px strip -- narrower than
@@ -462,8 +465,8 @@ export function hitTest(
     }
     // The region-edge span previews as a thin LINE along the edge it docks
     // against, spanning the whole region -- the same insertion-line affordance as
-    // a per-panel split, just region-wide. (`t` and `sideBand` are hoisted above,
-    // shared with the cross-band seam.)
+    // a per-panel split, just region-wide. (`t` and `sideBand` are declared once
+    // at the top of this loop body, shared with the cross-band seam.)
     // A single-leaf region normally suppresses these region-wide bands (its own
     // per-panel split is identical, full leaf height). But a MINIMIZED region
     // renders as a SHORT strip, so the per-panel split is only strip-tall and
@@ -602,7 +605,7 @@ export function hitTest(
       }
     }
     if (seam !== null && seam.lower.ctx.kind === "docked") {
-      const t = 3;
+      const t = LINE_PX;
       return {
         result: {
           kind: "split",
@@ -631,7 +634,7 @@ export function hitTest(
   // on the A|B seam (one coherent "insert a column here"), and per-panel splits
   // read differently from the region-edge "span all" ghosts.
   const splitLine = (region: "top" | "bottom" | "left" | "right"): DropHint => {
-    const t = 3;
+    const t = LINE_PX;
     // Center the line on the seam, then clamp it fully inside the container so it
     // stays visible. A panel docked at the region's outer edge sits flush with the
     // screen edge, so a seam-centered line there would otherwise be half-clipped;

@@ -55,7 +55,13 @@ export interface RegionPlan {
    * expanded while the widthRow is all strips (e.g. a wide band minimized above
    * a narrower expanded band); the region must still reserve its content width,
    * or the expanded band gets squished to strip width. The reserved-width math
-   * gates on THIS, while the resizer/reconciler still use the widthRow fields. */
+   * gates on THIS, while the resizer/reconciler still use the widthRow fields.
+   *
+   * Equals `!isRegionMinimized(region, groups)`. SplitView recomputes the same
+   * predicate as `regionHasExpanded` -- deliberately, NOT a missed dedup: this
+   * plan is widthRow-shaped (it has discarded per-band structure), while
+   * SplitView needs the full per-band collapsed mask anyway, so threading this
+   * one scalar down would couple the width plan to the renderer for no saving. */
   anyBandExpanded: boolean;
 }
 

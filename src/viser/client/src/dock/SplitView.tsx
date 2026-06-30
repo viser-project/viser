@@ -74,6 +74,9 @@ export const SplitView = React.memo(function SplitView({
   // to the compact vertical rail (the "collapsed region" affordance) rather than
   // a stack of full-width horizontal bars squeezed into strip width; the
   // horizontal bar is only for a band minimized BESIDE expanded sibling bands.
+  // (regionHasExpanded == regionPlan's anyBandExpanded == !isRegionMinimized; it
+  // is recomputed here from the mask we already need, not threaded from the plan,
+  // which is widthRow-shaped -- see regionPlan.RegionPlan.anyBandExpanded.)
   const bandMinimized = rows.map((r) => isRowMinimized(r, groups));
   const regionHasExpanded = bandMinimized.some((m) => !m);
 

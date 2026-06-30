@@ -17,6 +17,7 @@ import React from "react";
 import { useDock } from "./DockContext";
 import { focusRing, gripBarBg } from "./DockStyles.css";
 import { startCollapsedGroupPress } from "./collapsedPress";
+import { keyActivate } from "./gestures";
 import { collectLeaves, expandStack } from "./layoutOps";
 import { DockEdge, DockRow, MINIMIZED_STRIP_PX } from "./types";
 
@@ -104,12 +105,7 @@ export function HorizontalMinimizedBand({
                   dock.toggleCollapsed(groupId),
                 );
               }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  dock.toggleCollapsed(groupId);
-                }
-              }}
+              onKeyDown={keyActivate(() => dock.toggleCollapsed(groupId))}
               style={{
                 display: "flex",
                 flexDirection: "row",
