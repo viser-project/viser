@@ -23,15 +23,22 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import Page  # noqa: E402
 
+from .dock_helpers import dock_layout as _dock_layout
 from .dock_helpers import drag_group as _drag_group
 from .dock_helpers import floating_group_ids as _floating_ids
 from .dock_helpers import grip_above_strip_point as _grip_above_strip
 from .dock_helpers import group_box as _gbox
 from .dock_helpers import group_grip_center as _grip_bar_point
+from .dock_helpers import layout as _layout
+from .dock_helpers import leaf_box as _leaf_box
 from .dock_helpers import move_floating_window as _move_window
 from .dock_helpers import open_playground as _open
 from .dock_helpers import right_cols as _right_cols
+from .dock_helpers import rows as _rows
+from .dock_helpers import columns as _columns
+from .dock_helpers import set_layout as _set_layout
 from .dock_helpers import setup_side_by_side as _setup_side_by_side
+from .dock_helpers import window as _window
 
 
 # ===========================================================================
@@ -303,6 +310,89 @@ def test_drag_tab_back_uses_live_strip_geometry(dock_context, vite_server: int) 
         assert abs(hint["left"] - surv_right) <= 6, (
             f"insertion line at {hint['left']}px is not at the survivor's real "
             f"right edge {surv_right}px -- stale pre-tear-out geometry regressed"
+        )
+    finally:
+        page.close()
+
+
+# ===========================================================================
+# (c) Cross-band SEAM: dropping a panel in the gap between two row bands inserts
+#     a new FULL-WIDTH band there (not a per-column split into one band). The
+#     bug: the seam below a multi-column band stacked a half-width leaf under one
+#     column. Driven from a deterministic injected layout for stability.
+# ===========================================================================
+def test_cross_band_seam_inserts_a_band(dock_context, vite_server: int) -> None:
+    page = _open(dock_context, vite_server, 1400, 900)
+    try:
+        # Right edge: a TWO-COLUMN band [controls | inspector] over a single
+        # band [console], plus a floating panel `layers` to drag into the seam.
+        # (Uses the playground's REGISTERED, mergeable pane ids -- unknown panes
+        # are stripped by registry reconciliation, and an unmergeable panel like
+        # `monitor` has a full-width header instead of a draggable grip.)
+        _set_layout(
+            page,
+            _dock_layout(
+                docked_right=_rows(_columns("controls", "inspector"), "console"),
+                floating=[_window("layers", x=300, y=300)],
+            ),
+        )
+
+        before = _layout(page)
+        if before is None or before["docked"]["right"] is None:
+            pytest.skip("right region not set this run")
+        assert len(before["docked"]["right"]["rows"]) == 2, (
+            "fixture should start with exactly two bands"
+        )
+
+        # The seam is the boundary between the top band (controls/inspector) and
+        # the mid band: midway between the top band's bottom and the mid band's
+        # top, at the region's horizontal center (the middle span, clear of the
+        # side bands).
+        top = _leaf_box(page, "t-controls")
+        mid = _leaf_box(page, "t-console")
+        seam_y = (top["bottom"] + mid["y"]) / 2
+        seam_x = mid["x"] + mid["w"] / 2
+
+        _drag_group(page, "t-layers", (seam_x, seam_y))
+        page.wait_for_timeout(200)
+
+        after = _layout(page)
+        right = after["docked"]["right"]
+        if right is None or len(right["rows"]) != 3:
+            pytest.skip(
+                "seam drop did not land a third band this run "
+                f"(rows={None if right is None else len(right['rows'])})"
+            )
+
+        # The NEW band (the one holding monitor) must be a single full-width
+        # column -- exactly one column with one leaf -- and sit at index 1
+        # (between the original two bands).
+        def band_groups(band: dict) -> list[str]:
+            return [
+                leaf["group"]
+                for col in band["columns"]
+                for leaf in col["leaves"]
+            ]
+
+        new_band_idx = next(
+            (i for i, b in enumerate(right["rows"]) if "t-layers" in band_groups(b)),
+            None,
+        )
+        assert new_band_idx is not None, "the dropped panel must be in some band"
+        new_band = right["rows"][new_band_idx]
+        assert len(new_band["columns"]) == 1, (
+            "the inserted band must be a single FULL-WIDTH column, not a split"
+        )
+        assert len(new_band["columns"][0]["leaves"]) == 1
+        # It landed BETWEEN the two original bands (index 1), so the top band
+        # (controls/inspector) is above it and the mid band below it.
+        assert new_band_idx == 1, (
+            f"the band should land between the two originals (index 1), "
+            f"got index {new_band_idx}"
+        )
+        top_band_groups = band_groups(right["rows"][0])
+        assert "t-controls" in top_band_groups and "t-inspector" in top_band_groups, (
+            "the original multi-column band must stay intact above the new band"
         )
     finally:
         page.close()

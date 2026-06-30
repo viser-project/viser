@@ -356,12 +356,16 @@ def rows(*bands) -> dict:
     out_rows: list[dict] = []
     groups: list[dict] = []
     for band in bands:
-        spec = _row(band) if not (isinstance(band, dict) and "row" in band) else band
-        # columns()/stack() return region/column specs; coerce to a row band.
-        if isinstance(band, dict) and "region" in band:
+        # columns()/stack()/already-a-row specs coerce to a row band WITHOUT
+        # eagerly calling _row (which only accepts panel/stack cells, not a
+        # region/row dict). A bare panel or stack() falls through to _row.
+        if isinstance(band, dict) and "row" in band:
+            out_rows.append(band["row"])
+            groups.extend(band["groups"])
+        elif isinstance(band, dict) and "region" in band:  # from columns()
             out_rows.extend(band["region"]["rows"])
             groups.extend(band["groups"])
-        elif isinstance(band, dict) and "column" in band:
+        elif isinstance(band, dict) and "column" in band:  # from stack()
             out_rows.append(
                 {
                     "id": f"t-r-{next(_split_counter)}",
@@ -370,7 +374,8 @@ def rows(*bands) -> dict:
                 }
             )
             groups.extend(band["groups"])
-        else:
+        else:  # a bare panel id / group spec -> a one-column band
+            spec = _row(band)
             out_rows.append(spec["row"])
             groups.extend(spec["groups"])
     return {"region": {"rows": out_rows}, "groups": groups}
