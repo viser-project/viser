@@ -838,3 +838,66 @@ def test_minimized_multigroup_band_chip_gestures(
         assert out["inspectorDocked"], "inspector should stay docked (only one chip torn out)"
     finally:
         page.close()
+
+
+def test_all_bands_minimized_region_is_compact_rail_not_squares(
+    dock_context, vite_server: int
+) -> None:
+    """When EVERY band is minimized, the region is the compact vertical rail (the
+    'collapsed region' affordance), not a stack of full-width horizontal bars
+    squeezed into strip width (which rendered as ~36x36 squares). A band expands
+    back from the rail."""
+    page = _open(dock_context, vite_server, 1280, 900)
+    try:
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=rows(
+                    group("controls", collapsed=True),
+                    group("inspector", collapsed=True),
+                    group("console", collapsed=True),
+                )
+            ),
+        )
+        page.wait_for_timeout(300)
+        # No horizontal band bars when the whole region is collapsed.
+        assert page.locator("[data-dock-minimized-band]").count() == 0, (
+            "an all-minimized region should use the vertical rail, not horizontal bars"
+        )
+        # Each band's leaf is a NARROW (rail-width) cell, not a tiny square: width
+        # well under height (a vertical rail), and not the squished ~36-wide form
+        # of a horizontal bar with no region width.
+        leaves = page.eval_on_selector_all(
+            '[data-dock-leaf][data-dock-edge="right"]',
+            """els => els.map(l => {
+                const r = l.getBoundingClientRect();
+                return { w: Math.round(r.width), h: Math.round(r.height) };
+            })""",
+        )
+        assert len(leaves) == 3, f"expected three collapsed band rails, got {leaves}"
+        for lf in leaves:
+            assert lf["w"] < 60, f"rail should be narrow, got {lf}"
+            assert lf["h"] > lf["w"], f"rail should be taller than wide, got {lf}"
+
+        # Expand one band from the rail -> it grows to full width.
+        page.evaluate(
+            """() => {
+                const g = document.querySelector('[data-dock-group="t-controls"]');
+                g.querySelector('[data-dock-minimize]').click();
+            }"""
+        )
+        page.wait_for_timeout(400)
+        assert (
+            page.evaluate(
+                "() => window.__dockLayout.groups['t-controls'].collapsed === true"
+            )
+            is False
+        )
+        w = page.evaluate(
+            """() => Math.round(document
+                .querySelector('[data-dock-group="t-controls"]')
+                .closest('[data-dock-leaf]').getBoundingClientRect().width)"""
+        )
+        assert w > 200, f"expanded band should be full width, got {w}"
+    finally:
+        page.close()

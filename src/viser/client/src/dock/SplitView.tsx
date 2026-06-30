@@ -68,6 +68,12 @@ export const SplitView = React.memo(function SplitView({
   const containerRef = React.useRef<HTMLDivElement>(null);
   const rows = region.rows;
   const loneBand = rows.length === 1;
+  // Whether ANY band has an expanded column. When the WHOLE region is minimized
+  // (no band expanded), it collapses to the compact vertical rail -- the
+  // "collapsed region" affordance, same as a lone minimized region -- rather
+  // than a stack of full-width horizontal bars squeezed into strip width. The
+  // horizontal bar is only for a band minimized BESIDE expanded sibling bands.
+  const regionHasExpanded = rows.some((r) => !isRowMinimized(r, groups));
 
   return (
     <Box
@@ -89,7 +95,12 @@ export const SplitView = React.memo(function SplitView({
         // minimized band still fills the region height (a full-height vertical
         // rail), matching the column rule where a lone strip fills the width.
         const collapsedBand = isRowMinimized(row, groups);
-        const stripBand = collapsedBand && !loneBand;
+        // A band is a fixed-height horizontal STRIP only when it's collapsed
+        // AND some other band is expanded (so the region is at content width).
+        // A lone collapsed band, or an all-collapsed region, instead fills its
+        // share of height and renders the vertical rail (compact collapsed
+        // region), avoiding squished 36x36 bars when the region has no width.
+        const stripBand = collapsedBand && !loneBand && regionHasExpanded;
         return (
           <React.Fragment key={row.id}>
             <Box
