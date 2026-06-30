@@ -12,12 +12,15 @@
 
 import { describe, it, expect } from "vitest";
 import {
+  DockColumn,
   DockEdge,
   DockLayout,
-  DockNode,
+  DockLeaf,
+  DockRegion,
   DropRegion,
   GroupId,
   NodeId,
+  NonEmpty,
   emptyLayout,
 } from "./types";
 import { invariantViolations } from "./layoutInvariants";
@@ -29,7 +32,7 @@ import {
   mergeGroupsInto,
   floatGroup,
   floatColumn,
-  isPureColumn,
+  isMultiLeafColumn,
   tearOutPane,
   snapToWindowStack,
   reorderTab,
@@ -49,6 +52,7 @@ import {
   col as colS,
   group as grp,
   floatingWindow,
+  toRegion,
 } from "./testUtils";
 
 type Rng = () => number;
@@ -58,17 +62,11 @@ const int = (rng: Rng, lo: number, hi: number) =>
   lo + Math.floor(rng() * (hi - lo + 1));
 
 // ---------------------------------------------------------------------------
-// Layout walking helpers.
+// Layout walking helpers (flat model: region -> columns -> leaves).
 // ---------------------------------------------------------------------------
-function* walkNodes(node: DockNode | null): Generator<DockNode> {
-  if (node === null) return;
-  yield node;
-  if (node.type === "split") for (const c of node.children) yield* walkNodes(c);
-}
-function leaves(node: DockNode | null): Extract<DockNode, { type: "leaf" }>[] {
-  return [...walkNodes(node)].filter(
-    (n): n is Extract<DockNode, { type: "leaf" }> => n.type === "leaf",
-  );
+function leaves(region: DockRegion | null): DockLeaf[] {
+  if (region === null) return [];
+  return region.columns.flatMap((c) => c.leaves);
 }
 
 // THE INVARIANTS live in production (layoutInvariants.ts) so applyOp asserts the
@@ -92,7 +90,7 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
       make: () => {
         const l = emptyLayout();
         l.groups = { a: grp("a", 2) };
-        l.docked.left = leaf("a");
+        l.docked.left = toRegion(leaf("a"));
         return l;
       },
     },
@@ -101,7 +99,7 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
       make: () => {
         const l = emptyLayout();
         l.groups = { a: grp("a", 1), b: grp("b", 3), c: grp("c", 1) };
-        l.docked.left = rowS([leaf("a"), leaf("b"), leaf("c")]);
+        l.docked.left = toRegion(rowS([leaf("a"), leaf("b"), leaf("c")]));
         return l;
       },
     },
@@ -110,7 +108,7 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
       make: () => {
         const l = emptyLayout();
         l.groups = { a: grp("a", 1), b: grp("b", 1) };
-        l.docked.left = colS([leaf("a"), leaf("b")]);
+        l.docked.left = toRegion(colS([leaf("a"), leaf("b")]));
         return l;
       },
     },
@@ -126,8 +124,8 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
           e: grp("e", 1),
           f: grp("f", 1),
         };
-        l.docked.left = rowS([leaf("a"), colS([leaf("b"), leaf("c")])]);
-        l.docked.right = colS([leaf("d"), leaf("e")]);
+        l.docked.left = toRegion(rowS([leaf("a"), colS([leaf("b"), leaf("c")])]));
+        l.docked.right = toRegion(colS([leaf("d"), leaf("e")]));
         l.floating = [floatingWindow({ id: "wf", x: 50, y: 50, width: 280, stack: ["f"] })];
         return l;
       },
@@ -159,7 +157,7 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
           e: grp("e", 1),
           f: grp("f", 1),
         };
-        l.docked.left = colS([leaf("d"), leaf("e")]);
+        l.docked.left = toRegion(colS([leaf("d"), leaf("e")]));
         l.floating = [
           floatingWindow({ id: "wf", x: 60, y: 60, width: 260, stack: ["f"] }),
         ];
@@ -219,15 +217,18 @@ function allDockedLeafTargets(
   return out;
 }
 
-/** All floatable PURE columns (>=2 leaf children) across the docked edges, for
+/** All floatable multi-leaf columns (>=2 leaves) across the docked edges, for
  * the floatColumn op (floats a whole column as one stacked window). */
 function allPureColumnTargets(
   l: DockLayout,
 ): { edge: DockEdge; nodeId: NodeId }[] {
   const out: { edge: DockEdge; nodeId: NodeId }[] = [];
-  for (const edge of ["left", "right"] as DockEdge[])
-    for (const n of walkNodes(l.docked[edge]))
-      if (isPureColumn(n)) out.push({ edge, nodeId: n.id });
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const region = l.docked[edge];
+    if (region === null) continue;
+    for (const c of region.columns)
+      if (isMultiLeafColumn(c)) out.push({ edge, nodeId: c.id });
+  }
   return out;
 }
 
@@ -533,33 +534,28 @@ function randomStart(seed: number): DockLayout {
   const buckets: GroupId[][] = [[], [], []];
   for (const n of names) buckets[int(rng, 0, 2)].push(n);
 
-  // Build a random tree (flat-ish, valid: splits have >=2 children) from a list.
-  const buildTree = (gs: GroupId[]): DockNode | null => {
+  // Build a random VALID flat region: partition the groups into columns, each
+  // column stacking 1-3 leaves (the fixed 3-level shape -- no deeper nesting to
+  // generate).
+  const buildTree = (gs: GroupId[]): DockRegion | null => {
     if (gs.length === 0) return null;
-    if (gs.length === 1) return leaf(gs[0]);
-    const dir = rng() < 0.5 ? "row" : "column";
-    // Split into 2-4 chunks.
-    const chunks = int(rng, 2, Math.min(4, gs.length));
-    const children: DockNode[] = [];
-    const per = Math.ceil(gs.length / chunks);
-    for (let i = 0; i < gs.length; i += per) {
-      const slice = gs.slice(i, i + per);
-      // Avoid same-axis nested singletons creating invalid shapes; build leaf or
-      // perpendicular subtree.
-      if (slice.length === 1) children.push(leaf(slice[0]));
-      else {
-        const subDir = dir === "row" ? "column" : "row";
-        children.push({
-          type: "split",
+    const columns: DockColumn[] = [];
+    let i = 0;
+    while (i < gs.length) {
+      const take = int(rng, 1, Math.min(3, gs.length - i));
+      const slice = gs.slice(i, i + take);
+      i += take;
+      columns.push({
+        id: nid(),
+        weight: 1,
+        leaves: slice.map((g) => ({
           id: nid(),
-          dir: subDir,
+          group: g,
           weight: 1,
-          children: slice.map((g) => leaf(g)),
-        });
-      }
+        })) as NonEmpty<DockLeaf>,
+      });
     }
-    if (children.length === 1) return children[0];
-    return { type: "split", id: nid(), dir, weight: 1, children };
+    return { columns: columns as NonEmpty<DockColumn> };
   };
 
   l.docked.left = buildTree(buckets[0]);

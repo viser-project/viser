@@ -9,13 +9,13 @@ import { describe, expect, it } from "vitest";
 import { addPaneToArea, dockToEdge, ensureArea, removePane } from "./layoutOps";
 import { invariantViolations } from "./layoutInvariants";
 import { emptyLayout, DockLayout } from "./types";
-import { leaf, group, floatingWindow } from "./testUtils";
+import { leaf, group, floatingWindow, toRegion } from "./testUtils";
 
 describe("invariantViolations", () => {
   it("a healthy docked layout has no violations", () => {
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b") };
-    l.docked.right = leaf("a");
+    l.docked.right = toRegion(leaf("a"));
     l.floating = [floatingWindow({ id: "w", x: 10, y: 10, width: 240, stack: ["b"] })];
     expect(invariantViolations(l)).toEqual([]);
   });
@@ -57,7 +57,7 @@ describe("invariantViolations", () => {
     l.groups = { a: group("a"), b: { id: "b", paneIds: ["dup"], activeId: "dup" } };
     // Inject the duplication: "dup" also in a.
     l.groups["a"].paneIds = ["a", "dup"];
-    l.docked.left = leaf("a");
+    l.docked.left = toRegion(leaf("a"));
     l.floating = [floatingWindow({ id: "w", x: 0, y: 0, width: 240, stack: ["b"] })];
     const v = invariantViolations(l);
     expect(v.some((s) => s.includes("dup") && s.includes("both"))).toBe(true);
@@ -66,7 +66,7 @@ describe("invariantViolations", () => {
   it("flags a group referenced from two locations", () => {
     const l = emptyLayout();
     l.groups = { a: group("a") };
-    l.docked.left = leaf("a");
+    l.docked.left = toRegion(leaf("a"));
     l.floating = [floatingWindow({ id: "w", x: 0, y: 0, width: 240, stack: ["a"] })]; // also here
     const v = invariantViolations(l);
     expect(v.some((s) => s.includes("referenced 2x"))).toBe(true);
@@ -75,7 +75,7 @@ describe("invariantViolations", () => {
   it("flags an orphan group (in groups but referenced nowhere)", () => {
     const l = emptyLayout();
     l.groups = { a: group("a"), orphan: group("orphan") };
-    l.docked.left = leaf("a");
+    l.docked.left = toRegion(leaf("a"));
     expect(invariantViolations(l).some((s) => s.includes("orphan"))).toBe(true);
   });
 });

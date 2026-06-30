@@ -21,9 +21,9 @@ import { collectLeafGroups, minRegionWidth, widthColumns } from "./layoutOps";
 import { planRegion, RegionPlan } from "./regionPlan";
 import {
   DEFAULT_REGION_PX,
+  DockColumn,
   DockEdge,
   DockLayout,
-  DockNode,
   regionWidthsOf,
 } from "./types";
 
@@ -35,8 +35,8 @@ import {
 
 /** Sum of `cols`' minimum widths (no dividers -- those are chrome), for
  * clamping regionWidth. */
-function colsMin(cols: DockNode[]): number {
-  return cols.reduce((s, c) => s + minRegionWidth(c), 0);
+function colsMin(cols: DockColumn[]): number {
+  return cols.reduce((s) => s + minRegionWidth(), 0);
 }
 
 // There is no upper bound on region width -- a docked region may be dragged as
@@ -74,12 +74,10 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
     const nextTree = next.docked[edge];
     if (nextTree === null) return; // empty edge: keep the width for restore.
     const prevTree = prev.docked[edge];
-    // Use the WIDTH-determining horizontal columns, not the literal top-level
-    // columns. They differ when the root is a column (stacked) split -- e.g.
-    // after a top/bottom dock produces column[C, row[A,B]]: topColumns would
-    // see one "column" (the whole stack) and squash the region to a single
-    // column's width, whereas widthColumns surfaces the inner row's [A,B] so
-    // the side-by-side widths are preserved (LEAD 1).
+    // The region IS a row of columns now, so the width-determining columns are
+    // simply `region.columns` -- plan and reconciler iterate the identical list
+    // (the old "descend into the widest child to guess the columns" logic, and
+    // the LEAD 1 bug it patched, are gone).
     const prevCols = prevTree ? widthColumns(prevTree) : [];
     const nextCols = widthColumns(nextTree);
     const sameSet =
@@ -142,18 +140,18 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
         // column's contents may have changed shape across the op (e.g. a lone
         // leaf becoming row-rooted raises its per-panel minimum), so the old
         // pixel width isn't automatically still legal for it.
-        return Math.max(match.px, minRegionWidth(c));
+        return Math.max(match.px, minRegionWidth());
       }
       // New column, previously EMPTY edge: the edge's preserved regionWidth
       // IS this content's width -- e.g. a layout snapshot being restored
       // (Escape after an undock), where the carried width must round-trip
       // exactly rather than reset to the default.
       if (prevCols.length === 0 && nextCols.length === 1) {
-        return Math.max(nextRW[edge], minRegionWidth(c));
+        return Math.max(nextRW[edge], minRegionWidth());
       }
       // New column joining existing content: a sensible default, clamped to
       // its panes' min/max.
-      return Math.max(DEFAULT_REGION_PX, minRegionWidth(c));
+      return Math.max(DEFAULT_REGION_PX, minRegionWidth());
     });
     // Set the columns' weights to their pixel widths so each renders at
     // `intended` px within the summed region width. ONLY when there are

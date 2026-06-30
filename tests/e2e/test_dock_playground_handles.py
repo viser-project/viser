@@ -98,13 +98,10 @@ def test_column_handle_floats_whole_stack(dock_context, vite_server: int) -> Non
         assert handles.count() == 1
         order_before = page.evaluate(
             """() => {
-                const l = window.__dockLayout.docked.right;
-                const leaves = [];
-                const walk = (n) => n.type === 'leaf'
-                    ? leaves.push(n.group)
-                    : n.children.forEach(walk);
-                walk(l);
-                return leaves;
+                // The 2-leaf column is the region's single column; its leaves
+                // top-to-bottom are the stack order.
+                const region = window.__dockLayout.docked.right;
+                return region.columns[0].leaves.map((leaf) => leaf.group);
             }"""
         )
         assert len(order_before) == 2

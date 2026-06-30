@@ -5,7 +5,7 @@
 // drop a pointer position maps to, plus the geometry of the visual hint. It is
 // intentionally DOM-free so it can be unit tested with synthetic rects.
 
-import { edgeIsSingleLeaf, isColumnMinimized } from "./layoutOps";
+import { edgeIsSingleLeaf, isRegionMinimized } from "./layoutOps";
 import {
   AreaId,
   clamp,
@@ -407,7 +407,7 @@ export function hitTest(
     //  - over the strip CELL itself: only the outer/inner thirds dock beside
     //    (full height), leaving the middle third for the cell's own tab-insert /
     //    merge zones.
-    const regionMinimized = isColumnMinimized(tree, layout.groups);
+    const regionMinimized = isRegionMinimized(tree, layout.groups);
     const keepSideBand = regionMinimized;
     const effSideBand = !keepSideBand
       ? sideBand

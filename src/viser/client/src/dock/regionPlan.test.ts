@@ -17,11 +17,23 @@ import {
   SPLIT_DIVIDER_PX,
 } from "./types";
 import { reconcileRegionWidths } from "./widthReconciliation";
-import { leaf, row, col, groupsRecord as groups } from "./testUtils";
+import {
+  leaf,
+  row,
+  col,
+  groupsRecord as groups,
+  toRegion,
+  TreeSpec,
+} from "./testUtils";
+import type { TabGroup } from "./types";
+
+// planRegion takes a DockRegion now; the tests build specs, so wrap them.
+const planOf = (spec: TreeSpec, g: Record<string, TabGroup>) =>
+  planRegion(toRegion(spec)!, g);
 
 describe("planRegion", () => {
   it("expanded single leaf: one expanded column, no chrome", () => {
-    const plan = planRegion(leaf("a"), groups(["a"]));
+    const plan = planOf(leaf("a"), groups(["a"]));
     expect(plan.hasExpanded).toBe(true);
     expect(plan.isStrip).toEqual([false]);
     expect(plan.singleColumn).toBe(true);
@@ -30,7 +42,7 @@ describe("planRegion", () => {
   });
 
   it("fully-minimized single leaf: one strip, no regionWidth contribution", () => {
-    const plan = planRegion(leaf("a"), groups(["a", true]));
+    const plan = planOf(leaf("a"), groups(["a", true]));
     expect(plan.hasExpanded).toBe(false);
     expect(plan.isStrip).toEqual([true]);
     expect(plan.chromePx).toBe(MINIMIZED_STRIP_PX);
@@ -39,7 +51,7 @@ describe("planRegion", () => {
 
   it("row with one strip and one expanded column", () => {
     const tree = row([leaf("a"), leaf("b")]);
-    const plan = planRegion(tree, groups(["a", true], ["b"]));
+    const plan = planOf(tree, groups(["a", true], ["b"]));
     expect(plan.hasExpanded).toBe(true);
     expect(plan.isStrip).toEqual([true, false]);
     expect(plan.expandedColumns.length).toBe(1);
@@ -48,7 +60,7 @@ describe("planRegion", () => {
 
   it("fully-minimized row: every column is a strip", () => {
     const tree = row([leaf("a"), leaf("b")]);
-    const plan = planRegion(tree, groups(["a", true], ["b", true]));
+    const plan = planOf(tree, groups(["a", true], ["b", true]));
     expect(plan.hasExpanded).toBe(false);
     expect(plan.isStrip).toEqual([true, true]);
     expect(plan.chromePx).toBe(2 * MINIMIZED_STRIP_PX + SPLIT_DIVIDER_PX);
@@ -59,7 +71,7 @@ describe("planRegion", () => {
     // leaf is a horizontal bar), regardless of which child widthColumns
     // surfaces as width-determining.
     const tree = col([leaf("a"), leaf("b")]);
-    const plan = planRegion(tree, groups(["a", true], ["b"]));
+    const plan = planOf(tree, groups(["a", true], ["b"]));
     expect(plan.hasExpanded).toBe(true);
     expect(plan.isStrip).toEqual([false]);
     expect(plan.chromePx).toBe(0);
@@ -72,15 +84,19 @@ describe("reconcile: dropping an expanded panel below a strip", () => {
     // Region = single minimized leaf (a strip) with preserved width 320.
     const l = emptyLayout();
     l.groups = groups(["a"], ["b"]);
-    l.docked.right = leaf("a", 320);
+    l.docked.right = toRegion(leaf("a", 320));
     l.regionWidth = { left: 0, right: 320 };
     const prev = toggleCollapsed(l, "a");
     reconcileRegionWidths(l, prev);
 
-    // Drop b BELOW the strip: tree becomes column[a(collapsed), b].
+    // Drop b BELOW the strip: the single column gains leaf b (collapsed a above,
+    // expanded b below) -- a single-column region that renders full-width.
     const next = structuredClone(prev);
-    const a = next.docked.right!;
-    next.docked.right = col([a, leaf("b")]);
+    next.docked.right!.columns[0].leaves.push({
+      id: "Lb",
+      group: "b",
+      weight: 1,
+    });
     reconcileRegionWidths(prev, next);
     expect(next.regionWidth!.right).toBe(320);
     // And the rendered region uses that width (no strip chrome).
@@ -94,29 +110,29 @@ describe("canvasFacingStripOffsetPx", () => {
   it("RIGHT region: [strip][expanded] offsets past the leading strip", () => {
     // The user's case -- handle should sit between the strip and the expanded
     // panel, i.e. offset inward by one strip + its divider.
-    const plan = planRegion(row([leaf("a"), leaf("b")]), groups(["a", true], ["b"]));
+    const plan = planOf(row([leaf("a"), leaf("b")]), groups(["a", true], ["b"]));
     expect(canvasFacingStripOffsetPx(plan, "right")).toBe(STRIP_AND_DIVIDER);
   });
 
   it("RIGHT region: [expanded][strip] -- strip is NOT canvas-facing, offset 0", () => {
-    const plan = planRegion(row([leaf("a"), leaf("b")]), groups(["a"], ["b", true]));
+    const plan = planOf(row([leaf("a"), leaf("b")]), groups(["a"], ["b", true]));
     expect(canvasFacingStripOffsetPx(plan, "right")).toBe(0);
   });
 
   it("LEFT region: [expanded][strip] offsets past the trailing strip", () => {
     // On a left edge the canvas is on the RIGHT, so a trailing strip is the
     // canvas-facing one.
-    const plan = planRegion(row([leaf("a"), leaf("b")]), groups(["a"], ["b", true]));
+    const plan = planOf(row([leaf("a"), leaf("b")]), groups(["a"], ["b", true]));
     expect(canvasFacingStripOffsetPx(plan, "left")).toBe(STRIP_AND_DIVIDER);
   });
 
   it("LEFT region: [strip][expanded] -- leading strip is away from canvas, offset 0", () => {
-    const plan = planRegion(row([leaf("a"), leaf("b")]), groups(["a", true], ["b"]));
+    const plan = planOf(row([leaf("a"), leaf("b")]), groups(["a", true], ["b"]));
     expect(canvasFacingStripOffsetPx(plan, "left")).toBe(0);
   });
 
   it("counts MULTIPLE contiguous canvas-facing strips", () => {
-    const plan = planRegion(
+    const plan = planOf(
       row([leaf("a"), leaf("b"), leaf("c")]),
       groups(["a", true], ["b", true], ["c"]),
     );
@@ -124,12 +140,12 @@ describe("canvasFacingStripOffsetPx", () => {
   });
 
   it("no expanded columns (fully minimized) -> 0 (nothing to resize)", () => {
-    const plan = planRegion(row([leaf("a"), leaf("b")]), groups(["a", true], ["b", true]));
+    const plan = planOf(row([leaf("a"), leaf("b")]), groups(["a", true], ["b", true]));
     expect(canvasFacingStripOffsetPx(plan, "right")).toBe(0);
   });
 
   it("no strips -> 0", () => {
-    const plan = planRegion(row([leaf("a"), leaf("b")]), groups(["a"], ["b"]));
+    const plan = planOf(row([leaf("a"), leaf("b")]), groups(["a"], ["b"]));
     expect(canvasFacingStripOffsetPx(plan, "right")).toBe(0);
   });
 });

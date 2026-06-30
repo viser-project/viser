@@ -294,48 +294,61 @@ def _as_group(spec) -> dict:
 
 def _leaf(g: dict, weight: float = 1) -> dict:
     return {
-        "type": "leaf",
         "id": f"t-n-{g['id'][2:]}",
         "group": g["id"],
         "weight": weight,
     }
 
 
-def columns(*cells) -> dict:
-    """Docked-region spec: side-by-side columns, one tab group each, left to
-    right. A single cell is a plain leaf. Pass to dock_layout(docked_*=...).
-    Cells may also be stack() specs for a column of stacked groups."""
-    return _split("row", cells)
+def _column(*cells, weight: float = 1) -> dict:
+    """A DockColumn spec: a vertical stack of leaves (one tab group each).
+    Returns {"column": DockColumn, "groups": [...]}. A column always has >=1
+    leaf (the flat model forbids empty / nested-split columns)."""
+    leaves: list[dict] = []
+    groups: list[dict] = []
+    for cell in cells:
+        g = _as_group(cell)
+        groups.append(g)
+        leaves.append(_leaf(g))
+    column = {
+        "id": f"t-s-{next(_split_counter)}",
+        "leaves": leaves,
+        "weight": weight,
+    }
+    return {"column": column, "groups": groups}
 
 
 def stack(*cells) -> dict:
-    """Docked-region spec: vertically stacked cells (top to bottom)."""
-    return _split("column", cells)
+    """Docked-region spec: ONE column of vertically stacked groups (top to
+    bottom). Pass to dock_layout(docked_*=...) -- it wraps as a 1-column region.
+    A single cell is a 1-leaf column."""
+    return _column(*cells)
 
 
-def _split(direction: str, cells) -> dict:
-    nodes = []
+def columns(*cells) -> dict:
+    """Docked-region spec: side-by-side columns, left to right. Each cell is
+    either a panel/group (a 1-leaf column) or a stack() spec (a multi-leaf
+    column). Produces the flat Region = row-of-columns shape."""
+    cols: list[dict] = []
     groups: list[dict] = []
     for cell in cells:
-        if isinstance(cell, dict) and "node" in cell:  # nested columns()/stack()
-            nodes.append(cell["node"])
+        if isinstance(cell, dict) and "column" in cell:  # a stack() spec
+            cols.append(cell["column"])
             groups.extend(cell["groups"])
-        else:
-            g = _as_group(cell)
-            groups.append(g)
-            nodes.append(_leaf(g))
-    node = (
-        nodes[0]
-        if len(nodes) == 1
-        else {
-            "type": "split",
-            "id": f"t-s-{next(_split_counter)}",
-            "dir": direction,
-            "children": nodes,
-            "weight": 1,
-        }
-    )
-    return {"node": node, "groups": groups}
+        else:  # a bare panel/group -> a 1-leaf column
+            spec = _column(cell)
+            cols.append(spec["column"])
+            groups.extend(spec["groups"])
+    return {"region": {"columns": cols}, "groups": groups}
+
+
+def _as_region(spec: dict | None) -> dict | None:
+    """Normalize a docked spec (from columns() or stack()) to a DockRegion."""
+    if spec is None:
+        return None
+    if "region" in spec:  # from columns()
+        return spec["region"]
+    return {"columns": [spec["column"]]}  # from stack() -> single column
 
 
 def window(
@@ -385,8 +398,8 @@ def dock_layout(
     return {
         "groups": groups,
         "docked": {
-            "left": docked_left["node"] if docked_left else None,
-            "right": docked_right["node"] if docked_right else None,
+            "left": _as_region(docked_left),
+            "right": _as_region(docked_right),
         },
         "floating": [spec["window"] for spec in floating],
         "areas": {

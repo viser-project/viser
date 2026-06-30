@@ -1258,7 +1258,7 @@ export function DockManager({
         // Measure the COLUMN wrapper (not the 1em handle): floatRectFor clamps
         // width/height into sane floating ranges, same as a group undock.
         const rect = floatRectFor(`[data-dock-column="${columnNodeId}"]`);
-        const colNode = ops.treeFindNode(layoutRef.current.docked[edge], columnNodeId);
+        const colNode = ops.findColumnById(layoutRef.current.docked[edge], columnNodeId);
         const collapsed =
           colNode !== null && ops.isColumnMinimized(colNode, layoutRef.current.groups);
         const floatWidth = dockedFloatWidth(edge, collapsed, rect.width);
@@ -2022,7 +2022,7 @@ export function DockManager({
                   transition: widthTransition,
                 }}
               >
-                <SplitView node={tree} edge={edge} topLevel />
+                <SplitView region={tree} edge={edge} />
                 {hasExpanded && (
                 <RegionResizer
                   edge={edge}
@@ -2054,7 +2054,7 @@ export function DockManager({
                     const init = plan.singleColumn
                       ? [startRegion]
                       : cols.map((c) => c.weight);
-                    const mins = cols.map((c) => ops.minRegionWidth(c));
+                    const mins = cols.map(() => ops.minRegionWidth());
                     // No per-column max: a region drag is bounded only by its
                     // columns' grab-mins (and the render-time canvas guard), not
                     // a fixed per-panel width -- matching the width reconciler

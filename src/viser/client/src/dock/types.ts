@@ -135,29 +135,42 @@ export interface TabGroup {
   collapsed?: boolean;
 }
 
-interface DockNodeBase {
+/** Non-empty array: at least one element. Lets the type system guarantee a
+ * column always has a leaf and a region always has a column. (Leaks through
+ * `.filter`/`.slice`, which return plain `T[]` -- re-assert after deriving.) */
+export type NonEmpty<T> = [T, ...T[]];
+
+/** The docked layout has a FIXED three-level shape, enforced by these types
+ * rather than by runtime normalization:
+ *
+ *   DockRegion  =  a ROW of columns      (side by side, vertical dividers)
+ *     DockColumn  =  a STACK of leaves   (top to bottom, horizontal dividers)
+ *       DockLeaf  =  one tab group
+ *
+ * A single docked panel is `Region[Column[Leaf]]` -- a count of one, not a
+ * special shape. There is no arbitrary nesting and no `dir` field: the LEVEL is
+ * the axis (region = horizontal, column = vertical). This makes the bad shapes
+ * (a leaf directly in a row, `row>col>row...` nesting) unrepresentable, so the
+ * renderer and ops never have to defend against them. */
+export interface DockLeaf {
   id: NodeId;
-  /** Flex weight relative to siblings within the same split. Ignored for the
-   * root node. */
+  group: GroupId;
+  /** Flex weight relative to sibling leaves within the column (vertical). */
   weight: number;
 }
 
-/** A leaf in the docked split tree: a single tab group. */
-export interface DockLeaf extends DockNodeBase {
-  type: "leaf";
-  group: GroupId;
+export interface DockColumn {
+  id: NodeId;
+  /** Stacked top to bottom; always at least one. */
+  leaves: NonEmpty<DockLeaf>;
+  /** Flex weight relative to sibling columns within the region (horizontal). */
+  weight: number;
 }
 
-/** An internal split: children laid out along one axis.
- * - "row": children side by side (a vertical divider between them).
- * - "column": children stacked top to bottom (a horizontal divider). */
-export interface DockSplit extends DockNodeBase {
-  type: "split";
-  dir: "row" | "column";
-  children: DockNode[];
+export interface DockRegion {
+  /** Columns side by side; always at least one (an empty region is `null`). */
+  columns: NonEmpty<DockColumn>;
 }
-
-export type DockNode = DockLeaf | DockSplit;
 
 /** A floating window's vertical sizing. `auto` tracks content (capped per
  * group); `pinned` is an explicit px height the user dragged to. A tagged union
@@ -215,7 +228,7 @@ export interface DockLayout {
    * stacks. A group is "owned" by exactly one location at a time. */
   groups: Record<GroupId, TabGroup>;
   /** Docked region pinned to each edge, or null when that edge is empty. */
-  docked: Record<DockEdge, DockNode | null>;
+  docked: Record<DockEdge, DockRegion | null>;
   /** Docked region widths in px per edge: the EXPANDED width-columns' summed
    * pixels (minimized strips and dividers render on top -- see regionPlan).
    * THE single source of truth for region width. It travels with the layout

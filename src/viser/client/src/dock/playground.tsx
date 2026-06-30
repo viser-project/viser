@@ -169,7 +169,15 @@ const initialLayout: DockLayout = {
     [areaMainGroup.id]: areaMainGroup,
   },
   docked: {
-    left: { type: "leaf", id: "n-docked", group: dockedGroup.id, weight: 1 },
+    left: {
+      columns: [
+        {
+          id: "n-docked",
+          weight: 1,
+          leaves: [{ id: "n-docked-leaf", group: dockedGroup.id, weight: 1 }],
+        },
+      ],
+    },
     right: null,
   },
   floating: [

@@ -11,18 +11,18 @@ import { useDock } from "./DockContext";
 import { gripBarBg, focusRing } from "./DockStyles.css";
 import { tabListKeyDown } from "./gestures";
 import { GripPill, HandleIconButton } from "./handles";
-import { DockEdge, DockNode, NodeId, TabGroup } from "./types";
+import { DockColumn, DockEdge, NodeId, TabGroup } from "./types";
 import { collectLeaves } from "./layoutOps";
 
 export function VerticalMinimizedColumn({
-  node,
+  column,
   edge,
 }: {
-  node: DockNode;
+  column: DockColumn;
   edge: DockEdge;
 }) {
   const dock = useDock();
-  const leaves = collectLeaves(node);
+  const leaves = collectLeaves(column);
   return (
     <Paper
       radius={0}

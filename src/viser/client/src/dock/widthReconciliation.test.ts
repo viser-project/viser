@@ -16,7 +16,7 @@ import {
   regionWidthsOf,
 } from "./types";
 import { reconcileRegionWidths } from "./widthReconciliation";
-import { leaf, row, group } from "./testUtils";
+import { leaf, row, group, toRegion } from "./testUtils";
 
 /** Reconcile and return next's resulting widths (the new single source). */
 function recon(prev: DockLayout, next: DockLayout): Record<DockEdge, number> {
@@ -28,11 +28,9 @@ function recon(prev: DockLayout, next: DockLayout): Record<DockEdge, number> {
 function threeColumns(widths: [number, number, number]): DockLayout {
   const l = emptyLayout();
   l.groups = { a: group("a"), b: group("b"), c: group("c") };
-  l.docked.right = row([
-    leaf("a", widths[0]),
-    leaf("b", widths[1]),
-    leaf("c", widths[2]),
-  ]);
+  l.docked.right = toRegion(
+    row([leaf("a", widths[0]), leaf("b", widths[1]), leaf("c", widths[2])]),
+  );
   l.regionWidth = { left: 0, right: widths[0] + widths[1] + widths[2] };
   return l;
 }
@@ -80,15 +78,15 @@ describe("reconcileRegionWidths with minimized columns", () => {
     // Start with [a expanded 400, b minimized 200]; undock a -> [b] alone.
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b") };
-    l.docked.right = row([leaf("a", 400), leaf("b", 250)]);
+    l.docked.right = toRegion(row([leaf("a", 400), leaf("b", 250)]));
     l.regionWidth = { left: 0, right: 650 };
     const prev = toggleCollapsed(l, "b");
     expect(recon(l, prev).right).toBe(400);
 
     // Remove a's column entirely (structural: column set changes).
     const next = structuredClone(prev);
-    const tree = next.docked.right!;
-    if (tree.type === "split") next.docked.right = tree.children[1];
+    // Remove a's column: keep only the second column (b).
+    next.docked.right = { columns: [next.docked.right!.columns[1]] };
     // The only remaining column is minimized: fall back to its preserved px.
     expect(recon(prev, next).right).toBe(250);
   });
@@ -98,7 +96,7 @@ describe("reconcileRegionWidths with minimized columns", () => {
     // re-appearing single column must come back at the edge's preserved
     // width (carried in the layout), not the default.
     const docked = threeColumns([460, 0, 0]);
-    docked.docked.right = leaf("a", 1); // single column, weight is NOT px
+    docked.docked.right = toRegion(leaf("a", 1)); // single column, weight is NOT px
     docked.groups = { a: group("a") };
     docked.regionWidth = { left: 0, right: 460 };
     const floated = structuredClone(docked);
@@ -117,7 +115,7 @@ describe("reconcileRegionWidths width clamp (no max ceiling)", () => {
     // clamp runs every commit but only enforces the grab-min floor.
     const prev = emptyLayout();
     prev.groups = { a: group("a") };
-    prev.docked.right = leaf("a", 1);
+    prev.docked.right = toRegion(leaf("a", 1));
     prev.regionWidth = { left: 0, right: 400 };
     const next = structuredClone(prev);
     next.regionWidth = { left: 0, right: 2000 };
@@ -142,7 +140,7 @@ describe("reconcileRegionWidths min-width floor", () => {
     // scrolls its body instead).
     const prev = emptyLayout();
     prev.groups = { a: group("a") };
-    prev.docked.right = leaf("a", 1);
+    prev.docked.right = toRegion(leaf("a", 1));
     prev.regionWidth = { left: 0, right: 300 };
     const next = structuredClone(prev);
     next.regionWidth = { left: 0, right: 20 }; // deliberately below the floor.
@@ -156,11 +154,11 @@ describe("reconcileRegionWidths min-width floor", () => {
     // (added once via chromePx at render), so the floor must not include it too.
     const prev = emptyLayout();
     prev.groups = { a: group("a") };
-    prev.docked.right = leaf("a", 1);
+    prev.docked.right = toRegion(leaf("a", 1));
     prev.regionWidth = { left: 0, right: 10 };
     const next = structuredClone(prev);
     next.groups["b"] = group("b");
-    next.docked.right = row([leaf("a", 5), leaf("b", 5)]);
+    next.docked.right = toRegion(row([leaf("a", 5), leaf("b", 5)]));
     expect(recon(prev, next).right).toBeGreaterThanOrEqual(
       MIN_REGION_GRAB_PX * 2,
     );

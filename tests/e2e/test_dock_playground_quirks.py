@@ -285,7 +285,7 @@ def test_region_resize_ignores_minimized_columns(dock_context, vite_server) -> N
         page, dock_layout(docked_right=columns("console", "inspector", "controls"))
     )
     tree = _layout(page)["docked"]["right"]
-    assert tree is not None and tree["type"] == "split" and len(tree["children"]) == 3
+    assert tree is not None and len(tree["columns"]) == 3
 
     def leaf_width(panel: str) -> float:
         gid = _group_id_for_panel(page, panel)

@@ -119,7 +119,9 @@ describe("removePane", () => {
   it("collapses a docked leaf whose only panel is removed", () => {
     const l = emptyLayout();
     l.groups["g1"] = { id: "g1", paneIds: ["p1"], activeId: "p1" };
-    l.docked.left = { type: "leaf", id: "L1", group: "g1", weight: 1 };
+    l.docked.left = {
+      columns: [{ id: "C1", weight: 1, leaves: [{ id: "L1", group: "g1", weight: 1 }] }],
+    };
     const out = removePane(l, "p1");
     expect(out.docked.left).toBeNull();
     expect(out.groups["g1"]).toBeUndefined();
@@ -204,20 +206,14 @@ describe("floatColumn", () => {
     l.groups["b"] = group("b");
     l.groups["x"] = group("x");
     l.docked.left = {
-      type: "split",
-      id: "ROW",
-      dir: "row",
-      weight: 1,
-      children: [
-        { type: "leaf", id: "Lx", group: "x", weight: 1 },
+      columns: [
+        { id: "Cx", weight: 1, leaves: [{ id: "Lx", group: "x", weight: 1 }] },
         {
-          type: "split",
           id: "COL",
-          dir: "column",
           weight: 1,
-          children: [
-            { type: "leaf", id: "La", group: "a", weight: 2 },
-            { type: "leaf", id: "Lb", group: "b", weight: 1 },
+          leaves: [
+            { id: "La", group: "a", weight: 2 },
+            { id: "Lb", group: "b", weight: 1 },
           ],
         },
       ],
@@ -240,14 +236,17 @@ describe("floatColumn", () => {
     expect(win.stack).toEqual(["a", "b"]);
     expect(win.stackWeights).toEqual({ a: 2, b: 1 });
     expect(win).toMatchObject({ x: 10, y: 20, width: 300, height: { mode: "pinned", px: 400 } });
-    // The row collapsed to the surviving leaf.
-    expect(out.docked.left).toMatchObject({ type: "leaf", group: "x" });
+    // The region collapsed to the surviving column (just leaf x).
+    expect(out.docked.left!.columns).toHaveLength(1);
+    expect(out.docked.left!.columns[0].leaves).toEqual([
+      { id: "Lx", group: "x", weight: 1 },
+    ]);
   });
 
   it("floating the LAST column empties the region", () => {
     const l = colLayout();
-    // Remove the sibling leaf so the column is the whole region.
-    l.docked.left = (l.docked.left as any).children[1];
+    // Drop the sibling column so COL is the whole region.
+    l.docked.left = { columns: [l.docked.left!.columns[1]] };
     const { layout: out, windowId } = floatColumn(l, "left", "COL", 0, 0, 300);
     expect(windowId).not.toBeNull();
     expect(out.docked.left).toBeNull();
@@ -262,27 +261,17 @@ describe("floatColumn", () => {
     expect(out.groups["b"].collapsed).toBe(true);
   });
 
-  it("guards: unknown node, wrong edge, leaf node, impure column -> no-op", () => {
+  it("guards: unknown node, wrong edge, leaf id (not a column) -> no-op", () => {
     const l = colLayout();
     expect(floatColumn(l, "left", "nope", 0, 0, 300)).toEqual({
       layout: l,
       windowId: null,
     });
     expect(floatColumn(l, "right", "COL", 0, 0, 300).windowId).toBeNull();
+    // "La" is a LEAF id, not a column id -- floatColumn addresses columns, so
+    // it's a no-op (there is no "impure column" case anymore: every column is
+    // trivially floatable in the flat model).
     expect(floatColumn(l, "left", "La", 0, 0, 300).windowId).toBeNull();
-    // Impure: column containing a nested row.
-    const impure = colLayout();
-    (impure.docked.left as any).children[1].children[1] = {
-      type: "split",
-      id: "NEST",
-      dir: "row",
-      weight: 1,
-      children: [
-        { type: "leaf", id: "Lb", group: "b", weight: 1 },
-        { type: "leaf", id: "Lx2", group: "x", weight: 1 },
-      ],
-    };
-    expect(floatColumn(impure, "left", "COL", 0, 0, 300).windowId).toBeNull();
   });
 
   it("is pure: the input layout is untouched on success", () => {

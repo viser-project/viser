@@ -21,14 +21,11 @@
 // elsewhere must not be counted as a strip. (Getting this wrong squeezed a
 // freshly docked panel into a 36px region.)
 
+import { isColumnMinimized } from "./layoutOps";
 import {
-  isColumnMinimized,
-  topColumns,
-  widthColumns,
-} from "./layoutOps";
-import {
+  DockColumn,
   DockEdge,
-  DockNode,
+  DockRegion,
   GroupId,
   MINIMIZED_STRIP_PX,
   SPLIT_DIVIDER_PX,
@@ -39,47 +36,51 @@ export interface RegionPlan {
   /** Any panel in the region is expanded: the region renders at
    * regionWidth + chromePx. False -> the whole region is strips. */
   hasExpanded: boolean;
-  /** The width-determining columns, in render order. */
-  columns: DockNode[];
+  /** The region's columns, in render order. */
+  columns: DockColumn[];
   /** Per-column: renders as a fixed-width minimized strip. Same length and
    * order as `columns`. */
   isStrip: boolean[];
   /** Columns that carry pixel widths (the non-strips). The resizer
    * redistributes over these; the reconciler sums them. */
-  expandedColumns: DockNode[];
-  /** True when only one width-determining column surfaced (a single leaf, or
-   * a lone stacked child of a column root). Its WEIGHT may be a height, so
-   * its pixels live in regionWidth state, not in the weight. */
+  expandedColumns: DockColumn[];
+  /** True when the region has a single column. Its WEIGHT is a horizontal share
+   * that's irrelevant when alone, so its pixels live in regionWidth state, not
+   * in the column weight. */
   singleColumn: boolean;
   /** Fixed chrome on top of regionWidth: strips + inter-column dividers. */
   chromePx: number;
 }
 
 export function planRegion(
-  tree: DockNode,
+  region: DockRegion,
   groups: Record<GroupId, TabGroup>,
 ): RegionPlan {
-  // Contract rule 1: fully-minimized region -> every top-level column is a
-  // strip.
-  if (isColumnMinimized(tree, groups)) {
-    const columns = topColumns(tree);
-    return {
-      hasExpanded: false,
-      columns,
-      isStrip: columns.map(() => true),
-      expandedColumns: [],
-      singleColumn: columns.length === 1,
-      chromePx:
-        columns.length * MINIMIZED_STRIP_PX +
-        Math.max(0, columns.length - 1) * SPLIT_DIVIDER_PX,
-    };
-  }
-  const columns = widthColumns(tree);
+  const columns = region.columns;
+  // The region IS a row of columns, so the plan and the renderer iterate the
+  // SAME list -- there is no "guess the columns" step anymore. A column renders
+  // as a fixed-width minimized strip exactly when all of its leaves are
+  // collapsed (isColumnMinimized).
+  const isStrip = columns.map((c) => isColumnMinimized(c, groups));
+  const expandedColumns = columns.filter((_, i) => !isStrip[i]);
+
   if (columns.length === 1) {
-    // A single surfaced column governs the width but always renders
-    // full-width (no render row exists for it to be a strip in) -- even if
-    // the surfaced child itself is fully minimized, the region's expanded
-    // content lives in a stacked sibling spanning the same width.
+    if (isStrip[0]) {
+      // A fully-minimized lone column renders as a single strip; its preserved
+      // width is kept (in regionWidth) for restore.
+      return {
+        hasExpanded: false,
+        columns,
+        isStrip: [true],
+        expandedColumns: [],
+        singleColumn: true,
+        chromePx: MINIMIZED_STRIP_PX,
+      };
+    }
+    // An expanded lone column renders full-width: there is no render row for it
+    // to be a strip in, so even a minimized leaf stacked above an expanded one
+    // (the column itself is NOT fully minimized) is a full-width horizontal bar,
+    // not a strip.
     return {
       hasExpanded: true,
       columns,
@@ -89,10 +90,22 @@ export function planRegion(
       chromePx: 0,
     };
   }
-  // Contract rule 2: in a genuine render row, fully-minimized children are
-  // strips.
-  const isStrip = columns.map((c) => isColumnMinimized(c, groups));
-  const expandedColumns = columns.filter((_, i) => !isStrip[i]);
+
+  if (expandedColumns.length === 0) {
+    // Fully-minimized multi-column region: every column is a strip.
+    return {
+      hasExpanded: false,
+      columns,
+      isStrip,
+      expandedColumns: [],
+      singleColumn: false,
+      chromePx:
+        columns.length * MINIMIZED_STRIP_PX +
+        Math.max(0, columns.length - 1) * SPLIT_DIVIDER_PX,
+    };
+  }
+
+  // Genuine render row: fully-minimized columns are strips, the rest expand.
   return {
     hasExpanded: true,
     columns,

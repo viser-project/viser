@@ -181,14 +181,12 @@ describe("applyPanelPlacement", () => {
       { ...EMPTY, position: { kind: "split", anchor_uuid: "anchor", side: "above" } },
       anchorByPane(layout),
     );
-    const right = layout.docked.right;
-    expect(right?.type).toBe("split");
-    expect((right as { dir: string }).dir).toBe("column");
-    // The new panel's group is the FIRST child (above).
-    const firstChild = (right as { children: { type: string; group?: string }[] })
-      .children[0];
-    expect(firstChild.type).toBe("leaf");
-    expect(firstChild.group).toBe(findPaneGroup(layout, "p"));
+    const right = layout.docked.right!;
+    // "above" inserts the new panel as a leaf into the anchor's COLUMN, above it.
+    expect(right.columns).toHaveLength(1);
+    const leaves = right.columns[0].leaves;
+    expect(leaves).toHaveLength(2);
+    expect(leaves[0].group).toBe(findPaneGroup(layout, "p")); // new panel on top
   });
 
   it("splits below a docked anchor (new panel is the second child)", () => {
@@ -204,9 +202,10 @@ describe("applyPanelPlacement", () => {
       { ...EMPTY, position: { kind: "split", anchor_uuid: "anchor", side: "below" } },
       anchorByPane(layout),
     );
-    const right = layout.docked.right as { dir: string; children: { group?: string }[] };
-    expect(right.dir).toBe("column");
-    expect(right.children[1].group).toBe(findPaneGroup(layout, "p"));
+    const right = layout.docked.right!;
+    // "below" inserts the new panel as the SECOND leaf in the anchor's column.
+    expect(right.columns).toHaveLength(1);
+    expect(right.columns[0].leaves[1].group).toBe(findPaneGroup(layout, "p"));
   });
 
   it("falls back to right edge (with a warning) when the split anchor is not docked", () => {

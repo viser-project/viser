@@ -23,7 +23,6 @@ import { describe, it, expect } from "vitest";
 import {
   DockEdge,
   DockLayout,
-  DockNode,
   GroupId,
   MIN_PANEL_WIDTH_PX,
   MIN_REGION_GRAB_PX,
@@ -39,6 +38,7 @@ import {
   group,
   refCount,
   floatingWindow,
+  toRegion,
 } from "./testUtils";
 import {
   edgeIsSingleLeaf,
@@ -77,13 +77,9 @@ function twoLeafRow(): DockLayout {
   const l = emptyLayout();
   l.groups = { a: group("a"), b: group("b") };
   l.docked.left = {
-    type: "split",
-    id: "S",
-    dir: "row",
-    weight: 1,
-    children: [
-      { type: "leaf", id: "La", group: "a", weight: 1 },
-      { type: "leaf", id: "Lb", group: "b", weight: 1 },
+    columns: [
+      { id: "Sa", weight: 1, leaves: [{ id: "La", group: "a", weight: 1 }] },
+      { id: "Sb", weight: 1, leaves: [{ id: "Lb", group: "b", weight: 1 }] },
     ],
   };
   return l;
@@ -160,85 +156,61 @@ describe("findGroupLocation", () => {
 // ===========================================================================
 
 describe("edgeIsSingleLeaf", () => {
-  const sides = ["top", "bottom", "left", "right"] as const;
+  /** Build a region from a spec for the helper, which takes a DockRegion now. */
+  const reg = (spec: ReturnType<typeof leaf>) => toRegion(spec)!;
 
-  it("a bare leaf is a single leaf on all sides", () => {
-    const node = leaf("a");
-    for (const s of sides) expect(edgeIsSingleLeaf(node, s)).toBe(true);
+  it("a lone leaf (single-column, single-leaf region) is single on all sides", () => {
+    const region = reg(leaf("a"));
+    for (const s of ["top", "bottom", "left", "right"] as const)
+      expect(edgeIsSingleLeaf(region, s)).toBe(true);
   });
 
-  describe("row split (side-by-side columns)", () => {
-    // [a | b]: top/bottom span both columns (multi-cell -> not single);
-    // left descends into a, right descends into b (each a single leaf).
-    const node = row([leaf("a"), leaf("b")]);
-    it("top/bottom span multiple cells -> not single", () => {
-      expect(edgeIsSingleLeaf(node, "top")).toBe(false);
-      expect(edgeIsSingleLeaf(node, "bottom")).toBe(false);
+  describe("a row of side-by-side columns", () => {
+    // [a | b]: top/bottom span both columns (multi-column -> not single);
+    // left/right touch a single-leaf edge column -> single.
+    const region = reg(row([leaf("a"), leaf("b")]));
+    it("top/bottom span multiple columns -> not single", () => {
+      expect(edgeIsSingleLeaf(region, "top")).toBe(false);
+      expect(edgeIsSingleLeaf(region, "bottom")).toBe(false);
     });
-    it("left/right descend into the edge column leaf -> single", () => {
-      expect(edgeIsSingleLeaf(node, "left")).toBe(true);
-      expect(edgeIsSingleLeaf(node, "right")).toBe(true);
+    it("left/right touch a single-leaf edge column -> single", () => {
+      expect(edgeIsSingleLeaf(region, "left")).toBe(true);
+      expect(edgeIsSingleLeaf(region, "right")).toBe(true);
     });
-    it("left/right are not single when the edge column is itself a column split", () => {
-      const n = row([col([leaf("a"), leaf("b")]), leaf("c")]);
+    it("left/right are not single when the edge column stacks 2+ leaves", () => {
+      const n = reg(row([col([leaf("a"), leaf("b")]), leaf("c")]));
       expect(edgeIsSingleLeaf(n, "left")).toBe(false); // left column is a stack
       expect(edgeIsSingleLeaf(n, "right")).toBe(true); // right column is a leaf
     });
   });
 
-  describe("column split (stacked rows)", () => {
-    // [a / b]: left/right span both rows (multi-cell -> not single);
-    // top descends into a, bottom descends into b.
-    const node = col([leaf("a"), leaf("b")]);
-    it("left/right span multiple cells -> not single", () => {
-      expect(edgeIsSingleLeaf(node, "left")).toBe(false);
-      expect(edgeIsSingleLeaf(node, "right")).toBe(false);
+  describe("a single column of stacked leaves", () => {
+    // [a / b]: one column, so top/bottom are redundant (single); left/right
+    // span the 2 stacked leaves -> not single.
+    const region = reg(col([leaf("a"), leaf("b")]));
+    it("left/right span multiple stacked leaves -> not single", () => {
+      expect(edgeIsSingleLeaf(region, "left")).toBe(false);
+      expect(edgeIsSingleLeaf(region, "right")).toBe(false);
     });
-    it("top/bottom descend into the edge row leaf -> single", () => {
-      expect(edgeIsSingleLeaf(node, "top")).toBe(true);
-      expect(edgeIsSingleLeaf(node, "bottom")).toBe(true);
-    });
-    it("top/bottom are not single when the edge row is itself a row split", () => {
-      const n = col([row([leaf("a"), leaf("b")]), leaf("c")]);
-      expect(edgeIsSingleLeaf(n, "top")).toBe(false);
-      expect(edgeIsSingleLeaf(n, "bottom")).toBe(true);
+    it("top/bottom on a single-column region -> single", () => {
+      expect(edgeIsSingleLeaf(region, "top")).toBe(true);
+      expect(edgeIsSingleLeaf(region, "bottom")).toBe(true);
     });
   });
 });
 
 // ===========================================================================
-// minRegionWidth
+// minRegionWidth  (now per-column; the layout floor is one grabbable sliver)
 // ===========================================================================
 
 describe("minRegionWidth", () => {
-  // The layout floor is the grabbable sliver (MIN_REGION_GRAB_PX), NOT the
-  // panel-content minimum -- a region narrower than its content scrolls its
-  // body rather than refusing to shrink.
-  it("a leaf floors at one grab minimum", () => {
-    expect(minRegionWidth(leaf("a"))).toBe(MIN_REGION_GRAB_PX);
-  });
-
-  it("a column (stacked) takes the max of its children (shared width)", () => {
-    expect(minRegionWidth(col([leaf("a"), leaf("b")]))).toBe(MIN_REGION_GRAB_PX);
-  });
-
-  it("a row sums children plus dividers", () => {
-    const divider = 6;
-    expect(minRegionWidth(row([leaf("a"), leaf("b")]), divider)).toBe(
-      MIN_REGION_GRAB_PX * 2 + divider,
-    );
-  });
-
-  it("honors a custom divider width", () => {
-    expect(minRegionWidth(row([leaf("a"), leaf("b"), leaf("c")]), 10)).toBe(
-      MIN_REGION_GRAB_PX * 3 + 10 * 2,
-    );
-  });
-
-  it("nested: a column containing a row takes the row's (summed) width", () => {
-    const divider = 6;
-    const node = col([leaf("a"), row([leaf("b"), leaf("c")])]);
-    expect(minRegionWidth(node, divider)).toBe(MIN_REGION_GRAB_PX * 2 + divider);
+  // The per-column floor is the grabbable sliver (MIN_REGION_GRAB_PX), NOT the
+  // panel-content minimum -- a region narrower than its content scrolls its body
+  // rather than refusing to shrink. A column's min is the sliver regardless of
+  // its leaf count (leaves stacked in a column share one width); the
+  // summing-with-dividers across side-by-side columns lives in widthReconciliation.
+  it("a column floors at one grab minimum", () => {
+    expect(minRegionWidth()).toBe(MIN_REGION_GRAB_PX);
   });
 });
 
@@ -539,13 +511,9 @@ describe("dropOnDockedLeaf seam equivalence (right-of-left == left-of-right)", (
   function sideBySide(): DockLayout {
     const l = emptyLayout();
     l.docked.left = {
-      type: "split",
-      id: "S",
-      dir: "row",
-      weight: 1,
-      children: [
-        { type: "leaf", id: "Lb", group: "b", weight: 1 },
-        { type: "leaf", id: "La", group: "a", weight: 1 },
+      columns: [
+        { id: "Sb", weight: 1, leaves: [{ id: "Lb", group: "b", weight: 1 }] },
+        { id: "Sa", weight: 1, leaves: [{ id: "La", group: "a", weight: 1 }] },
       ],
     };
     l.groups = { a: group("a"), b: group("b"), c: group("c") };
@@ -612,7 +580,9 @@ describe("BUG #3 (by design): self-drop onto a sole docked leaf is a no-op", () 
   it("returns the input unchanged when the region has a single leaf", () => {
     const l = emptyLayout();
     l.groups = { a: group("a") };
-    l.docked.left = { type: "leaf", id: "La", group: "a", weight: 1 };
+    l.docked.left = {
+      columns: [{ id: "Ca", weight: 1, leaves: [{ id: "La", group: "a", weight: 1 }] }],
+    };
     const out = dropOnDockedLeaf(l, ["a"], "left", "La", "right");
     expect(out).toBe(l); // intentional no-op
     expect(refCount(out, "a")).toBe(1);
@@ -770,7 +740,11 @@ describe("(7) dock/snap ops guard an area group in the dragged set", () => {
 
   it("dropOnDockedLeaf with only the area group is a no-op", () => {
     const l = areaDragLayout();
-    l.docked.left = { type: "leaf", id: "La", group: "plain-src", weight: 1 };
+    l.docked.left = {
+      columns: [
+        { id: "Cp", weight: 1, leaves: [{ id: "La", group: "plain-src", weight: 1 }] },
+      ],
+    };
     l.floating = l.floating.filter((w) => w.id !== "w1");
     expect(dropOnDockedLeaf(l, ["area-grp"], "left", "La", "top")).toBe(l);
   });
@@ -1676,20 +1650,23 @@ describe("normalization invariants", () => {
     });
   });
 
-  it("collapses a single-child split and promotes the split's weight", () => {
-    // A weighted row [a(?)|b] inside a column; float a out -> b promoted with
-    // the parent split's weight.
-    const inner = row([leaf("a"), leaf("b")], 5);
-    const layout = makeLayout({ left: col([leaf("x"), inner]) });
-    const { layout: out } = floatGroup(layout, "a", 0, 0, 200);
-    expect(shapeOf(out.docked.left, true)).toEqual({
-      dir: "column",
-      weight: 1,
-      children: [
-        { leaf: "x", weight: 1 },
-        { leaf: "b", weight: 5 }, // promoted, keeps inner split's weight
-      ],
+  it("drops a column to its sole surviving leaf when one of two leaves leaves", () => {
+    // A region [colX | col(a,b)]; float a out -> the second column persists,
+    // now holding just b (no nested split level to collapse in the flat model).
+    const layout = makeLayout({
+      left: row([leaf("x"), col([leaf("a"), leaf("b", 5)])]),
     });
+    const { layout: out } = floatGroup(layout, "a", 0, 0, 200);
+    // Structure: two side-by-side columns, the second a one-leaf column (b).
+    expect(shapeOf(out.docked.left)).toEqual({
+      dir: "row",
+      children: [{ leaf: "x" }, { leaf: "b" }],
+    });
+    // b's own leaf weight is preserved through the removal.
+    const region = out.docked.left!;
+    expect(region.columns[1].leaves).toEqual([
+      { id: expect.any(String), group: "b", weight: 5 },
+    ]);
   });
 
   it("empties the whole region to null when its last group leaves", () => {
@@ -1718,7 +1695,13 @@ describe("normalization invariants", () => {
     const layout = makeLayout({ left: leaf("a"), floating: [{ id: "w1", stack: ["b"] }] });
     const snapshot = structuredClone(layout);
     dockToEdge(layout, ["b"], "left");
-    dropOnDockedLeaf(layout, ["b"], "left", (layout.docked.left as DockNode).id, "left");
+    dropOnDockedLeaf(
+      layout,
+      ["b"],
+      "left",
+      layout.docked.left!.columns[0].leaves[0].id,
+      "left",
+    );
     expect(layout).toEqual(snapshot);
   });
 });

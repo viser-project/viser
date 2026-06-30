@@ -9,10 +9,11 @@
 import {
   AreaId,
   clamp,
+  DockColumn,
   DockEdge,
   DockLayout,
-  DockNode,
-  DockSplit,
+  DockLeaf,
+  DockRegion,
   DropRegion,
   FloatingWindow,
   GroupId,
@@ -20,17 +21,26 @@ import {
   MIN_REGION_GRAB_PX,
   MIN_WINDOW_HEIGHT_PX,
   NodeId,
+  NonEmpty,
   PaneId,
   PaneRegistry,
   pinnedPxOf,
   regionWidthsOf,
-  SPLIT_DIVIDER_PX,
   TabGroup,
   windowHeight,
   WindowId,
 } from "./types";
 import { freshId } from "./gestures";
 import { GuiSetPanelPositionMessage } from "../WebsocketMessages";
+
+// NonEmpty leaks through `.filter`/`.slice` (they return a plain T[]), so after
+// deriving a columns/leaves list we re-assert non-emptiness in ONE place before
+// assigning it back to a NonEmpty field. The "what to do when it IS empty"
+// decision -- drop the column, or null the region -- is made explicitly at each
+// removal site (the type can't make that call for us).
+function asNonEmpty<T>(xs: T[]): NonEmpty<T> | null {
+  return xs.length > 0 ? (xs as NonEmpty<T>) : null;
+}
 
 // A typed recursive deep-clone, ~10x faster than structuredClone for the
 // layout's plain JSON-ish shape (objects/arrays/numbers/strings/booleans --
@@ -57,130 +67,120 @@ const clone = <T>(value: T): T => {
 };
 
 // ---------------------------------------------------------------------------
-// Tree helpers (operate on cloned nodes; return new nodes).
+// Flat-model accessors + structural helpers.
+//
+// The docked shape is fixed at three levels (Region = row of columns; Column =
+// stack of leaves; Leaf = one tab group), so what used to be recursive tree
+// walks are now trivial array lookups. Removal helpers maintain the invariant
+// by re-wrapping: drop an emptied column from the region, null an emptied
+// region.
 // ---------------------------------------------------------------------------
 
-/** Remove the leaf holding `groupId` from a tree, collapsing any split left
- * with a single child. Returns the new tree, or null if it became empty. */
-function treeRemoveGroup(node: DockNode, groupId: GroupId): DockNode | null {
-  if (node.type === "leaf") {
-    return node.group === groupId ? null : node;
-  }
-  const children = node.children
-    .map((child) => treeRemoveGroup(child, groupId))
-    .filter((child): child is DockNode => child !== null);
-  if (children.length === 0) return null;
-  if (children.length === 1) {
-    // Promote the sole survivor, but keep this split's weight so the region's
-    // overall proportions don't jump.
-    return { ...children[0], weight: node.weight };
-  }
-  return { ...node, children };
-}
-
-/** Find the leaf node holding `groupId`, returning its node id. */
-function treeFindGroupNodeId(node: DockNode, groupId: GroupId): NodeId | null {
-  if (node.type === "leaf") return node.group === groupId ? node.id : null;
-  for (const child of node.children) {
-    const found = treeFindGroupNodeId(child, groupId);
-    if (found !== null) return found;
-  }
-  return null;
-}
-
-/** Replace the node with id `nodeId` by `replacement` everywhere in the tree. */
-function treeReplaceNode(
-  node: DockNode,
-  nodeId: NodeId,
-  replacement: DockNode,
-): DockNode {
-  if (node.id === nodeId) return replacement;
-  if (node.type === "leaf") return node;
-  return {
-    ...node,
-    children: node.children.map((child) =>
-      treeReplaceNode(child, nodeId, replacement),
-    ),
-  };
-}
-
-/** Find any node (leaf or split) by node id. Accepts a null tree (empty edge)
- * for convenience at call sites that hold a possibly-empty region. */
-export function treeFindNode(
-  node: DockNode | null,
-  nodeId: NodeId,
-): DockNode | null {
-  if (node === null) return null;
-  if (node.id === nodeId) return node;
-  if (node.type === "leaf") return null;
-  for (const child of node.children) {
-    const found = treeFindNode(child, nodeId);
-    if (found !== null) return found;
-  }
-  return null;
-}
-
-/** Find a leaf by node id. */
-function treeFindLeaf(
-  node: DockNode,
-  nodeId: NodeId,
-): Extract<DockNode, { type: "leaf" }> | null {
-  if (node.type === "leaf") return node.id === nodeId ? node : null;
-  for (const child of node.children) {
-    const found = treeFindLeaf(child, nodeId);
-    if (found !== null) return found;
-  }
-  return null;
-}
-
-/** Flatten nested splits that share their parent's direction, so dropping
- * repeatedly along one axis yields a flat row/column rather than a deep,
- * lopsided tree. */
-function normalizeTree(node: DockNode): DockNode {
-  if (node.type === "leaf") return node;
-  const flattened: DockNode[] = [];
-  for (const rawChild of node.children) {
-    const child = normalizeTree(rawChild);
-    if (child.type === "split" && child.dir === node.dir) {
-      // Distribute the child split's weight across its grandchildren so their
-      // relative proportions within the merged axis are preserved.
-      const total = child.children.reduce((sum, c) => sum + c.weight, 0) || 1;
-      for (const grandchild of child.children) {
-        flattened.push({
-          ...grandchild,
-          weight: (grandchild.weight / total) * child.weight,
-        });
-      }
-    } else {
-      flattened.push(child);
+/** Locate the leaf holding `groupId` within a region, returning its position.
+ * Null when the region is empty or doesn't hold the group. */
+function findGroupInRegion(
+  region: DockRegion | null,
+  groupId: GroupId,
+): { columnIndex: number; leafIndex: number; leaf: DockLeaf } | null {
+  if (region === null) return null;
+  for (let ci = 0; ci < region.columns.length; ci++) {
+    const leaves = region.columns[ci].leaves;
+    for (let li = 0; li < leaves.length; li++) {
+      if (leaves[li].group === groupId)
+        return { columnIndex: ci, leafIndex: li, leaf: leaves[li] };
     }
   }
-  if (flattened.length === 1) return { ...flattened[0], weight: node.weight };
-  return { ...node, children: flattened };
+  return null;
+}
+
+/** Remove the leaf holding `groupId` from a region. Drops the leaf from its
+ * column; drops the column if it became empty; returns null if the whole region
+ * emptied. The column's weight is preserved when its sole-survivor leaf would
+ * otherwise be promoted, so the region's proportions don't jump. */
+function regionRemoveGroup(
+  region: DockRegion,
+  groupId: GroupId,
+): DockRegion | null {
+  const columns: DockColumn[] = [];
+  for (const column of region.columns) {
+    const leaves = column.leaves.filter((l) => l.group !== groupId);
+    const ne = asNonEmpty(leaves);
+    if (ne !== null) {
+      columns.push(leaves.length === column.leaves.length ? column : { ...column, leaves: ne });
+    }
+    // else: column's last leaf was removed -> drop the whole column.
+  }
+  const ne = asNonEmpty(columns);
+  return ne === null ? null : { columns: ne };
+}
+
+/** Find a column by its node id within a region. */
+function findColumn(region: DockRegion | null, nodeId: NodeId): DockColumn | null {
+  if (region === null) return null;
+  return region.columns.find((c) => c.id === nodeId) ?? null;
+}
+
+/** Find a leaf by its node id within a region, with its enclosing column. */
+function findLeaf(
+  region: DockRegion | null,
+  nodeId: NodeId,
+): { column: DockColumn; columnIndex: number; leafIndex: number; leaf: DockLeaf } | null {
+  if (region === null) return null;
+  for (let ci = 0; ci < region.columns.length; ci++) {
+    const column = region.columns[ci];
+    const li = column.leaves.findIndex((l) => l.id === nodeId);
+    if (li !== -1)
+      return { column, columnIndex: ci, leafIndex: li, leaf: column.leaves[li] };
+  }
+  return null;
+}
+
+/** A column / column-id, for code that wants to address a column by node id.
+ * Exposed so the manager can resolve a column the user is dragging. Returns the
+ * column or null. (Kept as the public successor to the old treeFindNode, which
+ * had to recurse; now a flat lookup.) */
+export function findColumnById(
+  region: DockRegion | null,
+  nodeId: NodeId,
+): DockColumn | null {
+  return findColumn(region, nodeId);
 }
 
 // ---------------------------------------------------------------------------
-// Location lookup.
+// Collapse / minimization.
 // ---------------------------------------------------------------------------
 
-/** A column subtree is "minimized" when every panel in it is collapsed. Such a
- * column needs no real width -- only its handles show. */
+/** A column is "minimized" when EVERY leaf in it is collapsed -- then it needs
+ * no real width and renders as a narrow vertical strip. (One well-typed level;
+ * no subtree recursion to get wrong -- this is what fixed the `[A][B]/[C]`
+ * height-reclaim bug.) */
 export function isColumnMinimized(
-  node: DockNode,
+  column: DockColumn,
   groups: Record<GroupId, TabGroup>,
 ): boolean {
-  if (node.type === "leaf") return groups[node.group]?.collapsed === true;
-  return node.children.every((c) => isColumnMinimized(c, groups));
+  return column.leaves.every((l) => groups[l.group]?.collapsed === true);
 }
 
-/** True when the subtree at `nodeId` (in either docked tree) is fully
+/** A region is "minimized" when every one of its columns is minimized. */
+export function isRegionMinimized(
+  region: DockRegion,
+  groups: Record<GroupId, TabGroup>,
+): boolean {
+  return region.columns.every((c) => isColumnMinimized(c, groups));
+}
+
+/** True when the column with id `nodeId` (in either docked region) is fully
  * minimized -- used to decide whether a new cell dropped beside it should adopt
- * the minimized state. False if the node isn't found. */
+ * the minimized state. False if the column isn't found. */
 export function nodeAllMinimized(layout: DockLayout, nodeId: NodeId): boolean {
   for (const edge of ["left", "right"] as const) {
-    const tree = layout.docked[edge];
-    const node = tree && treeFindNode(tree, nodeId);
-    if (node) return isColumnMinimized(node, layout.groups);
+    const region = layout.docked[edge];
+    const column = findColumn(region, nodeId);
+    if (column !== null) return isColumnMinimized(column, layout.groups);
+    // A leaf id may also be passed (a single-leaf column dropped beside): treat
+    // a fully-minimized enclosing column as minimized.
+    const found = findLeaf(region, nodeId);
+    if (found !== null) return isColumnMinimized(found.column, layout.groups);
   }
   return false;
 }
@@ -198,120 +198,62 @@ export function windowAllMinimized(
   );
 }
 
-/** In-order group ids of every leaf in a subtree. */
-export function collectLeafGroups(node: DockNode): GroupId[] {
-  if (node.type === "leaf") return [node.group];
-  return node.children.flatMap(collectLeafGroups);
+/** In-order group ids of every leaf in a column. */
+export function collectLeafGroups(column: DockColumn): GroupId[] {
+  return column.leaves.map((l) => l.group);
 }
 
-/** The group ids of a COLUMN split's DIRECT leaf children -- i.e. the leaves
- * that render as one vertical stack. Empty for a leaf, a row split, or a column
- * whose children are all nested splits. The shared notion of "a docked stack's
- * members" used by the collapse-uniformity helpers. */
-function columnLeafGroups(node: DockNode): GroupId[] {
-  if (node.type !== "split" || node.dir !== "column") return [];
-  return node.children
-    .filter((c): c is Extract<DockNode, { type: "leaf" }> => c.type === "leaf")
-    .map((c) => c.group);
-}
-
-/** In-order leaf nodes (id + group) of a subtree. */
+/** In-order leaf nodes (id + group) of a column. */
 export function collectLeaves(
-  node: DockNode,
+  column: DockColumn,
 ): { id: NodeId; group: GroupId }[] {
-  if (node.type === "leaf") return [{ id: node.id, group: node.group }];
-  return node.children.flatMap(collectLeaves);
+  return column.leaves.map((l) => ({ id: l.id, group: l.group }));
 }
 
-/** The top-level horizontal columns of a region (the row split's children, or
- * the whole tree as a single column). */
-export function topColumns(tree: DockNode): DockNode[] {
-  return tree.type === "split" && tree.dir === "row" ? tree.children : [tree];
+/** A region's columns, in render order. With the flat model the region IS a row
+ * of columns, so this is the literal field -- the old "descend into the widest
+ * child to guess the columns" logic is gone (region width and render now iterate
+ * the SAME list, which is what fixed the regionPlan-vs-render disagreement). */
+export function topColumns(region: DockRegion): NonEmpty<DockColumn> {
+  return region.columns;
 }
 
-/** The horizontal columns that DETERMINE a region's width, for width
- * reconciliation. A row root's columns are its children (laid side by side). A
- * column root has no top-level horizontal columns -- its width comes from the
- * widest stacked child -- so we descend into the stacked child with the largest
- * horizontal extent (the nested row) and use ITS columns. A leaf is its own
- * single column. This is what lets a top/bottom dock (which wraps the region in
- * a column split) preserve the underlying side-by-side widths rather than
- * collapsing the whole stack to one column's worth (the LEAD 1 bug). */
-export function widthColumns(tree: DockNode): DockNode[] {
-  if (tree.type === "leaf" || tree.dir === "row") return topColumns(tree);
-  // Column (stacked) root: the width-bearing child is the one with the most
-  // side-by-side columns (a nested row of N leaves outranks a stacked leaf), so
-  // we recurse into it to surface those columns.
-  let widest = tree.children[0];
-  let widestExtent = -Infinity;
-  for (const child of tree.children) {
-    const extent = columnExtent(child);
-    if (extent > widestExtent) {
-      widestExtent = extent;
-      widest = child;
-    }
-  }
-  return widthColumns(widest);
+/** Alias kept for the width consumers: the width-determining columns ARE the
+ * region's columns now (no guessing). */
+export function widthColumns(region: DockRegion): NonEmpty<DockColumn> {
+  return region.columns;
 }
 
-/** Number of side-by-side columns a node spans: leaf = 1, row = sum of its
- * children, column = max of its children. A pure ORDINAL comparator for
- * widthColumns (which stacked child is "widest") -- no pixels, no cap. */
-function columnExtent(node: DockNode): number {
-  if (node.type === "leaf") return 1;
-  if (node.dir === "row")
-    return node.children.reduce((s, c) => s + columnExtent(c), 0);
-  return Math.max(...node.children.map(columnExtent));
-}
-
-/** Whether a region's given edge is a single full-span leaf. When true, a "span
- * the whole region" drop there would be identical to a per-panel split of that
- * one panel, so the region-edge zone should be suppressed as redundant. It's
- * only distinct when the edge spans multiple cells:
- * - top/bottom edge spans multiple cells when there are side-by-side columns;
- * - left/right edge spans multiple cells when there are stacked rows. */
+/** Whether a region's given edge is a single full-span leaf -- so a "span the
+ * whole region" drop there would be identical to a per-panel split of that one
+ * panel, and the region-edge zone is suppressed as redundant. The edge is
+ * distinct only when it spans multiple cells:
+ * - top/bottom span multiple cells when the region has side-by-side columns;
+ * - left/right span multiple cells when the touched column stacks 2+ leaves.
+ * (No recursion: the level IS the axis.) */
 export function edgeIsSingleLeaf(
-  node: DockNode,
+  region: DockRegion,
   side: "top" | "bottom" | "left" | "right",
 ): boolean {
-  if (node.type === "leaf") return true;
   const vertical = side === "top" || side === "bottom";
-  const first = side === "top" || side === "left";
-  if (node.dir === "column") {
-    // Stacked vertically: top/bottom descend into one child; left/right span all
-    // the stacked rows.
-    if (!vertical) return false;
-    return edgeIsSingleLeaf(
-      first ? node.children[0] : node.children[node.children.length - 1],
-      side,
-    );
+  if (vertical) {
+    // Top/bottom span every column; redundant only when there's a single column.
+    return region.columns.length === 1;
   }
-  // Row (side by side): left/right descend into one child; top/bottom span all
-  // the columns.
-  if (vertical) return false;
-  return edgeIsSingleLeaf(
-    first ? node.children[0] : node.children[node.children.length - 1],
-    side,
-  );
+  // Left/right touch the outermost column; redundant only when THAT column is a
+  // single leaf (no stacked rows for the full-height band to span).
+  const column = side === "left" ? region.columns[0] : region.columns[region.columns.length - 1];
+  return column.leaves.length === 1;
 }
 
-/** Minimum width a docked region may be resized to in the layout model. A leaf
- * floors at MIN_REGION_GRAB_PX (a tiny grabbable sliver, NOT the panel-content
- * minimum -- a too-narrow panel scrolls its body instead). Row splits sum their
- * children's minimums (plus dividers); column splits take the max (panes
- * stacked vertically share one width). */
-export function minRegionWidth(
-  node: DockNode,
-  dividerPx = SPLIT_DIVIDER_PX,
-): number {
-  if (node.type === "leaf") return MIN_REGION_GRAB_PX;
-  if (node.dir === "row") {
-    return (
-      node.children.reduce((sum, c) => sum + minRegionWidth(c, dividerPx), 0) +
-      dividerPx * (node.children.length - 1)
-    );
-  }
-  return Math.max(...node.children.map((c) => minRegionWidth(c, dividerPx)));
+/** Minimum width a single docked column may be resized to in the layout model:
+ * MIN_REGION_GRAB_PX -- a tiny grabbable sliver, NOT the panel-content minimum
+ * (a too-narrow panel scrolls its body instead). Leaves stacked in a column
+ * share one width, so a column's min is just the sliver regardless of its leaf
+ * count -- a constant. (Kept as a named function, not an inlined constant, so a
+ * future per-column minimum has one place to live and callers read clearly.) */
+export function minRegionWidth(): number {
+  return MIN_REGION_GRAB_PX;
 }
 
 /** The area id whose tab group is `groupId`, or null. A group that backs a
@@ -331,19 +273,13 @@ export function isAreaGroup(layout: DockLayout, groupId: GroupId): boolean {
   return areaForGroup(layout, groupId) !== null;
 }
 
-/** A "pure column": a column split whose children are ALL leaves (2+). Only
- * pure columns get a float-the-whole-column handle: a column containing a
- * nested row has no crisp linearization into a vertical floating stack --
- * flattening would silently reorder side-by-side panes into a top-to-bottom
- * order that can't round-trip back. Keeping the affordance to pure columns
- * keeps the gesture's semantics obvious. */
-export function isPureColumn(node: DockNode): node is DockSplit {
-  return (
-    node.type === "split" &&
-    node.dir === "column" &&
-    node.children.length >= 2 &&
-    node.children.every((c) => c.type === "leaf")
-  );
+/** A column with 2+ stacked leaves -- the case where "float the whole column"
+ * is a distinct gesture from "float a single panel" (a 1-leaf column IS its
+ * single panel). With the flat model every column is trivially linearizable
+ * top-to-bottom, so the old "pure column" caveat (a column might hold a nested
+ * row that can't round-trip) is gone: this is just a leaf-count check. */
+export function isMultiLeafColumn(column: DockColumn): boolean {
+  return column.leaves.length >= 2;
 }
 
 /** Distribute a region's total width across its side-by-side columns for a
@@ -453,10 +389,10 @@ export function findGroupLocation(
   groupId: GroupId,
 ): GroupLocation | null {
   for (const edge of ["left", "right"] as DockEdge[]) {
-    const tree = layout.docked[edge];
-    if (tree === null) continue;
-    const nodeId = treeFindGroupNodeId(tree, groupId);
-    if (nodeId !== null) return { kind: "docked", edge, nodeId };
+    // A docked group is exactly one leaf; report that leaf's node id so callers
+    // (split-against-anchor, drag-the-cell) can address it.
+    const found = findGroupInRegion(layout.docked[edge], groupId);
+    if (found !== null) return { kind: "docked", edge, nodeId: found.leaf.id };
   }
   for (const win of layout.floating) {
     if (win.stack.includes(groupId)) {
@@ -469,39 +405,32 @@ export function findGroupLocation(
 }
 
 /** The group ids that share a STACK with `groupId` (including itself): a
- * floating window's whole stack, or the leaf children of the column split that
- * directly contains the group. A LONE group (its own window, or a leaf not in a
- * multi-leaf column) returns just `[groupId]`. Used to route a minimize toggle
- * to the right granularity -- a stack toggles all-or-nothing, a lone group
- * toggles itself (see the uniform-collapse invariant). */
+ * floating window's whole stack, or the leaf groups of the docked COLUMN that
+ * contains the group. A LONE group (its own window, or the sole leaf of its
+ * column) returns just `[groupId]`. Used to route a minimize toggle to the right
+ * granularity -- a stack toggles all-or-nothing, a lone group toggles itself
+ * (see the uniform-collapse invariant). */
 export function stackGroupIdsOf(
   layout: DockLayout,
   groupId: GroupId,
 ): GroupId[] {
   const win = layout.floating.find((w) => w.stack.includes(groupId));
   if (win !== undefined) return win.stack.length >= 2 ? [...win.stack] : [groupId];
-  // Docked: find the column split whose DIRECT children include this group's
-  // leaf; its leaf children are the stack.
+  // Docked: the column holding this group's leaf IS the stack.
   for (const edge of ["left", "right"] as DockEdge[]) {
-    const tree = layout.docked[edge];
-    if (tree === null) continue;
-    let found: GroupId[] | null = null;
-    const walk = (node: DockNode): void => {
-      if (node.type !== "split") return;
-      const stack = columnLeafGroups(node);
-      if (stack.length >= 2 && stack.includes(groupId)) found = stack;
-      node.children.forEach(walk);
-    };
-    walk(tree);
-    if (found !== null) return found;
+    const found = findGroupInRegion(layout.docked[edge], groupId);
+    if (found === null) continue;
+    const column = layout.docked[edge]!.columns[found.columnIndex];
+    return column.leaves.length >= 2 ? collectLeafGroups(column) : [groupId];
   }
   return [groupId];
 }
 
 /** Remove a group from wherever it currently lives, mutating `draft` in place.
  * The group object itself stays in `draft.groups`; the caller re-inserts it
- * elsewhere (or deletes it). Empty splits and empty floating windows are
- * cleaned up. */
+ * elsewhere (or deletes it). An emptied column is dropped from its region, an
+ * emptied region becomes null, and an emptied floating window is removed -- so
+ * the flat invariant holds by construction after every detach. */
 function detachInPlace(draft: DockLayout, groupId: GroupId): void {
   const loc = findGroupLocation(draft, groupId);
   if (loc === null) return;
@@ -511,11 +440,8 @@ function detachInPlace(draft: DockLayout, groupId: GroupId): void {
   // source of a tearOutPane, never floated as a whole -- but guard anyway).
   if (loc.kind === "area") return;
   if (loc.kind === "docked") {
-    const tree = draft.docked[loc.edge];
-    draft.docked[loc.edge] =
-      tree === null ? null : treeRemoveGroup(tree, groupId);
-    const after = draft.docked[loc.edge];
-    if (after !== null) draft.docked[loc.edge] = normalizeTree(after);
+    const region = draft.docked[loc.edge];
+    draft.docked[loc.edge] = region === null ? null : regionRemoveGroup(region, groupId);
   } else {
     const win = draft.floating.find((w) => w.id === loc.windowId);
     if (win === undefined) return;
@@ -568,22 +494,28 @@ export function isGroupUnmergeable(
   return group.paneIds.some((p) => isPaneUnmergeable(panes, p));
 }
 
-function makeLeaf(groupId: GroupId, weight = 1): DockNode {
-  return { type: "leaf", id: freshId("node"), group: groupId, weight };
+function makeLeaf(groupId: GroupId, weight = 1): DockLeaf {
+  return { id: freshId("node"), group: groupId, weight };
 }
 
-/** Build a dock subtree from an ordered list of groups: a single leaf for one
- * group, or a vertical (column) split for several -- so a snapped floating
- * stack keeps its top-to-bottom arrangement when docked. */
-function buildColumnSubtree(groupIds: GroupId[]): DockNode {
-  if (groupIds.length === 1) return makeLeaf(groupIds[0]);
+/** Build a DockColumn from an ordered list of groups (>=1): the groups become
+ * the column's stacked leaves (top to bottom), so a snapped floating stack keeps
+ * its vertical arrangement when docked. The column's own weight defaults to 1
+ * (its horizontal share in the region); callers override it when preserving a
+ * sibling's width. A lone group is a column of one leaf -- a count of one, not a
+ * special shape. */
+function buildColumn(groupIds: NonEmpty<GroupId>, weight = 1): DockColumn {
   return {
-    type: "split",
     id: freshId("node"),
-    dir: "column",
-    weight: 1,
-    children: groupIds.map((g) => makeLeaf(g)),
+    weight,
+    leaves: groupIds.map((g) => makeLeaf(g)) as NonEmpty<DockLeaf>,
   };
+}
+
+/** A single-column region holding `column` -- the wrap that turns "a column" into
+ * "a docked region". */
+function regionOf(column: DockColumn): DockRegion {
+  return { columns: [column] };
 }
 
 // ---------------------------------------------------------------------------
@@ -599,32 +531,38 @@ export function dockToEdge(
   edge: DockEdge,
 ): DockLayout {
   groupIds = withoutAreaGroups(layout, groupIds);
-  if (groupIds.length === 0) return layout;
+  const ne = asNonEmpty(groupIds);
+  if (ne === null) return layout;
   const draft = clone(layout);
-  groupIds.forEach((g) => detachInPlace(draft, g));
-  const subtree = buildColumnSubtree(groupIds);
+  ne.forEach((g) => detachInPlace(draft, g));
+  const column = buildColumn(ne);
   const existing = draft.docked[edge];
   if (existing === null) {
-    draft.docked[edge] = subtree;
+    draft.docked[edge] = regionOf(column);
   } else {
-    const children =
-      edge === "left" ? [subtree, existing] : [existing, subtree];
-    draft.docked[edge] = normalizeTree({
-      type: "split",
-      id: freshId("node"),
-      dir: "row",
-      weight: 1,
-      children,
-    });
+    // Add the new column at the OUTERMOST position: far left for "left", far
+    // right for "right". (A region is a row of columns -- a new edge dock is
+    // just another column in that row.)
+    const columns: NonEmpty<DockColumn> =
+      edge === "left"
+        ? [column, ...existing.columns]
+        : [...existing.columns, column];
+    draft.docked[edge] = { columns };
   }
   return draft;
 }
 
-/** Dock a stack of groups as a full-span band across the whole region, on the
- * given outer side of everything already docked there. top/bottom wrap the
- * region's tree in a column split (full-width row); left/right wrap it in a row
- * split (full-height column). Optional weights preserve the existing content's
- * size (used by left/right, which grow the region rather than resizing). */
+/** Dock a stack of groups as a band on the given outer side of everything
+ * already docked in the region. With the flat 3-level model:
+ * - left/right add a new full-height COLUMN at the region's outer/inner side;
+ * - top/bottom add the band as leaf(s) at the TOP/BOTTOM of the region's first
+ *   column. (A true "span every column" band is a 4th level the type forbids;
+ *   top/bottom region-edge is only offered on a single-column region anyway --
+ *   see edgeIsSingleLeaf -- where "first column" IS the whole region, so this is
+ *   exactly the old full-width band. JUDGMENT CALL: on a hypothetical multi-
+ *   column region it degrades to banding the first column rather than nesting.)
+ * Optional weights preserve the existing content's size (left/right grow the
+ * region rather than resizing). */
 export function dockToRegionEdge(
   layout: DockLayout,
   groupIds: GroupId[],
@@ -633,95 +571,122 @@ export function dockToRegionEdge(
   weights?: { existing: number; dragged: number },
 ): DockLayout {
   groupIds = withoutAreaGroups(layout, groupIds);
-  if (groupIds.length === 0) return layout;
+  const ne = asNonEmpty(groupIds);
+  if (ne === null) return layout;
   const draft = clone(layout);
-  groupIds.forEach((g) => detachInPlace(draft, g));
-  const subtree = buildColumnSubtree(groupIds);
+  ne.forEach((g) => detachInPlace(draft, g));
   const existing = draft.docked[edge];
   if (existing === null) {
-    draft.docked[edge] = subtree;
+    draft.docked[edge] = regionOf(buildColumn(ne));
     return draft;
   }
-  const dir: "row" | "column" =
-    side === "top" || side === "bottom" ? "column" : "row";
-  const draggedFirst = side === "top" || side === "left";
-  // Without explicit weights, start the new split 50/50. The existing subtree's
-  // root weight is meaningful only in its OLD context: for a row-rooted region it
-  // may be a leftover pixel value from horizontal width reconciliation, which
-  // must NOT leak in as a vertical proportion here (a column split) -- otherwise
-  // the freshly-docked panel (weight 1) collapses next to a sibling weighted in
-  // the hundreds. (For row/left-right docks applyOp rewrites these to px anyway;
-  // for column/top-bottom docks it can't, so equalizing here is what keeps the
-  // new band at ~50% height.)
-  const subtreeW =
-    weights !== undefined ? { ...subtree, weight: weights.dragged } : { ...subtree, weight: 1 };
-  const existingW =
-    weights !== undefined ? { ...existing, weight: weights.existing } : { ...existing, weight: 1 };
-  const children = draggedFirst
-    ? [subtreeW, existingW]
-    : [existingW, subtreeW];
-  draft.docked[edge] = normalizeTree({
-    type: "split",
-    id: freshId("node"),
-    dir,
-    weight: 1,
-    children,
+  if (side === "left" || side === "right") {
+    // A new full-height column beside everything. Weights (when given) preserve
+    // the existing columns' widths; otherwise the reconciler assigns pixels.
+    const dw = weights?.dragged ?? 1;
+    const column = buildColumn(ne, dw);
+    if (weights !== undefined) {
+      // Scale every existing column to the "existing" share so the new column
+      // sits at the requested proportion next to them (matches the old
+      // 2-child split weight semantics for the single-column case).
+      const total = existing.columns.reduce((s, c) => s + c.weight, 0) || 1;
+      existing.columns.forEach((c) => {
+        c.weight = (c.weight / total) * weights.existing;
+      });
+    }
+    const columns: NonEmpty<DockColumn> =
+      side === "left"
+        ? [column, ...existing.columns]
+        : [...existing.columns, column];
+    draft.docked[edge] = { columns };
+    return draft;
+  }
+  // top / bottom: band the FIRST column's leaf stack. With no explicit weights,
+  // EQUALIZE every leaf (existing + new) to weight 1 so a freshly docked band
+  // sits at ~50% height rather than inheriting a stale pixel weight (the old
+  // top/bottom 50/50 behavior, now a leaf-stack operation). With explicit
+  // weights, the existing leaves take `existing` and the new ones take `dragged`.
+  const first = existing.columns[0];
+  const existingW = weights?.existing ?? 1;
+  const draggedW = weights?.dragged ?? 1;
+  const banded = ne.map((g) => makeLeaf(g, draggedW));
+  first.leaves.forEach((l) => {
+    l.weight = existingW;
   });
+  first.leaves = (
+    side === "top" ? [...banded, ...first.leaves] : [...first.leaves, ...banded]
+  ) as NonEmpty<DockLeaf>;
   return draft;
 }
 
 /** Drop a stack of groups onto an existing docked leaf. `center` merges every
- * dragged panel into the target's tabs; the four sides split the target's cell,
- * placing the dragged stack (kept together) on that side. */
+ * dragged panel into the target's tabs. The flattening KEY SEMANTIC:
+ * - top/bottom insert the dragged leaf(s) INTO the target leaf's COLUMN, just
+ *   above/below the target (a column gains a leaf);
+ * - left/right insert a new COLUMN beside the target leaf's column (the region
+ *   gains a column).
+ * This is what keeps every gesture inside the fixed 3-level shape. */
 export function dropOnDockedLeaf(
   layout: DockLayout,
   draggedGroupIds: GroupId[],
   edge: DockEdge,
   targetNodeId: NodeId,
   region: DropRegion,
-  /** Optional child weights so callers can preserve absolute sizes (e.g. a
-   * left/right split that grows the region keeps the existing panel's width). */
+  /** Optional weights so callers can preserve absolute sizes (e.g. a left/right
+   * split that grows the region keeps the existing column's width). */
   weights?: { dragged: number; target: number },
 ): DockLayout {
   draggedGroupIds = withoutAreaGroups(layout, draggedGroupIds);
-  if (draggedGroupIds.length === 0) return layout;
-  const draft = clone(layout);
-  const tree = draft.docked[edge];
-  if (tree === null) return layout;
-  const targetLeaf = treeFindLeaf(tree, targetNodeId);
-  if (targetLeaf === null) return layout;
+  const ne = asNonEmpty(draggedGroupIds);
+  if (ne === null) return layout;
+  const existingRegion = layout.docked[edge];
+  const target = findLeaf(existingRegion, targetNodeId);
+  if (target === null) return layout;
 
   if (region === "center") {
-    return mergeGroupsInto(layout, targetLeaf.group, draggedGroupIds);
+    return mergeGroupsInto(layout, target.leaf.group, ne);
   }
 
-  draggedGroupIds.forEach((g) => detachInPlace(draft, g));
+  const draft = clone(layout);
+  ne.forEach((g) => detachInPlace(draft, g));
   // Re-find the target leaf AFTER detach. If a dragged group shared this edge,
-  // detaching it may have collapsed/removed the target node; if the target is
-  // gone (a self-drop), abort rather than dropping the dragged groups into a
-  // node that no longer exists (which would orphan them and lose the panes).
-  const liveTree = draft.docked[edge];
-  if (liveTree === null) return layout;
-  const liveTarget = treeFindLeaf(liveTree, targetNodeId);
-  if (liveTarget === null) return layout;
+  // detaching it may have dropped the target's column; if the target is gone (a
+  // self-drop), abort rather than orphaning the dragged groups.
+  const liveRegion = draft.docked[edge];
+  const live = findLeaf(liveRegion, targetNodeId);
+  if (liveRegion === null || live === null) return layout;
 
   const dw = weights?.dragged ?? 1;
   const tw = weights?.target ?? 1;
-  const subtree: DockNode = { ...buildColumnSubtree(draggedGroupIds), weight: dw };
-  const keptTarget: DockNode = { ...liveTarget, weight: tw };
-  const dir: "row" | "column" =
-    region === "left" || region === "right" ? "row" : "column";
-  const draggedFirst = region === "left" || region === "top";
-  const split: DockNode = {
-    type: "split",
-    id: freshId("node"),
-    dir,
-    weight: liveTarget.weight,
-    children: draggedFirst ? [subtree, keptTarget] : [keptTarget, subtree],
+  const targetColumn = liveRegion.columns[live.columnIndex];
+
+  if (region === "top" || region === "bottom") {
+    // Insert the dragged leaf(s) into the target's column, above/below it. The
+    // target keeps its (resized) weight; the dragged leaves take `dw`.
+    targetColumn.leaves[live.leafIndex] = { ...live.leaf, weight: tw };
+    const banded = ne.map((g) => makeLeaf(g, dw));
+    const at = region === "top" ? live.leafIndex : live.leafIndex + 1;
+    targetColumn.leaves = [
+      ...targetColumn.leaves.slice(0, at),
+      ...banded,
+      ...targetColumn.leaves.slice(at),
+    ] as NonEmpty<DockLeaf>;
+    return draft;
+  }
+
+  // left / right: a new column beside the target's column. The new column
+  // inherits the target column's weight basis (dw/tw split its horizontal
+  // share); the target column keeps `tw`.
+  targetColumn.weight = tw;
+  const newColumn = buildColumn(ne, dw);
+  const at = region === "left" ? live.columnIndex : live.columnIndex + 1;
+  draft.docked[edge] = {
+    columns: [
+      ...liveRegion.columns.slice(0, at),
+      newColumn,
+      ...liveRegion.columns.slice(at),
+    ] as NonEmpty<DockColumn>,
   };
-  draft.docked[edge] = normalizeTree(
-    treeReplaceNode(liveTree, targetNodeId, split),
-  );
   return draft;
 }
 
@@ -1071,11 +1036,9 @@ export function floatGroup(
 
 /** Float an entire docked column as one stacked window: the column's leaf
  * groups become the window's stack (top-to-bottom order preserved), with
- * stackWeights carrying the leaves' relative heights. Only PURE columns (all
- * children are leaves -- see isPureColumn) are floatable; anything else is a
- * no-op (windowId null), as is a missing node/edge. An unmergeable panel in
- * the column is safe by construction: each leaf group becomes its own stack
- * entry, so "alone in its group" is preserved. */
+ * stackWeights carrying the leaves' relative heights. Every column is trivially
+ * linearizable in the flat model (its leaves top-to-bottom), so the only no-ops
+ * are a missing column/edge or a column that backs a dockable area. */
 export function floatColumn(
   layout: DockLayout,
   edge: DockEdge,
@@ -1085,21 +1048,17 @@ export function floatColumn(
   width: number,
   height?: number,
 ): { layout: DockLayout; windowId: WindowId | null } {
-  const tree = layout.docked[edge];
-  if (tree === null) return { layout, windowId: null };
-  const node = treeFindNode(tree, columnNodeId);
-  if (node === null || !isPureColumn(node)) return { layout, windowId: null };
-  // Capture order + weights BEFORE detaching (detach restructures the tree).
-  // Sequential detachInPlace (by GROUP id) is immune to that restructuring
-  // and reuses the standard cleanup invariants (empty tree -> null edge,
-  // weight-preserving promotion), unlike a bespoke subtree removal.
-  const leaves = node.children as Extract<DockNode, { type: "leaf" }>[];
-  const stack = leaves.map((l) => l.group);
+  const column = findColumn(layout.docked[edge], columnNodeId);
+  if (column === null) return { layout, windowId: null };
+  // Capture order + weights BEFORE detaching (detach restructures the region).
+  // Sequential detachInPlace (by GROUP id) reuses the standard cleanup
+  // invariants (empty region -> null edge, drop emptied columns).
+  const stack = column.leaves.map((l) => l.group);
   if (stack.some((g) => isAreaGroup(layout, g))) {
     return { layout, windowId: null };
   }
   const stackWeights: Record<GroupId, number> = {};
-  leaves.forEach((l) => {
+  column.leaves.forEach((l) => {
     stackWeights[l.group] = l.weight;
   });
 
@@ -1341,14 +1300,13 @@ export function expandStack(
 }
 
 /** Enforce the stack-uniform-collapse invariant: in any stack of 2+ groups (a
- * column split's leaf children, or a floating window's stack) every member
- * shares one collapsed state. A LONE group (its own column/window) may be
- * independently minimized. When a stack is non-uniform, EXPANDED dominates: the
- * whole stack expands. This makes the "some panels minimized, some short inside
- * one stack" state -- the source of the per-cell weight/render pathology --
- * unrepresentable by construction. Run on every commit (see applyOp), so any op
- * that would leave a mixed stack is corrected before render. Mutates `layout` in
- * place; returns whether anything changed.
+ * docked COLUMN's leaves, or a floating window's stack) every member shares one
+ * collapsed state. A LONE group (the sole leaf of its column, or its own window)
+ * may be independently minimized. When a stack is non-uniform, EXPANDED
+ * dominates: the whole stack expands. This makes the "some panels minimized,
+ * some short inside one stack" state -- the source of the per-cell weight/render
+ * pathology -- unrepresentable. Run on every commit (see applyOp). Mutates
+ * `layout` in place; returns whether anything changed.
  *
  * Only `collapsed` is cleared here -- a lone group keeps its own collapse, and a
  * uniformly-minimized stack is left alone (so minimizeStack's all-collapsed
@@ -1364,63 +1322,62 @@ export function normalizeStackCollapse(layout: DockLayout): boolean {
       }
     }
   };
-  // A column split's DIRECT leaf children form one vertical stack.
-  const walk = (node: DockNode): void => {
-    if (node.type !== "split") return;
-    const stack = columnLeafGroups(node);
+  const reconcile = (groupIds: GroupId[]): void => {
     if (
-      stack.length >= 2 &&
-      stack.some((gid) => layout.groups[gid]?.collapsed !== true)
+      groupIds.length >= 2 &&
+      groupIds.some((gid) => layout.groups[gid]?.collapsed !== true)
     ) {
-      expandAll(stack);
+      expandAll(groupIds);
     }
-    node.children.forEach(walk);
   };
+  // Each docked column is one vertical stack.
   for (const edge of ["left", "right"] as const) {
-    const tree = layout.docked[edge];
-    if (tree !== null) walk(tree);
+    const region = layout.docked[edge];
+    if (region !== null)
+      for (const column of region.columns) reconcile(collectLeafGroups(column));
   }
   // Floating windows: the stack array is the unit.
-  for (const win of layout.floating) {
-    if (
-      win.stack.length >= 2 &&
-      win.stack.some((gid) => layout.groups[gid]?.collapsed !== true)
-    ) {
-      expandAll(win.stack);
-    }
-  }
+  for (const win of layout.floating) reconcile(win.stack);
   return changed;
 }
 
-/** Set node weights by node id (anywhere in a docked region's tree). Robust to
- * synthetic/partial subtrees: callers pass {nodeId: weight} for the nodes they
- * resized, and we write them onto the matching real nodes in the full tree. */
+/** Set node weights by node id (a leaf's or a column's) within a docked region.
+ * Callers pass {nodeId: weight} for the nodes they resized -- a region-row drag
+ * targets columns, a column-stack drag targets leaves -- and we write them onto
+ * the matching real nodes. */
 export function setNodeWeights(
   layout: DockLayout,
   edge: DockEdge,
   weightsById: Record<NodeId, number>,
 ): DockLayout {
-  const tree = layout.docked[edge];
-  if (tree === null) return layout;
-  // Fast path for the per-frame resize hot path: when every target weight
-  // already matches (the cursor paused), skip the full-layout clone entirely
-  // and let applyOp's downstream see an unchanged layout.
-  let changes = false;
-  const scan = (node: DockNode): void => {
-    const w = weightsById[node.id];
-    if (w !== undefined && Number.isFinite(w) && w > 0 && node.weight !== w)
-      changes = true;
-    if (node.type === "split") node.children.forEach(scan);
+  const region = layout.docked[edge];
+  if (region === null) return layout;
+  const wantsChange = (id: NodeId, current: number): boolean => {
+    const w = weightsById[id];
+    return w !== undefined && Number.isFinite(w) && w > 0 && current !== w;
   };
-  scan(tree);
+  // Fast path for the per-frame resize hot path: when every target weight
+  // already matches (the cursor paused), skip the clone entirely.
+  let changes = false;
+  for (const column of region.columns) {
+    if (wantsChange(column.id, column.weight)) changes = true;
+    for (const leaf of column.leaves)
+      if (wantsChange(leaf.id, leaf.weight)) changes = true;
+  }
   if (!changes) return layout;
   const draft = clone(layout);
-  const apply = (node: DockNode): void => {
-    const w = weightsById[node.id];
-    if (w !== undefined && Number.isFinite(w) && w > 0) node.weight = w;
-    if (node.type === "split") node.children.forEach(apply);
+  const set = (id: NodeId): number | undefined => {
+    const w = weightsById[id];
+    return w !== undefined && Number.isFinite(w) && w > 0 ? w : undefined;
   };
-  apply(draft.docked[edge]!);
+  for (const column of draft.docked[edge]!.columns) {
+    const cw = set(column.id);
+    if (cw !== undefined) column.weight = cw;
+    for (const leaf of column.leaves) {
+      const lw = set(leaf.id);
+      if (lw !== undefined) leaf.weight = lw;
+    }
+  }
   return draft;
 }
 

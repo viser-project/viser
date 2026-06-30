@@ -21,7 +21,7 @@ import {
   ContainerRect,
 } from "./hitTest";
 import { edgeIsSingleLeaf } from "./layoutOps";
-import { DockEdge, DockLayout, DockNode, emptyLayout } from "./types";
+import { DockEdge, DockLayout, emptyLayout } from "./types";
 import {
   rect,
   mulberry32,
@@ -30,6 +30,7 @@ import {
   col as colS,
   group,
   floatingWindow,
+  toRegion,
 } from "./testUtils";
 
 const CONTAINER: ContainerRect = { left: 0, top: 0, width: 1000, height: 800 };
@@ -45,17 +46,23 @@ function dockedTargets(
   layout: DockLayout,
   edge: DockEdge,
 ): GroupTarget[] {
-  const tree = layout.docked[edge];
-  if (tree === null) return [];
+  const region = layout.docked[edge];
+  if (region === null) return [];
   const regionLeft = edge === "left" ? 0 : CONTAINER.width - REGION_W[edge];
   const out: GroupTarget[] = [];
-  const place = (node: DockNode, x: number, y: number, w: number, h: number) => {
-    if (node.type === "leaf") {
-      const group = layout.groups[node.group];
-      const r = rect(x, y, w, h);
+  // The flat model: the region is a row of columns (split width), each column a
+  // stack of leaves (split height).
+  const cw = REGION_W[edge] / region.columns.length;
+  region.columns.forEach((column, ci) => {
+    const x = regionLeft + ci * cw;
+    const ch = CONTAINER.height / column.leaves.length;
+    column.leaves.forEach((lf, li) => {
+      const y = li * ch;
+      const group = layout.groups[lf.group];
+      const r = rect(x, y, cw, ch);
       const stripTop = y + STRIP_OFFSET;
       // Lay tabs left-to-right, wrapping every 3 within the strip width.
-      const tabW = Math.min(80, w / 3);
+      const tabW = Math.min(80, cw / 3);
       const tabs = (group?.paneIds ?? []).map((paneId, i) => {
         const col = i % 3;
         const row = Math.floor(i / 3);
@@ -66,24 +73,14 @@ function dockedTargets(
       });
       const rows = Math.max(1, Math.ceil((group?.paneIds.length ?? 1) / 3));
       out.push({
-        groupId: node.group,
+        groupId: lf.group,
         rect: r,
-        stripRect: rect(x, stripTop, w, STRIP_H * rows),
+        stripRect: rect(x, stripTop, cw, STRIP_H * rows),
         tabs,
-        ctx: { kind: "docked", nodeId: node.id, edge },
+        ctx: { kind: "docked", nodeId: lf.id, edge },
       });
-      return;
-    }
-    const n = node.children.length;
-    if (node.dir === "row") {
-      const cw = w / n;
-      node.children.forEach((c, i) => place(c, x + i * cw, y, cw, h));
-    } else {
-      const ch = h / n;
-      node.children.forEach((c, i) => place(c, x, y + i * ch, w, ch));
-    }
-  };
-  place(tree, regionLeft, 0, REGION_W[edge], CONTAINER.height);
+    });
+  });
   return out;
 }
 
@@ -128,13 +125,12 @@ function targetsFor(layout: DockLayout): DropTargets {
 // Result validation against the layout + targets.
 // ---------------------------------------------------------------------------
 function nodeExists(layout: DockLayout, edge: DockEdge, nodeId: string): boolean {
-  const walk = (node: DockNode | null): boolean => {
-    if (node === null) return false;
-    if (node.id === nodeId) return true;
-    if (node.type === "leaf") return false;
-    return node.children.some(walk);
-  };
-  return walk(layout.docked[edge]);
+  const region = layout.docked[edge];
+  if (region === null) return false;
+  // A drop result's nodeId addresses a leaf (a docked split target) or a column.
+  return region.columns.some(
+    (c) => c.id === nodeId || c.leaves.some((l) => l.id === nodeId),
+  );
 }
 
 function validateResult(
@@ -232,7 +228,7 @@ function layouts(): { name: string; layout: DockLayout }[] {
   {
     const l = emptyLayout();
     l.groups = { a: group("a", 2) };
-    l.docked.left = leaf("a");
+    l.docked.left = toRegion(leaf("a"));
     out.push({ name: "single docked leaf (left)", layout: l });
   }
   {
@@ -241,7 +237,7 @@ function layouts(): { name: string; layout: DockLayout }[] {
       a: group("a"),
       b: group("b", 3),
     };
-    l.docked.left = rowS([leaf("a"), leaf("b")]);
+    l.docked.left = toRegion(rowS([leaf("a"), leaf("b")]));
     out.push({ name: "side-by-side row (left)", layout: l });
   }
   {
@@ -250,7 +246,7 @@ function layouts(): { name: string; layout: DockLayout }[] {
       a: group("a"),
       b: group("b"),
     };
-    l.docked.left = colS([leaf("a"), leaf("b")]);
+    l.docked.left = toRegion(colS([leaf("a"), leaf("b")]));
     out.push({ name: "vertical stack (left)", layout: l });
   }
   {
@@ -261,8 +257,8 @@ function layouts(): { name: string; layout: DockLayout }[] {
       c: group("c"),
       d: group("d"),
     };
-    l.docked.left = rowS([leaf("a"), colS([leaf("b"), leaf("c")])]);
-    l.docked.right = leaf("d");
+    l.docked.left = toRegion(rowS([leaf("a"), colS([leaf("b"), leaf("c")])]));
+    l.docked.right = toRegion(leaf("d"));
     out.push({ name: "nested left + leaf right", layout: l });
   }
   {
@@ -271,7 +267,7 @@ function layouts(): { name: string; layout: DockLayout }[] {
     l.groups = {
       a: group("a", 5),
     };
-    l.docked.left = leaf("a");
+    l.docked.left = toRegion(leaf("a"));
     out.push({ name: "wrapping multi-tab docked leaf", layout: l });
   }
   {
@@ -312,7 +308,7 @@ function layouts(): { name: string; layout: DockLayout }[] {
       d: group("d"),
       f: group("f"),
     };
-    l.docked.left = leaf("d");
+    l.docked.left = toRegion(leaf("d"));
     l.floating = [floatingWindow({ id: "wf", x: 200, y: 250, width: 240, stack: ["f"] })];
     out.push({ name: "floating straddling docked region", layout: l });
   }
@@ -323,8 +319,8 @@ function layouts(): { name: string; layout: DockLayout }[] {
       a: group("a"),
       b: group("b"),
     };
-    l.docked.left = leaf("a");
-    l.docked.right = leaf("b");
+    l.docked.left = toRegion(leaf("a"));
+    l.docked.right = toRegion(leaf("b"));
     out.push({ name: "both edges docked leaves", layout: l });
   }
   {

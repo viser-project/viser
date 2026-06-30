@@ -8,30 +8,36 @@
 // (empty == healthy). Never throws; the caller decides what to do with the list.
 
 import {
+  DockColumn,
   DockEdge,
   DockLayout,
-  DockNode,
+  DockLeaf,
   GroupId,
   NodeId,
   PaneId,
 } from "./types";
 
-function* walkNodes(node: DockNode | null): Generator<DockNode> {
-  if (node === null) return;
-  yield node;
-  if (node.type === "split") for (const c of node.children) yield* walkNodes(c);
+// The docked shape (Region -> Column -> Leaf, both NonEmpty) is now guaranteed
+// by the TYPES, so the structural checks the old invariant ran (>=2 children,
+// valid dir, no same-axis nesting, single-child splits) are gone -- they're
+// unrepresentable. What remains are VALUE-level invariants the type can't
+// express: NonEmpty (defensive, in case a cast slipped through), finite/positive
+// weights, uniform-collapse per stack, and the reference/orphan/duplication
+// checks that span the whole layout.
+
+/** Every (docked) column across both edges, in order. */
+function columnsOf(layout: DockLayout): DockColumn[] {
+  const out: DockColumn[] = [];
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const region = layout.docked[edge];
+    if (region !== null) out.push(...region.columns);
+  }
+  return out;
 }
 
-function leaves(node: DockNode | null): Extract<DockNode, { type: "leaf" }>[] {
-  return [...walkNodes(node)].filter(
-    (n): n is Extract<DockNode, { type: "leaf" }> => n.type === "leaf",
-  );
-}
-
-function splits(node: DockNode | null): Extract<DockNode, { type: "split" }>[] {
-  return [...walkNodes(node)].filter(
-    (n): n is Extract<DockNode, { type: "split" }> => n.type === "split",
-  );
+/** Every (docked) leaf across both edges, in order. */
+function leavesOf(layout: DockLayout): DockLeaf[] {
+  return columnsOf(layout).flatMap((c) => c.leaves);
 }
 
 /** Every group id referenced anywhere -- docked leaves, floating stacks, AND
@@ -40,8 +46,7 @@ function splits(node: DockNode | null): Extract<DockNode, { type: "split" }>[] {
  * `groups` and must not be flagged as an orphan). */
 function referencedGroupIds(layout: DockLayout): GroupId[] {
   const out: GroupId[] = [];
-  for (const edge of ["left", "right"] as DockEdge[])
-    for (const l of leaves(layout.docked[edge])) out.push(l.group);
+  for (const l of leavesOf(layout)) out.push(l.group);
   for (const w of layout.floating) out.push(...w.stack);
   for (const a of Object.values(layout.areas ?? {})) out.push(a.group);
   return out;
@@ -54,13 +59,14 @@ function referencedGroupIds(layout: DockLayout): GroupId[] {
  *  3. No dangling references (every reference resolves to a group).
  *  4. No pane in two groups (the duplication class).
  *  5. activeId is a member; paneIds non-empty.
- *  6/7. Splits have >=2 children, valid dir, no same-axis nesting.
+ *  6. NonEmpty (defensive): every region has >=1 column, every column >=1 leaf.
  *  8. Finite positive weights.
  *  9. Floating windows: non-empty stacks, finite geometry, valid stackWeights
  *     (finite/positive, keyed only by groups in the window's stack).
  *  10/11. Unique node ids and floating window ids.
- *  12. `collapsed` / `collapsedByParent`, when present, are booleans.
- *  13. Each area is keyed by its own id. */
+ *  12. `collapsed`, when present, is a boolean.
+ *  13. Each area is keyed by its own id.
+ *  14. Uniform-collapse per docked column / floating stack. */
 export function invariantViolations(layout: DockLayout): string[] {
   const v: string[] = [];
   const refs = referencedGroupIds(layout);
@@ -106,24 +112,26 @@ export function invariantViolations(layout: DockLayout): string[] {
       v.push(`group ${gid} activeId ${group.activeId} not in paneIds`);
   }
 
-  // 6/7. Splits well-formed and flattened.
+  // 6. NonEmpty (defensive): the types guarantee it, but a stray cast in an op
+  // could in principle slip an empty array through, so we check the value too.
   for (const edge of ["left", "right"] as DockEdge[]) {
-    for (const s of splits(layout.docked[edge])) {
-      if (s.children.length < 2)
-        v.push(`split ${s.id} on ${edge} has ${s.children.length} children`);
-      if (s.dir !== "row" && s.dir !== "column")
-        v.push(`split ${s.id} bad dir ${s.dir}`);
-      for (const c of s.children)
-        if (c.type === "split" && c.dir === s.dir)
-          v.push(`unflattened same-axis nesting under ${s.id} on ${edge}`);
-    }
+    const region = layout.docked[edge];
+    if (region === null) continue;
+    if (region.columns.length === 0)
+      v.push(`region on ${edge} has no columns`);
+    for (const c of region.columns)
+      if (c.leaves.length === 0)
+        v.push(`column ${c.id} on ${edge} has no leaves`);
   }
 
-  // 8. Finite positive weights.
-  for (const edge of ["left", "right"] as DockEdge[])
-    for (const n of walkNodes(layout.docked[edge]))
-      if (!Number.isFinite(n.weight) || n.weight <= 0)
-        v.push(`node ${n.id} on ${edge} bad weight ${n.weight}`);
+  // 8. Finite positive weights (columns and leaves).
+  for (const c of columnsOf(layout)) {
+    if (!Number.isFinite(c.weight) || c.weight <= 0)
+      v.push(`column ${c.id} bad weight ${c.weight}`);
+    for (const l of c.leaves)
+      if (!Number.isFinite(l.weight) || l.weight <= 0)
+        v.push(`leaf ${l.id} bad weight ${l.weight}`);
+  }
 
   // 9. Floating windows: non-empty stacks + finite geometry + valid stackWeights
   // (finite, positive, and keyed only by groups actually in this window's stack).
@@ -150,10 +158,12 @@ export function invariantViolations(layout: DockLayout): string[] {
 
   // 10/11. Unique node + window ids.
   const nodeIds: NodeId[] = [];
-  for (const edge of ["left", "right"] as DockEdge[])
-    for (const n of walkNodes(layout.docked[edge])) nodeIds.push(n.id);
+  for (const c of columnsOf(layout)) {
+    nodeIds.push(c.id);
+    for (const l of c.leaves) nodeIds.push(l.id);
+  }
   if (new Set(nodeIds).size !== nodeIds.length)
-    v.push(`duplicate node ids in docked trees`);
+    v.push(`duplicate node ids in docked regions`);
   const wids = layout.floating.map((w) => w.id);
   if (new Set(wids).size !== wids.length) v.push(`duplicate floating window ids`);
 
@@ -176,15 +186,8 @@ export function invariantViolations(layout: DockLayout): string[] {
     if (states.some((s) => s !== states[0]))
       v.push(`stack ${where} has mixed collapsed states`);
   };
-  for (const edge of ["left", "right"] as DockEdge[])
-    for (const n of walkNodes(layout.docked[edge]))
-      if (n.type === "split" && n.dir === "column")
-        checkStackUniform(
-          n.children
-            .filter((c) => c.type === "leaf")
-            .map((c) => (c as Extract<DockNode, { type: "leaf" }>).group),
-          `column ${n.id}`,
-        );
+  for (const c of columnsOf(layout))
+    checkStackUniform(c.leaves.map((l) => l.group), `column ${c.id}`);
   for (const w of layout.floating) checkStackUniform(w.stack, `window ${w.id}`);
 
   return v;
