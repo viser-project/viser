@@ -500,3 +500,41 @@ def test_grow_auto_height_window_past_content_pins(dock_context, vite_server) ->
         ), "growing past content should pin the height"
     finally:
         page.close()
+
+
+def test_left_panel_minimize_button_clickable_despite_resizer(
+    dock_context, vite_server: int
+) -> None:
+    """Regression: the region resizer straddles the region boundary so an
+    edge-aimed resize drag registers -- but a LEFT-docked panel's minimize
+    button hugs the panel's canvas-facing (right) edge at the TOP corner, right
+    at that boundary. The resizer must START below the grip bar so its inward
+    straddle never covers the button. Here we click the button and assert it
+    toggles (i.e. the resizer did not intercept the click)."""
+    page = _open(dock_context, vite_server)
+    try:
+        set_layout(page, dock_layout(docked_left=columns("controls")))
+        gid = _group_id_for_panel(page, "controls")
+
+        def collapsed() -> bool:
+            return page.evaluate(
+                "(g) => window.__dockLayout.groups[g].collapsed === true", gid
+            )
+
+        assert not collapsed(), "should start expanded"
+        # Click the minimize button via a real pointer at its center -- if the
+        # resizer overlay (zIndex 15) covered it, the click would not toggle.
+        btn = page.locator(
+            '[data-dock-leaf][data-dock-edge="left"] [data-dock-minimize]'
+        ).first
+        assert btn.count() == 1
+        box = btn.bounding_box()
+        assert box is not None
+        page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        page.wait_for_timeout(350)
+        assert collapsed(), (
+            "clicking the left panel's minimize button did not collapse it -- the "
+            "region resizer likely intercepted the click"
+        )
+    finally:
+        page.close()

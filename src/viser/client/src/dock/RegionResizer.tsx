@@ -6,6 +6,16 @@ import { useDock } from "./DockContext";
 import { dragGesture } from "./gestures";
 import { DockEdge } from "./types";
 
+// How far the grab zone extends onto the CANVAS side of the region boundary.
+const RESIZER_OUTSET_PX = 10;
+// How far it extends INWARD over the panel, so a drag aimed at the visible
+// region edge registers instead of falling through to the panel. Kept small (and
+// below the grip bar, see `top`) so it doesn't shadow panel chrome.
+const RESIZER_INSET_PX = 5;
+// Top inset clearing the grip bar (~0.9em), so the inward part of the straddle
+// never covers the canvas-facing minimize button at a left panel's top corner.
+const GRIP_BAR_CLEARANCE_PX = 24;
+
 export function RegionResizer({
   edge,
   makeOnResize,
@@ -61,16 +71,22 @@ export function RegionResizer({
       onPointerDown={onPointerDown}
       style={{
         position: "absolute",
-        top: 0,
+        // Start BELOW the grip bar (which holds the canvas-facing minimize
+        // button at the panel's top corner): the grab zone straddles the region
+        // boundary, so without this top inset its inner few px would cover that
+        // button. The grip bar is ~0.9em tall; GRIP_BAR_CLEARANCE_PX clears it
+        // with margin. Below the bar there is no chrome at the boundary, so the
+        // grab can straddle safely down the full remaining height.
+        top: GRIP_BAR_CLEARANCE_PX,
         bottom: 0,
         // The canvas-facing edge of the region, pushed inward past any leading
         // minimized strips so the handle is on the resized panel's boundary. The
-        // ~12px grab area sits ENTIRELY on the canvas side of the boundary (12px
-        // out, 0 in) so it never overlaps the panel's own chrome -- notably a
-        // LEFT-docked panel's minimize button, which hugs the panel's right edge
-        // right at this boundary. Overlay, so no layout impact.
-        [edge === "left" ? "right" : "left"]: `${stripOffset - 12}px`,
-        width: "12px",
+        // grab STRADDLES the boundary -- a few px inside, the rest on the canvas
+        // side -- so a drag aimed at the visible region edge registers (it
+        // previously sat 12px ENTIRELY outside, so an edge-aimed drag fell on the
+        // panel and did nothing). Overlay, so no layout impact.
+        [edge === "left" ? "right" : "left"]: `${stripOffset - RESIZER_OUTSET_PX}px`,
+        width: `${RESIZER_OUTSET_PX + RESIZER_INSET_PX}px`,
         cursor: "ew-resize",
         zIndex: 15,
         touchAction: "none",
