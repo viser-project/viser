@@ -768,3 +768,73 @@ def test_expanded_band_not_squished_by_minimized_wider_band(
         assert w > 200, f"expanded console band was squished to {w}px by the minimized wider band"
     finally:
         page.close()
+
+
+def test_minimized_multigroup_band_chip_gestures(
+    dock_context, vite_server: int
+) -> None:
+    """A minimized band with 2+ groups shows one chip per group. Each chip is an
+    independent control: keyboard Enter expands just that group, and dragging one
+    chip out floats only that group (the others stay docked & minimized)."""
+    page = _open(dock_context, vite_server, 1280, 900)
+    try:
+
+        def seed() -> None:
+            set_layout(
+                page,
+                dock_layout(
+                    docked_right=rows(
+                        columns(
+                            group("controls", collapsed=True),
+                            group("inspector", collapsed=True),
+                        ),
+                        "console",
+                    )
+                ),
+            )
+
+        # Keyboard: focus the inspector chip, Enter -> expands ONLY inspector.
+        seed()
+        page.eval_on_selector(
+            '[data-dock-minimized-band] [data-dock-group="t-inspector"]',
+            "e => e.focus()",
+        )
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(400)
+        assert (
+            page.evaluate(
+                "() => window.__dockLayout.groups['t-inspector'].collapsed === true"
+            )
+            is False
+        ), "Enter on the inspector chip should expand it"
+        assert page.evaluate(
+            "() => window.__dockLayout.groups['t-controls'].collapsed === true"
+        ), "controls should stay minimized"
+
+        # Tear-out: drag the controls chip to canvas -> floats ONLY controls.
+        seed()
+        chip = page.evaluate(
+            """() => {
+                const c = document.querySelector(
+                    '[data-dock-minimized-band] [data-dock-group="t-controls"]');
+                const r = c.getBoundingClientRect();
+                return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+            }"""
+        )
+        _drag(page, (chip["x"], chip["y"]), (640, 450), steps=18)
+        out = page.evaluate(
+            """() => {
+                const l = window.__dockLayout;
+                return {
+                    controlsFloated:
+                        l.floating.some((w) => w.stack.includes('t-controls')),
+                    inspectorDocked:
+                        !!l.docked.right
+                        && JSON.stringify(l.docked.right).includes('t-inspector'),
+                };
+            }"""
+        )
+        assert out["controlsFloated"], "dragging the controls chip should float it"
+        assert out["inspectorDocked"], "inspector should stay docked (only one chip torn out)"
+    finally:
+        page.close()
