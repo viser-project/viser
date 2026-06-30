@@ -901,3 +901,45 @@ def test_all_bands_minimized_region_is_compact_rail_not_squares(
         assert w > 200, f"expanded band should be full width, got {w}"
     finally:
         page.close()
+
+
+def test_minimized_band_chip_drop_target_fills_bar(
+    dock_context, vite_server: int
+) -> None:
+    """The minimized-band chip IS the drop target (collectTargets reads its
+    data-dock-leaf rect). It must fill the bar -- a single chip spans ~the full
+    region width and the full strip height -- so the whole visible bar is
+    droppable, not just a small content-sized chip with dead space beside it."""
+    page = _open(dock_context, vite_server, 1280, 900)
+    try:
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=rows("controls", group("inspector", collapsed=True), "console")
+            ),
+        )
+        page.wait_for_timeout(300)
+        dims = page.evaluate(
+            """() => {
+                const g = document.querySelector(
+                    '[data-dock-minimized-band] [data-dock-group="t-inspector"]');
+                const leaf = g.closest('[data-dock-leaf]');
+                const bar = document.querySelector('[data-dock-minimized-band]');
+                const lr = leaf.getBoundingClientRect();
+                const br = bar.getBoundingClientRect();
+                return {
+                    leafW: Math.round(lr.width), leafH: Math.round(lr.height),
+                    barW: Math.round(br.width), barH: Math.round(br.height),
+                };
+            }"""
+        )
+        # The chip's hit area (leaf) fills the bar: nearly full width (minus the
+        # bar's small padding) and the full strip height.
+        assert dims["leafW"] >= dims["barW"] - 24, (
+            f"chip drop target does not fill the bar width: {dims}"
+        )
+        assert dims["leafH"] >= dims["barH"] - 4, (
+            f"chip drop target does not fill the bar height: {dims}"
+        )
+    finally:
+        page.close()

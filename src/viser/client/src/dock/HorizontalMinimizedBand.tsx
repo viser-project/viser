@@ -61,7 +61,7 @@ export function HorizontalMinimizedBand({
         gap: "0.4em",
         paddingLeft: "0.4em",
         paddingRight: "0.4em",
-        overflowX: "auto",
+        overflowX: "hidden",
         overflowY: "hidden",
         cursor: "grab",
         touchAction: "none",
@@ -88,7 +88,19 @@ export function HorizontalMinimizedBand({
             key={nodeId}
             data-dock-leaf={nodeId}
             data-dock-edge={edge}
-            style={{ flexShrink: 0, display: "flex" }}
+            // The wrapper IS the drop target (collectTargets reads its rect), so
+            // it fills the bar: chips tile the full width (flexGrow) and full
+            // height, leaving NO dead strip that a drop would fall through -- the
+            // whole visible bar is droppable, matching the vertical rail's
+            // full-width cells. The chip's visual content stays compact inside.
+            style={{
+              flexGrow: 1,
+              flexBasis: 0,
+              minWidth: 0,
+              height: "100%",
+              display: "flex",
+              alignItems: "center",
+            }}
           >
             <Box
               data-dock-group={groupId}
