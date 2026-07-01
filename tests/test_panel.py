@@ -223,6 +223,41 @@ def test_minimize_sends_collapsed_message() -> None:
         server.stop()
 
 
+def test_expand_sends_collapsed_false() -> None:
+    """expand() is the imperative inverse of minimize(): Collapsed(False), with
+    a bumped counter so it beats an earlier minimize in the coalesced buffer."""
+    server = _make_server()
+    try:
+        panel = server.gui.add_panel()
+        uuid = panel._impl.uuid
+        panel.minimize()
+        first = _latest(server, uuid, m.GuiSetPanelCollapsedMessage)
+        panel.expand()
+        latest = _latest(server, uuid, m.GuiSetPanelCollapsedMessage)
+        assert latest.collapsed is False
+        assert latest.counter > first.counter
+    finally:
+        server.stop()
+
+
+def test_placement_messages_carry_run_id() -> None:
+    """Every placement message is stamped with the GuiApi's run id (counters are
+    only comparable within one run/scope; the client uses run_id to detect a
+    restarted server or another scope)."""
+    server = _make_server()
+    try:
+        panel = server.gui.add_panel()
+        uuid = panel._impl.uuid
+        panel.dock_right()
+        panel.set_width(300)
+        pos = _latest(server, uuid, m.GuiSetPanelPositionMessage)
+        width = _latest(server, uuid, m.GuiSetPanelWidthMessage)
+        assert pos.run_id == width.run_id == server.gui._layout_run_id
+        assert len(pos.run_id) > 0
+    finally:
+        server.stop()
+
+
 def test_main_panel_placement_targets_control_panel_uuid() -> None:
     """main_panel returns throwaway handles; its commands target the fixed
     control-panel uuid via the same per-axis messages."""

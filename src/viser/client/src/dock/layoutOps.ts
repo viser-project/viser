@@ -1640,14 +1640,25 @@ function panelGroupOf(layout: DockLayout, paneIds: PaneId[]): GroupId | null {
 
 /** Reconcile a panel group's membership against the server's pane list, IN
  * PLACE, preserving the user's existing tab order for panes that remain. Panes
- * the server added are appended (in server order); panes the server removed are
- * dropped; `activeId` is kept unless it was removed. Does NOT reorder existing
- * panes to match the server (the user may have reordered tabs locally). */
-function reconcileMembershipInPlace(group: TabGroup, paneIds: PaneId[]): void {
+ * the server added are appended (in server order); panes in `removedPaneIds`
+ * (tabs the server explicitly removed from THIS panel) are dropped; `activeId`
+ * is kept unless it was removed. Does NOT reorder existing panes to match the
+ * server (the user may have reordered tabs locally), and does NOT drop panes it
+ * doesn't recognize: the group may also hold FOREIGN panes the user merged in
+ * from another panel, and filtering to the server's list would silently orphan
+ * them (they'd render nowhere until reconnect). */
+function reconcileMembershipInPlace(
+  group: TabGroup,
+  paneIds: PaneId[],
+  removedPaneIds: ReadonlySet<PaneId>,
+): void {
   const wanted = new Set(paneIds);
-  // Keep current panes that still exist (preserves user order), then append any
-  // newly-added server panes not already present (in server order).
-  const kept = group.paneIds.filter((p) => wanted.has(p));
+  // Keep current panes that are still wanted or weren't explicitly removed
+  // (preserves user order + foreign merges), then append newly-added server
+  // panes not already present (in server order).
+  const kept = group.paneIds.filter(
+    (p) => wanted.has(p) || !removedPaneIds.has(p),
+  );
   const added = paneIds.filter((p) => !group.paneIds.includes(p));
   group.paneIds = [...kept, ...added];
   if (group.paneIds.length > 0 && !group.paneIds.includes(group.activeId)) {
@@ -1696,25 +1707,35 @@ function applyMembership(
   // A placement command re-assembles the WHOLE panel into its home group. Any
   // pane the user dragged out into another group/window is MOVED back here via
   // the single move primitive (detach-then-insert), so a pane can't be left in
-  // two places. reconcileMembershipInPlace then drops any panes no longer in the
-  // panel and fixes order/activeId.
+  // two places. reconcileMembershipInPlace then fixes order/activeId. A
+  // placement command knows nothing about tab REMOVALS (that's the membership
+  // reconcile's job), so it passes an empty removed set -- and foreign panes
+  // the user merged in ride along with the relocated group.
   for (const paneId of paneIds) movePaneInPlace(draft, paneId, groupId);
-  reconcileMembershipInPlace(draft.groups[groupId], paneIds);
+  reconcileMembershipInPlace(draft.groups[groupId], paneIds, EMPTY_PANE_SET);
 }
+const EMPTY_PANE_SET: ReadonlySet<PaneId> = new Set();
 
 /** Reconcile a standalone panel's group membership (tabs added/removed) WITHOUT
  * repositioning it. Used on tab-list changes so a user-moved panel isn't yanked
- * back to its server placement just because a tab was added. No-op until the
- * panel's group exists (placement creates it). */
+ * back to its server placement just because a tab was added. `removedPaneIds`
+ * are the tabs the server removed since the last reconcile -- ONLY those are
+ * dropped from the group (a foreign pane the user merged in stays). No-op until
+ * the panel's group exists (placement creates it). */
 export function reconcilePanelMembership(
   layout: DockLayout,
   paneIds: PaneId[],
+  removedPaneIds: readonly PaneId[] = [],
 ): DockLayout {
   if (paneIds.length === 0) return layout;
   const groupId = panelGroupOf(layout, paneIds);
   if (groupId === null) return layout;
   const draft = clone(layout);
-  reconcileMembershipInPlace(draft.groups[groupId], paneIds);
+  reconcileMembershipInPlace(
+    draft.groups[groupId],
+    paneIds,
+    new Set(removedPaneIds),
+  );
   return draft;
 }
 

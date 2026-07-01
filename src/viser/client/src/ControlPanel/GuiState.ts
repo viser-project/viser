@@ -1,6 +1,7 @@
 import React from "react";
 import { createStore, createKeyedStore } from "../store";
 import { ColorTranslator } from "colortranslator";
+import { computePaneToStableKey } from "./panelIdentity";
 
 import {
   GuiComponentMessage,
@@ -11,38 +12,63 @@ import {
   ThemeConfigurationMessage,
 } from "../WebsocketMessages";
 
-/** Client-owned placement state for a single panel (a standalone panel keyed by
- * its uuid, or the main control panel keyed by CONTROL_PANEL_ID). Each of the
- * four write-only `GuiSetPanel*` messages merges its single field here; the dock
- * applies whatever is present. */
-export interface PanelPlacementState {
-  position?: GuiSetPanelPositionMessage["position"];
-  // null = override cleared (revert to the default / theme width; auto height).
-  width?: number | null;
-  height?: number | null;
-  collapsed?: boolean;
-  /** Highest per-panel layout-update counter seen across this panel's placement
-   * messages. The dock applies a placement only when this exceeds the count it
-   * last applied for the panel -- OR the user hasn't moved the panel yet -- so a
-   * reconnect/re-run replay (same counter) doesn't clobber a user-rearranged
-   * layout. 0 when no counter has arrived (e.g. injected test layouts). */
+/** One placement axis as last written by the server: the value plus the
+ * (counter, runId) stamp of the command that wrote it. Counters are comparable
+ * only within one runId (one GuiApi instance); across runIds the later ARRIVAL
+ * wins. */
+export interface PlacementAxis<T> {
+  value: T;
   counter: number;
+  runId: string;
 }
 
-/** Merge one placement field into a panel's entry, keeping the highest counter
- * seen (an out-of-order/replayed message can't lower it). Returns the partial
- * state update for `store.set`. */
-function mergePlacement(
+export type PlacementAxisName = "position" | "width" | "height" | "collapsed";
+
+/** Client-owned placement state for a single panel (a standalone panel keyed by
+ * its uuid, or the main control panel keyed by CONTROL_PANEL_ID). Each of the
+ * four write-only `GuiSetPanel*` messages merges its single axis here; the dock
+ * applies each axis INDEPENDENTLY (a set_width can never re-apply a stale
+ * position -- the axes carry their own counters). */
+export interface PanelPlacementState {
+  position?: PlacementAxis<GuiSetPanelPositionMessage["position"]>;
+  // null value = override cleared (revert to default/theme width; auto height).
+  width?: PlacementAxis<number | null>;
+  height?: PlacementAxis<number | null>;
+  collapsed?: PlacementAxis<boolean>;
+}
+
+/** The (counter, runId) stamp of the last server command APPLIED for one axis
+ * of one panel. The dock re-applies an axis only when the stored axis is newer
+ * (same run, higher counter) or from a different run/scope. */
+export interface AppliedAxisRecord {
+  counter: number;
+  runId: string;
+}
+export type AppliedAxes = Partial<Record<PlacementAxisName, AppliedAxisRecord>>;
+
+/** Merge one placement axis into a panel's entry. Same run: keep the higher
+ * counter (an out-of-order replay can't regress the axis). Different run: the
+ * later arrival wins (counters aren't comparable across runs/scopes). Returns
+ * the partial state update for `store.set`. */
+function mergePlacement<A extends PlacementAxisName>(
   state: { panelPlacement: { [uuid: string]: PanelPlacementState } },
   uuid: string,
-  patch: Partial<PanelPlacementState>,
-  counter: number,
-): { panelPlacement: { [uuid: string]: PanelPlacementState } } {
+  axis: A,
+  axisValue: PanelPlacementState[A],
+): Partial<{ panelPlacement: { [uuid: string]: PanelPlacementState } }> {
   const prev = state.panelPlacement[uuid];
+  const prevAxis = prev?.[axis];
+  if (
+    prevAxis !== undefined &&
+    axisValue !== undefined &&
+    prevAxis.runId === axisValue.runId &&
+    prevAxis.counter >= axisValue.counter
+  )
+    return {};
   return {
     panelPlacement: {
       ...state.panelPlacement,
-      [uuid]: { ...prev, ...patch, counter: Math.max(prev?.counter ?? 0, counter) },
+      [uuid]: { ...prev, [axis]: axisValue },
     },
   };
 }
@@ -84,12 +110,14 @@ export interface GuiState {
   /** Per-panel layout-application tracking, keyed by STABLE KEY (not uuid -- a
    * panel's uuid is random per run; the stable key is derived from its tab
    * labels + creation order). Deliberately SURVIVES `resetGui`, so a reconnect
-   * or program re-run can decide -- per panel -- whether to re-apply server
-   * placement: apply only if the panel's placement counter exceeds the last
-   * applied OR the user hasn't moved the panel. Entries for stable keys no
-   * longer present are pruned as the layout settles. */
+   * or program re-run can decide -- per panel, per AXIS -- whether to re-apply
+   * server placement: an axis is re-applied to a user-touched panel only when
+   * its (counter, runId) stamp is newer than the last applied (same run, higher
+   * counter) or from a different run/scope. Entries for stable keys no longer
+   * present are pruned as the layout settles (and immediately when the server
+   * removes a panel). */
   panelLayoutTracking: {
-    [stableKey: string]: { appliedCounter: number; userTouched: boolean };
+    [stableKey: string]: { applied: AppliedAxes; userTouched: boolean };
   };
   /** Bumped by `resetPanelLayout` to force the dock to re-apply server placement
    * for every panel from scratch (the placement effects watch it and clear their
@@ -125,17 +153,30 @@ export interface GuiActions {
     uuid: string,
     position: GuiSetPanelPositionMessage["position"],
     counter: number,
+    runId: string,
   ) => void;
-  setPanelWidth: (uuid: string, width: number | null, counter: number) => void;
-  setPanelHeight: (uuid: string, height: number | null, counter: number) => void;
+  setPanelWidth: (
+    uuid: string,
+    width: number | null,
+    counter: number,
+    runId: string,
+  ) => void;
+  setPanelHeight: (
+    uuid: string,
+    height: number | null,
+    counter: number,
+    runId: string,
+  ) => void;
   setPanelCollapsed: (
     uuid: string,
     collapsed: boolean,
     counter: number,
+    runId: string,
   ) => void;
-  /** Record that server placement at `counter` has been applied for the panel
-   * with this stable key (so a later replay at the same counter is ignored). */
-  recordPanelLayoutApplied: (stableKey: string, counter: number) => void;
+  /** Record which placement axes (with their counter/runId stamps) have been
+   * applied for the panel with this stable key, so a replay of the same
+   * commands is ignored while a genuinely newer command still applies. */
+  recordPanelLayoutApplied: (stableKey: string, applied: AppliedAxes) => void;
   /** Mark the panel with this stable key as user-moved, so server placement is
    * no longer auto-applied unless its counter increments. */
   markPanelUserTouched: (stableKey: string) => void;
@@ -306,7 +347,24 @@ export function useGuiState(initialServer: string) {
           // Drop its client-owned placement entry too (avoid a leak).
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { [id]: _placement, ...restPlacement } = state.panelPlacement;
-          return { panels: rest, panelPlacement: restPlacement };
+          // A server-REMOVED panel's layout tracking is pruned immediately (by
+          // the stable key computed from the pre-removal panel set): a later
+          // panel that resolves to the same stable key is a NEW panel and must
+          // not inherit this one's userTouched/applied state. (Reconnect goes
+          // through resetGui, which deliberately KEEPS tracking -- that's the
+          // "same panel, remembered arrangement" path.)
+          const stableKey = computePaneToStableKey(state.panels).get(id);
+          let tracking = state.panelLayoutTracking;
+          if (stableKey !== undefined && stableKey in tracking) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { [stableKey]: _tracked, ...restTracking } = tracking;
+            tracking = restTracking;
+          }
+          return {
+            panels: rest,
+            panelPlacement: restPlacement,
+            panelLayoutTracking: tracking,
+          };
         });
       },
       removeGui: (id) => {
@@ -417,28 +475,45 @@ export function useGuiState(initialServer: string) {
           return { commands: next };
         });
       },
-      // The four write-only GuiSetPanel* messages each merge their single field
-      // here, keeping the panel's highest counter (so an out-of-order replay
-      // can't lower it). One helper, one field apiece.
-      setPanelPosition: (uuid, position, counter) =>
-        store.set((state) => mergePlacement(state, uuid, { position }, counter)),
-      setPanelWidth: (uuid, width, counter) =>
-        store.set((state) => mergePlacement(state, uuid, { width }, counter)),
-      setPanelHeight: (uuid, height, counter) =>
-        store.set((state) => mergePlacement(state, uuid, { height }, counter)),
-      setPanelCollapsed: (uuid, collapsed, counter) =>
+      // The four write-only GuiSetPanel* messages each merge their single AXIS
+      // here, with the sending command's (counter, runId) stamp. One helper,
+      // one axis apiece.
+      setPanelPosition: (uuid, position, counter, runId) =>
         store.set((state) =>
-          mergePlacement(state, uuid, { collapsed }, counter),
+          mergePlacement(state, uuid, "position", {
+            value: position,
+            counter,
+            runId,
+          }),
         ),
-      recordPanelLayoutApplied: (stableKey, counter) => {
+      setPanelWidth: (uuid, width, counter, runId) =>
+        store.set((state) =>
+          mergePlacement(state, uuid, "width", { value: width, counter, runId }),
+        ),
+      setPanelHeight: (uuid, height, counter, runId) =>
+        store.set((state) =>
+          mergePlacement(state, uuid, "height", {
+            value: height,
+            counter,
+            runId,
+          }),
+        ),
+      setPanelCollapsed: (uuid, collapsed, counter, runId) =>
+        store.set((state) =>
+          mergePlacement(state, uuid, "collapsed", {
+            value: collapsed,
+            counter,
+            runId,
+          }),
+        ),
+      recordPanelLayoutApplied: (stableKey, applied) => {
         store.set((state) => {
           const prev = state.panelLayoutTracking[stableKey];
-          if (prev !== undefined && prev.appliedCounter === counter) return {};
           return {
             panelLayoutTracking: {
               ...state.panelLayoutTracking,
               [stableKey]: {
-                appliedCounter: counter,
+                applied: { ...prev?.applied, ...applied },
                 userTouched: prev?.userTouched ?? false,
               },
             },
@@ -453,7 +528,7 @@ export function useGuiState(initialServer: string) {
             panelLayoutTracking: {
               ...state.panelLayoutTracking,
               [stableKey]: {
-                appliedCounter: prev?.appliedCounter ?? 0,
+                applied: prev?.applied ?? {},
                 userTouched: true,
               },
             },

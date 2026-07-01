@@ -6,11 +6,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applyPanelPlacement,
+  dropOnDockedLeaf,
   findGroupLocation,
   findPaneGroup,
   floatGroup,
   moveWindow,
   PanelPlacement,
+  reconcilePanelMembership,
   releaseAnchor,
   removePane,
   resizeWindow,
@@ -627,6 +629,54 @@ describe("resizeWindowHeight pin / un-pin (auto-height)", () => {
     // Drag back down to content -> un-pin.
     layout = resizeWindowHeight(layout, id, undefined);
     expect(layout.floating[0].height).toEqual({ mode: "auto" });
+  });
+});
+
+describe("membership reconcile preserves foreign panes (user merges)", () => {
+  // Build: panel Q docked right, panel P floated, then the USER merges P's tab
+  // into Q's group (drop on center). The shared group holds [q1, p1].
+  function mergedLayout(): DockLayout {
+    let layout = applyPanelPlacement(
+      emptyLayout(),
+      ["q1"],
+      at({ kind: "edge", edge: "right" }),
+      () => null,
+      { canvasBounds: BOUNDS_1000 },
+    );
+    layout = applyPanelPlacement(
+      layout,
+      ["p1"],
+      at({ kind: "float", x: 50, y: 50 }),
+      () => null,
+      { canvasBounds: BOUNDS_1000 },
+    );
+    const gp = findPaneGroup(layout, "p1")!;
+    const gq = findPaneGroup(layout, "q1")!;
+    const loc = findGroupLocation(layout, gq)!;
+    if (loc.kind !== "docked") throw new Error("expected docked Q");
+    layout = dropOnDockedLeaf(layout, [gp], loc.edge, loc.nodeId, "center");
+    expect(findPaneGroup(layout, "p1")).toBe(findPaneGroup(layout, "q1"));
+    return layout;
+  }
+
+  it("adding a tab to P does NOT orphan Q's pane from the shared group", () => {
+    let layout = mergedLayout();
+    // Server adds tab p2 to panel P -> membership reconcile for P runs with
+    // wanted=[p1,p2] and nothing removed. REGRESSION: the old filter-to-wanted
+    // dropped q1 from the shared group, orphaning it (rendered nowhere).
+    layout = reconcilePanelMembership(layout, ["p1", "p2"], []);
+    expect(findPaneGroup(layout, "q1")).not.toBeNull();
+    const g = layout.groups[findPaneGroup(layout, "p1")!];
+    expect([...g.paneIds].sort()).toEqual(["p1", "p2", "q1"]);
+  });
+
+  it("an explicitly REMOVED tab is dropped; the foreign pane stays", () => {
+    let layout = mergedLayout();
+    layout = reconcilePanelMembership(layout, ["p1", "p2"], []);
+    // Server removes p1 from panel P (wanted=[p2], removed=[p1]).
+    layout = reconcilePanelMembership(layout, ["p2"], ["p1"]);
+    const g = layout.groups[findPaneGroup(layout, "p2")!];
+    expect([...g.paneIds].sort()).toEqual(["p2", "q1"]);
   });
 });
 

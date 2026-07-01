@@ -1773,6 +1773,13 @@ class GuiSetPanelPositionMessage(
     applied for the panel -- OR the user hasn't manually moved the panel yet --
     so a reconnect/re-run doesn't clobber a layout the user rearranged, while the
     server can still re-assert by calling a placement method again."""
+    run_id: str
+    """Random id of the GuiApi instance that sent this (fresh per server process
+    and per client-scoped `client.gui`). The client compares it axis-by-axis
+    against the run_id it last applied: a DIFFERENT run_id means a new server
+    run (whose counters restarted) or another scope (whose counters are
+    independent), so the counter comparison is meaningless and the placement is
+    treated as a fresh, deliberate command."""
 
 
 @dataclasses.dataclass
@@ -1788,6 +1795,8 @@ class GuiSetPanelWidthMessage(
     width: Optional[float]
     counter: int
     """Per-panel layout-update counter; see GuiSetPanelPositionMessage."""
+    run_id: str
+    """Sending GuiApi instance id; see GuiSetPanelPositionMessage."""
 
 
 @dataclasses.dataclass
@@ -1803,6 +1812,8 @@ class GuiSetPanelHeightMessage(
     height: Optional[float]
     counter: int
     """Per-panel layout-update counter; see GuiSetPanelPositionMessage."""
+    run_id: str
+    """Sending GuiApi instance id; see GuiSetPanelPositionMessage."""
 
 
 @dataclasses.dataclass
@@ -1817,6 +1828,8 @@ class GuiSetPanelCollapsedMessage(
     collapsed: bool
     counter: int
     """Per-panel layout-update counter; see GuiSetPanelPositionMessage."""
+    run_id: str
+    """Sending GuiApi instance id; see GuiSetPanelPositionMessage."""
 
 
 @dataclasses.dataclass

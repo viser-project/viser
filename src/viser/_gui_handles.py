@@ -881,16 +881,21 @@ class _PlacementMixin:
         impl = getattr(self, "_impl", None)
         if impl is not None and impl.removed:
             raise RuntimeError(f"Cannot place a removed {type(self).__name__}.")
-        # Stamp the per-panel layout-update counter, bumped on EVERY placement
-        # command. The client uses it to ignore replayed/late placement for a
-        # panel the user has since rearranged (see the message's `counter` doc).
-        # Methods construct the message with a placeholder counter=0; the
-        # authoritative value is assigned here, the single chokepoint.
+        # Stamp the per-panel layout-update counter (bumped on EVERY placement
+        # command) and this GuiApi's run id. The client uses the pair to ignore
+        # replayed/late placement for a panel the user has since rearranged (see
+        # the message's `counter` / `run_id` docs). Methods construct the message
+        # with placeholder counter=0 / run_id=""; the authoritative values are
+        # assigned here, the single chokepoint. The bump is guarded by a lock so
+        # concurrent placement calls from two threads can't stamp duplicate
+        # counters (which would weaken the client's monotonicity gate).
         api = self._placement_gui_api
         counts = api._layout_update_count_from_uuid
-        counts[self._placement_uuid] = counts.get(self._placement_uuid, 0) + 1
+        with api._layout_update_lock:
+            counts[self._placement_uuid] = counts.get(self._placement_uuid, 0) + 1
+            counter = counts[self._placement_uuid]
         stamped = dataclasses.replace(
-            cast(Any, message), counter=counts[self._placement_uuid]
+            cast(Any, message), counter=counter, run_id=api._layout_run_id
         )
         api._websock_interface.queue_message(stamped)
 
@@ -898,7 +903,9 @@ class _PlacementMixin:
         self, position: EdgePlacement | SplitPlacement | FloatPlacement
     ) -> None:
         self._queue_placement(
-            GuiSetPanelPositionMessage(self._placement_uuid, position, counter=0)
+            GuiSetPanelPositionMessage(
+                self._placement_uuid, position, counter=0, run_id=""
+            )
         )
 
     def _resolve_anchor_uuid(self, anchor: PlaceableHandle) -> str:
@@ -1017,7 +1024,7 @@ class _PlacementMixin:
         when floating)."""
         _check_dimension(width, "width")
         self._queue_placement(
-            GuiSetPanelWidthMessage(self._placement_uuid, width, counter=0)
+            GuiSetPanelWidthMessage(self._placement_uuid, width, counter=0, run_id="")
         )
 
     def set_height(self, height: float) -> None:
@@ -1029,7 +1036,9 @@ class _PlacementMixin:
         effect there."""
         _check_dimension(height, "height")
         self._queue_placement(
-            GuiSetPanelHeightMessage(self._placement_uuid, height, counter=0)
+            GuiSetPanelHeightMessage(
+                self._placement_uuid, height, counter=0, run_id=""
+            )
         )
 
     def minimize(self) -> None:
@@ -1045,7 +1054,21 @@ class _PlacementMixin:
         ``expand_by_default`` creation kwarg.
         """
         self._queue_placement(
-            GuiSetPanelCollapsedMessage(self._placement_uuid, True, counter=0)
+            GuiSetPanelCollapsedMessage(
+                self._placement_uuid, True, counter=0, run_id=""
+            )
+        )
+
+    def expand(self) -> None:
+        """Expand (un-minimize) the panel, the inverse of :meth:`minimize`.
+
+        Imperative like :meth:`minimize`: it always expands, even if the user
+        minimized the panel in the browser. Replayed to clients that connect
+        later."""
+        self._queue_placement(
+            GuiSetPanelCollapsedMessage(
+                self._placement_uuid, False, counter=0, run_id=""
+            )
         )
 
 
@@ -1069,8 +1092,8 @@ class PanelHandle(
     current layout is never read back from clients. There are no readable
     ``.width`` / position properties, and a user dragging the panel afterward wins
     until the next explicit command. (This is why sizing is ``set_width()`` rather
-    than a ``.width`` property.) The initial collapsed state is a one-shot
-    ``add_panel(expand_by_default=...)`` hint, like a folder's.
+    than a ``.width`` property.) Collapse is imperative too: :meth:`minimize` /
+    :meth:`expand`.
 
     The server owns a panel's existence: users can rearrange, drag, minimize, and
     resize a panel, but cannot close it from the UI. A panel disappears only when

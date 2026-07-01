@@ -160,6 +160,43 @@ def test_server_can_reassert_moved_panel(
     )
 
 
+def test_set_width_after_user_move_does_not_redock(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """THE yank regression: dock_right(), user drags the panel out to a float,
+    then set_width() -- the width-only command must apply the width WITHOUT
+    re-applying the stale dock position (placement axes are independent, gated
+    per axis)."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(200)
+    panel = viser_server.gui.add_panel()
+    with panel.add_tab("Persisty"):
+        viser_server.gui.add_markdown("hi")
+    panel.dock_right()
+    viser_page.wait_for_selector("[data-dock-tab]", timeout=8_000)
+    viser_page.wait_for_timeout(400)
+
+    _drag_panel_out(viser_page)
+    floated = _panel_box(viser_page)
+    assert floated is not None and not floated["docked"], (
+        f"drag did not float the panel: {floated}"
+    )
+
+    panel.set_width(444)
+    viser_page.wait_for_timeout(800)
+    after = _panel_box(viser_page)
+    assert after is not None and not after["docked"], (
+        f"set_width re-docked a user-moved panel (stale position re-applied): {after}"
+    )
+    # The width itself DID apply (to the floating window) -- the gate lets the
+    # fresh axis through while blocking the stale one.
+    width = viser_page.eval_on_selector(
+        "[data-floating-window]",
+        "e => Math.round(e.getBoundingClientRect().width)",
+    )
+    assert abs(width - 444) <= 2, f"width axis was not applied: {width}"
+
+
 def test_removed_then_readded_panel_does_not_inherit_touched_state(
     viser_page: Page, viser_server: viser.ViserServer
 ) -> None:

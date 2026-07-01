@@ -258,6 +258,7 @@ function useMessageHandler() {
           message.uuid,
           message.position,
           message.counter,
+          message.run_id,
         );
         return;
       }
@@ -266,6 +267,7 @@ function useMessageHandler() {
           message.uuid,
           message.width,
           message.counter,
+          message.run_id,
         );
         return;
       }
@@ -274,6 +276,7 @@ function useMessageHandler() {
           message.uuid,
           message.height,
           message.counter,
+          message.run_id,
         );
         return;
       }
@@ -282,6 +285,7 @@ function useMessageHandler() {
           message.uuid,
           message.collapsed,
           message.counter,
+          message.run_id,
         );
         return;
       }

@@ -7,6 +7,7 @@ import dataclasses
 import functools
 import threading
 import time
+import uuid
 import warnings
 from asyncio import AbstractEventLoop
 from collections.abc import Mapping
@@ -271,6 +272,16 @@ class GuiApi:
         # placement for a panel the user has rearranged. Keyed by panel uuid (the
         # main panel uses CONTROL_PANEL_ID).
         self._layout_update_count_from_uuid: dict[str, int] = {}
+        # Guards the counter's read-modify-write so concurrent placement calls
+        # from different threads can't stamp duplicate counters.
+        self._layout_update_lock = threading.Lock()
+        # Random id identifying THIS GuiApi instance (fresh per server process,
+        # and distinct for each client-scoped `client.gui`). Stamped on every
+        # placement message alongside the counter: counters are only comparable
+        # within one run/scope, so the client treats a placement whose run_id
+        # differs from the last applied as a fresh, deliberate command (a
+        # restarted server's counter restart would otherwise read as stale).
+        self._layout_run_id = uuid.uuid4().hex[:8]
         self._command_handle_from_uuid: dict[str, CommandHandle] = {}
         self._current_file_upload_states: dict[str, _FileUploadState] = {}
 
@@ -601,28 +612,30 @@ class GuiApi:
         # last-applied), while a normal reconnect replay -- same counter -- is
         # ignored. (None width/height clears any override -> default/theme.)
         counts = self._layout_update_count_from_uuid
-        counts[CONTROL_PANEL_ID] = counts.get(CONTROL_PANEL_ID, 0) + 1
-        reset_counter = counts[CONTROL_PANEL_ID]
+        with self._layout_update_lock:
+            counts[CONTROL_PANEL_ID] = counts.get(CONTROL_PANEL_ID, 0) + 1
+            reset_counter = counts[CONTROL_PANEL_ID]
         self._websock_interface.queue_message(
             _messages.GuiSetPanelPositionMessage(
                 CONTROL_PANEL_ID,
                 {"kind": "float", "x": None, "y": None},
                 counter=reset_counter,
+                run_id=self._layout_run_id,
             )
         )
         self._websock_interface.queue_message(
             _messages.GuiSetPanelCollapsedMessage(
-                CONTROL_PANEL_ID, False, counter=reset_counter
+                CONTROL_PANEL_ID, False, counter=reset_counter, run_id=self._layout_run_id
             )
         )
         self._websock_interface.queue_message(
             _messages.GuiSetPanelWidthMessage(
-                CONTROL_PANEL_ID, None, counter=reset_counter
+                CONTROL_PANEL_ID, None, counter=reset_counter, run_id=self._layout_run_id
             )
         )
         self._websock_interface.queue_message(
             _messages.GuiSetPanelHeightMessage(
-                CONTROL_PANEL_ID, None, counter=reset_counter
+                CONTROL_PANEL_ID, None, counter=reset_counter, run_id=self._layout_run_id
             )
         )
 
