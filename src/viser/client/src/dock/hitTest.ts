@@ -301,7 +301,11 @@ export function hitTest(
   const edgeReadsEmpty = (edge: DockEdge): boolean =>
     layout.docked[edge] === null;
   const cy = clientY - crect.top;
-  if (cx >= 0 && cx < EDGE_ZONE_PX && edgeReadsEmpty("left")) {
+  // No inner-side bound on either check: during a captured drag the pointer
+  // can leave the container, and slamming past EITHER screen edge should still
+  // dock there (the right check has always accepted cx > width; keep the left
+  // symmetric by accepting cx < 0).
+  if (cx < EDGE_ZONE_PX && edgeReadsEmpty("left")) {
     return {
       result: { kind: "edge", edge: "left" },
       hint: {
@@ -379,8 +383,12 @@ export function hitTest(
 
   // Vertical extent (top, bottom) of each row band of a docked edge, derived
   // from the band's leaves' target rects (the model has no heights; the rendered
-  // geometry does). Returns one entry per band in row order, or null when a band
-  // has no laid-out target yet. Used to place the cross-band seam drop zones.
+  // geometry does), converted to CONTAINER-relative coords (target rects are
+  // client-space; the seam check compares against container-relative `cy` and
+  // the hint is drawn container-relative, so convert here -- with a titlebar
+  // above the container the two spaces differ by crect.top). Returns one entry
+  // per band in row order, or null when a band has no laid-out target yet. Used
+  // to place the cross-band seam drop zones.
   const bandExtents = (
     edge: DockEdge,
   ): { top: number; bottom: number }[] | null => {
@@ -398,8 +406,8 @@ export function hitTest(
         for (const lf of col.leaves) {
           const r = rectOfNode.get(lf.id);
           if (r === undefined) continue;
-          top = Math.min(top, r.top);
-          bottom = Math.max(bottom, r.bottom);
+          top = Math.min(top, r.top - crect.top);
+          bottom = Math.max(bottom, r.bottom - crect.top);
         }
       if (!Number.isFinite(top) || !Number.isFinite(bottom)) return null;
       out.push({ top, bottom });

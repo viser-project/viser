@@ -564,7 +564,8 @@ export function DockManager({
     // Collect the strip + tabs that belong to ONE group, scoped so a nested
     // group (e.g. a DockArea inside this panel's body) doesn't leak its strip or
     // tabs into this target. `rectEl` is the element whose box defines the
-    // target's hit rect (the group element itself, or an area's wrapper).
+    // target's hit rect (a docked leaf's wrapper, the group element itself, or
+    // an area's wrapper).
     const buildTarget = (
       rectEl: Element,
       scopeEl: Element,
@@ -599,10 +600,19 @@ export function DockManager({
     container.querySelectorAll("[data-dock-leaf]").forEach((leaf) => {
       const nodeId = leaf.getAttribute("data-dock-leaf");
       const edge = leaf.getAttribute("data-dock-edge") as DockEdge | null;
-      const groupEl = leaf.querySelector("[data-dock-group]");
+      const groupEl = leaf.matches("[data-dock-group]")
+        ? leaf
+        : leaf.querySelector("[data-dock-group]");
       if (nodeId === null || edge === null || groupEl === null) return;
-      const g = readGroup(groupEl, { kind: "docked", nodeId, edge });
-      if (g !== null) targets.groups.push(g);
+      const groupId = groupEl.getAttribute("data-dock-group");
+      if (groupId === null) return;
+      // The LEAF wrapper's box is the drop target: both minimized renderers
+      // size the wrapper to the full droppable surface while the group element
+      // inside may be a compact chip (the horizontal band's pill). The group
+      // element still scopes the strip/tab lookup.
+      targets.groups.push(
+        buildTarget(leaf, groupEl, groupId, { kind: "docked", nodeId, edge }),
+      );
     });
     // Iterate floating windows in front-order (array order = z), not DOM order
     // (which is stable/by-id), so targets are ordered back-to-front and hitTest
@@ -613,7 +623,16 @@ export function DockManager({
         `[data-floating-window="${win.id}"]`,
       );
       if (winEl === null) return;
-      winEl.querySelectorAll("[data-dock-group]").forEach((groupEl, index) => {
+      winEl.querySelectorAll("[data-dock-group]").forEach((groupEl) => {
+        const gid = groupEl.getAttribute("data-dock-group");
+        if (gid === null) return;
+        // Snap index comes from the MODEL, not DOM enumeration: a nested
+        // DockArea inside a panel's body also renders a [data-dock-group],
+        // which would shift DOM-order indices past it (snap above/below then
+        // lands at the wrong stack position). Groups not in the stack are
+        // skipped here -- the area scan below collects them with area context.
+        const index = win.stack.indexOf(gid);
+        if (index === -1) return;
         const g = readGroup(groupEl, {
           kind: "floating",
           windowId: win.id,

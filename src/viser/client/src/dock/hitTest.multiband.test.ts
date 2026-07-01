@@ -29,17 +29,23 @@ const STRIP_H = 28;
 function layoutTargets(
   layout: DockLayout,
   edge: DockEdge,
+  container: ContainerRect = CONTAINER,
 ): { targets: GroupTarget[]; frameOf: Record<string, DOMRect> } {
   const region = layout.docked[edge];
   const targets: GroupTarget[] = [];
   const frameOf: Record<string, DOMRect> = {};
   if (region === null) return { targets, frameOf };
-  const regionLeft = edge === "left" ? 0 : CONTAINER.width - REGION_W[edge];
+  // Target rects are CLIENT-space (getBoundingClientRect), so they include the
+  // container's own client offset -- a container at top:100 puts band y=0 at
+  // client y=100. Tests with an offset container exercise exactly that skew.
+  const regionLeft =
+    container.left +
+    (edge === "left" ? 0 : container.width - REGION_W[edge]);
   const regionW = REGION_W[edge];
   const rowTotal = region.rows.reduce((s, r) => s + r.weight, 0);
-  let bandTop = 0;
+  let bandTop = container.top;
   for (const band of region.rows) {
-    const bandH = (band.weight / rowTotal) * CONTAINER.height;
+    const bandH = (band.weight / rowTotal) * container.height;
     const colTotal = band.columns.reduce((s, c) => s + c.weight, 0);
     let colLeft = regionLeft;
     for (const column of band.columns) {
@@ -77,8 +83,9 @@ function run(
   targets: GroupTarget[],
   x: number,
   y: number,
+  container: ContainerRect = CONTAINER,
 ): { result: DropResult; hint: unknown } | null {
-  return hitTest(layout, REGION_W, CONTAINER, { groups: targets }, x, y);
+  return hitTest(layout, REGION_W, container, { groups: targets }, x, y);
 }
 
 // ===========================================================================
@@ -213,5 +220,57 @@ describe("multi-band intent: [A1|A2] over [B] seam", () => {
       // Region width is REGION_W.left (300); the hint must span it, not ~150.
       expect((res.hint as { width: number }).width).toBe(REGION_W.left);
     }
+  });
+});
+
+// ===========================================================================
+// OFFSET CONTAINER: the dock container does not start at client (0,0) -- the
+// real app renders a Titlebar above it, so crect.top > 0. Target rects are
+// client-space while cy/hints are container-relative; a coordinate-space mixup
+// here once shifted the seam zone (and its hint) down by exactly crect.top.
+// ===========================================================================
+describe("multi-band intent: seam with an OFFSET container (titlebar above)", () => {
+  const OFFSET: ContainerRect = { left: 0, top: 100, width: 1000, height: 800 };
+
+  function make(): DockLayout {
+    const l = emptyLayout();
+    l.groups = { a: group("a"), b: group("b"), c: group("c") };
+    l.docked.left = toRegion(rows([row([leaf("a")]), row([leaf("b"), leaf("c")])]));
+    return l;
+  }
+
+  it("a drop ON the true seam is a bandInsert", () => {
+    const l = make();
+    const { targets, frameOf } = layoutTargets(l, "left", OFFSET);
+    const fa = frameOf["a"]; // client-space; fa.bottom is the true seam
+    const res = run(l, targets, fa.left + fa.width / 2, fa.bottom, OFFSET);
+    expect(res?.result.kind).toBe("bandInsert");
+    if (res?.result.kind === "bandInsert") expect(res.result.index).toBe(1);
+  });
+
+  it("the seam hint sits AT the seam (container-relative), not crect.top below it", () => {
+    const l = make();
+    const { targets, frameOf } = layoutTargets(l, "left", OFFSET);
+    const fa = frameOf["a"];
+    const res = run(l, targets, fa.left + fa.width / 2, fa.bottom, OFFSET);
+    expect(res?.result.kind).toBe("bandInsert");
+    const hint = res?.hint as { top: number; height: number };
+    // Hint is container-relative: seam client y minus the container's top.
+    const seamContainerY = fa.bottom - OFFSET.top;
+    expect(hint.top + hint.height / 2).toBeCloseTo(seamContainerY, 0);
+  });
+
+  it("crect.top BELOW the seam (the old mis-accept point) is NOT a bandInsert", () => {
+    const l = make();
+    const { targets, frameOf } = layoutTargets(l, "left", OFFSET);
+    const fa = frameOf["a"];
+    const res = run(
+      l,
+      targets,
+      fa.left + fa.width / 2,
+      fa.bottom + OFFSET.top,
+      OFFSET,
+    );
+    expect(res?.result.kind).not.toBe("bandInsert");
   });
 });

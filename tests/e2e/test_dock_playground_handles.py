@@ -30,7 +30,16 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import Page  # noqa: E402
 
-from .dock_helpers import columns, dock_layout, group, rows, set_layout, stack, window
+from .dock_helpers import (
+    columns,
+    dock_layout,
+    group,
+    group_grip_center,
+    rows,
+    set_layout,
+    stack,
+    window,
+)
 from .dock_helpers import drag as _drag
 from .dock_helpers import group_id_for_panel as _group_id_for_panel
 from .dock_helpers import open_playground as _open
@@ -940,6 +949,61 @@ def test_minimized_band_chip_drop_target_fills_bar(
         )
         assert dims["leafH"] >= dims["barH"] - 4, (
             f"chip drop target does not fill the bar height: {dims}"
+        )
+    finally:
+        page.close()
+
+
+def test_minimized_band_bar_empty_area_accepts_drop(
+    dock_context, vite_server: int
+) -> None:
+    """A REAL drop on the bar's empty area (right of the compact pill) must hit
+    the chip's drop target and merge/insert into the minimized group. Regression:
+    hit testing read the compact pill's rect (not the full-bar leaf wrapper), so
+    drops beside the pill fell through to a no-op window move. The drag source is
+    a FLOATING window so the docked region doesn't reflow mid-drag."""
+    page = _open(dock_context, vite_server, 1280, 900)
+    try:
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=rows("controls", group("inspector", collapsed=True)),
+                floating=[window("console", x=400, y=300)],
+            ),
+        )
+        page.wait_for_timeout(300)
+        pts = page.evaluate(
+            """() => {
+                const bar = document.querySelector('[data-dock-minimized-band]');
+                const pill = bar.querySelector('[data-dock-group]');
+                const br = bar.getBoundingClientRect();
+                const pr = pill.getBoundingClientRect();
+                return {
+                    // Midway between the pill's right edge and the bar's right
+                    // edge, pulled 50px in from the region edge so the region
+                    // side band (40px) can't claim the point.
+                    dropX: Math.min((pr.right + br.right) / 2, br.right - 50),
+                    dropY: br.y + br.height / 2,
+                    pillRight: pr.right,
+                };
+            }"""
+        )
+        if pts["dropX"] < pts["pillRight"] + 10:
+            pytest.skip("no empty bar area beside the pill at this viewport")
+        src = _group_id_for_panel(page, "console")
+        _drag(
+            page,
+            group_grip_center(page, src),
+            (pts["dropX"], pts["dropY"]),
+            steps=18,
+        )
+        page.wait_for_timeout(300)
+        merged = page.evaluate(
+            "() => window.__dockLayout.groups['t-inspector'].paneIds.includes('console')"
+        )
+        assert merged, (
+            "dropping on the bar's empty area should merge into the minimized "
+            "band's group (drop target must span the bar, not just the pill)"
         )
     finally:
         page.close()

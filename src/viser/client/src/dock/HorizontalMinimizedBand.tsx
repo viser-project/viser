@@ -16,7 +16,6 @@ import { IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
 import { focusRing, gripBarBg } from "./DockStyles.css";
-import { startCollapsedGroupPress } from "./collapsedPress";
 import { keyActivate } from "./gestures";
 import { collectLeaves, expandStack } from "./layoutOps";
 import { DockEdge, DockRow, MINIMIZED_STRIP_PX } from "./types";
@@ -113,9 +112,17 @@ export function HorizontalMinimizedBand({
               title={title}
               onPointerDown={(event) => {
                 event.stopPropagation();
-                startCollapsedGroupPress(dock, event, groupId, () =>
-                  dock.toggleCollapsed(groupId),
-                );
+                // A drag moves the WHOLE group (a chip stands for its group,
+                // like the rail cell's cap); a motionless click expands it.
+                // NOT startCollapsedGroupPress: the chip carries data-dock-tab
+                // on this same element (for hitTest's tab-insert rects), so
+                // its closest("[data-dock-tab]") arbitration would route every
+                // press to single-tab tear-out and the group branch would be
+                // unreachable. Per-tab tear-out isn't offered from a chip --
+                // the rail's per-tab rows are the granular affordance.
+                dock.startGroupDrag(event, groupId, {
+                  onClick: () => dock.toggleCollapsed(groupId),
+                });
               }}
               onKeyDown={keyActivate(() => dock.toggleCollapsed(groupId))}
               style={{
