@@ -149,6 +149,38 @@ def test_dock_below_same_batch_anchor(
     )
 
 
+def test_dock_below_reversed_creation_order(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """The DEPENDENT panel is created FIRST, the anchor second, all in one
+    batch. The dependent's placement effect runs before the anchor's group
+    exists (mount order = creation order); the split must DEFER until the
+    anchor materializes instead of silently degrading to the right-edge
+    side-by-side fallback."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(300)
+
+    dep = viser_server.gui.add_panel()
+    with dep.add_tab("B"):
+        viser_server.gui.add_markdown("b")
+    anchor = viser_server.gui.add_panel()
+    with anchor.add_tab("A"):
+        viser_server.gui.add_markdown("a")
+    anchor.dock_right()
+    dep.dock_below(anchor)
+
+    expect(_tab(viser_page, "A")).to_be_visible(timeout=5_000)
+    expect(_tab(viser_page, "B")).to_be_visible(timeout=5_000)
+    right_leaves = viser_page.locator("[data-dock-leaf][data-dock-edge='right']")
+    expect(right_leaves).to_have_count(2)
+    a_box = _leaf_box(viser_page, "A")
+    b_box = _leaf_box(viser_page, "B")
+    assert b_box["y"] > a_box["y"] + a_box["height"] / 2, (
+        "reversed-creation-order dock_below should stack vertically (the "
+        "deferred split must fire once the anchor's group appears)"
+    )
+
+
 def test_dock_right_places_panel_on_right_edge(
     viser_page: Page, viser_server: viser.ViserServer
 ) -> None:

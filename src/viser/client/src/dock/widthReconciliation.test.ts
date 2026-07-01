@@ -7,7 +7,12 @@
 // from structural-change sums, and (c) leave pure-internal changes alone.
 
 import { describe, expect, it } from "vitest";
-import { dockToRegionEdge, toggleCollapsed, widthColumns } from "./layoutOps";
+import {
+  dockToRegionEdge,
+  dropOnDockedLeaf,
+  toggleCollapsed,
+  widthColumns,
+} from "./layoutOps";
 import {
   DEFAULT_REGION_PX,
   DockEdge,
@@ -72,6 +77,30 @@ describe("lone minimized column: preserved width survives a sibling docking", ()
     reconcileRegionWidths(m1, m2);
     const m3 = toggleCollapsed(m2, "a"); // expand A
     expect(recon(m2, m3).right).toBe(500 + DEFAULT_REGION_PX);
+  });
+});
+
+describe("widthRow identity flip preserves rendered widths", () => {
+  it("a column surviving the flip keeps its rendered px (not the default)", () => {
+    // Two 1-column bands: X above Z. The widthRow is X's band (tie -> first);
+    // the region renders 500 wide, so Z's band ALSO renders 500. Dropping W
+    // beside Z gives Z's band 2 columns -- the widthRow flips to it. Z's
+    // rendered width was 500; it must stay 500 (the old widthRow-only match
+    // pool treated Z as brand new and reset it to the 300 default).
+    const l = emptyLayout();
+    l.groups = { x: group("x"), z: group("z"), w: group("w") };
+    const zLeaf = leaf("z");
+    l.docked.right = toRegion(rows([row([leaf("x")]), row([zLeaf])]));
+    l.regionWidth = { left: 0, right: 500 };
+    const zNodeId = l.docked.right!.rows[1].columns[0].leaves[0].id;
+    const next = dropOnDockedLeaf(l, ["w"], "right", zNodeId, "left");
+    reconcileRegionWidths(l, next);
+    const cols = widthColumns(next.docked.right!);
+    const zCol = cols.find((c) => c.leaves.some((lf) => lf.group === "z"))!;
+    const wCol = cols.find((c) => c.leaves.some((lf) => lf.group === "w"))!;
+    expect(zCol.weight).toBe(500); // rendered width preserved across the flip
+    expect(wCol.weight).toBe(DEFAULT_REGION_PX); // genuinely new content
+    expect(regionWidthsOf(next).right).toBe(500 + DEFAULT_REGION_PX);
   });
 });
 

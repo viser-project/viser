@@ -17,7 +17,12 @@
 // writer. Layouts that bypassed the ops (test literals, injected layouts)
 // simply lack the field and get defaults here.
 
-import { collectLeafGroups, minRegionWidth, widthColumns } from "./layoutOps";
+import {
+  collectLeafGroups,
+  minRegionWidth,
+  widthColumns,
+  widthRow,
+} from "./layoutOps";
 import { planRegion, RegionPlan } from "./regionPlan";
 import {
   DEFAULT_REGION_PX,
@@ -114,27 +119,43 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
     // panel groups (content identity), not node id: a column's root id changes
     // when it's split internally (leaf -> split) even though it still holds
     // the same panel, so id matching would wrongly treat it as new and reset
-    // its width. Each prev column matches at most one next column.
+    // its width. Each prev column matches at most one next column. The match
+    // pool spans ALL prev bands, not just the prev widthRow: when the
+    // width-determining band FLIPS identity (a narrower band gains a column
+    // and overtakes), the new widthRow's columns existed in another band --
+    // matching only against the old widthRow would treat them as brand new
+    // and reset every width to the default.
     const prevPlan =
       prevTree !== null ? planRegion(prevTree, prev.groups) : null;
     const prevExpanded = prevPlan?.expandedColumns ?? [];
-    const prevInfo = prevCols.map((c) => ({
-      groups: new Set(collectLeafGroups(c)),
-      // Weights ARE pixels once a region has multiple columns (this function
-      // wrote them); a SINGLE column's px lives in regionWidth instead (its
-      // weight is never rewritten -- see below). That single-column case holds
-      // whether the column is expanded OR fully minimized: a lone minimized
-      // column preserves its width in regionWidth too (the pattern-flip branch
-      // keeps it), while its weight is still the constructor default. Reading
-      // the weight there returned 1px -> floored to the grab-min, so a
-      // minimized lone panel came back at 96px after a sibling docked.
-      px:
-        prevCols.length === 1 ||
-        (prevExpanded.length === 1 && prevExpanded[0] === c)
-          ? prevRW[edge]
-          : c.weight,
-      used: false,
-    }));
+    const prevWidthBand = prevTree !== null ? widthRow(prevTree) : null;
+    const prevInfo = (prevTree?.rows ?? []).flatMap((band) => {
+      const bandTotal = band.columns.reduce((s, c) => s + c.weight, 0) || 1;
+      return band.columns.map((c) => ({
+        groups: new Set(collectLeafGroups(c)),
+        // widthRow columns: weights ARE pixels once the row has multiple
+        // columns (this function wrote them); a SINGLE column's px lives in
+        // regionWidth instead (its weight is never rewritten). That holds
+        // whether the column is expanded OR fully minimized: a lone minimized
+        // column preserves its width in regionWidth too (the pattern-flip
+        // branch keeps it), while its weight is still the constructor
+        // default. Reading the weight there returned 1px -> floored to the
+        // grab-min, so a minimized lone panel came back at 96px after a
+        // sibling docked.
+        // NON-widthRow columns: their weights are plain flex shares, but the
+        // band renders at the full region width, so the column's RENDERED px
+        // is its share of regionWidth -- the width it should keep if it
+        // becomes a widthRow column.
+        px:
+          band === prevWidthBand
+            ? prevCols.length === 1 ||
+              (prevExpanded.length === 1 && prevExpanded[0] === c)
+              ? prevRW[edge]
+              : c.weight
+            : prevRW[edge] * (c.weight / bandTotal),
+        used: false,
+      }));
+    });
     const intended = nextCols.map((c) => {
       const groupSet = collectLeafGroups(c);
       const match = prevInfo.find(

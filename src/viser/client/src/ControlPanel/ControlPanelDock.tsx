@@ -802,6 +802,50 @@ function StandalonePanelPlacement({
     lastResetNonce.current = layoutResetNonce;
     appliedPlacementKey.current = null;
   }
+  // Anchor ordering: `dep.dock_below(anchor)` can reach dep's placement
+  // effect BEFORE the anchor is docked -- dep created first in the same batch
+  // (mount order = creation order, so the anchor's group doesn't exist yet),
+  // or the anchor transiently FLOATING between its floatIfUnplaced and its
+  // own dock applying (multi-flush arrival). Splitting then would fall back
+  // to a right-edge dock -- wrong for a perfectly ordered program. So when
+  // the anchor's own STORED placement shows the server intends it docked
+  // (its position message precedes dep's split on the ordered stream), the
+  // split DEFERS: nothing applied or recorded; the watcher below re-runs the
+  // placement the moment the anchor is actually docked. A timeout escape
+  // applies the fallback anyway if the anchor never docks (e.g. its dock is
+  // gated off by a user having floated it) so the panel can't stay invisible.
+  const pendingAnchorUuid = React.useRef<string | null>(null);
+  const pendingAnchorTimer = React.useRef<number | null>(null);
+  const [anchorRetryNonce, setAnchorRetryNonce] = React.useState(0);
+  const forceAnchorFallback = React.useRef(false);
+  const anchorDocked = (layout: DockLayout, anchorUuid: string): boolean => {
+    const gid = resolveAnchor(layout, anchorUuid);
+    return gid !== null && ops.findGroupLocation(layout, gid)?.kind === "docked";
+  };
+  const anchorIntendsDocked = (anchorUuid: string): boolean => {
+    const pos =
+      viewer.useGui.get().panelPlacement[anchorUuid]?.position?.value;
+    return pos !== undefined && pos.kind !== "float";
+  };
+  React.useEffect(() => {
+    const anchor = pendingAnchorUuid.current;
+    if (anchor === null) return;
+    if (anchorDocked(dock.layout, anchor)) {
+      pendingAnchorUuid.current = null;
+      if (pendingAnchorTimer.current !== null) {
+        window.clearTimeout(pendingAnchorTimer.current);
+        pendingAnchorTimer.current = null;
+      }
+      setAnchorRetryNonce((n) => n + 1);
+    }
+  });
+  React.useEffect(
+    () => () => {
+      if (pendingAnchorTimer.current !== null)
+        window.clearTimeout(pendingAnchorTimer.current);
+    },
+    [],
+  );
   React.useEffect(() => {
     // When hidden, drop the applied-key so re-showing re-places the panel.
     if (!visible) {
@@ -826,12 +870,38 @@ function StandalonePanelPlacement({
       appliedPlacementKey.current = placementKey;
       return;
     }
+    const pos = gated.placement.position;
+    if (
+      !forceAnchorFallback.current &&
+      pos !== null &&
+      pos.kind === "split" &&
+      !anchorDocked(dock.layout, pos.anchor_uuid) &&
+      anchorIntendsDocked(pos.anchor_uuid)
+    ) {
+      // Defer (see pendingAnchorUuid above): the anchor's own dock is on its
+      // way; the watcher re-runs this effect once it lands, and the timeout
+      // forces the fallback if it never does.
+      const anchorUuid = pos.anchor_uuid;
+      pendingAnchorUuid.current = anchorUuid;
+      if (pendingAnchorTimer.current !== null)
+        window.clearTimeout(pendingAnchorTimer.current);
+      pendingAnchorTimer.current = window.setTimeout(() => {
+        if (pendingAnchorUuid.current !== anchorUuid) return;
+        pendingAnchorUuid.current = null;
+        pendingAnchorTimer.current = null;
+        forceAnchorFallback.current = true;
+        setAnchorRetryNonce((n) => n + 1);
+      }, 2000);
+      return;
+    }
+    forceAnchorFallback.current = false;
+    pendingAnchorUuid.current = null;
     appliedPlacementKey.current = placementKey;
     if (hasServerPlacement)
       viewer.guiActions.recordPanelLayoutApplied(stableKey, gated.applied);
     dock.api.apply((layout) => placePanel(layout, gated.placement));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, placementKey, visible, dock.api, stableKey, layoutResetNonce]);
+  }, [ready, placementKey, visible, dock.api, stableKey, layoutResetNonce, anchorRetryNonce]);
 
   // Hide/show: when `visible` is false, remove the panel's panes from the layout
   // (it renders nothing) without destroying the panel; when it flips back to
@@ -900,6 +970,10 @@ function StandalonePanelPlacement({
     dock.api.apply((layout) => {
       if (ops.findPaneGroup(layout, tabIds[0]) !== null)
         return ops.reconcilePanelMembership(layout, tabIds, removed);
+      // While a split placement is DEFERRED on its anchor materializing (see
+      // pendingAnchorUuid), leave the panel unplaced -- placing it here would
+      // hit the very warn+fallback the deferral avoids.
+      if (pendingAnchorUuid.current !== null) return layout;
       const gated = gatePlacement(placementEntry, tracking, false);
       return placePanel(layout, gated.placement);
     });
