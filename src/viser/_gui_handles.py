@@ -1022,6 +1022,11 @@ class _PlacementMixin:
     def set_width(self, width: float) -> None:
         """Set the panel width in pixels (region width when docked, window width
         when floating)."""
+        if width is None:  # type: ignore[unreachable]
+            # _check_dimension permits None (the message-level "clear override"
+            # used internally by gui.reset()), but the public command requires a
+            # real width -- None would silently no-op for standalone panels.
+            raise TypeError("set_width requires a width in pixels.")
         _check_dimension(width, "width")
         self._queue_placement(
             GuiSetPanelWidthMessage(self._placement_uuid, width, counter=0, run_id="")

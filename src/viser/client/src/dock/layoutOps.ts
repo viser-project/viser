@@ -34,7 +34,7 @@ import {
   withInserted,
 } from "./types";
 import { freshId } from "./gestures";
-import { GuiSetPanelPositionMessage } from "../WebsocketMessages";
+
 
 // NonEmpty leaks through `.filter`/`.slice` (they return a plain T[]), so after
 // deriving a columns/leaves list we re-assert non-emptiness in ONE place before
@@ -285,12 +285,6 @@ export function widthRow(region: DockRegion): DockRow {
  * region's horizontal extent). */
 export function widthColumns(region: DockRegion): NonEmpty<DockColumn> {
   return widthRow(region).columns;
-}
-
-/** The region's "top-level columns" -- alias of widthColumns, kept for the width
- * tests + any caller that thinks in terms of the side-by-side column list. */
-export function topColumns(region: DockRegion): NonEmpty<DockColumn> {
-  return widthColumns(region);
 }
 
 /** Whether a region's given edge is a single full-span leaf -- so a "span the
@@ -1403,8 +1397,6 @@ export function bringToFront(
   return draft;
 }
 
-/** Set the flex weights of a split node's children (used by split resizers).
- * `weights` must match the child count; mismatches are ignored. */
 /** Move `paneId` to `insertIndex` within its group's tab order. Returns the
  * input layout unchanged (same reference) when the order wouldn't change, so
  * callers can skip the re-render on no-op drag frames. */
@@ -1494,7 +1486,7 @@ export function expandStack(
  * Only `collapsed` is cleared here -- a lone group keeps its own collapse, and a
  * uniformly-minimized stack is left alone (so minimizeStack's all-collapsed
  * result survives). */
-export function normalizeStackCollapse(layout: DockLayout): boolean {
+export function normalizeStackCollapseInPlace(layout: DockLayout): boolean {
   let changed = false;
   const expandAll = (groupIds: GroupId[]): void => {
     for (const gid of groupIds) {
@@ -1612,14 +1604,24 @@ export function setActiveTab(
 // repositions it again (imperative, not continuous sync).
 // ---------------------------------------------------------------------------
 
+/** A panel's requested position, structurally identical to the wire shape
+ * (EdgePlacement | SplitPlacement | FloatPlacement in _messages.py /
+ * GuiSetPanelPositionMessage). Defined HERE rather than imported from
+ * WebsocketMessages so the dock library keeps no dependency on the viser wire
+ * protocol (the sync layer's message payloads are structurally compatible and
+ * flow in without conversion). */
+export type PanelPosition =
+  | { kind: "edge"; edge: DockEdge }
+  | { kind: "split"; anchor_uuid: string; side: "above" | "below" }
+  | { kind: "float"; x: number | null; y: number | null };
+
 /** The placement state the dock applies to a panel: a per-axis bundle the
  * caller assembles from the client-owned placement store. Each field is the
- * latest value the server wrote (or null when never set). `position` is the
- * wire shape of `GuiSetPanelPositionMessage`. Each command is independent and
- * always applied -- a set_width carries no position, so applying width can never
- * re-dock a panel. */
+ * latest value the server wrote (or null when never set / gated off). Each
+ * axis is independent and applied only when non-null -- a set_width carries no
+ * position, so applying width can never re-dock a panel. */
 export interface PanelPlacement {
-  position: GuiSetPanelPositionMessage["position"] | null;
+  position: PanelPosition | null;
   width: number | null;
   height: number | null;
   collapsed: boolean | null;

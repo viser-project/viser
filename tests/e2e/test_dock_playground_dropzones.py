@@ -23,6 +23,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import Page  # noqa: E402
 
+from .dock_helpers import columns as _columns
 from .dock_helpers import dock_layout as _dock_layout
 from .dock_helpers import drag_group as _drag_group
 from .dock_helpers import floating_group_ids as _floating_ids
@@ -35,7 +36,6 @@ from .dock_helpers import move_floating_window as _move_window
 from .dock_helpers import open_playground as _open
 from .dock_helpers import right_cols as _right_cols
 from .dock_helpers import rows as _rows
-from .dock_helpers import columns as _columns
 from .dock_helpers import set_layout as _set_layout
 from .dock_helpers import setup_side_by_side as _setup_side_by_side
 from .dock_helpers import window as _window

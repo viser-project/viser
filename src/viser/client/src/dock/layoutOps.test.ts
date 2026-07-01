@@ -63,7 +63,7 @@ import {
   toggleCollapsed,
   minimizeStack,
   expandStack,
-  normalizeStackCollapse,
+  normalizeStackCollapseInPlace,
   stackGroupIdsOf,
   setActiveTab,
   cascadeResize,
@@ -1358,14 +1358,14 @@ describe("minimizeStack / expandStack", () => {
 });
 
 // ===========================================================================
-// normalizeStackCollapse: a 2+ stack is uniform; expanded dominates.
+// normalizeStackCollapseInPlace: a 2+ stack is uniform; expanded dominates.
 // ===========================================================================
 
-describe("normalizeStackCollapse", () => {
+describe("normalizeStackCollapseInPlace", () => {
   it("a mixed floating stack -> all expanded (expanded dominates)", () => {
     const layout = makeLayout({ floating: [{ id: "w1", stack: ["a", "b"] }] });
     layout.groups["a"].collapsed = true; // a minimized, b expanded -> mixed
-    const changed = normalizeStackCollapse(layout);
+    const changed = normalizeStackCollapseInPlace(layout);
     expect(changed).toBe(true);
     expect(layout.groups["a"].collapsed).not.toBe(true);
     expect(layout.groups["b"].collapsed).not.toBe(true);
@@ -1375,7 +1375,7 @@ describe("normalizeStackCollapse", () => {
     const layout = makeLayout({ floating: [{ id: "w1", stack: ["a", "b"] }] });
     layout.groups["a"].collapsed = true;
     layout.groups["b"].collapsed = true;
-    expect(normalizeStackCollapse(layout)).toBe(false);
+    expect(normalizeStackCollapseInPlace(layout)).toBe(false);
     expect(layout.groups["a"].collapsed).toBe(true);
     expect(layout.groups["b"].collapsed).toBe(true);
   });
@@ -1383,14 +1383,14 @@ describe("normalizeStackCollapse", () => {
   it("a LONE group keeps its own minimized state", () => {
     const layout = makeLayout({ left: leaf("a") });
     layout.groups["a"].collapsed = true;
-    expect(normalizeStackCollapse(layout)).toBe(false);
+    expect(normalizeStackCollapseInPlace(layout)).toBe(false);
     expect(layout.groups["a"].collapsed).toBe(true);
   });
 
   it("a mixed docked column -> all expanded", () => {
     const layout = makeLayout({ left: col([leaf("a"), leaf("b")]) });
     layout.groups["a"].collapsed = true; // mixed within the column
-    normalizeStackCollapse(layout);
+    normalizeStackCollapseInPlace(layout);
     expect(layout.groups["a"].collapsed).not.toBe(true);
     expect(layout.groups["b"].collapsed).not.toBe(true);
   });

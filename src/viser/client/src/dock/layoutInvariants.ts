@@ -187,7 +187,7 @@ export function invariantViolations(layout: DockLayout): string[] {
 
   // 14. A stack of 2+ groups is uniform-collapse: every member shares one
   // collapsed state (a lone group may differ). Enforced by
-  // normalizeStackCollapse; checked here so any op that violates it is caught.
+  // normalizeStackCollapseInPlace; checked here so any op that violates it is caught.
   const checkStackUniform = (gids: GroupId[], where: string): void => {
     if (gids.length < 2) return;
     const states = gids.map((g) => layout.groups[g]?.collapsed === true);

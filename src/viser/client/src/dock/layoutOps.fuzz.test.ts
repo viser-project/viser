@@ -56,7 +56,7 @@ import {
   minimizeStack,
   expandStack,
   stackGroupIdsOf,
-  normalizeStackCollapse,
+  normalizeStackCollapseInPlace,
 } from "./layoutOps";
 import {
   mulberry32,
@@ -695,7 +695,7 @@ function runSequence(
     // on one group of a stack) may transiently produce a mixed stack; the
     // production commit path always normalizes it away, so normalize `next`
     // (a fresh op output -- safe to mutate) before checking invariants.
-    if (next !== before) normalizeStackCollapse(next);
+    if (next !== before) normalizeStackCollapseInPlace(next);
     const violations = [...invariantViolations(next), ...geometricViolations(next)];
     // Panel conservation: the multiset of panel ids must be invariant.
     if (JSON.stringify(allPanels(next)) !== startPanels) {

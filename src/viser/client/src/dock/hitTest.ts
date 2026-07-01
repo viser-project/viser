@@ -292,12 +292,10 @@ export function hitTest(
     variant,
   });
 
-  // 1. Screen edge zones, for an edge that READS as empty: either truly empty,
-  // or holding only fully-minimized columns (those render as a compact overlay
-  // rail floating over the canvas, so the screen edge still looks free --
-  // dropping there docks a new outer column, just like docking next to
-  // nothing). An edge with expanded content instead offers its region-edge
-  // bands below, which dock a new outer column with grow-preserve.
+  // 1. Screen edge zones, for a TRULY empty edge (docked[edge] === null). A
+  // minimized region does NOT read as empty here: its rail/strips reserve real
+  // width, and their cells carry their own drop zones -- the region-edge bands
+  // below (kept full-height for a minimized region) handle "dock beside".
   const edgeReadsEmpty = (edge: DockEdge): boolean =>
     layout.docked[edge] === null;
   const cy = clientY - crect.top;
@@ -512,14 +510,26 @@ export function hitTest(
         },
       };
     }
-    // Left / right (inner *and* outer): full-height line beside all rows.
+    // Left / right (inner *and* outer): a line beside the rows the drop will
+    // actually join. The op (dockToRegionEdge left/right) inserts the new
+    // column into the TOP band only -- the model has no cross-band column -- so
+    // with 2+ bands the hint spans just that band: an honest preview instead
+    // of a full-height line promising the unrepresentable "beside everything".
+    const sideHintSpan = (): { top: number; height: number } => {
+      if (tree.rows.length >= 2) {
+        const ext = bandExtents(edge);
+        if (ext !== null && ext.length > 0)
+          return { top: ext[0].top, height: ext[0].bottom - ext[0].top };
+      }
+      return { top: 0, height: crect.height };
+    };
     if (
       cx - regionLeft < effSideBand &&
       (!edgeIsSingleLeaf(tree, "left") || keepSideBand)
     ) {
       return {
         result: { kind: "regionEdge", edge, side: "left" },
-        hint: { left: regionLeft, top: 0, width: t, height: crect.height, variant: "line" },
+        hint: { left: regionLeft, width: t, ...sideHintSpan(), variant: "line" },
       };
     }
     if (
@@ -530,9 +540,8 @@ export function hitTest(
         result: { kind: "regionEdge", edge, side: "right" },
         hint: {
           left: regionRight - t,
-          top: 0,
           width: t,
-          height: crect.height,
+          ...sideHintSpan(),
           variant: "line",
         },
       };

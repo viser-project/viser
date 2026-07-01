@@ -153,7 +153,7 @@ export interface TabGroup {
   activeId: PaneId | null;
   /** When true, the group is minimized: only its handle + tab strip show, with
    * the contents hidden. In a stack of 2+ groups this is uniform across the
-   * stack (enforced by normalizeStackCollapse); a lone group minimizes on its
+   * stack (enforced by normalizeStackCollapseInPlace); a lone group minimizes on its
    * own. */
   collapsed?: boolean;
 }
@@ -260,9 +260,12 @@ export interface FloatingWindow {
   stack: GroupId[];
   /** Per-group height weights for a multi-group stack (groupId -> flex weight),
    * used when the window has a pinned `height` so a draggable divider can
-   * redistribute height between stacked groups. Missing/absent groups default to
+   * redistribute height between stacked groups. Missing groups default to
    * weight 1 (equal). Keyed by group id (not index) so it survives stack
-   * insert/remove without re-alignment; stale keys are harmless. */
+   * insert/remove without re-alignment. Keys MUST belong to the window's stack
+   * (invariant #9): detachInPlace deletes a departing group's entry, and the
+   * docking ops read the weights back into leaf weights -- a stale key would
+   * leak a dead group's height into the next occupant. */
   stackWeights?: Record<GroupId, number>;
   /** Server anchor for a server-placed panel: the canvas-relative coords the
    * window re-resolves to as the canvas + measured window size change (`x`/`y`

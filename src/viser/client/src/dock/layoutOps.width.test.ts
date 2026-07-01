@@ -2,7 +2,7 @@
 // and the centralized width reconciliation in DockManager.applyOp.
 //
 // Scope (flat 3-level model: Region = row of columns; Column = stack of leaves):
-//   - topColumns / widthColumns: a region's columns (they ARE widthColumns(region)
+//   - widthColumns / widthColumns: a region's columns (they ARE widthColumns(region)
 //     now -- the old "descend into the widest child to guess the columns" logic,
 //     and the LEAD 1 bug it patched, are gone since deep nesting is
 //     unrepresentable).
@@ -21,7 +21,6 @@ import {
   MIN_REGION_GRAB_PX,
 } from "./types";
 import {
-  topColumns,
   widthColumns,
   minRegionWidth,
   setNodeWeights,
@@ -46,12 +45,12 @@ function layoutWith(spec: TreeSpec, ...gids: GroupId[]): DockLayout {
 const reg = (spec: TreeSpec): DockRegion => toRegion(spec)!;
 
 // ===========================================================================
-// topColumns / widthColumns -- both are now just widthColumns(region).
+// widthColumns / widthColumns -- both are now just widthColumns(region).
 // ===========================================================================
-describe("topColumns / widthColumns", () => {
+describe("widthColumns / widthColumns", () => {
   it("a single-column region (one leaf) has one column", () => {
     const region = reg(leaf("a"));
-    expect(topColumns(region)).toEqual(widthColumns(region));
+    expect(widthColumns(region)).toEqual(widthColumns(region));
     expect(widthColumns(region)).toEqual(widthColumns(region));
   });
 
@@ -61,7 +60,7 @@ describe("topColumns / widthColumns", () => {
       "a",
       "b",
     ]);
-    expect(widthColumns(region)).toEqual(topColumns(region));
+    expect(widthColumns(region)).toEqual(widthColumns(region));
   });
 
   it("a single column stacking 2 leaves is ONE column (shared width)", () => {

@@ -56,6 +56,7 @@ import {
   DOCK_ANIM_MS,
   DockEdge,
   DockLayout,
+  FloatingWindow,
   GroupId,
   MIN_CANVAS_PX,
   MIN_REGION_GRAB_PX,
@@ -367,22 +368,37 @@ export function DockManager({
   // changes (see widthReconciliation.ts). The old auto-grow effect is gone:
   // the reconciler enforces the min-width floor on every commit, so a
   // too-narrow region is unrepresentable in committed state.
-  // Commit a layout: the ONE place layoutRef + React state are updated, so EVERY
-  // committed layout is structurally checked in dev. The invariant check (one
-  // location per group, one group per pane, ...) is stripped from production
-  // builds; the fuzz test asserts the same function over random op sequences.
+  // Commit a layout: the place layoutRef + React state are updated for every
+  // STRUCTURAL change, so every such layout is invariant-checked (dev: every
+  // commit; prod: rate-limited tripwire below). The one sanctioned bypass is
+  // patchFloatPositions (position-only float patches, which can't change
+  // structure). The fuzz test asserts the same invariants over random op
+  // sequences.
   // >0 while a PROGRAMMATIC layout change is running (the sync layer's
   // api.apply, used to apply server placement). User gestures commit with this
   // at 0, so `commit` can tell a user rearrangement from a programmatic one --
   // which drives the "user touched this panel" flag for layout persistence.
   const programmaticDepth = React.useRef(0);
+  // Production keeps a RATE-LIMITED invariant tripwire (dev checks every
+  // commit): layouts are partly SERVER-driven, so a malformed op sequence from
+  // server state can ship a violated layout to real users -- whose symptoms
+  // (duplicate React keys, silently vanished panes) are exactly the
+  // hard-to-diagnose kind. The check is O(layout) on small trees; per-frame
+  // region-resize commits are skipped (a width write can't break structure),
+  // and after the budget is spent production stops checking entirely.
+  const invariantWarnBudget = React.useRef(import.meta.env.DEV ? Infinity : 5);
   const commit = React.useCallback((next: DockLayout) => {
-    if (import.meta.env.DEV) {
+    if (!regionResizeDraggingRef.current && invariantWarnBudget.current > 0) {
       const violations = invariantViolations(next);
-      if (violations.length > 0)
-        console.error(
-          "[dock] layout invariant violation:\n" + violations.join("\n"),
-        );
+      if (violations.length > 0) {
+        const msg =
+          "[dock] layout invariant violation:\n" + violations.join("\n");
+        if (import.meta.env.DEV) console.error(msg);
+        else {
+          invariantWarnBudget.current -= 1;
+          console.warn(msg);
+        }
+      }
     }
     const prev = layoutRef.current;
     // Ease the region width whenever a group's collapsed state actually flipped
@@ -405,7 +421,7 @@ export function DockManager({
       // Enforce the stack-uniform-collapse invariant BEFORE width reconciliation
       // (it can flip cells expanded, which changes the width math). `next` is a
       // fresh draft here, so in-place mutation is safe.
-      ops.normalizeStackCollapse(next);
+      ops.normalizeStackCollapseInPlace(next);
       reconcileRegionWidths(layoutRef.current, next);
       commit(next);
     },
@@ -422,6 +438,34 @@ export function DockManager({
       programmaticDepth.current -= 1;
     }
   }, []);
+
+  // The ONLY sanctioned bypass of the applyOp->commit pipeline: POSITION-ONLY
+  // patches to floating windows (container-resize edge anchoring, server
+  // re-anchoring, inset clamping). These run per resize tick, can't change
+  // structure (no invariant/width-reconcile/onCommit needed), and must not
+  // spuriously flip user-touched flags -- so they write React state directly.
+  // `patch` returns the SAME window object for "unchanged"; the updater is
+  // idempotent (StrictMode may replay it), and the layoutRef sync inside keeps
+  // gesture closures reading the fresh positions synchronously. Anything
+  // STRUCTURAL must go through applyOp instead -- this helper deliberately
+  // cannot express it.
+  const patchFloatPositions = React.useCallback(
+    (patch: (w: FloatingWindow) => FloatingWindow) => {
+      setLayout((cur) => {
+        let changed = false;
+        const floating = cur.floating.map((w) => {
+          const out = patch(w);
+          if (out !== w) changed = true;
+          return out;
+        });
+        if (!changed) return cur;
+        const next = { ...cur, floating };
+        layoutRef.current = next;
+        return next;
+      });
+    },
+    [],
+  );
 
   // Imperative panel lifecycle API (exposed via context). Stable identity so
   // sync layers can list it in effect deps without re-running.
@@ -504,44 +548,36 @@ export function DockManager({
           if (id !== null) heights.set(id, winEl.offsetHeight);
         },
       );
-      setLayout((prev) => {
-        let changed = false;
-        const floating = prev.floating.map((w) => {
-          if (w.id === draggingWindowIdRef.current) return w;
-          // Server-anchored panels are repositioned by the resolve-effect below
-          // (keyed on container size); skip them here so the two don't fight.
-          if (w.anchor !== undefined) return w;
-          let x = w.x;
-          let y = w.y;
-          // Dragged windows: anchor to the nearer edge (operate on the RENDERED
-          // height the map just measured; the model height is only a fallback
-          // for a window with no DOM yet).
-          const wh = heights.get(w.id) ?? pinnedPxOf(w.height) ?? 0;
-          if (prevSize !== null && (deltaW !== 0 || deltaH !== 0)) {
-            if (w.x + w.width / 2 > prevSize.w / 2) x += deltaW;
-            if (w.y + wh / 2 > prevSize.h / 2) y += deltaH;
-            // A container SHRINK pulls windows fully on-screen when they fit
-            // (overhang from a drag is the user's choice; losing the far edge
-            // -- and its minimize/resize controls -- to a browser resize
-            // isn't). A window larger than the container pins to the
-            // top/left. Per axis, shrink only: a width-only resize must not
-            // yank a bottom-overhanging window upward, and a GROW loses
-            // nothing, so it must not cancel deliberate overhang either. NOT
-            // applied on the observer's initial fire, which would
-            // second-guess deliberate placement.
-            if (deltaW < 0) x = Math.min(x, Math.max(0, rect.width - w.width));
-            if (deltaH < 0 && wh > 0)
-              y = Math.min(y, Math.max(0, rect.height - wh));
-          }
-          [x, y] = clampCorner(x, y, rect.width, rect.height);
-          if (x === w.x && y === w.y) return w;
-          changed = true;
-          return { ...w, x, y };
-        });
-        if (!changed) return prev;
-        const next = { ...prev, floating };
-        layoutRef.current = next;
-        return next;
+      patchFloatPositions((w) => {
+        if (w.id === draggingWindowIdRef.current) return w;
+        // Server-anchored panels are repositioned by the resolve-effect below
+        // (keyed on container size); skip them here so the two don't fight.
+        if (w.anchor !== undefined) return w;
+        let x = w.x;
+        let y = w.y;
+        // Dragged windows: anchor to the nearer edge (operate on the RENDERED
+        // height the map just measured; the model height is only a fallback
+        // for a window with no DOM yet).
+        const wh = heights.get(w.id) ?? pinnedPxOf(w.height) ?? 0;
+        if (prevSize !== null && (deltaW !== 0 || deltaH !== 0)) {
+          if (w.x + w.width / 2 > prevSize.w / 2) x += deltaW;
+          if (w.y + wh / 2 > prevSize.h / 2) y += deltaH;
+          // A container SHRINK pulls windows fully on-screen when they fit
+          // (overhang from a drag is the user's choice; losing the far edge
+          // -- and its minimize/resize controls -- to a browser resize
+          // isn't). A window larger than the container pins to the
+          // top/left. Per axis, shrink only: a width-only resize must not
+          // yank a bottom-overhanging window upward, and a GROW loses
+          // nothing, so it must not cancel deliberate overhang either. NOT
+          // applied on the observer's initial fire, which would
+          // second-guess deliberate placement.
+          if (deltaW < 0) x = Math.min(x, Math.max(0, rect.width - w.width));
+          if (deltaH < 0 && wh > 0)
+            y = Math.min(y, Math.max(0, rect.height - wh));
+        }
+        [x, y] = clampCorner(x, y, rect.width, rect.height);
+        if (x === w.x && y === w.y) return w;
+        return { ...w, x, y };
       });
     });
     observer.observe(el);
@@ -549,6 +585,36 @@ export function DockManager({
   }, []);
 
   // --- Drop-target hit testing -------------------------------------------
+  //
+  // THE data-attribute contract between the renderers and this scanner. The
+  // attributes are a stringly, multi-file protocol -- two past bugs came from
+  // a renderer and this scanner disagreeing about it -- so the rules live HERE,
+  // next to the only reader:
+  //
+  //   data-dock-leaf=<nodeId> + data-dock-edge=<left|right>
+  //     A docked drop target. The LEAF wrapper's rect IS the drop rect (both
+  //     minimized renderers size the wrapper to the droppable surface; the
+  //     group element inside may be a compact chip). Rendered by SplitView's
+  //     DockLeafView, VerticalMinimizedColumn (docked), HorizontalMinimizedBand.
+  //   data-dock-group=<groupId>
+  //     The group's element: the leaf wrapper itself OR any descendant (both
+  //     accepted). Scopes the strip/tab lookup; carries
+  //     data-dock-collapsed="true" when minimized. Also rendered inside
+  //     floating windows (scanned per-window, snap index from the MODEL stack)
+  //     and areas (TabGroupFrame).
+  //   data-dock-strip=<groupId> / data-dock-tab=<paneId>
+  //     The tab strip and its tabs, DESCENDANTS of their group element; a tab
+  //     whose nearest [data-dock-group] ancestor isn't the scanned group is
+  //     skipped (nested areas don't leak tabs into the host).
+  //   data-floating-window=<windowId>
+  //     A floating window's root.
+  //   data-dock-area=<areaId>
+  //     A nested area's wrapper; its rect is the drop rect (inset via
+  //     hitRect), its group comes from the LAYOUT (an empty area renders no
+  //     group element but is still a target).
+  //   data-dock-minimized-band / data-dock-column / data-dock-header /
+  //   data-dock-minimize / data-dock-griphandle
+  //     Gesture/measurement hooks only; never drop targets.
 
   const collectTargets = (draggedWindowId: WindowId): DropTargets => {
     const container = containerRef.current;
@@ -1957,29 +2023,21 @@ export function DockManager({
   const reanchorFloats = React.useCallback(() => {
     const m = readFloatBounds();
     if (m === null) return;
-    setLayout((cur) => {
-      let changed = false;
-      const floating = cur.floating.map((w) => {
-        if (w.id === draggingWindowIdRef.current || w.anchor === undefined)
-          return w;
-        const winHeight = m.heights.get(w.id) ?? pinnedPxOf(w.height) ?? 0;
-        const { x, y } = ops.resolveRequestedFloatPosition(
-          w.anchor.x,
-          w.anchor.y,
-          w.width,
-          winHeight,
-          m.bounds,
-        );
-        if (x === w.x && y === w.y) return w;
-        changed = true;
-        return { ...w, x, y };
-      });
-      if (!changed) return cur;
-      const next = { ...cur, floating };
-      layoutRef.current = next;
-      return next;
+    patchFloatPositions((w) => {
+      if (w.id === draggingWindowIdRef.current || w.anchor === undefined)
+        return w;
+      const winHeight = m.heights.get(w.id) ?? pinnedPxOf(w.height) ?? 0;
+      const { x, y } = ops.resolveRequestedFloatPosition(
+        w.anchor.x,
+        w.anchor.y,
+        w.width,
+        winHeight,
+        m.bounds,
+      );
+      if (x === w.x && y === w.y) return w;
+      return { ...w, x, y };
     });
-  }, [readFloatBounds]);
+  }, [readFloatBounds, patchFloatPositions]);
 
   // A DISCRETE inset change (dock / minimize / undock) that wasn't produced by a
   // region-resize drag: pull any UNANCHORED float whose horizontal span now
@@ -1993,26 +2051,18 @@ export function DockManager({
     if (regionResizeDraggingRef.current) return;
     const m = readFloatBounds();
     if (m === null || m.bounds.width === 0) return;
-    setLayout((cur) => {
-      let changed = false;
-      const floating = cur.floating.map((w) => {
-        if (w.id === draggingWindowIdRef.current || w.anchor !== undefined)
-          return w;
-        const maxX = Math.max(
-          m.bounds.leftInset,
-          m.bounds.width - m.bounds.rightInset - w.width,
-        );
-        const x = Math.min(Math.max(w.x, m.bounds.leftInset), maxX);
-        if (x === w.x) return w;
-        changed = true;
-        return { ...w, x };
-      });
-      if (!changed) return cur;
-      const next = { ...cur, floating };
-      layoutRef.current = next;
-      return next;
+    patchFloatPositions((w) => {
+      if (w.id === draggingWindowIdRef.current || w.anchor !== undefined)
+        return w;
+      const maxX = Math.max(
+        m.bounds.leftInset,
+        m.bounds.width - m.bounds.rightInset - w.width,
+      );
+      const x = Math.min(Math.max(w.x, m.bounds.leftInset), maxX);
+      if (x === w.x) return w;
+      return { ...w, x };
     });
-  }, [readFloatBounds]);
+  }, [readFloatBounds, patchFloatPositions]);
 
   // Inset change (dock / minimize / undock): re-resolve SERVER-anchored floats
   // against the new bounds (so e.g. a top-right-anchored panel tracks the
