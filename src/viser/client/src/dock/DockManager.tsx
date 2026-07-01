@@ -1095,16 +1095,41 @@ export function DockManager({
 
   // Width to float a docked item at. A MINIMIZED docked group/column renders as
   // a ~strip-narrow cell, so its measured rect width is a useless panel width;
-  // float at the region's preserved EXPANDED width instead (regionWidth survives
-  // minimization) so it isn't strip-narrow after expanding. Expanded items keep
-  // their measured width. Shared by startGroupDrag (single tear-out) and
-  // startColumnDrag (whole-column undock) so neither re-introduces the bug.
+  // float at the item's preserved EXPANDED width instead so it isn't
+  // strip-narrow after expanding. That preserved width is:
+  // - the COLUMN's own weight in a multi-column region (weights are pixels
+  //   there -- regionWidth is the EXPANDED columns' sum, which EXCLUDES the
+  //   minimized column being dragged, so it would be the siblings' width);
+  // - regionWidth for a lone column (its px always lives there).
+  // Expanded items keep their measured width. Shared by startGroupDrag (single
+  // tear-out), startTabTearOut, and startColumnDrag (whole-column undock) so
+  // none re-introduces the bug. `groupId` locates the item's column.
   const dockedFloatWidth = (
     edge: DockEdge,
     collapsed: boolean,
     measuredWidth: number,
-  ): number =>
-    collapsed ? regionWidthsOf(layoutRef.current)[edge] : measuredWidth;
+    groupId?: GroupId,
+  ): number => {
+    if (!collapsed) return measuredWidth;
+    const layout = layoutRef.current;
+    const rw = regionWidthsOf(layout)[edge];
+    const tree = layout.docked[edge];
+    if (tree === null || groupId === undefined) return rw;
+    const cols = ops.widthColumns(tree);
+    const col = cols.find((c) =>
+      ops.collectLeaves(c).some((l) => l.group === groupId),
+    );
+    // Trust the column weight only when the reconciler actually wrote px into
+    // it (any real width clears the grab-min; an unreconciled weight is a bare
+    // flex share like 1).
+    if (
+      cols.length > 1 &&
+      col !== undefined &&
+      col.weight >= ops.minRegionWidth()
+    )
+      return col.weight;
+    return rw;
+  };
 
   // The grab offset = where in the dragged window the cursor pressed (so the
   // window tracks the cursor 1:1). `originX/originY` is the source's top-left in
@@ -1229,7 +1254,7 @@ export function DockManager({
           layoutRef.current.groups[groupId]?.collapsed === true;
         const floatWidth =
           collapsed && loc?.kind === "docked"
-            ? dockedFloatWidth(loc.edge, true, rect.width)
+            ? dockedFloatWidth(loc.edge, true, rect.width, groupId)
             : rect.width;
         // A panel whose body is a full-bleed nested area needs a definite
         // height to fill (it collapses to 0 in an auto-height window). Give
@@ -1282,7 +1307,12 @@ export function DockManager({
         const colNode = ops.findColumnById(layoutRef.current.docked[edge], columnNodeId);
         const collapsed =
           colNode !== null && ops.isColumnMinimized(colNode, layoutRef.current.groups);
-        const floatWidth = dockedFloatWidth(edge, collapsed, rect.width);
+        const floatWidth = dockedFloatWidth(
+          edge,
+          collapsed,
+          rect.width,
+          colNode?.leaves[0]?.group,
+        );
         const res = ops.floatColumn(
           layoutRef.current,
           edge,
@@ -1594,13 +1624,15 @@ export function DockManager({
         dragAfterCommit(e, () => {
           const rect = floatRectFor(`[data-dock-group="${groupId}"]`);
           // A minimized cell is strip-narrow, so its measured width is a poor
-          // panel width; float at the region's preserved expanded width.
+          // panel width; float at the item's preserved expanded width (shared
+          // dockedFloatWidth -- column weight in a multi-column region,
+          // regionWidth for a lone column).
           const loc = ops.findGroupLocation(layoutRef.current, groupId);
           const collapsed =
             layoutRef.current.groups[groupId]?.collapsed === true;
           const floatWidth =
             collapsed && loc?.kind === "docked"
-              ? regionWidthsOf(layoutRef.current)[loc.edge]
+              ? dockedFloatWidth(loc.edge, true, rect.width, groupId)
               : rect.width;
           const res = ops.tearOutPane(
             layoutRef.current,
@@ -1805,14 +1837,26 @@ export function DockManager({
         edge,
         tree,
         reservedWidth: 0,
-        hasExpanded: false,
+        modelReservedWidth: 0,
+        resizable: false,
         resizerStripOffset: 0,
       };
+    const planned = plannedReservedWidth(plan, regionWidth[edge]);
     return {
       edge,
       tree,
-      hasExpanded: plan.hasExpanded,
-      reservedWidth: plannedReservedWidth(plan, regionWidth[edge]),
+      // Resizable whenever ANY band shows expanded content -- not just the
+      // widthRow (`hasExpanded`). A region whose widthRow is all strips can
+      // still render another band full-width; it must keep a working resizer
+      // (which then adjusts regionWidth directly -- see makeOnResize).
+      resizable: plan.anyBandExpanded,
+      reservedWidth: planned,
+      // The MODEL-based reserved width, NOT the post-scaling rendered one: the
+      // resizer's drag baseline must be the model value, or grabbing the handle
+      // under the MIN_CANVAS_PX render-scale guard (or pressing Escape, which
+      // re-commits the start width) would bake the temporarily-scaled width
+      // into the model and break "widths restore when the viewport grows".
+      modelReservedWidth: planned,
       // Inset the resize handle past any canvas-facing minimized strips so it
       // lands on the first expanded panel's boundary, not the strip's far side.
       resizerStripOffset: canvasFacingStripOffsetPx(plan, edge),
@@ -2010,7 +2054,14 @@ export function DockManager({
         {/* Docked regions: every column insets the canvas, with fully-minimized
         columns rendering as fixed-width vertical strips. */}
         {regions.map(
-          ({ edge, tree, hasExpanded, reservedWidth, resizerStripOffset }) => (
+          ({
+            edge,
+            tree,
+            resizable,
+            reservedWidth,
+            modelReservedWidth,
+            resizerStripOffset,
+          }) => (
           <React.Fragment key={edge}>
             {/* Canvas-facing shadow on a div BEHIND the panes (zIndex 1), so it
             only shows over the canvas, never on top of a panel. */}
@@ -2044,11 +2095,12 @@ export function DockManager({
                 }}
               >
                 <SplitView region={tree} edge={edge} />
-                {hasExpanded && (
+                {resizable && (
                 <RegionResizer
                   edge={edge}
                   stripOffset={resizerStripOffset}
-                  getStart={() => reservedWidth}
+                  // Model-based (unscaled) start: see modelReservedWidth above.
+                  getStart={() => modelReservedWidth}
                   // Called once per drag: snapshots the columns' start widths
                   // and limits, and returns the per-frame handler. Widths are
                   // redistributed across ALL columns from their drag-start
@@ -2065,7 +2117,20 @@ export function DockManager({
                     // the same classification the render uses.
                     const plan = planRegion(tree0, layout0.groups);
                     const cols = plan.expandedColumns;
-                    if (cols.length === 0) return () => {};
+                    // The widthRow can be ALL strips while another band still
+                    // shows expanded content (plan.anyBandExpanded) -- then
+                    // there are no width-carrying columns to redistribute, but
+                    // the region still reserves regionWidth and must resize:
+                    // the drag adjusts the regionWidth scalar directly (the
+                    // expanded band renders full-width and follows). With
+                    // nothing expanded anywhere the resizer isn't rendered.
+                    const bareRegionResize = cols.length === 0;
+                    if (bareRegionResize && !plan.anyBandExpanded)
+                      return () => {};
+                    // In the bare mode the reserved width IS regionWidth (an
+                    // all-strip widthRow renders as full-width bars, not
+                    // side strips -- no chrome).
+                    const chromePx = bareRegionResize ? 0 : plan.chromePx;
                     const startRegion = regionWidthsOf(layoutRef.current)[
                       edge
                     ];
@@ -2086,25 +2151,34 @@ export function DockManager({
                       // The grip reports the desired RESERVED width, which
                       // includes the fixed chrome; subtract it to get the
                       // expanded columns' share.
-                      const widths = ops.resizeRegionColumns(
-                        init,
-                        mins,
-                        maxs,
-                        reservedPx - plan.chromePx,
-                      );
-                      const total = widths.reduce((a, b) => a + b, 0);
-                      // Only rewrite weights for genuinely side-by-side
-                      // columns; a single surfaced column may be a vertical
-                      // child whose weight is a HEIGHT (see applyOp). The
-                      // total goes through the setRegionWidth op so the model
-                      // stays the single source of truth for the width.
+                      let total: number;
                       let next = layoutRef.current;
-                      if (!plan.singleColumn) {
-                        const byId: Record<string, number> = {};
-                        ids.forEach((id, i) => {
-                          byId[id] = widths[i];
-                        });
-                        next = ops.setNodeWeights(next, edge, byId);
+                      if (bareRegionResize) {
+                        total = Math.max(
+                          reservedPx - chromePx,
+                          ops.minRegionWidth(),
+                        );
+                      } else {
+                        const widths = ops.resizeRegionColumns(
+                          init,
+                          mins,
+                          maxs,
+                          reservedPx - chromePx,
+                        );
+                        total = widths.reduce((a, b) => a + b, 0);
+                        // Only rewrite weights for genuinely side-by-side
+                        // columns; a single surfaced column may be a vertical
+                        // child whose weight is a HEIGHT (see applyOp). The
+                        // total goes through the setRegionWidth op so the
+                        // model stays the single source of truth for the
+                        // width.
+                        if (!plan.singleColumn) {
+                          const byId: Record<string, number> = {};
+                          ids.forEach((id, i) => {
+                            byId[id] = widths[i];
+                          });
+                          next = ops.setNodeWeights(next, edge, byId);
+                        }
                       }
                       // Push floats out of the way of THIS region's edge as it
                       // sweeps inward, using the before/after seam of this very
@@ -2119,7 +2193,7 @@ export function DockManager({
                         edge,
                         containerWidthRef.current,
                         reservedWidthRef.current[edge], // old reserved (pre-commit)
-                        total + plan.chromePx, // new reserved (cols + chrome)
+                        total + chromePx, // new reserved (cols + chrome)
                         draggingWindowIdRef.current,
                       );
                       // Flush the width commit so this render updates

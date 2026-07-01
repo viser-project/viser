@@ -550,14 +550,40 @@ function makeLeaf(groupId: GroupId, weight = 1): DockLeaf {
  * the column's stacked leaves (top to bottom), so a snapped floating stack keeps
  * its vertical arrangement when docked. The column's own weight defaults to 1
  * (its horizontal share in the region); callers override it when preserving a
- * sibling's width. A lone group is a column of one leaf -- a count of one, not a
- * special shape. */
-function buildColumn(groupIds: NonEmpty<GroupId>, weight = 1): DockColumn {
+ * sibling's width. `leafWeights` (per-group HEIGHT shares -- a floated stack's
+ * preserved stackWeights) carry a 70/30 split back into the docked column;
+ * absent entries default to 1. A lone group is a column of one leaf -- a count
+ * of one, not a special shape. */
+function buildColumn(
+  groupIds: NonEmpty<GroupId>,
+  weight = 1,
+  leafWeights?: Record<GroupId, number>,
+): DockColumn {
   return {
     id: freshId("node"),
     weight,
-    leaves: groupIds.map((g) => makeLeaf(g)) as NonEmpty<DockLeaf>,
+    leaves: groupIds.map((g) =>
+      makeLeaf(g, leafWeights?.[g] ?? 1),
+    ) as NonEmpty<DockLeaf>,
   };
+}
+
+/** The preserved per-group height shares of the floating window holding ALL of
+ * `groupIds` (its whole stack being docked), or undefined when the groups
+ * aren't coming from one window. Captured BEFORE detachInPlace (which clears a
+ * window's stackWeights as its groups leave), so docking a floated 70/30 stack
+ * restores 70/30 leaf heights -- the inverse of floatColumn, which wrote them. */
+function floatingStackWeights(
+  layout: DockLayout,
+  groupIds: readonly GroupId[],
+): Record<GroupId, number> | undefined {
+  const win = layout.floating.find((w) =>
+    groupIds.every((g) => w.stack.includes(g)),
+  );
+  // COPY: detachInPlace deletes each departing group's entry from the window's
+  // own stackWeights object as it leaves -- capturing a reference would watch
+  // the weights vanish before buildColumn reads them.
+  return win?.stackWeights === undefined ? undefined : { ...win.stackWeights };
 }
 
 /** A row of one column. */
@@ -587,8 +613,9 @@ export function dockToEdge(
   const ne = asNonEmpty(groupIds);
   if (ne === null) return layout;
   const draft = clone(layout);
+  const stackHeights = floatingStackWeights(draft, ne);
   ne.forEach((g) => detachInPlace(draft, g));
-  const column = buildColumn(ne);
+  const column = buildColumn(ne, 1, stackHeights);
   const existing = draft.docked[edge];
   if (existing === null) {
     draft.docked[edge] = regionOf(column);
@@ -631,10 +658,11 @@ export function dockToRegionEdge(
   const ne = asNonEmpty(groupIds);
   if (ne === null) return layout;
   const draft = clone(layout);
+  const stackHeights = floatingStackWeights(draft, ne);
   ne.forEach((g) => detachInPlace(draft, g));
   const existing = draft.docked[edge];
   if (existing === null) {
-    draft.docked[edge] = regionOf(buildColumn(ne));
+    draft.docked[edge] = regionOf(buildColumn(ne, 1, stackHeights));
     return draft;
   }
   if (side === "top" || side === "bottom") {
@@ -643,12 +671,12 @@ export function dockToRegionEdge(
     // band-insert mechanics (index, weight rescale) live in insertBandAtIndex;
     // the outer top/bottom are just its boundary cases.
     const index = side === "top" ? 0 : existing.rows.length;
-    return insertBandAtIndex(draft, ne, edge, index, weights);
+    return insertBandAtIndex(draft, ne, edge, index, weights, stackHeights);
   }
   // left / right: a new full-height column beside everything, in the FIRST row
   // band (a single-row region -- the common case -- is the whole region).
   const dw = weights?.dragged ?? 1;
-  const column = buildColumn(ne, dw);
+  const column = buildColumn(ne, dw, stackHeights);
   const firstRow = existing.rows[0];
   if (weights !== undefined) {
     const total = firstRow.columns.reduce((s, c) => s + c.weight, 0) || 1;
@@ -687,15 +715,16 @@ function insertBandAtIndex(
   edge: DockEdge,
   index: number,
   weights?: { existing: number; dragged: number },
+  leafWeights?: Record<GroupId, number>,
 ): DockLayout {
   const existing = draft.docked[edge];
   if (existing === null) {
     // No region yet: the band IS the region (index is irrelevant).
-    draft.docked[edge] = regionOf(buildColumn(groupIds));
+    draft.docked[edge] = regionOf(buildColumn(groupIds, 1, leafWeights));
     return draft;
   }
   const draggedW = weights?.dragged ?? 1;
-  const band = buildRow(buildColumn(groupIds), draggedW);
+  const band = buildRow(buildColumn(groupIds, 1, leafWeights), draggedW);
   if (weights !== undefined) {
     const total = existing.rows.reduce((s, r) => s + r.weight, 0) || 1;
     existing.rows.forEach((r) => {
@@ -728,6 +757,7 @@ export function dockBandAtIndex(
   const ne = asNonEmpty(groupIds);
   if (ne === null) return layout;
   const draft = clone(layout);
+  const stackHeights = floatingStackWeights(draft, ne);
   ne.forEach((g) => detachInPlace(draft, g));
   // Detaching dragged groups that shared this edge can drop bands, shifting the
   // target index. Re-clamp against the post-detach region so the band still
@@ -735,7 +765,14 @@ export function dockBandAtIndex(
   // layout; an exact "between THESE two bands" can shift, but it stays valid).
   const after = draft.docked[edge];
   const max = after === null ? 0 : after.rows.length;
-  return insertBandAtIndex(draft, ne, edge, clamp(index, 0, max), weights);
+  return insertBandAtIndex(
+    draft,
+    ne,
+    edge,
+    clamp(index, 0, max),
+    weights,
+    stackHeights,
+  );
 }
 
 /** Drop a stack of groups onto an existing docked leaf. `center` merges every
@@ -767,6 +804,7 @@ export function dropOnDockedLeaf(
   }
 
   const draft = clone(layout);
+  const stackHeights = floatingStackWeights(draft, ne);
   ne.forEach((g) => detachInPlace(draft, g));
   // Re-find the target leaf AFTER detach. If a dragged group shared this edge,
   // detaching it may have dropped the target's column; if the target is gone (a
@@ -796,9 +834,10 @@ export function dropOnDockedLeaf(
   }
 
   // left / right: a new column beside the target's column, within the SAME row
-  // band. The target column keeps `tw`; the new column takes `dw`.
+  // band. The target column keeps `tw`; the new column takes `dw` (its leaves
+  // keep a floated stack's preserved height shares).
   targetColumn.weight = tw;
-  const newColumn = buildColumn(ne, dw);
+  const newColumn = buildColumn(ne, dw, stackHeights);
   const ci = targetRow.columns.findIndex((c) => c.id === targetColumn.id);
   const at = region === "left" ? ci : ci + 1;
   targetRow.columns = [

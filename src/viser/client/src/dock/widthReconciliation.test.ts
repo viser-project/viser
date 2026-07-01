@@ -7,8 +7,9 @@
 // from structural-change sums, and (c) leave pure-internal changes alone.
 
 import { describe, expect, it } from "vitest";
-import { toggleCollapsed } from "./layoutOps";
+import { dockToRegionEdge, toggleCollapsed, widthColumns } from "./layoutOps";
 import {
+  DEFAULT_REGION_PX,
   DockEdge,
   DockLayout,
   emptyLayout,
@@ -34,6 +35,45 @@ function threeColumns(widths: [number, number, number]): DockLayout {
   l.regionWidth = { left: 0, right: widths[0] + widths[1] + widths[2] };
   return l;
 }
+
+describe("lone minimized column: preserved width survives a sibling docking", () => {
+  // Regression: a SINGLE column's px always lives in regionWidth (its weight is
+  // never rewritten) -- including while minimized. The structural-change branch
+  // used to read the minimized lone column's px from its weight (the bare flex
+  // default, 1) and floor it to the grab-min, so dock A at 500 -> minimize ->
+  // dock B beside -> expand A came back at 96px instead of 500.
+  function loneAt500(): DockLayout {
+    const l = emptyLayout();
+    l.groups = { a: group("a"), b: group("b") };
+    l.docked.right = toRegion(leaf("a"));
+    l.regionWidth = { left: 0, right: 500 };
+    return l;
+  }
+
+  it("carries the preserved px into the column weight when a sibling docks", () => {
+    const l = loneAt500();
+    const m1 = toggleCollapsed(l, "a"); // minimize the lone column
+    expect(recon(l, m1).right).toBe(500); // width kept for restore
+    const m2 = dockToRegionEdge(m1, ["b"], "right", "left"); // structural
+    reconcileRegionWidths(m1, m2);
+    const aCol = widthColumns(m2.docked.right!).find((c) =>
+      c.leaves.some((lf) => lf.group === "a"),
+    )!;
+    expect(aCol.weight).toBe(500); // NOT the 96px grab-min floor
+    // Only B is expanded, so the region reserves B's default width.
+    expect(regionWidthsOf(m2).right).toBe(DEFAULT_REGION_PX);
+  });
+
+  it("expanding afterwards rejoins at the preserved px", () => {
+    const l = loneAt500();
+    const m1 = toggleCollapsed(l, "a");
+    reconcileRegionWidths(l, m1);
+    const m2 = dockToRegionEdge(m1, ["b"], "right", "left");
+    reconcileRegionWidths(m1, m2);
+    const m3 = toggleCollapsed(m2, "a"); // expand A
+    expect(recon(m2, m3).right).toBe(500 + DEFAULT_REGION_PX);
+  });
+});
 
 describe("reconcileRegionWidths with minimized columns", () => {
   it("collapse toggle drops the column from the expanded sum", () => {

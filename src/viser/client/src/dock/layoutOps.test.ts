@@ -235,6 +235,23 @@ describe("dockToEdge", () => {
     expect(dockToEdge(layout, [], "left")).toBe(layout);
   });
 
+  it("restores a floated stack's preserved height split when docking back", () => {
+    // Regression: floatColumn carefully carries a docked column's 70/30 leaf
+    // weights into win.stackWeights, but docking the window back rebuilt the
+    // column with every leaf at weight 1 -- the height split silently reset
+    // (while column WIDTHS survive the same round-trip via the reconciler).
+    const layout = makeLayout({
+      floating: [{ id: "w1", stack: ["a", "b"] }],
+    });
+    layout.floating[0].stackWeights = { a: 70, b: 30 };
+    const out = dockToEdge(layout, ["a", "b"], "right");
+    const leaves = out.docked.right!.rows[0].columns[0].leaves;
+    expect(leaves.map((l) => ({ g: l.group, w: l.weight }))).toEqual([
+      { g: "a", w: 70 },
+      { g: "b", w: 30 },
+    ]);
+  });
+
   it("docks a single floating group to an empty left edge as a leaf", () => {
     const layout = makeLayout({ floating: [{ id: "w1", stack: ["a"] }] });
     const out = dockToEdge(layout, ["a"], "left");

@@ -121,10 +121,16 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
     const prevInfo = prevCols.map((c) => ({
       groups: new Set(collectLeafGroups(c)),
       // Weights ARE pixels once a region has multiple columns (this function
-      // wrote them); a single expanded column's px lives in regionWidth
-      // instead (its weight may be a height -- see below).
+      // wrote them); a SINGLE column's px lives in regionWidth instead (its
+      // weight is never rewritten -- see below). That single-column case holds
+      // whether the column is expanded OR fully minimized: a lone minimized
+      // column preserves its width in regionWidth too (the pattern-flip branch
+      // keeps it), while its weight is still the constructor default. Reading
+      // the weight there returned 1px -> floored to the grab-min, so a
+      // minimized lone panel came back at 96px after a sibling docked.
       px:
-        prevExpanded.length === 1 && prevExpanded[0] === c
+        prevCols.length === 1 ||
+        (prevExpanded.length === 1 && prevExpanded[0] === c)
           ? prevRW[edge]
           : c.weight,
       used: false,
