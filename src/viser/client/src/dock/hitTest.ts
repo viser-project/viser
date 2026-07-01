@@ -634,8 +634,13 @@ export function hitTest(
     }
     return null;
   }
-  const r = g.rect;
-  const strip = g.stripRect;
+  // Capture the narrowed target as a const: `g` is a mutated `let`, so the
+  // undefined-guard above doesn't narrow it inside the closures below -- the
+  // old `g!` assertions there would have compiled (and crashed) if the guard
+  // ever moved after them.
+  const gt = g;
+  const r = gt.rect;
+  const strip = gt.stripRect;
 
   // A per-panel split previews as a thin insertion LINE at the boundary where
   // the new panel will go -- so "right of A" and "left of B" draw the same line
@@ -654,7 +659,7 @@ export function hitTest(
       // CENTER so "below A" and "above B" coincide instead of jumping the
       // ~SPLIT_DIVIDER_PX divider width. With no sibling (region's outer edge),
       // fall back to the panel boundary + on-screen clamp.
-      const seam = g!.ctx.kind === "docked" ? dockedSeamSibling(g!, region) : null;
+      const seam = gt.ctx.kind === "docked" ? dockedSeamSibling(gt, region) : null;
       const edgeY = region === "top" ? r.top : r.bottom;
       const raw = (seam !== null ? seam.gapCenter : edgeY) - t / 2;
       const top = clamp(raw, crect.top, crect.top + crect.height - t);
@@ -670,9 +675,9 @@ export function hitTest(
   // than appending a tab, and a dragged stack holding an unmergeable panel
   // can't become tabs anywhere. Edge splits and floating snaps still apply.
   const mergeResult = (): { result: DropResult; hint: DropHint } | null =>
-    g!.unmergeable || draggingUnmergeable
+    gt.unmergeable || draggingUnmergeable
       ? null
-      : { result: { kind: "merge", targetGroupId: g!.groupId }, hint: rel(r, "merge") };
+      : { result: { kind: "merge", targetGroupId: gt.groupId }, hint: rel(r, "merge") };
 
   // 3-area. A nested dockable area is a FLAT tab group -- the only drops are
   // insert-at-a-tab-position (over its strip) or merge/append (anywhere else,

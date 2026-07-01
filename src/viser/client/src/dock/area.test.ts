@@ -38,7 +38,7 @@ function areaLayout(panes: string[], extra: Record<GroupId, string[]> = {}): Doc
   for (const [gid, ps] of Object.entries(extra)) {
     l.groups[gid] = { id: gid, paneIds: [...ps], activeId: ps[0] };
   }
-  l.areas = { [AREA_ID]: { id: AREA_ID, group: AREA_GID } };
+  l.areas = { [AREA_ID]: { group: AREA_GID } };
   return l;
 }
 

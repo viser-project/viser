@@ -220,3 +220,15 @@ export function freshId(prefix: string): string {
   idCounter += 1;
   return `${prefix}-${idCounter}`;
 }
+
+/** Raise the id counter past every `<prefix>-<n>` id already present in
+ * externally-supplied ids (a restored/injected layout). Without this a layout
+ * persisted from an earlier session collides with the fresh session's counter
+ * (which restarts at 0): a new `node-3` silently shadows a restored `node-3`,
+ * tripping the unique-id invariant or clobbering a groups-map entry. */
+export function bumpFreshIdFloor(ids: Iterable<string>): void {
+  for (const id of ids) {
+    const m = /-(\d+)$/.exec(id);
+    if (m !== null) idCounter = Math.max(idCounter, Number(m[1]));
+  }
+}

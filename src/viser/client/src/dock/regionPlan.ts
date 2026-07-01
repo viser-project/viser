@@ -71,7 +71,10 @@ export function planRegion(
 ): RegionPlan {
   // Width is set by the widest row band's columns (a full-width band spans the
   // region width; narrower bands ride along). A column is a fixed-width
-  // minimized strip exactly when all its leaves are collapsed.
+  // minimized strip exactly when all its leaves are collapsed. Note the lone
+  // expanded column needs no special case: a minimized LEAF stacked above an
+  // expanded one leaves its column non-minimized (it renders as a full-width
+  // horizontal bar, not a strip), so isStrip is already [false] for it.
   const columns = widthColumns(region);
   const isStrip = columns.map((c) => isColumnMinimized(c, groups));
   const expandedColumns = columns.filter((_, i) => !isStrip[i]);
@@ -79,61 +82,21 @@ export function planRegion(
   // the region must reserve its content width so that band isn't squished.
   // "Some band not minimized" is exactly the negation of "every band minimized".
   const anyBandExpanded = !isRegionMinimized(region, groups);
-
-  if (columns.length === 1) {
-    if (isStrip[0]) {
-      // A fully-minimized lone column renders as a single strip; its preserved
-      // width is kept (in regionWidth) for restore.
-      return {
-        hasExpanded: false,
-        columns,
-        isStrip: [true],
-        expandedColumns: [],
-        singleColumn: true,
-        chromePx: MINIMIZED_STRIP_PX,
-        anyBandExpanded,
-      };
-    }
-    // An expanded lone column renders full-width: there is no render row for it
-    // to be a strip in, so even a minimized leaf stacked above an expanded one
-    // (the column itself is NOT fully minimized) is a full-width horizontal bar,
-    // not a strip.
-    return {
-      hasExpanded: true,
-      columns,
-      isStrip: [false],
-      expandedColumns: columns,
-      singleColumn: true,
-      chromePx: 0,
-      anyBandExpanded,
-    };
-  }
-
-  if (expandedColumns.length === 0) {
-    // Fully-minimized multi-column region: every column is a strip.
-    return {
-      hasExpanded: false,
-      columns,
-      isStrip,
-      expandedColumns: [],
-      singleColumn: false,
-      chromePx:
-        columns.length * MINIMIZED_STRIP_PX +
-        Math.max(0, columns.length - 1) * SPLIT_DIVIDER_PX,
-      anyBandExpanded,
-    };
-  }
-
-  // Genuine render row: fully-minimized columns are strips, the rest expand.
+  // ONE construction site (previously four case-specific return literals whose
+  // parallel fields -- columns/isStrip/expandedColumns/hasExpanded -- could
+  // silently drift apart): every derived field falls out of columns + isStrip.
+  // Chrome is the strips plus the inter-column dividers, which covers all
+  // cases uniformly (a lone strip: 1*STRIP + 0 dividers; a lone expanded
+  // column: 0 + 0; mixed row: strips + n-1 dividers).
   return {
-    hasExpanded: true,
+    hasExpanded: expandedColumns.length > 0,
     columns,
     isStrip,
     expandedColumns,
-    singleColumn: false,
+    singleColumn: columns.length === 1,
     chromePx:
       isStrip.filter(Boolean).length * MINIMIZED_STRIP_PX +
-      Math.max(0, columns.length - 1) * SPLIT_DIVIDER_PX,
+      (columns.length - 1) * SPLIT_DIVIDER_PX,
     anyBandExpanded,
   };
 }

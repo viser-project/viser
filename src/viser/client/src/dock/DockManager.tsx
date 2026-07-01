@@ -23,6 +23,7 @@ import { FloatingWindowView } from "./FloatingWindowView";
 import { SplitView } from "./SplitView";
 import {
   bindPointerGesture,
+  bumpFreshIdFloor,
   grabbingCursor,
   motionExceedsThreshold,
   prefersReducedMotion,
@@ -50,6 +51,7 @@ import {
   tabInsertion,
 } from "./hitTest";
 import {
+  assertNever,
   clamp,
   DOCK_ANIM_MS,
   DockEdge,
@@ -143,7 +145,13 @@ function pushFloatsAheadOfSeam(
     return { ...w, x };
   });
   if (!changed) return layout;
-  return { ...layout, floating };
+  // Full clone, not `{ ...layout, floating }`: the result flows into applyOp
+  // (via the region-resize frame), whose normalize/reconcile steps mutate
+  // their input -- a shallow copy would alias groups/docked with the COMMITTED
+  // layout and let those steps corrupt it.
+  const next = ops.cloneLayout(layout);
+  next.floating = floating;
+  return next;
 }
 // How far past a tab strip's edge the pointer must travel before a tab reorder
 // becomes a tear-out into a floating window.
@@ -157,6 +165,12 @@ const AREA_HIT_INSET_PX = 40;
 // legitimate area (an empty "drop a panel here" placeholder is ~40px tall --
 // it must stay droppable), and well above the collapsed case (~0px).
 const AREA_MIN_TARGET_PX = 24;
+
+/** Validate a data-dock-edge attribute into the DockEdge union. A raw
+ * `getAttribute(...) as DockEdge` would let a markup typo flow into
+ * `layout.docked[edge]` as undefined and silently no-op every drop. */
+const parseDockEdge = (raw: string | null): DockEdge | null =>
+  raw === "left" || raw === "right" ? raw : null;
 
 export function DockManager({
   initialLayout,
@@ -191,6 +205,12 @@ export function DockManager({
   const [layout, setLayout] = React.useState(initialLayout);
   const layoutRef = React.useRef(layout);
   layoutRef.current = layout;
+  // Seed the fresh-id counter past any ids the initial layout brought with it
+  // (a restored/persisted layout): the counter restarts at 0 each session, so
+  // without this a new `node-3` would collide with a restored `node-3`
+  // (duplicate-id invariant violation / groups-map clobber). useState's
+  // initializer runs exactly once per mount.
+  React.useState(() => bumpFreshIdFloor(ops.allLayoutIds(initialLayout)));
   const onLayoutChangeRef = React.useRef(onLayoutChange);
   onLayoutChangeRef.current = onLayoutChange;
   const onCommitRef = React.useRef(onCommit);
@@ -599,7 +619,7 @@ export function DockManager({
 
     container.querySelectorAll("[data-dock-leaf]").forEach((leaf) => {
       const nodeId = leaf.getAttribute("data-dock-leaf");
-      const edge = leaf.getAttribute("data-dock-edge") as DockEdge | null;
+      const edge = parseDockEdge(leaf.getAttribute("data-dock-edge"));
       const groupEl = leaf.matches("[data-dock-group]")
         ? leaf
         : leaf.querySelector("[data-dock-group]");
@@ -955,13 +975,17 @@ export function DockManager({
           applyOp(
             ops.insertTabsInto(base, result.targetGroupId, stack, result.index),
           );
-        } else {
+        } else if (result.kind === "snap") {
           applyOp(
             adoptMinimized(
               ops.snapToWindowStack(base, stack, result.windowId, result.index),
               ops.windowAllMinimized(base, result.windowId),
             ),
           );
+        } else {
+          // Exhaustive: adding a DropResult kind is a compile error HERE (at
+          // the dispatch), not a runtime mis-route into the last branch.
+          assertNever(result);
         }
       },
       // Ignore other pointers so a second finger can't drive/commit this drag.
@@ -1829,12 +1853,11 @@ export function DockManager({
   // fixed-width vertical strips that inset the canvas like any other column.
   // All width accounting (which columns are strips, how much fixed chrome
   // sits on top of regionWidth) comes from ONE classification: planRegion.
-  const regions = (["left", "right"] as DockEdge[]).map((edge) => {
+  const regionFor = (edge: DockEdge) => {
     const tree = layout.docked[edge];
     const plan = plans[edge];
     if (tree === null || plan === null)
       return {
-        edge,
         tree,
         reservedWidth: 0,
         modelReservedWidth: 0,
@@ -1843,7 +1866,6 @@ export function DockManager({
       };
     const planned = plannedReservedWidth(plan, regionWidth[edge]);
     return {
-      edge,
       tree,
       // Resizable whenever ANY band shows expanded content -- not just the
       // widthRow (`hasExpanded`). A region whose widthRow is all strips can
@@ -1861,7 +1883,13 @@ export function DockManager({
       // lands on the first expanded panel's boundary, not the strip's far side.
       resizerStripOffset: canvasFacingStripOffsetPx(plan, edge),
     };
-  });
+  };
+  // Keyed by edge (not positional array indices, whose left/right meaning was
+  // only implied by construction order).
+  const regions: Record<DockEdge, ReturnType<typeof regionFor>> = {
+    left: regionFor("left"),
+    right: regionFor("right"),
+  };
   // Render-time overflow guard: many panels docked on a narrow viewport can make
   // left + right reserved width exceed the container, overlapping the regions and
   // fully occluding the canvas (trapping the controls underneath). When the sum
@@ -1871,15 +1899,19 @@ export function DockManager({
   // viewport grows back. (containerWidth === 0 before first measure -> skip.)
   if (containerWidth > 0) {
     const available = containerWidth - MIN_CANVAS_PX;
-    const total = regions[0].reservedWidth + regions[1].reservedWidth;
+    const total = regions.left.reservedWidth + regions.right.reservedWidth;
     if (total > available && total > 0) {
       const scale = Math.max(0, available) / total;
-      regions[0].reservedWidth = Math.floor(regions[0].reservedWidth * scale);
-      regions[1].reservedWidth = Math.floor(regions[1].reservedWidth * scale);
+      regions.left.reservedWidth = Math.floor(
+        regions.left.reservedWidth * scale,
+      );
+      regions.right.reservedWidth = Math.floor(
+        regions.right.reservedWidth * scale,
+      );
     }
   }
-  const leftInset = regions[0].reservedWidth;
-  const rightInset = regions[1].reservedWidth;
+  const leftInset = regions.left.reservedWidth;
+  const rightInset = regions.right.reservedWidth;
   // Rendered region widths, for hit-testing during drags: drop zones and
   // their hints must align to what's on screen, not to the MODEL regionWidth
   // (which excludes the strips and preserves widths through minimization).
@@ -2053,15 +2085,15 @@ export function DockManager({
 
         {/* Docked regions: every column insets the canvas, with fully-minimized
         columns rendering as fixed-width vertical strips. */}
-        {regions.map(
-          ({
-            edge,
+        {(["left", "right"] as DockEdge[]).map((edge) => {
+          const {
             tree,
             resizable,
             reservedWidth,
             modelReservedWidth,
             resizerStripOffset,
-          }) => (
+          } = regions[edge];
+          return (
           <React.Fragment key={edge}>
             {/* Canvas-facing shadow on a div BEHIND the panes (zIndex 1), so it
             only shows over the canvas, never on top of a panel. */}
@@ -2235,7 +2267,8 @@ export function DockManager({
               </Box>
             )}
           </React.Fragment>
-        ))}
+          );
+        })}
 
         {/* Floating windows. The `floating` array order is the front-order
         (last = topmost), but we render in a STABLE order (by id) and drive

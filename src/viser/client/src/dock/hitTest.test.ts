@@ -867,7 +867,7 @@ describe("area target", () => {
   const layout = (() => {
     const l = emptyLayout();
     l.groups = { area: { id: "area", paneIds: ["p0", "p1"], activeId: "p0" } };
-    l.areas = { "a1": { id: "a1", group: "area" } };
+    l.areas = { "a1": { group: "area" } };
     return l;
   })();
   const frame = rect(400, 200, 300, 300); // strip 30px, starts at y=212

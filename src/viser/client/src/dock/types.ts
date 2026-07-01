@@ -17,11 +17,29 @@
 
 import React from "react";
 
-export type PaneId = string;
-export type GroupId = string;
-export type WindowId = string;
-export type NodeId = string;
-export type AreaId = string;
+/** "Flavored" id types: a phantom optional tag makes the five id kinds
+ * mutually UNassignable (passing a GroupId where a NodeId is expected is a
+ * compile error -- exactly the argument-swap bug class of stringly-typed ids)
+ * while plain string literals and wire/DOM strings still flow in without
+ * casts (the tag is optional, so `string` remains assignable to every id).
+ * Deliberately a flavor, not a hard brand: ids genuinely originate as strings
+ * (server uuids, data-* attributes, test literals), so a required brand would
+ * just scatter as-casts over every boundary. */
+declare const idFlavor: unique symbol;
+type Flavor<K extends string> = string & { readonly [idFlavor]?: K };
+
+export type PaneId = Flavor<"PaneId">;
+export type GroupId = Flavor<"GroupId">;
+export type WindowId = Flavor<"WindowId">;
+export type NodeId = Flavor<"NodeId">;
+export type AreaId = Flavor<"AreaId">;
+
+/** Exhaustiveness backstop for switches/if-chains over tagged unions: the
+ * compiler errors here when a new variant isn't handled; at runtime (only
+ * reachable on data that lies about its type) it throws. */
+export function assertNever(x: never): never {
+  throw new Error(`Unexpected variant: ${JSON.stringify(x)}`);
+}
 
 /** Minimum width of a panel's CONTENT, enforced on the inner body container
  * (TabGroupFrame's PanelBody) -- NOT on the region/window/column layout. When a
@@ -122,12 +140,17 @@ export interface PaneSpec {
 
 export type PaneRegistry = Record<PaneId, PaneSpec>;
 
-/** A stack of panes shown as tabs. `activeId` must always be a member of
- * `paneIds`. */
+/** A stack of panes shown as tabs. */
 export interface TabGroup {
   id: GroupId;
   paneIds: PaneId[];
-  activeId: PaneId;
+  /** The active tab: always a member of `paneIds` (invariant #5), and `null`
+   * exactly when the group is EMPTY -- which only an area's backing group can
+   * be (it persists empty as a drop affordance). Previously an empty group
+   * carried an `""` sentinel that type-checked as a real PaneId and leaked
+   * into title fallbacks; `null` forces every consumer to handle the empty
+   * case explicitly. */
+  activeId: PaneId | null;
   /** When true, the group is minimized: only its handle + tab strip show, with
    * the contents hidden. In a stack of 2+ groups this is uniform across the
    * stack (enforced by normalizeStackCollapse); a lone group minimizes on its
@@ -136,9 +159,27 @@ export interface TabGroup {
 }
 
 /** Non-empty array: at least one element. Lets the type system guarantee a
- * column always has a leaf and a region always has a column. (Leaks through
- * `.filter`/`.slice`, which return plain `T[]` -- re-assert after deriving.) */
+ * column always has a leaf and a region always has a column. Array methods
+ * (`.filter`/`.slice`/`.map`) return plain `T[]`; use the AUDITED helpers below
+ * (mapNonEmpty / withInserted / layoutOps' asNonEmpty) instead of sprinkling
+ * `as NonEmpty` casts -- each helper is non-empty by construction, so the one
+ * cast lives next to its proof. */
 export type NonEmpty<T> = [T, ...T[]];
+
+/** `.map` over a NonEmpty: same length, so non-empty by construction. */
+export const mapNonEmpty = <T, U>(
+  xs: NonEmpty<T>,
+  f: (x: T, i: number) => U,
+): NonEmpty<U> => xs.map(f) as NonEmpty<U>;
+
+/** `xs` with `items` (>=1) spliced in at `index`: gains elements, so non-empty
+ * by construction even when `xs` is plain (possibly empty). */
+export const withInserted = <T>(
+  xs: readonly T[],
+  index: number,
+  ...items: NonEmpty<T>
+): NonEmpty<T> =>
+  [...xs.slice(0, index), ...items, ...xs.slice(index)] as NonEmpty<T>;
 
 /** The docked layout has a FIXED four-level shape, enforced by these types
  * rather than by runtime normalization:
@@ -265,7 +306,7 @@ export interface DockLayout {
    *
    * Optional so existing layout literals (e.g. in tests) stay valid; treat a
    * missing value as no areas. */
-  areas?: Record<AreaId, { id: AreaId; group: GroupId }>;
+  areas?: Record<AreaId, { group: GroupId }>;
 }
 
 /** A reference to where a tab group currently lives. Used by drag/drop and

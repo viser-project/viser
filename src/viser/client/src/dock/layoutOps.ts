@@ -19,6 +19,7 @@ import {
   FloatingWindow,
   GroupId,
   GroupLocation,
+  mapNonEmpty,
   MIN_REGION_GRAB_PX,
   MIN_WINDOW_HEIGHT_PX,
   NodeId,
@@ -30,6 +31,7 @@ import {
   TabGroup,
   windowHeight,
   WindowId,
+  withInserted,
 } from "./types";
 import { freshId } from "./gestures";
 import { GuiSetPanelPositionMessage } from "../WebsocketMessages";
@@ -66,6 +68,32 @@ const clone = <T>(value: T): T => {
   }
   return value;
 };
+
+/** Public deep-clone of a layout, for the rare caller OUTSIDE the ops that must
+ * hand a modified layout to applyOp: applyOp's normalize/reconcile steps
+ * mutate their input in place, so a shallow `{ ...layout, field }` copy would
+ * alias groups/docked with the COMMITTED layout and let those steps corrupt it
+ * (Escape-restore snapshots, onCommit diffing). */
+export const cloneLayout = (layout: DockLayout): DockLayout => clone(layout);
+
+/** Every id in a layout (groups, nodes, windows, areas). Used to seed the
+ * fresh-id counter past a restored layout's ids. */
+export function* allLayoutIds(layout: DockLayout): Iterable<string> {
+  yield* Object.keys(layout.groups);
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const region = layout.docked[edge];
+    if (region === null) continue;
+    for (const row of region.rows) {
+      yield row.id;
+      for (const column of row.columns) {
+        yield column.id;
+        for (const l of column.leaves) yield l.id;
+      }
+    }
+  }
+  for (const w of layout.floating) yield w.id;
+  yield* Object.keys(layout.areas ?? {});
+}
 
 // ---------------------------------------------------------------------------
 // Flat-model accessors + structural helpers.
@@ -308,8 +336,8 @@ export function areaForGroup(
   layout: DockLayout,
   groupId: GroupId,
 ): AreaId | null {
-  for (const area of Object.values(layout.areas ?? {})) {
-    if (area.group === groupId) return area.id;
+  for (const [areaId, area] of Object.entries(layout.areas ?? {})) {
+    if (area.group === groupId) return areaId;
   }
   return null;
 }
@@ -514,7 +542,11 @@ function withoutAreaGroups(layout: DockLayout, groupIds: GroupId[]): GroupId[] {
 // Group + panel construction.
 // ---------------------------------------------------------------------------
 
-export function makeGroup(paneIds: PaneId[]): TabGroup {
+/** Build a fresh TabGroup. NonEmpty by type: `makeGroup([])` would have
+ * produced `activeId: undefined` silently typed as a real PaneId -- an invalid
+ * group flowing anywhere. (The one legal EMPTY group, an area's backing group,
+ * is built inline by ensureArea with an explicit `activeId: null`.) */
+export function makeGroup(paneIds: NonEmpty<PaneId>): TabGroup {
   return {
     id: freshId("group"),
     paneIds: [...paneIds],
@@ -562,9 +594,7 @@ function buildColumn(
   return {
     id: freshId("node"),
     weight,
-    leaves: groupIds.map((g) =>
-      makeLeaf(g, leafWeights?.[g] ?? 1),
-    ) as NonEmpty<DockLeaf>,
+    leaves: mapNonEmpty(groupIds, (g) => makeLeaf(g, leafWeights?.[g] ?? 1)),
   };
 }
 
@@ -631,9 +661,9 @@ export function dockToEdge(
         ? [column, ...firstRow.columns]
         : [...firstRow.columns, column];
     draft.docked[edge] = {
-      rows: existing.rows.map((row, i) =>
+      rows: mapNonEmpty(existing.rows, (row, i) =>
         i === 0 ? { ...row, columns } : row,
-      ) as NonEmpty<DockRow>,
+      ),
     };
   }
   return draft;
@@ -689,9 +719,9 @@ export function dockToRegionEdge(
       ? [column, ...firstRow.columns]
       : [...firstRow.columns, column];
   draft.docked[edge] = {
-    rows: existing.rows.map((row, i) =>
+    rows: mapNonEmpty(existing.rows, (row, i) =>
       i === 0 ? { ...row, columns } : row,
-    ) as NonEmpty<DockRow>,
+    ),
   };
   return draft;
 }
@@ -732,13 +762,7 @@ function insertBandAtIndex(
     });
   }
   const at = clamp(index, 0, existing.rows.length);
-  draft.docked[edge] = {
-    rows: [
-      ...existing.rows.slice(0, at),
-      band,
-      ...existing.rows.slice(at),
-    ] as NonEmpty<DockRow>,
-  };
+  draft.docked[edge] = { rows: withInserted(existing.rows, at, band) };
   return draft;
 }
 
@@ -823,13 +847,9 @@ export function dropOnDockedLeaf(
     // target keeps its (resized) weight; the dragged leaves take `dw`.
     const li = targetColumn.leaves.findIndex((l) => l.id === targetNodeId);
     targetColumn.leaves[li] = { ...live.leaf, weight: tw };
-    const banded = ne.map((g) => makeLeaf(g, dw));
+    const banded = mapNonEmpty(ne, (g) => makeLeaf(g, dw));
     const at = region === "top" ? li : li + 1;
-    targetColumn.leaves = [
-      ...targetColumn.leaves.slice(0, at),
-      ...banded,
-      ...targetColumn.leaves.slice(at),
-    ] as NonEmpty<DockLeaf>;
+    targetColumn.leaves = withInserted(targetColumn.leaves, at, ...banded);
     return draft;
   }
 
@@ -840,11 +860,7 @@ export function dropOnDockedLeaf(
   const newColumn = buildColumn(ne, dw, stackHeights);
   const ci = targetRow.columns.findIndex((c) => c.id === targetColumn.id);
   const at = region === "left" ? ci : ci + 1;
-  targetRow.columns = [
-    ...targetRow.columns.slice(0, at),
-    newColumn,
-    ...targetRow.columns.slice(at),
-  ] as NonEmpty<DockColumn>;
+  targetRow.columns = withInserted(targetRow.columns, at, newColumn);
   return draft;
 }
 
@@ -883,9 +899,10 @@ export function insertTabsInto(
   ];
   // Guard against a source carrying a stale/empty activeId (e.g. an emptied
   // group consumed mid-merge): the active tab must be one of the result's tabs.
-  target.activeId = target.paneIds.includes(active)
-    ? active
-    : target.paneIds[0];
+  target.activeId =
+    active !== null && target.paneIds.includes(active)
+      ? active
+      : target.paneIds[0];
   return draft;
 }
 
@@ -1010,13 +1027,13 @@ export function ensureArea(layout: DockLayout, areaId: AreaId): DockLayout {
     return layout;
   }
   const draft = clone(layout);
-  // An empty group's activeId is meaningless (rendering guards on
-  // paneIds.length); it becomes real when the first panel is added.
-  const group: TabGroup = { id: freshId("group"), paneIds: [], activeId: "" };
+  // An empty group has no active tab (activeId null, the only legal empty
+  // state); it becomes real when the first panel is added.
+  const group: TabGroup = { id: freshId("group"), paneIds: [], activeId: null };
   draft.groups[group.id] = group;
   draft.areas = {
     ...(draft.areas ?? {}),
-    [areaId]: { id: areaId, group: group.id },
+    [areaId]: { group: group.id },
   };
   return draft;
 }
@@ -1037,7 +1054,11 @@ export function addPaneToArea(
   const group = draft.groups[draft.areas![areaId].group];
   const i = clampIndex(index, group.paneIds.length);
   group.paneIds.splice(i, 0, paneId);
-  if (group.paneIds.length === 1 || !group.paneIds.includes(group.activeId)) {
+  if (
+    group.paneIds.length === 1 ||
+    group.activeId === null ||
+    !group.paneIds.includes(group.activeId)
+  ) {
     group.activeId = paneId;
   }
   return draft;
@@ -1088,6 +1109,9 @@ function removePaneInPlace(draft: DockLayout, paneId: PaneId): void {
     if (!isAreaGroup(draft, groupId)) {
       detachInPlace(draft, groupId);
       delete draft.groups[groupId];
+    } else {
+      // An emptied area group persists (drop affordance) with no active tab.
+      group.activeId = null;
     }
     return;
   }
@@ -1270,10 +1294,10 @@ export function tearOutPane(
   const draft = clone(layout);
   const src = draft.groups[groupId];
   src.paneIds = src.paneIds.filter((p) => p !== paneId);
-  // Keep activeId valid when panes remain; if the area is now empty, leave the
-  // (stale) activeId -- rendering guards on paneIds.length, so it's harmless.
-  if (src.paneIds.length > 0 && src.activeId === paneId)
-    src.activeId = src.paneIds[0];
+  // Keep activeId valid when panes remain; an emptied area goes to null (the
+  // one legal empty-group state -- no stale sentinel).
+  if (src.paneIds.length === 0) src.activeId = null;
+  else if (src.activeId === paneId) src.activeId = src.paneIds[0];
   const newGroup = makeGroup([paneId]);
   // The torn pane inherits the source's minimized state: dragging a tab out of
   // a minimized strip floats it STILL minimized (expanding is a click-only
@@ -1700,7 +1724,10 @@ function reconcileMembershipInPlace(
   );
   const added = paneIds.filter((p) => !group.paneIds.includes(p));
   group.paneIds = [...kept, ...added];
-  if (group.paneIds.length > 0 && !group.paneIds.includes(group.activeId)) {
+  if (
+    group.paneIds.length > 0 &&
+    (group.activeId === null || !group.paneIds.includes(group.activeId))
+  ) {
     group.activeId = group.paneIds[0];
   }
 }
@@ -1716,10 +1743,11 @@ function ensurePanelGroup(
   paneIds: PaneId[],
   collapsed: boolean | null,
 ): GroupId | null {
-  if (paneIds.length === 0) return null;
+  const nePaneIds = asNonEmpty(paneIds);
+  if (nePaneIds === null) return null;
   let groupId = panelGroupOf(draft, paneIds);
   if (groupId === null) {
-    const group = makeGroup(paneIds);
+    const group = makeGroup(nePaneIds);
     draft.groups[group.id] = group;
     groupId = group.id;
   } else {
@@ -1926,7 +1954,7 @@ export function applyPanelPlacement(
         placement.width ?? DEFAULT_FLOAT_WIDTH,
         placement.height ?? undefined,
       );
-    } else {
+    } else if (position.kind === "split") {
       // split: dock above/below the anchor's docked leaf. Fall back to a right
       // edge dock when the anchor isn't docked (floating / not yet placed).
       const anchorGroupId = anchorGroupOf(position.anchor_uuid);
@@ -1950,6 +1978,16 @@ export function applyPanelPlacement(
         const region: DropRegion = position.side === "above" ? "top" : "bottom";
         draft = dropOnDockedLeaf(draft, [groupId], leaf.edge, leaf.nodeId, region);
       }
+    } else {
+      // Compile-time exhaustiveness over the wire union (a new placement kind
+      // must be handled here, not silently routed into the last branch) -- but
+      // WIRE data from a newer server can genuinely carry an unknown kind at
+      // runtime, so warn and leave the panel where it is instead of throwing.
+      const _exhaustive: never = position;
+      console.warn(
+        `[viser] Unknown panel position kind; ignoring placement:`,
+        _exhaustive,
+      );
     }
   }
 

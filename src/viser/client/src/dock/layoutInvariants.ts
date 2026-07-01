@@ -99,18 +99,22 @@ export function invariantViolations(layout: DockLayout): string[] {
     }
   }
 
-  // 5. activeId valid; paneIds non-empty. EXCEPTION: an area-backing group is
-  // allowed to be empty -- it persists as a "drop a panel here" affordance even
-  // with no tabs (see ensureArea / addPaneToArea / removePaneInPlace's area
-  // branch). An empty area group carries a meaningless activeId ("") by design,
-  // so it's exempt from both checks; a NON-empty area group is still validated.
+  // 5. activeId ∈ paneIds for a non-empty group; null exactly when empty. Only
+  // an area-backing group may be empty -- it persists as a "drop a panel here"
+  // affordance even with no tabs (see ensureArea / addPaneToArea /
+  // removePaneInPlace's area branch).
   const areaGroupIds = new Set(
     Object.values(layout.areas ?? {}).map((a) => a.group),
   );
   for (const [gid, group] of Object.entries(layout.groups)) {
     if (group.paneIds.length === 0) {
       if (!areaGroupIds.has(gid)) v.push(`group ${gid} has empty paneIds`);
-    } else if (!group.paneIds.includes(group.activeId))
+      if (group.activeId !== null)
+        v.push(`empty group ${gid} has non-null activeId ${group.activeId}`);
+    } else if (
+      group.activeId === null ||
+      !group.paneIds.includes(group.activeId)
+    )
       v.push(`group ${gid} activeId ${group.activeId} not in paneIds`);
   }
 
@@ -178,9 +182,8 @@ export function invariantViolations(layout: DockLayout): string[] {
       v.push(`group ${gid} collapsed is not boolean`);
   }
 
-  // 13. Each area is keyed by its own id (areas[k].id === k).
-  for (const [k, area] of Object.entries(layout.areas ?? {}))
-    if (area.id !== k) v.push(`area key ${k} != area.id ${area.id}`);
+  // (13 retired: areas no longer duplicate their key in an `id` field -- the
+  // mismatch it policed is unrepresentable now.)
 
   // 14. A stack of 2+ groups is uniform-collapse: every member shares one
   // collapsed state (a lone group may differ). Enforced by

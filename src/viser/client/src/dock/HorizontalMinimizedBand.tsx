@@ -77,6 +77,9 @@ export function HorizontalMinimizedBand({
         // also carries data-dock-leaf/-edge so it is a DOCKED drop target (the
         // collapsed branch in hitTest gives it 5-way zones), keeping a minimized
         // band droppable just like the vertical rail's cells.
+        // A docked band's groups are never empty, but the type says an empty
+        // (area-backing) group has activeId null -- render nothing for it.
+        if (g.activeId === null) return null;
         const activeSpec = dock.panes[g.activeId];
         const title = activeSpec?.title ?? g.activeId;
         return (

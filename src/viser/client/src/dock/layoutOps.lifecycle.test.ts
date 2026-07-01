@@ -24,7 +24,7 @@ function areaLayout(): DockLayout {
     paneIds: ["tab1", "tab2"],
     activeId: "tab1",
   };
-  l.areas = { "area-1": { id: "area-1", group: "g-area" } };
+  l.areas = { "area-1": { group: "g-area" } };
   return l;
 }
 

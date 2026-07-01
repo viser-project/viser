@@ -39,7 +39,7 @@ export interface DockContextValue {
   groups: Record<GroupId, TabGroup>;
   /** Nested dockable areas (areaId -> its tab group), so a `DockArea` placed in
    * a panel body can resolve its group by area id. */
-  areas: Record<AreaId, { id: AreaId; group: GroupId }>;
+  areas: Record<AreaId, { group: GroupId }>;
   /** Begin dragging an entire tab group (from its handle / tab-strip). A
    * no-motion press fires `onClick` if given (used by the unmergeable header,
    * which has no separate minimize button: clicking the label toggles minimize,

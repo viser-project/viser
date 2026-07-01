@@ -195,8 +195,8 @@ const initialLayout: DockLayout = {
     { id: "w-m", x: 900, y: 60, width: 300, height: { mode: "pinned", px: 380 }, stack: [floatM.id] },
   ],
   areas: {
-    "area-scene": { id: "area-scene", group: areaSceneGroup.id },
-    "area-main": { id: "area-main", group: areaMainGroup.id },
+    "area-scene": { group: areaSceneGroup.id },
+    "area-main": { group: areaMainGroup.id },
   },
 };
 

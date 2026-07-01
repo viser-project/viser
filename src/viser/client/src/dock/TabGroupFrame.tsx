@@ -201,6 +201,11 @@ export function TabGroupFrame({
 }) {
   const dock = useDock();
   const { panes } = dock;
+  // The active pane's spec, resolved ONCE. `group.activeId` is null exactly
+  // when the group is empty (only an area's backing group), which renders
+  // chrome only -- every consumer below handles the undefined.
+  const activePane =
+    group.activeId === null ? undefined : panes[group.activeId];
   const dimmed = dock.draggingGroupId === group.id;
   const collapsed = group.collapsed ?? false;
   // A LONE group shows its own +/- (and click-to-minimize); a group in a 2+
@@ -276,7 +281,7 @@ export function TabGroupFrame({
   //   column Paper) animate the height; when collapsed we just hide the body.
   const body = (
     <PanelBody
-      panel={panes[group.activeId]}
+      panel={activePane}
       fill={fill}
       maxContentHeight={maxContentHeight}
       persistentScrollbar={persistentScrollbar}
@@ -365,9 +370,9 @@ export function TabGroupFrame({
           // Full label on hover -- the plain-title header ellipsizes. (With a
           // custom titleNode the panel renders its own content; no tooltip.)
           title={
-            panes[group.activeId]?.titleNode
+            activePane?.titleNode
               ? undefined
-              : (panes[group.activeId]?.title ?? group.activeId)
+              : (activePane?.title ?? group.activeId ?? "")
           }
           // The 1px BOTTOM rule separates the header from the content below, so
           // only show it when EXPANDED -- a collapsed panel is header-only, and
@@ -375,7 +380,7 @@ export function TabGroupFrame({
           // rule (same gray) is added when docked+stacked to separate it from
           // the panel above.
           className={
-            panes[group.activeId]?.titleNode
+            activePane?.titleNode
               ? [!collapsed && headerRule, stacked && headerRuleTop]
                   .filter(Boolean)
                   .join(" ") || undefined
@@ -404,7 +409,7 @@ export function TabGroupFrame({
             // subtle 1px bottom divider (the headerRule class -- Divider's
             // gray-3/dark-4, NOT default-border; no thick primary rule, no tab
             // gradient). The plain-title case keeps the compact bold look + rule.
-            ...(panes[group.activeId]?.titleNode
+            ...(activePane?.titleNode
               ? {
                   height: "2.75em",
                   lineHeight: "1.5em",
@@ -429,9 +434,9 @@ export function TabGroupFrame({
             WebkitUserSelect: "none",
           }}
         >
-          {panes[group.activeId]?.titleNode ? (
+          {activePane?.titleNode ? (
             <Box style={{ display: "flex", alignItems: "center", width: "100%" }}>
-              {panes[group.activeId]?.titleNode}
+              {activePane?.titleNode}
             </Box>
           ) : (
             // Ellipsis on a non-flex child (see the tab-strip note below).
@@ -443,7 +448,7 @@ export function TabGroupFrame({
                 whiteSpace: "nowrap",
               }}
             >
-              {panes[group.activeId]?.title ?? group.activeId}
+              {activePane?.title ?? group.activeId ?? ""}
             </span>
           )}
         </Box>

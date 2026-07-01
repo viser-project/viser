@@ -280,7 +280,7 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
         l.floating = [
           floatingWindow({ id: "wf", x: 60, y: 60, width: 260, stack: ["f"] }),
         ];
-        l.areas = { "area-1": { id: "area-1", group: "area" } };
+        l.areas = { "area-1": { group: "area" } };
         return l;
       },
     },

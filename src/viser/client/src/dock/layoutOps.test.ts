@@ -26,6 +26,7 @@ import {
   GroupId,
   MIN_PANEL_WIDTH_PX,
   MIN_REGION_GRAB_PX,
+  PaneId,
   emptyLayout,
 } from "./types";
 import {
@@ -102,8 +103,11 @@ function floatingLayout(
   l.floating = windows.map(floatingWindow);
   for (const w of windows)
     for (const g of w.stack)
-      if (l.groups[g] === undefined)
-        l.groups[g] = { id: g, paneIds: [g], activeId: g };
+      if (l.groups[g] === undefined) {
+        // Test shorthand: the group's single pane reuses the group's name.
+        const pane: PaneId = String(g);
+        l.groups[g] = { id: g, paneIds: [pane], activeId: pane };
+      }
   return l;
 }
 
@@ -125,7 +129,7 @@ function areaSourceLayout(): DockLayout {
     paneIds: ["controls"],
     activeId: "controls",
   };
-  l.areas = { "area-1": { id: "area-1", group: "area-grp" } };
+  l.areas = { "area-1": { group: "area-grp" } };
   return l;
 }
 
@@ -811,7 +815,7 @@ describe("(6) insertTabsInto guards an area group used as a SOURCE", () => {
     // The area group's backing group and panes are intact.
     expect(out.groups["area-grp"].paneIds).toEqual(["props", "history"]);
     // The area mapping still points at the surviving group.
-    expect(out.areas!["area-1"]).toEqual({ id: "area-1", group: "area-grp" });
+    expect(out.areas!["area-1"]).toEqual({ group: "area-grp" });
     // The target was not modified.
     expect(out.groups["target"].paneIds).toEqual(["scene"]);
   });
