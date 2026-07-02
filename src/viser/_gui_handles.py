@@ -1040,9 +1040,7 @@ class _PlacementMixin:
         effect there."""
         _check_dimension(height, "height", allow_none=False)
         self._queue_placement(
-            GuiSetPanelHeightMessage(
-                self._placement_uuid, height, counter=0, run_id=""
-            )
+            GuiSetPanelHeightMessage(self._placement_uuid, height, counter=0, run_id="")
         )
 
     def minimize(self) -> None:

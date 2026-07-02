@@ -631,17 +631,26 @@ class GuiApi:
         )
         self._websock_interface.queue_message(
             _messages.GuiSetPanelCollapsedMessage(
-                CONTROL_PANEL_ID, False, counter=reset_counter, run_id=self._layout_run_id
+                CONTROL_PANEL_ID,
+                False,
+                counter=reset_counter,
+                run_id=self._layout_run_id,
             )
         )
         self._websock_interface.queue_message(
             _messages.GuiSetPanelWidthMessage(
-                CONTROL_PANEL_ID, None, counter=reset_counter, run_id=self._layout_run_id
+                CONTROL_PANEL_ID,
+                None,
+                counter=reset_counter,
+                run_id=self._layout_run_id,
             )
         )
         self._websock_interface.queue_message(
             _messages.GuiSetPanelHeightMessage(
-                CONTROL_PANEL_ID, None, counter=reset_counter, run_id=self._layout_run_id
+                CONTROL_PANEL_ID,
+                None,
+                counter=reset_counter,
+                run_id=self._layout_run_id,
             )
         )
 
@@ -1020,9 +1029,7 @@ class GuiApi:
             )
         )
 
-    def add_panel(
-        self, *, key: str | None = None, visible: bool = True
-    ) -> PanelHandle:
+    def add_panel(self, *, key: str | None = None, visible: bool = True) -> PanelHandle:
         """Add a standalone panel: a **movable** window (dockable / floating)
         that lives outside the main control panel. A panel is the *container*;
         its tabs (added with :meth:`PanelHandle.add_tab`) hold the content.
