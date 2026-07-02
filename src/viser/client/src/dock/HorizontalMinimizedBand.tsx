@@ -19,7 +19,7 @@ import { IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
 import { focusRing, gripBarBg } from "./DockStyles.css";
-import { keyActivate } from "./gestures";
+import { focusPaneTab, keyActivate } from "./gestures";
 import { collectLeaves, expandStack } from "./layoutOps";
 import { DockEdge, DockRow, MINIMIZED_STRIP_PX, TabGroup } from "./types";
 
@@ -168,7 +168,13 @@ export function MinimizedGroupChip({ group }: { group: TabGroup }) {
           onClick: () => dock.toggleCollapsed(group.id),
         });
       }}
-      onKeyDown={keyActivate(() => dock.toggleCollapsed(group.id))}
+      onKeyDown={keyActivate(() => {
+        // group.activeId is non-null here (guarded above); capture it before
+        // the toggle so the post-expand focus lands on the same tab.
+        const active = group.activeId;
+        dock.toggleCollapsed(group.id);
+        if (active !== null) focusPaneTab(active);
+      })}
       style={{
         display: "flex",
         flexDirection: "row",

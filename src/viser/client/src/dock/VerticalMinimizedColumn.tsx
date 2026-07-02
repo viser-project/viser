@@ -9,7 +9,7 @@ import { IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
 import { gripBarBg, focusRing } from "./DockStyles.css";
-import { tabListKeyDown } from "./gestures";
+import { focusPaneTab, tabListKeyDown } from "./gestures";
 import { GripPill, HandleIconButton } from "./handles";
 import { startCollapsedGroupPress } from "./collapsedPress";
 import { DockColumn, DockEdge, NodeId, TabGroup } from "./types";
@@ -194,7 +194,12 @@ export function VerticalMinimizedCell({
               paneIds: group.paneIds,
               prevKey: "ArrowUp",
               nextKey: "ArrowDown",
-              onActivate: (id) => dock.expandToTab(group.id, id),
+              onActivate: (id) => {
+                dock.expandToTab(group.id, id);
+                // Keyboard expand unmounts this row; land focus on the
+                // expanded strip's tab instead of dropping it to <body>.
+                focusPaneTab(id);
+              },
             });
             return (
               <Box
