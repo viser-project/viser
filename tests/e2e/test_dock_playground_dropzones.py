@@ -38,6 +38,7 @@ from .dock_helpers import right_cols as _right_cols
 from .dock_helpers import rows as _rows
 from .dock_helpers import set_layout as _set_layout
 from .dock_helpers import setup_side_by_side as _setup_side_by_side
+from .dock_helpers import stack as _stack
 from .dock_helpers import window as _window
 
 
@@ -389,6 +390,42 @@ def test_cross_band_seam_inserts_a_band(dock_context, vite_server: int) -> None:
         top_band_groups = band_groups(right["rows"][0])
         assert "t-controls" in top_band_groups and "t-inspector" in top_band_groups, (
             "the original multi-column band must stay intact above the new band"
+        )
+    finally:
+        page.close()
+
+
+# ===========================================================================
+# Docking beside ONE CELL of a lone stacked column splits the band: the
+# dropped panel lands beside just that cell (what the cell-height insertion
+# line promises), with the other cell keeping its own full-width band.
+# ===========================================================================
+def test_side_drop_on_one_cell_of_stack_splits_band(
+    dock_context, vite_server: int
+) -> None:
+    page = _open(dock_context, vite_server)
+    try:
+        _set_layout(
+            page,
+            _dock_layout(
+                docked_right=_stack("controls", "inspector"),
+                floating=[_window("console", x=200, y=400, width=240)],
+            ),
+        )
+        cell = _leaf_box(page, "t-controls")
+        # The per-cell side band sits between the 40px region-side band and the
+        # content merge zone; ~45px in is inside it.
+        target = (cell["x"] + 45, cell["y"] + cell["h"] / 2)
+        _drag_group(page, "t-console", target)
+        lay = _layout(page)
+        right = lay["docked"]["right"]
+        assert right is not None
+        bands = [
+            [[leaf["group"] for leaf in col["leaves"]] for col in row["columns"]]
+            for row in right["rows"]
+        ]
+        assert bands == [[["t-console"], ["t-controls"]], [["t-inspector"]]], (
+            f"side drop on the top cell should band-split, got {bands}"
         )
     finally:
         page.close()
