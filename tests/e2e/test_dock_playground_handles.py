@@ -243,8 +243,9 @@ def test_floating_minimized_stack_has_draggable_parent_handle(
     dock_context, vite_server: int
 ) -> None:
     """A fully-minimized FLOATING multi-group stack renders as a horizontal
-    CHIP BAR (one chip per group). The bar's empty area is the whole-window
-    handle: dragging it moves the window; clicking it expands every group."""
+    CHIP BAR (one chip per group) with a leading grip segment as the
+    whole-window handle: dragging it moves the window; clicking it expands
+    every group."""
     page = _open(dock_context, vite_server)
     try:
         set_layout(
@@ -265,16 +266,13 @@ def test_floating_minimized_stack_has_draggable_parent_handle(
         chips = page.locator("[data-floating-window] [data-dock-group]")
         assert chips.count() == 2, "chip bar should show one chip per group"
 
-        # Dragging the bar's EMPTY area (right of the last chip) moves the
-        # whole window.
+        # Dragging the bar's leading GRIP segment (the whole-window handle --
+        # chips tile the rest of the bar edge-to-edge) moves the whole window.
         bar = page.eval_on_selector(
-            "[data-floating-window]",
-            """(w) => {
-                const chips = w.querySelectorAll('[data-dock-group]');
-                const last = chips[chips.length - 1].getBoundingClientRect();
-                const r = w.getBoundingClientRect();
-                return { x: Math.min(last.right + 8, r.right - 3),
-                         y: r.y + r.height / 2 };
+            "[data-floating-window] [data-dock-bar-handle]",
+            """(h) => {
+                const r = h.getBoundingClientRect();
+                return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
             }""",
         )
         before = page.evaluate("() => window.__dockLayout.floating[0].x")
@@ -282,16 +280,13 @@ def test_floating_minimized_stack_has_draggable_parent_handle(
         after = page.evaluate("() => window.__dockLayout.floating[0].x")
         assert abs(after - before) > 50, "dragging the bar should move the window"
 
-        # A motionless CLICK on the bar's empty area expands every group (the
+        # A motionless CLICK on the grip segment expands every group (the
         # bar's press arbitration: motion drags, no motion expands).
         bar2 = page.eval_on_selector(
-            "[data-floating-window]",
-            """(w) => {
-                const chips = w.querySelectorAll('[data-dock-group]');
-                const last = chips[chips.length - 1].getBoundingClientRect();
-                const r = w.getBoundingClientRect();
-                return { x: Math.min(last.right + 8, r.right - 3),
-                         y: r.y + r.height / 2 };
+            "[data-floating-window] [data-dock-bar-handle]",
+            """(h) => {
+                const r = h.getBoundingClientRect();
+                return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
             }""",
         )
         page.mouse.move(bar2["x"], bar2["y"])

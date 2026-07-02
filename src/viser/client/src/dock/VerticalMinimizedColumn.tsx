@@ -8,12 +8,7 @@ import { Box, Paper } from "@mantine/core";
 import { IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
-import {
-  focusRing,
-  gripBarBg,
-  minimizedChip,
-  minimizedChipText,
-} from "./DockStyles.css";
+import { gripBarBg, focusRing } from "./DockStyles.css";
 import { tabListKeyDown } from "./gestures";
 import { GripPill, HandleIconButton } from "./handles";
 import { startCollapsedGroupPress } from "./collapsedPress";
@@ -32,7 +27,6 @@ export function VerticalMinimizedColumn({
   return (
     <Paper
       radius={0}
-      className={gripBarBg}
       style={{
         flexGrow: 1,
         minWidth: 0,
@@ -45,6 +39,7 @@ export function VerticalMinimizedColumn({
         // clipping the lower ones.
         overflowX: "hidden",
         overflowY: "auto",
+        backgroundColor: "var(--mantine-color-body)",
       }}
     >
       {leaves.map(({ id, group }, i) => {
@@ -183,9 +178,10 @@ export function VerticalMinimizedCell({
         <Box
           role="tablist"
           aria-orientation="vertical"
-          // Breathing room between the + handle cap and the chips; the chips
-          // carry their own bottom margins.
-          style={{ width: "100%", marginTop: "0.45em", marginBottom: "0.2em" }}
+          // Breathing room above (between the + handle cap and the labels) AND
+          // below the labels, so the spine titles sit centered in the strip
+          // rather than crammed against the bottom edge.
+          style={{ width: "100%", marginTop: "0.6em", marginBottom: "0.6em" }}
         >
           {group.paneIds.map((paneId) => {
             const spec = dock.panes[paneId];
@@ -207,12 +203,7 @@ export function VerticalMinimizedCell({
                 role="tab"
                 aria-selected={active}
                 tabIndex={0}
-                // Shared minimized-chip look: the vertical counterpart of the
-                // horizontal bar's chips (same border/background/text tokens),
-                // so both orientations read as one design. No active-tab
-                // highlight -- a minimized strip is wayfinding chrome, not
-                // content (aria-selected still marks it for assistive tech).
-                className={`${focusRing} ${minimizedChip} ${minimizedChipText}`}
+                className={focusRing}
                 title={spec?.title ?? paneId}
                 onKeyDown={onKeyDown}
                 style={{
@@ -223,11 +214,16 @@ export function VerticalMinimizedCell({
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
-                  alignSelf: "center",
-                  width: "calc(100% - 8px)",
+                  width: "100%",
                   paddingTop: "0.35em",
-                  paddingBottom: "0.5em",
-                  marginBottom: "0.3em",
+                  paddingBottom: "0.6em",
+                  cursor: "pointer",
+                  // All rows read uniformly as dimmed wayfinding chrome -- a
+                  // minimized strip is a label/affordance, not content, so an
+                  // active-tab highlight here just distracts. (aria-selected
+                  // still marks the logical active tab for assistive tech.)
+                  color: "var(--mantine-color-dimmed)",
+                  opacity: 0.85,
                 }}
               >
                 {spec?.icon !== undefined && (

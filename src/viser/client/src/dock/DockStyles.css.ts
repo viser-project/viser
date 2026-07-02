@@ -69,26 +69,3 @@ globalStyle(
   `:where([data-mantine-color-scheme="dark"]) ${headerRuleTop}`,
   { borderTop: "1px solid var(--mantine-color-dark-4)" },
 );
-
-/** THE minimized-chip look, shared by every minimized surface (the docked
- * band's horizontal bar, the docked column's vertical rail, and a minimized
- * floating window's bar): a bordered, body-colored pill on the grip-bar
- * surface. One definition so the three orientations can't drift apart. */
-export const minimizedChip = style({
-  backgroundColor: "var(--mantine-color-body)",
-  border: "1px solid var(--mantine-color-default-border)",
-  borderRadius: 4,
-  cursor: "pointer",
-});
-globalStyle(`${minimizedChip}:hover`, {
-  borderColor: "var(--mantine-color-dimmed)",
-});
-
-/** Label/icon treatment inside minimized chips: the theme text color at
- * slightly reduced emphasis -- darker and more readable than the previous
- * dimmed-gray treatment, still clearly "chrome, not content". */
-export const minimizedChipText = style({
-  color: "var(--mantine-color-text)",
-  opacity: 0.82,
-  fontWeight: 500,
-});
