@@ -89,6 +89,29 @@ def test_add_panel_add_tab_appends_tabs() -> None:
         server.stop()
 
 
+def test_tab_remove_updates_panel_message() -> None:
+    """tab.remove() must drop the tab from the panel's buffered create message
+    (the client learns membership only from the panel props, so the coalesced
+    GuiPanelMessage is what a late joiner replays)."""
+    server = _make_server()
+    try:
+        panel = server.gui.add_panel()
+        with panel.add_tab("Stats"):
+            server.gui.add_markdown("hello")
+        logs_tab = panel.add_tab("Logs")
+        with logs_tab:
+            server.gui.add_markdown("world")
+        assert panel._tab_labels == ("Stats", "Logs")
+        logs_tab.remove()
+        assert panel._tab_labels == ("Stats",)
+        assert len(panel._tab_container_ids) == 1
+        latest = _latest(server, panel._impl.uuid, m.GuiPanelMessage)
+        assert latest.props._tab_labels == ("Stats",)
+        assert len(latest.props._tab_container_ids) == 1
+    finally:
+        server.stop()
+
+
 def test_reset_clears_panels() -> None:
     """gui.reset() must drain panels (they live in their own registry, not under
     the root container, so they won't be removed by the root-children loop)."""
