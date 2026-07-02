@@ -607,18 +607,15 @@ def test_width_only_shrink_keeps_collapsed_strip_in_place(page: Page) -> None:
     assert 600 < win["y"] < 680, f"strip moved wrongly: y={win['y']}"
 
 
-def test_flip_expand_of_pinned_height_window_keeps_height(
-    browser, vite_server: int
+def test_expand_of_pinned_height_window_keeps_height(
+    dock_context, vite_server: int
 ) -> None:
-    """Expanding a pinned-height floating window WITH ANIMATIONS ENABLED must
-    end at the pinned height. Regression: the FLIP animation cleared the
-    inline height on completion, but React's style cache still held it, so
-    the window rendered at 0px and vanished. (The shared dock_context forces
-    reduced motion, which skips the FLIP -- so this test makes its own
-    context.)"""
-    ctx = browser.new_context()  # animations ON: no reduced_motion here.
+    """Expanding a minimized pinned-height floating window renders at the
+    pinned height. (Historically guarded a FLIP-animation bug where the
+    expanded window rendered at 0px; the animation is gone, but the pinned
+    height surviving a minimize round-trip is worth pinning on its own.)"""
+    pg = open_playground(dock_context, vite_server)
     try:
-        pg = open_playground(ctx, vite_server)
         set_layout(
             pg,
             dock_layout(
@@ -633,15 +630,17 @@ def test_flip_expand_of_pinned_height_window_keeps_height(
                 ]
             ),
         )
+        # Expand via the chip (Enter on the focused chip).
         pg.eval_on_selector(
-            '[data-dock-group="t-controls"] [data-dock-minimize]',
-            "e => e.click()",
+            '[data-floating-window] [data-dock-group="t-controls"]',
+            "e => e.focus()",
         )
-        pg.wait_for_timeout(600)  # let the 180ms FLIP finish (or break)
+        pg.keyboard.press("Enter")
+        pg.wait_for_timeout(300)
         box = pg.locator("[data-floating-window]").first.bounding_box()
         assert box is not None
         assert abs(box["height"] - 360) < 5, (
-            f"window should settle at its pinned 360px, got {box['height']}"
+            f"window should render at its pinned 360px, got {box['height']}"
         )
     finally:
-        ctx.close()
+        pg.close()

@@ -16,7 +16,8 @@ import {
 } from "./layoutOps";
 import { StackHandleBar } from "./handles";
 import { TabGroupFrame } from "./TabGroupFrame";
-import { VerticalMinimizedCell } from "./VerticalMinimizedColumn";
+import { gripBarBg } from "./DockStyles.css";
+import { MinimizedGroupChip } from "./HorizontalMinimizedBand";
 import {
   clamp,
   FloatingWindow,
@@ -318,12 +319,10 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         position: "absolute",
         left: win.x,
         top: win.y,
-        // A fully-minimized window renders as a narrow vertical strip (matching a
-        // minimized DOCKED column), so it ignores the panel width just like it
-        // ignores the pinned height. win.width is preserved for restore on
-        // expand (handled by the per-cell + cap, which floats at the region/panel
-        // width).
-        width: collapsed ? MINIMIZED_STRIP_PX : win.width,
+        // A fully-minimized window renders as a compact horizontal CHIP BAR
+        // (the same look as a minimized docked band) sized to its chips.
+        // win.width is preserved in the model for restore on expand.
+        width: collapsed ? "fit-content" : win.width,
         height: collapsed ? undefined : renderedHeight,
         zIndex,
         overflow: "visible",
@@ -402,54 +401,35 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         }}
       >
         {collapsed ? (
-          // Fully-minimized FLOATING window: render as a narrow vertical strip
-          // -- one book-spine cell per group -- exactly like a minimized DOCKED
-          // column, for visual consistency. A MULTI-group stack keeps its parent
-          // header (the same StackHandleBar as docked / expanded), so the whole
-          // stack stays draggable and expandable-as-one from a single + above
-          // the cells; each cell's own + cap still expands/tears just that
-          // group. A single group needs no parent header -- its own cell cap
-          // expands it and drags the window. The window is already a drop target
-          // via its [data-floating-window] scan, so the cells pass no
-          // nodeId/edge.
+          // Fully-minimized FLOATING window: a horizontal chip bar -- one
+          // MinimizedGroupChip per stacked group -- the same visual + gesture
+          // unit as a minimized docked BAND. The bar's empty area drags the
+          // whole window (a motionless click expands every group); each chip
+          // drags its own group out / click-expands it. The window is already
+          // a drop target via its [data-floating-window] scan.
           <Box
+            className={gripBarBg}
+            onPointerDown={(event) =>
+              dock.startWindowDrag(event, win.id, { onClick: toggleAll })
+            }
             style={{
               display: "flex",
-              flexDirection: "column",
-              width: "100%",
-              backgroundColor: "var(--mantine-color-body)",
+              flexDirection: "row",
+              alignItems: "center",
+              gap: "0.4em",
+              height: MINIMIZED_STRIP_PX,
+              paddingLeft: "0.4em",
+              paddingRight: "0.4em",
+              cursor: "grab",
+              touchAction: "none",
+              userSelect: "none",
+              WebkitUserSelect: "none",
             }}
           >
-            {multi && (
-              <StackHandleBar
-                attrs={{ "data-floating-handle": win.id }}
-                onPointerDown={(event) =>
-                  dock.startWindowDrag(event, win.id, { onClick: toggleAll })
-                }
-                collapsed
-                narrow
-                onToggle={toggleAll}
-              />
-            )}
-            {win.stack.map((groupId, index) => {
+            {win.stack.map((groupId) => {
               const group = dock.groups[groupId];
               if (group === undefined) return null;
-              return (
-                <React.Fragment key={groupId}>
-                  {index > 0 && (
-                    <Box
-                      style={{
-                        height: 1,
-                        flexShrink: 0,
-                        backgroundColor:
-                          "var(--mantine-color-default-border)",
-                        opacity: 0.5,
-                      }}
-                    />
-                  )}
-                  <VerticalMinimizedCell group={group} inStack={multi} />
-                </React.Fragment>
-              );
+              return <MinimizedGroupChip key={groupId} group={group} />;
             })}
           </Box>
         ) : (

@@ -242,9 +242,9 @@ def test_undock_minimized_column_keeps_expanded_width(
 def test_floating_minimized_stack_has_draggable_parent_handle(
     dock_context, vite_server: int
 ) -> None:
-    """A fully-minimized FLOATING multi-group stack shows the SAME parent + handle
-    as docked/expanded (for consistency); dragging it moves the whole window and
-    clicking it expands every group."""
+    """A fully-minimized FLOATING multi-group stack renders as a horizontal
+    CHIP BAR (one chip per group). The bar's empty area is the whole-window
+    handle: dragging it moves the window; clicking it expands every group."""
     page = _open(dock_context, vite_server)
     try:
         set_layout(
@@ -261,32 +261,48 @@ def test_floating_minimized_stack_has_draggable_parent_handle(
                 ]
             ),
         )
-        handle = page.locator("[data-floating-handle]")
-        assert handle.count() == 1, "minimized floating stack should show a parent +"
+        # Chip bar: one chip per stacked group.
+        chips = page.locator("[data-floating-window] [data-dock-group]")
+        assert chips.count() == 2, "chip bar should show one chip per group"
 
-        # Dragging the parent handle moves the whole window.
-        box = handle.first.bounding_box()
-        assert box is not None
+        # Dragging the bar's EMPTY area (right of the last chip) moves the
+        # whole window.
+        bar = page.eval_on_selector(
+            "[data-floating-window]",
+            """(w) => {
+                const chips = w.querySelectorAll('[data-dock-group]');
+                const last = chips[chips.length - 1].getBoundingClientRect();
+                const r = w.getBoundingClientRect();
+                return { x: Math.min(last.right + 8, r.right - 3),
+                         y: r.y + r.height / 2 };
+            }""",
+        )
         before = page.evaluate("() => window.__dockLayout.floating[0].x")
-        _drag(
-            page,
-            (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2),
-            (700, 500),
-            steps=18,
-        )
+        _drag(page, (bar["x"], bar["y"]), (700, 500), steps=18)
         after = page.evaluate("() => window.__dockLayout.floating[0].x")
-        assert abs(after - before) > 50, "dragging the parent handle should move it"
+        assert abs(after - before) > 50, "dragging the bar should move the window"
 
-        # Clicking the parent handle's + (synthetic click) expands every group.
-        page.eval_on_selector(
-            "[data-floating-handle] [data-dock-minimize-all]", "e => e.click()"
+        # A motionless CLICK on the bar's empty area expands every group (the
+        # bar's press arbitration: motion drags, no motion expands).
+        bar2 = page.eval_on_selector(
+            "[data-floating-window]",
+            """(w) => {
+                const chips = w.querySelectorAll('[data-dock-group]');
+                const last = chips[chips.length - 1].getBoundingClientRect();
+                const r = w.getBoundingClientRect();
+                return { x: Math.min(last.right + 8, r.right - 3),
+                         y: r.y + r.height / 2 };
+            }""",
         )
+        page.mouse.move(bar2["x"], bar2["y"])
+        page.mouse.down()
+        page.mouse.up()
         page.wait_for_timeout(150)
         all_expanded = page.evaluate(
             """() => window.__dockLayout.floating[0].stack.every(
                 (g) => window.__dockLayout.groups[g].collapsed !== true)"""
         )
-        assert all_expanded, "clicking the parent + should expand all groups"
+        assert all_expanded, "clicking the bar should expand all groups"
     finally:
         page.close()
 
@@ -733,10 +749,13 @@ def test_band_to_band_vertical_resize(dock_context, vite_server: int) -> None:
             f"bottom band should grow: {before} -> {after}"
         )
         # Total height conserved (allow slack for the divider + sub-pixel).
-        assert abs(
-            (after["t-controls"] + after["t-inspector"])
-            - (before["t-controls"] + before["t-inspector"])
-        ) <= 16, f"band heights should conserve total: {before} -> {after}"
+        assert (
+            abs(
+                (after["t-controls"] + after["t-inspector"])
+                - (before["t-controls"] + before["t-inspector"])
+            )
+            <= 16
+        ), f"band heights should conserve total: {before} -> {after}"
     finally:
         page.close()
 
@@ -774,7 +793,9 @@ def test_expanded_band_not_squished_by_minimized_wider_band(
             }"""
         )
         # Full content width, not a ~79px strip.
-        assert w > 200, f"expanded console band was squished to {w}px by the minimized wider band"
+        assert w > 200, (
+            f"expanded console band was squished to {w}px by the minimized wider band"
+        )
     finally:
         page.close()
 
@@ -844,7 +865,9 @@ def test_minimized_multigroup_band_chip_gestures(
             }"""
         )
         assert out["controlsFloated"], "dragging the controls chip should float it"
-        assert out["inspectorDocked"], "inspector should stay docked (only one chip torn out)"
+        assert out["inspectorDocked"], (
+            "inspector should stay docked (only one chip torn out)"
+        )
     finally:
         page.close()
 
@@ -924,7 +947,9 @@ def test_minimized_band_chip_drop_target_fills_bar(
         set_layout(
             page,
             dock_layout(
-                docked_right=rows("controls", group("inspector", collapsed=True), "console")
+                docked_right=rows(
+                    "controls", group("inspector", collapsed=True), "console"
+                )
             ),
         )
         page.wait_for_timeout(300)

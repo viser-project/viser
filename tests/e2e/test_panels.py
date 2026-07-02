@@ -873,8 +873,10 @@ def test_undock_minimized_panel_keeps_width(
         has=_tab(viser_page, "Wide")
     )
     expect(win).to_have_count(1, timeout=5_000)
-    # Expand and assert the width survived (not collapsed to the strip width).
-    win.locator("[data-dock-minimize]").first.click()
+    # Expand via the chip (the minimized floating window is a chip bar) and
+    # assert the width survived (not collapsed to the strip/bar width).
+    win.locator("[data-dock-group]").first.focus()
+    viser_page.keyboard.press("Enter")
     viser_page.wait_for_timeout(400)
     expanded_w = win.bounding_box()["width"]
     assert expanded_w > 200, (

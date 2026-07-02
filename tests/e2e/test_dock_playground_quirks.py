@@ -106,12 +106,15 @@ def test_minimize_button_keyboard(dock_context, vite_server) -> None:
     assert page.evaluate(
         "(gid) => window.__dockLayout.groups[gid].collapsed === true", gid
     ), "Enter on the focused minimize button should collapse the group"
-    page.eval_on_selector(sel, "e => e.focus()")
+    # Collapsed, the floating window is a chip bar: Space on the focused CHIP
+    # expands the group again.
+    chip_sel = f'[data-floating-window] [data-dock-group="{gid}"]'
+    page.eval_on_selector(chip_sel, "e => e.focus()")
     page.keyboard.press("Space")
     page.wait_for_timeout(100)
     assert page.evaluate(
         "(gid) => window.__dockLayout.groups[gid].collapsed !== true", gid
-    ), "Space on the focused button should expand the group again"
+    ), "Space on the focused chip should expand the group again"
     page.close()
 
 
@@ -205,9 +208,8 @@ def test_escape_restores_docked_group_drag(dock_context, vite_server) -> None:
 # ---------------------------------------------------------------------------
 def test_drop_on_minimized_group_stays_minimized(dock_context, vite_server) -> None:
     page = _open(dock_context, vite_server)
-    # Minimize the floating Controls window, then drop Inspector onto the center
-    # of its collapsed strip (the + cap = merge, since the strip's middle rows
-    # are tab-insert and its cap is merge).
+    # Minimize the floating Controls window (now a chip bar), then drop
+    # Inspector onto its chip: the drop lands in the still-minimized group.
     gid = _group_id_for_panel(page, "controls")
     page.eval_on_selector(
         f'[data-dock-group="{gid}"] [data-dock-minimize]', "e => e.click()"
@@ -216,10 +218,10 @@ def test_drop_on_minimized_group_stays_minimized(dock_context, vite_server) -> N
     assert page.evaluate(
         "(gid) => window.__dockLayout.groups[gid].collapsed === true", gid
     )
-    # Aim at the + cap (top of the strip) so the drop merges rather than inserts
-    # at a tab position.
+    # Aim at the CHIP (the collapsed group element on the minimized floating
+    # bar); a drop there merges/inserts into the still-minimized group.
     target = page.eval_on_selector(
-        f'[data-dock-group="{gid}"] [data-dock-minimize]',
+        f'[data-floating-window] [data-dock-group="{gid}"]',
         "e => { const r = e.getBoundingClientRect(); "
         "return { x: r.x + r.width/2, y: r.y + r.height/2 }; }",
     )
@@ -528,7 +530,7 @@ def test_escape_after_expand_on_drag_restores_minimized(
     )
     gid = "t-controls"
     btn = page.eval_on_selector(
-        f'[data-dock-group="{gid}"] [data-dock-minimize]',
+        f'[data-floating-window] [data-dock-group="{gid}"]',
         "e => { const r = e.getBoundingClientRect(); "
         "return { x: r.x + r.width/2, y: r.y + r.height/2 }; }",
     )

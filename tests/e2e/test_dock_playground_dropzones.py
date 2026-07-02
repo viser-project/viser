@@ -368,11 +368,7 @@ def test_cross_band_seam_inserts_a_band(dock_context, vite_server: int) -> None:
         # column -- exactly one column with one leaf -- and sit at index 1
         # (between the original two bands).
         def band_groups(band: dict) -> list[str]:
-            return [
-                leaf["group"]
-                for col in band["columns"]
-                for leaf in col["leaves"]
-            ]
+            return [leaf["group"] for col in band["columns"] for leaf in col["leaves"]]
 
         new_band_idx = next(
             (i for i, b in enumerate(right["rows"]) if "t-layers" in band_groups(b)),

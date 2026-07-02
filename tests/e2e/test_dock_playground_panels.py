@@ -326,7 +326,9 @@ def test_minimized_cell_split_preview_has_no_blue_flood(
         )
         gid = "t-controls"
         cell = _box(page, f'[data-dock-group="{gid}"]')
-        cap = _box(page, '[data-dock-group="t-console"] [data-dock-minimize]')
+        # The floating minimized window is a chip bar; the chip IS the
+        # group's drag handle (drag moves the group, click expands).
+        cap = _box(page, '[data-floating-window] [data-dock-group="t-console"]')
         if cell is None or cap is None:
             pytest.skip("strip not laid out this run")
         # Start dragging console's cap, then hover the strip's thin TOP edge band
@@ -408,7 +410,9 @@ def test_drop_into_minimized_stack_at_tab_position(
         gid = "t-controls"
         # Drag console's + cap onto the TOP of the inspector row -> insert
         # console BEFORE inspector (between controls and inspector).
-        cap = _box(page, '[data-dock-group="t-console"] [data-dock-minimize]')
+        # The floating minimized window is a chip bar; the chip IS the
+        # group's drag handle (drag moves the group, click expands).
+        cap = _box(page, '[data-floating-window] [data-dock-group="t-console"]')
         row = _box(page, f'[data-dock-group="{gid}"] [data-dock-tab="inspector"]')
         if cap is None or row is None:
             pytest.skip("strip not laid out this run")

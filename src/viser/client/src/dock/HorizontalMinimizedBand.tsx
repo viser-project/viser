@@ -15,10 +15,15 @@ import { Box } from "@mantine/core";
 import { IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
-import { focusRing, gripBarBg } from "./DockStyles.css";
+import {
+  focusRing,
+  gripBarBg,
+  minimizedChip,
+  minimizedChipText,
+} from "./DockStyles.css";
 import { keyActivate } from "./gestures";
 import { collectLeaves, expandStack } from "./layoutOps";
-import { DockEdge, DockRow, MINIMIZED_STRIP_PX } from "./types";
+import { DockEdge, DockRow, MINIMIZED_STRIP_PX, TabGroup } from "./types";
 
 export function HorizontalMinimizedBand({
   row,
@@ -71,17 +76,10 @@ export function HorizontalMinimizedBand({
       {leaves.map(({ id: nodeId, group: groupId }) => {
         const g = dock.groups[groupId];
         if (g === undefined) return null;
-        // One chip per group: its active tab's title + a + cap. Click expands
-        // the band to that group/tab; a drag tears the group out (still
-        // minimized) -- same gesture set as the vertical rail's cells. The chip
-        // also carries data-dock-leaf/-edge so it is a DOCKED drop target (the
-        // collapsed branch in hitTest gives it 5-way zones), keeping a minimized
-        // band droppable just like the vertical rail's cells.
-        // A docked band's groups are never empty, but the type says an empty
-        // (area-backing) group has activeId null -- render nothing for it.
-        if (g.activeId === null) return null;
-        const activeSpec = dock.panes[g.activeId];
-        const title = activeSpec?.title ?? g.activeId;
+        // One chip per group (see MinimizedGroupChip below); the wrapper also
+        // carries data-dock-leaf/-edge so it is a DOCKED drop target (the
+        // collapsed branch in hitTest gives it 5-way zones), keeping a
+        // minimized band droppable just like the vertical rail's cells.
         return (
           // Outer wrapper carries data-dock-leaf/-edge (the DOCKED drop target
           // collectTargets scans for; it reads data-dock-group from a
@@ -104,60 +102,74 @@ export function HorizontalMinimizedBand({
               alignItems: "center",
             }}
           >
-            <Box
-              data-dock-group={groupId}
-              data-dock-collapsed="true"
-              data-dock-tab={g.activeId}
-              role="tab"
-              aria-selected={false}
-              tabIndex={0}
-              className={focusRing}
-              title={title}
-              onPointerDown={(event) => {
-                event.stopPropagation();
-                // A drag moves the WHOLE group (a chip stands for its group,
-                // like the rail cell's cap); a motionless click expands it.
-                // NOT startCollapsedGroupPress: the chip carries data-dock-tab
-                // on this same element (for hitTest's tab-insert rects), so
-                // its closest("[data-dock-tab]") arbitration would route every
-                // press to single-tab tear-out and the group branch would be
-                // unreachable. Per-tab tear-out isn't offered from a chip --
-                // the rail's per-tab rows are the granular affordance.
-                dock.startGroupDrag(event, groupId, {
-                  onClick: () => dock.toggleCollapsed(groupId),
-                });
-              }}
-              onKeyDown={keyActivate(() => dock.toggleCollapsed(groupId))}
-              style={{
-                display: "flex",
-                flexDirection: "row",
-                alignItems: "center",
-                gap: "0.3em",
-                maxWidth: "12em",
-                paddingLeft: "0.4em",
-                paddingRight: "0.2em",
-                height: "1.6em",
-                borderRadius: "0.25em",
-                backgroundColor: "var(--mantine-color-body)",
-                cursor: "pointer",
-                opacity: dock.draggingGroupId === groupId ? 0.4 : 1,
-              }}
-            >
-              <Box
-                style={{
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  fontSize: "0.75em",
-                }}
-              >
-                {title}
-              </Box>
-              <IconPlus size={11} style={{ flexShrink: 0, opacity: 0.7 }} />
-            </Box>
+            <MinimizedGroupChip group={g} />
           </Box>
         );
       })}
+    </Box>
+  );
+}
+
+/** ONE minimized group rendered as a compact horizontal chip: the active
+ * tab's title + a "+" cap, in the shared minimized-chip look. Used by the
+ * docked band's bar AND a minimized floating window's bar, so the two
+ * horizontal surfaces are the same visual + gesture unit: a drag moves the
+ * WHOLE group; a motionless click (or Enter/Space) expands it.
+ *
+ * NOT startCollapsedGroupPress: the chip carries data-dock-tab on its own
+ * element (for hitTest's tab rects), so that helper's closest("[data-dock-
+ * tab]") arbitration would route every press to single-tab tear-out. Per-tab
+ * tear-out isn't offered from a chip -- the vertical rail's per-tab rows are
+ * the granular affordance. */
+export function MinimizedGroupChip({ group }: { group: TabGroup }) {
+  const dock = useDock();
+  // A rendered chip's group is never empty, but the type says an empty
+  // (area-backing) group has activeId null -- render nothing for it.
+  if (group.activeId === null) return null;
+  const activeSpec = dock.panes[group.activeId];
+  const title = activeSpec?.title ?? group.activeId;
+  return (
+    <Box
+      data-dock-group={group.id}
+      data-dock-collapsed="true"
+      data-dock-tab={group.activeId}
+      role="tab"
+      aria-selected={false}
+      tabIndex={0}
+      className={`${focusRing} ${minimizedChip} ${minimizedChipText}`}
+      title={title}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        dock.startGroupDrag(event, group.id, {
+          onClick: () => dock.toggleCollapsed(group.id),
+        });
+      }}
+      onKeyDown={keyActivate(() => dock.toggleCollapsed(group.id))}
+      // Shared minimized-chip look (minimizedChip/-Text classes); only layout
+      // + drag-dim stay inline.
+      style={{
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        gap: "0.3em",
+        maxWidth: "12em",
+        paddingLeft: "0.45em",
+        paddingRight: "0.25em",
+        height: "1.7em",
+        opacity: dock.draggingGroupId === group.id ? 0.4 : 1,
+      }}
+    >
+      <Box
+        style={{
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          fontSize: "0.75em",
+        }}
+      >
+        {title}
+      </Box>
+      <IconPlus size={11} style={{ flexShrink: 0, opacity: 0.85 }} />
     </Box>
   );
 }

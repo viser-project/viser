@@ -390,7 +390,11 @@ def _as_region(spec: dict | None) -> dict | None:
     # from stack() -> a single one-column row band.
     return {
         "rows": [
-            {"id": f"t-r-{next(_split_counter)}", "weight": 1, "columns": [spec["column"]]}
+            {
+                "id": f"t-r-{next(_split_counter)}",
+                "weight": 1,
+                "columns": [spec["column"]],
+            }
         ]
     }
 
