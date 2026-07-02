@@ -13,22 +13,33 @@ import type { GuiPanelMessage } from "../WebsocketMessages";
 
 export type PanelsById = { [uuid: string]: GuiPanelMessage };
 
-/** Build the uuid -> stableKey map in one pass (bucket by labels, number each
- * bucket by order) -- the single source of the identity rule. Labels are
- * NUL-joined so a label containing a space can't collide with a different
- * multi-tab split. */
+/** Build the uuid -> stableKey map in one pass -- the single source of the
+ * identity rule.
+ *
+ * A panel with an EXPLICIT server-provided key (`add_panel(key=...)`) uses it
+ * directly: identity is an input, immune to tab renames/reorders (the server
+ * rejects duplicate keys among live panels). Panels without one fall back to
+ * the label inference (bucket by NUL-joined labels -- so a label containing a
+ * space can't collide with a different multi-tab split -- numbered by creation
+ * order within a bucket). The two namespaces are prefixed ("k:" / "i:") so an
+ * explicit key can never collide with an inferred one by construction. */
 export function computePaneToStableKey(panels: PanelsById): Map<string, string> {
+  const keys = new Map<string, string>();
   const byLabel = new Map<string, string[]>();
   for (const [uuid, p] of Object.entries(panels)) {
+    const explicit = p.props._stable_key;
+    if (explicit !== null) {
+      keys.set(uuid, `k:${explicit}`);
+      continue;
+    }
     const labels = p.props._tab_labels.join("\0");
     const bucket = byLabel.get(labels);
     if (bucket === undefined) byLabel.set(labels, [uuid]);
     else bucket.push(uuid);
   }
-  const keys = new Map<string, string>();
   for (const [labels, uuids] of byLabel) {
     uuids.sort((a, b) => panels[a].props.order - panels[b].props.order);
-    uuids.forEach((uuid, idx) => keys.set(uuid, `${labels}#${idx}`));
+    uuids.forEach((uuid, idx) => keys.set(uuid, `i:${labels}#${idx}`));
   }
   return keys;
 }

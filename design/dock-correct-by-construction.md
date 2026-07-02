@@ -62,6 +62,45 @@ wins snapshot, so a log would re-derive what the server already collapsed).
   E2E seam: the Python `window()` helper in dock_helpers.py is the one place test
   layouts build floating windows -- updated it for the WindowHeight union too.
 
+- **Hardening pass (July 2026).** A second round applied the same program to
+  the layers above the model:
+  - *Types*: flavored (weakly-branded) `PaneId`/`GroupId`/`WindowId`/`NodeId`/
+    `AreaId` (the five id kinds are mutually unassignable; strings still flow
+    in from wire/DOM/tests); `TabGroup.activeId: PaneId | null` retiring the
+    `""` sentinel end to end; `makeGroup(NonEmpty<PaneId>)`;
+    `mapNonEmpty`/`withInserted` replacing scattered `as NonEmpty` casts;
+    exhaustive `DropResult`/position dispatches; `areas` no longer duplicate
+    their key (invariant #13 retired -- unrepresentable).
+  - *Single construction sites*: `planRegion` builds its parallel fields at
+    ONE site; `patchFloatPositions` is the one sanctioned commit bypass and
+    its patch type (`(w) => {x, y} | null`) makes the position-only claim
+    hold by construction; `detachAllPreservingStackWeights` makes the
+    capture-before-detach ordering unviolatable; `api.replace()` is the one
+    wholesale-injection entry (seeds the fresh-id floor).
+  - *Placement protocol*: per-axis `(counter, runId)` stamps + a single
+    per-axis gate (`placementGate.ts`) shared by the main panel and
+    standalone panels -- a `set_width` structurally cannot re-apply a stale
+    dock position. Split placements DEFER on their anchor via a synchronous
+    store predicate (`anchorDockPending`), with a timeout only as a
+    stale-state tripwire.
+  - *Verification net*: the invariant checker now also runs in production
+    (time-throttled, warn-budgeted); dev checks every commit.
+
+## Roadmap (next structural steps, in order)
+
+1. **Server-provided stable panel key** (`add_panel(key=...)`, optional wire
+   field): identity becomes an input instead of the label+order inference in
+   `panelIdentity.ts`, capping its twin-panel re-bucketing edge case.
+2. **Column weights are always px**: today `DockColumn.weight` decodes three
+   ways (px in a multi-column widthRow; ignored for a lone column, whose px
+   lives in `regionWidth`; flex share elsewhere). Normalizing every band's
+   weights to rendered px on each commit retires the `prevPxOf` estimate and
+   `dockedFloatWidth`'s magnitude heuristic, and deletes the stale
+   height-weight caveats.
+3. **Placement coordinator**: one ordered pass over the placement store
+   applying per-panel reconciliation (the "study 3" item below), replacing
+   the per-panel effect fan-out that has to re-derive stream ordering.
+
 - **Deferred / only-if-it-bites (from the studies):**
   - Full `placement` tagged union (drop stored x/y; resolve at render): study
     judged the incremental win guards code the single resolver already makes

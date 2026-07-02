@@ -1101,7 +1101,11 @@ class PanelHandle(
 
     The server owns a panel's existence: users can rearrange, drag, minimize, and
     resize a panel, but cannot close it from the UI. A panel disappears only when
-    :meth:`remove` is called."""
+    :meth:`remove` is called.
+
+    .. note::
+        Panels are a new API surface; method names and placement semantics may
+        still evolve in upcoming releases."""
 
     def __init__(self, _impl: _GuiHandleState[None]) -> None:
         super().__init__(impl=_impl)
@@ -1114,6 +1118,14 @@ class PanelHandle(
         # themselves in `_container_handle_from_uuid` (keyed by tab id), so the
         # panel itself doesn't need a container entry.
         _impl.gui_api._panel_handle_from_uuid[_impl.uuid] = self
+
+    @property
+    def key(self) -> str | None:
+        """The panel's stable identity (`add_panel(key=...)`), or None when
+        the client infers one from tab labels + creation order."""
+        props = self._impl.props
+        assert isinstance(props, GuiPanelProps)
+        return props._stable_key
 
     @override
     def _queue_update(self, name: str, value: Any) -> None:
@@ -1184,7 +1196,11 @@ class MainPanelHandle(_PlacementMixin):
     scope.
 
     A fresh handle is returned on each access; placement state is keyed off the
-    control panel's fixed uuid, so handles are interchangeable."""
+    control panel's fixed uuid, so handles are interchangeable.
+
+    .. note::
+        Panels are a new API surface; method names and placement semantics may
+        still evolve in upcoming releases."""
 
     def __init__(self, gui_api: GuiApi) -> None:
         # Placement is write-only (per-axis messages keyed by CONTROL_PANEL_ID);

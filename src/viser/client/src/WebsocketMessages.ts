@@ -1688,6 +1688,7 @@ export interface GuiPanelMessage {
     _tab_labels: string[];
     _tab_icons_html: (string | null)[];
     _tab_container_ids: string[];
+    _stable_key: string | null;
     order: number;
     visible: boolean;
   };

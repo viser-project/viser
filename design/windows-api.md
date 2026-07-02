@@ -1,3 +1,8 @@
+> **Historical design notes.** Working document from the design phase of
+> the panels/docking feature; kept for context. The implementation has
+> since evolved -- where this document and the code disagree, the code
+> (and `dock-correct-by-construction.md`) are authoritative.
+
 # Spec: Standalone Panels API
 
 Status: **Superseded — historical design doc.** This was the original spec; the
