@@ -501,7 +501,12 @@ export interface CubicBezierSplineMessage {
 export interface GaussianSplatsMessage {
   type: "GaussianSplatsMessage";
   name: string;
-  props: { buffer: Uint32Array; scale: number | [number, number, number] };
+  props: {
+    buffer: Uint32Array;
+    sh_degree: number;
+    sh_buffer: Uint32Array | null;
+    scale: number | [number, number, number];
+  };
 }
 /** Remove a particular node from the scene.
  *
@@ -3092,6 +3097,14 @@ export const SceneNodePropsSchema: {
     buffer: {
       kind: "default",
       tsType: "Uint32Array",
+    },
+    sh_degree: {
+      kind: "default",
+      tsType: "number",
+    },
+    sh_buffer: {
+      kind: "default",
+      tsType: "(Uint32Array | null)",
     },
     scale: {
       kind: "default",

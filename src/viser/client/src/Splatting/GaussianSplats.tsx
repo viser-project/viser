@@ -40,9 +40,11 @@ import { v4 as uuidv4 } from "uuid";
 
 import {
   GaussianSplatsContext,
+  SH_TEXELS_PER_GAUSSIAN,
   createGaussianMeshProps,
   useGaussianSplatStore,
   type GaussianMeshProps,
+  type SplatGroupData,
 } from "./GaussianSplatsHelpers";
 import { ViewerContext } from "../ViewerContext";
 
@@ -70,10 +72,15 @@ export const SplatObject = React.forwardRef<
   THREE.Group,
   {
     buffer: Uint32Array;
+    shBuffer?: Uint32Array | null;
+    shDegree?: number;
     sceneNodeName?: string;
     children?: React.ReactNode;
   }
->(function SplatObject({ buffer, sceneNodeName, children }, ref) {
+>(function SplatObject(
+  { buffer, shBuffer = null, shDegree = 0, sceneNodeName, children },
+  ref,
+) {
   const splatContext = React.useContext(GaussianSplatsContext)!;
   const { setBuffer, removeBuffer } = splatContext.gaussianSplatState.actions;
   const nodeRefFromId = splatContext.gaussianSplatState.store(
@@ -96,8 +103,8 @@ export const SplatObject = React.forwardRef<
 
   // Update buffer when it changes.
   React.useEffect(() => {
-    setBuffer(name, buffer);
-  }, [name, buffer, setBuffer]);
+    setBuffer(name, { buffer, shBuffer, shDegree });
+  }, [name, buffer, shBuffer, shDegree, setBuffer]);
 
   return (
     <group
@@ -160,6 +167,8 @@ function SplatRendererImpl() {
     numGaussians: number;
     numGroups: number;
     groupIndices: Uint32Array;
+    shBuffer: Uint32Array | null;
+    shDegree: number;
   } | null>(null);
   const isFirstRenderRef = React.useRef(true);
   const initializedBufferTextureRef = React.useRef(false);
@@ -187,11 +196,14 @@ function SplatRendererImpl() {
     !prevMergedRef.current ||
     merged.gaussianBuffer !== prevMergedRef.current.gaussianBuffer;
 
-  // Check if number of Gaussians or groups changed (requires texture resize).
+  // Check if number of Gaussians or groups changed (requires texture
+  // resize). A spherical harmonics degree change also resizes the SH
+  // texture, so it takes the same path.
   const sizeChanged =
     prevMergedRef.current &&
     (merged.numGaussians !== prevMergedRef.current.numGaussians ||
-      merged.numGroups !== prevMergedRef.current.numGroups);
+      merged.numGroups !== prevMergedRef.current.numGroups ||
+      merged.shDegree !== prevMergedRef.current.shDegree);
 
   // Initialize resources on first render.
   if (isFirstRenderRef.current) {
@@ -200,6 +212,8 @@ function SplatRendererImpl() {
       merged.gaussianBuffer,
       merged.numGroups,
       maxTextureSize,
+      merged.shBuffer,
+      merged.shDegree,
     );
 
     // Show splats immediately with identity sort order. This makes splats
@@ -248,10 +262,13 @@ function SplatRendererImpl() {
         merged.gaussianBuffer,
         merged.numGroups,
         maxTextureSize,
+        merged.shBuffer,
+        merged.shDegree,
       );
 
       // Dispose old resources.
       oldProps.textureBuffer.dispose();
+      oldProps.shTextureBuffer.dispose();
       oldProps.geometry.dispose();
       oldProps.material.dispose();
       oldProps.textureT_camera_groups.dispose();
@@ -278,6 +295,18 @@ function SplatRendererImpl() {
       textureData.set(merged.gaussianBuffer);
       meshPropsRef.current.textureBuffer.needsUpdate = true;
 
+      if (
+        merged.shBuffer !== null &&
+        merged.shBuffer !== prevMergedRef.current?.shBuffer
+      ) {
+        // Same degree (else sizeChanged), so the texture layouts match.
+        const shTextureData = meshPropsRef.current.shTextureBuffer.image
+          .data as Uint32Array;
+        shTextureData.fill(0);
+        shTextureData.set(merged.shBuffer);
+        meshPropsRef.current.shTextureBuffer.needsUpdate = true;
+      }
+
       // Update worker with new buffer.
       postToWorker({
         updateBuffer: merged.gaussianBuffer,
@@ -299,6 +328,7 @@ function SplatRendererImpl() {
     return () => {
       if (meshPropsRef.current) {
         meshPropsRef.current.textureBuffer.dispose();
+        meshPropsRef.current.shTextureBuffer.dispose();
         meshPropsRef.current.geometry.dispose();
         meshPropsRef.current.material.dispose();
         meshPropsRef.current.textureT_camera_groups.dispose();
@@ -589,21 +619,22 @@ function SplatRendererImpl() {
 /**Consolidate groups of Gaussians into a single buffer, to make it possible
  * for them to be sorted globally.*/
 function mergeGaussianGroups(groupBufferFromName: {
-  [name: string]: Uint32Array;
+  [name: string]: SplatGroupData;
 }) {
   // Create geometry. Each Gaussian will be rendered as a quad.
   let totalBufferLength = 0;
-  for (const buffer of Object.values(groupBufferFromName)) {
-    totalBufferLength += buffer.length;
+  for (const group of Object.values(groupBufferFromName)) {
+    totalBufferLength += group.buffer.length;
   }
   const numGaussians = totalBufferLength / 8;
   const gaussianBuffer = new Uint32Array(totalBufferLength);
   const groupIndices = new Uint32Array(numGaussians);
 
   let offset = 0;
-  for (const [groupIndex, groupBuffer] of Object.values(
+  for (const [groupIndex, group] of Object.values(
     groupBufferFromName,
   ).entries()) {
+    const groupBuffer = group.buffer;
     groupIndices.fill(
       groupIndex,
       offset / 8,
@@ -623,6 +654,92 @@ function mergeGaussianGroups(groupBufferFromName: {
     offset += groupBuffer.length;
   }
 
+  const { shBuffer, shDegree } = mergeShBuffers(
+    groupBufferFromName,
+    numGaussians,
+  );
+
   const numGroups = Object.keys(groupBufferFromName).length;
-  return { numGaussians, gaussianBuffer, numGroups, groupIndices };
+  return {
+    numGaussians,
+    gaussianBuffer,
+    numGroups,
+    groupIndices,
+    shBuffer,
+    shDegree,
+  };
+}
+
+/**Consolidate spherical harmonics coefficients, with the same Gaussian
+ * ordering as the merged splat buffer.
+ *
+ * The shader uses a single global SH degree, so when groups have different
+ * degrees we promote everything to the maximum: lower-degree groups keep
+ * their coefficients with zeros for the missing higher-order terms, and
+ * groups without spherical harmonics get DC-only coefficients synthesized
+ * from their RGBA colors. Returns a null buffer when no group has spherical
+ * harmonics, which disables the feature entirely.*/
+function mergeShBuffers(
+  groupBufferFromName: { [name: string]: SplatGroupData },
+  numGaussians: number,
+): { shBuffer: Uint32Array | null; shDegree: number } {
+  let shDegree = 0;
+  for (const group of Object.values(groupBufferFromName)) {
+    if (group.shBuffer !== null && group.shDegree > 0) {
+      shDegree = Math.max(shDegree, Math.min(group.shDegree, 3));
+    }
+  }
+  if (shDegree === 0) {
+    return { shBuffer: null, shDegree: 0 };
+  }
+
+  const uint32PerGaussian = SH_TEXELS_PER_GAUSSIAN[shDegree] * 4;
+  const shBuffer = new Uint32Array(numGaussians * uint32PerGaussian);
+  const SH_C0 = 0.28209479177387814;
+
+  let gaussianOffset = 0;
+  for (const group of Object.values(groupBufferFromName)) {
+    const numGroupGaussians = group.buffer.length / 8;
+    const srcPerGaussianExpected =
+      group.shDegree > 0 ? SH_TEXELS_PER_GAUSSIAN[group.shDegree] * 4 : 0;
+    if (
+      group.shBuffer !== null &&
+      group.shDegree > 0 &&
+      // Guard against a stale coefficient buffer, e.g. after the main buffer
+      // was resized without updating the harmonics.
+      group.shBuffer.length === numGroupGaussians * srcPerGaussianExpected
+    ) {
+      const srcPerGaussian = srcPerGaussianExpected;
+      if (srcPerGaussian === uint32PerGaussian) {
+        shBuffer.set(group.shBuffer, gaussianOffset * uint32PerGaussian);
+      } else {
+        // Lower degree than the merged scene; copy per-Gaussian. The source
+        // rows end with zero padding (see GaussianSplatsProps.sh_buffer),
+        // which lands on higher-order coefficients and is harmless.
+        for (let i = 0; i < numGroupGaussians; i++) {
+          for (let j = 0; j < srcPerGaussian; j++) {
+            shBuffer[(gaussianOffset + i) * uint32PerGaussian + j] =
+              group.shBuffer[i * srcPerGaussian + j];
+          }
+        }
+      }
+    } else {
+      // No spherical harmonics: synthesize a DC-only coefficient that
+      // reproduces the RGBA color, since `color = C0 * dc + 0.5`.
+      for (let i = 0; i < numGroupGaussians; i++) {
+        const rgba = group.buffer[i * 8 + 7];
+        const r = ((rgba & 0xff) / 255.0 - 0.5) / SH_C0;
+        const g = (((rgba >> 8) & 0xff) / 255.0 - 0.5) / SH_C0;
+        const b = (((rgba >> 16) & 0xff) / 255.0 - 0.5) / SH_C0;
+        const base = (gaussianOffset + i) * uint32PerGaussian;
+        shBuffer[base] =
+          THREE.DataUtils.toHalfFloat(r) |
+          (THREE.DataUtils.toHalfFloat(g) << 16);
+        shBuffer[base + 1] = THREE.DataUtils.toHalfFloat(b);
+      }
+    }
+    gaussianOffset += numGroupGaussians;
+  }
+
+  return { shBuffer, shDegree };
 }

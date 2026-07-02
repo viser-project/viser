@@ -2169,6 +2169,7 @@ class SceneApi:
         rgbs: np.ndarray,
         opacities: np.ndarray,
         *,
+        sh_coeffs: np.ndarray | None = None,
         scale: float | tuple[float, float, float] = 1.0,
         wxyz: Tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: Tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
@@ -2185,6 +2186,13 @@ class SceneApi:
             covariances: Second moment for each Gaussian. (N, 3, 3).
             rgbs: Color for each Gaussian. (N, 3).
             opacities: Opacity for each Gaussian. (N, 1).
+            sh_coeffs: Optional spherical harmonics coefficients for
+                view-dependent colors, in the 3DGS (inria) convention. (N, K,
+                3), where K is 4, 9, or 16 for SH degrees 1, 2, and 3. The
+                first coefficient is the DC term (`f_dc` in standard 3DGS
+                checkpoints); the remainder are the higher-order terms
+                (`f_rest`), lowest order first. When provided, colors are
+                computed from the harmonics and `rgbs` is ignored.
             scale: Scale of the Gaussian splats. A single float for uniform
                 scaling or a tuple of (x, y, z) for per-axis scaling.
             wxyz: R_parent_local transformation.
@@ -2199,6 +2207,29 @@ class SceneApi:
         assert rgbs.shape == (num_gaussians, 3)
         assert opacities.shape == (num_gaussians, 1)
         assert covariances.shape == (num_gaussians, 3, 3)
+
+        sh_degree = 0
+        sh_buffer = None
+        if sh_coeffs is not None:
+            degree_from_coeff_count = {4: 1, 9: 2, 16: 3}
+            assert (
+                sh_coeffs.ndim == 3
+                and sh_coeffs.shape[0] == num_gaussians
+                and sh_coeffs.shape[1] in degree_from_coeff_count
+                and sh_coeffs.shape[2] == 3
+            ), (
+                "sh_coeffs must have shape (N, K, 3) with K in (4, 9, 16),"
+                f" got {sh_coeffs.shape}"
+            )
+            sh_degree = degree_from_coeff_count[sh_coeffs.shape[1]]
+
+            # Pack coefficients as float16, zero-padded so each Gaussian spans
+            # a whole number of RGBA32UI texels (8 float16s each) client-side.
+            num_floats = sh_coeffs.shape[1] * 3
+            num_floats_padded = -(-num_floats // 8) * 8
+            sh_f16 = np.zeros((num_gaussians, num_floats_padded), dtype=np.float16)
+            sh_f16[:, :num_floats] = sh_coeffs.reshape(num_gaussians, num_floats)
+            sh_buffer = sh_f16.view(np.uint32)
 
         # Get upper-triangular terms of covariance matrix.
         cov_triu = covariances.reshape((-1, 9))[:, np.array([0, 1, 2, 4, 5, 8])]
@@ -2225,6 +2256,8 @@ class SceneApi:
             props=_messages.GaussianSplatsProps(
                 buffer=buffer,
                 scale=scale,
+                sh_degree=sh_degree,
+                sh_buffer=sh_buffer,
             ),
         )
         node_handle = GaussianSplatHandle._make(

@@ -2146,6 +2146,17 @@ class GaussianSplatsProps:
     - rgba (int32)
 
     Where cov1-6 are the upper-triangular terms of covariance matrices."""
+    sh_degree: int
+    """Spherical harmonics degree for view-dependent colors. 0 means no
+    spherical harmonics (colors are read from `buffer`)."""
+    sh_buffer: Optional[npt.NDArray[np.uint32]]
+    """Optional spherical harmonics coefficients, used when `sh_degree > 0`.
+
+    Each Gaussian gets `4 * ceil(3 * (sh_degree + 1)^2 / 8)` uint32 elements:
+    all `3 * (sh_degree + 1)^2` coefficients (including the DC term) as
+    float16, in coefficient-major order (c0.rgb, c1.rgb, ...), zero-padded to
+    a multiple of 8 float16s so each Gaussian spans a whole number of RGBA32UI
+    texels."""
     scale: Union[float, Tuple[float, float, float]] = 1.0
     """Scale of the Gaussian splats. A single float for uniform scaling or a
     tuple of (x, y, z) for per-axis scaling."""
