@@ -220,7 +220,7 @@ export function ControlPanelDockSurface({
       const after = groupPlacementSignatures(next);
       // Groups whose placement signature changed (the user moved them).
       const changed = [...after].filter(([gid, sig]) => before.get(gid) !== sig);
-      if (changed.length === 0) return; // e.g. a region-width-only commit.
+      if (changed.length === 0) return; // e.g. a tab-reorder-only commit.
       // Map each panel's panes (tab containers) to its stable key; the main
       // panel's pane is CONTROL_PANEL_ID. Built only when something changed.
       const panelState = viewer.useGui.get().panels;
@@ -807,45 +807,70 @@ function StandalonePanelPlacement({
   // (mount order = creation order, so the anchor's group doesn't exist yet),
   // or the anchor transiently FLOATING between its floatIfUnplaced and its
   // own dock applying (multi-flush arrival). Splitting then would fall back
-  // to a right-edge dock -- wrong for a perfectly ordered program. So when
-  // the anchor's own STORED placement shows the server intends it docked
-  // (its position message precedes dep's split on the ordered stream), the
+  // to a right-edge dock -- wrong for a perfectly ordered program. So while
+  // the anchor's dock is provably still COMING (see anchorDockPending), the
   // split DEFERS: nothing applied or recorded; the watcher below re-runs the
   // placement the moment the anchor is actually docked. A timeout escape
-  // applies the fallback anyway if the anchor never docks (e.g. its dock is
-  // gated off by a user having floated it) so the panel can't stay invisible.
-  const pendingAnchorUuid = React.useRef<string | null>(null);
-  const pendingAnchorTimer = React.useRef<number | null>(null);
-  const [anchorRetryNonce, setAnchorRetryNonce] = React.useState(0);
-  const forceAnchorFallback = React.useRef(false);
+  // applies the fallback anyway if the pending state goes stale (e.g. the
+  // anchor's panel is hidden mid-flight) so the panel can't stay invisible.
+  //
+  // State: ONE ref holding the pending deferral (uuid + its escape timer live
+  // and die together -- clearPendingAnchor is the only way out), plus ONE
+  // retry state whose `fallback` flag tells the re-run whether deferring is
+  // still allowed.
+  const pendingAnchor = React.useRef<{ uuid: string; timer: number } | null>(
+    null,
+  );
+  const [anchorRetry, setAnchorRetry] = React.useState({
+    fallback: false,
+    n: 0,
+  });
+  const clearPendingAnchor = () => {
+    if (pendingAnchor.current === null) return;
+    window.clearTimeout(pendingAnchor.current.timer);
+    pendingAnchor.current = null;
+  };
   const anchorDocked = (layout: DockLayout, anchorUuid: string): boolean => {
     const gid = resolveAnchor(layout, anchorUuid);
     return gid !== null && ops.findGroupLocation(layout, gid)?.kind === "docked";
   };
-  const anchorIntendsDocked = (anchorUuid: string): boolean => {
-    const pos =
-      viewer.useGui.get().panelPlacement[anchorUuid]?.position?.value;
-    return pos !== undefined && pos.kind !== "float";
+  // Whether the anchor's own dock is still on its way -- decided from the
+  // STORE, not a timer: its placement must intend docking (edge/split
+  // position; that message precedes dep's split on the ordered stream) AND its
+  // own gate must still be willing to apply it (an anchor the user floated has
+  // a closed gate -- its dock will never re-apply, so defer would hang and we
+  // fall back immediately instead).
+  const anchorDockPending = (
+    layout: DockLayout,
+    anchorUuid: string,
+  ): boolean => {
+    const gui = viewer.useGui.get();
+    const anchorEntry = gui.panelPlacement[anchorUuid];
+    const pos = anchorEntry?.position?.value;
+    if (pos === undefined || pos.kind === "float") return false;
+    const anchorKey =
+      anchorUuid === CONTROL_PANEL_ID
+        ? CONTROL_PANEL_ID
+        : (buildPaneToStableKey(gui.panels).get(anchorUuid) ?? anchorUuid);
+    const anchorGid = resolveAnchor(layout, anchorUuid);
+    const gated = gatePlacement(
+      anchorEntry,
+      gui.panelLayoutTracking[anchorKey],
+      anchorGid !== null,
+    );
+    return gated.placement.position !== null;
   };
   React.useEffect(() => {
-    const anchor = pendingAnchorUuid.current;
-    if (anchor === null) return;
-    if (anchorDocked(dock.layout, anchor)) {
-      pendingAnchorUuid.current = null;
-      if (pendingAnchorTimer.current !== null) {
-        window.clearTimeout(pendingAnchorTimer.current);
-        pendingAnchorTimer.current = null;
-      }
-      setAnchorRetryNonce((n) => n + 1);
+    const pending = pendingAnchor.current;
+    if (pending === null) return;
+    if (anchorDocked(dock.layout, pending.uuid)) {
+      clearPendingAnchor();
+      setAnchorRetry((r) => ({ fallback: false, n: r.n + 1 }));
     }
-  });
-  React.useEffect(
-    () => () => {
-      if (pendingAnchorTimer.current !== null)
-        window.clearTimeout(pendingAnchorTimer.current);
-    },
-    [],
-  );
+    // The only input that can flip anchorDocked is the layout.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dock.layout]);
+  React.useEffect(() => clearPendingAnchor, []);
   React.useEffect(() => {
     // When hidden, drop the applied-key so re-showing re-places the panel.
     if (!visible) {
@@ -872,36 +897,37 @@ function StandalonePanelPlacement({
     }
     const pos = gated.placement.position;
     if (
-      !forceAnchorFallback.current &&
+      !anchorRetry.fallback &&
       pos !== null &&
       pos.kind === "split" &&
       !anchorDocked(dock.layout, pos.anchor_uuid) &&
-      anchorIntendsDocked(pos.anchor_uuid)
+      anchorDockPending(dock.layout, pos.anchor_uuid)
     ) {
-      // Defer (see pendingAnchorUuid above): the anchor's own dock is on its
-      // way; the watcher re-runs this effect once it lands, and the timeout
-      // forces the fallback if it never does.
-      const anchorUuid = pos.anchor_uuid;
-      pendingAnchorUuid.current = anchorUuid;
-      if (pendingAnchorTimer.current !== null)
-        window.clearTimeout(pendingAnchorTimer.current);
-      pendingAnchorTimer.current = window.setTimeout(() => {
-        if (pendingAnchorUuid.current !== anchorUuid) return;
-        pendingAnchorUuid.current = null;
-        pendingAnchorTimer.current = null;
-        forceAnchorFallback.current = true;
-        setAnchorRetryNonce((n) => n + 1);
-      }, 2000);
+      // Defer (see pendingAnchor above): the anchor's own dock is on its way;
+      // the watcher re-runs this effect once it lands, and the timeout forces
+      // the fallback if the pending state somehow goes stale.
+      clearPendingAnchor();
+      pendingAnchor.current = {
+        uuid: pos.anchor_uuid,
+        timer: window.setTimeout(() => {
+          if (pendingAnchor.current === null) return;
+          pendingAnchor.current = null;
+          setAnchorRetry((r) => ({ fallback: true, n: r.n + 1 }));
+        }, 2000),
+      };
       return;
     }
-    forceAnchorFallback.current = false;
-    pendingAnchorUuid.current = null;
+    clearPendingAnchor();
+    // A timeout-forced fallback disables deferral for THIS run only -- reset
+    // the flag so a future split command can defer again. (The extra effect
+    // pass this schedules early-returns on the placementKey dedup above.)
+    if (anchorRetry.fallback) setAnchorRetry((r) => ({ ...r, fallback: false }));
     appliedPlacementKey.current = placementKey;
     if (hasServerPlacement)
       viewer.guiActions.recordPanelLayoutApplied(stableKey, gated.applied);
     dock.api.apply((layout) => placePanel(layout, gated.placement));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, placementKey, visible, dock.api, stableKey, layoutResetNonce, anchorRetryNonce]);
+  }, [ready, placementKey, visible, dock.api, stableKey, layoutResetNonce, anchorRetry]);
 
   // Hide/show: when `visible` is false, remove the panel's panes from the layout
   // (it renders nothing) without destroying the panel; when it flips back to
@@ -967,16 +993,25 @@ function StandalonePanelPlacement({
       (id) => !tabIds.includes(id),
     );
     prevMembershipTabIds.current = tabIds;
-    dock.api.apply((layout) => {
-      if (ops.findPaneGroup(layout, tabIds[0]) !== null)
-        return ops.reconcilePanelMembership(layout, tabIds, removed);
-      // While a split placement is DEFERRED on its anchor materializing (see
-      // pendingAnchorUuid), leave the panel unplaced -- placing it here would
-      // hit the very warn+fallback the deferral avoids.
-      if (pendingAnchorUuid.current !== null) return layout;
-      const gated = gatePlacement(placementEntry, tracking, false);
-      return placePanel(layout, gated.placement);
-    });
+    if (ops.findPaneGroup(dock.layout, tabIds[0]) !== null) {
+      dock.api.apply((layout) =>
+        ops.reconcilePanelMembership(layout, tabIds, removed),
+      );
+      return;
+    }
+    // While a split placement is DEFERRED on its anchor materializing (see
+    // pendingAnchor), leave the panel unplaced -- placing it here would hit
+    // the very warn+fallback the deferral avoids.
+    if (pendingAnchor.current !== null) return;
+    // Ungrouped: re-place from scratch (the gate is open for an unplaced
+    // panel, so the full stored bundle applies). Gate -> apply -> record, the
+    // SAME protocol as the placement effect -- previously nothing was
+    // recorded here, which was only correct because the placement effect
+    // usually ran in the same flush.
+    const gated = gatePlacement(placementEntry, tracking, false);
+    if (placementEntry !== undefined)
+      viewer.guiActions.recordPanelLayoutApplied(stableKey, gated.applied);
+    dock.api.apply((layout) => placePanel(layout, gated.placement));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, orderKey, visible, dock.api]);
 

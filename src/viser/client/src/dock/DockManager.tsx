@@ -380,20 +380,26 @@ export function DockManager({
   // which drives the "user touched this panel" flag for layout persistence.
   const programmaticDepth = React.useRef(0);
   // Production keeps a RATE-LIMITED invariant tripwire (dev checks EVERY
-  // commit, including per-frame resize commits): layouts are partly
+  // commit, including per-frame gesture commits): layouts are partly
   // SERVER-driven, so a malformed op sequence from server state can ship a
   // violated layout to real users -- whose symptoms (duplicate React keys,
   // silently vanished panes) are exactly the hard-to-diagnose kind. The check
-  // is O(layout) on small trees; in production the per-frame region-resize
-  // commits are skipped (a width write can't break structure, and 60Hz checks
-  // aren't worth it there), and after the budget is spent production stops
-  // checking entirely.
-  const invariantWarnBudget = React.useRef(import.meta.env.DEV ? Infinity : 5);
+  // is O(layout) on small trees; in production it runs at most every 250ms --
+  // which naturally exempts ALL per-frame gesture paths (region/divider/window
+  // resizes) while still catching a persisting violation on the next discrete
+  // commit -- and stops entirely once the warn budget is spent.
+  const invariantWarnBudget = React.useRef(5);
+  const lastProdCheckMs = React.useRef(0);
   const commit = React.useCallback((next: DockLayout) => {
-    const skipCheck =
-      !import.meta.env.DEV &&
-      (regionResizeDraggingRef.current || invariantWarnBudget.current <= 0);
-    if (!skipCheck) {
+    let check = true;
+    if (!import.meta.env.DEV) {
+      const now = performance.now();
+      check =
+        invariantWarnBudget.current > 0 &&
+        now - lastProdCheckMs.current >= 250;
+      if (check) lastProdCheckMs.current = now;
+    }
+    if (check) {
       const violations = invariantViolations(next);
       if (violations.length > 0) {
         const msg =
@@ -449,19 +455,21 @@ export function DockManager({
   // re-anchoring, inset clamping). These run per resize tick, can't change
   // structure (no invariant/width-reconcile/onCommit needed), and must not
   // spuriously flip user-touched flags -- so they write React state directly.
-  // `patch` returns the SAME window object for "unchanged"; the updater is
-  // idempotent (StrictMode may replay it), and the layoutRef sync inside keeps
-  // gesture closures reading the fresh positions synchronously. Anything
-  // STRUCTURAL must go through applyOp instead -- this helper deliberately
-  // cannot express it.
+  // `patch` returns null for "unchanged" or the window's new coordinates --
+  // the position-only claim holds BY CONSTRUCTION (the patch cannot express a
+  // stack/size/structure change). The updater is idempotent (StrictMode may
+  // replay it), and the layoutRef sync inside keeps gesture closures reading
+  // the fresh positions synchronously. Anything structural must go through
+  // applyOp instead.
   const patchFloatPositions = React.useCallback(
-    (patch: (w: FloatingWindow) => FloatingWindow) => {
+    (patch: (w: FloatingWindow) => { x: number; y: number } | null) => {
       setLayout((cur) => {
         let changed = false;
         const floating = cur.floating.map((w) => {
-          const out = patch(w);
-          if (out !== w) changed = true;
-          return out;
+          const pos = patch(w);
+          if (pos === null || (pos.x === w.x && pos.y === w.y)) return w;
+          changed = true;
+          return { ...w, x: pos.x, y: pos.y };
         });
         if (!changed) return cur;
         const next = { ...cur, floating };
@@ -477,16 +485,17 @@ export function DockManager({
   const api = React.useMemo(
     () => ({
       apply: (fn: (l: DockLayout) => DockLayout) =>
+        runProgrammatic(() => applyOp(fn(layoutRef.current))),
+      /** Replace the layout WHOLESALE (restore, test-probe injection) --
+       * unlike `apply`, the incoming ids didn't come from this session's
+       * freshId, so the id counter is seeded past them first (same reason as
+       * the initialLayout seeding above; a collision would violate the
+       * unique-id invariant). Kept separate so the per-frame `apply` path
+       * doesn't pay the scan. */
+      replace: (layout: DockLayout) =>
         runProgrammatic(() => {
-          const next = fn(layoutRef.current);
-          // A sync layer can hand apply() a WHOLESALE layout (restore,
-          // test-probe injection) whose ids didn't come from freshId; keep
-          // the id counter ahead of them so later fresh ids can't collide
-          // (same reason as the initialLayout seeding above). No-op for
-          // ordinary op results (their ids already came from the counter).
-          if (next !== layoutRef.current)
-            bumpFreshIdFloor(ops.allLayoutIds(next));
-          applyOp(next);
+          bumpFreshIdFloor(ops.allLayoutIds(layout));
+          applyOp(layout);
         }),
       addPaneToArea: (areaId: string, paneId: PaneId, index?: number) =>
         runProgrammatic(() =>
@@ -564,10 +573,10 @@ export function DockManager({
         },
       );
       patchFloatPositions((w) => {
-        if (w.id === draggingWindowIdRef.current) return w;
+        if (w.id === draggingWindowIdRef.current) return null;
         // Server-anchored panels are repositioned by the resolve-effect below
         // (keyed on container size); skip them here so the two don't fight.
-        if (w.anchor !== undefined) return w;
+        if (w.anchor !== undefined) return null;
         let x = w.x;
         let y = w.y;
         // Dragged windows: anchor to the nearer edge (operate on the RENDERED
@@ -591,8 +600,7 @@ export function DockManager({
             y = Math.min(y, Math.max(0, rect.height - wh));
         }
         [x, y] = clampCorner(x, y, rect.width, rect.height);
-        if (x === w.x && y === w.y) return w;
-        return { ...w, x, y };
+        return { x, y };
       });
     });
     observer.observe(el);
@@ -692,10 +700,16 @@ export function DockManager({
         unmergeable: ops.isGroupUnmergeable(layoutRef.current, panes, groupId),
       };
     };
-    const readGroup = (el: Element, ctx: GroupContext): GroupTarget | null => {
+    // `rectEl` overrides the element whose box is the drop rect (defaults to
+    // the group element itself).
+    const readGroup = (
+      el: Element,
+      ctx: GroupContext,
+      rectEl: Element = el,
+    ): GroupTarget | null => {
       const groupId = el.getAttribute("data-dock-group");
       if (groupId === null) return null;
-      return buildTarget(el, el, groupId, ctx);
+      return buildTarget(rectEl, el, groupId, ctx);
     };
 
     container.querySelectorAll("[data-dock-leaf]").forEach((leaf) => {
@@ -705,15 +719,12 @@ export function DockManager({
         ? leaf
         : leaf.querySelector("[data-dock-group]");
       if (nodeId === null || edge === null || groupEl === null) return;
-      const groupId = groupEl.getAttribute("data-dock-group");
-      if (groupId === null) return;
       // The LEAF wrapper's box is the drop target: both minimized renderers
       // size the wrapper to the full droppable surface while the group element
       // inside may be a compact chip (the horizontal band's pill). The group
       // element still scopes the strip/tab lookup.
-      targets.groups.push(
-        buildTarget(leaf, groupEl, groupId, { kind: "docked", nodeId, edge }),
-      );
+      const g = readGroup(groupEl, { kind: "docked", nodeId, edge }, leaf);
+      if (g !== null) targets.groups.push(g);
     });
     // Iterate floating windows in front-order (array order = z), not DOM order
     // (which is stable/by-id), so targets are ordered back-to-front and hitTest
@@ -1221,9 +1232,7 @@ export function DockManager({
     const tree = layout.docked[edge];
     if (tree === null || groupId === undefined) return rw;
     const cols = ops.widthColumns(tree);
-    const col = cols.find((c) =>
-      ops.collectLeaves(c).some((l) => l.group === groupId),
-    );
+    const col = cols.find((c) => ops.collectLeafGroups(c).includes(groupId));
     // Trust the column weight only when the reconciler actually wrote px into
     // it (any real width clears the grab-min; an unreconciled weight is a bare
     // flex share like 1).
@@ -1953,13 +1962,13 @@ export function DockManager({
       // still render another band full-width; it must keep a working resizer
       // (which then adjusts regionWidth directly -- see makeOnResize).
       resizable: plan.anyBandExpanded,
+      // MODEL-based reserved width. The resizer's drag baseline reads THIS,
+      // never the post-scaling rendered width below -- otherwise grabbing the
+      // handle under the MIN_CANVAS_PX render-scale guard (or pressing
+      // Escape, which re-commits the start width) would bake the
+      // temporarily-scaled width into the model and break "widths restore
+      // when the viewport grows".
       reservedWidth: planned,
-      // The MODEL-based reserved width, NOT the post-scaling rendered one: the
-      // resizer's drag baseline must be the model value, or grabbing the handle
-      // under the MIN_CANVAS_PX render-scale guard (or pressing Escape, which
-      // re-commits the start width) would bake the temporarily-scaled width
-      // into the model and break "widths restore when the viewport grows".
-      modelReservedWidth: planned,
       // Inset the resize handle past any canvas-facing minimized strips so it
       // lands on the first expanded panel's boundary, not the strip's far side.
       resizerStripOffset: canvasFacingStripOffsetPx(plan, edge),
@@ -1971,28 +1980,30 @@ export function DockManager({
     left: regionFor("left"),
     right: regionFor("right"),
   };
-  // Render-time overflow guard: many panels docked on a narrow viewport can make
-  // left + right reserved width exceed the container, overlapping the regions and
-  // fully occluding the canvas (trapping the controls underneath). When the sum
-  // would leave less than MIN_CANVAS_PX of scene, scale BOTH regions down
-  // proportionally so a usable canvas strip always remains. Model widths are
-  // untouched -- this only shrinks what's rendered; widths restore when the
-  // viewport grows back. (containerWidth === 0 before first measure -> skip.)
+  // RENDERED widths, derived separately (the model record above is never
+  // mutated): the overflow guard scales what's DRAWN when many panels dock on
+  // a narrow viewport -- left + right reserved width would otherwise exceed
+  // the container, overlapping the regions and fully occluding the canvas
+  // (trapping the controls underneath). When the sum would leave less than
+  // MIN_CANVAS_PX of scene, both rendered widths shrink proportionally so a
+  // usable canvas strip always remains; model widths are untouched, so widths
+  // restore when the viewport grows back. (containerWidth === 0 before first
+  // measure -> skip.)
+  const renderedWidth: Record<DockEdge, number> = {
+    left: regions.left.reservedWidth,
+    right: regions.right.reservedWidth,
+  };
   if (containerWidth > 0) {
     const available = containerWidth - MIN_CANVAS_PX;
-    const total = regions.left.reservedWidth + regions.right.reservedWidth;
+    const total = renderedWidth.left + renderedWidth.right;
     if (total > available && total > 0) {
       const scale = Math.max(0, available) / total;
-      regions.left.reservedWidth = Math.floor(
-        regions.left.reservedWidth * scale,
-      );
-      regions.right.reservedWidth = Math.floor(
-        regions.right.reservedWidth * scale,
-      );
+      renderedWidth.left = Math.floor(renderedWidth.left * scale);
+      renderedWidth.right = Math.floor(renderedWidth.right * scale);
     }
   }
-  const leftInset = regions.left.reservedWidth;
-  const rightInset = regions.right.reservedWidth;
+  const leftInset = renderedWidth.left;
+  const rightInset = renderedWidth.right;
   // Rendered region widths, for hit-testing during drags: drop zones and
   // their hints must align to what's on screen, not to the MODEL regionWidth
   // (which excludes the strips and preserves widths through minimization).
@@ -2040,17 +2051,15 @@ export function DockManager({
     if (m === null) return;
     patchFloatPositions((w) => {
       if (w.id === draggingWindowIdRef.current || w.anchor === undefined)
-        return w;
+        return null;
       const winHeight = m.heights.get(w.id) ?? pinnedPxOf(w.height) ?? 0;
-      const { x, y } = ops.resolveRequestedFloatPosition(
+      return ops.resolveRequestedFloatPosition(
         w.anchor.x,
         w.anchor.y,
         w.width,
         winHeight,
         m.bounds,
       );
-      if (x === w.x && y === w.y) return w;
-      return { ...w, x, y };
     });
   }, [readFloatBounds, patchFloatPositions]);
 
@@ -2068,14 +2077,12 @@ export function DockManager({
     if (m === null || m.bounds.width === 0) return;
     patchFloatPositions((w) => {
       if (w.id === draggingWindowIdRef.current || w.anchor !== undefined)
-        return w;
+        return null;
       const maxX = Math.max(
         m.bounds.leftInset,
         m.bounds.width - m.bounds.rightInset - w.width,
       );
-      const x = Math.min(Math.max(w.x, m.bounds.leftInset), maxX);
-      if (x === w.x) return w;
-      return { ...w, x };
+      return { x: clamp(w.x, m.bounds.leftInset, maxX), y: w.y };
     });
   }, [readFloatBounds, patchFloatPositions]);
 
@@ -2151,13 +2158,8 @@ export function DockManager({
         {/* Docked regions: every column insets the canvas, with fully-minimized
         columns rendering as fixed-width vertical strips. */}
         {(["left", "right"] as DockEdge[]).map((edge) => {
-          const {
-            tree,
-            resizable,
-            reservedWidth,
-            modelReservedWidth,
-            resizerStripOffset,
-          } = regions[edge];
+          const { tree, resizable, resizerStripOffset } = regions[edge];
+          const drawnWidth = renderedWidth[edge];
           return (
           <React.Fragment key={edge}>
             {/* Canvas-facing shadow on a div BEHIND the panes (zIndex 1), so it
@@ -2169,7 +2171,7 @@ export function DockManager({
                   top: 0,
                   bottom: 0,
                   [edge]: 0,
-                  width: reservedWidth,
+                  width: drawnWidth,
                   zIndex: 1,
                   pointerEvents: "none",
                   boxShadow: "0 0 1em 0 rgba(0,0,0,0.1)",
@@ -2184,7 +2186,7 @@ export function DockManager({
                   top: 0,
                   bottom: 0,
                   [edge]: 0,
-                  width: reservedWidth,
+                  width: drawnWidth,
                   display: "flex",
                   backgroundColor: "var(--mantine-color-body)",
                   zIndex: 5,
@@ -2196,8 +2198,9 @@ export function DockManager({
                 <RegionResizer
                   edge={edge}
                   stripOffset={resizerStripOffset}
-                  // Model-based (unscaled) start: see modelReservedWidth above.
-                  getStart={() => modelReservedWidth}
+                  // Model-based (unscaled) start: see regionFor's
+                  // reservedWidth doc.
+                  getStart={() => regions[edge].reservedWidth}
                   // Called once per drag: snapshots the columns' start widths
                   // and limits, and returns the per-frame handler. Widths are
                   // redistributed across ALL columns from their drag-start
@@ -2221,12 +2224,12 @@ export function DockManager({
                     // the drag adjusts the regionWidth scalar directly (the
                     // expanded band renders full-width and follows). With
                     // nothing expanded anywhere the resizer isn't rendered.
+                    // Bare mode: the widthRow is all strips while another
+                    // band is expanded (the resizer only renders when
+                    // plan.anyBandExpanded). The reserved width IS regionWidth
+                    // -- an all-strip widthRow renders as full-width bars, not
+                    // side strips, so there is NO chrome in this mode.
                     const bareRegionResize = cols.length === 0;
-                    if (bareRegionResize && !plan.anyBandExpanded)
-                      return () => {};
-                    // In the bare mode the reserved width IS regionWidth (an
-                    // all-strip widthRow renders as full-width bars, not
-                    // side strips -- no chrome).
                     const chromePx = bareRegionResize ? 0 : plan.chromePx;
                     const startRegion = regionWidthsOf(layoutRef.current)[
                       edge
@@ -2251,10 +2254,8 @@ export function DockManager({
                       let total: number;
                       let next = layoutRef.current;
                       if (bareRegionResize) {
-                        total = Math.max(
-                          reservedPx - chromePx,
-                          ops.minRegionWidth(),
-                        );
+                        // No chrome to subtract in bare mode (see above).
+                        total = Math.max(reservedPx, ops.minRegionWidth());
                       } else {
                         const widths = ops.resizeRegionColumns(
                           init,

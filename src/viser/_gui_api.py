@@ -584,6 +584,15 @@ class GuiApi:
         """Set container ID associated with the current thread."""
         self._target_container_from_thread_id[threading.get_ident()] = container_uuid
 
+    def _next_layout_counter(self, uuid: str) -> int:
+        """Bump and return the panel's layout-update counter. THE single home of
+        the lock-guarded read-modify-write (used by every placement command and
+        by reset), so concurrent calls can't stamp duplicate counters."""
+        counts = self._layout_update_count_from_uuid
+        with self._layout_update_lock:
+            counts[uuid] = counts.get(uuid, 0) + 1
+            return counts[uuid]
+
     def reset(self) -> None:
         """Reset the GUI."""
         root_container = self._container_handle_from_uuid["root"]
@@ -611,10 +620,7 @@ class GuiApi:
         # panel still sees this deliberate reset (counter increment beats its
         # last-applied), while a normal reconnect replay -- same counter -- is
         # ignored. (None width/height clears any override -> default/theme.)
-        counts = self._layout_update_count_from_uuid
-        with self._layout_update_lock:
-            counts[CONTROL_PANEL_ID] = counts.get(CONTROL_PANEL_ID, 0) + 1
-            reset_counter = counts[CONTROL_PANEL_ID]
+        reset_counter = self._next_layout_counter(CONTROL_PANEL_ID)
         self._websock_interface.queue_message(
             _messages.GuiSetPanelPositionMessage(
                 CONTROL_PANEL_ID,

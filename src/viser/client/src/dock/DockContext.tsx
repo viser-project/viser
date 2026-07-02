@@ -22,6 +22,10 @@ import {
 export interface DockApi {
   /** Apply an arbitrary pure layout transform (compose ops from layoutOps). */
   apply: (fn: (layout: DockLayout) => DockLayout) => void;
+  /** Replace the layout WHOLESALE with one whose ids did not come from this
+   * session (restore, test-probe injection). Seeds the fresh-id counter past
+   * the incoming ids before applying. */
+  replace: (layout: DockLayout) => void;
   /** Add a not-yet-placed panel to an area's tabs (creates the area if
    * needed). No-op if the panel is already placed anywhere. */
   addPaneToArea: (areaId: AreaId, paneId: PaneId, index?: number) => void;

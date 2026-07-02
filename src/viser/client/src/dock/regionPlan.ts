@@ -95,7 +95,7 @@ export function planRegion(
     expandedColumns,
     singleColumn: columns.length === 1,
     chromePx:
-      isStrip.filter(Boolean).length * MINIMIZED_STRIP_PX +
+      (columns.length - expandedColumns.length) * MINIMIZED_STRIP_PX +
       (columns.length - 1) * SPLIT_DIVIDER_PX,
     anyBandExpanded,
   };

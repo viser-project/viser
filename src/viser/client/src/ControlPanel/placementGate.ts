@@ -22,12 +22,11 @@
 
 import type {
   AppliedAxes,
+  PanelLayoutEntry,
   PanelPlacementState,
   PlacementAxisName,
 } from "./GuiState";
 import type { PanelPlacement } from "../dock/layoutOps";
-
-const AXES: PlacementAxisName[] = ["position", "width", "height", "collapsed"];
 
 export interface GatedPlacement {
   /** Bundle for applyPanelPlacement: fresh axes carry their value, gated-off or
@@ -42,35 +41,49 @@ export interface GatedPlacement {
 
 export function gatePlacement(
   entry: PanelPlacementState | undefined,
-  tracking:
-    | { applied: AppliedAxes; userTouched: boolean }
-    | undefined,
+  tracking: PanelLayoutEntry | undefined,
   placed: boolean,
 ): GatedPlacement {
-  const placement: PanelPlacement = {
-    position: null,
-    width: null,
-    height: null,
-    collapsed: null,
-  };
-  const applied: AppliedAxes = {};
-  let anyFresh = false;
   const gateOpen = tracking?.userTouched !== true || !placed;
-  for (const axis of AXES) {
+  // Per-axis freshness, resolved with full types (no loop over axis names --
+  // that shape forced a Record cast to write the heterogeneous values back).
+  const freshAxis = <A extends PlacementAxisName>(axis: A) => {
     const stored = entry?.[axis];
-    if (stored === undefined) continue;
+    if (stored === undefined) return undefined;
     const last = tracking?.applied[axis];
     const fresh =
       gateOpen ||
       last === undefined ||
       stored.runId !== last.runId ||
       stored.counter > last.counter;
-    if (!fresh) continue;
-    // The axes' value types line up field-by-field (position/width/height/
-    // collapsed); TypeScript can't prove it across the loop variable.
-    (placement as Record<PlacementAxisName, unknown>)[axis] = stored.value;
-    applied[axis] = { counter: stored.counter, runId: stored.runId };
-    anyFresh = true;
+    return fresh ? stored : undefined;
+  };
+  const position = freshAxis("position");
+  const width = freshAxis("width");
+  const height = freshAxis("height");
+  const collapsed = freshAxis("collapsed");
+  const applied: AppliedAxes = {};
+  for (const [axis, stored] of [
+    ["position", position],
+    ["width", width],
+    ["height", height],
+    ["collapsed", collapsed],
+  ] as const) {
+    if (stored !== undefined)
+      applied[axis] = { counter: stored.counter, runId: stored.runId };
   }
-  return { placement, applied, anyFresh };
+  return {
+    placement: {
+      position: position?.value ?? null,
+      width: width?.value ?? null,
+      height: height?.value ?? null,
+      collapsed: collapsed?.value ?? null,
+    },
+    applied,
+    anyFresh:
+      position !== undefined ||
+      width !== undefined ||
+      height !== undefined ||
+      collapsed !== undefined,
+  };
 }

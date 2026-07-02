@@ -592,22 +592,25 @@ function buildColumn(
   };
 }
 
-/** The preserved per-group height shares of the floating window holding ALL of
- * `groupIds` (its whole stack being docked), or undefined when the groups
- * aren't coming from one window. Captured BEFORE detachInPlace (which clears a
- * window's stackWeights as its groups leave), so docking a floated 70/30 stack
- * restores 70/30 leaf heights -- the inverse of floatColumn, which wrote them. */
-function floatingStackWeights(
-  layout: DockLayout,
-  groupIds: readonly GroupId[],
+/** Detach every group in `groupIds` from the draft, returning the preserved
+ * per-group height shares of the floating window that held ALL of them (its
+ * whole stack being docked), or undefined when the groups aren't coming from
+ * one window. Capture-then-detach lives in ONE helper because the ORDER is
+ * load-bearing: detachInPlace deletes each departing group's stackWeights
+ * entry as it leaves, so the weights must be copied out first -- this is the
+ * inverse of floatColumn, which wrote them, and it's what lets a floated
+ * 70/30 stack dock back at 70/30. */
+function detachAllPreservingStackWeights(
+  draft: DockLayout,
+  groupIds: NonEmpty<GroupId>,
 ): Record<GroupId, number> | undefined {
-  const win = layout.floating.find((w) =>
+  const win = draft.floating.find((w) =>
     groupIds.every((g) => w.stack.includes(g)),
   );
-  // COPY: detachInPlace deletes each departing group's entry from the window's
-  // own stackWeights object as it leaves -- capturing a reference would watch
-  // the weights vanish before buildColumn reads them.
-  return win?.stackWeights === undefined ? undefined : { ...win.stackWeights };
+  const weights =
+    win?.stackWeights === undefined ? undefined : { ...win.stackWeights };
+  groupIds.forEach((g) => detachInPlace(draft, g));
+  return weights;
 }
 
 /** A row of one column. */
@@ -637,8 +640,7 @@ export function dockToEdge(
   const ne = asNonEmpty(groupIds);
   if (ne === null) return layout;
   const draft = clone(layout);
-  const stackHeights = floatingStackWeights(draft, ne);
-  ne.forEach((g) => detachInPlace(draft, g));
+  const stackHeights = detachAllPreservingStackWeights(draft, ne);
   const column = buildColumn(ne, 1, stackHeights);
   const existing = draft.docked[edge];
   if (existing === null) {
@@ -682,8 +684,7 @@ export function dockToRegionEdge(
   const ne = asNonEmpty(groupIds);
   if (ne === null) return layout;
   const draft = clone(layout);
-  const stackHeights = floatingStackWeights(draft, ne);
-  ne.forEach((g) => detachInPlace(draft, g));
+  const stackHeights = detachAllPreservingStackWeights(draft, ne);
   const existing = draft.docked[edge];
   if (existing === null) {
     draft.docked[edge] = regionOf(buildColumn(ne, 1, stackHeights));
@@ -775,8 +776,7 @@ export function dockBandAtIndex(
   const ne = asNonEmpty(groupIds);
   if (ne === null) return layout;
   const draft = clone(layout);
-  const stackHeights = floatingStackWeights(draft, ne);
-  ne.forEach((g) => detachInPlace(draft, g));
+  const stackHeights = detachAllPreservingStackWeights(draft, ne);
   // Detaching dragged groups that shared this edge can drop bands, shifting the
   // target index. Re-clamp against the post-detach region so the band still
   // lands in range (the caller's index was computed against the pre-detach
@@ -822,8 +822,7 @@ export function dropOnDockedLeaf(
   }
 
   const draft = clone(layout);
-  const stackHeights = floatingStackWeights(draft, ne);
-  ne.forEach((g) => detachInPlace(draft, g));
+  const stackHeights = detachAllPreservingStackWeights(draft, ne);
   // Re-find the target leaf AFTER detach. If a dragged group shared this edge,
   // detaching it may have dropped the target's column; if the target is gone (a
   // self-drop), abort rather than orphaning the dragged groups.
@@ -1048,11 +1047,9 @@ export function addPaneToArea(
   const group = draft.groups[draft.areas![areaId].group];
   const i = clampIndex(index, group.paneIds.length);
   group.paneIds.splice(i, 0, paneId);
-  if (
-    group.paneIds.length === 1 ||
-    group.activeId === null ||
-    !group.paneIds.includes(group.activeId)
-  ) {
+  // (A just-emptied group had activeId null -- invariant #5 -- so the
+  // "first pane added" case is covered by the null check.)
+  if (group.activeId === null || !group.paneIds.includes(group.activeId)) {
     group.activeId = paneId;
   }
   return draft;
@@ -1781,9 +1778,8 @@ function applyMembership(
   // reconcile's job), so it passes an empty removed set -- and foreign panes
   // the user merged in ride along with the relocated group.
   for (const paneId of paneIds) movePaneInPlace(draft, paneId, groupId);
-  reconcileMembershipInPlace(draft.groups[groupId], paneIds, EMPTY_PANE_SET);
+  reconcileMembershipInPlace(draft.groups[groupId], paneIds, new Set());
 }
-const EMPTY_PANE_SET: ReadonlySet<PaneId> = new Set();
 
 /** Reconcile a standalone panel's group membership (tabs added/removed) WITHOUT
  * repositioning it. Used on tab-list changes so a user-moved panel isn't yanked
@@ -1794,7 +1790,7 @@ const EMPTY_PANE_SET: ReadonlySet<PaneId> = new Set();
 export function reconcilePanelMembership(
   layout: DockLayout,
   paneIds: PaneId[],
-  removedPaneIds: readonly PaneId[] = [],
+  removedPaneIds: readonly PaneId[],
 ): DockLayout {
   if (paneIds.length === 0) return layout;
   const groupId = panelGroupOf(layout, paneIds);

@@ -838,13 +838,21 @@ class GuiTabHandle:
 CONTROL_PANEL_ID = "viser-control-panel"
 
 
-def _check_dimension(value: float | None, name: str) -> None:
+def _check_dimension(
+    value: float | None, name: str, *, allow_none: bool = True
+) -> None:
     """Reject non-positive / non-finite panel sizes before they reach the client.
 
     NaN/negative/zero widths produce broken (and, for NaN, sticky + replayed)
     layouts; the client's floating-window resize doesn't clamp them, so we
-    validate at the Python boundary like other viser inputs do."""
-    if value is not None and (not math.isfinite(value) or value <= 0.0):
+    validate at the Python boundary like other viser inputs do. ``None`` is the
+    internal "clear the override" sentinel (used by ``gui.reset()``); public
+    commands that require a real size pass ``allow_none=False``."""
+    if value is None:
+        if not allow_none:
+            raise TypeError(f"{name} must be a number in pixels, not None.")
+        return
+    if not math.isfinite(value) or value <= 0.0:
         raise ValueError(f"{name} must be a positive, finite number, got {value!r}.")
 
 
@@ -886,16 +894,12 @@ class _PlacementMixin:
         # replayed/late placement for a panel the user has since rearranged (see
         # the message's `counter` / `run_id` docs). Methods construct the message
         # with placeholder counter=0 / run_id=""; the authoritative values are
-        # assigned here, the single chokepoint. The bump is guarded by a lock so
-        # concurrent placement calls from two threads can't stamp duplicate
-        # counters (which would weaken the client's monotonicity gate).
+        # assigned here, the single chokepoint.
         api = self._placement_gui_api
-        counts = api._layout_update_count_from_uuid
-        with api._layout_update_lock:
-            counts[self._placement_uuid] = counts.get(self._placement_uuid, 0) + 1
-            counter = counts[self._placement_uuid]
         stamped = dataclasses.replace(
-            cast(Any, message), counter=counter, run_id=api._layout_run_id
+            cast(Any, message),
+            counter=api._next_layout_counter(self._placement_uuid),
+            run_id=api._layout_run_id,
         )
         api._websock_interface.queue_message(stamped)
 
@@ -1022,12 +1026,7 @@ class _PlacementMixin:
     def set_width(self, width: float) -> None:
         """Set the panel width in pixels (region width when docked, window width
         when floating)."""
-        if width is None:  # type: ignore[unreachable]
-            # _check_dimension permits None (the message-level "clear override"
-            # used internally by gui.reset()), but the public command requires a
-            # real width -- None would silently no-op for standalone panels.
-            raise TypeError("set_width requires a width in pixels.")
-        _check_dimension(width, "width")
+        _check_dimension(width, "width", allow_none=False)
         self._queue_placement(
             GuiSetPanelWidthMessage(self._placement_uuid, width, counter=0, run_id="")
         )
@@ -1039,7 +1038,7 @@ class _PlacementMixin:
         panel -- whether solo or stacked via :meth:`dock_above` /
         :meth:`dock_below` -- sizes to its split weights, so ``set_height`` has no
         effect there."""
-        _check_dimension(height, "height")
+        _check_dimension(height, "height", allow_none=False)
         self._queue_placement(
             GuiSetPanelHeightMessage(
                 self._placement_uuid, height, counter=0, run_id=""

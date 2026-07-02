@@ -217,7 +217,7 @@ function LayoutInjector() {
     const probe = window as unknown as {
       __dockSetLayout?: (layout: DockLayout) => void;
     };
-    probe.__dockSetLayout = (layout) => api.apply(() => layout);
+    probe.__dockSetLayout = (layout) => api.replace(layout);
     return () => {
       delete probe.__dockSetLayout;
     };

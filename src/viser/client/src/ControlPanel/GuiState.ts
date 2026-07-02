@@ -1,7 +1,7 @@
 import React from "react";
 import { createStore, createKeyedStore } from "../store";
 import { ColorTranslator } from "colortranslator";
-import { computePaneToStableKey } from "./panelIdentity";
+import { buildPaneToStableKey } from "./panelIdentity";
 
 import {
   GuiComponentMessage,
@@ -46,6 +46,13 @@ export interface AppliedAxisRecord {
 }
 export type AppliedAxes = Partial<Record<PlacementAxisName, AppliedAxisRecord>>;
 
+/** One panel's layout-application tracking (see GuiState.panelLayoutTracking).
+ * Named so the store and the placement gate share a single definition. */
+export interface PanelLayoutEntry {
+  applied: AppliedAxes;
+  userTouched: boolean;
+}
+
 /** Merge one placement axis into a panel's entry. Same run: keep the higher
  * counter (an out-of-order replay can't regress the axis). Different run: the
  * later arrival wins (counters aren't comparable across runs/scopes). Returns
@@ -54,13 +61,12 @@ function mergePlacement<A extends PlacementAxisName>(
   state: { panelPlacement: { [uuid: string]: PanelPlacementState } },
   uuid: string,
   axis: A,
-  axisValue: PanelPlacementState[A],
+  axisValue: NonNullable<PanelPlacementState[A]>,
 ): Partial<{ panelPlacement: { [uuid: string]: PanelPlacementState } }> {
   const prev = state.panelPlacement[uuid];
   const prevAxis = prev?.[axis];
   if (
     prevAxis !== undefined &&
-    axisValue !== undefined &&
     prevAxis.runId === axisValue.runId &&
     prevAxis.counter >= axisValue.counter
   )
@@ -117,7 +123,7 @@ export interface GuiState {
    * present are pruned as the layout settles (and immediately when the server
    * removes a panel). */
   panelLayoutTracking: {
-    [stableKey: string]: { applied: AppliedAxes; userTouched: boolean };
+    [stableKey: string]: PanelLayoutEntry;
   };
   /** Bumped by `resetPanelLayout` to force the dock to re-apply server placement
    * for every panel from scratch (the placement effects watch it and clear their
@@ -287,6 +293,25 @@ export function useGuiState(initialServer: string) {
     // Per-component config store, keyed by UUID.
     const configStore = createKeyedStore<GuiComponentMessage>();
 
+    // One setter per placement axis, differing only in the axis name: the
+    // factory keeps the (value, counter, runId) -> mergePlacement wiring in a
+    // single place, fully typed per axis.
+    const setPanelAxis =
+      <A extends PlacementAxisName>(axis: A) =>
+      (
+        uuid: string,
+        value: NonNullable<PanelPlacementState[A]>["value"],
+        counter: number,
+        runId: string,
+      ) =>
+        store.set((state) =>
+          mergePlacement(state, uuid, axis, {
+            value,
+            counter,
+            runId,
+          } as NonNullable<PanelPlacementState[A]>),
+        );
+
     const actions: GuiActions = {
       setTheme: (theme) => store.set({ theme }),
       setShareUrl: (shareUrl) => store.set({ shareUrl }),
@@ -353,7 +378,7 @@ export function useGuiState(initialServer: string) {
           // not inherit this one's userTouched/applied state. (Reconnect goes
           // through resetGui, which deliberately KEEPS tracking -- that's the
           // "same panel, remembered arrangement" path.)
-          const stableKey = computePaneToStableKey(state.panels).get(id);
+          const stableKey = buildPaneToStableKey(state.panels).get(id);
           let tracking = state.panelLayoutTracking;
           if (stableKey !== undefined && stableKey in tracking) {
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -476,39 +501,30 @@ export function useGuiState(initialServer: string) {
         });
       },
       // The four write-only GuiSetPanel* messages each merge their single AXIS
-      // here, with the sending command's (counter, runId) stamp. One helper,
+      // here, with the sending command's (counter, runId) stamp. One factory,
       // one axis apiece.
-      setPanelPosition: (uuid, position, counter, runId) =>
-        store.set((state) =>
-          mergePlacement(state, uuid, "position", {
-            value: position,
-            counter,
-            runId,
-          }),
-        ),
-      setPanelWidth: (uuid, width, counter, runId) =>
-        store.set((state) =>
-          mergePlacement(state, uuid, "width", { value: width, counter, runId }),
-        ),
-      setPanelHeight: (uuid, height, counter, runId) =>
-        store.set((state) =>
-          mergePlacement(state, uuid, "height", {
-            value: height,
-            counter,
-            runId,
-          }),
-        ),
-      setPanelCollapsed: (uuid, collapsed, counter, runId) =>
-        store.set((state) =>
-          mergePlacement(state, uuid, "collapsed", {
-            value: collapsed,
-            counter,
-            runId,
-          }),
-        ),
+      setPanelPosition: setPanelAxis("position"),
+      setPanelWidth: setPanelAxis("width"),
+      setPanelHeight: setPanelAxis("height"),
+      setPanelCollapsed: setPanelAxis("collapsed"),
       recordPanelLayoutApplied: (stableKey, applied) => {
         store.set((state) => {
           const prev = state.panelLayoutTracking[stableKey];
+          // No-op when every stamp is already recorded: record runs on every
+          // placement application, and an identical write would churn a new
+          // tracking object through every subscriber for nothing.
+          if (
+            prev !== undefined &&
+            Object.entries(applied).every(([axis, stamp]) => {
+              const cur = prev.applied[axis as PlacementAxisName];
+              return (
+                cur !== undefined &&
+                cur.counter === stamp.counter &&
+                cur.runId === stamp.runId
+              );
+            })
+          )
+            return {};
           return {
             panelLayoutTracking: {
               ...state.panelLayoutTracking,

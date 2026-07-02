@@ -29,6 +29,7 @@ import {
   DockColumn,
   DockEdge,
   DockLayout,
+  DockRow,
   regionWidthsOf,
 } from "./types";
 
@@ -84,12 +85,14 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
     // (the old "descend into the widest child to guess the columns" logic, and
     // the LEAD 1 bug it patched, are gone).
     const prevCols = prevTree ? widthColumns(prevTree) : [];
-    const nextCols = widthColumns(nextTree);
+    const nextPlan = planRegion(nextTree, next.groups);
+    // The plan's columns ARE widthColumns(nextTree) (same array object), so
+    // consuming them keeps this module's per-column indexing (isStrip[i])
+    // aligned with the plan by construction rather than by re-derivation.
+    const nextCols = nextPlan.columns;
     const sameSet =
       prevCols.length === nextCols.length &&
       prevCols.every((c, i) => c.id === nextCols[i].id);
-
-    const nextPlan = planRegion(nextTree, next.groups);
     if (sameSet) {
       // Same columns: only a STRIP-pattern flip (collapse/expand toggle)
       // changes regionWidth -- the toggled column leaves or rejoins the
@@ -129,33 +132,36 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
       prevTree !== null ? planRegion(prevTree, prev.groups) : null;
     const prevExpanded = prevPlan?.expandedColumns ?? [];
     const prevWidthBand = prevTree !== null ? widthRow(prevTree) : null;
-    const prevInfo = (prevTree?.rows ?? []).flatMap((band) => {
-      const bandTotal = band.columns.reduce((s, c) => s + c.weight, 0) || 1;
-      return band.columns.map((c) => ({
+    // A prev column's carried-over pixel width:
+    // - NON-widthRow columns: their weights are plain flex shares, but the
+    //   band renders at the full region width, so the RENDERED px is the
+    //   share of regionWidth -- the width the column should keep if it
+    //   becomes a widthRow column (widthRow-identity flip).
+    // - widthRow columns: weights ARE pixels once the row has multiple
+    //   columns (this function wrote them); a SINGLE column's px lives in
+    //   regionWidth instead (its weight is never rewritten). That holds
+    //   whether the column is expanded OR fully minimized: a lone minimized
+    //   column preserves its width in regionWidth too (the pattern-flip
+    //   branch keeps it), while its weight is still the constructor default
+    //   -- reading the weight there returned 1px -> floored to the grab-min,
+    //   so a minimized lone panel came back at 96px after a sibling docked.
+    const prevPxOf = (band: DockRow, c: DockColumn): number => {
+      if (band !== prevWidthBand) {
+        const bandTotal = band.columns.reduce((s, x) => s + x.weight, 0) || 1;
+        return prevRW[edge] * (c.weight / bandTotal);
+      }
+      const lone =
+        prevCols.length === 1 ||
+        (prevExpanded.length === 1 && prevExpanded[0] === c);
+      return lone ? prevRW[edge] : c.weight;
+    };
+    const prevInfo = (prevTree?.rows ?? []).flatMap((band) =>
+      band.columns.map((c) => ({
         groups: new Set(collectLeafGroups(c)),
-        // widthRow columns: weights ARE pixels once the row has multiple
-        // columns (this function wrote them); a SINGLE column's px lives in
-        // regionWidth instead (its weight is never rewritten). That holds
-        // whether the column is expanded OR fully minimized: a lone minimized
-        // column preserves its width in regionWidth too (the pattern-flip
-        // branch keeps it), while its weight is still the constructor
-        // default. Reading the weight there returned 1px -> floored to the
-        // grab-min, so a minimized lone panel came back at 96px after a
-        // sibling docked.
-        // NON-widthRow columns: their weights are plain flex shares, but the
-        // band renders at the full region width, so the column's RENDERED px
-        // is its share of regionWidth -- the width it should keep if it
-        // becomes a widthRow column.
-        px:
-          band === prevWidthBand
-            ? prevCols.length === 1 ||
-              (prevExpanded.length === 1 && prevExpanded[0] === c)
-              ? prevRW[edge]
-              : c.weight
-            : prevRW[edge] * (c.weight / bandTotal),
+        px: prevPxOf(band, c),
         used: false,
-      }));
-    });
+      })),
+    );
     const intended = nextCols.map((c) => {
       const groupSet = collectLeafGroups(c);
       const match = prevInfo.find(
