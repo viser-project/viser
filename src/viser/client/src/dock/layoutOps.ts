@@ -835,10 +835,11 @@ export function dropOnDockedLeaf(
   const targetColumn = live.column; // a reference into the cloned draft
   const targetRow = live.row;
 
+  const li = targetColumn.leaves.findIndex((l) => l.id === targetNodeId);
+
   if (region === "top" || region === "bottom") {
     // Insert the dragged leaf(s) into the target's column, above/below it. The
     // target keeps its (resized) weight; the dragged leaves take `dw`.
-    const li = targetColumn.leaves.findIndex((l) => l.id === targetNodeId);
     targetColumn.leaves[li] = { ...live.leaf, weight: tw };
     const banded = mapNonEmpty(ne, (g) => makeLeaf(g, dw));
     const at = region === "top" ? li : li + 1;
@@ -857,7 +858,6 @@ export function dropOnDockedLeaf(
   // instead (and the hint spans the band to match).
   const newColumn = buildColumn(ne, dw, stackHeights);
   if (targetRow.columns.length === 1 && targetColumn.leaves.length > 1) {
-    const li = targetColumn.leaves.findIndex((l) => l.id === targetNodeId);
     const above = targetColumn.leaves.slice(0, li);
     const below = targetColumn.leaves.slice(li + 1);
     // Carve the original band's weight by the leaves' height shares, so the
@@ -1807,10 +1807,8 @@ function ensurePanelGroup(
   // Apply the collapsed field (always applied -- no prevCollapsed): true sets
   // the group's collapsed flag; false expands it; null/undefined leaves it
   // untouched.
-  if (collapsed === true) {
-    draft.groups[groupId].collapsed = true;
-  } else if (collapsed === false) {
-    draft.groups[groupId].collapsed = false;
+  if (typeof collapsed === "boolean") {
+    draft.groups[groupId].collapsed = collapsed;
   }
   return groupId;
 }
