@@ -106,12 +106,34 @@ export function usePlacementCoordinator(
       );
     };
     // Whether the anchor's own dock is still COMING -- decided synchronously
-    // from the store, never a timer: its stored placement must intend docking
-    // (edge/split position; on the ordered stream that message precedes the
-    // dependent's split) AND its own gate must still be willing to apply it.
-    // An anchor the user floated has a closed gate -- its dock will never
-    // re-apply -- so the dependent falls back immediately instead of hanging.
-    const anchorDockPending = (anchorUuid: string): boolean => {
+    // from the store, never a timer. Deferring is only correct while progress
+    // is POSSIBLE, so every "can never dock" case must return false (the
+    // dependent then applies with the op's warn + right-edge fallback instead
+    // of hanging invisible):
+    //  - stored position absent or float: the server never intends a dock;
+    //  - the anchor's placement step can't RUN: a hidden panel or one emptied
+    //    to zero tabs early-returns before placing;
+    //  - its gate is closed (e.g. the user floated it): the dock won't
+    //    re-apply;
+    //  - a split-anchored anchor waits on ITS anchor in turn -- followed
+    //    recursively, with a visited set so an anchor CYCLE (a above b, b
+    //    above a: neither can move first) reads as not-pending rather than
+    //    deadlocking the fixpoint.
+    const anchorDockPending = (
+      anchorUuid: string,
+      visited: Set<string> = new Set(),
+    ): boolean => {
+      if (visited.has(anchorUuid)) return false; // cycle: nobody moves first.
+      visited.add(anchorUuid);
+      if (anchorUuid !== CONTROL_PANEL_ID) {
+        const anchorPanel = panels[anchorUuid];
+        if (
+          anchorPanel === undefined ||
+          !anchorPanel.props.visible ||
+          anchorPanel.props._tab_container_ids.length === 0
+        )
+          return false;
+      }
       const anchorEntry = panelPlacement[anchorUuid];
       const pos = anchorEntry?.position?.value;
       if (pos === undefined || pos.kind === "float") return false;
@@ -124,7 +146,13 @@ export function usePlacementCoordinator(
         tracking[anchorKey],
         resolveAnchor(anchorUuid) !== null,
       );
-      return gated.placement.position !== null;
+      if (gated.placement.position === null) return false;
+      if (pos.kind === "split")
+        return (
+          anchorDocked(pos.anchor_uuid) ||
+          anchorDockPending(pos.anchor_uuid, visited)
+        );
+      return true;
     };
 
     const processPanel = (uuid: string): void => {

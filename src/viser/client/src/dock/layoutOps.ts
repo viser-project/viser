@@ -1859,6 +1859,9 @@ export function applyPanelPlacement(
     rightInset: 0,
   };
   if (paneIds.length === 0) return layout;
+  // Whether the panel already HAD a group before this op (used by the orphan
+  // guard at the end: a group we created must not outlive the op unattached).
+  const groupExistedBefore = panelGroupOf(layout, paneIds) !== null;
   let draft = clone(layout);
   const groupId = ensurePanelGroup(draft, paneIds, placement.collapsed);
   if (groupId === null) return layout;
@@ -2005,6 +2008,18 @@ export function applyPanelPlacement(
       }
     }
   }
+
+  // An ORPHAN group must be uncommittable from this op: if nothing above
+  // attached the group we created (no position + floatIfUnplaced disabled, or
+  // an unknown wire position kind), committing the draft would violate the
+  // no-orphans invariant -- and worse, findPaneGroup would report the panel
+  // "placed" off the orphan, wedging callers' dedup with a panel rendered
+  // nowhere. No attach + freshly-created group => the whole op is a no-op.
+  if (
+    !groupExistedBefore &&
+    findGroupLocation(draft, groupId) === null
+  )
+    return layout;
 
   return draft;
 }

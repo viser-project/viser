@@ -419,13 +419,16 @@ describe("applyPanelPlacement", () => {
 
   it("does NOT auto-float an unplaced panel when floatIfUnplaced=false", () => {
     // The control panel path: a no-position placement must not place it (it's
-    // floated separately).
-    const out = applyPanelPlacement(emptyLayout(), ["p"], EMPTY, () => null, {
+    // floated separately). Since the orphan guard, this is a full NO-OP --
+    // previously the group was created and committed attached nowhere, which
+    // both violated the no-orphans invariant and made the panel read as
+    // "placed" while rendering nowhere.
+    const layout = emptyLayout();
+    const out = applyPanelPlacement(layout, ["p"], EMPTY, () => null, {
       floatIfUnplaced: false,
     });
-    const gid = findPaneGroup(out, "p");
-    expect(gid).not.toBeNull();
-    expect(findGroupLocation(out, gid!)).toBeNull();
+    expect(out).toBe(layout);
+    expect(findPaneGroup(out, "p")).toBeNull();
   });
 
   it("does not yank an already-placed panel on a no-position update", () => {
@@ -629,6 +632,42 @@ describe("resizeWindowHeight pin / un-pin (auto-height)", () => {
     // Drag back down to content -> un-pin.
     layout = resizeWindowHeight(layout, id, undefined);
     expect(layout.floating[0].height).toEqual({ mode: "auto" });
+  });
+});
+
+describe("orphan groups are uncommittable from applyPanelPlacement", () => {
+  it("no position + floatIfUnplaced:false on an unplaced pane is a NO-OP", () => {
+    // Previously this created the group (ensurePanelGroup) and committed it
+    // ATTACHED NOWHERE -- an orphan that violated the invariant and made
+    // findPaneGroup report the panel "placed" while it rendered nowhere.
+    const layout = emptyLayout();
+    const out = applyPanelPlacement(layout, ["p"], EMPTY, () => null, {
+      floatIfUnplaced: false,
+      canvasBounds: BOUNDS_1000,
+    });
+    expect(out).toBe(layout); // same reference: nothing to commit.
+    expect(findPaneGroup(out, "p")).toBeNull();
+  });
+
+  it("an EXISTING group is still updated by a no-position bundle", () => {
+    // The guard only applies to groups this op created: collapse-only updates
+    // to an already-placed panel must still commit.
+    let layout = applyPanelPlacement(
+      emptyLayout(),
+      ["p"],
+      at({ kind: "edge", edge: "right" }),
+      () => null,
+      { canvasBounds: BOUNDS_1000 },
+    );
+    layout = applyPanelPlacement(
+      layout,
+      ["p"],
+      { position: null, width: null, height: null, collapsed: true },
+      () => null,
+      { canvasBounds: BOUNDS_1000 },
+    );
+    const gid = findPaneGroup(layout, "p")!;
+    expect(layout.groups[gid].collapsed).toBe(true);
   });
 });
 

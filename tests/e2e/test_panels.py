@@ -181,6 +181,51 @@ def test_dock_below_reversed_creation_order(
     )
 
 
+def test_dock_below_hidden_anchor_falls_back(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """A split against a HIDDEN anchor must not defer forever: the anchor's
+    placement step can never run while it's hidden, so the dependent applies
+    the right-edge fallback instead of hanging invisible."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(300)
+
+    anchor = viser_server.gui.add_panel()
+    with anchor.add_tab("A"):
+        viser_server.gui.add_markdown("a")
+    anchor.dock_left()
+    anchor.visible = False
+    dep = viser_server.gui.add_panel()
+    with dep.add_tab("B"):
+        viser_server.gui.add_markdown("b")
+    dep.dock_below(anchor)
+
+    # B must appear (fallback), not hang invisible waiting on the hidden A.
+    expect(_tab(viser_page, "B")).to_be_visible(timeout=5_000)
+
+
+def test_dock_anchor_cycle_falls_back(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """An anchor CYCLE (a above b, b above a) can never resolve -- neither dock
+    can go first. Both panels must fall back and stay visible rather than
+    deadlocking the placement fixpoint."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(300)
+
+    a = viser_server.gui.add_panel()
+    with a.add_tab("A"):
+        viser_server.gui.add_markdown("a")
+    b = viser_server.gui.add_panel()
+    with b.add_tab("B"):
+        viser_server.gui.add_markdown("b")
+    a.dock_above(b)
+    b.dock_above(a)
+
+    expect(_tab(viser_page, "A")).to_be_visible(timeout=5_000)
+    expect(_tab(viser_page, "B")).to_be_visible(timeout=5_000)
+
+
 def test_dock_right_places_panel_on_right_edge(
     viser_page: Page, viser_server: viser.ViserServer
 ) -> None:
