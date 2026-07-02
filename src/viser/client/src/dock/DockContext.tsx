@@ -95,16 +95,11 @@ export interface DockContextValue {
   expandToTab: (groupId: GroupId, paneId: PaneId) => void;
   /** Toggle a group's minimized state (tap on its handle). */
   toggleCollapsed: (groupId: GroupId) => void;
-  /** True while a split divider is being dragged. The column collapse/expand
-   * CSS transition is suppressed during a resize so panes track the cursor 1:1
-   * instead of easing behind it. */
-  resizing: boolean;
-  /** Set the `resizing` flag (called by SplitDivider on pointer down/up). */
-  setResizing: (value: boolean) => void;
   /** Group currently being dragged, or null. Used to dim its origin. */
   draggingGroupId: GroupId | null;
-  /** Tab currently being reordered within its strip, or null. The frame lifts
-   * this tab and skips FLIP for it (the manager drives it imperatively). */
+  /** Tab currently being reordered within its strip, or null. The frame
+   * lifts this tab visually (the manager drives its transform imperatively
+   * during the drag). */
   draggingTabId: PaneId | null;
 }
 

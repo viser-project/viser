@@ -6,7 +6,7 @@
 import { Box, Paper } from "@mantine/core";
 import React from "react";
 import { useDock } from "./DockContext";
-import { dragGesture, prefersReducedMotion } from "./gestures";
+import { dragGesture } from "./gestures";
 import {
   cappedWindowHeight,
   cascadeResize,
@@ -19,7 +19,6 @@ import { TabGroupFrame } from "./TabGroupFrame";
 import { VerticalMinimizedCell } from "./VerticalMinimizedColumn";
 import {
   clamp,
-  DOCK_ANIM_MS,
   FloatingWindow,
   GroupId,
   MIN_REGION_GRAB_PX,
@@ -84,84 +83,6 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       ? cappedWindowHeight(pinnedPx, containerHeight)
       : undefined;
 
-  // Animate collapse/expand by FLIP-ing the window height: each render notes
-  // the Paper's resting height; when the collapsed state flips we replay the
-  // previous height and transition to the new one. ONLY for windows with a
-  // pinned height (full-bleed / user-resized), whose body can't be measured by
-  // a <Collapse>: auto-height windows let the body's own <Collapse> drive the
-  // animation -- FLIP-ing those would measure the target before the Collapse
-  // opens and pin the Paper at the still-collapsed height while the expanding
-  // content spills out. Resizes update the baseline but don't animate.
-  const prevHeightRef = React.useRef<number | null>(null);
-  const prevCollapsedRef = React.useRef(collapsed);
-  // Cancels the in-flight animation (clears inline styles + listener), if any.
-  const flipCancelRef = React.useRef<(() => void) | null>(null);
-  React.useLayoutEffect(() => {
-    const p = paperRef.current;
-    if (p === null) return;
-    const flipped = prevCollapsedRef.current !== collapsed;
-    prevCollapsedRef.current = collapsed;
-    if (pinnedPx === undefined) {
-      flipCancelRef.current?.();
-      prevHeightRef.current = null;
-      return;
-    }
-    if (!flipped) {
-      // Keep the resting baseline fresh (resizes, content changes) -- but not
-      // while an animation is in flight, when the inline height would be
-      // mistaken for the resting height. Expanded, the resting height IS the
-      // pinned win.height (no layout read needed); collapsed (auto-sized to the
-      // handles) it has to be measured.
-      if (flipCancelRef.current === null)
-        prevHeightRef.current = collapsed
-          ? p.offsetHeight
-          : (renderedHeight ?? null);
-      return;
-    }
-    // If a previous flip is still animating, start the new transition from the
-    // current ON-SCREEN height (so a mid-animation re-toggle reverses smoothly)
-    // and cancel it so the resting target can be measured.
-    const interruptedAt =
-      flipCancelRef.current !== null ? p.getBoundingClientRect().height : null;
-    flipCancelRef.current?.();
-    const target = p.offsetHeight;
-    const start = interruptedAt ?? prevHeightRef.current;
-    prevHeightRef.current = target;
-    if (start === null || Math.abs(start - target) < 1) return;
-    if (prefersReducedMotion()) return;
-    // ONE WRITER PER STYLE PROPERTY: React owns `height` (it renders the
-    // pinned renderedHeight), so the animation drives min-height/max-height
-    // -- properties React never writes on the Paper. Pinning both forces the
-    // box through the transition in either direction, and clearing them on
-    // cancel hands control back cleanly BY CONSTRUCTION: there is no React
-    // style-cache entry for them to disagree with. (Animating `height` here
-    // and "handing it back" by clearing the inline value left the window at
-    // 0px: React's cache still held the old height, so it never re-wrote it.)
-    p.style.transition = "none";
-    p.style.minHeight = `${start}px`;
-    p.style.maxHeight = `${start}px`;
-    void p.offsetHeight; // force a reflow so the start height takes effect
-    p.style.transition = "min-height 180ms ease, max-height 180ms ease";
-    p.style.minHeight = `${target}px`;
-    p.style.maxHeight = `${target}px`;
-    const cancel = () => {
-      flipCancelRef.current = null;
-      p.style.transition = "";
-      p.style.minHeight = "";
-      p.style.maxHeight = "";
-      p.removeEventListener("transitionend", onEnd);
-    };
-    const onEnd = (e: TransitionEvent) => {
-      // Child transitions bubble; only our own animation ends the FLIP (both
-      // pinned properties finish together -- listen for one of them).
-      if (e.target === p && e.propertyName === "max-height") cancel();
-    };
-    flipCancelRef.current = cancel;
-    p.addEventListener("transitionend", onEnd);
-  });
-  // Clear in-flight animation styles/listener if the window unmounts mid-flip.
-  React.useEffect(() => () => flipCancelRef.current?.(), []);
-
   // Cancel an in-flight grip gesture if this window unmounts mid-resize (e.g.
   // another client docks it away), so its listeners can't fire afterwards. One
   // ref serves all grips: only one resize gesture may be active per window (a
@@ -196,9 +117,6 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
 
       let pending = startWidth;
       let pendingX: number | undefined = undefined;
-      // Mark resizing so the window's width-ease transition is suppressed -- the
-      // width must track the cursor 1:1, not ease behind it.
-      dock.setResizing(true);
       activeGrip.current = dragGesture({
         grip: event.currentTarget,
         pointerId: event.pointerId,
@@ -212,7 +130,6 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         flush: () => onResize(win.id, pending, pendingX),
         onEnd: (cancelled) => {
           activeGrip.current = null;
-          dock.setResizing(false);
           // Cancel (Escape) reverts the per-frame resizes to the start size.
           if (cancelled)
             onResize(
@@ -359,7 +276,6 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       let pendingX: number | undefined = undefined;
       let pendingH = startHeight;
       // Suppress the width-ease while dragging the corner (width tracks 1:1).
-      dock.setResizing(true);
       activeGrip.current = dragGesture({
         grip: event.currentTarget,
         pointerId: event.pointerId,
@@ -377,7 +293,6 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         },
         onEnd: (cancelled) => {
           activeGrip.current = null;
-          dock.setResizing(false);
           setSnappedToContent(false);
           if (cancelled) {
             onResize(
@@ -409,15 +324,6 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         // expand (handled by the per-cell + cap, which floats at the region/panel
         // width).
         width: collapsed ? MINIMIZED_STRIP_PX : win.width,
-        // Ease the width on minimize/expand (full <-> strip), so a floating panel
-        // collapses like a docked one. Width changes only on collapse or a
-        // width-resize drag, so suppress it mid-resize (track 1:1) and under
-        // reduced-motion. (Height is animated separately -- the FLIP above for
-        // pinned windows, the content <Collapse> for auto-height ones.)
-        transition:
-          dock.resizing || prefersReducedMotion()
-            ? undefined
-            : `width ${DOCK_ANIM_MS}ms ease`,
         height: collapsed ? undefined : renderedHeight,
         zIndex,
         overflow: "visible",
@@ -684,7 +590,6 @@ function FloatingStackDivider({
   isFixed: boolean;
   pinHeight: () => void;
 }) {
-  const { setResizing } = useDock();
   // Cancel the in-flight gesture if the divider unmounts mid-drag (the stack
   // can be restructured by another client), so the window listeners can't fire
   // after unmount and the shared `resizing` flag can't stick true.
@@ -701,7 +606,6 @@ function FloatingStackDivider({
     // (re-renders to fixed-height with weighted cells). Capturing happens after,
     // on the persistent grip element.
     if (!isFixed) pinHeight();
-    setResizing(true);
     const start = event.clientY;
     let latest = start;
     // Drag-start weights so a cancel (Escape) can put them back.
@@ -735,7 +639,6 @@ function FloatingStackDivider({
       },
       onEnd: (cancelled) => {
         activeDrag.current = null;
-        setResizing(false);
         if (cancelled) onSetWeights(startWeights);
       },
     });

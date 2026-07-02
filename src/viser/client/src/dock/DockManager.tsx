@@ -26,7 +26,6 @@ import {
   bumpFreshIdFloor,
   grabbingCursor,
   motionExceedsThreshold,
-  prefersReducedMotion,
   suppressTextSelection,
   tryCapture,
   tryRelease,
@@ -53,7 +52,6 @@ import {
 import {
   assertNever,
   clamp,
-  DOCK_ANIM_MS,
   DockEdge,
   DockLayout,
   FloatingWindow,
@@ -72,18 +70,6 @@ import {
 // its handle stays reachable (panes may otherwise overflow off-screen).
 const KEEP_VISIBLE_PX = 40;
 
-/** Whether any group present in BOTH layouts flipped its collapsed state -- i.e.
- * a genuine minimize/expand, the cue to ease the region width. Checking
- * persistence in both (rather than a collapsed-set diff) means removing a
- * collapsed group, or a drag/dock/resize, does NOT count. */
-function collapseFlipped(prev: DockLayout, next: DockLayout): boolean {
-  return Object.keys(next.groups).some(
-    (id) =>
-      id in prev.groups &&
-      (prev.groups[id]?.collapsed === true) !==
-        (next.groups[id]?.collapsed === true),
-  );
-}
 
 /** Clamp a floating window's top-left corner so the handle stays reachable. The
  * corner stays within the container (no off-top/left), but the window body may
@@ -231,76 +217,9 @@ export function DockManager({
     null,
   );
   const [draggingTabId, setDraggingTabId] = React.useState<PaneId | null>(null);
-  const [resizing, setResizing] = React.useState(false);
-  // True only during a region-divider drag (per-frame width commits). Used to
-  // skip the minimize-animation bookkeeping on those ~60fps commits, which can't
-  // flip a collapsed bit. (Also read by the float re-clamp effect below.)
+  // True only during a region-divider drag (per-frame width commits). Read by
+  // the float re-clamp effect and the production invariant throttle.
   const regionResizeDraggingRef = React.useRef(false);
-  // True for ~one animation's duration after a commit that flips some group's
-  // collapsed state. Gates the region/canvas-inset WIDTH transition so ONLY a
-  // minimize/expand eases the region width (a lone docked panel's 300<->36px
-  // collapse + the canvas inset that follows it); drag/dock/tear-out/resize stay
-  // instant. Multi-column minimize is animated per-cell in SplitView instead, so
-  // the expanded siblings don't wobble.
-  const [animatingMinimize, setAnimatingMinimize] = React.useState(false);
-  const minimizeAnimTimer = React.useRef<ReturnType<typeof setTimeout>>();
-  const clearMinimizeAnimTimer = () => {
-    if (minimizeAnimTimer.current !== undefined)
-      clearTimeout(minimizeAnimTimer.current);
-  };
-  // The canvas-inset box, so the minimize rAF loop can read its LIVE (mid-CSS-
-  // transition) width and keep the 3D canvas backbuffer in step with the easing
-  // inset -- the model's reservedWidth jumps to the final value instantly, so we
-  // measure the element, not the model.
-  const canvasInsetRef = React.useRef<HTMLDivElement>(null);
-  const minimizeRafRef = React.useRef<number>();
-  const stopMinimizeRaf = () => {
-    if (minimizeRafRef.current !== undefined)
-      cancelAnimationFrame(minimizeRafRef.current);
-    minimizeRafRef.current = undefined;
-  };
-  const pulseMinimizeAnimation = React.useCallback(() => {
-    setAnimatingMinimize(true);
-    clearMinimizeAnimTimer();
-    // Hold the flag a hair past the CSS duration so the transition completes
-    // before it's removed (removing mid-flight would snap to the end).
-    minimizeAnimTimer.current = setTimeout(
-      () => setAnimatingMinimize(false),
-      DOCK_ANIM_MS + 40,
-    );
-    // Drive the canvas backbuffer per-frame from the easing inset box, so the 3D
-    // scene resizes smoothly with the panel (its ResizeObserver alone can lag/
-    // step behind the CSS transition). Same syncCanvasSize the resize-drag uses.
-    stopMinimizeRaf();
-    const start = performance.now();
-    const tick = () => {
-      const el = canvasInsetRef.current;
-      if (el !== null)
-        onRegionResizeFrameRef.current?.(
-          Math.round(el.getBoundingClientRect().width),
-          containerHeightRef.current,
-        );
-      if (performance.now() - start < DOCK_ANIM_MS + 40)
-        minimizeRafRef.current = requestAnimationFrame(tick);
-      else minimizeRafRef.current = undefined;
-    };
-    minimizeRafRef.current = requestAnimationFrame(tick);
-  }, []);
-  // End the pulse early when a NON-minimize commit lands inside its window, so a
-  // drag/dock/tear-out right after a minimize doesn't inherit the width ease.
-  const cancelMinimizeAnimation = React.useCallback(() => {
-    clearMinimizeAnimTimer();
-    stopMinimizeRaf();
-    setAnimatingMinimize((on) => (on ? false : on));
-  }, []);
-  React.useEffect(
-    () => () => {
-      clearMinimizeAnimTimer();
-      stopMinimizeRaf();
-    },
-    [],
-  );
-
   // Drop hint, driven IMPERATIVELY (style mutations on a persistent element)
   // rather than via state: the hint updates on every pointer move during a
   // drag, and routing that through setState would re-render the entire dock
@@ -336,15 +255,7 @@ export function DockManager({
   const draggingWindowIdRef = React.useRef<WindowId | null>(null);
   // Cleanup for an in-flight gesture, run if the manager unmounts mid-drag.
   const activeCleanup = React.useRef<(() => void) | null>(null);
-  // Pending tab-reorder "settle" timer, so it can be cancelled on unmount.
-  const settleTimer = React.useRef<number | undefined>(undefined);
-  React.useEffect(
-    () => () => {
-      activeCleanup.current?.();
-      if (settleTimer.current !== undefined) clearTimeout(settleTimer.current);
-    },
-    [],
-  );
+  React.useEffect(() => () => activeCleanup.current?.(), []);
 
   // ONE region plan per edge per layout (fix: previously re-planned in the
   // render body AND the auto-grow effect AND metrics, several walks per frame
@@ -412,19 +323,10 @@ export function DockManager({
       }
     }
     const prev = layoutRef.current;
-    // Ease the region width whenever a group's collapsed state actually flipped
-    // (minimize/expand) -- whether that came from a per-panel toggle (applyOp) or
-    // a whole-column minimize-all (api.apply); both are user gestures and must
-    // animate consistently. Skip only region-resize-drag commits (~60fps,
-    // can't flip a collapsed bit). Other commits (drag/dock/remove) leave it
-    // unchanged and cancel any in-flight pulse so they don't inherit the ease.
-    if (!regionResizeDraggingRef.current && collapseFlipped(prev, next))
-      pulseMinimizeAnimation();
-    else if (!regionResizeDraggingRef.current) cancelMinimizeAnimation();
     layoutRef.current = next;
     setLayout(next);
     onCommitRef.current?.(prev, next, programmaticDepth.current > 0);
-  }, [pulseMinimizeAnimation, cancelMinimizeAnimation]);
+  }, []);
 
   const applyOp = React.useCallback(
     (next: DockLayout) => {
@@ -644,32 +546,6 @@ export function DockManager({
     const targets: DropTargets = { groups: [] };
     if (container === null) return targets;
 
-    // Tabs animate to new slots with a transient FLIP `transform: translate(...)`
-    // (see TabGroupFrame). Collecting targets right after a tear-out's flushSync
-    // would otherwise capture those mid-animation positions -- making the strip
-    // look like it still has the just-removed tab's geometry. Measure each tab at
-    // its RESTING layout box by subtracting its own transform translation.
-    const restingRect = (el: Element): DOMRect => {
-      const rect = el.getBoundingClientRect();
-      const tf = getComputedStyle(el).transform;
-      if (tf === "none" || tf === "") return rect;
-      // matrix(a,b,c,d,tx,ty) / matrix3d(...) -- the translate is the last two
-      // (2D) or 13th/14th (3D) values.
-      const nums = tf
-        .slice(tf.indexOf("(") + 1, tf.lastIndexOf(")"))
-        .split(",")
-        .map((n) => parseFloat(n));
-      const tx = nums.length === 6 ? nums[4] : nums.length === 16 ? nums[12] : 0;
-      const ty = nums.length === 6 ? nums[5] : nums.length === 16 ? nums[13] : 0;
-      if (tx === 0 && ty === 0) return rect;
-      return new DOMRect(
-        rect.left - tx,
-        rect.top - ty,
-        rect.width,
-        rect.height,
-      );
-    };
-
     // Collect the strip + tabs that belong to ONE group, scoped so a nested
     // group (e.g. a DockArea inside this panel's body) doesn't leak its strip or
     // tabs into this target. `rectEl` is the element whose box defines the
@@ -688,7 +564,7 @@ export function DockManager({
         // isn't ours).
         if (t.closest("[data-dock-group]") !== scopeEl) return;
         const paneId = t.getAttribute("data-dock-tab");
-        if (paneId !== null) tabs.push({ paneId, rect: restingRect(t) });
+        if (paneId !== null) tabs.push({ paneId, rect: t.getBoundingClientRect() });
       });
       return {
         groupId,
@@ -829,7 +705,6 @@ export function DockManager({
     if (el === null) return;
     el.style.height = "";
     el.style.alignSelf = "";
-    el.style.transition = "";
     // Restore the wrapper's pre-tint background (see applyLeafPreview).
     const wrapper = el.parentElement;
     if (wrapper !== null)
@@ -864,7 +739,6 @@ export function DockManager({
     if (previewLeaf.current !== null && previewLeaf.current !== el) {
       resetLeafPreview();
     }
-    el.style.transition = prefersReducedMotion() ? "none" : "height 120ms ease";
     el.style.height = "50%";
     // Keep the leaf in the half the new panel won't take.
     el.style.alignSelf = region === "top" ? "flex-end" : "flex-start";
@@ -1146,14 +1020,6 @@ export function DockManager({
     // so without this DOM-containment check a click inside an open modal
     // would arm a drag / click-toggle on the handle underneath.
     if (!event.currentTarget.contains(event.target as Node)) return;
-    // Finalize any pending tab-reorder settle so its delayed setDraggingTabId
-    // doesn't fire in the middle of this new gesture (which would un-mark a tab
-    // mid-drag and let FLIP fight the manager's imperative transform).
-    if (settleTimer.current !== undefined) {
-      clearTimeout(settleTimer.current);
-      settleTimer.current = undefined;
-      setDraggingTabId(null);
-    }
     // Suppress text selection from the PRESS, not from the drag threshold: the
     // browser anchors a selection on the initial mousedown, so suppressing only
     // once motion exceeds 3px would still let a drag highlight page text.
@@ -1501,7 +1367,6 @@ export function DockManager({
       teardown();
       const tabEl = draggedTabEl();
       if (tabEl !== null) {
-        tabEl.style.transition = "";
         tabEl.style.transform = "";
       }
       if (reordering) setDraggingTabId(null);
@@ -1515,36 +1380,15 @@ export function DockManager({
         setDraggingTabId(null);
         return;
       }
-      const cursorX = latest?.clientX ?? 0;
       const index = lastInsert;
       flushSync(() =>
         applyOp(ops.reorderTab(layoutRef.current, groupId, paneId, index)),
       );
       const tabEl = draggedTabEl();
-      if (tabEl !== null && prefersReducedMotion()) {
-        tabEl.style.transition = "";
+      if (tabEl !== null) {
         tabEl.style.transform = "";
-      } else if (tabEl !== null) {
-        // Re-anchor at the cursor (no jump when the slot moves), then ease in.
-        const rect = tabEl.getBoundingClientRect();
-        const restCenter = rect.left + rect.width / 2 - tabTx;
-        tabEl.style.transition = "none";
-        tabEl.style.transform = `translateX(${cursorX - restCenter}px)`;
-        requestAnimationFrame(() => {
-          tabEl.style.transition = "transform 160ms ease";
-          tabEl.style.transform = "";
-        });
       }
-      // Keep draggingTabId set through the settle so FLIP leaves this tab to
-      // us -- except under reduced motion, where there's no glide to protect.
-      if (prefersReducedMotion()) {
-        setDraggingTabId(null);
-      } else {
-        settleTimer.current = window.setTimeout(
-          () => setDraggingTabId(null),
-          180,
-        );
-      }
+      setDraggingTabId(null);
     };
 
     const tearOut = (e: PointerEvent) => {
@@ -1659,7 +1503,6 @@ export function DockManager({
         const r = tabEl.getBoundingClientRect();
         const restCenter = r.left + r.width / 2 - tabTx;
         tabTx = e.clientX - restCenter;
-        tabEl.style.transition = "none";
         tabEl.style.transform = `translateX(${tabTx}px)`;
       }
     };
@@ -1857,8 +1700,6 @@ export function DockManager({
       layout,
       groups: layout.groups,
       areas: layout.areas ?? {},
-      resizing,
-      setResizing,
       ...stableGestures,
       activateTab,
       expandToTab,
@@ -1870,7 +1711,6 @@ export function DockManager({
       panes,
       api,
       layout,
-      resizing,
       stableGestures,
       activateTab,
       expandToTab,
@@ -2009,14 +1849,6 @@ export function DockManager({
   // (which excludes the strips and preserves widths through minimization).
   reservedWidthRef.current = { left: leftInset, right: rightInset };
 
-  // Ease the region width + canvas inset on a minimize/expand only (see
-  // animatingMinimize); never during a resize drag (width must track the cursor
-  // 1:1) or under reduced-motion.
-  const widthTransition =
-    animatingMinimize && !resizing && !prefersReducedMotion()
-      ? `width ${DOCK_ANIM_MS}ms ease, left ${DOCK_ANIM_MS}ms ease, right ${DOCK_ANIM_MS}ms ease`
-      : undefined;
-
   // Read the live canvas bounds + measured float heights, for repositioning
   // floats when the canvas changes. (User floats are pushed out of a growing
   // region's path in the region-resize handler; server-anchored floats are
@@ -2142,14 +1974,12 @@ export function DockManager({
       >
         {/* Center content, inset by docked regions. */}
         <Box
-          ref={canvasInsetRef}
           style={{
             position: "absolute",
             top: 0,
             bottom: 0,
             left: leftInset,
             right: rightInset,
-            transition: widthTransition,
           }}
         >
           {children}
@@ -2175,7 +2005,6 @@ export function DockManager({
                   zIndex: 1,
                   pointerEvents: "none",
                   boxShadow: "0 0 1em 0 rgba(0,0,0,0.1)",
-                  transition: widthTransition,
                 }}
               />
             )}
@@ -2190,7 +2019,6 @@ export function DockManager({
                   display: "flex",
                   backgroundColor: "var(--mantine-color-body)",
                   zIndex: 5,
-                  transition: widthTransition,
                 }}
               >
                 <SplitView region={tree} edge={edge} />

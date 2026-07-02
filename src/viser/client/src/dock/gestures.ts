@@ -201,18 +201,6 @@ export function tabListKeyDown(opts: {
   };
 }
 
-// Honors the OS-level "reduce motion" accessibility setting: dock animations
-// (FLIP slides, collapse transitions, preview tweens) become instant. The
-// MediaQueryList is module-scoped so `.matches` reads stay live without
-// re-querying; jsdom (unit tests) has no matchMedia, hence the optional call.
-const reducedMotionQuery =
-  typeof window !== "undefined"
-    ? window.matchMedia?.("(prefers-reduced-motion: reduce)")
-    : undefined;
-export function prefersReducedMotion(): boolean {
-  return reducedMotionQuery?.matches ?? false;
-}
-
 // Monotonic id counter. Module-scoped so ids are unique across the whole client
 // session without needing Math.random()/Date.now().
 let idCounter = 0;

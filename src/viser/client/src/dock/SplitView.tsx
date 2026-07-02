@@ -16,7 +16,7 @@
 import { Box, Paper } from "@mantine/core";
 import React from "react";
 import { useDock } from "./DockContext";
-import { dragGesture, prefersReducedMotion } from "./gestures";
+import { dragGesture } from "./gestures";
 import {
   cascadeResize,
   collectLeafGroups,
@@ -31,7 +31,6 @@ import { HorizontalMinimizedBand } from "./HorizontalMinimizedBand";
 import { TabGroupFrame } from "./TabGroupFrame";
 import { VerticalMinimizedColumn } from "./VerticalMinimizedColumn";
 import {
-  DOCK_ANIM_MS,
   DockColumn,
   DockEdge,
   DockLeaf,
@@ -64,7 +63,6 @@ export const SplitView = React.memo(function SplitView({
 }) {
   const dock = useDock();
   const groups = dock.groups;
-  const resizing = dock.resizing;
   const containerRef = React.useRef<HTMLDivElement>(null);
   const rows = region.rows;
   // Per-band collapsed mask, computed ONCE: the band map, the strip decision,
@@ -117,10 +115,6 @@ export const SplitView = React.memo(function SplitView({
                 minWidth: 0,
                 minHeight: 0,
                 display: "flex",
-                transition:
-                  resizing || prefersReducedMotion()
-                    ? undefined
-                    : `flex-grow ${DOCK_ANIM_MS}ms ease, flex-basis ${DOCK_ANIM_MS}ms ease`,
               }}
             >
               {/* A collapsed band among siblings renders as a full-width
@@ -184,7 +178,6 @@ export const SplitView = React.memo(function SplitView({
 function RowView({ row, edge }: { row: DockRow; edge: DockEdge }) {
   const dock = useDock();
   const groups = dock.groups;
-  const resizing = dock.resizing;
   const containerRef = React.useRef<HTMLDivElement>(null);
   const columns = row.columns;
 
@@ -214,10 +207,6 @@ function RowView({ row, edge }: { row: DockRow; edge: DockEdge }) {
                 minWidth: 0,
                 minHeight: 0,
                 display: "flex",
-                transition:
-                  resizing || prefersReducedMotion()
-                    ? undefined
-                    : `flex-grow ${DOCK_ANIM_MS}ms ease, flex-basis ${DOCK_ANIM_MS}ms ease`,
               }}
             >
               <ColumnShell column={column} edge={edge} />
@@ -339,7 +328,6 @@ function ColumnHandle({ column, edge }: { column: DockColumn; edge: DockEdge }) 
 function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
   const dock = useDock();
   const groups = dock.groups;
-  const resizing = dock.resizing;
   const containerRef = React.useRef<HTMLDivElement>(null);
   const leaves = column.leaves;
 
@@ -370,10 +358,6 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
                 minWidth: 0,
                 minHeight: 0,
                 display: "flex",
-                transition:
-                  resizing || prefersReducedMotion()
-                    ? undefined
-                    : `flex-grow ${DOCK_ANIM_MS}ms ease, flex-basis ${DOCK_ANIM_MS}ms ease`,
               }}
             >
               <DockLeafView leaf={leaf} edge={edge} />
@@ -522,10 +506,9 @@ function SplitDivider({
   onCancel: () => void;
 }) {
   const isRow = dir === "row";
-  const { setResizing } = useDock();
   // Cancel the in-flight gesture if the divider unmounts mid-drag (its region
   // can be restructured by another client), so the window listeners can't fire
-  // after unmount and the shared `resizing` flag can't stick true.
+  // after unmount.
   const activeDrag = React.useRef<(() => void) | null>(null);
   React.useEffect(() => () => activeDrag.current?.(), []);
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -538,10 +521,6 @@ function SplitDivider({
     const rect = container.getBoundingClientRect();
     const containerPx = isRow ? rect.width : rect.height;
     const start = isRow ? event.clientX : event.clientY;
-    // Suppress the collapse/expand transition while dragging so the resize
-    // tracks the cursor 1:1 (a cell would otherwise ease 200ms behind every
-    // frame, which reads as a sluggish/broken resize).
-    setResizing(true);
 
     let latest = start;
     activeDrag.current = dragGesture({
@@ -553,7 +532,6 @@ function SplitDivider({
       flush: () => onResize(latest - start, containerPx),
       onEnd: (cancelled) => {
         activeDrag.current = null;
-        setResizing(false);
         if (cancelled) onCancel();
       },
     });

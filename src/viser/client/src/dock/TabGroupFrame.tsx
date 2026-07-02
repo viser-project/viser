@@ -1,7 +1,7 @@
 // Renders one tab group: a tab strip plus the active panel's contents. Used
 // both for docked leaves and for the groups stacked inside a floating window.
 
-import { Box, Collapse, ScrollArea } from "@mantine/core";
+import { Box, ScrollArea } from "@mantine/core";
 import { IconMinus, IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
@@ -13,9 +13,9 @@ import {
   headerRule,
   headerRuleTop,
 } from "./DockStyles.css";
-import { prefersReducedMotion, tabListKeyDown } from "./gestures";
+import { tabListKeyDown } from "./gestures";
 import { GripPill, HandleIconButton } from "./handles";
-import { DOCK_ANIM_MS, PaneSpec, TabGroup } from "./types";
+import { PaneSpec, TabGroup } from "./types";
 
 // The active panel's BODY, memoized so it is rebuilt/reconciled only when its
 // OWN inputs change -- not on every unrelated dock op. A tab switch or a
@@ -223,17 +223,6 @@ export function TabGroupFrame({
   // above it).
   const stacked = !lone;
 
-  // FLIP animation: when the tab order changes, each tab slides from its old
-  // slot to its new one. We record each tab's offsetLeft and play the inverted
-  // delta. The actively dragged tab is skipped -- the manager drives it
-  // imperatively to follow the cursor.
-  //
-  // Gated on the ORDER (and drag state), not run every render: the effect
-  // reads offsetLeft for every tab, a forced-layout read that would otherwise
-  // run across every strip on every unrelated dock re-render. The recorded
-  // baselines can go stale if the strip is resized between reorders -- worst
-  // case the next reorder animates from a slightly-off start, which beats
-  // paying layout reads per render.
   // Tablist keyboard pattern: ArrowLeft/Right activate the neighbor tab and
   // move focus with it; Enter/Space activate the focused tab.
   const tabKeyDown = (paneId: string) =>
@@ -247,38 +236,13 @@ export function TabGroupFrame({
     });
 
   const stripRef = React.useRef<HTMLDivElement>(null);
-  const prevLefts = React.useRef<Map<string, number>>(new Map());
-  const orderKey = group.paneIds.join("\n");
-  React.useLayoutEffect(() => {
-    const strip = stripRef.current;
-    if (strip === null) return;
-    strip.querySelectorAll<HTMLElement>("[data-dock-tab]").forEach((tab) => {
-      const id = tab.getAttribute("data-dock-tab");
-      if (id === null) return;
-      const left = tab.offsetLeft;
-      const prev = prevLefts.current.get(id);
-      prevLefts.current.set(id, left);
-      if (id === dock.draggingTabId) return; // driven imperatively.
-      if (prev === undefined || prev === left) return;
-      if (prefersReducedMotion()) return;
-      tab.style.transition = "none";
-      tab.style.transform = `translateX(${prev - left}px)`;
-      requestAnimationFrame(() => {
-        tab.style.transition = "transform 160ms ease";
-        tab.style.transform = "";
-      });
-    });
-  }, [orderKey, dock.draggingTabId]);
 
-  // The panel body. Two animation strategies, by context:
-  // - Floating (non-fill, content-sized): wrap in Mantine <Collapse>, which
-  //   measures the content and animates its intrinsic height open/closed -- the
-  //   window then auto-resizes around it. This is the original FloatingPanel
-  //   feel and works cleanly when nothing else pins the height.
-  // - Docked (fill): the leaf fills its region via flex, so an intrinsic-height
-  //   Collapse would fight the flex sizing. Instead we render the body plainly
-  //   and let the leaf's flex-grow transition (see the outer Box / DockLeafView
-  //   column Paper) animate the height; when collapsed we just hide the body.
+  // The panel body, by context:
+  // - Floating (non-fill, content-sized): hidden (not unmounted) when
+  //   collapsed, so the window auto-resizes to just its chrome and pane state
+  //   survives minimize.
+  // - Docked (fill): the leaf fills its region via flex; when collapsed the
+  //   group shrinks to its handle + strip and the body is hidden.
   const body = (
     <PanelBody
       panel={activePane}
@@ -306,12 +270,10 @@ export function TabGroupFrame({
       {body}
     </Box>
   ) : (
-    <Collapse
-      in={!collapsed}
-      transitionDuration={prefersReducedMotion() ? 0 : DOCK_ANIM_MS}
-    >
-      {body}
-    </Collapse>
+    // Floating auto-height: hide (not unmount) the body when collapsed, so
+    // pane component state survives minimize -- same semantics the animated
+    // <Collapse> had, minus the height tween.
+    <Box style={{ display: collapsed ? "none" : undefined }}>{body}</Box>
   );
 
   return (
@@ -323,9 +285,8 @@ export function TabGroupFrame({
         flexDirection: "column",
         // Fill the docked leaf via flexGrow (the leaf's Paper is a flex box). A
         // collapsed group never fills -- it shrinks to just its handle + tab
-        // strip. We rely on flexGrow alone (not height:100%) so the height isn't
-        // pinned, letting the content's <Collapse> drive the shrink/grow; the
-        // flex transition then animates the leaf resizing in step.
+        // strip. We rely on flexGrow alone (not height:100%) so the height
+        // isn't pinned.
         width: "100%",
         // A collapsed group sizes to its handle + strip (flexBasis auto, no
         // grow/shrink) so it stays visible in a fill container instead of
@@ -336,10 +297,6 @@ export function TabGroupFrame({
         minWidth: 0,
         minHeight: 0,
         opacity: dimmed ? 0.4 : 1,
-        transition:
-          fill && !prefersReducedMotion()
-            ? `flex-grow ${DOCK_ANIM_MS}ms ease, flex-basis ${DOCK_ANIM_MS}ms ease`
-            : undefined,
       }}
     >
       {/* Move-handle grip bar (with a minimize/expand button), above the tabs. */}

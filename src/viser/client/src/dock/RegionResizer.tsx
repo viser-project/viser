@@ -2,7 +2,6 @@
 
 import { Box } from "@mantine/core";
 import React from "react";
-import { useDock } from "./DockContext";
 import { dragGesture } from "./gestures";
 import { DockEdge } from "./types";
 
@@ -32,7 +31,6 @@ export function RegionResizer({
    * (`[strip]│[panel]`) rather than the strip's far side. */
   stripOffset?: number;
 }) {
-  const { setResizing } = useDock();
   // Cancel the in-flight gesture if the resizer unmounts mid-drag (e.g. the
   // region empties), so its window listeners can't fire after unmount.
   const activeDrag = React.useRef<(() => void) | null>(null);
@@ -45,9 +43,6 @@ export function RegionResizer({
     const startWidth = getStart();
     const onResize = makeOnResize();
     let pending = startWidth;
-    // Mark resizing so the region-width transition is suppressed -- a resize
-    // started right after a minimize must track the cursor, not ease.
-    setResizing(true);
     activeDrag.current = dragGesture({
       grip: event.currentTarget,
       pointerId: event.pointerId,
@@ -58,7 +53,6 @@ export function RegionResizer({
       flush: () => onResize(pending),
       onEnd: (cancelled) => {
         activeDrag.current = null;
-        setResizing(false);
         // Cancel (Escape): resolve back to the drag-start width; the snapshot
         // closure reproduces the original column widths from it.
         if (cancelled) onResize(startWidth);
