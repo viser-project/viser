@@ -13,7 +13,7 @@ import { useDisclosure } from "@mantine/hooks";
 import React from "react";
 import { ViewerContext, ViewerContextContents } from "../ViewerContext";
 import { htmlIconWrapper } from "../components/ComponentStyles.css";
-import { DockMetrics, DockMetricsContext, useDock } from "../dock/DockContext";
+import { DockMetricsContext, useDock } from "../dock/DockContext";
 import { DockManager } from "../dock/DockManager";
 import * as ops from "../dock/layoutOps";
 import {
@@ -22,7 +22,6 @@ import {
   emptyLayout,
   regionWidthsOf,
 } from "../dock/types";
-import type { CanvasBounds } from "../dock/layoutOps";
 import {
   CommandsButton,
   ConnectionStatus,
@@ -36,7 +35,7 @@ import { shallowArrayEqual } from "../utils/shallowArrayEqual";
 import { controlWidthPx } from "./controlWidth";
 import { CONTROL_PANEL_ID } from "./controlPanelId";
 import { buildPaneToStableKey } from "./panelIdentity";
-import { gatePlacement } from "./placementGate";
+import { usePlacementCoordinator } from "./placementCoordinator";
 
 // Memoized so a torn-out tab's whole GUI tree doesn't re-render every time
 // unrelated dock state changes (it only depends on its container uuid).
@@ -44,14 +43,6 @@ const MemoizedGeneratedGuiContainer = React.memo(GeneratedGuiContainer);
 
 // Match the original FloatingPanel's 15px boundary pad for initial placement.
 const PANEL_PAD_PX = 15;
-
-function useStableKey(viewer: ViewerContextContents, uuid: string): string {
-  return viewer.useGui((state) =>
-    uuid === CONTROL_PANEL_ID
-      ? CONTROL_PANEL_ID // fixed identity.
-      : (buildPaneToStableKey(state.panels).get(uuid) ?? uuid),
-  );
-}
 
 /** Per-group placement signature in a layout: where the group sits + its
  * collapsed state + (for a floating group) its window geometry. Used to detect
@@ -89,16 +80,6 @@ function groupPlacementSignatures(
     for (const gid of win.stack) sigs.set(gid, `${wsig}:${collapsed(gid)}`);
   }
   return sigs;
-}
-
-/** The canvas bounds (for resolving float placements) from the dock metrics. */
-function canvasBoundsFromMetrics(metrics: DockMetrics): CanvasBounds {
-  return {
-    width: metrics.containerWidth,
-    height: metrics.containerHeight,
-    leftInset: metrics.reservedWidth.left,
-    rightInset: metrics.reservedWidth.right,
-  };
 }
 
 /** Where the control panel currently sits, reported up to App so the
@@ -445,7 +426,6 @@ function ControlPanelDockSync({
   const viewer = React.useContext(ViewerContext)!;
   const metrics = React.useContext(DockMetricsContext);
   const markerRef = React.useRef<HTMLSpanElement>(null);
-  const resolveAnchor = useAnchorResolver();
 
   // Client-owned placement for the control panel (`main_panel` commands).
   // Overrides the default top-right float.
@@ -491,60 +471,33 @@ function ControlPanelDockSync({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Client-owned placement (main_panel.dock_* / float / minimize / set_*).
-  // Re-applies whenever the placement bundle changes. `undefined` = the server
-  // never placed it (leave the default top-right float). gui.reset() makes the
-  // server re-send a default float position (x/y null) + collapsed=false, which
-  // we route to the top-right default geometry below -- the same place the
-  // initial placement uses.
-  const mainPlacementKey = React.useMemo(
-    () => JSON.stringify(mainPlacementEntry ?? null),
-    [mainPlacementEntry],
+  // THE placement coordinator: one pass over the control panel + every
+  // standalone panel, applying server placement (gate -> defer -> apply ->
+  // record) as a fixpoint over store/layout changes. See
+  // placementCoordinator.tsx. The control panel's one special rewrite: a
+  // DEFAULT float (kind float, both coords null -- gui.reset()'s "return to
+  // the default") resolves to the top-right geometry (the dock's bare float
+  // default is top-LEFT).
+  usePlacementCoordinator(
+    React.useCallback(
+      (placement) => {
+        const pos = placement.position;
+        const defaultFloat =
+          pos !== null &&
+          pos.kind === "float" &&
+          pos.x === null &&
+          pos.y === null;
+        if (!defaultFloat) return placement;
+        const { x, y, width } = topRightGeometry();
+        return {
+          ...placement,
+          position: { kind: "float", x, y },
+          width: placement.width ?? width,
+        };
+      },
+      [topRightGeometry],
+    ),
   );
-  // Per-axis gate, SHARED with standalone panels (gatePlacement): once the user
-  // has moved the control panel, only axes the server actively re-asserted
-  // (newer counter, or another run/scope) re-apply -- a set_width can never
-  // re-apply a stale dock position.
-  const mainTracking = viewer.useGui(
-    (state) => state.panelLayoutTracking[CONTROL_PANEL_ID],
-  );
-  const layoutResetNonce = viewer.useGui((state) => state.layoutResetNonce);
-  React.useEffect(() => {
-    if (mainPlacementEntry === undefined) return;
-    const placed =
-      ops.findPaneGroup(dock.layout, CONTROL_PANEL_ID) !== null;
-    const gated = gatePlacement(mainPlacementEntry, mainTracking, placed);
-    if (!gated.anyFresh) return;
-    viewer.guiActions.recordPanelLayoutApplied(CONTROL_PANEL_ID, gated.applied);
-    // A DEFAULT float (kind float, both coords null) means "return to the
-    // default top-right float" -- the dock's bare float default is top-LEFT, so
-    // the control panel resolves it to its own top-right geometry instead.
-    const pos = gated.placement.position;
-    const defaultFloat =
-      pos !== null && pos.kind === "float" && pos.x === null && pos.y === null;
-    let placement = gated.placement;
-    if (defaultFloat) {
-      const { x, y, width } = topRightGeometry();
-      placement = {
-        ...placement,
-        position: { kind: "float", x, y },
-        width: placement.width ?? width,
-      };
-    }
-    dock.api.apply((layout) =>
-      ops.applyPanelPlacement(
-        layout,
-        [CONTROL_PANEL_ID],
-        placement,
-        (anchorUuid) => resolveAnchor(layout, anchorUuid),
-        // The control panel is floated separately (initial-placement effect);
-        // don't let a no-position placement double-place it. A main_panel.float()
-        // is canvas-relative like any other panel's.
-        { floatIfUnplaced: false, canvasBounds: canvasBoundsFromMetrics(metrics) },
-      ),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mainPlacementKey, dock.api, layoutResetNonce]);
 
   // Where is the control panel now?
   const controlGroupId = ops.findPaneGroup(dock.layout, CONTROL_PANEL_ID);
@@ -685,7 +638,7 @@ function StandalonePanelSync({
   return (
     <>
       {panelUuids.map((uuid) => (
-        <StandalonePanelPlacement
+        <StandalonePanelRegistration
           key={uuid}
           uuid={uuid}
           registerTabGroup={registerTabGroup}
@@ -695,325 +648,21 @@ function StandalonePanelSync({
   );
 }
 
-/** Resolve an anchor uuid (a standalone panel's uuid, or the control panel id)
- * to its current dock group, for split placements. The control panel's pane id
- * IS the control-panel id; a standalone panel's panes are its tab container ids,
- * so its group holds those panes. */
-function useAnchorResolver(): (
-  layout: ReturnType<typeof useDock>["layout"],
-  uuid: string,
-) => string | null {
-  const viewer = React.useContext(ViewerContext)!;
-  return React.useCallback(
-    (layout, uuid) => {
-      if (uuid === CONTROL_PANEL_ID) {
-        return ops.findPaneGroup(layout, CONTROL_PANEL_ID);
-      }
-      const panel = viewer.useGui.get().panels[uuid];
-      const firstPane = panel?.props._tab_container_ids[0];
-      return firstPane === undefined
-        ? null
-        : ops.findPaneGroup(layout, firstPane);
-    },
-    [viewer],
-  );
-}
 
-function StandalonePanelPlacement({
+/** Per-panel content registration ONLY: the panel's tabs become panes in the
+ * dock registry (their content lives in the panels store). All PLACEMENT is
+ * owned by the placement coordinator (see placementCoordinator.tsx), which
+ * runs one pass over every panel -- this component deliberately has no
+ * placement logic. */
+function StandalonePanelRegistration({
   uuid,
   registerTabGroup,
 }: {
   uuid: string;
   registerTabGroup: (uuid: string, source?: "gui" | "panel") => void;
 }) {
-  const viewer = React.useContext(ViewerContext)!;
-  const dock = useDock();
-  const metrics = React.useContext(DockMetricsContext);
-  const resolveAnchor = useAnchorResolver();
-
-  // Register so the panel's tabs become panes in the dock registry (its content
-  // lives in the panels store).
   React.useEffect(() => {
     registerTabGroup(uuid, "panel");
   }, [uuid, registerTabGroup]);
-
-  // Subscribe to this panel's tab list (panels store) and its client-owned
-  // placement (placementPlacement store).
-  const tabIds = viewer.useGui(
-    (state) => state.panels[uuid]?.props._tab_container_ids ?? [],
-    shallowArrayEqual,
-  );
-  const placementEntry = viewer.useGui((state) => state.panelPlacement[uuid]);
-  const visible = viewer.useGui(
-    (state) => state.panels[uuid]?.props.visible ?? true,
-  );
-  // The panel's panes must be registered (specs created) before we can place or
-  // reconcile -- placing earlier races the registry reconciliation.
-  const ready =
-    tabIds.length > 0 && tabIds.every((cid) => dock.panes[cid] !== undefined);
-  // Serialize the placement only when its (stable) object reference changes --
-  // this component re-renders on every dock-layout commit, so avoid re-stringify
-  // on unrelated churn.
-  const placementKey = React.useMemo(
-    () => JSON.stringify(placementEntry ?? null),
-    [placementEntry],
-  );
-  const orderKey = tabIds.join("\n");
-
-  // Re-create + place this panel's group from its panes (used by the placement
-  // effect and the ungrouped-recovery fallback below), applying the axes the
-  // gate let through. With no placement command yet (a bare add_panel()) the
-  // bundle is all-null and floatIfUnplaced floats it so it's still visible.
-  const placePanel = (layout: DockLayout, placement: ops.PanelPlacement) =>
-    ops.applyPanelPlacement(
-      layout,
-      tabIds,
-      placement,
-      (anchorUuid) => resolveAnchor(layout, anchorUuid),
-      { canvasBounds: canvasBoundsFromMetrics(metrics), floatIfUnplaced: true },
-    );
-
-  // Stable identity + layout-tracking gate: whether server placement should be
-  // (re)applied, given the user may have rearranged this panel and the layout
-  // may be replayed on reconnect / re-run. Apply when the placement counter
-  // EXCEEDS the last we applied (a deliberate new/changed server command) OR the
-  // user hasn't moved this panel yet. The tracking store survives resetGui and
-  // is keyed by stable key, so it persists across reconnect/re-run.
-  const stableKey = useStableKey(viewer, uuid);
-  const tracking = viewer.useGui((state) => state.panelLayoutTracking[stableKey]);
-  // Bumped by a "Reset layout" action; when it changes we re-apply server
-  // placement from scratch (the tracking is cleared alongside, so the gate below
-  // lets every panel re-seed).
-  const layoutResetNonce = viewer.useGui((state) => state.layoutResetNonce);
-
-  // (1) Apply PLACEMENT only when the placement bundle itself changes (once
-  // panes are ready). Crucially NOT on tab-list changes, and NOT merely because
-  // `ready` flipped: re-applying on a tab add/remove would re-run the same
-  // command and (e.g.) re-dock a panel the user has dragged elsewhere. We track
-  // the last-APPLIED placementKey in a ref, so a `ready` false->true transition
-  // (which happens whenever a tab is added, since the new pane registers a render
-  // later) re-runs this effect but is a no-op unless the placement actually
-  // changed. This is per-command idempotency, independent of the dock's
-  // always-apply model.
-  const appliedPlacementKey = React.useRef<string | null>(null);
-  // A layout reset forces the next run to re-apply (clear the per-panel cache).
-  const lastResetNonce = React.useRef(layoutResetNonce);
-  if (lastResetNonce.current !== layoutResetNonce) {
-    lastResetNonce.current = layoutResetNonce;
-    appliedPlacementKey.current = null;
-  }
-  // Anchor ordering: `dep.dock_below(anchor)` can reach dep's placement
-  // effect BEFORE the anchor is docked -- dep created first in the same batch
-  // (mount order = creation order, so the anchor's group doesn't exist yet),
-  // or the anchor transiently FLOATING between its floatIfUnplaced and its
-  // own dock applying (multi-flush arrival). Splitting then would fall back
-  // to a right-edge dock -- wrong for a perfectly ordered program. So while
-  // the anchor's dock is provably still COMING (see anchorDockPending), the
-  // split DEFERS: nothing applied or recorded; the watcher below re-runs the
-  // placement the moment the anchor is actually docked. A timeout escape
-  // applies the fallback anyway if the pending state goes stale (e.g. the
-  // anchor's panel is hidden mid-flight) so the panel can't stay invisible.
-  //
-  // State: ONE ref holding the pending deferral (uuid + its escape timer live
-  // and die together -- clearPendingAnchor is the only way out), plus ONE
-  // retry state whose `fallback` flag tells the re-run whether deferring is
-  // still allowed.
-  const pendingAnchor = React.useRef<{ uuid: string; timer: number } | null>(
-    null,
-  );
-  const [anchorRetry, setAnchorRetry] = React.useState({
-    fallback: false,
-    n: 0,
-  });
-  const clearPendingAnchor = () => {
-    if (pendingAnchor.current === null) return;
-    window.clearTimeout(pendingAnchor.current.timer);
-    pendingAnchor.current = null;
-  };
-  const anchorDocked = (layout: DockLayout, anchorUuid: string): boolean => {
-    const gid = resolveAnchor(layout, anchorUuid);
-    return gid !== null && ops.findGroupLocation(layout, gid)?.kind === "docked";
-  };
-  // Whether the anchor's own dock is still on its way -- decided from the
-  // STORE, not a timer: its placement must intend docking (edge/split
-  // position; that message precedes dep's split on the ordered stream) AND its
-  // own gate must still be willing to apply it (an anchor the user floated has
-  // a closed gate -- its dock will never re-apply, so defer would hang and we
-  // fall back immediately instead).
-  const anchorDockPending = (
-    layout: DockLayout,
-    anchorUuid: string,
-  ): boolean => {
-    const gui = viewer.useGui.get();
-    const anchorEntry = gui.panelPlacement[anchorUuid];
-    const pos = anchorEntry?.position?.value;
-    if (pos === undefined || pos.kind === "float") return false;
-    const anchorKey =
-      anchorUuid === CONTROL_PANEL_ID
-        ? CONTROL_PANEL_ID
-        : (buildPaneToStableKey(gui.panels).get(anchorUuid) ?? anchorUuid);
-    const anchorGid = resolveAnchor(layout, anchorUuid);
-    const gated = gatePlacement(
-      anchorEntry,
-      gui.panelLayoutTracking[anchorKey],
-      anchorGid !== null,
-    );
-    return gated.placement.position !== null;
-  };
-  React.useEffect(() => {
-    const pending = pendingAnchor.current;
-    if (pending === null) return;
-    if (anchorDocked(dock.layout, pending.uuid)) {
-      clearPendingAnchor();
-      setAnchorRetry((r) => ({ fallback: false, n: r.n + 1 }));
-    }
-    // The only input that can flip anchorDocked is the layout.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dock.layout]);
-  React.useEffect(() => clearPendingAnchor, []);
-  React.useEffect(() => {
-    // When hidden, drop the applied-key so re-showing re-places the panel.
-    if (!visible) {
-      appliedPlacementKey.current = null;
-      return;
-    }
-    if (!ready) return;
-    if (appliedPlacementKey.current === placementKey) return;
-    // The per-axis gate (shared with the main panel -- see placementGate.ts): a
-    // user-moved panel re-applies only axes the server actively re-asserted
-    // (newer counter, or a different run/scope); an untouched or UNPLACED panel
-    // applies everything. With no placement yet (bare add_panel), the bundle is
-    // all-null and placePanel just floats it via floatIfUnplaced -- always
-    // allowed.
-    const placed = ops.findPaneGroup(dock.layout, tabIds[0]) !== null;
-    const gated = gatePlacement(placementEntry, tracking, placed);
-    const hasServerPlacement = placementEntry !== undefined;
-    if (hasServerPlacement && !gated.anyFresh && placed) {
-      // Nothing fresh to apply; mark this placement as "seen" so we don't
-      // re-evaluate it every render -- a genuinely newer command changes
-      // placementKey and re-runs this.
-      appliedPlacementKey.current = placementKey;
-      return;
-    }
-    const pos = gated.placement.position;
-    if (
-      !anchorRetry.fallback &&
-      pos !== null &&
-      pos.kind === "split" &&
-      !anchorDocked(dock.layout, pos.anchor_uuid) &&
-      anchorDockPending(dock.layout, pos.anchor_uuid)
-    ) {
-      // Defer (see pendingAnchor above): the anchor's own dock is on its way;
-      // the watcher re-runs this effect once it lands, and the timeout forces
-      // the fallback if the pending state somehow goes stale.
-      clearPendingAnchor();
-      pendingAnchor.current = {
-        uuid: pos.anchor_uuid,
-        timer: window.setTimeout(() => {
-          if (pendingAnchor.current === null) return;
-          pendingAnchor.current = null;
-          setAnchorRetry((r) => ({ fallback: true, n: r.n + 1 }));
-        }, 2000),
-      };
-      return;
-    }
-    clearPendingAnchor();
-    // A timeout-forced fallback disables deferral for THIS run only -- reset
-    // the flag so a future split command can defer again. (The extra effect
-    // pass this schedules early-returns on the placementKey dedup above.)
-    if (anchorRetry.fallback) setAnchorRetry((r) => ({ ...r, fallback: false }));
-    appliedPlacementKey.current = placementKey;
-    if (hasServerPlacement)
-      viewer.guiActions.recordPanelLayoutApplied(stableKey, gated.applied);
-    dock.api.apply((layout) => placePanel(layout, gated.placement));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, placementKey, visible, dock.api, stableKey, layoutResetNonce, anchorRetry]);
-
-  // Hide/show: when `visible` is false, remove the panel's panes from the layout
-  // (it renders nothing) without destroying the panel; when it flips back to
-  // true the placement effect above re-applies. Keyed on `visible` + `orderKey`
-  // so a tab added while hidden is also removed.
-  React.useEffect(() => {
-    if (visible || tabIds.length === 0) return;
-    dock.api.apply((layout) => {
-      let next = layout;
-      for (const id of tabIds) next = ops.removePane(next, id);
-      return next;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, orderKey, dock.api]);
-
-  // Remember the panel's last-known panes so the empty effect below can clean up
-  // the dock layout when the panel is emptied (it has no current tabIds to look
-  // the group up by). Updated in an effect (not during render) and only while
-  // non-empty -- so on the emptying commit lastTabIds still holds the panes to
-  // remove. Declared BEFORE the empty effect so it commits first on that render.
-  const lastTabIds = React.useRef<string[]>([]);
-  React.useEffect(() => {
-    if (tabIds.length > 0) lastTabIds.current = tabIds;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderKey]);
-
-  // Emptied to ZERO tabs (last tab removed) while still visible: remove the
-  // panel's now-dead panes from the dock layout (collapsing its group/leaf) and
-  // forget the applied placement, so re-populating the panel later re-places it
-  // cleanly. Without this, a docked panel's stale group lingers (the membership
-  // effect bails on !ready and the hide effect bails on visible), and a revive
-  // creates a NEW group -- orphaning the stale one and rendering nowhere.
-  // (Resets appliedPlacementKey, so it must stay declared AFTER the placement
-  // effect; both touch that ref. Op idempotency makes the ordering self-healing,
-  // but keep this order.)
-  React.useEffect(() => {
-    if (!visible || tabIds.length > 0) return;
-    dock.api.apply((layout) => {
-      let next = layout;
-      for (const id of lastTabIds.current) next = ops.removePane(next, id);
-      return next;
-    });
-    appliedPlacementKey.current = null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, orderKey, dock.api]);
-
-  // (2) Reconcile MEMBERSHIP (tabs added/removed) without repositioning, so a
-  // tab change updates the group's panes but leaves its current location alone.
-  // The REMOVED set (previous tabs no longer wanted) is passed explicitly so
-  // reconciliation drops exactly those -- and never a FOREIGN pane the user
-  // merged into this panel's group from another panel (which the old
-  // filter-to-wanted approach silently orphaned).
-  // Edge case: if the server replaced ALL tab containers at once (zero overlap
-  // with the old set), the panel's group can no longer be found by its panes, so
-  // reconcile no-ops and the panel would render nowhere. Detect that (ready but
-  // ungrouped) and fall back to re-applying placement, which re-creates and
-  // re-places the group from the new panes (the gate is open for an unplaced
-  // panel, so the full stored bundle applies).
-  const prevMembershipTabIds = React.useRef<string[]>([]);
-  React.useEffect(() => {
-    if (!ready || !visible) return;
-    const removed = prevMembershipTabIds.current.filter(
-      (id) => !tabIds.includes(id),
-    );
-    prevMembershipTabIds.current = tabIds;
-    if (ops.findPaneGroup(dock.layout, tabIds[0]) !== null) {
-      dock.api.apply((layout) =>
-        ops.reconcilePanelMembership(layout, tabIds, removed),
-      );
-      return;
-    }
-    // While a split placement is DEFERRED on its anchor materializing (see
-    // pendingAnchor), leave the panel unplaced -- placing it here would hit
-    // the very warn+fallback the deferral avoids.
-    if (pendingAnchor.current !== null) return;
-    // Ungrouped: re-place from scratch (the gate is open for an unplaced
-    // panel, so the full stored bundle applies). Gate -> apply -> record, the
-    // SAME protocol as the placement effect -- previously nothing was
-    // recorded here, which was only correct because the placement effect
-    // usually ran in the same flush.
-    const gated = gatePlacement(placementEntry, tracking, false);
-    if (placementEntry !== undefined)
-      viewer.guiActions.recordPanelLayoutApplied(stableKey, gated.applied);
-    dock.api.apply((layout) => placePanel(layout, gated.placement));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, orderKey, visible, dock.api]);
-
   return null;
 }
