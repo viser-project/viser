@@ -60,7 +60,9 @@ from .dock_helpers import (
     MIN_CELL_HEIGHT_PX,
     columns,
     dock_layout,
+    group,
     open_playground,
+    rows,
     set_layout,
     stack,
     window,
@@ -614,4 +616,42 @@ def test_narrow_region_scrolls_body_with_bottom_scrollbar(page: Page) -> None:
     # content). Allow a few px for the scrollbar track / sub-pixel rounding.
     assert abs(vp["vpBottom"] - vp["leafBottom"]) <= 18, (
         f"scroll viewport does not reach the panel bottom: {vp}"
+    )
+
+
+# ===========================================================================
+# All-strip widthRow with an expanded sibling band: the region must keep a
+# WORKING resizer that adjusts regionWidth directly (there are no
+# width-carrying columns to redistribute). Regression for the "expanded region
+# with no resize handle" hole.
+# ===========================================================================
+def test_region_resizer_works_when_widthrow_all_minimized(page: Page) -> None:
+    set_layout(
+        page,
+        dock_layout(
+            docked_right=rows(
+                columns(
+                    group("controls", collapsed=True),
+                    group("inspector", collapsed=True),
+                ),
+                "console",
+            )
+        ),
+    )
+    page.wait_for_timeout(300)
+    handle = page.query_selector('[data-dock-region-resize="right"]')
+    assert handle is not None, (
+        "region with an expanded band must render a resizer even when the "
+        "width-determining band is all strips"
+    )
+    before = page.evaluate("() => window.__dockLayout.regionWidth.right")
+    hb = handle.bounding_box()
+    assert hb is not None
+    x = hb["x"] + hb["width"] / 2
+    y = hb["y"] + hb["height"] * 0.75  # below the grip-bar clearance
+    _raw_drag(page, (x, y), (x - 120, y))
+    after = page.evaluate("() => window.__dockLayout.regionWidth.right")
+    assert after - before >= 100, (
+        f"dragging the resizer must widen the region via regionWidth: "
+        f"{before} -> {after}"
     )

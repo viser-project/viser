@@ -188,7 +188,7 @@ export function ControlPanelDockSurface({
   const initialLayout = React.useMemo(() => emptyLayout(), []);
 
   // Prune layout tracking for panels that no longer exist, so a removed panel's
-  // {userTouched, appliedCounter} can't be inherited by a later panel that
+  // {userTouched, applied} can't be inherited by a later panel that
   // resolves to the same stable key (which would wrongly suppress the new
   // panel's server placement). Recompute the active stable-key set when the
   // panel set changes (keyed on a sorted-uuid signature).

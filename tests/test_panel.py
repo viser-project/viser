@@ -240,6 +240,29 @@ def test_expand_sends_collapsed_false() -> None:
         server.stop()
 
 
+def test_remove_purges_buffered_placement_messages() -> None:
+    """Removing a panel purges its buffered per-axis placement messages (they
+    share the panel's `gui` entity), so a late-joining client can't replay
+    placement for a panel that no longer exists."""
+    server = _make_server()
+    try:
+        panel = server.gui.add_panel()
+        uuid = panel._impl.uuid
+        panel.dock_right()
+        panel.set_width(300)
+        panel.minimize()
+        assert m.GuiSetPanelPositionMessage in _buffered_types(server, uuid)
+        panel.remove()
+        # Only the remove tombstone remains (it coalesces over the create via
+        # the shared redundancy key -- the standard entity lifecycle); every
+        # per-axis placement update must be gone.
+        assert _buffered_types(server, uuid) == {m.GuiPanelRemoveMessage}, (
+            "placement messages must be purged with the panel"
+        )
+    finally:
+        server.stop()
+
+
 def test_placement_messages_carry_run_id() -> None:
     """Every placement message is stamped with the GuiApi's run id (counters are
     only comparable within one run/scope; the client uses run_id to detect a

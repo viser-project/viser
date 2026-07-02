@@ -34,9 +34,10 @@ describe("invariantViolations", () => {
   });
 
   it("an EMPTY area group is NOT flagged (persists as a drop affordance)", () => {
-    // ensureArea creates an empty backing group (paneIds [], activeId "") that is
-    // a legitimate committed state -- a "drop a panel here" placeholder. The
-    // checker must not flag it for empty paneIds (an ordinary group would be).
+    // ensureArea creates an empty backing group (paneIds [], activeId null)
+    // that is a legitimate committed state -- a "drop a panel here"
+    // placeholder. The checker must not flag it for empty paneIds (an ordinary
+    // group would be).
     let l: DockLayout = ensureArea(emptyLayout(), "gui-area");
     expect(invariantViolations(l)).toEqual([]);
     // It also goes empty when the last tab is removed (e.g. server drops it).
@@ -46,7 +47,7 @@ describe("invariantViolations", () => {
     expect(invariantViolations(l)).toEqual([]);
     // A NON-area empty group is still a violation (sanity: the exemption is
     // scoped to area groups only).
-    l.groups["bad"] = { id: "bad", paneIds: [], activeId: "" };
+    l.groups["bad"] = { id: "bad", paneIds: [], activeId: null };
     expect(invariantViolations(l).some((s) => s.includes("empty paneIds"))).toBe(
       true,
     );

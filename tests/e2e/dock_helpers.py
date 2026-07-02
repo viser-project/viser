@@ -447,8 +447,8 @@ def dock_layout(
         },
         "floating": [spec["window"] for spec in floating],
         "areas": {
-            "area-scene": {"id": "area-scene", "group": area_scene["id"]},
-            "area-main": {"id": "area-main", "group": area_main["id"]},
+            "area-scene": {"group": area_scene["id"]},
+            "area-main": {"group": area_main["id"]},
         },
     }
 

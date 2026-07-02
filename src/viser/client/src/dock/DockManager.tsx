@@ -379,16 +379,21 @@ export function DockManager({
   // at 0, so `commit` can tell a user rearrangement from a programmatic one --
   // which drives the "user touched this panel" flag for layout persistence.
   const programmaticDepth = React.useRef(0);
-  // Production keeps a RATE-LIMITED invariant tripwire (dev checks every
-  // commit): layouts are partly SERVER-driven, so a malformed op sequence from
-  // server state can ship a violated layout to real users -- whose symptoms
-  // (duplicate React keys, silently vanished panes) are exactly the
-  // hard-to-diagnose kind. The check is O(layout) on small trees; per-frame
-  // region-resize commits are skipped (a width write can't break structure),
-  // and after the budget is spent production stops checking entirely.
+  // Production keeps a RATE-LIMITED invariant tripwire (dev checks EVERY
+  // commit, including per-frame resize commits): layouts are partly
+  // SERVER-driven, so a malformed op sequence from server state can ship a
+  // violated layout to real users -- whose symptoms (duplicate React keys,
+  // silently vanished panes) are exactly the hard-to-diagnose kind. The check
+  // is O(layout) on small trees; in production the per-frame region-resize
+  // commits are skipped (a width write can't break structure, and 60Hz checks
+  // aren't worth it there), and after the budget is spent production stops
+  // checking entirely.
   const invariantWarnBudget = React.useRef(import.meta.env.DEV ? Infinity : 5);
   const commit = React.useCallback((next: DockLayout) => {
-    if (!regionResizeDraggingRef.current && invariantWarnBudget.current > 0) {
+    const skipCheck =
+      !import.meta.env.DEV &&
+      (regionResizeDraggingRef.current || invariantWarnBudget.current <= 0);
+    if (!skipCheck) {
       const violations = invariantViolations(next);
       if (violations.length > 0) {
         const msg =
@@ -472,7 +477,17 @@ export function DockManager({
   const api = React.useMemo(
     () => ({
       apply: (fn: (l: DockLayout) => DockLayout) =>
-        runProgrammatic(() => applyOp(fn(layoutRef.current))),
+        runProgrammatic(() => {
+          const next = fn(layoutRef.current);
+          // A sync layer can hand apply() a WHOLESALE layout (restore,
+          // test-probe injection) whose ids didn't come from freshId; keep
+          // the id counter ahead of them so later fresh ids can't collide
+          // (same reason as the initialLayout seeding above). No-op for
+          // ordinary op results (their ids already came from the counter).
+          if (next !== layoutRef.current)
+            bumpFreshIdFloor(ops.allLayoutIds(next));
+          applyOp(next);
+        }),
       addPaneToArea: (areaId: string, paneId: PaneId, index?: number) =>
         runProgrammatic(() =>
           applyOp(ops.addPaneToArea(layoutRef.current, areaId, paneId, index)),
