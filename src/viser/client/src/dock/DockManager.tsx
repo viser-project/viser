@@ -802,6 +802,17 @@ export function DockManager({
     // rects AND may recreate the dragged window's DOM node; both are
     // re-resolved lazily in apply() so drops land on what's actually on screen.
     let targetsLayout = layoutRef.current;
+    // Rects can also move WITHOUT a layout change: a scroll inside the
+    // container (a tall minimized rail wheel-scrolled mid-drag) or a viewport
+    // resize shifts targets while the model is untouched. Mark the cache
+    // stale and re-read live geometry on the next frame. Capture phase:
+    // scroll events don't bubble.
+    let targetsStale = false;
+    const markTargetsStale = () => {
+      targetsStale = true;
+    };
+    container.addEventListener("scroll", markTargetsStale, true);
+    window.addEventListener("resize", markTargetsStale);
     // The dragged stack is fixed for the whole drag; if it holds an unmergeable
     // panel, hitTest suppresses merge/insertTab results (and their hints).
     const draggingUnmergeable = (
@@ -820,7 +831,8 @@ export function DockManager({
       raf = null;
       const e = latest;
       if (e === null) return;
-      if (layoutRef.current !== targetsLayout) {
+      if (layoutRef.current !== targetsLayout || targetsStale) {
+        targetsStale = false;
         targetsLayout = layoutRef.current;
         targets = collectTargets(windowId);
         crect = container.getBoundingClientRect();
@@ -880,6 +892,8 @@ export function DockManager({
         // no move -- clearing the transform snaps the window back to where the
         // drag started. Only a real pointerup commits.
         detach();
+        container.removeEventListener("scroll", markTargetsStale, true);
+        window.removeEventListener("resize", markTargetsStale);
         activeCleanup.current = null;
         if (raf !== null) {
           cancelAnimationFrame(raf);

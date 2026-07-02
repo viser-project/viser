@@ -364,12 +364,14 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
             </Box>
             {index < leaves.length - 1 &&
               (() => {
+                const isCollapsed = (l: DockLeaf) =>
+                  groups[l.group]?.collapsed === true;
                 const leftResizable = leaves
                   .slice(0, index + 1)
-                  .some((l) => groups[l.group]?.collapsed !== true);
+                  .some((l) => !isCollapsed(l));
                 const rightResizable = leaves
                   .slice(index + 1)
-                  .some((l) => groups[l.group]?.collapsed !== true);
+                  .some((l) => !isCollapsed(l));
                 return (
                   <SplitDivider
                     dir="column"
@@ -380,9 +382,7 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
                         dock,
                         edge,
                         cells: leaves,
-                        collapsed: leaves.map(
-                          (l) => groups[l.group]?.collapsed === true,
-                        ),
+                        collapsed: leaves.map(isCollapsed),
                         index,
                         deltaPx,
                         containerPx,
