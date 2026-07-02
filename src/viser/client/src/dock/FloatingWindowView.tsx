@@ -464,6 +464,10 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
               // stacked cells.
               return (
                 <React.Fragment key={groupId}>
+                  {/* Divider between segments AND (unlike the band bar) after
+                  the leading grip handle: the handle and the first chip's +
+                  cap are both gray, so without a hairline they'd read as one
+                  blob. */}
                   {(i > 0 || multi) && <ChipDivider />}
                   <Box
                     data-dock-chip-cell="true"

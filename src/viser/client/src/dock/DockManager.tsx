@@ -683,14 +683,16 @@ export function DockManager({
       // beside/below it. `rect` stays full so the merge HINT is still full-width;
       // only `hitRect` (used for hit detection) is inset.
       const r = t.rect;
-      const mx = Math.min(AREA_HIT_INSET_PX, r.width * 0.28);
-      const mb = Math.min(AREA_HIT_INSET_PX, r.height * 0.28);
-      t.hitRect = new DOMRect(
-        r.left + mx,
-        r.top,
-        Math.max(AREA_HIT_INSET_PX, r.width - 2 * mx),
-        Math.max(AREA_HIT_INSET_PX, r.height - mb),
-      );
+      // Apply an inset only when the remaining band stays usefully large;
+      // otherwise skip that inset entirely. Flooring the SIZE instead (the old
+      // form) let the hit rect exceed the area's real rect for areas shorter/
+      // narrower than the floor (24-40px), creating a phantom hit zone
+      // OUTSIDE the visible area.
+      const mxRaw = Math.min(AREA_HIT_INSET_PX, r.width * 0.28);
+      const mbRaw = Math.min(AREA_HIT_INSET_PX, r.height * 0.28);
+      const mx = r.width - 2 * mxRaw >= AREA_HIT_INSET_PX ? mxRaw : 0;
+      const mb = r.height - mbRaw >= AREA_HIT_INSET_PX ? mbRaw : 0;
+      t.hitRect = new DOMRect(r.left + mx, r.top, r.width - 2 * mx, r.height - mb);
       targets.groups.push(t);
     });
     return targets;
