@@ -681,7 +681,39 @@ export function hitTest(
     }
     const raw = (region === "left" ? r.left : r.right) - t / 2;
     const left = clamp(raw, crect.left, crect.left + crect.width - t);
-    return rel({ left, top: r.top, width: t, height: r.height }, "line");
+    // Vertical extent = the drop's TRUE extent. Beside a cell of a lone
+    // multi-leaf column the band will split, affecting only that cell (cell
+    // height). Beside a column that has band SIBLINGS the flat model can't
+    // nest, so the new column spans the whole band -- draw the line band-tall
+    // to match (a cell-tall line there would promise a split the drop can't
+    // deliver).
+    let top = r.top;
+    let height = r.height;
+    if (gt.ctx.kind === "docked") {
+      const edge = gt.ctx.edge;
+      const nodeId = gt.ctx.nodeId;
+      const tree = layout.docked[edge];
+      const band = tree?.rows.find((rw) =>
+        rw.columns.some((c) => c.leaves.some((l) => l.id === nodeId)),
+      );
+      const col = band?.columns.find((c) =>
+        c.leaves.some((l) => l.id === nodeId),
+      );
+      if (
+        tree !== null &&
+        band !== undefined &&
+        col !== undefined &&
+        band.columns.length > 1 &&
+        col.leaves.length > 1
+      ) {
+        const ext = bandExtents(edge)?.[tree.rows.indexOf(band)];
+        if (ext !== null && ext !== undefined) {
+          top = ext.top + crect.top;
+          height = ext.bottom - ext.top;
+        }
+      }
+    }
+    return rel({ left, top, width: t, height }, "line");
   };
 
   // An unmergeable group never participates in a merge, from EITHER side: a

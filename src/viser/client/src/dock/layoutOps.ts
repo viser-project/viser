@@ -846,11 +846,63 @@ export function dropOnDockedLeaf(
     return draft;
   }
 
-  // left / right: a new column beside the target's column, within the SAME row
-  // band. The target column keeps `tw`; the new column takes `dw` (its leaves
-  // keep a floated stack's preserved height shares).
-  targetColumn.weight = tw;
+  // left / right: dock beside the TARGET CELL. When the target's column is
+  // its band's ONLY column and stacks multiple leaves, the band SPLITS so the
+  // new panel lands beside just that cell -- keeping the hint's promise (the
+  // insertion line is drawn at the cell's height) literally: leaves above and
+  // below the target keep their own full-width bands, and the target's leaf
+  // shares a new band with the dropped column. With sibling columns in the
+  // band the flat Region->Row->Column->Leaf model cannot nest a row inside a
+  // column, so the new column spans the whole band beside the target's column
+  // instead (and the hint spans the band to match).
   const newColumn = buildColumn(ne, dw, stackHeights);
+  if (targetRow.columns.length === 1 && targetColumn.leaves.length > 1) {
+    const li = targetColumn.leaves.findIndex((l) => l.id === targetNodeId);
+    const above = targetColumn.leaves.slice(0, li);
+    const below = targetColumn.leaves.slice(li + 1);
+    // Carve the original band's weight by the leaves' height shares, so the
+    // on-screen heights don't jump at the split.
+    const total = targetColumn.leaves.reduce((s, l) => s + l.weight, 0) || 1;
+    const share = (leaves: DockLeaf[]) =>
+      (targetRow.weight * leaves.reduce((s, l) => s + l.weight, 0)) / total;
+    const bandOf = (leaves: DockLeaf[]): DockRow | null => {
+      const ls = asNonEmpty(leaves);
+      return ls === null
+        ? null
+        : buildRow({ id: freshId("node"), weight: 1, leaves: ls }, share(leaves));
+    };
+    // The target's own column keeps its id (and with it its reconciled width).
+    const targetCol: DockColumn = {
+      ...targetColumn,
+      weight: tw,
+      leaves: [{ ...live.leaf, weight: 1 }],
+    };
+    const middle: DockRow = {
+      id: targetRow.id,
+      weight: share([live.leaf]),
+      columns:
+        region === "left" ? [newColumn, targetCol] : [targetCol, newColumn],
+    };
+    const aboveBand = bandOf(above);
+    const belowBand = bandOf(below);
+    // Replace the original band with its 1-3 successors, in place. The result
+    // always contains `middle`, so it is non-empty by construction.
+    const ri = liveRegion.rows.findIndex((rw) => rw.id === targetRow.id);
+    const rows = asNonEmpty([
+      ...liveRegion.rows.slice(0, ri),
+      ...(aboveBand === null ? [] : [aboveBand]),
+      middle,
+      ...(belowBand === null ? [] : [belowBand]),
+      ...liveRegion.rows.slice(ri + 1),
+    ]);
+    if (rows === null) return layout; // unreachable: `middle` is always present
+    liveRegion.rows = rows;
+    return draft;
+  }
+  // A new column beside the target's column, within the SAME row band. The
+  // target column keeps `tw`; the new column takes `dw` (its leaves keep a
+  // floated stack's preserved height shares).
+  targetColumn.weight = tw;
   const ci = targetRow.columns.findIndex((c) => c.id === targetColumn.id);
   const at = region === "left" ? ci : ci + 1;
   targetRow.columns = withInserted(targetRow.columns, at, newColumn);

@@ -587,6 +587,70 @@ describe("dropOnDockedLeaf", () => {
     });
   });
 
+  // Band-split: docking beside ONE CELL of a lone multi-leaf column splits the
+  // band, so the new panel really lands beside just that cell (what the
+  // cell-height insertion hint promises) instead of spanning the whole stack.
+  const bandsOf = (region: DockLayout["docked"]["left"]) =>
+    region === null
+      ? null
+      : region.rows.map((rw) => rw.columns.map((c) => c.leaves.map((l) => l.group)));
+
+  it("left of the TOP cell of a lone stacked column splits the band", () => {
+    const layout = makeLayout({
+      left: col([leaf("a"), leaf("b")]),
+      floating: [{ id: "w1", stack: ["c"] }],
+    });
+    const id = leafIdOf(layout, "left", "a");
+    const out = dropOnDockedLeaf(layout, ["c"], "left", id, "left");
+    expect(bandsOf(out.docked.left)).toEqual([[["c"], ["a"]], [["b"]]]);
+    expect(out.floating).toHaveLength(0);
+  });
+
+  it("right of the BOTTOM cell of a lone stacked column splits the band", () => {
+    const layout = makeLayout({
+      left: col([leaf("a"), leaf("b")]),
+      floating: [{ id: "w1", stack: ["c"] }],
+    });
+    const id = leafIdOf(layout, "left", "b");
+    const out = dropOnDockedLeaf(layout, ["c"], "left", id, "right");
+    expect(bandsOf(out.docked.left)).toEqual([[["a"]], [["b"], ["c"]]]);
+  });
+
+  it("beside the MIDDLE cell of a 3-stack yields three bands", () => {
+    const layout = makeLayout({
+      left: col([leaf("a"), leaf("b"), leaf("d")]),
+      floating: [{ id: "w1", stack: ["c"] }],
+    });
+    const id = leafIdOf(layout, "left", "b");
+    const out = dropOnDockedLeaf(layout, ["c"], "left", id, "left");
+    expect(bandsOf(out.docked.left)).toEqual([[["a"]], [["c"], ["b"]], [["d"]]]);
+  });
+
+  it("band-split carves the band weight by the leaves' height shares", () => {
+    const layout = makeLayout({
+      left: col([leaf("a", 3), leaf("b", 1)]),
+      floating: [{ id: "w1", stack: ["c"] }],
+    });
+    const id = leafIdOf(layout, "left", "a");
+    const out = dropOnDockedLeaf(layout, ["c"], "left", id, "left");
+    const rows = out.docked.left!.rows;
+    expect(rows).toHaveLength(2);
+    // 3:1 leaf split -> 3:1 band split (relative weights preserved).
+    expect(rows[0].weight / rows[1].weight).toBeCloseTo(3);
+  });
+
+  it("beside a cell whose column has BAND SIBLINGS spans the band (no nesting)", () => {
+    // Band = [x | col(a, b)]: the flat model can't put c beside just `a`, so
+    // the drop inserts a full-band column beside the target's column.
+    const layout = makeLayout({
+      left: row([leaf("x"), col([leaf("a"), leaf("b")])]),
+      floating: [{ id: "w1", stack: ["c"] }],
+    });
+    const id = leafIdOf(layout, "left", "a");
+    const out = dropOnDockedLeaf(layout, ["c"], "left", id, "left");
+    expect(bandsOf(out.docked.left)).toEqual([[["x"], ["c"], ["a", "b"]]]);
+  });
+
   it("a same-edge dragged group is detached before the split (no duplication)", () => {
     // Both a and b live on the left; drop b to the right of a.
     const layout = makeLayout({ left: row([leaf("a"), leaf("b")]) });
