@@ -573,6 +573,7 @@ export function DockManager({
         tabs,
         ctx,
         collapsed: layoutRef.current.groups[groupId]?.collapsed === true,
+        chip: scopeEl.getAttribute("data-dock-chip") === "true",
         unmergeable: ops.isGroupUnmergeable(layoutRef.current, panes, groupId),
       };
     };
@@ -621,11 +622,21 @@ export function DockManager({
         // skipped here -- the area scan below collects them with area context.
         const index = win.stack.indexOf(gid);
         if (index === -1) return;
-        const g = readGroup(groupEl, {
-          kind: "floating",
-          windowId: win.id,
-          index,
-        });
+        // A minimized floating window renders its groups as compact chips
+        // inside full-bar-height cells; the CELL is the drop rect (the whole
+        // bar height is droppable), while the chip element still scopes the
+        // group. Expanded groups have no cell wrapper -- fall back to the
+        // group element itself.
+        const cellEl = groupEl.closest("[data-dock-chip-cell]") ?? groupEl;
+        const g = readGroup(
+          groupEl,
+          {
+            kind: "floating",
+            windowId: win.id,
+            index,
+          },
+          cellEl,
+        );
         if (g !== null) targets.groups.push(g);
       });
     });

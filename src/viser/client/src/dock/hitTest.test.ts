@@ -512,6 +512,23 @@ describe("outer-edge dock beside a minimized region strip", () => {
       expect(out.hint.top).toBeLessThan(200);
     }
   });
+
+  it("a CHIP target (horizontal pill) merges instead of Y-based row insertion", () => {
+    // A collapsed group rendered as a horizontal chip (band bar / floating
+    // bar) is one visual unit with no per-tab rows: even if a tab rect is
+    // present, the middle of the chip must MERGE -- Y-based row insertion
+    // would pick an arbitrary before/after index on a ~24px-tall pill.
+    const node = leaf("g");
+    const layout = layoutWith({ right: node });
+    layout.groups["g"] = group("g", 1, true);
+    // A wide, bar-height chip wrapper (the horizontal band's leaf wrapper).
+    const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft - 200, 0, 236, STRIP));
+    tgt.chip = true;
+    tgt.tabs = [{ paneId: "p", rect: rect(stripLeft - 190, 6, 120, 24) }];
+    // Dead-center of the chip: inside the tab rect, past the edge bands.
+    const out = run(layout, [tgt], stripLeft - 130, STRIP / 2, STRIP_W)!;
+    expect(out.result).toMatchObject({ kind: "merge", targetGroupId: "g" });
+  });
 });
 
 // ===========================================================================

@@ -117,10 +117,11 @@ export function HorizontalMinimizedBand({
  * WHOLE group; a motionless click (or Enter/Space) expands it.
  *
  * NOT startCollapsedGroupPress: the chip carries data-dock-tab on its own
- * element (for hitTest's tab rects), so that helper's closest("[data-dock-
- * tab]") arbitration would route every press to single-tab tear-out. Per-tab
- * tear-out isn't offered from a chip -- the vertical rail's per-tab rows are
- * the granular affordance. */
+ * element (it IS the active tab's label, which keeps tab-based selectors and
+ * a11y working), so that helper's closest("[data-dock-tab]") arbitration
+ * would route every press to single-tab tear-out. Per-tab tear-out isn't
+ * offered from a chip -- the vertical rail's per-tab rows are the granular
+ * affordance. */
 export function MinimizedGroupChip({ group }: { group: TabGroup }) {
   const dock = useDock();
   // A rendered chip's group is never empty, but the type says an empty
@@ -132,6 +133,11 @@ export function MinimizedGroupChip({ group }: { group: TabGroup }) {
     <Box
       data-dock-group={group.id}
       data-dock-collapsed="true"
+      // Marks this collapsed group as a horizontal CHIP (vs the vertical
+      // rail cell). hitTest's collapsed branch reads this to offer merge
+      // instead of the rail's Y-based per-row tab insertion, which assumes
+      // vertically stacked spine rows.
+      data-dock-chip="true"
       data-dock-tab={group.activeId}
       role="tab"
       aria-selected={false}

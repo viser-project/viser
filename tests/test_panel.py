@@ -273,7 +273,10 @@ def test_panel_key_stable_identity() -> None:
     try:
         panel = server.gui.add_panel(key="stats")
         assert panel.key == "stats"
-        assert _latest(server, panel._impl.uuid, m.GuiPanelMessage).props._stable_key == "stats"
+        assert (
+            _latest(server, panel._impl.uuid, m.GuiPanelMessage).props._stable_key
+            == "stats"
+        )
         with pytest.raises(ValueError):
             server.gui.add_panel(key="stats")
         with pytest.raises(ValueError):

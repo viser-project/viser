@@ -21,7 +21,13 @@ import {
   ContainerRect,
 } from "./hitTest";
 import { edgeIsSingleLeaf } from "./layoutOps";
-import { DockEdge, DockLayout, emptyLayout } from "./types";
+import {
+  DockEdge,
+  DockLayout,
+  NonEmpty,
+  emptyLayout,
+  mapNonEmpty,
+} from "./types";
 import {
   rect,
   mulberry32,
@@ -574,6 +580,164 @@ describe("tabInsertion boundary sweep", () => {
         }
       }
       expect(bad, bad.slice(0, 5).join("\n")).toEqual([]);
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Left/right mirror symmetry: docking is left/right symmetric BY CONTRACT.
+// For every fixture we build the mirrored world (docked trees swapped between
+// edges, floating windows and every target rect reflected across the vertical
+// centerline) and require that the mirrored pointer resolves to the mirrored
+// result everywhere on the grid. This pins the whole family of "works on the
+// left, subtly off on the right" bugs: inverted inequalities, unmirrored
+// bands, wrong-side hints.
+// ---------------------------------------------------------------------------
+describe("hitTest left/right mirror symmetry", () => {
+  const W = CONTAINER.width;
+  const reverseNonEmpty = <T,>(xs: NonEmpty<T>): NonEmpty<T> =>
+    [...xs].reverse() as NonEmpty<T>;
+  const mirRect = (r: DOMRect): DOMRect =>
+    rect(W - r.left - r.width, r.top, r.width, r.height);
+  const flipLR = <T extends string>(v: T): T =>
+    (v === "left" ? "right" : v === "right" ? "left" : v) as T;
+
+  // Mirroring swaps the edges AND reverses each band's column order: columns
+  // render left-to-right on both edges, so the spatial mirror of [a | b] is
+  // [b | a] in the model too (edgeIsSingleLeaf & friends read model order).
+  // Row bands and in-column leaves stack vertically -- unchanged by the flip.
+  const mirrorRegion = (
+    r: DockLayout["docked"]["left"],
+  ): DockLayout["docked"]["left"] =>
+    r === null
+      ? null
+      : {
+          ...r,
+          rows: mapNonEmpty(r.rows, (band) => ({
+            ...band,
+            columns: reverseNonEmpty(band.columns),
+          })),
+        };
+  const mirrorLayout = (l: DockLayout): DockLayout => ({
+    ...l,
+    docked: {
+      left: mirrorRegion(l.docked.right),
+      right: mirrorRegion(l.docked.left),
+    },
+    floating: l.floating.map((w) => ({ ...w, x: W - w.x - w.width })),
+  });
+
+  const mirrorTargets = (ts: DropTargets): DropTargets => ({
+    groups: ts.groups.map((t) => ({
+      ...t,
+      rect: mirRect(t.rect),
+      hitRect: t.hitRect === undefined ? undefined : mirRect(t.hitRect),
+      stripRect: t.stripRect === null ? null : mirRect(t.stripRect),
+      tabs: t.tabs.map((tab) => ({ ...tab, rect: mirRect(tab.rect) })),
+      ctx:
+        t.ctx.kind === "docked" ? { ...t.ctx, edge: flipLR(t.ctx.edge) } : t.ctx,
+    })),
+  });
+
+  /** The result the MIRRORED world must produce for a left-world result.
+   * insertTab's index is dropped: mirroring reverses the strip spatially, so
+   * the index flips around the matched tab -- same group, different number. */
+  const expectTwin = (res: DropResult): unknown => {
+    switch (res.kind) {
+      case "edge":
+        return { kind: "edge", edge: flipLR(res.edge) };
+      case "regionEdge":
+        return { kind: "regionEdge", edge: flipLR(res.edge), side: flipLR(res.side) };
+      case "bandInsert":
+        return { kind: "bandInsert", edge: flipLR(res.edge), index: res.index };
+      case "split":
+        return {
+          kind: "split",
+          edge: flipLR(res.edge),
+          nodeId: res.nodeId,
+          region: flipLR(res.region),
+        };
+      case "insertTab":
+        return { kind: "insertTab", targetGroupId: res.targetGroupId };
+      case "merge":
+        return { kind: "merge", targetGroupId: res.targetGroupId };
+      case "snap":
+        return { kind: "snap", windowId: res.windowId, index: res.index };
+    }
+  };
+  /** The same field selection as expectTwin, WITHOUT flipping -- applied to
+   * the mirrored world's own result before comparing. */
+  const canon = (res: DropResult): unknown => {
+    switch (res.kind) {
+      case "edge":
+        return { kind: "edge", edge: res.edge };
+      case "regionEdge":
+        return { kind: "regionEdge", edge: res.edge, side: res.side };
+      case "bandInsert":
+        return { kind: "bandInsert", edge: res.edge, index: res.index };
+      case "split":
+        return { kind: "split", edge: res.edge, nodeId: res.nodeId, region: res.region };
+      case "insertTab":
+        return { kind: "insertTab", targetGroupId: res.targetGroupId };
+      case "merge":
+        return { kind: "merge", targetGroupId: res.targetGroupId };
+      case "snap":
+        return { kind: "snap", windowId: res.windowId, index: res.index };
+    }
+  };
+
+  const STEP = 8;
+  for (const { name, layout } of layouts()) {
+    it(`mirrored pointer resolves to the mirrored result (${name})`, () => {
+      const targets = targetsFor(layout);
+      // Surface the model's collapsed flags on the targets so the collapsed
+      // (3z) branch participates in the symmetry check too.
+      for (const t of targets.groups)
+        if (layout.groups[t.groupId]?.collapsed === true) t.collapsed = true;
+      const mLayout = mirrorLayout(layout);
+      const mTargets = mirrorTargets(targets);
+      const errors: string[] = [];
+
+      for (let y = 0; y <= CONTAINER.height; y += STEP) {
+        for (let x = 0; x <= W; x += STEP) {
+          const L = hitTest(layout, REGION_W, CONTAINER, targets, x, y);
+          const R = hitTest(mLayout, REGION_W, CONTAINER, mTargets, W - x, y);
+          const key = (msg: string) => {
+            const k = msg.replace(/[-\d.]+/g, "#");
+            if (!errors.some((e) => e.startsWith(k)))
+              errors.push(`${k}  e.g. ${msg}`);
+          };
+          if ((L === null) !== (R === null)) {
+            key(
+              `null asymmetry at (${x},${y}): L=${L === null ? "null" : L.result.kind} R=${R === null ? "null" : R.result.kind}`,
+            );
+            continue;
+          }
+          if (L === null || R === null) continue;
+          const want = JSON.stringify(expectTwin(L.result));
+          const got = JSON.stringify(canon(R.result));
+          if (want !== got) {
+            key(`result asymmetry at (${x},${y}): L=${want} R=${got}`);
+            continue;
+          }
+          // Hints must mirror too (skip insertTab: the matched-tab flip moves
+          // the line by design; and allow slack for the leftmost-tab nudge).
+          if (L.result.kind !== "insertTab") {
+            const tol = 4;
+            const wantLeft = W - L.hint.left - L.hint.width;
+            if (
+              Math.abs(R.hint.left - wantLeft) > tol ||
+              Math.abs(R.hint.top - L.hint.top) > tol ||
+              Math.abs(R.hint.width - L.hint.width) > tol ||
+              Math.abs(R.hint.height - L.hint.height) > tol
+            )
+              key(
+                `hint asymmetry at (${x},${y}) [${L.result.kind}]: L=${JSON.stringify(L.hint)} R=${JSON.stringify(R.hint)}`,
+              );
+          }
+        }
+      }
+      expect(errors, errors.join("\n")).toEqual([]);
     });
   }
 });

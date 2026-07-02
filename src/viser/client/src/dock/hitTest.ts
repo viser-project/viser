@@ -111,6 +111,11 @@ export interface GroupTarget {
    * has no content area, so its whole bar is treated as a 5-way drop zone.
    * Optional so existing target literals (e.g. in tests) stay valid. */
   collapsed?: boolean;
+  /** True when a COLLAPSED group renders as a horizontal chip (a docked
+   * band's or floating bar's pill) rather than the vertical rail cell. A chip
+   * is a single visual unit with no per-tab rows, so the collapsed branch
+   * offers merge instead of the rail's Y-based per-row tab insertion. */
+  chip?: boolean;
   /** True when the group holds an unmergeable panel: nothing may be merged or
    * inserted into it, so its content area is merge-suppressed (drops there fall
    * back to a split / no-op) and its label is a header rather than a tab. */
@@ -733,8 +738,14 @@ export function hitTest(
     // The edge bands are thin pixel strips at the cell's very top/bottom, so the
     // + cap (just inside the top edge) stays a MERGE target rather than being
     // swallowed by an "above" zone. Insertion is suppressed for an unmergeable
-    // drag (can't become tabs) or an unmergeable target.
-    const canInsert = !draggingUnmergeable && !g.unmergeable && g.tabs.length > 0;
+    // drag (can't become tabs), an unmergeable target, or a CHIP target (a
+    // horizontal pill with no per-tab rows -- Y-based row insertion would pick
+    // an arbitrary index there; a drop on a chip merges instead).
+    const canInsert =
+      !draggingUnmergeable &&
+      !g.unmergeable &&
+      g.chip !== true &&
+      g.tabs.length > 0;
     const edge = Math.min(MINIMIZED_EDGE_BAND_PX, r.height / 3);
     const inTopEdge = clientY < r.top + edge;
     const inBottomEdge = clientY > r.bottom - edge;

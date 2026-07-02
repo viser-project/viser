@@ -429,7 +429,19 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
             {win.stack.map((groupId) => {
               const group = dock.groups[groupId];
               if (group === undefined) return null;
-              return <MinimizedGroupChip key={groupId} group={group} />;
+              // Full-bar-height cell around each compact chip: collectTargets
+              // uses it (data-dock-chip-cell) as the chip's DROP rect, so the
+              // whole bar height is droppable -- no dead strip above/below the
+              // pill -- matching the docked band bar's full-height wrappers.
+              return (
+                <Box
+                  key={groupId}
+                  data-dock-chip-cell="true"
+                  style={{ height: "100%", display: "flex", alignItems: "center" }}
+                >
+                  <MinimizedGroupChip group={group} />
+                </Box>
+              );
             })}
           </Box>
         ) : (
