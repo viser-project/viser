@@ -149,15 +149,20 @@ Anatomy is listed top-to-bottom / left-to-right.
 ### 3.3 Band bar (minimized band among expanded bands)
 - One segment per group, tiling the full width edge-to-edge; hairline
   dividers between segments.
-- Segment anatomy = rail cell rotated 90°: gray `+` cap on the leading edge,
-  then dimmed icon+title of the active tab.
-- Segment click expands that group; segment drag moves that group. Each
-  segment's `+` is a DISTINCT action (P9-legal): expanding one group leaves
-  its siblings minimized as narrow rail columns beside it (each group sits
-  in its own column, so uniform-collapse does not couple them).
-- Bar area not covered by a segment's visuals (segments are content-sized
-  inside full-width slots): motionless click expands the whole band; drag
-  moves ~the band~ → **OPEN QUESTION Q2** (today: drags the *first column*).
+- Segment anatomy = rail cell rotated 90°: gray `+` cap on the leading
+  edge, then one dimmed icon+title **label per tab** (D9) — the horizontal
+  analog of the rail's spine rows. Labels are separated by spacing, not
+  outlines (P10). When width runs out, the segment degrades to
+  `ActiveTitle +N`.
+- Cap click expands that group (its `+` is a DISTINCT action, P9-legal:
+  siblings stay minimized as narrow rail columns beside it — each group is
+  its own column, so uniform-collapse does not couple them). Label click
+  expands to THAT tab; label drag tears that pane out, still minimized
+  (per-tab tear-out exists on every minimized surface, D5). Cap drag moves
+  the whole group.
+- Bar background (area not covered by segments): motionless click expands
+  the whole band; drag moves the WHOLE BAND as one unit (D2) — re-dock as a
+  band elsewhere, or float as one stack.
 
 ### 3.4 Chip bar (fully-minimized floating window)
 - Multi-group: leading grip segment (whole-window handle) + one segment per
@@ -166,10 +171,12 @@ Anatomy is listed top-to-bottom / left-to-right.
 - Uniform-collapse (§7) makes per-group expand IMPOSSIBLE in a floating
   stack: any expand expands the whole window. Therefore (P9) the expand
   signifier lives on the window-level handle ONLY — multi-group chips carry
-  NO `+` glyph. Chips remain fully clickable (hit area for the same expand)
-  and draggable (tear their group out, still minimized). A single-group
-  bar's one chip keeps its `+`: there the chip IS the window and the action
-  is singular.
+  NO `+` glyph. A single-group bar's one chip keeps its `+`: there the chip
+  IS the window and the action is singular.
+- Segments show one label per tab (D9, same anatomy as §3.3): label click
+  expands (the whole window — uniform-collapse — landing on that tab);
+  label drag tears that pane out, still minimized; cap drag moves the
+  group.
 - The bar is fit-content wide; the window's expanded width is preserved in
   the model for its return (P8).
 
@@ -210,10 +217,10 @@ a click. One active gesture at a time; extra pointers are ignored.
 | Stack handle bar (floating multi) | whole window | toggle all collapse |
 | Rail cell cap (`+` / pill) | whole group (still minimized) | expand (lone cell only) |
 | Rail spine row | that pane (still minimized) | expand to that tab |
-| Band-bar segment | that group (still minimized) | expand that group (siblings stay minimized) |
-| Chip-bar segment | that group (still minimized) | expand the whole window (uniform-collapse; no `+` glyph on multi-group chips, P9) |
+| Segment cap (band/chip bar) | that group (still minimized) | expand that group (band bar) / — (chip bar: window handle owns expand, P9) |
+| Segment tab label (band/chip bar) | that pane (still minimized) | expand to that tab (chip bar: expands whole window, lands on that tab) |
 | Chip-bar grip segment | whole window | expand all |
-| Band-bar background | see Q2 | expand whole band |
+| Band-bar background | whole band (as one stack) | expand whole band |
 | Region resize divider | region width | — |
 | Split divider | neighboring cells/columns | — |
 | Window edge/bottom grips | window size | — |
@@ -260,12 +267,14 @@ and changing one is a spec change.
 - Above the strip (grip bar): split above this cell.
 - Over the strip: insert at that tab position (2D nearest-tab, works with
   wrapped rows).
-- Content side bands (22% of width, ≤70px): split left/right of this cell.
+- Content side bands (30% of width, ≤120px): split left/right of this cell.
   If the cell's column is the band's only column, the drop *band-splits* so
   the new panel sits beside just this cell; otherwise the new column spans
   the band and the hint is drawn band-tall (P1).
-- Content top/bottom bands (15%, ≤70px): split above/below this cell.
-- Content center: merge (become a tab). Suppressed for unmergeable panels.
+- Content top/bottom bands (25%, ≤100px): split above/below this cell.
+- Content center — roughly the middle third each way — merges (become a
+  tab). Splits are the easy default; merging requires clearer aim (D1).
+  Suppressed for unmergeable panels.
 
 ### 5.3 Minimized rail cell zones (rotated §5.2)
 - 8px outer/inner side slivers: dock a column beside.
@@ -274,11 +283,14 @@ and changing one is a spec change.
 - Rest (the cap): merge, staying minimized.
 
 ### 5.4 Segments (band bar / chip bar)
-- A segment is one visual unit: its whole slot (full bar height) is a drop
-  target; drop = merge into that group, staying minimized. No positional
-  insert (there are no per-tab rows to aim at).
-- Thin edge bands on the slot: band bar → split above/below the band; chip
-  bar → snap into the window's stack above/below that group.
+- A segment's whole slot (full bar height) is a drop target; drop = merge
+  into that group, staying minimized. Insertion at a tab position aims at
+  the per-tab labels (D9), mirroring rail rows.
+- Band bar slots have NO per-segment top/bottom zones (D4): the band seams
+  and region-edge bands immediately adjacent already express "insert a band
+  above/below", and 6px zones inside a 36px bar were unhittable.
+- Chip bar slots keep top/bottom snap zones at ~10px (D4): no alternative
+  affordance exists for snapping into a minimized window's stack.
 
 ### 5.5 Hints and previews
 - **Line** = an insertion boundary (3px bar), drawn at the true landing
@@ -307,9 +319,10 @@ and changing one is a spec change.
 
 - **Region width**: expanded columns of the width-determining band carry
   pixel widths; the region's width is their sum. Docking a new column
-  *grows* the region by the newcomer's width (existing panels never shrink
-  because something arrived — P3); the region resizer then redistributes.
-  → **OPEN QUESTION Q3** on growth vs share-in-place.
+  *grows* the region by the newcomer's width — DECIDED (D3): existing
+  panels never shrink because something arrived (P3 outranks canvas
+  preservation; the resizer is the recovery). Applies to per-cell splits
+  and region-edge docks alike.
 - **Minimums**: expanded columns ≥ ~120px grab minimum; cells ≥ ~50px;
   windows ≥ 100px height. Resizes clamp; they never squeeze a cell below
   its header.
@@ -404,66 +417,32 @@ against: `hitTest*.test.ts` (zones, sweep, mirror), `layoutOps*.test.ts`
 
 ---
 
-## 11. Open questions — the "rough" list
+## 11. Resolved decisions (2026-07-03)
 
-Positions proposed; each needs a decision, then a spec edit + cross-check.
+Former open questions, decided with the maintainer. Normative sections above
+already reflect them; this list preserves the rationale.
 
-**Q1 — Merge is too easy.** The entire content center of an expanded cell is
-a merge zone. Users aiming for "put it near here" get tab-merged panels they
-then have to tear apart. *Proposal:* keep merge on center but shrink it —
-grow the four split bands from 22%/15% toward a Windows-style layout where
-center-merge is roughly the middle ninth; alternatively require a brief
-hover (dwell) before the merge zone arms. Leaning: bigger split bands, no
-dwell (dwell violates P4).
-
-**Q2 — Band-bar background drag target.** Today a drag from the bar's
-background moves the band's *first column* — surprising when the bar has 3
-segments and you grabbed the far right. *Proposal:* background drag moves
-the WHOLE band (there's a band-level op already: bandInsert); segment drags
-remain per-group. Click-to-expand-all stays.
-
-**Q3 — Region growth on side-drop.** Docking a 300px panel beside a 300px
-region makes a 600px region — half the canvas vanishes in one drop.
-*Proposal:* per-cell/side splits SHARE the existing region width (newcomer
-takes half the target column's width, clamped to minimums); only explicit
-region-edge docks (the 40px outer bands, the empty-edge zone) grow the
-region. This matches VS Code and keeps P3 (canvas is content too).
-
-**Q4 — 6px snap bands on chips.** The top/bottom snap/split bands on
-minimized segments are 6px — nearly unhittable, and the band bar already has
-band-level seams nearby. *Proposal:* drop the per-segment top/bottom bands
-in band bars (seams + region bands cover the intent); keep them at 8–10px on
-chip bars where no alternative exists.
-
-**Q5 — Tear-out granularity from segments.** A chip drag moves the whole
-group; per-tab tear-out exists only on rail rows. Is a multi-tab group
-minimized into a chip a dead end for extracting one tab? Currently: expand
-first, then tear. *Proposal:* accept (expanding is one click; per-tab
-affordances on a 24px chip would be noise) — but the spec should say so
-explicitly.
-
-**Q6 — Discoverability of minimize.** Expanded panels minimize via a small
-(−) button; minimized ones expand via whole-surface click. Asymmetric.
-*Proposal:* accept the asymmetry (a whole-surface "minimize" on an expanded
-panel is impossible), but consider double-click-on-grip-bar as minimize
-toggle, mirroring double-click-to-restore conventions. Needs a decision.
-
-**Q7 — Where do torn-out panels land by default?** Release over "nothing"
-floats the stack at the pointer. Should releasing within N px of the
-original position instead snap back (treat as aborted)? Today: it floats.
-Leaning: keep floating (P2: motion means move), but worth confirming.
-
-**Q8 — Main panel specialness.** The main panel currently behaves like any
-panel plus a stable key and icon. Should it resist merging (stay its own
-group), or being minimized-by-adoption? Today it participates fully.
-Needs a product decision.
-
-**Q9 — Hidden tab labels in segments.** A multi-tab group minimized into a
-band bar or chip bar shows only its ACTIVE tab's label; the other tabs are
-invisible and undiscoverable until expand (the rail, by contrast, lists
-every tab). Violates the spirit of P7 (the bars claim to be "the rail
-rotated"). Options: (A) one label per tab inside each segment — the true
-rail analog; label click expands to that tab, label drag tears that pane
-out (also resolves Q5); (B) active label + count badge ("Controls +1");
-(C) joined titles with ellipsis. *Recommendation: A*, with B's badge as the
-overflow degradation when the bar runs out of width.
+- **D1 (merge zone):** grow the per-cell split bands (30% sides ≤120px, 25%
+  top/bottom ≤100px) so center-merge is roughly the middle third. Splits
+  are the casual-drop default; merging requires aim. No dwell timers (P4).
+- **D2 (band-bar background drag):** drags the WHOLE band as one stack;
+  motionless click still expands all. Segments remain per-group/per-tab
+  handles. (Replaces the old first-column drag.)
+- **D3 (region growth):** side-docking always GROWS the region by the
+  newcomer's width. Existing panels never shrink because something arrived;
+  the canvas cost is accepted and the resizer is the recovery.
+- **D4 (thin zones):** band-bar segments lose their 6px top/bottom zones
+  (seams next door cover the intent); chip-bar segments keep snap zones,
+  widened to ~10px.
+- **D5 (tear-out granularity):** resolved by D9 — per-tab labels give
+  per-tab tear-out on every minimized surface.
+- **D6 (minimize gesture):** the (−) button stays the only minimize
+  affordance. Double-click rejected: it would extend the P2 grammar
+  globally for one shortcut.
+- **D7 (release over nothing):** always float at the pointer. Motion means
+  move; Escape is the abort.
+- **D8 (main panel):** fully ordinary — merges, stacks, minimizes like any
+  group. Its specialness is identity + icon only.
+- **D9 (segment anatomy):** one label per tab inside band/chip-bar
+  segments (rail analog; click = expand to tab, drag = tear pane out),
+  degrading to `ActiveTitle +N` when width runs out.
