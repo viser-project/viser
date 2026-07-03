@@ -88,6 +88,19 @@ reads as a different action and lies about granularity). Litmus test: if
 uniform-collapse or any other invariant makes two controls equivalent, they
 must merge into one signifier.
 
+**P10 — Borders divide, they never enclose.** A 1px line may separate two
+adjacent siblings (cells in a rail, segments in a bar, a strip from its
+body, two stacked panels). A line may never OUTLINE a thing: no boxed
+pills, no framed chips, no stroked panels. Enclosure is expressed by
+surface contrast (body color vs the gray chrome color) and, for floating
+surfaces, elevation (shadow) — never by drawing the boundary. Exemptions,
+both state (not structure): the keyboard focus ring, and the accent
+underline on an active tab. History: the bordered-pill minimized chips
+violated this and read as clutter; the rail aesthetic that replaced them is
+this principle applied. Corollary for theming: every divider and surface
+color is a theme variable — light/dark parity is a requirement, and a
+divider that disappears in one scheme is a bug.
+
 ---
 
 ## 2. Vocabulary
