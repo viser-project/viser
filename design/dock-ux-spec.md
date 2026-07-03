@@ -80,6 +80,14 @@ move, minimize/expand round-trip, float/dock round-trip, and reconnect,
 until the user resizes it or space constraints force a clamp. Defaults
 (300px width) appear only for panels that have never had a size.
 
+**P9 — One signifier per action.** Every distinct action gets exactly one
+visual signifier (icon/button) per view; an icon never appears twice for the
+same action. Enlarging an action's *hit area* with unmarked surface is
+encouraged — duplicating its *iconography* is forbidden (a repeated icon
+reads as a different action and lies about granularity). Litmus test: if
+uniform-collapse or any other invariant makes two controls equivalent, they
+must merge into one signifier.
+
 ---
 
 ## 2. Vocabulary
@@ -130,7 +138,10 @@ Anatomy is listed top-to-bottom / left-to-right.
   dividers between segments.
 - Segment anatomy = rail cell rotated 90°: gray `+` cap on the leading edge,
   then dimmed icon+title of the active tab.
-- Segment click expands that group; segment drag moves that group.
+- Segment click expands that group; segment drag moves that group. Each
+  segment's `+` is a DISTINCT action (P9-legal): expanding one group leaves
+  its siblings minimized as narrow rail columns beside it (each group sits
+  in its own column, so uniform-collapse does not couple them).
 - Bar area not covered by a segment's visuals (segments are content-sized
   inside full-width slots): motionless click expands the whole band; drag
   moves ~the band~ → **OPEN QUESTION Q2** (today: drags the *first column*).
@@ -139,8 +150,13 @@ Anatomy is listed top-to-bottom / left-to-right.
 - Multi-group: leading grip segment (whole-window handle) + one segment per
   group with dividers. Single-group: just the one segment (the group IS the
   window).
-- Grip segment: drag moves the window; motionless click expands every group.
-- Chip segments behave exactly like band-bar segments (P7).
+- Uniform-collapse (§7) makes per-group expand IMPOSSIBLE in a floating
+  stack: any expand expands the whole window. Therefore (P9) the expand
+  signifier lives on the window-level handle ONLY — multi-group chips carry
+  NO `+` glyph. Chips remain fully clickable (hit area for the same expand)
+  and draggable (tear their group out, still minimized). A single-group
+  bar's one chip keeps its `+`: there the chip IS the window and the action
+  is singular.
 - The bar is fit-content wide; the window's expanded width is preserved in
   the model for its return (P8).
 
@@ -181,7 +197,8 @@ a click. One active gesture at a time; extra pointers are ignored.
 | Stack handle bar (floating multi) | whole window | toggle all collapse |
 | Rail cell cap (`+` / pill) | whole group (still minimized) | expand (lone cell only) |
 | Rail spine row | that pane (still minimized) | expand to that tab |
-| Band-bar / chip-bar segment | that group (still minimized) | expand that group |
+| Band-bar segment | that group (still minimized) | expand that group (siblings stay minimized) |
+| Chip-bar segment | that group (still minimized) | expand the whole window (uniform-collapse; no `+` glyph on multi-group chips, P9) |
 | Chip-bar grip segment | whole window | expand all |
 | Band-bar background | see Q2 | expand whole band |
 | Region resize divider | region width | — |
@@ -302,8 +319,11 @@ and changing one is a spec change.
 - A lone minimized column renders as the rail; a minimized band with
   expanded siblings renders as the band bar; a fully-minimized floating
   window renders as the chip bar. There is no fourth form.
-- Expand targets: rail spine-row click expands *to that tab*; segment click
-  expands that group with its previous active tab; parent handles expand
+- Expand targets: rail spine-row click expands *to that tab* (in a stacked
+  rail, uniform-collapse expands the whole column either way — the rows'
+  REAL difference is which tab becomes active, and the spec accepts that
+  subtlety); band-bar segment click expands that group with its previous
+  active tab; chip-bar clicks expand the whole window; parent handles expand
   everything they own.
 - Tearing a pane out of a minimized group floats it STILL minimized
   (expanding is exclusively a click; drags never change collapse — P2).
@@ -424,3 +444,13 @@ Leaning: keep floating (P2: motion means move), but worth confirming.
 panel plus a stable key and icon. Should it resist merging (stay its own
 group), or being minimized-by-adoption? Today it participates fully.
 Needs a product decision.
+
+**Q9 — Hidden tab labels in segments.** A multi-tab group minimized into a
+band bar or chip bar shows only its ACTIVE tab's label; the other tabs are
+invisible and undiscoverable until expand (the rail, by contrast, lists
+every tab). Violates the spirit of P7 (the bars claim to be "the rail
+rotated"). Options: (A) one label per tab inside each segment — the true
+rail analog; label click expands to that tab, label drag tears that pane
+out (also resolves Q5); (B) active label + count badge ("Controls +1");
+(C) joined titles with ellipsis. *Recommendation: A*, with B's badge as the
+overflow degradation when the bar runs out of width.
