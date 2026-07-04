@@ -14,9 +14,9 @@ import {
   minimizeStack,
   windowAllMinimized,
 } from "./layoutOps";
-import { StackHandleBar } from "./handles";
+import { HandleIconButton, StackHandleBar } from "./handles";
+import { IconPlus } from "@tabler/icons-react";
 import { TabGroupFrame } from "./TabGroupFrame";
-import { gripBarBg } from "./DockStyles.css";
 import { ChipDivider, MinimizedGroupChip } from "./HorizontalMinimizedBand";
 import {
   clamp,
@@ -322,7 +322,9 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         // A fully-minimized window renders as a compact horizontal CHIP BAR
         // (the same look as a minimized docked band) sized to its chips.
         // win.width is preserved in the model for restore on expand.
-        width: collapsed ? "fit-content" : win.width,
+        // P13/D10: the minimized bar keeps the window's width -- the width
+        // is part of the window's identity (P8); no fit-content jump.
+        width: win.width,
         height: collapsed ? undefined : renderedHeight,
         zIndex,
         overflow: "visible",
@@ -401,12 +403,13 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         }}
       >
         {collapsed ? (
-          // Fully-minimized FLOATING window: a horizontal chip bar -- one
-          // MinimizedGroupChip per stacked group -- the same visual + gesture
-          // unit as a minimized docked BAND. A press on the bar itself drags
-          // the whole window (a motionless click expands every group); each
-          // chip drags its own group out / click-expands it. The window is
-          // already a drop target via its [data-floating-window] scan.
+          // Fully-minimized FLOATING window: the window's HEADER row kept in
+          // place (P13) -- group label runs from the left with hairline
+          // dividers, and ONE `+` toggle at the bar's right end, where the
+          // expanded header's `-` sat. A press on the bar (including the
+          // slack right of the labels, and drag-through on the `+`) drags
+          // the whole window; a motionless click expands every group. Each
+          // group's label run is its own drop target (data-dock-chip-cell).
           <Box
             onPointerDown={(event) =>
               dock.startWindowDrag(event, win.id, { onClick: toggleAll })
@@ -423,65 +426,43 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
               WebkitUserSelect: "none",
             }}
           >
-            {/* Whole-window handle for a MULTI-group bar: the chips tile the
-            fit-content bar edge-to-edge, so without this there'd be no press
-            surface left that moves the WINDOW (each chip drags its own group
-            out). The horizontal counterpart of the expanded stack's
-            StackHandleBar; no handler of its own -- the press bubbles to the
-            bar's startWindowDrag above. A single-group bar needs none: its
-            one chip IS the window. */}
-            {multi && (
-              <Box
-                data-dock-bar-handle={win.id}
-                className={gripBarBg}
-                style={{
-                  width: "1.1em",
-                  flexShrink: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Box
-                  style={{
-                    width: 3,
-                    height: "1em",
-                    borderRadius: 2,
-                    backgroundColor: "var(--mantine-color-gray-5)",
-                    opacity: 0.8,
-                  }}
-                />
-              </Box>
-            )}
             {win.stack.map((groupId, i) => {
               const group = dock.groups[groupId];
               if (group === undefined) return null;
-              // Full-bar-height cell around each segment: collectTargets uses
-              // it (data-dock-chip-cell) as the chip's DROP rect, so the whole
-              // bar height is droppable -- no dead strip above/below --
-              // matching the docked band bar's full-height wrappers. Segments
-              // tile edge-to-edge with hairline dividers, like the rail's
-              // stacked cells.
               return (
                 <React.Fragment key={groupId}>
-                  {/* Divider between segments AND (unlike the band bar) after
-                  the leading grip handle: the handle and the first chip's +
-                  cap are both gray, so without a hairline they'd read as one
-                  blob. */}
-                  {(i > 0 || multi) && <ChipDivider />}
+                  {i > 0 && <ChipDivider />}
                   <Box
                     data-dock-chip-cell="true"
                     style={{
                       height: "100%",
                       display: "flex",
                       alignItems: "stretch",
+                      minWidth: 0,
                     }}
                   >
-                    <MinimizedGroupChip group={group} showPlus={!multi} />
+                    <MinimizedGroupChip group={group} withToggle={false} />
                   </Box>
                 </React.Fragment>
               );
             })}
+            {/* Slack: window-drag surface (bubbles to the bar handler). */}
+            <Box style={{ flexGrow: 1 }} />
+            {/* THE expand signifier for the whole bar (P9): uniform-collapse
+            makes any expand window-level, so exactly one `+`, at the right
+            end. Drag-through: press flows to the bar's window drag; the
+            motionless click comes from the drag-starter's onClick above. */}
+            <HandleIconButton
+              attrs={{ "data-dock-minimize": "true" }}
+              label="Expand panels"
+              title="Expand"
+              expanded={false}
+              dragThrough
+              onActivate={toggleAll}
+              placement={{ width: "1.7em", height: "100%", flexShrink: 0 }}
+            >
+              <IconPlus size={12} />
+            </HandleIconButton>
           </Box>
         ) : (
         <>

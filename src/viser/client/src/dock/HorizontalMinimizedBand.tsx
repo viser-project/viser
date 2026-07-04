@@ -18,9 +18,10 @@ import { Box } from "@mantine/core";
 import { IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
-import { focusRing, gripBarBg } from "./DockStyles.css";
-import { focusPaneTab, keyActivate, tabListKeyDown } from "./gestures";
+import { focusRing } from "./DockStyles.css";
+import { focusPaneTab, tabListKeyDown } from "./gestures";
 import { startCollapsedGroupPress } from "./collapsedPress";
+import { HandleIconButton } from "./handles";
 import { collectLeaves, expandStack } from "./layoutOps";
 import { DockEdge, DockRow, MINIMIZED_STRIP_PX, TabGroup } from "./types";
 
@@ -126,30 +127,32 @@ export function HorizontalMinimizedBand({
   );
 }
 
-/** ONE minimized group rendered as a horizontal segment in the vertical
- * rail's aesthetic, rotated (spec D9): a gray cap on the LEADING edge (the
- * rail cell's cap turned on its side; carries the + expand glyph only where
- * per-group expand is a real, distinct action -- P9), then one dimmed
- * icon+title LABEL PER TAB (the rail's spine rows, horizontal). Used by the
- * docked band's bar AND a minimized floating window's bar, so the two
- * horizontal surfaces are the same visual + gesture unit.
+/** ONE minimized group rendered as its HEADER kept in place (spec P13/D10):
+ * one dimmed icon+title LABEL PER TAB laid out from the left (literal
+ * cousins of the expanded tab strip), and -- where per-group expand is a
+ * real, distinct action (band-bar segments) -- the `+` toggle at the
+ * segment's RIGHT end, exactly where the expanded grip bar's `-` sat, so
+ * the minimize/expand toggle is spatially stable. Chip-bar segments render
+ * withToggle=false: the WINDOW owns expand there (P9) via the bar's own
+ * right-end `+`.
  *
  * Gestures (shared with the rail via startCollapsedGroupPress): pressing a
  * label tears out THAT pane (still minimized; single-pane groups move the
- * whole group instead, keeping ids stable); pressing the cap / elsewhere
- * drags the whole group; a motionless click on a label expands to that tab,
- * on the cap/background expands the group. Labels that don't fit are hidden
- * behind a "+N" badge (visibility:hidden keeps their geometry stable so the
- * overflow measurement can't feed back into itself). */
+ * whole group instead, keeping ids stable); pressing the background (or
+ * dragging through the `+`) drags the whole group; a motionless click on a
+ * label expands to that tab, on the background/`+` expands the group.
+ * Labels that don't fit are hidden behind a "+N" badge (visibility:hidden
+ * keeps their geometry stable so the overflow measurement can't feed back
+ * into itself). */
 export function MinimizedGroupChip({
   group,
-  showPlus = true,
+  withToggle = true,
 }: {
   group: TabGroup;
-  /** False on multi-group chip-bar segments: uniform-collapse makes any
-   * expand there a WINDOW-level action, and the window handle owns that
-   * signifier (P9) -- the cap renders as a plain gray grip edge. */
-  showPlus?: boolean;
+  /** False on chip-bar segments: uniform-collapse makes any expand there a
+   * WINDOW-level action, and the bar's right-end `+` owns that signifier
+   * (P9) -- segments render labels only. */
+  withToggle?: boolean;
 }) {
   const dock = useDock();
   const labelsRef = React.useRef<HTMLDivElement>(null);
@@ -203,6 +206,7 @@ export function MinimizedGroupChip({
         flexDirection: "row",
         alignItems: "stretch",
         height: "100%",
+        width: withToggle ? "100%" : undefined,
         minWidth: 0,
         backgroundColor: "var(--mantine-color-body)",
         cursor: "grab",
@@ -212,36 +216,6 @@ export function MinimizedGroupChip({
         opacity: dock.draggingGroupId === group.id ? 0.4 : 1,
       }}
     >
-      {/* Gray cap: the rail cell's cap rotated onto the leading edge. With
-      showPlus it is the group-expand signifier (focusable, Enter/Space);
-      without it, a plain grip edge -- the press still bubbles to the
-      container's group-drag/click handling either way. */}
-      <Box
-        className={showPlus ? `${gripBarBg} ${focusRing}` : gripBarBg}
-        role={showPlus ? "button" : undefined}
-        aria-label={showPlus ? "Expand panel" : undefined}
-        tabIndex={showPlus ? 0 : undefined}
-        onKeyDown={
-          showPlus
-            ? keyActivate(() => {
-                const active = group.activeId;
-                expandGroup();
-                if (active !== null) focusPaneTab(active);
-              })
-            : undefined
-        }
-        style={{
-          // 1.5em ~= 21px: the cap is its own click action (expand group),
-          // so it meets the P11 20px floor in BOTH dimensions on its own.
-          width: "1.5em",
-          flexShrink: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        {showPlus && <IconPlus size={11} style={{ opacity: 0.7 }} />}
-      </Box>
       {/* One label per tab (the rail's spine rows, horizontal). */}
       <Box
         ref={labelsRef}
@@ -336,6 +310,32 @@ export function MinimizedGroupChip({
         >
           +{hiddenCount}
         </Box>
+      )}
+      {withToggle && (
+        <>
+          {/* Background slack between labels and the toggle: part of the
+          segment's group-drag surface. */}
+          <Box style={{ flexGrow: 1 }} />
+          {/* The P13 toggle: `+` at the segment's RIGHT end, where the
+          expanded grip bar's `-` sits. Drag-through: a press flows to the
+          segment's group drag; a motionless click (via the drag-starter's
+          onClick) or Enter/Space expands. */}
+          <HandleIconButton
+            attrs={{ "data-dock-minimize": "true" }}
+            label="Expand panel"
+            title="Expand"
+            expanded={false}
+            dragThrough
+            onActivate={() => {
+              const active = group.activeId;
+              expandGroup();
+              if (active !== null) focusPaneTab(active);
+            }}
+            placement={{ width: "1.7em", height: "100%", flexShrink: 0 }}
+          >
+            <IconPlus size={12} />
+          </HandleIconButton>
+        </>
       )}
     </Box>
   );
