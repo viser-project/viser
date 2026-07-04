@@ -41,6 +41,30 @@ const MIN_CELL_HEIGHT_PX = 50;
 // zone to this so it's comfortable to hit without thickening the seam.
 const DIVIDER_GRAB_PX = 12;
 
+/** Per-divider resizable lookups over a per-cell minimized mask, computed once
+ * as running prefix/suffix flags (instead of a slice().some() scan per
+ * divider): `atOrBefore[i]` = some expanded cell at index <= i; `after[i]` =
+ * some expanded cell at index > i. Divider i resizes iff both hold. */
+function expandedFlags(minimized: boolean[]): {
+  atOrBefore: boolean[];
+  after: boolean[];
+} {
+  const n = minimized.length;
+  const atOrBefore = new Array<boolean>(n);
+  const after = new Array<boolean>(n);
+  let acc = false;
+  for (let i = 0; i < n; i++) {
+    acc = acc || !minimized[i];
+    atOrBefore[i] = acc;
+  }
+  acc = false;
+  for (let i = n - 1; i >= 0; i--) {
+    after[i] = acc;
+    acc = acc || !minimized[i];
+  }
+  return { atOrBefore, after };
+}
+
 /** Render a docked region: a VERTICAL stack of full-width row bands, with
  * horizontal dividers between them. Each band is a RowView (a horizontal row of
  * columns). The common single-band region is just one RowView filling the
@@ -62,6 +86,8 @@ export const SplitView = React.memo(function SplitView({
   // shrinks to its content -- the bars -- by ordinary flex (grow 0), so
   // expanded bands absorb the freed height (edge case 16).
   const bandMinimized = rows.map((r) => isRowMinimized(r, groups));
+  const { atOrBefore: expandedAtOrBefore, after: expandedAfter } =
+    expandedFlags(bandMinimized);
   // flex-grow semantics: when grow factors sum to <1, flexbox distributes
   // only that FRACTION of the free space (the rest strands as dead area).
   // D12's weight carving produces fractional band weights, so normalize:
@@ -112,17 +138,11 @@ export const SplitView = React.memo(function SplitView({
             {index < rows.length - 1 &&
               (() => {
                 // The band divider resizes only when a non-collapsed band sits
-                // on both sides of it (reusing the per-band collapsed mask).
-                const topResizable = bandMinimized
-                  .slice(0, index + 1)
-                  .some((m) => !m);
-                const botResizable = bandMinimized
-                  .slice(index + 1)
-                  .some((m) => !m);
+                // on both sides of it (see expandedFlags).
                 return (
                   <SplitDivider
                     dir="column"
-                    resizable={topResizable && botResizable}
+                    resizable={expandedAtOrBefore[index] && expandedAfter[index]}
                     containerRef={containerRef}
                     onResize={(deltaPx, containerPx) =>
                       resizeCells({
@@ -237,12 +257,14 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
   const groups = dock.groups;
   const containerRef = React.useRef<HTMLDivElement>(null);
   const leaves = column.leaves;
+  // Per-leaf collapsed mask, computed once: the leaf map, every divider's
+  // resizable flags, and resizeCells all read it.
+  const leafCollapsed = leaves.map((l) => groups[l.group]?.collapsed === true);
+  const { atOrBefore: expandedAtOrBefore, after: expandedAfter } =
+    expandedFlags(leafCollapsed);
   // Normalize grow factors (fractional sums strand free space).
   const expandedLeafWeightTotal =
-    leaves.reduce(
-      (s, l) => s + (groups[l.group]?.collapsed === true ? 0 : l.weight),
-      0,
-    ) || 1;
+    leaves.reduce((s, l, i) => s + (leafCollapsed[i] ? 0 : l.weight), 0) || 1;
 
   return (
     <Box
@@ -260,7 +282,7 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
         // A minimized leaf renders as its 26px bar in place (D20): fixed
         // basis, no grow/shrink, so its siblings absorb the freed height. Its
         // weight is preserved in the model and restored when expanded.
-        const collapsed = groups[leaf.group]?.collapsed === true;
+        const collapsed = leafCollapsed[index];
         return (
           <React.Fragment key={leaf.id}>
             <Box
@@ -279,25 +301,17 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
             </Box>
             {index < leaves.length - 1 &&
               (() => {
-                const isCollapsed = (l: DockLeaf) =>
-                  groups[l.group]?.collapsed === true;
-                const leftResizable = leaves
-                  .slice(0, index + 1)
-                  .some((l) => !isCollapsed(l));
-                const rightResizable = leaves
-                  .slice(index + 1)
-                  .some((l) => !isCollapsed(l));
                 return (
                   <SplitDivider
                     dir="column"
-                    resizable={leftResizable && rightResizable}
+                    resizable={expandedAtOrBefore[index] && expandedAfter[index]}
                     containerRef={containerRef}
                     onResize={(deltaPx, containerPx) =>
                       resizeCells({
                         dock,
                         edge,
                         cells: leaves,
-                        collapsed: leaves.map(isCollapsed),
+                        collapsed: leafCollapsed,
                         index,
                         deltaPx,
                         containerPx,

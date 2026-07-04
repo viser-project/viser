@@ -5,7 +5,7 @@
 // drop a pointer position maps to, plus the geometry of the visual hint. It is
 // intentionally DOM-free so it can be unit tested with synthetic rects.
 
-import { edgeIsSingleLeaf } from "./layoutOps";
+import { edgeIsSingleLeaf, isRowMinimized } from "./layoutOps";
 import {
   AreaId,
   clamp,
@@ -500,12 +500,9 @@ export function hitTest(
     //  - over the cell itself: only the outer/inner thirds dock beside (full
     //    height), leaving the middle for the cell's own tab-insert / merge
     //    zones.
-    const regionAllCollapsed = tree.rows.every((rw) =>
-      rw.columns.every((c) =>
-        c.leaves.every((lf) => layout.groups[lf.group]?.collapsed === true),
-      ),
-    );
-    const keepSideBand = isRegionCollapsedOn(layout, edge) || regionAllCollapsed;
+    const keepSideBand =
+      isRegionCollapsedOn(layout, edge) ||
+      tree.rows.every((rw) => isRowMinimized(rw, layout.groups));
     const effSideBand = !keepSideBand
       ? sideBand
       : overCollapsedCell(edge)

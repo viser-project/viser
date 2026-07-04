@@ -1465,8 +1465,9 @@ describe("toggleCollapsed", () => {
 });
 
 // ===========================================================================
-// minimizeStack / expandStack (the stack handle's minimize-all button) -- a
-// stack is uniform-collapse, so these are simple all/none toggles.
+// minimizeStack / expandStack (the stack handle's minimize-all button) -- bulk
+// all/none convenience over independently-collapsible cells (D16); mixed
+// per-cell states stay legal outside these helpers.
 // ===========================================================================
 
 describe("minimizeStack / expandStack", () => {

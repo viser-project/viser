@@ -48,6 +48,7 @@ import {
   tabInsertion,
 } from "./hitTest";
 import {
+  HANDLE_BTN_EM,
   assertNever,
   clamp,
   DockEdge,
@@ -581,14 +582,9 @@ export function DockManager({
         stripRect: stripEl?.getBoundingClientRect() ?? null,
         tabs,
         ctx,
-        // Collapsed for DROP purposes when the group itself is minimized OR
-        // its whole region is explicitly collapsed (D21): rail cells render
-        // as compact strips regardless of their own collapse state, so they
-        // need the rotated collapsed-target zones either way.
-        collapsed:
-          layoutRef.current.groups[groupId]?.collapsed === true ||
-          (ctx.kind === "docked" &&
-            isRegionCollapsedOn(layoutRef.current, ctx.edge)),
+        // Effectively-collapsed cells (own flag OR region rail, D21) need the
+        // rotated collapsed-target zones -- see isGroupEffectivelyCollapsed.
+        collapsed: ops.isGroupEffectivelyCollapsed(layoutRef.current, groupId),
         chip: scopeEl.getAttribute("data-dock-chip") === "true",
         unmergeable: ops.isGroupUnmergeable(layoutRef.current, panes, groupId),
       };
@@ -1137,6 +1133,23 @@ export function DockManager({
     return rw;
   };
 
+  // Float width for tearing `groupId` (or one of its tabs) out of wherever it
+  // lives: a docked group that is EFFECTIVELY collapsed (own minimize OR the
+  // region's explicit D21 collapse -- rail cells measure ~36px either way)
+  // floats at its preserved expanded width via dockedFloatWidth; everything
+  // else floats at its measured width.
+  const dockedFloatWidthForGroup = (
+    groupId: GroupId,
+    measuredWidth: number,
+  ): number => {
+    const layout = layoutRef.current;
+    const loc = ops.findGroupLocation(layout, groupId);
+    return loc?.kind === "docked" &&
+      ops.isGroupEffectivelyCollapsed(layout, groupId)
+      ? dockedFloatWidth(loc.edge, true, measuredWidth, groupId)
+      : measuredWidth;
+  };
+
   // The grab offset = where in the dragged window the cursor pressed (so the
   // window tracks the cursor 1:1). `originX/originY` is the source's top-left in
   // container coords. When `winId` is given, clamp the offset into that floated
@@ -1255,18 +1268,9 @@ export function DockManager({
     armPress(event, (e) => {
       dragAfterCommit(e, () => {
         const rect = floatRectFor(`[data-dock-group="${groupId}"]`);
-        const loc = ops.findGroupLocation(layoutRef.current, groupId);
-        // Strip-rendered for width purposes when the group is minimized OR
-        // its region is explicitly collapsed (D21: rail cells measure ~36px
-        // regardless of their own collapse state).
-        const collapsed =
-          layoutRef.current.groups[groupId]?.collapsed === true ||
-          (loc?.kind === "docked" &&
-            isRegionCollapsedOn(layoutRef.current, loc.edge));
-        const floatWidth =
-          collapsed && loc?.kind === "docked"
-            ? dockedFloatWidth(loc.edge, true, rect.width, groupId)
-            : rect.width;
+        // Effectively-collapsed docked cells float at their preserved
+        // expanded width (see dockedFloatWidthForGroup).
+        const floatWidth = dockedFloatWidthForGroup(groupId, rect.width);
         // A panel whose body is a full-bleed nested area needs a definite
         // height to fill (it collapses to 0 in an auto-height window). Give
         // the undocked window the panel's current rendered height in that
@@ -1588,20 +1592,9 @@ export function DockManager({
       (e) => {
         dragAfterCommit(e, () => {
           const rect = floatRectFor(`[data-dock-group="${groupId}"]`);
-          // A rail cell is strip-narrow, so its measured width is a poor
-          // panel width; float at the item's preserved expanded width (shared
-          // dockedFloatWidth -- column weight in a multi-column region,
-          // regionWidth for a lone column). Rail cells measure ~36px whenever
-          // the REGION is collapsed (D21), whatever the group's own state.
-          const loc = ops.findGroupLocation(layoutRef.current, groupId);
-          const collapsed =
-            layoutRef.current.groups[groupId]?.collapsed === true ||
-            (loc?.kind === "docked" &&
-              isRegionCollapsedOn(layoutRef.current, loc.edge));
-          const floatWidth =
-            collapsed && loc?.kind === "docked"
-              ? dockedFloatWidth(loc.edge, true, rect.width, groupId)
-              : rect.width;
+          // Effectively-collapsed docked cells float at their preserved
+          // expanded width (see dockedFloatWidthForGroup).
+          const floatWidth = dockedFloatWidthForGroup(groupId, rect.width);
           const res = ops.tearOutPane(
             layoutRef.current,
             groupId,
@@ -2047,10 +2040,13 @@ export function DockManager({
                       // The INNER (canvas-facing) corner: left edge's inner
                       // side is its right, and vice versa. On the LEFT edge
                       // that corner also hosts the topmost panel's minimize
-                      // button (the grip bar's right-end `-`), so sit just
-                      // inboard of it; the right edge's inner corner only
-                      // overlaps empty grip surface.
-                      ...(edge === "left" ? { right: "1.9em" } : { left: 0 }),
+                      // button (the grip bar's right-end `-`, HANDLE_BTN_EM
+                      // wide), so sitting HANDLE_BTN_EM + a small gap inboard
+                      // clears it by construction; the right edge's inner
+                      // corner only overlaps empty grip surface.
+                      ...(edge === "left"
+                        ? { right: `${HANDLE_BTN_EM + 0.2}em` }
+                        : { left: 0 }),
                       width: "20px",
                       height: "20px",
                       zIndex: 16,

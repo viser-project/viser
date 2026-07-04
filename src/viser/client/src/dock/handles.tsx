@@ -8,6 +8,7 @@ import { IconMinus, IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { focusRing } from "./DockStyles.css";
 import { keyActivate } from "./gestures";
+import { HANDLE_BTN_EM } from "./types";
 
 /** Centered grip line drawn inside every drag handle (grip bars, stack
  * handles, the vertical minimized strip). */
@@ -30,6 +31,11 @@ export function GripPill({
     />
   );
 }
+
+/** Square-ish handle-button size (em): HandleIconButton's default width, the
+ * ChromeToggle / rail-cap button extent, and the basis other chrome uses to
+ * clear these buttons (e.g. the region-collapse chevron's inset). Lives here,
+ * with the button it sizes, rather than in types.ts. */
 
 /** Hover-highlighted icon button used inside handles (per-group minimize on
  * the grip bar, minimize-all on a stack handle, expand on a vertical strip
@@ -101,7 +107,7 @@ export function HandleIconButton({
           right: 0,
           top: 0,
           bottom: 0,
-          width: "1.7em",
+          width: `${HANDLE_BTN_EM}em`,
         }),
       }}
     >
@@ -167,7 +173,7 @@ export function ChromeToggle({
       expanded={expanded}
       dragThrough
       onActivate={onActivate}
-      placement={{ width: "1.7em", height: "100%", flexShrink: 0 }}
+      placement={{ width: `${HANDLE_BTN_EM}em`, height: "100%", flexShrink: 0 }}
     >
       {expanded ? <IconMinus size={12} /> : <IconPlus size={12} />}
     </HandleIconButton>

@@ -67,6 +67,10 @@ export const MINIMIZED_STRIP_PX = 36;
  * (P13/D14) -- while clearing the P11 20px clickable floor. The 36px
  * MINIMIZED_STRIP_PX above remains the vertical RAIL's width. */
 export const MINIMIZED_BAR_PX = 26;
+/** Width/height (em) of the square handle icon buttons (+/- toggles, the
+ * region chevron's clearance). One constant so offsets that must clear a
+ * button derive from the size they are dodging. */
+export const HANDLE_BTN_EM = 1.7;
 
 /** Rendered width (px) of the divider between a region's side-by-side
  * columns. Participates in the region-width model the same way strips do:

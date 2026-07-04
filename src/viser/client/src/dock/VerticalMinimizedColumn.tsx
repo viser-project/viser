@@ -20,7 +20,7 @@ import {
 } from "./handles";
 import { startCollapsedGroupPress } from "./collapsedPress";
 import { collectLeaves, setRegionCollapsed } from "./layoutOps";
-import { DockEdge, DockRegion, NodeId, TabGroup } from "./types";
+import { HANDLE_BTN_EM, DockEdge, DockRegion, NodeId, TabGroup } from "./types";
 
 /** The COLLAPSED region as ONE packed rail (spec 3.2 / D21): every leaf
  * across every band, contiguous, so the canvas gets the region's width back
@@ -178,7 +178,7 @@ export function VerticalMinimizedCell({
             expanded={false}
             onActivate={expandCell}
             dragThrough
-            placement={{ width: "100%", height: "1.7em" }}
+            placement={{ width: "100%", height: `${HANDLE_BTN_EM}em` }}
           >
             <IconPlus size={12} />
           </HandleIconButton>

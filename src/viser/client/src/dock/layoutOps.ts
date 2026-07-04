@@ -465,6 +465,19 @@ export function findGroupLocation(
   return null;
 }
 
+/** True when a group READS as collapsed: its own collapsed flag is set, OR it
+ * is docked on an edge whose whole region is explicitly collapsed to the rail
+ * (D21) -- rail cells render as compact strips regardless of their own
+ * per-cell collapse state. */
+export function isGroupEffectivelyCollapsed(
+  layout: DockLayout,
+  groupId: GroupId,
+): boolean {
+  if (layout.groups[groupId]?.collapsed === true) return true;
+  const loc = findGroupLocation(layout, groupId);
+  return loc?.kind === "docked" && isRegionCollapsedOn(layout, loc.edge);
+}
+
 /** The group ids that share a STACK with `groupId` (including itself): a
  * floating window's whole stack, or the leaf groups of the docked COLUMN that
  * contains the group. A LONE group (its own window, or the sole leaf of its
@@ -485,6 +498,20 @@ export function stackGroupIdsOf(
       : [groupId];
   }
   return [groupId];
+}
+
+/** True when `groupId` shares a stack with at least one OTHER group (a 2+
+ * floating stack or a 2+-leaf docked column) -- the boolean companion to
+ * stackGroupIdsOf for chrome that only needs the yes/no, without building
+ * the id array. */
+export function isStackedGroup(layout: DockLayout, groupId: GroupId): boolean {
+  const win = layout.floating.find((w) => w.stack.includes(groupId));
+  if (win !== undefined) return win.stack.length >= 2;
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const found = findGroupInRegion(layout.docked[edge], groupId);
+    if (found !== null) return found.column.leaves.length >= 2;
+  }
+  return false;
 }
 
 /** Remove a group from wherever it currently lives, mutating `draft` in place.
@@ -1363,7 +1390,7 @@ export function floatRegion(
   stack.forEach((g) => detachInPlace(draft, g));
   // The region is gone; its explicit collapse flag (D21) must not survive to
   // ambush the NEXT region docked on this edge with a surprise rail.
-  draft.regionCollapsed = { ...regionCollapsedOf(draft), [edge]: false };
+  draft.regionCollapsed = withRegionCollapsed(draft, edge, false);
   const win = makeFloatingWindow(x, y, width, stack, undefined, stackWeights);
   draft.floating.push(win);
   return { layout: draft, windowId: win.id };
@@ -1545,18 +1572,17 @@ export function reorderTab(
 
 /** Toggle a group's minimized (collapsed) state. Per-cell (D16): any group --
  * lone or stacked -- toggles individually; mixed stacks are legal. The expand
- * direction also clears the group's region-collapse flag (D21), like
- * expandGroup: any user expand reveals the panel. */
+ * direction shares expandGroup's path (expandGroupInPlace), which also clears
+ * the group's region-collapse flag (D21): any user expand reveals the panel. */
 export function toggleCollapsed(
   layout: DockLayout,
   groupId: GroupId,
 ): DockLayout {
-  const draft = clone(layout);
-  const group = draft.groups[groupId];
+  const group = layout.groups[groupId];
   if (group === undefined) return layout;
-  group.collapsed = !group.collapsed;
-  if (group.collapsed !== true)
-    clearRegionCollapsedForGroupInPlace(draft, groupId);
+  const draft = clone(layout);
+  if (group.collapsed === true) expandGroupInPlace(draft, groupId);
+  else draft.groups[groupId].collapsed = true;
   return draft;
 }
 
@@ -1567,6 +1593,16 @@ function regionCollapsedOf(layout: DockLayout): Record<DockEdge, boolean> {
     left: isRegionCollapsedOn(layout, "left"),
     right: isRegionCollapsedOn(layout, "right"),
   };
+}
+
+/** The layout's region-collapse record with `edge` set to `value` -- the one
+ * way any mutation writes `regionCollapsed`. */
+function withRegionCollapsed(
+  layout: DockLayout,
+  edge: DockEdge,
+  value: boolean,
+): Record<DockEdge, boolean> {
+  return { ...regionCollapsedOf(layout), [edge]: value };
 }
 
 /** Set an edge's EXPLICIT region-collapse flag (D21). Collapsing an edge with
@@ -1580,38 +1616,47 @@ export function setRegionCollapsed(
   if (collapsed && layout.docked[edge] === null) return layout;
   if (isRegionCollapsedOn(layout, edge) === collapsed) return layout;
   const draft = clone(layout);
-  draft.regionCollapsed = { ...regionCollapsedOf(layout), [edge]: collapsed };
+  draft.regionCollapsed = withRegionCollapsed(layout, edge, collapsed);
   return draft;
 }
 
 /** Clear the region-collapse flag for the edge holding `groupId` (if docked),
  * in place. Every op that EXPANDS a panel routes through this: expanding a
  * panel from the rail must reveal it, which means un-collapsing its region
- * (D21) -- otherwise the "expanded" panel would stay hidden behind the rail. */
+ * (D21) -- otherwise the "expanded" panel would stay hidden behind the rail.
+ * Returns whether the flag was actually cleared. */
 function clearRegionCollapsedForGroupInPlace(
   draft: DockLayout,
   groupId: GroupId,
-): void {
+): boolean {
   const loc = findGroupLocation(draft, groupId);
-  if (loc?.kind !== "docked" || !isRegionCollapsedOn(draft, loc.edge)) return;
-  draft.regionCollapsed = { ...regionCollapsedOf(draft), [loc.edge]: false };
+  if (loc?.kind !== "docked" || !isRegionCollapsedOn(draft, loc.edge))
+    return false;
+  draft.regionCollapsed = withRegionCollapsed(draft, loc.edge, false);
+  return true;
+}
+
+/** Expand `groupId` in place: clear its own collapsed flag and its region's
+ * collapse flag (D21). Shared by expandGroup and toggleCollapsed's expand
+ * direction. Returns whether anything changed. */
+function expandGroupInPlace(draft: DockLayout, groupId: GroupId): boolean {
+  let changed = false;
+  const group = draft.groups[groupId];
+  if (group?.collapsed === true) {
+    group.collapsed = false;
+    changed = true;
+  }
+  if (clearRegionCollapsedForGroupInPlace(draft, groupId)) changed = true;
+  return changed;
 }
 
 /** Expand a collapsed group. ALSO clears its region's collapse flag (D21):
  * expanding from the rail reveals the panel. No-op when the group is already
  * expanded AND its region isn't collapsed (or the group is unknown). */
 export function expandGroup(layout: DockLayout, groupId: GroupId): DockLayout {
-  const group = layout.groups[groupId];
-  if (group === undefined) return layout;
-  const loc = findGroupLocation(layout, groupId);
-  const regionFlag =
-    loc?.kind === "docked" && isRegionCollapsedOn(layout, loc.edge);
-  if (group.collapsed !== true && !regionFlag) return layout;
+  if (layout.groups[groupId] === undefined) return layout;
   const draft = clone(layout);
-  if (draft.groups[groupId].collapsed === true)
-    draft.groups[groupId].collapsed = false;
-  clearRegionCollapsedForGroupInPlace(draft, groupId);
-  return draft;
+  return expandGroupInPlace(draft, groupId) ? draft : layout;
 }
 
 /** Minimize a whole stack (a floating window's stack or a docked column's

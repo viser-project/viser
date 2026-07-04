@@ -5,7 +5,7 @@ import { Box, ScrollArea } from "@mantine/core";
 import { IconMinus, IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
-import { stackGroupIdsOf } from "./layoutOps";
+import { isStackedGroup } from "./layoutOps";
 import {
   dockBodyScroll,
   focusRing,
@@ -211,7 +211,7 @@ export function TabGroupFrame({
   // below another panel in a 2+ stack, docked OR floating) gets a thin top rule
   // so it reads as separated from the panel above. Not needed when LONE (nothing
   // above it).
-  const stacked = stackGroupIdsOf(dock.layout, group.id).length >= 2;
+  const stacked = isStackedGroup(dock.layout, group.id);
 
   // Tablist keyboard pattern: ArrowLeft/Right activate the neighbor tab and
   // move focus with it; Enter/Space activate the focused tab.
