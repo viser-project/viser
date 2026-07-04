@@ -94,5 +94,10 @@
     "typescript": "^5.0.4",
     "vite-plugin-eslint": "^1.8.1",
     "vitest": "^4.1.8"
+  },
+  "overrides": {
+    "@emnapi/core": "1.11.2",
+    "@emnapi/runtime": "1.11.2",
+    "@napi-rs/wasm-runtime": "1.1.4"
   }
 }
