@@ -116,6 +116,30 @@ enclosing unit gets exactly the surface its children don't claim. New
 surfaces inherit this arbitration instead of re-deriving it; a press must
 never arm two levels at once.
 
+**P13 — Minimize keeps the chrome.** A minimized panel is its expanded
+chrome with the body removed: the grip surface stays, the tab labels stay
+in place (restyled to dimmed wayfinding), the width stays, and the
+minimize/expand toggle stays in the SAME position — `−` at the top-right of
+the expanded header becomes `+` at the right end of the minimized bar, so
+the toggle is spatially stable and a mis-click is undone without moving the
+mouse. Minimized bars are not a separate chrome language; they are headers.
+One deliberate exception: the vertical rail (a lone minimized docked
+column) exists to reclaim canvas WIDTH, which "keep the header in place"
+cannot do — it stays the rotated form, `+` cap at the top (the analog of
+the header's top edge).
+
+**P14 — One structure per picture.** Two layouts that render identically
+must be the same model value: the layout has a canonical form, enforced by
+normalization at every structural commit (drops, docks, removals — not
+pure weight changes, so a resize can never restructure mid-gesture).
+Concretely: (a) full-width vertical stacking is expressed as BANDS — a
+multi-leaf column may exist only when its band has sibling columns, i.e.
+only where nesting is the only way to express the shape; (b) adjacent
+bands with the same multi-column partition (equal widths within tolerance)
+zip-merge into one band of stacked columns — one seam, one set of handles.
+Redundant representations are where confusion lives: identical pictures
+with different gestures are indistinguishable bugs.
+
 ### Non-goals (decided 2026-07-03)
 
 - **Keyboard layout rearrangement.** The existing click-level keyboard
@@ -162,10 +186,11 @@ Anatomy is listed top-to-bottom / left-to-right.
 - The (−) button is drag-through: dragging it moves the panel (P5 — no inert
   pixels); motionless click minimizes.
 
-### 3.2 Vertical rail (lone minimized column)
+### 3.2 Vertical rail (the P13 exception: reclaims width, not height)
 - Per cell: gray cap — a `+` button when the cell is alone, a small grip pill
   when stacked (the parent rail owns expand-all); then one **spine row per
-  tab** (upright icon above rotated title), dimmed.
+  tab** (upright icon above rotated title), dimmed. (Post-D12, stacked rail
+  cells occur only for an all-minimized REGION; plain stacks are bands.)
 - Hairline divider between cells.
 - Clicking a spine row expands the column *to that tab*. Clicking the `+`
   expands in place. Dragging any row tears out just that pane (still
@@ -175,36 +200,34 @@ Anatomy is listed top-to-bottom / left-to-right.
 ### 3.3 Band bar (minimized band among expanded bands)
 - One segment per group, tiling the full width edge-to-edge; hairline
   dividers between segments.
-- Segment anatomy = rail cell rotated 90°: gray `+` cap on the leading
-  edge, then one dimmed icon+title **label per tab** (D9) — the horizontal
-  analog of the rail's spine rows. Labels are separated by spacing, not
-  outlines (P10). When width runs out, the segment degrades to
-  `ActiveTitle +N`.
-- Cap click expands that group (its `+` is a DISTINCT action, P9-legal:
-  siblings stay minimized as narrow rail columns beside it — each group is
-  its own column, so uniform-collapse does not couple them). Label click
-  expands to THAT tab; label drag tears that pane out, still minimized
-  (per-tab tear-out exists on every minimized surface, D5). Cap drag moves
-  the whole group.
+- Segment anatomy (P13) = the group's HEADER kept in place: dimmed
+  icon+title **label per tab** (D9) laid out from the left — literal
+  cousins of the expanded tab strip — and the `+` toggle at the segment's
+  RIGHT end, exactly where the expanded grip bar's `−` sat. No leading
+  caps. Labels are separated by spacing, not outlines (P10); when width
+  runs out, labels degrade to `ActiveTitle +N`.
+- `+` click expands that group (a DISTINCT action, P9-legal: siblings stay
+  minimized beside it). Label click expands to THAT tab; label drag tears
+  that pane out, still minimized (per-tab tear-out exists on every
+  minimized surface, D5). Segment background drag moves the whole group.
 - Bar background (area not covered by segments): motionless click expands
   the whole band; drag moves the WHOLE BAND as one unit (D2) — re-dock as a
   band elsewhere, or float as one stack.
 
 ### 3.4 Chip bar (fully-minimized floating window)
-- Multi-group: leading grip segment (whole-window handle) + one segment per
-  group with dividers. Single-group: just the one segment (the group IS the
-  window).
+- The bar IS the window's header row kept in place (P13): full `win.width`
+  wide (no fit-content jump — the width is part of the window's identity,
+  P8), group label runs laid out from the left with hairline dividers
+  between groups, and ONE `+` toggle at the bar's right end — where the
+  expanded header's `−` sat.
 - Uniform-collapse (§7) makes per-group expand IMPOSSIBLE in a floating
-  stack: any expand expands the whole window. Therefore (P9) the expand
-  signifier lives on the window-level handle ONLY — multi-group chips carry
-  NO `+` glyph. A single-group bar's one chip keeps its `+`: there the chip
-  IS the window and the action is singular.
-- Segments show one label per tab (D9, same anatomy as §3.3): label click
-  expands (the whole window — uniform-collapse — landing on that tab);
-  label drag tears that pane out, still minimized; cap drag moves the
-  group.
-- The bar is fit-content wide; the window's expanded width is preserved in
-  the model for its return (P8).
+  stack: any expand expands the whole window. Therefore (P9) the single
+  right-end `+` is the expand signifier for the whole bar; group segments
+  carry no toggles at all.
+- Labels behave as in §3.3: label click expands (the whole window —
+  uniform-collapse — landing on that tab); label drag tears that pane out,
+  still minimized. Bar background (including the slack right of the labels)
+  drags the whole window; a motionless background click expands all.
 
 ### 3.5 Expanded floating window
 - Multi-group: stack handle bar on top (drag = move window; (−) toggles all).
@@ -243,9 +266,11 @@ a click. One active gesture at a time; extra pointers are ignored.
 | Stack handle bar (floating multi) | whole window | toggle all collapse |
 | Rail cell cap (`+` / pill) | whole group (still minimized) | expand (lone cell only) |
 | Rail spine row | that pane (still minimized) | expand to that tab |
-| Segment cap (band/chip bar) | that group (still minimized) | expand that group (band bar) / — (chip bar: window handle owns expand, P9) |
+| Band-bar segment `+` (right end) | that group (drag-through) | expand that group |
 | Segment tab label (band/chip bar) | that pane (still minimized) | expand to that tab (chip bar: expands whole window, lands on that tab) |
-| Chip-bar grip segment | whole window | expand all |
+| Band-bar segment background | that group (still minimized) | expand that group |
+| Chip-bar `+` (bar's right end) | whole window (drag-through) | expand all |
+| Chip-bar bar background | whole window | expand all |
 | Band-bar background | whole band (as one stack) | expand whole band |
 | Region resize divider | region width | — |
 | Split divider | neighboring cells/columns | — |
@@ -375,6 +400,11 @@ and changing one is a spec change.
   any expands all). The chip bar's structural analog is the RAIL (also one
   stack, with the same expand-all behavior), not the band bar it visually
   resembles. Same rule, different structures; do not "fix" the asymmetry.
+- Canonical form (P14/D12) makes this bite rarely in docked regions: plain
+  full-width stacks are BANDS, which minimize independently (per-band band
+  bars). Docked uniform-collapse coupling survives only inside zip-merged
+  grids (D13) and nested columns-with-siblings — where minimizing the BAND
+  is the natural unit anyway.
 - A lone minimized column renders as the rail; a minimized band with
   expanded siblings renders as the band bar; a fully-minimized floating
   window renders as the chip bar. There is no fourth form.
@@ -457,6 +487,12 @@ all had existing pins the auditors missed; the one REAL gap — edge case 10
 `test_viewport_resize_mid_drag_keeps_drop_targets_fresh`, which exercises
 the shared staleness flag via its resize trigger.
 
+**Spec-ahead-of-code (2026-07-03, after D10–D13):** the P13 bar anatomy
+(right-end toggles, no leading caps, width-stable floating bars) and the
+P14 canonicalization (D12 band normalization, D13 zip-merge) are SPECIFIED
+but not yet implemented — they are the active work queue, and the tables
+above describe the target state. Everything else remains verified.
+
 ---
 
 ## 11. Resolved decisions (2026-07-03)
@@ -487,4 +523,33 @@ already reflect them; this list preserves the rationale.
   group. Its specialness is identity + icon only.
 - **D9 (segment anatomy):** one label per tab inside band/chip-bar
   segments (rail analog; click = expand to tab, drag = tear pane out),
-  degrading to `ActiveTitle +N` when width runs out.
+  degrading to `ActiveTitle +N` when width runs out. *Partially superseded
+  by D10: the labels stay; the leading `+` caps are replaced by
+  right-end toggles.*
+- **D10 (minimize keeps the chrome — P13 adopted):** minimized bars are
+  the expanded header kept in place: labels left, one `+` toggle at the
+  RIGHT where the `−` was (spatially stable toggle), width unchanged
+  (floating bars keep `win.width` — no fit-content jump). The rail is the
+  documented exception (reclaims width; `+` cap on top). Fixes the
+  multi-stack bar's missing expand signifier.
+- **D11 (keep the 4-level model):** single-group columns were considered
+  and REJECTED: they would make any vertical stacking narrower than the
+  region unrepresentable — including "dock below just A beside B", a
+  working, common operation — and would break floating stacks' side-
+  docking. Confusion is addressed by canonical form (D12/D13) instead of
+  by amputation.
+- **D12 (canonical form: bands for full-width stacks):** a multi-leaf
+  column may exist only when its band has sibling columns. Lone multi-leaf
+  columns normalize into consecutive bands (heights preserved) at every
+  structural commit. Plain docked stacks thereby gain independent
+  per-panel minimize (band bars) — docked uniform-collapse coupling no
+  longer applies to them.
+- **D13 (zip-merge aligned neighbors):** adjacent bands with the same
+  multi-column partition (equal widths within ~2px) merge by zipping
+  corresponding columns — one seam, one set of handles, no double chrome
+  for a 2×2 grid. Runs on structural commits ONLY (never during pure
+  weight changes, so a resize cannot restructure mid-gesture). Accepted
+  consequence: zipped columns are stacks — shared seam, band-level
+  minimize (per-cell minimize inside a zipped grid is not offered; the
+  future relaxation would be mixed-collapse docked columns rendering a
+  36px strip cell).
