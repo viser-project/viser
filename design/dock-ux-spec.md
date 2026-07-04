@@ -101,6 +101,32 @@ this principle applied. Corollary for theming: every divider and surface
 color is a theme variable — light/dark parity is a requirement, and a
 divider that disappears in one scheme is a bug.
 
+**P11 — Minimum hit targets.** Every distinct drop zone is at least 8px in
+its narrow dimension; every clickable control is at least 20px in each
+dimension or backed by a larger unmarked hit surface. A zone that cannot
+afford its minimum in context is REMOVED, not shrunk — a sub-minimum zone
+is worse than none, because it converts intent into misfires. (D4 applied
+this: the band bar's 6px zones were removed outright, the chip bar's
+widened to 10px.)
+
+**P12 — Granularity nests.** Interactive surfaces compose by containment:
+the SMALLEST interactive unit under the pointer owns the press (label →
+pane, cap → group, bar background → band, grip handle → window), and each
+enclosing unit gets exactly the surface its children don't claim. New
+surfaces inherit this arbitration instead of re-deriving it; a press must
+never arm two levels at once.
+
+### Non-goals (decided 2026-07-03)
+
+- **Keyboard layout rearrangement.** The existing click-level keyboard
+  parity stays (focusable targets, Enter/Space, arrow traversal, Escape,
+  focus restoration after expand — it is built, tested, and cheap). But no
+  keyboard path for dock/split/merge/reorder will be added: layout
+  rearrangement is pointer-only by decision.
+- **Undo after commit.** Escape aborts an in-flight gesture; once a drop
+  commits there is no undo. Mitigation is prevention: the D1 zone rebalance
+  makes destructive-by-accident drops (unwanted merges) hard to trigger.
+
 ---
 
 ## 2. Vocabulary
@@ -342,6 +368,13 @@ and changing one is a spec change.
   stack) is **uniform**: mixed states normalize to all-expanded at the next
   commit. Rationale: a half-minimized stack has no coherent geometry, and
   "expand" is the safe direction (nothing hides).
+- The visible asymmetry between the two horizontal bars follows from this
+  and is NOT a P7 violation: a band bar's segments are groups in separate
+  COLUMNS (independent stacks — expanding one leaves siblings minimized),
+  while a chip bar's segments share ONE window stack (uniform — expanding
+  any expands all). The chip bar's structural analog is the RAIL (also one
+  stack, with the same expand-all behavior), not the band bar it visually
+  resembles. Same rule, different structures; do not "fix" the asymmetry.
 - A lone minimized column renders as the rail; a minimized band with
   expanded siblings renders as the band bar; a fully-minimized floating
   window renders as the chip bar. There is no fourth form.
