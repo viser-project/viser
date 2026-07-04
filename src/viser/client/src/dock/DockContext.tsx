@@ -92,6 +92,10 @@ export interface DockContextValue {
   expandToTab: (groupId: GroupId, paneId: PaneId) => void;
   /** Toggle a group's minimized state (tap on its handle). */
   toggleCollapsed: (groupId: GroupId) => void;
+  /** Collapse/expand a docked EDGE to/from its rail (D21) -- the chevron and
+   * rail-header gesture. A USER commit (not runProgrammatic), so ownership
+   * arbitration learns the user set/cleared the flag (P6). */
+  collapseRegion: (edge: DockEdge, on: boolean) => void;
   /** Group currently being dragged, or null. Used to dim its origin. */
   draggingGroupId: GroupId | null;
   /** Tab currently being reordered within its strip, or null. The frame

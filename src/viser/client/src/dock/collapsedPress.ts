@@ -1,6 +1,6 @@
-// Shared pointer-down arbitration for a COLLAPSED group's drop target -- used by
-// both minimized renderers (the vertical column rail's cells and the horizontal
-// band's chips) so the gesture lives in one place instead of being copy-pasted.
+// Shared pointer-down arbitration for a COLLAPSED group's surface -- used by
+// both minimized renderers (the region rail's cells and the in-place
+// MinimizedBar) so the gesture lives in one place instead of copy-pasted.
 
 import React from "react";
 import type { DockContextValue } from "./DockContext";

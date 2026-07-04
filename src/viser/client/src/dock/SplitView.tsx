@@ -293,7 +293,12 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
                 flexShrink: collapsed ? 0 : 1,
                 flexBasis: collapsed ? MINIMIZED_BAR_PX : 0,
                 minWidth: 0,
-                minHeight: 0,
+                // Expanded cells never render below their own chrome
+                // (spec 6): repeated same-target splits halve weights
+                // geometrically, and without a floor the smallest cell
+                // clips its grip bar + tab strip. Mirrors the floating
+                // stack's MIN_STACK_CELL_PX floor (P7).
+                minHeight: collapsed ? 0 : MIN_CELL_HEIGHT_PX,
                 display: "flex",
               }}
             >

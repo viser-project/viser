@@ -5,11 +5,7 @@ import { Box, ScrollArea } from "@mantine/core";
 import { IconMinus, IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
-import {
-  isStackedGroup,
-  regionChevronEdge,
-  setRegionCollapsed,
-} from "./layoutOps";
+import { isStackedGroup, regionChevronEdge } from "./layoutOps";
 import {
   dockBodyScroll,
   focusRing,
@@ -17,7 +13,7 @@ import {
   headerRule,
   headerRuleTop,
 } from "./DockStyles.css";
-import { tabListKeyDown } from "./gestures";
+import { focusDockControl, tabListKeyDown } from "./gestures";
 import {
   ChromeToggle,
   GripPill,
@@ -153,6 +149,9 @@ function GripBar({
         alignItems: "center",
         justifyContent: "center",
         flexShrink: 0,
+        // Center the pill in the run LEFT of the right-end controls (P13):
+        // without this it drifts under the chevron in narrow columns.
+        paddingRight: `${(chevron ? 2 : 1) * HANDLE_BTN_EM}em`,
         height: "0.9em",
         // Light gray fill marks the handle (one step lighter than the border
         // gray -- see gripBarBg) and separates it from the tabs.
@@ -230,8 +229,23 @@ export function TabGroupFrame({
   // the chevron inline, just inboard of the -/+ toggle.
   const chevronEdge = regionChevronEdge(dock.layout, group.id);
   const collapseRegion = () => {
-    if (chevronEdge !== null)
-      dock.api.apply((l) => setRegionCollapsed(l, chevronEdge, true));
+    if (chevronEdge === null) return;
+    dock.collapseRegion(chevronEdge, true);
+    // The chevron unmounts with its chrome row; hand focus to the rail
+    // header's toggle (the same-spot undo control) instead of <body>.
+    focusDockControl(
+      `[data-dock-region-rail="${chevronEdge}"] [data-dock-minimize-all]`,
+    );
+  };
+  // Keyboard/Click minimize unmounts this frame for the in-place bar; focus
+  // hands off to the bar's toggle (the same-spot + that undoes it).
+  const toggleAndFocusBar = () => {
+    const wasExpanded = !collapsed;
+    dock.toggleCollapsed(group.id);
+    if (wasExpanded)
+      focusDockControl(
+        `[data-dock-group="${CSS.escape(group.id)}"] [data-dock-minimize]`,
+      );
   };
 
   // Tablist keyboard pattern: ArrowLeft/Right activate the neighbor tab and
@@ -317,7 +331,7 @@ export function TabGroupFrame({
       {stripDragsGroup && !unmergeable && (
         <GripBar
           collapsed={collapsed}
-          onToggle={() => dock.toggleCollapsed(group.id)}
+          onToggle={toggleAndFocusBar}
           startDrag={(event, opts) =>
             dock.startGroupDrag(event, group.id, opts)
           }
@@ -326,12 +340,19 @@ export function TabGroupFrame({
               <RegionCollapseChevron
                 edge={chevronEdge}
                 onActivate={collapseRegion}
+                // The 0.9em bar is sub-P11 and, unlike the - toggle, the
+                // chevron has NO whole-bar backing surface (bar click =
+                // minimize, a DIFFERENT action). Extend the hit box over the
+                // strip's top slack to ~24px; paddingBottom keeps the icon
+                // visually centered in the bar itself.
                 placement={{
                   position: "absolute",
                   right: `${HANDLE_BTN_EM}em`,
                   top: 0,
                   width: `${HANDLE_BTN_EM}em`,
-                  height: "100%",
+                  height: `${HANDLE_BTN_EM}em`,
+                  paddingBottom: "0.8em",
+                  zIndex: 2,
                 }}
               />
             )
@@ -453,7 +474,7 @@ export function TabGroupFrame({
           <ChromeToggle
             expanded={!collapsed}
             label={collapsed ? "Expand panel" : "Minimize panel"}
-            onActivate={() => dock.toggleCollapsed(group.id)}
+            onActivate={toggleAndFocusBar}
           />
         </Box>
       ) : (

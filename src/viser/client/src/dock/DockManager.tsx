@@ -690,6 +690,12 @@ export function DockManager({
         `[data-floating-window="${win.id}"]`,
       );
       if (winEl === null) return;
+      // The window's full paper rect: the owning-window mask in hitTest
+      // covers chrome slivers (header, dividers) that no cell rect claims.
+      (targets.windows ??= []).push({
+        windowId: win.id,
+        rect: winEl.getBoundingClientRect(),
+      });
       winEl.querySelectorAll("[data-dock-group]").forEach((groupEl) => {
         const gid = groupEl.getAttribute("data-dock-group");
         if (gid === null) return;
@@ -707,11 +713,17 @@ export function DockManager({
           windowId: win.id,
           index,
         });
-        if (g !== null) targets.groups.push(g);
+        if (g !== null) {
+          g.winId = win.id;
+          targets.groups.push(g);
+        }
       });
       // This window's nested areas, right after its cells: the area wins over
       // its host but stays below any window stacked in front.
-      for (const t of areasByHost.get(win.id) ?? []) targets.groups.push(t);
+      for (const t of areasByHost.get(win.id) ?? []) {
+        t.winId = win.id;
+        targets.groups.push(t);
+      }
     });
     return targets;
   };
@@ -1121,8 +1133,7 @@ export function DockManager({
   // float at the item's preserved EXPANDED width instead so it isn't
   // strip-narrow after expanding. That preserved width is:
   // - the COLUMN's own weight in a multi-column region (weights are pixels
-  //   there -- regionWidth is the EXPANDED columns' sum, which EXCLUDES the
-  //   minimized column being dragged, so it would be the siblings' width);
+  //   there, and every column -- minimized or not -- carries its width, D20);
   // - regionWidth for a lone column (its px always lives there).
   // Expanded items keep their measured width. Shared by startGroupDrag (single
   // tear-out) and startTabTearOut so neither re-introduces the bug. `groupId`
@@ -1718,6 +1729,12 @@ export function DockManager({
       ),
     [applyOp],
   );
+  const collapseRegion = React.useCallback(
+    (edge: DockEdge, on: boolean) => {
+      applyOp(ops.setRegionCollapsed(layoutRef.current, edge, on));
+    },
+    [applyOp],
+  );
   const toggleCollapsed = React.useCallback(
     (groupId: GroupId) => {
       // Per-CELL minimize everywhere (D16): any group toggles itself, whether
@@ -1742,6 +1759,7 @@ export function DockManager({
       activateTab,
       expandToTab,
       toggleCollapsed,
+      collapseRegion,
       draggingGroupId,
       draggingTabId,
     }),

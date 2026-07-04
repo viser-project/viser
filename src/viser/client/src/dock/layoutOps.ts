@@ -916,10 +916,18 @@ export function dropOnDockedLeaf(
   // takes half, which is scale-invariant and matches the hint's 50/50 promise.
   if (region === "top" || region === "bottom") {
     // Insert the dragged leaf(s) into the target's column, above/below it.
+    // The dragged STACK as a whole takes half the target's weight (the
+    // hint's 50/50 promise); each leaf's share of that half follows the
+    // floated stack's preserved height ratios (P8 round-trip -- same rule as
+    // the left/right branch's buildColumn).
     const dw = live.leaf.weight / 2;
     const tw = live.leaf.weight / 2;
     targetColumn.leaves[li] = { ...live.leaf, weight: tw };
-    const banded = mapNonEmpty(ne, (g) => makeLeaf(g, dw));
+    const shareOf = (g: GroupId) => stackHeights?.[g] ?? 1;
+    const totalShares = ne.reduce((s2, g) => s2 + shareOf(g), 0) || 1;
+    const banded = mapNonEmpty(ne, (g) =>
+      makeLeaf(g, (dw * shareOf(g)) / totalShares),
+    );
     const at = region === "top" ? li : li + 1;
     targetColumn.leaves = withInserted(targetColumn.leaves, at, ...banded);
     return draft;
@@ -2127,7 +2135,6 @@ function reconcileMembershipInPlace(
 function ensurePanelGroup(
   draft: DockLayout,
   paneIds: PaneId[],
-  collapsed: boolean | null,
 ): GroupId | null {
   const nePaneIds = asNonEmpty(paneIds);
   if (nePaneIds === null) return null;
@@ -2138,16 +2145,6 @@ function ensurePanelGroup(
     groupId = group.id;
   } else {
     applyMembership(draft, groupId, paneIds);
-  }
-  // Apply the collapsed field (always applied -- no prevCollapsed): true sets
-  // the group's collapsed flag; false expands it; null/undefined leaves it
-  // untouched. Expanding routes through expandGroupInPlace so a docked
-  // panel's region-collapse flag clears too (spec 7 / P6: a server expand
-  // must be visible, never hidden behind the rail).
-  if (collapsed === true) {
-    draft.groups[groupId].collapsed = true;
-  } else if (collapsed === false) {
-    expandGroupInPlace(draft, groupId);
   }
   return groupId;
 }
@@ -2252,7 +2249,7 @@ export function applyPanelPlacement(
   // guard at the end: a group we created must not outlive the op unattached).
   const groupExistedBefore = panelGroupOf(layout, paneIds) !== null;
   let draft = clone(layout);
-  const groupId = ensurePanelGroup(draft, paneIds, placement.collapsed);
+  const groupId = ensurePanelGroup(draft, paneIds);
   if (groupId === null) return layout;
 
   // Float a group at the given REQUESTED coords: record them on the window (so
@@ -2379,6 +2376,20 @@ export function applyPanelPlacement(
         _exhaustive,
       );
     }
+  }
+
+  // Collapsed axis -- applied AFTER position, so an expand sees the group's
+  // FINAL location: expanding routes through expandGroupInPlace, which also
+  // clears the (destination) region's collapse flag (spec 7 / P6: a server
+  // expand is always visible, never hidden behind the rail). Applied before
+  // position, it would clear the DEPARTING region's rail -- un-railing a
+  // rail the user explicitly set, for a panel that then leaves it -- and a
+  // dock-into-railed-region bundle would land invisible.
+  if (placement.collapsed === true) {
+    const g = draft.groups[groupId];
+    if (g !== undefined) g.collapsed = true;
+  } else if (placement.collapsed === false) {
+    expandGroupInPlace(draft, groupId);
   }
 
   // Size: width is region width when docked / window width when floating; height

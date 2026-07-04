@@ -45,10 +45,11 @@ const INSERT_LINE_INSET_PX = 4;
 // edge stays a MERGE target (capped to a third of the cell so a short strip
 // keeps a merge zone). P11 floor: no zone under 8px.
 const MINIMIZED_EDGE_BAND_PX = 8;
-// Chip-bar (floating) segments use a wider snap band (spec D4): 6px was
-// unhittable, and no alternative affordance exists for snapping into a
-// minimized window's stack. Band-bar segments have NO top/bottom zones at
-// all -- the band seams and region-edge bands next door express the intent.
+// FLOATING minimized bars use a wider snap band (spec D4, amended): capped
+// at a third of the bar height so all three zones stay >= the 8px P11 floor
+// (a flat 10px would leave a sub-8px middle on a 26px bar). DOCKED bars have
+// NO top/bottom zones at all -- the column seams and region-edge bands next
+// door express the intent.
 const CHIP_SNAP_BAND_PX = 10;
 // Rendered thickness (px) of an insertion-LINE hint -- the thin bar drawn for
 // every "insert here" drop (per-panel split, region-edge span, cross-band seam).
@@ -111,6 +112,10 @@ export interface GroupTarget {
    * keep a full-width merge highlight while leaving an inset frame around it that
    * falls through to the host panel's edge zones. Defaults to `rect`. */
   hitRect?: DOMRect;
+  /** Hosting floating window id (floating cells and window-hosted areas);
+   * undefined for docked targets and docked-hosted areas. Pairs with
+   * DropTargets.windows for the owning-window mask. */
+  winId?: string;
   stripRect: DOMRect | null;
   tabs: { paneId: PaneId; rect: DOMRect }[];
   ctx: GroupContext;
@@ -131,6 +136,13 @@ export interface GroupTarget {
 
 export interface DropTargets {
   groups: GroupTarget[];
+  /** Floating windows' full PAPER rects, back-to-front (same z order as the
+   * floating group targets). A window's chrome (header, stack dividers,
+   * paddings) has no group rect, and those slivers must not let the pointer
+   * fall through to whatever is painted UNDERNEATH the window (3.5): the
+   * frontmost window containing the pointer owns it. Optional: without it
+   * (unit-test fixtures), resolution falls back to cell rects only. */
+  windows?: { windowId: string; rect: DOMRect }[];
 }
 
 /** Visual hint, in container-relative px.
@@ -372,9 +384,19 @@ export function hitTest(
     return false;
   };
   // A floating window visually covering a region-band spot claims the
-  // pointer first (3.5 back-to-front): a drop there should target the float's
-  // cell, not dock a column THROUGH it into the region underneath.
+  // pointer first (3.5 back-to-front): a drop there should target the float,
+  // not dock a column THROUGH it into the region underneath. Window PAPER
+  // rects cover the whole window incl. chrome (header, dividers) -- cell
+  // rects alone left slivers where the suppression blinked off mid-drag.
+  const owningWindow = (() => {
+    let win: { windowId: string; rect: DOMRect } | null = null;
+    for (const w of targets.windows ?? []) {
+      if (inside(w.rect, clientX, clientY)) win = w; // last match = topmost
+    }
+    return win;
+  })();
   const overFloatingTarget = (): boolean => {
+    if (owningWindow !== null) return true;
     for (const t of targets.groups) {
       if (t.ctx.kind !== "floating") continue;
       if (inside(t.hitRect ?? t.rect, clientX, clientY)) return true;
@@ -505,8 +527,8 @@ export function hitTest(
     // zones (D4: bars have none), so the region bands aren't redundant there.
     // So when the region is collapsed, keep the FULL-HEIGHT left/right bands
     // (and the top/bottom bands even for a single leaf):
-    //  - over the EMPTY area below the rail/bars: the whole column width docks
-    //    a sibling (no dead center stripe),
+    //  - over the EMPTY area below the rail/bars: the column's left/right
+    //    HALVES dock a sibling on that side (no dead center stripe),
     //  - over the cell itself: only the outer/inner thirds dock beside (full
     //    height), leaving the middle for the cell's own tab-insert / merge
     //    zones.
@@ -517,7 +539,12 @@ export function hitTest(
       ? sideBand
       : overCollapsedCell(edge)
         ? sideBand // over the strip: thirds (center falls through to the cell)
-        : w; // empty area: full column width
+        : w / 2 + 0.5; // empty area: halves (see below).
+    // Halves -- left half docks left, right half docks right. A full-width
+    // band here made side:"right" unreachable: the left check runs first and
+    // matched every x, so a drop at the far RIGHT edge of the empty area
+    // drew and docked on the LEFT. The half-pixel nudge keeps the exact
+    // midline from falling dead between the two strict `<` checks.
 
     // Top / bottom: full-width line above/below everything. A lone COLLAPSED
     // leaf keeps these (keepSideBand): its bar has no per-panel top/bottom
@@ -590,10 +617,15 @@ export function hitTest(
   // 3. The group frame the pointer is over. targets.groups is ordered
   // back-to-front (docked behind, then floating ascending z), so we take the
   // LAST match -- the topmost target -- rather than the first (which would be
-  // the one painted underneath).
+  // the one painted underneath). When a floating window's PAPER contains the
+  // pointer, only THAT window's targets (cells + its hosted areas) are
+  // eligible: a pointer on its header or divider gap must not resolve to an
+  // occluded docked panel or a lower window's cell (3.5).
+  const eligible = (t: GroupTarget): boolean =>
+    owningWindow === null || t.winId === owningWindow.windowId;
   let g: GroupTarget | undefined;
   for (const t of targets.groups) {
-    if (hitsTarget(t, clientX, clientY)) g = t;
+    if (eligible(t) && hitsTarget(t, clientX, clientY)) g = t;
   }
 
   // The visual SEAM between two vertically-stacked docked panels [A above B] is
@@ -641,9 +673,11 @@ export function hitTest(
     // Divider dead-spot recovery: the pointer is over the ~SPLIT_DIVIDER_PX gap
     // between two stacked docked panels (the divider has no group target). Map
     // it to the seam split it sits in the middle of, so the hint stays stable
-    // and gap-free instead of blinking to NONE.
+    // and gap-free instead of blinking to NONE. Skipped when a floating
+    // window owns the pointer (its own seam recovery below handles gaps).
     let seam: { lower: GroupTarget; gapCenter: number } | null = null;
     for (const t of targets.groups) {
+      if (owningWindow !== null) break;
       if (t.ctx.kind !== "docked") continue;
       const sib = dockedSeamSibling(t, "top");
       if (sib === null) continue;
@@ -694,6 +728,13 @@ export function hitTest(
     } | null = null;
     for (const lower of targets.groups) {
       if (lower.ctx.kind !== "floating") continue;
+      // Scope to the owning window when known: a front window's header over
+      // a back window's seam must not snap into the BACK window.
+      if (
+        owningWindow !== null &&
+        lower.ctx.windowId !== owningWindow.windowId
+      )
+        continue;
       for (const upper of targets.groups) {
         if (
           upper === lower ||
@@ -862,10 +903,10 @@ export function hitTest(
     // an arbitrary index there; a drop on a chip merges instead).
     const canInsert =
       !draggingUnmergeable && !g.unmergeable && g.tabs.length > 0;
-    // Top/bottom edge bands: rail cells keep the thin 6px stack-above/below
-    // zones; CHIP segments differ by context (spec D4) -- a docked band-bar
-    // segment has NONE (the band seams next door already say "insert a band
-    // above/below"), a floating chip-bar segment gets a wider 10px snap band.
+    // Top/bottom edge bands: rail cells keep thin 8px stack-above/below
+    // zones; horizontal BARS differ by context (spec D4) -- a docked bar has
+    // NONE (the column seams next door already say "insert above/below"), a
+    // floating bar gets the wider min(10px, height/3) snap band.
     const edgeBand =
       g.chip === true
         ? gt.ctx.kind === "docked"

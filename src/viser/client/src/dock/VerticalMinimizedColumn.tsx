@@ -13,7 +13,7 @@ import { focusRing, gripBarBg, wayfindingText } from "./DockStyles.css";
 import { focusPaneTab, tabListKeyDown } from "./gestures";
 import { ChromeDivider, GripPill, StackHandleBar } from "./handles";
 import { startCollapsedGroupPress } from "./collapsedPress";
-import { collectLeaves, setRegionCollapsed } from "./layoutOps";
+import { collectLeaves } from "./layoutOps";
 import { DockEdge, DockRegion, NodeId, TabGroup } from "./types";
 
 /** The COLLAPSED region as ONE packed rail (spec 3.2 / D21): every leaf
@@ -41,7 +41,7 @@ export function RegionMinimizedRail({
   // (spec 4 / edge case 14; the tab may be an expanded strip's tab or a
   // bar's title -- both carry data-dock-tab).
   const expandRegion = () => {
-    dock.api.apply((l) => setRegionCollapsed(l, edge, false));
+    dock.collapseRegion(edge, false);
     const firstGroup = dock.groups[leaves[0]?.group ?? ""];
     if (firstGroup?.activeId != null) focusPaneTab(firstGroup.activeId);
   };
@@ -109,11 +109,10 @@ export function RegionMinimizedRail({
   );
 }
 
-/** One group as a rail cell: gray cap (a `+` when the cell is alone -- its
- * own expand signifier; a grip pill when stacked, where the parent handle
- * owns expand-region, P9), then one spine row per tab. Used by the region
- * rail (pass nodeId/edge for the drop-target wrapper) and reusable without
- * them. Gestures via startCollapsedGroupPress: row press tears out that pane
+/** One group as a rail cell: gray cap (always a quiet grip pill -- the
+ * rail's ONE + lives on the parent handle, D25), then one spine row per
+ * tab. Used by the region rail (pass nodeId/edge for the drop-target
+ * wrapper) and reusable without them. Gestures via startCollapsedGroupPress: row press tears out that pane
  * (still minimized) / row click expands the region to that tab; cap or
  * background press drags the whole group / click expands (lone cells).
  * Expansion goes through the ops' expandGroup/expandToTab, which ALSO clear

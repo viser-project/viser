@@ -123,18 +123,23 @@ surfaces inherit this arbitration instead of re-deriving it; a press must
 never arm two levels at once.
 
 **P13 — Minimize keeps the chrome.** A minimized panel is its expanded
-chrome with the body removed: the grip surface stays — INCLUDING its
-grip-bar gray, which is what bounds the bar against adjacent white panel
-bodies (P10 enclosure-by-surface; a body-colored bar between two panels
-reads as a stray label inside them) — the tab labels stay in place
-(restyled to dimmed wayfinding), the width stays, and every retained
-element keeps its POSITION through the transition: the grip pill stays
-CENTERED in the bar's free run (as it is on the expanded header — no
-center-to-left jump on minimize), and the minimize/expand toggle stays in
-the SAME position — `−` at the top-right of
-the expanded header becomes `+` at the right end of the minimized bar, so
-the toggle is spatially stable and a mis-click is undone without moving the
-mouse. Minimized bars are not a separate chrome language; they are headers.
+chrome with the body removed: the header's SURFACE stays — its grip-bar
+gray, at the same position and width, which is what bounds the bar against
+adjacent white panel bodies (P10 enclosure-by-surface; a body-colored bar
+between two panels reads as a stray label inside them). What the surface
+retains (re-synced to D14/D18/D19, which superseded the original tab-labels
++ centered-pill list): ONE wayfinding title — the active tab's, dimmed —
+or the pane's minimized face in its place, the `+N` badge naming the rest,
+and the minimize/expand toggle in the SAME position — `−` at the top-right
+of the expanded header becomes `+` at the right end of the minimized bar,
+so the toggle is spatially stable and a mis-click is undone without moving
+the mouse. NO grip pill (D18): the whole bar is the handle, and a pill
+inside a surface that is entirely handle would be a redundant signifier.
+Pills belong to EXPANDED headers, where the handle is a slice of a larger
+surface — and there the pill centers in the free run LEFT of the header's
+right-end controls (chevron + toggle), not in the bar's full width, so it
+never drifts under the controls in a narrow column.
+Minimized bars are not a separate chrome language; they are headers.
 One deliberate exception: the vertical rail (a lone minimized docked
 column) exists to reclaim canvas WIDTH, which "keep the header in place"
 cannot do — it stays the rotated form, `+` cap at the top (the analog of
@@ -285,7 +290,11 @@ forms: the expanded cell, the bar, the rail, and the floating window.
   main panel's settings icon. Unlike its neighbors it is NOT
   drag-through: its host row's motionless click already means
   minimize/expand, so a press on the chevron must stay its own gesture
-  (collapse the region). It renders only while the region is expanded —
+  (collapse the region). On the 0.9em grip bar its HIT BOX extends over
+  the strip's top slack to ~24px (P11): unlike the `−`, the chevron has
+  NO whole-bar backing surface — the bar's click is a DIFFERENT action —
+  so the box itself must clear the floor. It renders only while the
+  region is expanded —
   while collapsed, the expand affordance is the rail's own header (P9:
   one signifier per action).
 
@@ -315,9 +324,17 @@ forms: the expanded cell, the bar, the rail, and the floating window.
   z-order, not DOM order), and a nested area's targets rank immediately
   above their HOST window — above the host's own cells, below any window
   stacked in front — never above unrelated floating windows.
-- Region-edge bands yield while the pointer is over a floating window's
-  cell (the same back-to-front rule): a drop there targets the float,
-  never docks a column THROUGH it into the region underneath.
+- Ownership is by the window's whole PAPER rect, not its cell rects: the
+  frontmost floating window whose rect contains the pointer OWNS it, and
+  only that window's targets (its cells and its hosted areas) are
+  eligible. A pointer on its header, divider gaps, or padding must never
+  resolve to an occluded docked panel or a lower window's cell — cell
+  rects alone left chrome slivers where the masking blinked off mid-drag.
+  Seam dead-spot recovery is scoped the same way: the owning window's own
+  seams, never a back window's.
+- Region-edge bands yield while the pointer is over a floating window
+  (the same paper-rect rule): a drop there targets the float, never docks
+  a column THROUGH it into the region underneath.
 - Multi-client: layout is per-client state; server placement commands fan
   out to every client and each client's gate arbitrates against its own
   user's touches (P6). Clients never sync layouts with each other.
@@ -351,8 +368,9 @@ a click. One active gesture at a time; extra pointers are ignored.
 | Rail cell cap / background (quiet pill) | whole group (still minimized) | expand region + group (lone cell only; inert with 2+ cells) |
 | Rail spine row | that pane (still minimized) | expand region to that tab |
 | Region resize divider | region width | — |
-| Split divider (expanded cell on each side) | neighboring cells/columns | — |
-| Split divider (a side all-minimized) | — (INERT, D24: no resize cursor, no gesture) | — |
+| Column (width) divider inside a band | neighboring columns' widths — never inert (D24 as scoped: bars hold their column's width, D20) | — |
+| Height divider (docked stack / floating stack; expanded cell on each side) | neighboring cells' heights | — |
+| Height divider (a side all-minimized) | — (INERT, D24: no resize cursor, no gesture) | — |
 | Window edge/bottom grips | window size | — |
 
 Escape during any of the above restores the exact pre-gesture layout,
@@ -361,9 +379,14 @@ restores the minimized state.
 
 Keyboard: every click target above is focusable (visible focus ring), with
 Enter/Space = its motionless click. Tab strips and rails are `tablist`s with
-arrow-key traversal (Left/Right on strips, Up/Down on rails). After a
-keyboard-driven expand, focus lands on the expanded strip's tab — never on
-`<body>`.
+arrow-key traversal (Left/Right on strips, Up/Down on rails); a minimized
+bar is a one-tab `tablist` (its single title is a `tab`), so the pattern
+stays valid for screen readers across the minimize round-trip. Focus never
+falls to `<body>` in EITHER direction: after a keyboard-driven expand,
+focus lands on the expanded strip's tab; after a keyboard-driven MINIMIZE
+or REGION COLLAPSE — whose activated control unmounts with its chrome row —
+focus hands off to the control that replaced it (the bar's `+` toggle, the
+rail's header), i.e. the same-spot control that undoes the action.
 
 Touch: all drag surfaces set `touch-action: none`; a browser-cancelled
 pointer aborts like Escape (P2).
@@ -391,9 +414,13 @@ and changing one is a spec change.
    region containing a multi-column band cannot be zipped (rows can't
    nest), so the drop joins the first band and the hint spans only that
    band. Suppressed where they'd duplicate a per-cell split (single leaf
-   edge-wise), and while the pointer is over a floating window's cell
-   (§3.5 back-to-front: the float claims the pointer). Hints span the
-   true affected extent either way (P1).
+   edge-wise), and while the pointer is inside a floating window's paper
+   rect (§3.5 owning-window rule: the float claims the pointer). Hints
+   span the true affected extent either way (P1). Over a railed or
+   all-minimized region's EMPTY area, the side bands widen to the area's
+   left/right HALVES — no dead center stripe, each side dockable from
+   its own half (a full-width band made side `right` unreachable: the
+   left check ran first and matched every x).
    A seam band-insert takes an EQUAL SHARE of the region height (the mean
    of the existing bands' weights) — never a fixed weight that a px-scale
    region would render as a 0px sliver.
@@ -486,17 +513,29 @@ expands it, §9 item 1).
   and region-edge docks alike.
 - **Minimums**: expanded columns ≥ ~120px grab minimum; cells ≥ ~50px;
   windows ≥ 100px height. Resizes clamp; they never squeeze a cell below
-  its header.
+  its header. The cell minimum is also a RENDER floor on expanded docked
+  leaves (mirroring the floating stack's, P7): repeated same-target
+  splits halve weights geometrically, and without the floor the smallest
+  cell clips its own grip bar + strip.
 - **Split defaults**: a top/bottom leaf drop and a left/right column
   drop both default the two sides to HALF the target's current weight.
   Sibling weights may be on any scale (divider drags write px values),
   so a fixed default weight could render as a 0px sliver; half-the-
   target is scale-invariant and keeps the hint's 50/50 promise (P1).
-- **Dividers** (D24): a split/stack divider is INERT — no resize cursor,
-  no armed gesture, and no height-pin side effect — unless an expanded
-  cell exists on EACH side (bars are fixed 26px; with none there is
-  nothing to trade, and a resize cursor that no-ops lies). When
-  resizable, a drag walks PAST minimized bars to the nearest expanded
+  A multi-group stack dropped top/bottom takes that half as a WHOLE and
+  divides it among its leaves by the stack's preserved height ratios
+  (P8 round-trip — the same rule the left/right branch's column build
+  uses), not equally.
+- **Dividers** (D24, axis-scoped): the inert rule applies to
+  HEIGHT-trading dividers only — between stacked cells in a docked
+  column or a floating stack. Such a divider is INERT — no resize
+  cursor, no armed gesture, and no height-pin side effect — unless an
+  expanded cell exists on EACH side (bars are fixed 26px; with none
+  there is nothing to trade, and a resize cursor that no-ops lies).
+  COLUMN (width) dividers inside a band are NEVER inert: a minimized
+  bar carries its column's WIDTH (D20), so a width drag always has a
+  visible effect regardless of collapse states. When resizable, a
+  height drag walks PAST minimized bars to the nearest expanded
   neighbor on each side (cascadeResize), so a seam adjacent to a bar
   still resizes instead of dead-ending. Floating stack dividers carry
   the same ~12px invisible grab overlay as docked ones (P11) — only
@@ -538,7 +577,10 @@ expands it, §9 item 1).
   36px rail REGARDLESS of per-cell collapse states — the rail is a VIEW
   over the model; band structure and per-cell flags stay put and return
   intact on expand. Collapsing an edge with no region is a no-op;
-  clearing is always legal.
+  clearing is always legal. The chevron and rail-header gestures commit
+  as USER ops (P6): ownership arbitration must learn the user set or
+  cleared the flag, or a stale server placement could silently re-flip a
+  rail the user just toggled.
 - Expand ops clear the flag (D21): every op that expands a docked panel
   (expand-group, expand-to-tab, a toggle landing on expanded) also
   un-collapses that panel's region — an "expanded" panel hidden behind
@@ -576,6 +618,12 @@ expands it, §9 item 1).
   touched that panel since the message's stamp (gate open), or the stamp is
   provably newer than the last applied one. Late joiners replay the latest
   message per axis and reconstruct the same placement.
+- When several axes of one panel apply together (a replay bundle), the
+  order is position first, THEN collapsed, then size: an expand must see
+  the panel's FINAL location, so it clears the DESTINATION region's rail
+  (§7), never the departing one's — collapsed-before-position would
+  un-rail a rail the user explicitly set as the panel leaves it, and a
+  dock-into-railed-region bundle would land its expand invisibly.
 - Split placements (`dock_below(anchor)` etc.) defer until the anchor is
   actually docked; if the anchor can never dock (hidden, emptied, cyclic),
   the placement falls back to a right-edge dock rather than hanging (P5).
@@ -610,7 +658,9 @@ Behaviors that MUST hold (each is or should be pinned by a test):
     36px rail (D21), and expanding any panel from the rail clears it.
 13. Region-edge docking beside a collapsed (railed) region stays
     reachable from the outer half of the strip.
-14. Bar/rail keyboard expand moves focus onto the revealed strip.
+14. Bar/rail keyboard expand moves focus onto the revealed strip; keyboard
+    minimize/collapse moves it onto the replacement control (the bar's
+    toggle / the rail's header). Neither direction drops focus to `<body>`.
 15. Left/right mirrored layouts resolve mirrored drops everywhere (swept).
 16. Expanded panels absorb ALL space freed by minimized siblings — a band/
     column/cell/stack-cell may never strand dead area because fractional
@@ -678,6 +728,50 @@ region bands yield over floats, floating seams got docked-style
 dead-spot recovery, and mid-drag window growth marks target rects
 stale (§3.5/§5.1/§5.5). One pure code restoration: the content-top
 band had silently merged; it splits above again (§5.2).
+
+**Update (2026-07-04, stability-loop iteration 3):** every finding was a
+code fix; the spec changes in this pass are re-syncs (P13's retained-
+element list to D14/D18/D19; D24 axis-scoped to height dividers only —
+`SplitView.tsx`'s RowView passes column dividers resizable
+unconditionally, since bars carry their column's width, D20) plus the
+normative sentences pinning the fixes below.
+
+- `layoutOps.ts` — `applyPanelPlacement` applies the collapsed axis
+  AFTER position, so an expand sees the panel's final location (§8): the
+  old order un-railed the DEPARTING region and let a
+  dock-into-railed-region bundle land its expand invisibly.
+- `layoutOps.ts` — `dropOnDockedLeaf` top/bottom drops of a multi-group
+  stack divide the stack's half-of-target by the preserved stackHeights
+  ratios (P8, §6) instead of giving every leaf a full half.
+- `SplitView.tsx` — expanded docked leaves get a `MIN_CELL_HEIGHT_PX`
+  render floor mirroring the floating stack's (§6): repeated
+  same-target splits otherwise clipped the smallest cell's own chrome.
+- `TabGroupFrame.tsx` — the grip-bar chevron's hit box extends over the
+  strip's top slack to ~24px (P11, §3.3): unlike the `−` it has no
+  whole-bar backing surface (the bar's click is a different action).
+- `TabGroupFrame.tsx` / `gestures.ts` (`focusDockControl`) — keyboard
+  minimize and region collapse hand focus to the replacement control
+  (the bar's toggle / the rail's header); edge case 14 now pins BOTH
+  directions.
+- `MinimizedBar.tsx` — the bar is a one-tab `tablist` (its title stays
+  `role="tab"`), keeping the ARIA pattern valid for screen readers (§4).
+- `RegionResizer.tsx` — top clearance raised to 48px, covering the
+  TALLEST chrome row (the 2.75em unmergeable titleNode header), so the
+  straddle never shadows the top cell's chevron/toggle.
+- `DockManager.tsx` / `DockContext.tsx` — region collapse/expand
+  gestures route through a `collapseRegion` context op committing as a
+  USER op (not `runProgrammatic`), so P6 ownership arbitration records
+  the touch (§7).
+- `hitTest.ts` / `DockManager.tsx` — owning-window mask (§3.5): floating
+  windows' full PAPER rects are collected as targets; the frontmost rect
+  containing the pointer claims it, masking occluded docked/lower-window
+  targets under header and divider chrome (cell rects alone left
+  slivers), and scoping seam dead-spot recovery to the owning window.
+- `hitTest.ts` — a railed/all-minimized region's EMPTY area splits into
+  left/right HALVES for `regionEdge` (§5.1): the full-width band made
+  side `right` unreachable (the left check matched every x first).
+- `gestures.ts` — `focusPaneTab` escapes pane ids (`CSS.escape`) before
+  building its selector.
 
 ---
 
@@ -844,7 +938,13 @@ already reflect them; this list preserves the rationale.
   bars to the next expanded neighbor, so a seam adjacent to a bar still
   resizes instead of dead-ending. Floating stack dividers gain the same
   ~12px invisible grab overlay as docked ones (P11), only while
-  resizable.
+  resizable. *Amended (iteration 3, 2026-07-04): axis-scoped. The inert
+  rule applies only to HEIGHT-trading dividers (docked column stacks,
+  floating stacks), where a bar is a fixed 26px and there is nothing to
+  trade. COLUMN (width) dividers inside a band are never inert: a
+  minimized bar carries its column's WIDTH (D20), so a width drag always
+  has a visible effect — `SplitView.tsx`'s RowView passes its column
+  dividers resizable unconditionally.*
 - **D25 (one `+` per rail; caps are always quiet pills, 2026-07-04):**
   the rail cell cap no longer flips between a `+` button (lone cell)
   and a pill (stacked): it is ALWAYS a quiet grip pill, and the rail's

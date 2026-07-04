@@ -11,9 +11,11 @@ const RESIZER_OUTSET_PX = 10;
 // region edge registers instead of falling through to the panel. Kept small (and
 // below the grip bar, see `top`) so it doesn't shadow panel chrome.
 const RESIZER_INSET_PX = 5;
-// Top inset clearing the grip bar (~0.9em), so the inward part of the straddle
-// never covers the canvas-facing minimize button at a left panel's top corner.
-const GRIP_BAR_CLEARANCE_PX = 24;
+// Top inset clearing the TALLEST chrome row (the unmergeable titleNode
+// header is 2.75em ~= 44px), so the inward part of the straddle never covers
+// the canvas-facing chevron/minimize toggle at a left panel's top corner --
+// e.g. the docked main panel's header controls.
+const GRIP_BAR_CLEARANCE_PX = 48;
 
 export function RegionResizer({
   edge,
@@ -60,12 +62,13 @@ export function RegionResizer({
       onPointerDown={onPointerDown}
       style={{
         position: "absolute",
-        // Start BELOW the grip bar (which holds the canvas-facing minimize
-        // button at the panel's top corner): the grab zone straddles the region
-        // boundary, so without this top inset its inner few px would cover that
-        // button. The grip bar is ~0.9em tall; GRIP_BAR_CLEARANCE_PX clears it
-        // with margin. Below the bar there is no chrome at the boundary, so the
-        // grab can straddle safely down the full remaining height.
+        // Start BELOW the top cell's chrome row (which holds the
+        // canvas-facing chevron + minimize toggle at a left panel's top
+        // corner): the grab zone straddles the region boundary, so without
+        // this top inset its inner few px would cover those buttons. The
+        // tallest chrome row is the 2.75em unmergeable header;
+        // GRIP_BAR_CLEARANCE_PX clears it with margin. Below it there is no
+        // chrome at the boundary, so the grab straddles the full height.
         top: GRIP_BAR_CLEARANCE_PX,
         bottom: 0,
         // The canvas-facing edge of the region. The grab STRADDLES the

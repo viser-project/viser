@@ -15,7 +15,7 @@ import { focusRing, gripBarBg, wayfindingText } from "./DockStyles.css";
 import { focusPaneTab, keyActivate } from "./gestures";
 import { startCollapsedGroupPress } from "./collapsedPress";
 import { ChromeToggle, RegionCollapseChevron } from "./handles";
-import { regionChevronEdge, setRegionCollapsed } from "./layoutOps";
+import { regionChevronEdge } from "./layoutOps";
 import { MINIMIZED_BAR_PX, TabGroup } from "./types";
 
 /** ONE minimized group as its header kept in place (P13/D14/D20).
@@ -60,6 +60,10 @@ export function MinimizedBar({ group }: { group: TabGroup }) {
       // Horizontal BAR marker: hitTest's collapsed branch uses X-based
       // label insertion + the D4 zone rules for it (vs the rail's Y-based).
       data-dock-chip="true"
+      // The single title below is a role="tab"; the bar is its (one-tab)
+      // tablist so the pattern stays valid for screen readers.
+      role="tablist"
+      aria-orientation="horizontal"
       className={gripBarBg}
       onPointerDown={(event) => {
         // The bar owns its press; without this it would ALSO arm an
@@ -158,9 +162,7 @@ export function MinimizedBar({ group }: { group: TabGroup }) {
       {chevronEdge !== null && (
         <RegionCollapseChevron
           edge={chevronEdge}
-          onActivate={() =>
-            dock.api.apply((l) => setRegionCollapsed(l, chevronEdge, true))
-          }
+          onActivate={() => dock.collapseRegion(chevronEdge, true)}
         />
       )}
       <ChromeToggle

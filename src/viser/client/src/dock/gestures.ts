@@ -158,8 +158,19 @@ export function tryRelease(el: Element, pointerId: number): void {
 export function focusPaneTab(paneId: string) {
   requestAnimationFrame(() => {
     document
-      .querySelector<HTMLElement>(`[data-dock-tab="${paneId}"]`)
+      .querySelector<HTMLElement>(`[data-dock-tab="${CSS.escape(paneId)}"]`)
       ?.focus();
+  });
+}
+
+/** rAF-focus the first element matching `selector` -- same deferral contract
+ * as focusPaneTab, for keyboard-driven MINIMIZE/COLLAPSE: the activated
+ * control unmounts with its chrome row, so focus hands off to the control
+ * that replaced it (the bar's toggle, the rail's header) instead of falling
+ * to <body>. */
+export function focusDockControl(selector: string) {
+  requestAnimationFrame(() => {
+    document.querySelector<HTMLElement>(selector)?.focus();
   });
 }
 
