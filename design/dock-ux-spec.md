@@ -487,11 +487,13 @@ all had existing pins the auditors missed; the one REAL gap — edge case 10
 `test_viewport_resize_mid_drag_keeps_drop_targets_fresh`, which exercises
 the shared staleness flag via its resize trigger.
 
-**Spec-ahead-of-code (2026-07-03, after D10–D13):** the P13 bar anatomy
-(right-end toggles, no leading caps, width-stable floating bars) and the
-P14 canonicalization (D12 band normalization, D13 zip-merge) are SPECIFIED
-but not yet implemented — they are the active work queue, and the tables
-above describe the target state. Everything else remains verified.
+**Update (2026-07-03, end of day):** D10–D13 are now IMPLEMENTED and
+verified (452 unit tests incl. the canonicalizer suite; full e2e battery
+green with seven pins rewritten to the decided behavior; CI 23/23). The
+spec and implementation are aligned again. Remaining documentation debt:
+the gap sections listed in review — off-screen window recovery, overflow
+rules, reorder-vs-tear boundary, persistence statement, degraded/empty
+states, small viewports.
 
 ---
 
