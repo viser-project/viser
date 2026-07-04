@@ -12,7 +12,7 @@ import {
 } from "@tabler/icons-react";
 import React from "react";
 import { focusRing } from "./DockStyles.css";
-import { keyActivate } from "./gestures";
+import { focusDockControl, keyActivate } from "./gestures";
 import { HANDLE_BTN_EM } from "./types";
 
 /** Centered grip line drawn inside every drag handle (grip bars, stack
@@ -205,7 +205,15 @@ export function RegionCollapseChevron({
       label="Collapse panel area"
       title="Collapse"
       expanded
-      onActivate={onActivate}
+      onActivate={() => {
+        onActivate();
+        // A keyboard collapse unmounts the chevron with its chrome row; hand
+        // focus to the rail header's toggle (the same-spot undo control)
+        // instead of <body> -- spec 4 / edge case 14.
+        focusDockControl(
+          `[data-dock-region-rail="${edge}"] [data-dock-minimize-all]`,
+        );
+      }}
       placement={
         placement ?? {
           width: `${HANDLE_BTN_EM}em`,

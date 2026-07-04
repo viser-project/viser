@@ -459,6 +459,31 @@ export function cascadeResize(opts: {
   return next;
 }
 
+/** Per-divider resizable lookups over a per-cell minimized mask, computed once
+ * as running prefix/suffix flags (instead of a slice().some() scan per
+ * divider): `atOrBefore[i]` = some expanded cell at index <= i; `after[i]` =
+ * some expanded cell at index > i. Divider i resizes iff both hold. Shared by
+ * SplitView's band/leaf dividers and FloatingWindowView's stack dividers. */
+export function expandedFlags(minimized: boolean[]): {
+  atOrBefore: boolean[];
+  after: boolean[];
+} {
+  const n = minimized.length;
+  const atOrBefore = new Array<boolean>(n);
+  const after = new Array<boolean>(n);
+  let acc = false;
+  for (let i = 0; i < n; i++) {
+    acc = acc || !minimized[i];
+    atOrBefore[i] = acc;
+  }
+  acc = false;
+  for (let i = n - 1; i >= 0; i--) {
+    after[i] = acc;
+    acc = acc || !minimized[i];
+  }
+  return { atOrBefore, after };
+}
+
 export function findGroupLocation(
   layout: DockLayout,
   groupId: GroupId,
@@ -490,6 +515,23 @@ export function isGroupEffectivelyCollapsed(
   if (layout.groups[groupId]?.collapsed === true) return true;
   const loc = findGroupLocation(layout, groupId);
   return loc?.kind === "docked" && isRegionCollapsedOn(layout, loc.edge);
+}
+
+/** True when a group is DOCKED and reads as collapsed there (its own flag, or
+ * its edge's explicit region collapse, D21) -- i.e. the drag paths' "was this
+ * a railed/bar cell" pre-op check, done in one findGroupLocation walk. For
+ * docked groups this matches isGroupEffectivelyCollapsed exactly; non-docked
+ * groups are always false. */
+export function isRailedDockedCell(
+  layout: DockLayout,
+  groupId: GroupId,
+): boolean {
+  const loc = findGroupLocation(layout, groupId);
+  return (
+    loc?.kind === "docked" &&
+    (layout.groups[groupId]?.collapsed === true ||
+      isRegionCollapsedOn(layout, loc.edge))
+  );
 }
 
 /** The group ids that share a STACK with `groupId` (including itself): a
@@ -926,13 +968,12 @@ export function dropOnDockedLeaf(
     // hint's 50/50 promise); each leaf's share of that half follows the
     // floated stack's preserved height ratios (P8 round-trip -- same rule as
     // the left/right branch's buildColumn).
-    const dw = live.leaf.weight / 2;
-    const tw = live.leaf.weight / 2;
-    targetColumn.leaves[li] = { ...live.leaf, weight: tw };
+    const half = live.leaf.weight / 2;
+    targetColumn.leaves[li] = { ...live.leaf, weight: half };
     const shareOf = (g: GroupId) => stackHeights?.[g] ?? 1;
     const totalShares = ne.reduce((s2, g) => s2 + shareOf(g), 0) || 1;
     const banded = mapNonEmpty(ne, (g) =>
-      makeLeaf(g, (dw * shareOf(g)) / totalShares),
+      makeLeaf(g, (half * shareOf(g)) / totalShares),
     );
     const at = region === "top" ? li : li + 1;
     targetColumn.leaves = withInserted(targetColumn.leaves, at, ...banded);
@@ -948,9 +989,8 @@ export function dropOnDockedLeaf(
   // band the flat Region->Row->Column->Leaf model cannot nest a row inside a
   // column, so the new column spans the whole band beside the target's column
   // instead (and the hint spans the band to match).
-  const dw = targetColumn.weight / 2;
-  const tw = targetColumn.weight / 2;
-  const newColumn = buildColumn(ne, dw, stackHeights);
+  const half = targetColumn.weight / 2;
+  const newColumn = buildColumn(ne, half, stackHeights);
   if (targetRow.columns.length === 1 && targetColumn.leaves.length > 1) {
     const above = targetColumn.leaves.slice(0, li);
     const below = targetColumn.leaves.slice(li + 1);
@@ -968,7 +1008,7 @@ export function dropOnDockedLeaf(
     // The target's own column keeps its id (and with it its reconciled width).
     const targetCol: DockColumn = {
       ...targetColumn,
-      weight: tw,
+      weight: half,
       leaves: [{ ...live.leaf, weight: 1 }],
     };
     const middle: DockRow = {
@@ -993,10 +1033,10 @@ export function dropOnDockedLeaf(
     liveRegion.rows = rows;
     return draft;
   }
-  // A new column beside the target's column, within the SAME row band. The
-  // target column keeps `tw`; the new column takes `dw` (its leaves keep a
-  // floated stack's preserved height shares).
-  targetColumn.weight = tw;
+  // A new column beside the target's column, within the SAME row band. Each
+  // takes `half` of the target column's weight (the new column's leaves keep
+  // a floated stack's preserved height shares).
+  targetColumn.weight = half;
   const ci = targetRow.columns.findIndex((c) => c.id === targetColumn.id);
   const at = region === "left" ? ci : ci + 1;
   targetRow.columns = withInserted(targetRow.columns, at, newColumn);
@@ -1737,10 +1777,7 @@ export function minimizeStack(
   if (groupIds.every((gid) => layout.groups[gid]?.collapsed === true))
     return layout;
   const draft = clone(layout);
-  for (const gid of groupIds) {
-    const group = draft.groups[gid];
-    if (group !== undefined) group.collapsed = true;
-  }
+  stampCollapsedInPlace(draft, groupIds);
   return draft;
 }
 
@@ -2134,10 +2171,7 @@ function reconcileMembershipInPlace(
 
 /** Ensure this panel's panes live together in a single group, returning that
  * group's id. Creates the group (expanded) if the panes aren't placed yet; if
- * they're already grouped, reuses it and reconciles membership. `collapsed` is
- * the latest server-written value (or null when never set): true collapses the
- * group, false expands it, null leaves it as-is -- a plainly applied field, no
- * one-shot/prev gating. */
+ * they're already grouped, reuses it and reconciles membership. */
 function ensurePanelGroup(
   draft: DockLayout,
   paneIds: PaneId[],

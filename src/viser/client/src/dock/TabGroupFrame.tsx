@@ -112,6 +112,11 @@ const PanelBody = React.memo(function PanelBody({
 // gradient. In em relative to the strip's own font-size so the two stay aligned.
 const TAB_ROW_EM = "2.4em";
 
+// Font scale for the tab strip (and the plain-title unmergeable header, which
+// mirrors the tab look). Also the em basis to divide by when converting a
+// base-em length into the strip's scaled em (see the chevron reservation).
+const STRIP_FONT_EM = 0.85;
+
 /** Slim handle bar above the tab strip (docked or floating). The bar itself is
  * a drag handle (centered grip line + grab cursor); a button on the right
  * minimizes/expands the group. The button is drag-THROUGH: pressing it and
@@ -231,11 +236,6 @@ export function TabGroupFrame({
   const collapseRegion = () => {
     if (chevronEdge === null) return;
     dock.collapseRegion(chevronEdge, true);
-    // The chevron unmounts with its chrome row; hand focus to the rail
-    // header's toggle (the same-spot undo control) instead of <body>.
-    focusDockControl(
-      `[data-dock-region-rail="${chevronEdge}"] [data-dock-minimize-all]`,
-    );
   };
   // Keyboard/Click minimize unmounts this frame for the in-place bar; focus
   // hands off to the bar's toggle (the same-spot + that undoes it).
@@ -420,7 +420,7 @@ export function TabGroupFrame({
               : {
                   height: TAB_ROW_EM,
                   padding: "0 0.9em",
-                  fontSize: "0.85em",
+                  fontSize: `${STRIP_FONT_EM}em`,
                   fontWeight: 600,
                   color: "var(--mantine-primary-color-filled)",
                   boxShadow: "inset 0 -2px 0 0 var(--mantine-primary-color-filled)",
@@ -500,19 +500,19 @@ export function TabGroupFrame({
             // hit box overhangs the strip top-right; reserve that corner so
             // no TAB can sit under it (a press there must never collapse
             // the region when the user aimed at a tab).
-            // In the STRIP's em (fontSize 0.85em below): the chevron's hit
-            // box is laid out in the grip bar's UNSCALED em, so divide or the
-            // reservation comes up ~0.5 base-em short and a tab edge still
-            // sits under the overhang.
+            // In the STRIP's em (fontSize STRIP_FONT_EM below): the chevron's
+            // hit box is laid out in the grip bar's UNSCALED em, so divide or
+            // the reservation comes up ~0.5 base-em short and a tab edge
+            // still sits under the overhang.
             paddingRight:
               chevronEdge !== null
-                ? `${(2 * HANDLE_BTN_EM) / 0.85}em`
+                ? `${(2 * HANDLE_BTN_EM) / STRIP_FONT_EM}em`
                 : undefined,
             display: "flex",
             flexWrap: "wrap",
             alignItems: "stretch",
             flexShrink: 0,
-            fontSize: "0.85em",
+            fontSize: `${STRIP_FONT_EM}em`,
             backgroundImage:
               "linear-gradient(to top, var(--mantine-color-default-border) 2px, transparent 2px)",
             backgroundSize: `100% ${TAB_ROW_EM}`,

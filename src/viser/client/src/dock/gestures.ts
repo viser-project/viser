@@ -151,16 +151,12 @@ export function tryRelease(el: Element, pointerId: number): void {
  * the native <button> contract for our minimize/expand controls. Structurally
  * typed so it accepts React's synthetic KeyboardEvent without a React import. */
 /** Move keyboard focus to a pane's tab element on the next frame -- used
- * after a KEYBOARD-driven expand of a minimized group, whose chip/row
+ * after a KEYBOARD-driven expand of a minimized group, whose bar/row
  * unmounts on expand (focus would otherwise fall to <body> and the user
  * would have to Tab back in from the top). Pointer paths don't call this:
  * mouse users don't expect a focus ring to appear. */
 export function focusPaneTab(paneId: string) {
-  requestAnimationFrame(() => {
-    document
-      .querySelector<HTMLElement>(`[data-dock-tab="${CSS.escape(paneId)}"]`)
-      ?.focus();
-  });
+  focusDockControl(`[data-dock-tab="${CSS.escape(paneId)}"]`);
 }
 
 /** rAF-focus the first element matching `selector` -- same deferral contract

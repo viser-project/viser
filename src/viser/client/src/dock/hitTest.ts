@@ -123,11 +123,11 @@ export interface GroupTarget {
    * has no content area, so its whole bar is treated as a 5-way drop zone.
    * Optional so existing target literals (e.g. in tests) stay valid. */
   collapsed?: boolean;
-  /** True when a COLLAPSED group renders as a horizontal chip (a docked
-   * band's or floating bar's pill) rather than the vertical rail cell. A chip
-   * is a single visual unit with no per-tab rows, so the collapsed branch
+  /** True when a COLLAPSED group renders as a horizontal bar (a docked cell's
+   * or floating stack's in-place bar) rather than the vertical rail cell. A
+   * bar is a single visual unit with no per-tab rows, so the collapsed branch
    * offers merge instead of the rail's Y-based per-row tab insertion. */
-  chip?: boolean;
+  bar?: boolean;
   /** True when the group holds an unmergeable panel: nothing may be merged or
    * inserted into it, so its content area is merge-suppressed (drops there fall
    * back to a split / no-op) and its label is a header rather than a tab. */
@@ -399,7 +399,7 @@ export function hitTest(
     if (owningWindow !== null) return true;
     for (const t of targets.groups) {
       if (t.ctx.kind !== "floating") continue;
-      if (inside(t.hitRect ?? t.rect, clientX, clientY)) return true;
+      if (hitsTarget(t, clientX, clientY)) return true;
     }
     return false;
   };
@@ -676,22 +676,23 @@ export function hitTest(
     // and gap-free instead of blinking to NONE. Skipped when a floating
     // window owns the pointer (its own seam recovery below handles gaps).
     let seam: { lower: GroupTarget; gapCenter: number } | null = null;
-    for (const t of targets.groups) {
-      if (owningWindow !== null) break;
-      if (t.ctx.kind !== "docked") continue;
-      const sib = dockedSeamSibling(t, "top");
-      if (sib === null) continue;
-      const tr = t.rect;
-      // `t` is the LOWER panel of the pair; the gap is just above it. Confirm
-      // the pointer is in that gap (and horizontally within the column).
-      if (
-        clientX >= tr.left &&
-        clientX <= tr.right &&
-        clientY < tr.top &&
-        clientY >= sib.gapCenter - SEAM_GAP_MAX_PX
-      ) {
-        if (seam === null || sib.gapCenter > seam.gapCenter)
-          seam = { lower: t, gapCenter: sib.gapCenter };
+    if (owningWindow === null) {
+      for (const t of targets.groups) {
+        if (t.ctx.kind !== "docked") continue;
+        const sib = dockedSeamSibling(t, "top");
+        if (sib === null) continue;
+        const tr = t.rect;
+        // `t` is the LOWER panel of the pair; the gap is just above it. Confirm
+        // the pointer is in that gap (and horizontally within the column).
+        if (
+          clientX >= tr.left &&
+          clientX <= tr.right &&
+          clientY < tr.top &&
+          clientY >= sib.gapCenter - SEAM_GAP_MAX_PX
+        ) {
+          if (seam === null || sib.gapCenter > seam.gapCenter)
+            seam = { lower: t, gapCenter: sib.gapCenter };
+        }
       }
     }
     if (seam !== null && seam.lower.ctx.kind === "docked") {
@@ -726,8 +727,16 @@ export function hitTest(
       width: number;
       gapCenter: number;
     } | null = null;
+    // Stack cells by (window, index): the only cell that can share a seam
+    // with a given lower cell is its model-adjacent upper neighbor (index-1
+    // in the same window), so one lookup replaces a pairwise scan.
+    const cellAbove = new Map<string, GroupTarget>();
+    for (const t of targets.groups) {
+      if (t.ctx.kind === "floating")
+        cellAbove.set(`${t.ctx.windowId}:${t.ctx.index}`, t);
+    }
     for (const lower of targets.groups) {
-      if (lower.ctx.kind !== "floating") continue;
+      if (lower.ctx.kind !== "floating" || lower.ctx.index === 0) continue;
       // Scope to the owning window when known: a front window's header over
       // a back window's seam must not snap into the BACK window.
       if (
@@ -735,29 +744,26 @@ export function hitTest(
         lower.ctx.windowId !== owningWindow.windowId
       )
         continue;
-      for (const upper of targets.groups) {
-        if (
-          upper === lower ||
-          upper.ctx.kind !== "floating" ||
-          upper.ctx.windowId !== lower.ctx.windowId
-        )
-          continue;
-        const gap = lower.rect.top - upper.rect.bottom;
-        if (gap < -1 || gap > SEAM_GAP_MAX_PX) continue;
-        if (
-          clientX >= lower.rect.left &&
-          clientX <= lower.rect.right &&
-          clientY >= upper.rect.bottom &&
-          clientY <= lower.rect.top
-        ) {
-          fseam = {
-            windowId: lower.ctx.windowId,
-            index: lower.ctx.index,
-            left: lower.rect.left,
-            width: lower.rect.width,
-            gapCenter: (upper.rect.bottom + lower.rect.top) / 2,
-          };
-        }
+      const upper = cellAbove.get(
+        `${lower.ctx.windowId}:${lower.ctx.index - 1}`,
+      );
+      if (upper === undefined) continue;
+      const gap = lower.rect.top - upper.rect.bottom;
+      if (gap < -1 || gap > SEAM_GAP_MAX_PX) continue;
+      // Targets are back-to-front, so the LAST match (topmost) wins.
+      if (
+        clientX >= lower.rect.left &&
+        clientX <= lower.rect.right &&
+        clientY >= upper.rect.bottom &&
+        clientY <= lower.rect.top
+      ) {
+        fseam = {
+          windowId: lower.ctx.windowId,
+          index: lower.ctx.index,
+          left: lower.rect.left,
+          width: lower.rect.width,
+          gapCenter: (upper.rect.bottom + lower.rect.top) / 2,
+        };
       }
     }
     if (fseam !== null) {
@@ -898,9 +904,9 @@ export function hitTest(
     // The edge bands are thin pixel strips at the cell's very top/bottom, so the
     // + cap (just inside the top edge) stays a MERGE target rather than being
     // swallowed by an "above" zone. Insertion is suppressed for an unmergeable
-    // drag (can't become tabs), an unmergeable target, or a CHIP target (a
-    // horizontal pill with no per-tab rows -- Y-based row insertion would pick
-    // an arbitrary index there; a drop on a chip merges instead).
+    // drag (can't become tabs), an unmergeable target, or a BAR target (a
+    // horizontal bar with no per-tab rows -- Y-based row insertion would pick
+    // an arbitrary index there; a drop on a bar merges instead).
     const canInsert =
       !draggingUnmergeable && !g.unmergeable && g.tabs.length > 0;
     // Top/bottom edge bands: rail cells keep thin 8px stack-above/below
@@ -908,7 +914,7 @@ export function hitTest(
     // NONE (the column seams next door already say "insert above/below"), a
     // floating bar gets the wider min(10px, height/3) snap band.
     const edgeBand =
-      g.chip === true
+      g.bar === true
         ? gt.ctx.kind === "docked"
           ? 0
           : Math.min(CHIP_SNAP_BAND_PX, r.height / 3)
@@ -916,11 +922,11 @@ export function hitTest(
     const inTopEdge = edgeBand > 0 && clientY < r.top + edgeBand;
     const inBottomEdge = edgeBand > 0 && clientY > r.bottom - edgeBand;
     // Tab insertion matches the segment's orientation: rail cells stack rows
-    // vertically (Y-based, horizontal line); chips lay labels out
+    // vertically (Y-based, horizontal line); bars lay labels out
     // horizontally (2D nearest-tab, vertical line) -- spec D9.
     const insertResult = () => {
       if (!canInsert || inTopEdge || inBottomEdge) return null;
-      if (g.chip === true) {
+      if (g.bar === true) {
         // Spec 5.4: insertion aims at the bar's single title label; a drop
         // anywhere ELSE on the bar appends (merge). Without this bound the
         // whole bar width resolved to insert-around-the-active-tab, making

@@ -111,8 +111,8 @@ export function RegionMinimizedRail({
 
 /** One group as a rail cell: gray cap (always a quiet grip pill -- the
  * rail's ONE + lives on the parent handle, D25), then one spine row per
- * tab. Used by the region rail (pass nodeId/edge for the drop-target
- * wrapper) and reusable without them. Gestures via startCollapsedGroupPress: row press tears out that pane
+ * tab. Used by the region rail (nodeId/edge feed the drop-target
+ * wrapper). Gestures via startCollapsedGroupPress: row press tears out that pane
  * (still minimized) / row click expands the region to that tab; cap or
  * background press drags the whole group / click expands (lone cells).
  * Expansion goes through the ops' expandGroup/expandToTab, which ALSO clear
@@ -124,15 +124,14 @@ export function VerticalMinimizedCell({
   group,
   clickExpands = false,
 }: {
-  nodeId?: NodeId;
-  edge?: DockEdge;
+  nodeId: NodeId;
+  edge: DockEdge;
   group: TabGroup;
   /** Motionless click on the cap/background expands region + group. On only
    * when the cell is the rail's SOLE cell (unambiguous target). */
   clickExpands?: boolean;
 }) {
   const dock = useDock();
-  const docked = nodeId !== undefined && edge !== undefined;
   // Expand this cell: un-collapse the group AND its region (op-level; the
   // active tab stays). The rail only renders while the region is collapsed,
   // so expand is the only direction.
@@ -253,9 +252,9 @@ export function VerticalMinimizedCell({
       </Box>
     </Box>
   );
-  // Docked: the wrapper carries data-dock-leaf/-edge and sizes to CONTENT --
+  // The wrapper carries data-dock-leaf/-edge and sizes to CONTENT --
   // the rect must equal the visible strip or hitTest gets region-tall zones.
-  return docked ? (
+  return (
     <Box
       data-dock-leaf={nodeId}
       data-dock-edge={edge}
@@ -270,7 +269,5 @@ export function VerticalMinimizedCell({
     >
       {inner}
     </Box>
-  ) : (
-    inner
   );
 }

@@ -209,8 +209,8 @@ def test_escape_restores_docked_group_drag(dock_context, vite_server) -> None:
 # ---------------------------------------------------------------------------
 def test_drop_on_minimized_group_stays_minimized(dock_context, vite_server) -> None:
     page = _open(dock_context, vite_server)
-    # Minimize the floating Controls window (now a chip bar), then drop
-    # Inspector onto its chip: the drop lands in the still-minimized group.
+    # Minimize the floating Controls window (now an in-place bar), then drop
+    # Inspector onto that bar: the drop lands in the still-minimized group.
     gid = _group_id_for_panel(page, "controls")
     page.eval_on_selector(
         f'[data-dock-group="{gid}"] [data-dock-minimize]', "e => e.click()"
@@ -219,8 +219,8 @@ def test_drop_on_minimized_group_stays_minimized(dock_context, vite_server) -> N
     assert page.evaluate(
         "(gid) => window.__dockLayout.groups[gid].collapsed === true", gid
     )
-    # Aim at the CHIP (the collapsed group element on the minimized floating
-    # bar); a drop there merges/inserts into the still-minimized group.
+    # Aim at the BAR (the collapsed group element on the minimized floating
+    # window); a drop there merges/inserts into the still-minimized group.
     target = page.eval_on_selector(
         f'[data-floating-window] [data-dock-group="{gid}"]',
         "e => { const r = e.getBoundingClientRect(); "

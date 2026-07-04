@@ -18,7 +18,12 @@ import React from "react";
 import { useDock } from "./DockContext";
 import { dragGesture } from "./gestures";
 import { collapseAnim } from "./DockStyles.css";
-import { cascadeResize, isRowMinimized, setNodeWeights } from "./layoutOps";
+import {
+  cascadeResize,
+  expandedFlags,
+  isRowMinimized,
+  setNodeWeights,
+} from "./layoutOps";
 import { MinimizedBar } from "./MinimizedBar";
 import { TabGroupFrame } from "./TabGroupFrame";
 import { RegionMinimizedRail } from "./VerticalMinimizedColumn";
@@ -28,10 +33,12 @@ import {
   DockLeaf,
   DockRegion,
   DockRow,
+  GroupId,
   isRegionCollapsedOn,
   MIN_REGION_GRAB_PX,
   MINIMIZED_BAR_PX,
   SPLIT_DIVIDER_PX,
+  TabGroup,
 } from "./types";
 
 // Minimum height for a stacked (column) cell; row cells use the per-panel width.
@@ -42,28 +49,26 @@ const MIN_CELL_HEIGHT_PX = 50;
 // zone to this so it's comfortable to hit without thickening the seam.
 const DIVIDER_GRAB_PX = 12;
 
-/** Per-divider resizable lookups over a per-cell minimized mask, computed once
- * as running prefix/suffix flags (instead of a slice().some() scan per
- * divider): `atOrBefore[i]` = some expanded cell at index <= i; `after[i]` =
- * some expanded cell at index > i. Divider i resizes iff both hold. */
-function expandedFlags(minimized: boolean[]): {
-  atOrBefore: boolean[];
-  after: boolean[];
-} {
-  const n = minimized.length;
-  const atOrBefore = new Array<boolean>(n);
-  const after = new Array<boolean>(n);
-  let acc = false;
-  for (let i = 0; i < n; i++) {
-    acc = acc || !minimized[i];
-    atOrBefore[i] = acc;
-  }
-  acc = false;
-  for (let i = n - 1; i >= 0; i--) {
-    after[i] = acc;
-    acc = acc || !minimized[i];
-  }
-  return { atOrBefore, after };
+/** A band's minimum rendered height: the tallest column's stack of cells at
+ * their render floors -- 26px bars for collapsed leaves, MIN_CELL_HEIGHT_PX
+ * for expanded ones -- plus 7px dividers between stacked leaves. Serves both
+ * as the band divider's per-band min-cell floor and as a fully-minimized
+ * band's NUMERIC flex-basis (auto would not animate; with every leaf
+ * collapsed this is exactly the bar-stack height). */
+function bandMinPx(row: DockRow, groups: Record<GroupId, TabGroup>): number {
+  return Math.max(
+    ...row.columns.map((col) =>
+      col.leaves.reduce(
+        (px, lf, i) =>
+          px +
+          (groups[lf.group]?.collapsed === true
+            ? MINIMIZED_BAR_PX
+            : MIN_CELL_HEIGHT_PX) +
+          (i > 0 ? SPLIT_DIVIDER_PX : 0),
+        0,
+      ),
+    ),
+  );
 }
 
 /** Render a docked region: a VERTICAL stack of full-width row bands, with
@@ -132,7 +137,7 @@ export const SplitView = React.memo(function SplitView({
                 // Numeric when minimized (the tallest column's bar stack),
                 // not "auto": auto is not animatable, and the value is the
                 // same -- bars are fixed 26px (+7px dividers).
-                flexBasis: minimized ? bandBarStackPx(row) : 0,
+                flexBasis: minimized ? bandMinPx(row, groups) : 0,
                 minWidth: 0,
                 minHeight: 0,
                 display: "flex",
@@ -162,21 +167,7 @@ export const SplitView = React.memo(function SplitView({
                         // column's cells (expanded 50px / bars 26px +
                         // dividers), or the leaves' own render floors
                         // overflow into the band below.
-                        minCell: rows.map((band) =>
-                          Math.max(
-                            ...band.columns.map((col) =>
-                              col.leaves.reduce(
-                                (px, lf, i2) =>
-                                  px +
-                                  (groups[lf.group]?.collapsed === true
-                                    ? MINIMIZED_BAR_PX
-                                    : MIN_CELL_HEIGHT_PX) +
-                                  (i2 > 0 ? SPLIT_DIVIDER_PX : 0),
-                                0,
-                              ),
-                            ),
-                          ),
-                        ),
+                        minCell: rows.map((band) => bandMinPx(band, groups)),
                       })
                     }
                     onCancel={() =>
@@ -275,19 +266,6 @@ function RowView({ row, edge }: { row: DockRow; edge: DockEdge }) {
 
 /** Render an expanded column: a vertical stack of leaves with horizontal
  * dividers between them. */
-/** A fully-minimized band's rendered height: the tallest column's stack of
- * 26px bars with 7px dividers between them. Used as the band wrapper's
- * NUMERIC minimized flex-basis (auto would not animate). */
-function bandBarStackPx(row: DockRow): number {
-  return Math.max(
-    ...row.columns.map(
-      (col) =>
-        col.leaves.length * MINIMIZED_BAR_PX +
-        (col.leaves.length - 1) * SPLIT_DIVIDER_PX,
-    ),
-  );
-}
-
 function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
   const dock = useDock();
   const groups = dock.groups;

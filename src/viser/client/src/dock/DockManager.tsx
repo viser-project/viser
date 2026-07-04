@@ -189,6 +189,13 @@ export function DockManager({
   const [layout, setLayout] = React.useState(initialLayout);
   const layoutRef = React.useRef(layout);
   layoutRef.current = layout;
+  // Structure signature of the CURRENT committed layout (layoutRef.current),
+  // cached so applyOp hashes only the INCOMING layout per commit instead of
+  // both sides. `null` means "recompute lazily" -- the initial value, and what
+  // the one commit path that bypasses applyOp with a possibly-different
+  // structure (the drag Escape-restore) resets it to. patchFloatPositions is
+  // position-only by construction, so it never invalidates the cache.
+  const structureSigRef = React.useRef<string | null>(null);
   // Seed the fresh-id counter past any ids the initial layout brought with it
   // (a restored/persisted layout): the counter restarts at 0 each session, so
   // without this a new `node-3` would collide with a restored `node-3`
@@ -253,12 +260,6 @@ export function DockManager({
   // Set for the duration of a drag: lets the per-window ResizeObserver mark
   // the drag's cached target rects stale (a window growing mid-drag).
   const markDragTargetsStaleRef = React.useRef<(() => void) | null>(null);
-  // Layout at the start of a region-width drag: the per-frame width commits
-  // are programmatic (perf: ~60/s), so ONE user-attributed commit fires at
-  // release comparing this snapshot to the final layout -- otherwise the
-  // placement dirty-bit never learns the user resized the region and a
-  // reconnect replay of a server set_width reverts the drag.
-  const regionDragStartLayoutRef = React.useRef<DockLayout | null>(null);
   // Cleanup for an in-flight gesture, run if the manager unmounts mid-drag.
   const activeCleanup = React.useRef<(() => void) | null>(null);
   React.useEffect(() => () => activeCleanup.current?.(), []);
@@ -341,12 +342,18 @@ export function DockManager({
       if (next === layoutRef.current) return; // no-op op: nothing to commit.
       // Canonical band form (P14/D12/D13) on STRUCTURAL commits only: a pure
       // weight change (a resize mid-gesture) must never restructure the
-      // layout under the user's pointer.
-      if (
-        ops.structureSignature(next) !==
-        ops.structureSignature(layoutRef.current)
-      ) {
+      // layout under the user's pointer. The current layout's signature is
+      // cached (structureSigRef), so only the incoming layout is hashed here.
+      const nextSig = ops.structureSignature(next);
+      const curSig =
+        structureSigRef.current ?? ops.structureSignature(layoutRef.current);
+      if (nextSig !== curSig) {
         ops.normalizeCanonicalBandsInPlace(next);
+        // Canonicalization can restructure, so re-derive the committed
+        // layout's signature rather than storing the pre-normalize one.
+        structureSigRef.current = ops.structureSignature(next);
+      } else {
+        structureSigRef.current = nextSig;
       }
       reconcileRegionWidths(layoutRef.current, next);
       commit(next);
@@ -576,7 +583,7 @@ export function DockManager({
         // Skip tabs that belong to a nested group (their nearest group ancestor
         // isn't ours).
         if (t.closest("[data-dock-group]") !== scopeEl) return;
-        // Skip overflow-hidden chip labels (visibility:hidden behind the +N
+        // Skip overflow-hidden bar labels (visibility:hidden behind the +N
         // badge): an invisible element must not be an insertion target (P1).
         if (getComputedStyle(t).visibility === "hidden") return;
         const paneId = t.getAttribute("data-dock-tab");
@@ -591,7 +598,7 @@ export function DockManager({
         // Effectively-collapsed cells (own flag OR region rail, D21) need the
         // rotated collapsed-target zones -- see isGroupEffectivelyCollapsed.
         collapsed: ops.isGroupEffectivelyCollapsed(layoutRef.current, groupId),
-        chip: scopeEl.getAttribute("data-dock-chip") === "true",
+        bar: scopeEl.getAttribute("data-dock-bar") === "true",
         unmergeable: ops.isGroupUnmergeable(layoutRef.current, panes, groupId),
       };
     };
@@ -680,8 +687,8 @@ export function DockManager({
       if (nodeId === null || edge === null || groupEl === null) return;
       // The LEAF wrapper's box is the drop target: both minimized renderers
       // size the wrapper to the full droppable surface while the group element
-      // inside may be a compact chip (the horizontal band's pill). The group
-      // element still scopes the strip/tab lookup.
+      // inside may be a compact rail cell. The group element still scopes the
+      // strip/tab lookup.
       const g = readGroup(groupEl, { kind: "docked", nodeId, edge }, leaf);
       if (g === null) return;
       // Clip to the column's scroll box: with overflowY auto a squeezed,
@@ -871,8 +878,19 @@ export function DockManager({
     window.addEventListener("resize", markTargetsStale);
     // Minimize/expand transitions (collapseAnim) ease cell geometry for
     // ~160ms after a commit; cached rects read mid-ease go stale when the
-    // transition settles. Capture phase: fires for every descendant.
-    container.addEventListener("transitionend", markTargetsStale, true);
+    // transition settles. Capture phase: fires for every descendant -- so
+    // gate on the GEOMETRY properties collapseAnim eases: HandleIconButton's
+    // color/background transitions end on every hover and would otherwise
+    // spuriously invalidate the cache.
+    const onTransitionEnd = (e: TransitionEvent) => {
+      if (
+        e.propertyName === "flex-grow" ||
+        e.propertyName === "flex-basis" ||
+        e.propertyName === "min-height"
+      )
+        markTargetsStale();
+    };
+    container.addEventListener("transitionend", onTransitionEnd, true);
     // A floating window can also RESIZE mid-drag with no layout change (an
     // auto-height window whose content grows from a server update). The
     // per-window ResizeObserver reports through this ref.
@@ -958,7 +976,7 @@ export function DockManager({
         detach();
         container.removeEventListener("scroll", markTargetsStale, true);
         window.removeEventListener("resize", markTargetsStale);
-        container.removeEventListener("transitionend", markTargetsStale, true);
+        container.removeEventListener("transitionend", onTransitionEnd, true);
         markDragTargetsStaleRef.current = null;
         activeCleanup.current = null;
         if (raf !== null) {
@@ -982,8 +1000,13 @@ export function DockManager({
           // commit (NOT applyOp): the snapshot already carries valid widths, so
           // "put the pre-drag layout back" restores geometry by construction --
           // the reconciler's content-matching would treat restored columns as
-          // new and reset them to defaults.
-          if (restoreOnCancel !== undefined) commit(restoreOnCancel);
+          // new and reset them to defaults. Bypassing applyOp also bypasses
+          // the structure-signature cache, so invalidate it (recomputed
+          // lazily on the next applyOp).
+          if (restoreOnCancel !== undefined) {
+            structureSigRef.current = null;
+            commit(restoreOnCancel);
+          }
           return;
         }
 
@@ -1332,10 +1355,10 @@ export function DockManager({
         // Effectively-collapsed docked cells float at their preserved
         // expanded width (see dockedFloatWidthForGroup).
         const floatWidth = dockedFloatWidthForGroup(groupId, rect.width);
-        const wasRailedCell =
-          ops.findGroupLocation(layoutRef.current, groupId)?.kind ===
-            "docked" &&
-          ops.isGroupEffectivelyCollapsed(layoutRef.current, groupId);
+        const wasRailedCell = ops.isRailedDockedCell(
+          layoutRef.current,
+          groupId,
+        );
         // A panel whose body is a full-bleed nested area needs a definite
         // height to fill (it collapses to 0 in an auto-height window). Give
         // the undocked window the panel's current rendered height in that
@@ -1485,6 +1508,10 @@ export function DockManager({
       cleanup();
       dragAfterCommit(e, () => {
         const src = floatRectFor(`[data-dock-group="${groupId}"]`);
+        const wasRailedCell = ops.isRailedDockedCell(
+          layoutRef.current,
+          groupId,
+        );
         const res = ops.tearOutPane(
           layoutRef.current,
           groupId,
@@ -1496,6 +1523,11 @@ export function DockManager({
         // No-op tear-out (pane not in the group): nothing floated, nothing to
         // reposition.
         if (res.windowId === null) return null;
+        // A tab torn out of a railed region floats STILL minimized (P2): the
+        // source group's own flag may be false (region-flag collapse), so
+        // stamp the torn group directly -- same guard as startTabTearOut.
+        if (wasRailedCell && res.floatingGroupId !== null)
+          ops.stampCollapsedInPlace(res.layout, [res.floatingGroupId]);
         const newWindowId = res.windowId;
         flushSync(() => applyOp(res.layout));
 
@@ -1673,10 +1705,10 @@ export function DockManager({
           // Effectively-collapsed docked cells float at their preserved
           // expanded width (see dockedFloatWidthForGroup).
           const floatWidth = dockedFloatWidthForGroup(groupId, rect.width);
-          const wasRailedCell =
-            ops.findGroupLocation(layoutRef.current, groupId)?.kind ===
-              "docked" &&
-            ops.isGroupEffectivelyCollapsed(layoutRef.current, groupId);
+          const wasRailedCell = ops.isRailedDockedCell(
+            layoutRef.current,
+            groupId,
+          );
           const res = ops.tearOutPane(
             layoutRef.current,
             groupId,
@@ -1887,14 +1919,12 @@ export function DockManager({
         tree,
         reservedWidth: 0,
         resizable: false,
-        collapsed: false,
       };
     const collapsed = isRegionCollapsedOn(layout, edge);
     return {
       tree,
       // The rail is fixed-width chrome: nothing to resize while collapsed.
       resizable: !collapsed,
-      collapsed,
       // MODEL-based reserved width. The resizer's drag baseline reads THIS,
       // never the post-scaling rendered width below -- otherwise grabbing the
       // handle under the MIN_CANVAS_PX render-scale guard (or pressing
@@ -2125,29 +2155,30 @@ export function DockManager({
                 {resizable && (
                 <RegionResizer
                   edge={edge}
-                  onDragEnd={(cancelled) => {
-                    const start = regionDragStartLayoutRef.current;
-                    regionDragStartLayoutRef.current = null;
-                    if (cancelled || start === null) return;
-                    // One USER commit spanning the whole drag (see the ref
-                    // doc): layout state is already final, this only informs
-                    // the host's ownership diff.
-                    onCommitRef.current?.(start, layoutRef.current, false);
-                  }}
                   // Model-based (unscaled) start: see regionFor's
                   // reservedWidth doc.
                   getStart={() => regions[edge].reservedWidth}
                   // Called once per drag: snapshots the columns' start widths
-                  // and limits, and returns the per-frame handler. Widths are
-                  // redistributed across ALL columns from their drag-start
-                  // proportions, clamping each to its own min/max and handing
-                  // the difference to columns that still have room -- so the
-                  // region keeps resizing while any column can give or take.
+                  // and limits (and the drag-start layout, which serves the
+                  // end-commit), and returns the per-frame + end handlers.
+                  // Widths are redistributed across ALL columns from their
+                  // drag-start proportions, clamping each to its own min/max
+                  // and handing the difference to columns that still have
+                  // room -- so the region keeps resizing while any column can
+                  // give or take.
                   makeOnResize={() => {
                     const layout0 = layoutRef.current;
-                    regionDragStartLayoutRef.current = layout0;
+                    const onEnd = (cancelled: boolean) => {
+                      // Skip on cancel (Escape restored the start widths) and
+                      // on a click without motion (no frame committed, layout
+                      // unchanged). Otherwise fire ONE user-attributed commit
+                      // spanning the whole drag: layout state is already
+                      // final, this only informs the host's ownership diff.
+                      if (cancelled || layout0 === layoutRef.current) return;
+                      onCommitRef.current?.(layout0, layoutRef.current, false);
+                    };
                     const tree0 = layout0.docked[edge];
-                    if (tree0 === null) return () => {};
+                    if (tree0 === null) return { onFrame: () => {}, onEnd };
                     // Every width-determining column participates (D20:
                     // minimized cells are in-place bars holding their
                     // column's width). The plan is the same classification
@@ -2171,7 +2202,7 @@ export function DockManager({
                     // and SplitView divider drags.
                     const maxs = cols.map(() => Infinity);
                     const ids = cols.map((c) => c.id);
-                    return (reservedPx: number) => {
+                    const onFrame = (reservedPx: number) => {
                       // The grip reports the desired RESERVED width, which
                       // includes the fixed chrome; subtract it to get the
                       // columns' share.
@@ -2220,10 +2251,12 @@ export function DockManager({
                       // the drag already moved them flush with the seam.
                       regionResizeDraggingRef.current = true;
                       try {
-                        // Region width isn't a per-panel placement the dirty-bit
-                        // tracks (and these fire per drag frame), so commit as
-                        // programmatic -- avoids running the user-gesture commit
-                        // handler ~60x/s for a change it ignores anyway.
+                        // Per-frame commits stay PROGRAMMATIC even though the
+                        // dirty-bit does track region width: running the
+                        // user-gesture commit handler ~60x/s is wasted work,
+                        // and an Escape-cancel must leave no user-attributed
+                        // trace. The single user commit spanning the whole
+                        // drag fires at release instead (see onEnd above).
                         flushSync(() =>
                           runProgrammatic(() =>
                             applyOp(ops.setRegionWidth(next, edge, total)),
@@ -2245,6 +2278,7 @@ export function DockManager({
                         containerHeight,
                       );
                     };
+                    return { onFrame, onEnd };
                   }}
                 />
                 )}

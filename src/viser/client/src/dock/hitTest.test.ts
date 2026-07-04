@@ -470,7 +470,7 @@ describe("outer-edge dock beside a minimized region strip", () => {
 
   it("lone minimized BAR: the region's bottom edge band docks a band below (D4/D16)", () => {
     // An in-place bar (D20) carries NO per-panel top/bottom split zones
-    // (D4: docked chips have none), so for a LONE collapsed leaf the
+    // (D4: docked bars have none), so for a LONE collapsed leaf the
     // region-edge top/bottom bands must stay available -- otherwise there
     // is no way to dock below the bar at all (P5).
     const node = leaf("g");
@@ -485,7 +485,7 @@ describe("outer-edge dock beside a minimized region strip", () => {
       tabs: [],
       ctx: { kind: "docked", nodeId: leafIdOf(node), edge: "right" },
       collapsed: true,
-      chip: true,
+      bar: true,
     };
     // Drop at the region's bottom edge, mid-x (clear of the side bands).
     const out = run(layout, [tgt], barLeft + 150, CONTAINER.height - 4, {
@@ -546,8 +546,8 @@ describe("outer-edge dock beside a minimized region strip", () => {
     }
   });
 
-  it("a CHIP target inserts HORIZONTALLY over its labels, merges elsewhere", () => {
-    // A chip lays its per-tab labels out horizontally (spec D9): over a
+  it("a BAR target inserts HORIZONTALLY over its labels, merges elsewhere", () => {
+    // A bar lays its per-tab labels out horizontally (spec D9): over a
     // label the drop inserts at that X position (2D nearest-tab, vertical
     // line) -- never the rail's Y-based row insertion, which would pick an
     // arbitrary index on a ~24px-tall segment. Off the labels (the cap /
@@ -555,9 +555,9 @@ describe("outer-edge dock beside a minimized region strip", () => {
     const node = leaf("g");
     const layout = layoutWith({ right: node });
     layout.groups["g"] = group("g", 1, true);
-    // A wide, bar-height chip wrapper (the horizontal band's leaf wrapper).
+    // A wide, bar-height wrapper (the horizontal in-place bar's leaf wrapper).
     const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft - 200, 0, 236, STRIP));
-    tgt.chip = true;
+    tgt.bar = true;
     tgt.tabs = [{ paneId: "p", rect: rect(stripLeft - 190, 6, 120, 24) }];
     // Left half of the label -> insert BEFORE it; vertical line hint.
     const before = run(layout, [tgt], stripLeft - 160, STRIP / 2, STRIP_W)!;
@@ -577,19 +577,19 @@ describe("outer-edge dock beside a minimized region strip", () => {
     expect(out.result).toMatchObject({ kind: "merge", targetGroupId: "g" });
   });
 
-  it("a DOCKED chip has no top/bottom split zones; a FLOATING chip snaps at 10px", () => {
-    // Spec D4: band-bar segments lose the 6px stack zones (band seams next
-    // door express the intent); chip-bar segments keep snap zones at 10px.
+  it("a DOCKED bar has no top/bottom split zones; a FLOATING bar snaps at 10px", () => {
+    // Spec D4: docked bars lose the 6px stack zones (band seams next
+    // door express the intent); floating bars keep snap zones at 10px.
     const node = leaf("g");
     const layout = layoutWith({ right: node });
     layout.groups["g"] = group("g", 1, true);
     const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft - 200, 0, 236, STRIP));
-    tgt.chip = true;
+    tgt.bar = true;
     tgt.tabs = [];
-    // 3px from the docked chip's top edge: NOT a split -- merge instead.
+    // 3px from the docked bar's top edge: NOT a split -- merge instead.
     const dockedOut = run(layout, [tgt], stripLeft - 100, 3, STRIP_W)!;
     expect(dockedOut.result.kind).toBe("merge");
-    // Floating chip: same press 3px from the top IS a snap (band is 10px).
+    // Floating bar: same press 3px from the top IS a snap (band is 10px).
     const flayout = layoutWith({});
     flayout.groups["g"] = group("g", 1, true);
     flayout.floating = [
@@ -602,7 +602,7 @@ describe("outer-edge dock beside a minimized region strip", () => {
       tabs: [],
       ctx: { kind: "floating", windowId: "w", index: 0 },
       collapsed: true,
-      chip: true,
+      bar: true,
     };
     const fout = run(flayout, [ftgt], 400, 103, STRIP_W)!;
     expect(fout.result).toMatchObject({ kind: "snap", windowId: "w", index: 0 });
@@ -1270,6 +1270,60 @@ describe("BUG #4 (fixed): overlapping drop targets resolve to the one on TOP", (
       kind: "merge",
       targetGroupId: "b",
     });
+  });
+});
+
+// regression pin: the owning-window mask (DropTargets.windows). A floating
+// window's PAPER rect covers chrome slivers -- its header, divider gaps --
+// that no cell rect claims. A pointer there is OWNED by that window (3.5):
+// it must not fall through to a docked target painted underneath, even
+// though the docked rect contains the point.
+describe("owning-window mask: a window's header sliver never hits the docked target below", () => {
+  it("pointer on the header sliver (inside paper, outside cell) resolves to null, not the occluded docked panel", () => {
+    const l = emptyLayout();
+    l.groups = {
+      d: group("d"),
+      f: group("f"),
+    };
+    l.docked.left = {
+      rows: [
+        {
+          id: "r106",
+          weight: 1,
+          columns: [
+            { id: "Cd", weight: 1, leaves: [{ id: "Ld", group: "d", weight: 1 }] },
+          ],
+        },
+      ],
+    };
+    l.floating = [
+      floatingWindow({ id: "w1", x: 100, y: 300, width: 200, stack: ["f"] }),
+    ];
+    // The window's paper spans y [300..600]; its cell starts 30px lower (the
+    // header sliver), so (150, 315) is inside the paper but outside the cell
+    // -- and inside the docked target's rect.
+    const cell = floatTarget("f", "w1", rect(100, 330, 200, 240));
+    cell.winId = "w1";
+    const targets: DropTargets = {
+      groups: [dockTarget("d", "Ld", rect(0, 0, 300, 800)), cell],
+      windows: [{ windowId: "w1", rect: rect(100, 300, 200, 300) }],
+    };
+    // Control: WITHOUT the paper rect the same point falls through to the
+    // docked panel's content area (merge) -- so the mask, not geometry, is
+    // what suppresses it.
+    const unmasked = hitTest(
+      l,
+      REGION_W,
+      CONTAINER,
+      { groups: targets.groups },
+      150,
+      315,
+    );
+    expect(unmasked?.result).toEqual({ kind: "merge", targetGroupId: "d" });
+    // With the mask: w1 owns the pointer; only w1-scoped targets are
+    // eligible, the cell doesn't contain the point, and the window's own
+    // seam recovery has no index>0 cell -- so the resolution is null.
+    expect(hitTest(l, REGION_W, CONTAINER, targets, 150, 315)).toBeNull();
   });
 });
 

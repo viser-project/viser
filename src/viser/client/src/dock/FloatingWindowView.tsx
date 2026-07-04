@@ -10,6 +10,7 @@ import { dragGesture } from "./gestures";
 import {
   cappedWindowHeight,
   cascadeResize,
+  expandedFlags,
   expandStack,
   minimizeStack,
   windowAllMinimized,
@@ -35,6 +36,10 @@ const RESIZE_KEEP_CANVAS_PX = 100;
 const MIN_HEIGHT_PX = MIN_WINDOW_HEIGHT_PX;
 // Minimum height for one group in a resizable snap-stack.
 const MIN_STACK_CELL_PX = 50;
+// The stack divider's invisible grab overlay overhangs its 7px layout seam on
+// each side, widening the grab zone to ~12px (P11 zone floor is 8px; the
+// docked analog grabs ~12px) without thickening the drawn seam: (12 - 7) / 2.
+const DIVIDER_OVERHANG_PX = 2.5;
 
 export const FloatingWindowView = React.memo(function FloatingWindowView({
   win,
@@ -92,6 +97,18 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     ) || 1;
   const pinnedPx = pinnedPxOf(win.height);
   const fixedHeight = pinnedPx !== undefined && !collapsed;
+  // Per-divider resizable flags over the stack's collapsed mask: a seam
+  // resizes only when an EXPANDED cell exists on each side (bars are fixed
+  // 26px; cascadeResize skips them to the next expanded grower). With no
+  // expanded cell on one side there is nothing to trade: no resize cursor,
+  // no armed gesture, and crucially no pinHeight() side effect on a press
+  // that would otherwise no-op (hit-box loop finding). Same prefix/suffix
+  // flags as SplitView's dividers.
+  const stackCollapsedMask = win.stack.map(
+    (g) => dock.groups[g]?.collapsed === true,
+  );
+  const { atOrBefore: expandedAtOrBefore, after: expandedAfter } =
+    expandedFlags(stackCollapsedMask);
   const renderedHeight =
     pinnedPx !== undefined
       ? cappedWindowHeight(pinnedPx, containerHeight)
@@ -489,6 +506,9 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                     dividerIndex={index - 1}
                     stack={win.stack}
                     groups={dock.groups}
+                    resizable={
+                      expandedAtOrBefore[index - 1] && expandedAfter[index - 1]
+                    }
                     weightOf={(g) => win.stackWeights?.[g] ?? 1}
                     onSetWeights={(weights) => onSetStackWeights(win.id, weights)}
                     isFixed={fixedHeight}
@@ -541,6 +561,7 @@ function FloatingStackDivider({
   dividerIndex,
   stack,
   groups,
+  resizable,
   weightOf,
   onSetWeights,
   isFixed,
@@ -550,6 +571,10 @@ function FloatingStackDivider({
   dividerIndex: number;
   stack: GroupId[];
   groups: Record<GroupId, TabGroup>;
+  /** False when no expanded cell sits on one side of the seam: nothing to
+   * trade, so no resize cursor, no armed gesture, and no pinHeight() side
+   * effect. Computed by the parent via the shared expandedFlags. */
+  resizable: boolean;
   weightOf: (g: GroupId) => number;
   onSetWeights: (weights: Record<GroupId, number>) => void;
   /** Whether the window already has a fixed height (so weights apply directly).
@@ -562,15 +587,6 @@ function FloatingStackDivider({
   // after unmount and the shared `resizing` flag can't stick true.
   const activeDrag = React.useRef<(() => void) | null>(null);
   React.useEffect(() => () => activeDrag.current?.(), []);
-  // A seam resizes only when an EXPANDED cell exists on each side (bars are
-  // fixed 26px; cascadeResize skips them to the next expanded grower). With
-  // no expanded cell on one side there is nothing to trade: no resize
-  // cursor, no armed gesture, and crucially no pinHeight() side effect on a
-  // press that would otherwise no-op (hit-box loop finding).
-  const collapsedMask = stack.map((g) => groups[g]?.collapsed === true);
-  const resizable =
-    collapsedMask.slice(0, dividerIndex + 1).some((c) => !c) &&
-    collapsedMask.slice(dividerIndex + 1).some((c) => !c);
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!resizable) return;
     if (event.button !== 0) return;
@@ -619,16 +635,13 @@ function FloatingStackDivider({
       },
       onEnd: (cancelled) => {
         activeDrag.current = null;
-        stackRef.current?.removeAttribute("data-dock-resizing");
+        // The captured element, not stackRef.current: the ref can re-point
+        // to a new node mid-drag, stranding the attribute on the old one.
+        container.removeAttribute("data-dock-resizing");
         if (cancelled) onSetWeights(startWeights);
       },
     });
   };
-  // Hit area wider than the divider's 7px layout footprint (P11 zone floor is
-  // 8px; the docked analog grabs ~12px): an invisible centered overlay
-  // extends the grab zone without thickening the drawn seam. Same pattern as
-  // SplitView's divider overlay -- only when resizable.
-  const overhang = resizable ? Math.max(0, (12 - 7) / 2) : 0;
   return (
     <Box
       data-floating-divider={dividerIndex}
@@ -651,8 +664,8 @@ function FloatingStackDivider({
             position: "absolute",
             left: 0,
             right: 0,
-            top: -overhang,
-            height: 7 + 2 * overhang,
+            top: -DIVIDER_OVERHANG_PX,
+            height: 7 + 2 * DIVIDER_OVERHANG_PX,
           }}
         />
       )}

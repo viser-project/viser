@@ -21,15 +21,17 @@ export function RegionResizer({
   edge,
   makeOnResize,
   getStart,
-  onDragEnd,
 }: {
   edge: DockEdge;
-  /** Called once per drag (at pointer down) so the handler can snapshot the
-   * columns' start widths; returns the per-frame resize handler. */
-  makeOnResize: () => (px: number) => void;
+  /** Called once per drag (at pointer down) so the handlers can snapshot the
+   * columns' start widths (and the drag-start layout); returns the per-frame
+   * resize handler plus the release/cancel handler (called AFTER the final
+   * width settles). */
+  makeOnResize: () => {
+    onFrame: (px: number) => void;
+    onEnd: (cancelled: boolean) => void;
+  };
   getStart: () => number;
-  /** Called once at release/cancel, AFTER the final width settles. */
-  onDragEnd?: (cancelled: boolean) => void;
 }) {
   // Cancel the in-flight gesture if the resizer unmounts mid-drag (e.g. the
   // region empties), so its window listeners can't fire after unmount.
@@ -41,7 +43,7 @@ export function RegionResizer({
     event.stopPropagation();
     const startX = event.clientX;
     const startWidth = getStart();
-    const onResize = makeOnResize();
+    const handlers = makeOnResize();
     let pending = startWidth;
     activeDrag.current = dragGesture({
       grip: event.currentTarget,
@@ -50,42 +52,68 @@ export function RegionResizer({
         const delta = e.clientX - startX;
         pending = edge === "left" ? startWidth + delta : startWidth - delta;
       },
-      flush: () => onResize(pending),
+      flush: () => handlers.onFrame(pending),
       onEnd: (cancelled) => {
         activeDrag.current = null;
         // Cancel (Escape): resolve back to the drag-start width; the snapshot
         // closure reproduces the original column widths from it.
-        if (cancelled) onResize(startWidth);
-        onDragEnd?.(cancelled);
+        if (cancelled) handlers.onFrame(startWidth);
+        handlers.onEnd(cancelled);
       },
     });
+  };
+  // The grab STRADDLES the region boundary as two strips sharing one
+  // handler. The OUTER (canvas-side) strip can never overlap panel chrome,
+  // so it runs the full height -- a drag aimed at the visible boundary line
+  // registers even beside the top cell's header. Only the INNER strip (the
+  // few px over the panel) starts below GRIP_BAR_CLEARANCE_PX, clearing the
+  // tallest chrome row (the 2.75em unmergeable header), whose canvas-corner
+  // chevron/toggle it would otherwise cover. The wrapper keeps the full
+  // straddle footprint (e2e drags target its bbox center) but is
+  // pointer-inert; only the strips take the press. Overlays, no layout
+  // impact.
+  const shared: React.CSSProperties = {
+    position: "absolute",
+    pointerEvents: "auto",
+    cursor: "ew-resize",
+    touchAction: "none",
   };
   return (
     <Box
       data-dock-region-resize={edge}
-      onPointerDown={onPointerDown}
       style={{
         position: "absolute",
-        // Start BELOW the top cell's chrome row (which holds the
-        // canvas-facing chevron + minimize toggle at a left panel's top
-        // corner): the grab zone straddles the region boundary, so without
-        // this top inset its inner few px would cover those buttons. The
-        // tallest chrome row is the 2.75em unmergeable header;
-        // GRIP_BAR_CLEARANCE_PX clears it with margin. Below it there is no
-        // chrome at the boundary, so the grab straddles the full height.
-        top: GRIP_BAR_CLEARANCE_PX,
+        top: 0,
         bottom: 0,
-        // The canvas-facing edge of the region. The grab STRADDLES the
-        // boundary -- a few px inside, the rest on the canvas side -- so a
-        // drag aimed at the visible region edge registers (it previously sat
-        // 12px ENTIRELY outside, so an edge-aimed drag fell on the panel and
-        // did nothing). Overlay, so no layout impact.
         [edge === "left" ? "right" : "left"]: `${-RESIZER_OUTSET_PX}px`,
         width: `${RESIZER_OUTSET_PX + RESIZER_INSET_PX}px`,
-        cursor: "ew-resize",
         zIndex: 15,
-        touchAction: "none",
+        pointerEvents: "none",
       }}
-    />
+    >
+      {/* Outer strip: canvas side of the boundary (the side away from the
+      region), full height. */}
+      <Box
+        onPointerDown={onPointerDown}
+        style={{
+          ...shared,
+          top: 0,
+          bottom: 0,
+          [edge === "left" ? "right" : "left"]: 0,
+          width: `${RESIZER_OUTSET_PX}px`,
+        }}
+      />
+      {/* Inner strip: over the panel, below the top chrome row. */}
+      <Box
+        onPointerDown={onPointerDown}
+        style={{
+          ...shared,
+          top: GRIP_BAR_CLEARANCE_PX,
+          bottom: 0,
+          [edge === "left" ? "left" : "right"]: 0,
+          width: `${RESIZER_INSET_PX}px`,
+        }}
+      />
+    </Box>
   );
 }
