@@ -24,7 +24,7 @@ import {
   GroupId,
   MIN_REGION_GRAB_PX,
   MIN_WINDOW_HEIGHT_PX,
-  MINIMIZED_STRIP_PX,
+  MINIMIZED_BAR_PX,
   pinnedPxOf,
   TabGroup,
 } from "./types";
@@ -419,23 +419,25 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
               display: "flex",
               flexDirection: "row",
               alignItems: "stretch",
-              height: MINIMIZED_STRIP_PX,
+              height: MINIMIZED_BAR_PX,
               cursor: "grab",
               touchAction: "none",
               userSelect: "none",
               WebkitUserSelect: "none",
             }}
           >
+            {/* WINDOW-scope pill: wider + stronger than the per-group
+            pills beside it, so the two drag scopes are visually ranked. */}
             <Box
               style={{
                 flexShrink: 0,
                 display: "flex",
                 alignItems: "center",
                 paddingLeft: "0.5em",
-                paddingRight: "0.15em",
+                paddingRight: "0.3em",
               }}
             >
-              <GripPill width="1.1em" opacity={0.5} />
+              <GripPill width="1.8em" opacity={0.65} strong />
             </Box>
             {win.stack.map((groupId, i) => {
               const group = dock.groups[groupId];

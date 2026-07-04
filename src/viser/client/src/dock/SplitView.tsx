@@ -40,6 +40,7 @@ import {
   DockRegion,
   DockRow,
   MIN_REGION_GRAB_PX,
+  MINIMIZED_BAR_PX,
   MINIMIZED_STRIP_PX,
   SPLIT_DIVIDER_PX,
 } from "./types";
@@ -121,7 +122,7 @@ export const SplitView = React.memo(function SplitView({
               style={{
                 flexGrow: stripBand ? 0 : row.weight,
                 flexShrink: stripBand ? 0 : 1,
-                flexBasis: stripBand ? MINIMIZED_STRIP_PX : 0,
+                flexBasis: stripBand ? MINIMIZED_BAR_PX : 0,
                 minWidth: 0,
                 minHeight: 0,
                 display: "flex",

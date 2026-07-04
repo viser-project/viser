@@ -62,6 +62,11 @@ export const MIN_REGION_GRAB_PX = 96;
  * region-width MODEL: totals and resize math add this constant directly, so
  * the rendered width must match it exactly. */
 export const MINIMIZED_STRIP_PX = 36;
+/** Height of a minimized horizontal BAR (band bar / floating collapsed bar):
+ * grip-bar scale -- the bar reads as "the panel collapsed to its handle"
+ * (P13/D14) -- while clearing the P11 20px clickable floor. The 36px
+ * MINIMIZED_STRIP_PX above remains the vertical RAIL's width. */
+export const MINIMIZED_BAR_PX = 26;
 
 /** Rendered width (px) of the divider between a region's side-by-side
  * columns. Participates in the region-width model the same way strips do:

@@ -11,11 +11,11 @@ import { Box } from "@mantine/core";
 import React from "react";
 import { useDock } from "./DockContext";
 import { focusRing, gripBarBg, wayfindingText } from "./DockStyles.css";
-import { focusPaneTab, tabListKeyDown } from "./gestures";
+import { focusPaneTab, keyActivate } from "./gestures";
 import { startCollapsedGroupPress } from "./collapsedPress";
 import { ChromeDivider, ChromeToggle, GripPill } from "./handles";
 import { collectLeaves, expandStack } from "./layoutOps";
-import { DockEdge, DockRow, MINIMIZED_STRIP_PX, TabGroup } from "./types";
+import { DockEdge, DockRow, MINIMIZED_BAR_PX, TabGroup } from "./types";
 
 /** Re-export under the legacy name used by FloatingWindowView. */
 export function ChipDivider() {
@@ -47,8 +47,8 @@ export function HorizontalMinimizedBand({
       }
       style={{
         width: "100%",
-        height: MINIMIZED_STRIP_PX,
-        minHeight: MINIMIZED_STRIP_PX,
+        height: MINIMIZED_BAR_PX,
+        minHeight: MINIMIZED_BAR_PX,
         flexShrink: 0,
         display: "flex",
         flexDirection: "row",
@@ -91,17 +91,21 @@ export function HorizontalMinimizedBand({
   );
 }
 
-/** ONE minimized group as its header kept in place (P13/D10): grip pill,
- * one wayfinding label per tab (D9), a "+N" badge when labels overflow, and
- * -- where per-group expand is a real distinct action (band bar; single-group
- * floating bar) -- the ChromeToggle at the right end. Chip-bar segments in a
- * multi-group window render withToggle=false: uniform-collapse makes expand
- * window-level there, and the BAR's toggle owns that signifier (P9).
+/** ONE minimized group as its header kept in place (P13/D14): grip pill,
+ * a SINGLE wayfinding title (the active tab's, with a "+N" badge for the
+ * other tabs -- per-tab affordances live in the rail and the expanded
+ * strip), and -- where per-group expand is a real distinct action (band bar;
+ * single-group floating bar) -- the ChromeToggle at the right end. Chip-bar
+ * segments in a multi-group window render withToggle=false: uniform-
+ * collapse makes expand window-level there, and the BAR's toggle owns that
+ * signifier (P9).
  *
- * Gestures (shared with the rail via startCollapsedGroupPress): a label
- * press tears out THAT pane, still minimized (single-pane groups float
- * wholesale, ids stable); any other press drags the whole group; motionless
- * clicks expand (label: to that tab; elsewhere: the group). */
+ * The title carries data-dock-tab (the active tab): it keeps tab-based
+ * selectors, keyboard activation (Enter/Space expands to it), and hitTest's
+ * single label rect working. Gestures via startCollapsedGroupPress: a
+ * title press tears out the active pane (single-pane groups float
+ * wholesale, ids stable); any other press drags the whole group;
+ * motionless clicks expand. */
 export function MinimizedGroupChip({
   group,
   withToggle = true,
@@ -110,34 +114,15 @@ export function MinimizedGroupChip({
   withToggle?: boolean;
 }) {
   const dock = useDock();
-  const labelsRef = React.useRef<HTMLDivElement>(null);
-  const [visibleCount, setVisibleCount] = React.useState(group.paneIds.length);
-  // Overflow: count labels that fit fully. Hidden labels keep their layout
-  // (visibility, not display) so measurement cannot oscillate.
-  React.useEffect(() => {
-    const el = labelsRef.current;
-    if (el === null) return;
-    const measure = () => {
-      const box = el.getBoundingClientRect();
-      let fit = 0;
-      for (const child of Array.from(el.children)) {
-        if (child.getBoundingClientRect().right <= box.right + 1) fit += 1;
-        else break;
-      }
-      setVisibleCount(Math.max(1, fit));
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [group.paneIds.length]);
-
   // The type allows an empty (area-backing) group with activeId null;
   // rendered chips never are, but render nothing rather than crash.
   if (group.activeId === null) return null;
-  const hiddenCount = group.paneIds.length - visibleCount;
-  const hiddenTitles = group.paneIds
-    .slice(visibleCount)
+  const activeId = group.activeId;
+  const spec = dock.panes[activeId];
+  const title = spec?.title ?? activeId;
+  const hiddenCount = group.paneIds.length - 1;
+  const otherTitles = group.paneIds
+    .filter((id) => id !== activeId)
     .map((id) => dock.panes[id]?.title ?? id)
     .join(", ");
   const expandGroup = () => dock.toggleCollapsed(group.id);
@@ -168,7 +153,7 @@ export function MinimizedGroupChip({
         opacity: dock.draggingGroupId === group.id ? 0.4 : 1,
       }}
     >
-      {/* The header's grip pill, kept (P13): the drag signifier. */}
+      {/* The header's grip pill, kept (P13): the group-drag signifier. */}
       <Box
         style={{
           flexShrink: 0,
@@ -178,85 +163,50 @@ export function MinimizedGroupChip({
           paddingRight: "0.15em",
         }}
       >
-        <GripPill width="1.1em" opacity={0.5} />
+        <GripPill width="1.1em" opacity={0.4} />
       </Box>
-      {/* One label per tab: the header's tabs, restyled to wayfinding. */}
+      {/* The single wayfinding title (D14): the active tab's identity. */}
       <Box
-        ref={labelsRef}
-        role="tablist"
-        aria-orientation="horizontal"
+        data-dock-tab={activeId}
+        role="tab"
+        aria-selected
+        tabIndex={0}
+        className={`${focusRing} ${wayfindingText}`}
+        title={title}
+        onKeyDown={keyActivate(() => {
+          dock.expandToTab(group.id, activeId);
+          focusPaneTab(activeId);
+        })}
         style={{
           display: "flex",
-          flexDirection: "row",
-          alignItems: "stretch",
+          alignItems: "center",
+          gap: "0.35em",
           minWidth: 0,
-          overflow: "hidden",
+          paddingLeft: "0.35em",
+          paddingRight: "0.5em",
+          cursor: "pointer",
         }}
       >
-        {group.paneIds.map((paneId, i) => {
-          const spec = dock.panes[paneId];
-          const title = spec?.title ?? paneId;
-          const onKeyDown = tabListKeyDown({
-            paneId,
-            paneIds: group.paneIds,
-            prevKey: "ArrowLeft",
-            nextKey: "ArrowRight",
-            onActivate: (id) => {
-              dock.expandToTab(group.id, id);
-              focusPaneTab(id);
-            },
-          });
-          return (
-            <Box
-              key={paneId}
-              data-dock-tab={paneId}
-              role="tab"
-              aria-selected={paneId === group.activeId}
-              tabIndex={0}
-              className={`${focusRing} ${wayfindingText}`}
-              title={title}
-              onKeyDown={onKeyDown}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.35em",
-                minWidth: 0,
-                flexShrink: 0,
-                paddingLeft: "0.5em",
-                paddingRight: "0.5em",
-                cursor: "pointer",
-                visibility: i < visibleCount ? undefined : "hidden",
-              }}
-            >
-              {spec?.icon !== undefined && (
-                <Box
-                  style={{
-                    flexShrink: 0,
-                    display: "flex",
-                    alignItems: "center",
-                  }}
-                >
-                  {spec.icon}
-                </Box>
-              )}
-              <Box
-                style={{
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  maxWidth: "10em",
-                }}
-              >
-                {title}
-              </Box>
-            </Box>
-          );
-        })}
+        {spec?.icon !== undefined && (
+          <Box style={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
+            {spec.icon}
+          </Box>
+        )}
+        <Box
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            maxWidth: "12em",
+          }}
+        >
+          {title}
+        </Box>
       </Box>
-      {/* D9 degradation: hidden labels collapse into a "+N" badge. */}
+      {/* "+N": the group's other tabs, named on hover (D14 badge). */}
       {hiddenCount > 0 && (
         <Box
-          title={hiddenTitles}
+          title={otherTitles}
           className={wayfindingText}
           style={{
             display: "flex",
@@ -277,9 +227,8 @@ export function MinimizedGroupChip({
             expanded={false}
             label="Expand panel"
             onActivate={() => {
-              const active = group.activeId;
               expandGroup();
-              if (active !== null) focusPaneTab(active);
+              focusPaneTab(activeId);
             }}
           />
         </>
