@@ -563,6 +563,9 @@ export function DockManager({
         // Skip tabs that belong to a nested group (their nearest group ancestor
         // isn't ours).
         if (t.closest("[data-dock-group]") !== scopeEl) return;
+        // Skip overflow-hidden chip labels (visibility:hidden behind the +N
+        // badge): an invisible element must not be an insertion target (P1).
+        if (getComputedStyle(t).visibility === "hidden") return;
         const paneId = t.getAttribute("data-dock-tab");
         if (paneId !== null) tabs.push({ paneId, rect: t.getBoundingClientRect() });
       });
@@ -1351,6 +1354,41 @@ export function DockManager({
     );
   };
 
+  const startBandDrag: DockContextValue["startBandDrag"] = (
+    event,
+    edge,
+    rowId,
+    opts,
+  ) => {
+    armPress(
+      event,
+      (e) => {
+        dragAfterCommit(e, () => {
+          // Measure the band bar itself; float at the region's width (a
+          // minimized band is region-wide, so the bar's measured width IS the
+          // preserved width).
+          const rect = floatRectFor(`[data-dock-minimized-band="${rowId}"]`);
+          const res = ops.floatBand(
+            layoutRef.current,
+            edge,
+            rowId,
+            rect.x,
+            rect.y,
+            regionWidthsOf(layoutRef.current)[edge],
+          );
+          if (res.windowId === null) return null;
+          flushSync(() => applyOp(res.layout));
+          return {
+            windowId: res.windowId,
+            groupIdForDim: null,
+            ...grabOffset(e, rect.x, rect.y, res.windowId),
+          };
+        });
+      },
+      opts?.onClick,
+    );
+  };
+
   const startTabDrag: DockContextValue["startTabDrag"] = (
     event,
     groupId,
@@ -1656,6 +1694,7 @@ export function DockManager({
     startTabTearOut,
     startWindowDrag,
     startColumnDrag,
+    startBandDrag,
   };
   const gestureRef = React.useRef(gestureImpls);
   gestureRef.current = gestureImpls;
@@ -1671,6 +1710,7 @@ export function DockManager({
           gestureRef.current.startWindowDrag(...args),
         startColumnDrag: (...args) =>
           gestureRef.current.startColumnDrag(...args),
+        startBandDrag: (...args) => gestureRef.current.startBandDrag(...args),
       }) satisfies Pick<
         DockContextValue,
         | "startGroupDrag"
@@ -1678,6 +1718,7 @@ export function DockManager({
         | "startTabTearOut"
         | "startWindowDrag"
         | "startColumnDrag"
+        | "startBandDrag"
       >,
     [],
   );

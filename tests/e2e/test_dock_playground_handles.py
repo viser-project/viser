@@ -818,10 +818,12 @@ def test_minimized_multigroup_band_chip_gestures(
                 ),
             )
 
-        # Keyboard: focus the inspector chip, Enter -> expands ONLY inspector.
+        # Keyboard: focus the inspector chip's tab LABEL (labels are the
+        # focusable elements; the container is a pure drag surface), Enter ->
+        # expands ONLY inspector.
         seed()
         page.eval_on_selector(
-            '[data-dock-minimized-band] [data-dock-group="t-inspector"]',
+            '[data-dock-minimized-band] [data-dock-group="t-inspector"] [data-dock-tab]',
             "e => e.focus()",
         )
         page.keyboard.press("Enter")

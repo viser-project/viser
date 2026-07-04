@@ -19,7 +19,8 @@ import { IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
 import { focusRing, gripBarBg } from "./DockStyles.css";
-import { focusPaneTab, keyActivate } from "./gestures";
+import { focusPaneTab, keyActivate, tabListKeyDown } from "./gestures";
+import { startCollapsedGroupPress } from "./collapsedPress";
 import { collectLeaves, expandStack } from "./layoutOps";
 import { DockEdge, DockRow, MINIMIZED_STRIP_PX, TabGroup } from "./types";
 
@@ -61,12 +62,11 @@ export function HorizontalMinimizedBand({
       // area is a grab/expand affordance for the whole band.
       data-dock-minimized-band={row.id}
       onPointerDown={(event) => {
-        // A press on the bar's empty area (not a segment) drags the FIRST
-        // column out (matching the column rail's tear-out), or -- motionless --
-        // expands the whole band. Segments handle their own press
-        // (stopPropagation below).
-        const first = row.columns[0];
-        dock.startColumnDrag(event, edge, first.id, { onClick: expandAll });
+        // A press on the bar's background (not a segment) drags the WHOLE
+        // band out as one stack (spec D2), or -- motionless -- expands the
+        // whole band. Segments handle their own press (their container
+        // handles it; the press never reaches here).
+        dock.startBandDrag(event, edge, row.id, { onClick: expandAll });
       }}
       style={{
         width: "100%",
@@ -127,71 +127,109 @@ export function HorizontalMinimizedBand({
 }
 
 /** ONE minimized group rendered as a horizontal segment in the vertical
- * rail's aesthetic, rotated: a gray + cap on the LEFT (the rail cell's cap,
- * turned on its side), then the active tab's icon + title as a dimmed label
- * on the body-colored surface. Used by the docked band's bar AND a minimized
- * floating window's bar, so the two horizontal surfaces are the same visual +
- * gesture unit: a drag moves the WHOLE group; a motionless click (or
- * Enter/Space) expands it.
+ * rail's aesthetic, rotated (spec D9): a gray cap on the LEADING edge (the
+ * rail cell's cap turned on its side; carries the + expand glyph only where
+ * per-group expand is a real, distinct action -- P9), then one dimmed
+ * icon+title LABEL PER TAB (the rail's spine rows, horizontal). Used by the
+ * docked band's bar AND a minimized floating window's bar, so the two
+ * horizontal surfaces are the same visual + gesture unit.
  *
- * NOT startCollapsedGroupPress: the chip carries data-dock-tab on its own
- * element (it IS the active tab's label, which keeps tab-based selectors and
- * a11y working), so that helper's closest("[data-dock-tab]") arbitration
- * would route every press to single-tab tear-out. Per-tab tear-out isn't
- * offered from a chip -- the vertical rail's per-tab rows are the granular
- * affordance. */
-export function MinimizedGroupChip({ group }: { group: TabGroup }) {
+ * Gestures (shared with the rail via startCollapsedGroupPress): pressing a
+ * label tears out THAT pane (still minimized; single-pane groups move the
+ * whole group instead, keeping ids stable); pressing the cap / elsewhere
+ * drags the whole group; a motionless click on a label expands to that tab,
+ * on the cap/background expands the group. Labels that don't fit are hidden
+ * behind a "+N" badge (visibility:hidden keeps their geometry stable so the
+ * overflow measurement can't feed back into itself). */
+export function MinimizedGroupChip({
+  group,
+  showPlus = true,
+}: {
+  group: TabGroup;
+  /** False on multi-group chip-bar segments: uniform-collapse makes any
+   * expand there a WINDOW-level action, and the window handle owns that
+   * signifier (P9) -- the cap renders as a plain gray grip edge. */
+  showPlus?: boolean;
+}) {
   const dock = useDock();
+  const labelsRef = React.useRef<HTMLDivElement>(null);
+  const [visibleCount, setVisibleCount] = React.useState(group.paneIds.length);
+  // Overflow measurement: how many labels fit fully inside the labels box.
+  // Hidden labels keep their layout (visibility, not display), so measuring
+  // is stable across re-renders and can't oscillate.
+  React.useEffect(() => {
+    const el = labelsRef.current;
+    if (el === null) return;
+    const measure = () => {
+      const box = el.getBoundingClientRect();
+      let fit = 0;
+      for (const child of Array.from(el.children)) {
+        if (child.getBoundingClientRect().right <= box.right + 1) fit += 1;
+        else break;
+      }
+      setVisibleCount(Math.max(1, fit));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [group.paneIds.length]);
+
   // A rendered chip's group is never empty, but the type says an empty
   // (area-backing) group has activeId null -- render nothing for it.
   if (group.activeId === null) return null;
-  const activeSpec = dock.panes[group.activeId];
-  const title = activeSpec?.title ?? group.activeId;
+  const hiddenCount = group.paneIds.length - visibleCount;
+  const hiddenTitles = group.paneIds
+    .slice(visibleCount)
+    .map((id) => dock.panes[id]?.title ?? id)
+    .join(", ");
+  const expandGroup = () => dock.toggleCollapsed(group.id);
   return (
     <Box
       data-dock-group={group.id}
       data-dock-collapsed="true"
       // Marks this collapsed group as a horizontal CHIP (vs the vertical
-      // rail cell). hitTest's collapsed branch reads this to offer merge
-      // instead of the rail's Y-based per-row tab insertion, which assumes
-      // vertically stacked spine rows.
+      // rail cell): hitTest's collapsed branch uses X-based label insertion
+      // and the D4 zone rules for it.
       data-dock-chip="true"
-      data-dock-tab={group.activeId}
-      role="tab"
-      aria-selected={false}
-      tabIndex={0}
-      className={focusRing}
-      title={title}
       onPointerDown={(event) => {
+        // Segments own their press: without this the press ALSO bubbles to
+        // the bar's whole-band drag (D2) and two gestures fight.
         event.stopPropagation();
-        dock.startGroupDrag(event, group.id, {
-          onClick: () => dock.toggleCollapsed(group.id),
-        });
+        startCollapsedGroupPress(dock, event, group.id, expandGroup);
       }}
-      onKeyDown={keyActivate(() => {
-        // group.activeId is non-null here (guarded above); capture it before
-        // the toggle so the post-expand focus lands on the same tab.
-        const active = group.activeId;
-        dock.toggleCollapsed(group.id);
-        if (active !== null) focusPaneTab(active);
-      })}
       style={{
         display: "flex",
         flexDirection: "row",
         alignItems: "stretch",
         height: "100%",
         minWidth: 0,
-        maxWidth: "14em",
         backgroundColor: "var(--mantine-color-body)",
-        cursor: "pointer",
+        cursor: "grab",
+        touchAction: "none",
+        userSelect: "none",
+        WebkitUserSelect: "none",
         opacity: dock.draggingGroupId === group.id ? 0.4 : 1,
       }}
     >
-      {/* Gray cap with the + expand affordance: the rail cell's cap, rotated
-      onto the segment's leading edge. Purely visual here -- the whole segment
-      is the click/drag handle. */}
+      {/* Gray cap: the rail cell's cap rotated onto the leading edge. With
+      showPlus it is the group-expand signifier (focusable, Enter/Space);
+      without it, a plain grip edge -- the press still bubbles to the
+      container's group-drag/click handling either way. */}
       <Box
-        className={gripBarBg}
+        className={showPlus ? `${gripBarBg} ${focusRing}` : gripBarBg}
+        role={showPlus ? "button" : undefined}
+        aria-label={showPlus ? "Expand panel" : undefined}
+        tabIndex={showPlus ? 0 : undefined}
+        onKeyDown={
+          showPlus
+            ? keyActivate(() => {
+                const active = group.activeId;
+                expandGroup();
+                if (active !== null) focusPaneTab(active);
+              })
+            : undefined
+        }
         style={{
           width: "1.3em",
           flexShrink: 0,
@@ -200,45 +238,103 @@ export function MinimizedGroupChip({ group }: { group: TabGroup }) {
           justifyContent: "center",
         }}
       >
-        <IconPlus size={11} style={{ opacity: 0.7 }} />
+        {showPlus && <IconPlus size={11} style={{ opacity: 0.7 }} />}
       </Box>
-      {/* Dimmed wayfinding label, matching the rail's spine rows: icon (kept
-      upright there too) + title, chrome-not-content emphasis. */}
+      {/* One label per tab (the rail's spine rows, horizontal). */}
       <Box
+        ref={labelsRef}
+        role="tablist"
+        aria-orientation="horizontal"
         style={{
           display: "flex",
-          alignItems: "center",
-          gap: "0.35em",
+          flexDirection: "row",
+          alignItems: "stretch",
           minWidth: 0,
-          paddingLeft: "0.55em",
-          paddingRight: "0.7em",
-          color: "var(--mantine-color-dimmed)",
-          opacity: 0.85,
-          fontWeight: 500,
+          overflow: "hidden",
         }}
       >
-        {activeSpec?.icon !== undefined && (
-          <Box
-            style={{
-              flexShrink: 0,
-              display: "flex",
-              alignItems: "center",
-            }}
-          >
-            {activeSpec.icon}
-          </Box>
-        )}
+        {group.paneIds.map((paneId, i) => {
+          const spec = dock.panes[paneId];
+          const title = spec?.title ?? paneId;
+          const onKeyDown = tabListKeyDown({
+            paneId,
+            paneIds: group.paneIds,
+            prevKey: "ArrowLeft",
+            nextKey: "ArrowRight",
+            onActivate: (id) => {
+              dock.expandToTab(group.id, id);
+              focusPaneTab(id);
+            },
+          });
+          return (
+            <Box
+              key={paneId}
+              data-dock-tab={paneId}
+              role="tab"
+              aria-selected={paneId === group.activeId}
+              tabIndex={0}
+              className={focusRing}
+              title={title}
+              onKeyDown={onKeyDown}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.35em",
+                minWidth: 0,
+                flexShrink: 0,
+                paddingLeft: "0.55em",
+                paddingRight: "0.7em",
+                color: "var(--mantine-color-dimmed)",
+                opacity: 0.85,
+                fontWeight: 500,
+                cursor: "pointer",
+                visibility: i < visibleCount ? undefined : "hidden",
+              }}
+            >
+              {spec?.icon !== undefined && (
+                <Box
+                  style={{
+                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                  }}
+                >
+                  {spec.icon}
+                </Box>
+              )}
+              <Box
+                style={{
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  fontSize: "0.85em",
+                  maxWidth: "10em",
+                }}
+              >
+                {title}
+              </Box>
+            </Box>
+          );
+        })}
+      </Box>
+      {/* Overflow badge: the D9 degradation when labels don't fit. */}
+      {hiddenCount > 0 && (
         <Box
+          title={hiddenTitles}
           style={{
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            fontSize: "0.85em",
+            display: "flex",
+            alignItems: "center",
+            flexShrink: 0,
+            paddingRight: "0.5em",
+            color: "var(--mantine-color-dimmed)",
+            opacity: 0.85,
+            fontWeight: 500,
+            fontSize: "0.75em",
           }}
         >
-          {title}
+          +{hiddenCount}
         </Box>
-      </Box>
+      )}
     </Box>
   );
 }

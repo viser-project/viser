@@ -477,7 +477,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                       alignItems: "stretch",
                     }}
                   >
-                    <MinimizedGroupChip group={group} />
+                    <MinimizedGroupChip group={group} showPlus={!multi} />
                   </Box>
                 </React.Fragment>
               );

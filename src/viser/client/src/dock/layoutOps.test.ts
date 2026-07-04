@@ -52,6 +52,7 @@ import {
   dropOnDockedLeaf,
   insertTabsInto,
   mergeGroupsInto,
+  floatBand,
   floatGroup,
   tearOutPane,
   moveWindow,
@@ -986,6 +987,41 @@ describe("mergeGroupsInto", () => {
   it("handles an unknown target gracefully (end index 0 -> no-op return)", () => {
     const layout = makeLayout({ floating: [{ id: "w1", stack: ["s"] }] });
     expect(mergeGroupsInto(layout, "zzz", ["s"])).toBe(layout);
+  });
+});
+
+// ===========================================================================
+// floatBand  (spec D2: band-bar background drags the whole band)
+// ===========================================================================
+
+describe("floatBand", () => {
+  it("floats every leaf of the band as one window stack, in order", () => {
+    // Band = [x | col(a, b)] over band [c]: floating the FIRST band takes
+    // x, a, b (columns left-to-right, leaves top-to-bottom) and leaves [c].
+    const layout = makeLayout({
+      left: rows([
+        row([leaf("x"), col([leaf("a", 3), leaf("b")])]),
+        row([leaf("c")]),
+      ]),
+    });
+    const rowId = layout.docked.left!.rows[0].id;
+    const res = floatBand(layout, "left", rowId, 100, 100, 300);
+    expect(res.windowId).not.toBeNull();
+    const win = res.layout.floating.find((w) => w.id === res.windowId)!;
+    expect(win.stack).toEqual(["x", "a", "b"]);
+    // Leaf weights become the window's stack weights (heights survive).
+    expect(win.stackWeights).toMatchObject({ a: 3, b: 1, x: 1 });
+    // The remaining band survives alone.
+    expect(
+      res.layout.docked.left!.rows.map((r) =>
+        r.columns.map((c) => c.leaves.map((l) => l.group)),
+      ),
+    ).toEqual([[["c"]]]);
+  });
+
+  it("no-op for a missing row id", () => {
+    const layout = makeLayout({ left: leaf("a") });
+    expect(floatBand(layout, "left", "nope", 0, 0, 300).windowId).toBeNull();
   });
 });
 

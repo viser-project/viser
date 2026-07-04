@@ -106,9 +106,10 @@ def test_minimize_button_keyboard(dock_context, vite_server) -> None:
     assert page.evaluate(
         "(gid) => window.__dockLayout.groups[gid].collapsed === true", gid
     ), "Enter on the focused minimize button should collapse the group"
-    # Collapsed, the floating window is a chip bar: Space on the focused CHIP
-    # expands the group again.
-    chip_sel = f'[data-floating-window] [data-dock-group="{gid}"]'
+    # Collapsed, the floating window is a chip bar: Space on the focused
+    # tab LABEL inside the chip expands the group again (labels are the
+    # focusable elements; the container is a pure drag surface).
+    chip_sel = f'[data-floating-window] [data-dock-group="{gid}"] [data-dock-tab]'
     page.eval_on_selector(chip_sel, "e => e.focus()")
     page.keyboard.press("Space")
     page.wait_for_timeout(100)

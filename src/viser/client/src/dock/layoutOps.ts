@@ -1295,6 +1295,39 @@ export function floatColumn(
   return { layout: draft, windowId: win.id };
 }
 
+/** Float an entire ROW BAND as ONE window: every leaf across the band's
+ * columns (left-to-right, top-to-bottom within each column) becomes the
+ * window's stack. Spec D2: the minimized band bar's background drags the
+ * whole band as a unit. Same conventions as floatColumn: weights become the
+ * window's stackWeights; area groups veto the float. */
+export function floatBand(
+  layout: DockLayout,
+  edge: DockEdge,
+  rowId: NodeId,
+  x: number,
+  y: number,
+  width: number,
+  height?: number,
+): { layout: DockLayout; windowId: WindowId | null } {
+  const row = layout.docked[edge]?.rows.find((r) => r.id === rowId);
+  if (row === undefined) return { layout, windowId: null };
+  const stack = row.columns.flatMap((c) => c.leaves.map((l) => l.group));
+  if (stack.some((g) => isAreaGroup(layout, g))) {
+    return { layout, windowId: null };
+  }
+  const stackWeights: Record<GroupId, number> = {};
+  row.columns.forEach((c) =>
+    c.leaves.forEach((l) => {
+      stackWeights[l.group] = l.weight;
+    }),
+  );
+  const draft = clone(layout);
+  stack.forEach((g) => detachInPlace(draft, g));
+  const win = makeFloatingWindow(x, y, width, stack, height, stackWeights);
+  draft.floating.push(win);
+  return { layout: draft, windowId: win.id };
+}
+
 /** Pull a single panel out of its group into a new floating window. If the
  * panel was the only one in its group, the whole group floats instead (no new
  * group is created). Returns the new layout and the id of the group that ended

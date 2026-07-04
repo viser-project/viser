@@ -630,9 +630,9 @@ def test_expand_of_pinned_height_window_keeps_height(
                 ]
             ),
         )
-        # Expand via the chip (Enter on the focused chip).
+        # Expand via the chip's tab label (Enter on the focused label).
         pg.eval_on_selector(
-            '[data-floating-window] [data-dock-group="t-controls"]',
+            '[data-floating-window] [data-dock-group="t-controls"] [data-dock-tab]',
             "e => e.focus()",
         )
         pg.keyboard.press("Enter")

@@ -63,6 +63,15 @@ export interface DockContextValue {
     columnNodeId: NodeId,
     opts?: { onClick?: () => void },
   ) => void;
+  /** Begin a press on a minimized band bar's background: a drag floats the
+   * WHOLE band as one window stack (spec D2); a motionless click runs
+   * `opts.onClick` (expand-all). */
+  startBandDrag: (
+    event: React.PointerEvent<HTMLElement>,
+    edge: DockEdge,
+    rowId: NodeId,
+    opts?: { onClick?: () => void },
+  ) => void;
   /** Begin a press on a tab: a click activates it, a drag tears the panel out
    * into its own floating window. */
   startTabDrag: (
