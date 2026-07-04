@@ -897,13 +897,14 @@ def test_all_bands_minimized_region_is_compact_rail_not_squares(
             assert lf["w"] < 60, f"rail should be narrow, got {lf}"
             assert lf["h"] > lf["w"], f"rail should be taller than wide, got {lf}"
 
-        # Expand one band from the rail -> it grows to full width.
-        page.evaluate(
-            """() => {
-                const g = document.querySelector('[data-dock-group="t-controls"]');
-                g.querySelector('[data-dock-minimize]').click();
-            }"""
+        # Expand one band from the rail via its spine ROW (rows own per-band
+        # expand; the parent handle owns the one expand-all +, P9). Rows are
+        # pointer-gesture surfaces, so activate via keyboard (Enter), which
+        # works synthetically.
+        page.eval_on_selector(
+            '[data-dock-group="t-controls"] [data-dock-tab]', "e => e.focus()"
         )
+        page.keyboard.press("Enter")
         page.wait_for_timeout(400)
         assert (
             page.evaluate(

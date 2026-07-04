@@ -18,7 +18,7 @@ import { Box } from "@mantine/core";
 import { IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
-import { focusRing } from "./DockStyles.css";
+import { focusRing, gripBarBg } from "./DockStyles.css";
 import { focusPaneTab, tabListKeyDown } from "./gestures";
 import { startCollapsedGroupPress } from "./collapsedPress";
 import { HandleIconButton } from "./handles";
@@ -69,6 +69,7 @@ export function HorizontalMinimizedBand({
         // handles it; the press never reaches here).
         dock.startBandDrag(event, edge, row.id, { onClick: expandAll });
       }}
+      className={gripBarBg}
       style={{
         width: "100%",
         height: MINIMIZED_STRIP_PX,
@@ -77,7 +78,6 @@ export function HorizontalMinimizedBand({
         display: "flex",
         flexDirection: "row",
         alignItems: "stretch",
-        backgroundColor: "var(--mantine-color-body)",
         overflowX: "hidden",
         overflowY: "hidden",
         cursor: "grab",
@@ -208,7 +208,6 @@ export function MinimizedGroupChip({
         height: "100%",
         width: withToggle ? "100%" : undefined,
         minWidth: 0,
-        backgroundColor: "var(--mantine-color-body)",
         cursor: "grab",
         touchAction: "none",
         userSelect: "none",

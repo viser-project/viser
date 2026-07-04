@@ -1051,3 +1051,72 @@ def test_docked_resize_pushes_fully_on_canvas_float(
     assert abs(after_right - seam) <= 10, (
         f"pushed float right edge {after_right} should sit flush with the seam {seam}"
     )
+
+
+def test_example_11_panels_minimized_chrome(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """Real-content pin of the 11_panels example's minimized states (the
+    playground's synthetic panels missed both of these once):
+
+    1. The all-minimized docked region (stats + logs) shows exactly ONE
+       expand-all `+` (the rail's parent handle) -- cells show pills, and
+       expanding a single band is the spine row's job (P9).
+    2. After expanding stats from the rail, the still-minimized log band bar
+       must be visually BOUNDED against the white panel body above it: its
+       surface is the grip-bar gray, not the body color (P13/P10)."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(300)
+
+    stats = viser_server.gui.add_panel(key="stats")
+    with stats.add_tab("Stats"):
+        viser_server.gui.add_markdown("stats content")
+    stats.dock_right()
+    stats.set_width(320)
+    stats.minimize()
+    logs = viser_server.gui.add_panel(key="logs")
+    with logs.add_tab("Log"):
+        viser_server.gui.add_markdown("log content")
+    logs.dock_below(stats)
+    logs.minimize()
+
+    rail = viser_page.locator("[data-dock-region-rail]")
+    expect(rail).to_have_count(1, timeout=5_000)
+    # Exactly one + (the parent handle's expand-all); no per-cell + caps.
+    n_all = viser_page.locator(
+        "[data-dock-edge='right'] [data-dock-minimize], "
+        "[data-dock-region-rail] [data-dock-minimize]"
+    ).count()
+    n_parent = viser_page.locator(
+        "[data-dock-region-rail] [data-dock-minimize-all]"
+    ).count()
+    assert n_all == 0 and n_parent == 1, (
+        f"rail must show exactly one expand-all + (got {n_all} cell +s, "
+        f"{n_parent} parent)"
+    )
+
+    # Expand stats via its spine row (keyboard; rows are gesture surfaces).
+    row = viser_page.locator(
+        "[data-dock-leaf][data-dock-edge='right'] [data-dock-tab]"
+    ).first
+    row.focus()
+    viser_page.keyboard.press("Enter")
+    viser_page.wait_for_timeout(400)
+    expect(_tab(viser_page, "Stats")).to_be_visible()
+
+    # The log band bar renders with the grip-bar surface: its background
+    # must DIFFER from the body color of the expanded panel above (P13).
+    colors = viser_page.evaluate(
+        """() => {
+        const band = document.querySelector('[data-dock-minimized-band]');
+        const body = document.querySelector('[data-dock-leaf][data-dock-edge="right"]');
+        return {
+          band: band ? getComputedStyle(band).backgroundColor : null,
+          body: body ? getComputedStyle(body.querySelector('[data-dock-group]')).backgroundColor : null,
+        };
+    }"""
+    )
+    assert colors["band"] is not None
+    assert colors["band"] != colors["body"], (
+        f"minimized band bar must be bounded by surface contrast, got {colors}"
+    )

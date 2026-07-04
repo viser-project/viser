@@ -146,11 +146,11 @@ export function RegionMinimizedRail({
                 nodeId={id}
                 edge={edge}
                 group={g}
-                // NOT inStack: the region rail's cells are independent BANDS
-                // (D12), so each keeps its own + (expand just that band) --
-                // a distinct action from the parent handle's expand-all, so
-                // both signifiers are P9-legal.
-                inStack={false}
+                // inStack: the parent handle owns the ONE expand-all + (P9);
+                // expanding a single band is the spine ROW's click
+                // (expand-to-tab), so per-cell + caps would be a third
+                // signifier for actions the rows already own.
+                inStack={leaves.length > 1}
               />
             </React.Fragment>
           );

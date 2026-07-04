@@ -14,6 +14,7 @@ import {
   minimizeStack,
   windowAllMinimized,
 } from "./layoutOps";
+import { gripBarBg } from "./DockStyles.css";
 import { HandleIconButton, StackHandleBar } from "./handles";
 import { IconPlus } from "@tabler/icons-react";
 import { TabGroupFrame } from "./TabGroupFrame";
@@ -411,6 +412,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
           // the whole window; a motionless click expands every group. Each
           // group's label run is its own drop target (data-dock-chip-cell).
           <Box
+            className={gripBarBg}
             onPointerDown={(event) =>
               dock.startWindowDrag(event, win.id, { onClick: toggleAll })
             }
@@ -419,7 +421,6 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
               flexDirection: "row",
               alignItems: "stretch",
               height: MINIMIZED_STRIP_PX,
-              backgroundColor: "var(--mantine-color-body)",
               cursor: "grab",
               touchAction: "none",
               userSelect: "none",

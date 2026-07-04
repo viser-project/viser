@@ -117,8 +117,11 @@ surfaces inherit this arbitration instead of re-deriving it; a press must
 never arm two levels at once.
 
 **P13 — Minimize keeps the chrome.** A minimized panel is its expanded
-chrome with the body removed: the grip surface stays, the tab labels stay
-in place (restyled to dimmed wayfinding), the width stays, and the
+chrome with the body removed: the grip surface stays — INCLUDING its
+grip-bar gray, which is what bounds the bar against adjacent white panel
+bodies (P10 enclosure-by-surface; a body-colored bar between two panels
+reads as a stray label inside them) — the tab labels stay in place
+(restyled to dimmed wayfinding), the width stays, and the
 minimize/expand toggle stays in the SAME position — `−` at the top-right of
 the expanded header becomes `+` at the right end of the minimized bar, so
 the toggle is spatially stable and a mis-click is undone without moving the
@@ -188,9 +191,14 @@ Anatomy is listed top-to-bottom / left-to-right.
 
 ### 3.2 Vertical rail (the P13 exception: reclaims width, not height)
 - Per cell: gray cap — a `+` button when the cell is alone, a small grip pill
-  when stacked (the parent rail owns expand-all); then one **spine row per
-  tab** (upright icon above rotated title), dimmed. (Post-D12, stacked rail
-  cells occur only for an all-minimized REGION; plain stacks are bands.)
+  when stacked; then one **spine row per tab** (upright icon above rotated
+  title), dimmed. (Post-D12, stacked rail cells occur only for an
+  all-minimized REGION; plain stacks are bands.)
+- Signifier budget in a stacked rail (P9, learned from the real example):
+  exactly ONE `+` — on the region rail's parent handle (expand-all). Cells
+  show pills; expanding a single band is the spine ROW's click
+  (expand-to-tab), which needs no icon. Three `+`s in a 36px strip read as
+  three different mysteries.
 - Hairline divider between cells.
 - Clicking a spine row expands the column *to that tab*. Clicking the `+`
   expands in place. Dragging any row tears out just that pane (still
