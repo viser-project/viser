@@ -513,11 +513,12 @@ describe("outer-edge dock beside a minimized region strip", () => {
     }
   });
 
-  it("a CHIP target (horizontal pill) merges instead of Y-based row insertion", () => {
-    // A collapsed group rendered as a horizontal chip (band bar / floating
-    // bar) is one visual unit with no per-tab rows: even if a tab rect is
-    // present, the middle of the chip must MERGE -- Y-based row insertion
-    // would pick an arbitrary before/after index on a ~24px-tall pill.
+  it("a CHIP target inserts HORIZONTALLY over its labels, merges elsewhere", () => {
+    // A chip lays its per-tab labels out horizontally (spec D9): over a
+    // label the drop inserts at that X position (2D nearest-tab, vertical
+    // line) -- never the rail's Y-based row insertion, which would pick an
+    // arbitrary index on a ~24px-tall segment. Off the labels (the cap /
+    // trailing space) the drop merges.
     const node = leaf("g");
     const layout = layoutWith({ right: node });
     layout.groups["g"] = group("g", 1, true);
@@ -525,9 +526,53 @@ describe("outer-edge dock beside a minimized region strip", () => {
     const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft - 200, 0, 236, STRIP));
     tgt.chip = true;
     tgt.tabs = [{ paneId: "p", rect: rect(stripLeft - 190, 6, 120, 24) }];
-    // Dead-center of the chip: inside the tab rect, past the edge bands.
-    const out = run(layout, [tgt], stripLeft - 130, STRIP / 2, STRIP_W)!;
-    expect(out.result).toMatchObject({ kind: "merge", targetGroupId: "g" });
+    // Left half of the label -> insert BEFORE it; vertical line hint.
+    const before = run(layout, [tgt], stripLeft - 160, STRIP / 2, STRIP_W)!;
+    expect(before.result).toMatchObject({
+      kind: "insertTab",
+      targetGroupId: "g",
+      index: 0,
+    });
+    expect(before.hint.width).toBeLessThan(before.hint.height);
+    // Right half -> insert AFTER it.
+    const after = run(layout, [tgt], stripLeft - 100, STRIP / 2, STRIP_W)!;
+    expect(after.result).toMatchObject({ kind: "insertTab", index: 1 });
+    // Past the labels (trailing space): nearest-label insertion appends at
+    // the end -- functionally merge-append, with an honest line hint (same
+    // convention as the rail, whose insertion also has no range cutoff).
+    const out = run(layout, [tgt], stripLeft - 20, STRIP / 2, STRIP_W)!;
+    expect(out.result).toMatchObject({ kind: "insertTab", index: 1 });
+  });
+
+  it("a DOCKED chip has no top/bottom split zones; a FLOATING chip snaps at 10px", () => {
+    // Spec D4: band-bar segments lose the 6px stack zones (band seams next
+    // door express the intent); chip-bar segments keep snap zones at 10px.
+    const node = leaf("g");
+    const layout = layoutWith({ right: node });
+    layout.groups["g"] = group("g", 1, true);
+    const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft - 200, 0, 236, STRIP));
+    tgt.chip = true;
+    tgt.tabs = [];
+    // 3px from the docked chip's top edge: NOT a split -- merge instead.
+    const dockedOut = run(layout, [tgt], stripLeft - 100, 3, STRIP_W)!;
+    expect(dockedOut.result.kind).toBe("merge");
+    // Floating chip: same press 3px from the top IS a snap (band is 10px).
+    const flayout = layoutWith({});
+    flayout.groups["g"] = group("g", 1, true);
+    flayout.floating = [
+      { id: "w", x: 300, y: 100, width: 236, height: { mode: "auto" }, stack: ["g"] },
+    ];
+    const ftgt: GroupTarget = {
+      groupId: "g",
+      rect: rect(300, 100, 236, STRIP),
+      stripRect: null,
+      tabs: [],
+      ctx: { kind: "floating", windowId: "w", index: 0 },
+      collapsed: true,
+      chip: true,
+    };
+    const fout = run(flayout, [ftgt], 400, 103, STRIP_W)!;
+    expect(fout.result).toMatchObject({ kind: "snap", windowId: "w", index: 0 });
   });
 });
 
@@ -1429,13 +1474,14 @@ describe("unmergeable header acts as the dock-above / snap-above zone", () => {
 
   it("left/right split bands are pixel-capped on wide panes", () => {
     const l = layoutDockedRight();
-    // 400px-wide panel: 22% would be 88px; the cap holds the band at 70px.
+    // 500px-wide panel: 30% would be 150px; the cap holds the band at 120px
+    // (spec D1 geometry).
     const targets: DropTargets = {
-      groups: [unmergeableDockTarget(rect(600, 0, 400, 800))],
+      groups: [unmergeableDockTarget(rect(500, 0, 500, 800))],
     };
-    const inBand = hitTest(l, REGION_W, CONTAINER, targets, 600 + 50, 400);
+    const inBand = hitTest(l, REGION_W, CONTAINER, targets, 500 + 100, 400);
     expect(inBand?.result).toMatchObject({ kind: "split", region: "left" });
-    const pastCap = hitTest(l, REGION_W, CONTAINER, targets, 600 + 80, 400);
+    const pastCap = hitTest(l, REGION_W, CONTAINER, targets, 500 + 140, 400);
     expect(pastCap).toBeNull(); // dead center for unmergeable, not "left"
   });
 });

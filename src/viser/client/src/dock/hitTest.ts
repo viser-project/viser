@@ -44,17 +44,23 @@ const INSERT_LINE_INSET_PX = 4;
 // edge stays a MERGE target (capped to a third of the cell so a short strip
 // keeps a merge zone).
 const MINIMIZED_EDGE_BAND_PX = 6;
+// Chip-bar (floating) segments use a wider snap band (spec D4): 6px was
+// unhittable, and no alternative affordance exists for snapping into a
+// minimized window's stack. Band-bar segments have NO top/bottom zones at
+// all -- the band seams and region-edge bands next door express the intent.
+const CHIP_SNAP_BAND_PX = 10;
 // Rendered thickness (px) of an insertion-LINE hint -- the thin bar drawn for
 // every "insert here" drop (per-panel split, region-edge span, cross-band seam).
 const LINE_PX = 3;
 // Band fraction (of the content area) for a per-panel left/right split, capped
-// in pixels so it doesn't balloon on a wide panel.
-const SPLIT_BAND = 0.22;
-const SPLIT_BAND_H_MAX_PX = 70;
-// Above/below splits use a smaller band, also capped in pixels so it doesn't
-// balloon on a tall panel -- the bulk of the content area stays "merge".
-const SPLIT_BAND_V = 0.15;
-const SPLIT_BAND_V_MAX_PX = 70;
+// in pixels so it doesn't balloon on a wide panel. Sized so center-merge is
+// roughly the middle third (spec D1): splits are the casual-drop default,
+// merging requires clearer aim.
+const SPLIT_BAND = 0.3;
+const SPLIT_BAND_H_MAX_PX = 120;
+// Above/below splits: same D1 rebalance, slightly narrower than the sides.
+const SPLIT_BAND_V = 0.25;
+const SPLIT_BAND_V_MAX_PX = 100;
 // Max vertical gap between two stacked docked panels still treated as ONE seam
 // (the divider). Slightly above SPLIT_DIVIDER_PX for sub-px layout slack; small
 // enough that two genuinely separated panels aren't fused.
@@ -774,19 +780,47 @@ export function hitTest(
     // horizontal pill with no per-tab rows -- Y-based row insertion would pick
     // an arbitrary index there; a drop on a chip merges instead).
     const canInsert =
-      !draggingUnmergeable &&
-      !g.unmergeable &&
-      g.chip !== true &&
-      g.tabs.length > 0;
-    const edge = Math.min(MINIMIZED_EDGE_BAND_PX, r.height / 3);
-    const inTopEdge = clientY < r.top + edge;
-    const inBottomEdge = clientY > r.bottom - edge;
-    const ins =
-      canInsert && !inTopEdge && !inBottomEdge
-        ? verticalTabInsertion(g.tabs, clientY)
-        : null;
-    const insertResult = () =>
-      ins === null
+      !draggingUnmergeable && !g.unmergeable && g.tabs.length > 0;
+    // Top/bottom edge bands: rail cells keep the thin 6px stack-above/below
+    // zones; CHIP segments differ by context (spec D4) -- a docked band-bar
+    // segment has NONE (the band seams next door already say "insert a band
+    // above/below"), a floating chip-bar segment gets a wider 10px snap band.
+    const edgeBand =
+      g.chip === true
+        ? gt.ctx.kind === "docked"
+          ? 0
+          : Math.min(CHIP_SNAP_BAND_PX, r.height / 3)
+        : Math.min(MINIMIZED_EDGE_BAND_PX, r.height / 3);
+    const inTopEdge = edgeBand > 0 && clientY < r.top + edgeBand;
+    const inBottomEdge = edgeBand > 0 && clientY > r.bottom - edgeBand;
+    // Tab insertion matches the segment's orientation: rail cells stack rows
+    // vertically (Y-based, horizontal line); chips lay labels out
+    // horizontally (2D nearest-tab, vertical line) -- spec D9.
+    const insertResult = () => {
+      if (!canInsert || inTopEdge || inBottomEdge) return null;
+      if (g.chip === true) {
+        const ins = tabInsertion(g.tabs, clientX, clientY);
+        return ins === null
+          ? null
+          : {
+              result: {
+                kind: "insertTab" as const,
+                targetGroupId: g.groupId,
+                index: ins.index,
+              },
+              hint: rel(
+                {
+                  left: ins.lineLeft - 1,
+                  top: ins.lineTop,
+                  width: 2,
+                  height: ins.lineHeight,
+                },
+                "line" as const,
+              ),
+            };
+      }
+      const ins = verticalTabInsertion(g.tabs, clientY);
+      return ins === null
         ? null
         : {
             result: {
@@ -799,6 +833,7 @@ export function hitTest(
               "line" as const,
             ),
           };
+    };
     if (g.ctx.kind === "docked") {
       const e = g.ctx.edge;
       const n = g.ctx.nodeId;
