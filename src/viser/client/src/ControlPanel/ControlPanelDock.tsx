@@ -16,7 +16,7 @@ import { htmlIconWrapper } from "../components/ComponentStyles.css";
 import { DockMetricsContext, useDock } from "../dock/DockContext";
 import { DockManager } from "../dock/DockManager";
 import * as ops from "../dock/layoutOps";
-import {
+import { isRegionCollapsedOn,
   DockLayout,
   PaneRegistry,
   emptyLayout,
@@ -64,10 +64,15 @@ function groupPlacementSignatures(
     const region = layout.docked[edge];
     if (region === null) continue;
     const w = Math.round(regionWidthsOf(layout)[edge]);
+    // The region's D21 rail flag is part of every resident's signature: a
+    // user's chevron collapse must mark those panels touched, or a later
+    // single-axis server update would replay a stale collapsed=false and
+    // silently un-rail the region the user just collapsed (P6).
+    const rail = isRegionCollapsedOn(layout, edge) ? "R" : "-";
     for (const row of region.rows)
       for (const column of row.columns)
         for (const { id, group } of ops.collectLeaves(column))
-          sigs.set(group, `d:${edge}:${id}:${collapsed(group)}:${w}`);
+          sigs.set(group, `d:${edge}:${id}:${collapsed(group)}:${w}:${rail}`);
   }
   // Floating: signature = the window (id + position/size) the group sits in, plus
   // its collapsed state. Deliberately NOT the stack index -- a group that stays

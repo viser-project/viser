@@ -12,7 +12,7 @@ import { Box } from "@mantine/core";
 import React from "react";
 import { useDock } from "./DockContext";
 import { focusRing, gripBarBg, wayfindingText } from "./DockStyles.css";
-import { focusPaneTab, keyActivate } from "./gestures";
+import { focusDockControl, focusPaneTab, keyActivate } from "./gestures";
 import { startCollapsedGroupPress } from "./collapsedPress";
 import { ChromeToggle, RegionCollapseChevron } from "./handles";
 import { regionChevronEdge } from "./layoutOps";
@@ -162,7 +162,14 @@ export function MinimizedBar({ group }: { group: TabGroup }) {
       {chevronEdge !== null && (
         <RegionCollapseChevron
           edge={chevronEdge}
-          onActivate={() => dock.collapseRegion(chevronEdge, true)}
+          onActivate={() => {
+            dock.collapseRegion(chevronEdge, true);
+            // The chevron unmounts with the bar; hand focus to the rail
+            // header (spec 4 / edge case 14 -- same as the grip-bar path).
+            focusDockControl(
+              `[data-dock-region-rail="${chevronEdge}"] [data-dock-minimize-all]`,
+            );
+          }}
         />
       )}
       <ChromeToggle

@@ -404,11 +404,17 @@ export function cascadeResize(opts: {
   containerPx: number;
   dividerIndex: number;
   deltaPx: number;
-  minCell: number;
+  /** Per-cell minimum px, or one shared floor. Band dividers pass per-band
+   * minimums (a band holding N stacked leaves needs N cells' worth of
+   * height, not one) so a drag can't squeeze a multi-leaf band below its
+   * own content and force cross-band overlap. */
+  minCell: number | number[];
   maxCell: number;
 }): number[] | null {
-  const { weights, collapsed, containerPx, deltaPx, minCell, maxCell } = opts;
+  const { weights, collapsed, containerPx, deltaPx, maxCell } = opts;
   const index = opts.dividerIndex;
+  const minOf = (i: number): number =>
+    Array.isArray(opts.minCell) ? (opts.minCell[i] ?? 0) : opts.minCell;
   if (containerPx <= 0) return null;
   const total =
     weights.reduce((s, w, i) => (collapsed[i] ? s : s + w), 0) || 1;
@@ -430,7 +436,7 @@ export function cascadeResize(opts: {
     const want = need;
     for (let j = index + 1; j < next.length && need > 0.5; j++) {
       if (collapsed[j]) continue;
-      const give = Math.min(need, next[j] - minCell);
+      const give = Math.min(need, next[j] - minOf(j));
       if (give > 0) {
         next[j] -= give;
         need -= give;
@@ -442,7 +448,7 @@ export function cascadeResize(opts: {
     const want = need;
     for (let j = index; j >= 0 && need > 0.5; j--) {
       if (collapsed[j]) continue;
-      const give = Math.min(need, next[j] - minCell);
+      const give = Math.min(need, next[j] - minOf(j));
       if (give > 0) {
         next[j] -= give;
         need -= give;

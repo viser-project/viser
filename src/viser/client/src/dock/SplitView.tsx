@@ -153,7 +153,25 @@ export const SplitView = React.memo(function SplitView({
                         index,
                         deltaPx,
                         containerPx,
-                        minCell: MIN_CELL_HEIGHT_PX,
+                        // Per-band floor: a band must fit its tallest
+                        // column's cells (expanded 50px / bars 26px +
+                        // dividers), or the leaves' own render floors
+                        // overflow into the band below.
+                        minCell: rows.map((band) =>
+                          Math.max(
+                            ...band.columns.map((col) =>
+                              col.leaves.reduce(
+                                (px, lf, i2) =>
+                                  px +
+                                  (groups[lf.group]?.collapsed === true
+                                    ? MINIMIZED_BAR_PX
+                                    : MIN_CELL_HEIGHT_PX) +
+                                  (i2 > 0 ? SPLIT_DIVIDER_PX : 0),
+                                0,
+                              ),
+                            ),
+                          ),
+                        ),
                       })
                     }
                     onCancel={() =>
@@ -276,6 +294,12 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
         height: "100%",
         minWidth: 0,
         minHeight: 0,
+        // With the leaves' render floors, a squeezed column (short viewport,
+        // many cells) SCROLLS rather than pushing cells past the container
+        // where their chrome becomes unreachable (P5) -- mirrors the
+        // floating stack's overflow rule (P7).
+        overflowY: "auto",
+        overflowX: "hidden",
       }}
     >
       {leaves.map((leaf, index) => {
@@ -357,7 +381,7 @@ function resizeCells(opts: {
   index: number;
   deltaPx: number;
   containerPx: number;
-  minCell: number;
+  minCell: number | number[];
 }): void {
   const { dock, edge, cells, collapsed, index, deltaPx, containerPx, minCell } =
     opts;

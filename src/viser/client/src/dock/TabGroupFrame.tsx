@@ -394,7 +394,7 @@ export function TabGroupFrame({
             // Click-to-minimize: minimize is per-GROUP now (D16), so a tap on
             // the header toggles just this panel -- stacked or not.
             dock.startGroupDrag(event, group.id, {
-              onClick: () => dock.toggleCollapsed(group.id),
+              onClick: toggleAndFocusBar,
             });
           }}
           data-dock-unmergeable-header={group.id}
@@ -496,6 +496,12 @@ export function TabGroupFrame({
             if (stripDragsGroup) dock.startGroupDrag(event, group.id);
           }}
           style={{
+            // When the grip bar above hosts the region chevron, its ~24px
+            // hit box overhangs the strip top-right; reserve that corner so
+            // no TAB can sit under it (a press there must never collapse
+            // the region when the user aimed at a tab).
+            paddingRight:
+              chevronEdge !== null ? `${2 * HANDLE_BTN_EM}em` : undefined,
             display: "flex",
             flexWrap: "wrap",
             alignItems: "stretch",

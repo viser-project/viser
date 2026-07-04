@@ -1771,6 +1771,7 @@ export function DockManager({
       activateTab,
       expandToTab,
       toggleCollapsed,
+      collapseRegion,
       draggingGroupId,
       draggingTabId,
     ],
