@@ -116,3 +116,44 @@ describe("structureSignature", () => {
     expect(structureSignature(l3)).not.toBe(sig);
   });
 });
+
+import { dockToRegionEdge, dockBandAtIndex } from "./layoutOps";
+import { floatingWindow } from "./testUtils";
+
+describe("region-side dock beside a canonical stack (D12 follow-ups)", () => {
+  it("zips single-column bands so the new panel lands beside EVERYTHING", () => {
+    const l = makeLayout({
+      // Band WEIGHTS 3:1 (the second arg of row(), not the leaf weight).
+      left: rows([row([leaf("b")], 3), row([leaf("c")], 1)]),
+    });
+    l.floating = [floatingWindow({ id: "w", x: 0, y: 0, width: 200, stack: ["n"] })];
+    l.groups["n"] = group("n");
+    const out = dockToRegionEdge(l, ["n"], "left", "left");
+    const rws = out.docked.left!.rows;
+    expect(rws).toHaveLength(1);
+    expect(rws[0].columns.map((c) => c.leaves.map((lf) => lf.group))).toEqual([
+      ["n"],
+      ["b", "c"],
+    ]);
+    // Zipped leaf weights preserve the bands' 3:1 height split.
+    const zipped = rws[0].columns[1];
+    expect(zipped.leaves[0].weight / zipped.leaves[1].weight).toBeCloseTo(3);
+  });
+
+  it("a seam band insert takes an equal share, not a ~0px sliver", () => {
+    // BAND weights on a px scale (post band-divider resize).
+    const l = makeLayout({
+      left: rows([row([leaf("b")], 400), row([leaf("c")], 300)]),
+    });
+    l.floating = [floatingWindow({ id: "w", x: 0, y: 0, width: 200, stack: ["n"] })];
+    l.groups["n"] = group("n");
+    const out = dockBandAtIndex(l, ["n"], "left", 1);
+    const rws = out.docked.left!.rows;
+    expect(rws).toHaveLength(3);
+    const total = rws.reduce((s, r) => s + r.weight, 0);
+    const newBand = rws[1];
+    // The new band's share is ~1/3 of the region (mean of the existing
+    // weights), NOT 1/701.
+    expect(newBand.weight / total).toBeGreaterThan(0.2);
+  });
+});

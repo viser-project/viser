@@ -21,7 +21,7 @@ import { useDock } from "./DockContext";
 import { focusRing, gripBarBg } from "./DockStyles.css";
 import { focusPaneTab, tabListKeyDown } from "./gestures";
 import { startCollapsedGroupPress } from "./collapsedPress";
-import { HandleIconButton } from "./handles";
+import { GripPill, HandleIconButton } from "./handles";
 import { collectLeaves, expandStack } from "./layoutOps";
 import { DockEdge, DockRow, MINIMIZED_STRIP_PX, TabGroup } from "./types";
 
@@ -215,6 +215,19 @@ export function MinimizedGroupChip({
         opacity: dock.draggingGroupId === group.id ? 0.4 : 1,
       }}
     >
+      {/* The header's grip pill, kept (P13): the visible drag signifier for
+      the segment (the whole background drags; the pill marks it). */}
+      <Box
+        style={{
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          paddingLeft: "0.5em",
+          paddingRight: "0.15em",
+        }}
+      >
+        <GripPill width="1.1em" opacity={0.5} />
+      </Box>
       {/* One label per tab (the rail's spine rows, horizontal). */}
       <Box
         ref={labelsRef}

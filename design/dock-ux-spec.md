@@ -121,8 +121,9 @@ chrome with the body removed: the grip surface stays — INCLUDING its
 grip-bar gray, which is what bounds the bar against adjacent white panel
 bodies (P10 enclosure-by-surface; a body-colored bar between two panels
 reads as a stray label inside them) — the tab labels stay in place
-(restyled to dimmed wayfinding), the width stays, and the
-minimize/expand toggle stays in the SAME position — `−` at the top-right of
+(restyled to dimmed wayfinding), the width stays, the header's GRIP PILL
+stays (the visible drag signifier — an unmarked drag surface is not kept
+chrome), and the minimize/expand toggle stays in the SAME position — `−` at the top-right of
 the expanded header becomes `+` at the right end of the minimized bar, so
 the toggle is spatially stable and a mis-click is undone without moving the
 mouse. Minimized bars are not a separate chrome language; they are headers.
@@ -189,6 +190,16 @@ Anatomy is listed top-to-bottom / left-to-right.
 - The (−) button is drag-through: dragging it moves the panel (P5 — no inert
   pixels); motionless click minimizes.
 
+### 3.1b Nested stack handle (coupled stacks only)
+- A multi-leaf column (which, post-D12, exists only BESIDE sibling columns
+  or via zip-merge) carries a slim column handle above its cells: drag
+  floats the whole stack, its `−`/`+` toggles all members.
+- Plain stacked BANDS deliberately have NO collective handle: they are
+  independent panels (D12), and the handle's presence is the SIGNAL that a
+  stack is coupled (uniform-collapse applies to it). `[A | B-over-C]`
+  shows a handle on the B/C stack; `B-over-C` alone does not — that
+  asymmetry is the coupling made visible, not an oversight.
+
 ### 3.2 Vertical rail (the P13 exception: reclaims width, not height)
 - Per cell: gray cap — a `+` button when the cell is alone, a small grip pill
   when stacked; then one **spine row per tab** (upright icon above rotated
@@ -208,8 +219,9 @@ Anatomy is listed top-to-bottom / left-to-right.
 ### 3.3 Band bar (minimized band among expanded bands)
 - One segment per group, tiling the full width edge-to-edge; hairline
   dividers between segments.
-- Segment anatomy (P13) = the group's HEADER kept in place: dimmed
-  icon+title **label per tab** (D9) laid out from the left — literal
+- Segment anatomy (P13) = the group's HEADER kept in place: a small grip
+  pill on the leading edge (the drag signifier), then dimmed icon+title
+  **label per tab** (D9) laid out from the left — literal
   cousins of the expanded tab strip — and the `+` toggle at the segment's
   RIGHT end, exactly where the expanded grip bar's `−` sat. No leading
   caps. Labels are separated by spacing, not outlines (P10); when width
@@ -225,9 +237,9 @@ Anatomy is listed top-to-bottom / left-to-right.
 ### 3.4 Chip bar (fully-minimized floating window)
 - The bar IS the window's header row kept in place (P13): full `win.width`
   wide (no fit-content jump — the width is part of the window's identity,
-  P8), group label runs laid out from the left with hairline dividers
-  between groups, and ONE `+` toggle at the bar's right end — where the
-  expanded header's `−` sat.
+  P8), a leading grip pill (the window-drag signifier), group label runs
+  laid out from the left with hairline dividers between groups, and ONE
+  `+` toggle at the bar's right end — where the expanded header's `−` sat.
 - Uniform-collapse (§7) makes per-group expand IMPOSSIBLE in a floating
   stack: any expand expands the whole window. Therefore (P9) the single
   right-end `+` is the expand signifier for the whole bar; group segments
@@ -315,8 +327,15 @@ and changing one is a spec change.
    beats broad intent).
 3. **Region edge bands** (occupied edge): 8px top/bottom = full-span band
    above/below everything; 40px outer/inner side = full-height column beside
-   everything. Suppressed where they'd duplicate a per-cell split (single
-   leaf edge-wise). Hints span the full affected extent (P1).
+   everything — for a canonical stack (all bands single-column) the op ZIPS
+   the bands into one nested column so "beside everything" is literal; a
+   region containing a multi-column band cannot be zipped (rows can't
+   nest), so the drop joins the first band and the hint spans only that
+   band. Suppressed where they'd duplicate a per-cell split (single leaf
+   edge-wise). Hints span the true affected extent either way (P1).
+   A seam band-insert takes an EQUAL SHARE of the region height (the mean
+   of the existing bands' weights) — never a fixed weight that a px-scale
+   region would render as a 0px sliver.
 4. **Cross-band seams**: the divider between two bands inserts a new
    full-width band at that index.
 5. **Per-target zones** (§5.2–5.4).

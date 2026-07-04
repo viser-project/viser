@@ -698,10 +698,49 @@ export function dockToRegionEdge(
     const index = side === "top" ? 0 : existing.rows.length;
     return insertBandAtIndex(draft, ne, edge, index, weights, stackHeights);
   }
-  // left / right: a new full-height column beside everything, in the FIRST row
-  // band (a single-row region -- the common case -- is the whole region).
+  // left / right: a new full-height column beside EVERYTHING. A multi-band
+  // region of single-column bands (the canonical stack, D12) can only host
+  // a full-height neighbor as the NESTED form: zip the bands into one
+  // multi-leaf column (leaf weights scaled by band weights, so on-screen
+  // heights don't move) and put the new column beside it -- [new | col(...)].
+  // Regions with a multi-column band can't be zipped (rows can't nest);
+  // there the new column joins the FIRST band, and hitTest draws the hint
+  // first-band-tall to match (P1).
   const dw = weights?.dragged ?? 1;
   const column = buildColumn(ne, dw, stackHeights);
+  const zippable =
+    existing.rows.length > 1 &&
+    existing.rows.every((r) => r.columns.length === 1);
+  if (zippable) {
+    const leaves = existing.rows.flatMap((r) => {
+      const only = r.columns[0];
+      const total = only.leaves.reduce((sum, l) => sum + l.weight, 0) || 1;
+      return only.leaves.map((l) => ({
+        ...l,
+        weight: (l.weight / total) * r.weight,
+      }));
+    });
+    const zipLeaves = asNonEmpty(leaves);
+    if (zipLeaves !== null) {
+      const zipped: DockColumn = {
+        id: existing.rows[0].columns[0].id,
+        weight: weights?.existing ?? existing.rows[0].columns[0].weight,
+        leaves: zipLeaves,
+      };
+      const columns: NonEmpty<DockColumn> =
+        side === "left" ? [column, zipped] : [zipped, column];
+      draft.docked[edge] = {
+        rows: [
+          {
+            id: existing.rows[0].id,
+            weight: existing.rows.reduce((s, r) => s + r.weight, 0),
+            columns,
+          },
+        ],
+      };
+      return draft;
+    }
+  }
   const firstRow = existing.rows[0];
   if (weights !== undefined) {
     const total = firstRow.columns.reduce((s, c) => s + c.weight, 0) || 1;
@@ -748,7 +787,13 @@ function insertBandAtIndex(
     draft.docked[edge] = regionOf(buildColumn(groupIds, 1, leafWeights));
     return draft;
   }
-  const draggedW = weights?.dragged ?? 1;
+  // Default weight: the MEAN of the existing bands' weights, so the new
+  // band takes an equal share regardless of the scale the existing weights
+  // are on (after a band-divider resize they are px-scale; a literal 1
+  // would render the new band ~0px tall).
+  const meanW =
+    existing.rows.reduce((s, r) => s + r.weight, 0) / existing.rows.length;
+  const draggedW = weights?.dragged ?? meanW;
   const band = buildRow(buildColumn(groupIds, 1, leafWeights), draggedW);
   if (weights !== undefined) {
     const total = existing.rows.reduce((s, r) => s + r.weight, 0) || 1;

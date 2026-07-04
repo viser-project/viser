@@ -258,14 +258,16 @@ def test_floating_minimized_stack_has_draggable_parent_handle(
         chips = page.locator("[data-floating-window] [data-dock-group]")
         assert chips.count() == 2, "chip bar should show one chip per group"
 
-        # The bar keeps win.width (P13): background SLACK exists between the
-        # labels and the right-end `+` (last ~24px). Aim between them.
+        # The bar's leading GRIP PILL is the window-drag signifier (P13); its
+        # surface has no handler of its own, so presses flow to the bar's
+        # window drag. (Label runs can fill the rest of a narrow bar, so the
+        # pill is the RELIABLE whole-window point.)
         def slack_point():
             return page.eval_on_selector(
                 "[data-floating-window]",
                 """(w) => {
                     const r = w.getBoundingClientRect();
-                    return { x: r.right - 45, y: r.y + r.height / 2 };
+                    return { x: r.x + 12, y: r.y + r.height / 2 };
                 }""",
             )
 

@@ -15,7 +15,7 @@ import {
   windowAllMinimized,
 } from "./layoutOps";
 import { gripBarBg } from "./DockStyles.css";
-import { HandleIconButton, StackHandleBar } from "./handles";
+import { GripPill, HandleIconButton, StackHandleBar } from "./handles";
 import { IconPlus } from "@tabler/icons-react";
 import { TabGroupFrame } from "./TabGroupFrame";
 import { ChipDivider, MinimizedGroupChip } from "./HorizontalMinimizedBand";
@@ -427,6 +427,19 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
               WebkitUserSelect: "none",
             }}
           >
+            {/* The window header's grip pill, kept (P13): marks the bar as
+            the window's drag handle. */}
+            <Box
+              style={{
+                flexShrink: 0,
+                display: "flex",
+                alignItems: "center",
+                paddingLeft: "0.5em",
+                paddingRight: "0.15em",
+              }}
+            >
+              <GripPill width="1.1em" opacity={0.5} />
+            </Box>
             {win.stack.map((groupId, i) => {
               const group = dock.groups[groupId];
               if (group === undefined) return null;

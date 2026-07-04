@@ -522,12 +522,15 @@ export function hitTest(
       };
     }
     // Left / right (inner *and* outer): a line beside the rows the drop will
-    // actually join. The op (dockToRegionEdge left/right) inserts the new
-    // column into the TOP band only -- the model has no cross-band column -- so
-    // with 2+ bands the hint spans just that band: an honest preview instead
-    // of a full-height line promising the unrepresentable "beside everything".
+    // actually join. When every band is single-column (a canonical stack),
+    // dockToRegionEdge ZIPS the bands into one nested column and the new
+    // panel really lands beside EVERYTHING -- full-height hint. A region
+    // with a multi-column band can't be zipped (rows can't nest), so the
+    // new column joins the first band only and the hint spans just that
+    // band: honest previews either way (P1).
     const sideHintSpan = (): { top: number; height: number } => {
-      if (tree.rows.length >= 2) {
+      const zippable = tree.rows.every((rw) => rw.columns.length === 1);
+      if (tree.rows.length >= 2 && !zippable) {
         const ext = bandExtents(edge);
         if (ext !== null && ext.length > 0)
           return { top: ext[0].top, height: ext[0].bottom - ext[0].top };

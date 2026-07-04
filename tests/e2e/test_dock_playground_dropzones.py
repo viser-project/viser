@@ -429,3 +429,74 @@ def test_side_drop_on_one_cell_of_stack_splits_band(
         )
     finally:
         page.close()
+
+
+# ===========================================================================
+# Region-side dock beside a canonical stack ZIPS the bands (spec 5.1): the
+# dropped panel really lands beside BOTH stacked panels, full height -- not
+# beside just the top one.
+# ===========================================================================
+def test_region_side_drop_lands_beside_whole_stack(
+    dock_context, vite_server: int
+) -> None:
+    page = _open(dock_context, vite_server)
+    try:
+        _set_layout(
+            page,
+            _dock_layout(
+                docked_right=_stack("controls", "inspector"),
+                floating=[_window("console", x=250, y=400, width=240)],
+            ),
+        )
+        # Outer side band of the right region: a few px inside the screen edge.
+        cell = _leaf_box(page, "t-controls")
+        target = (cell["x"] + cell["w"] - 4, cell["y"] + cell["h"] / 2)
+        _drag_group(page, "t-console", target)
+        lay = _layout(page)
+        right = lay["docked"]["right"]
+        assert right is not None
+        bands = [
+            [[leaf["group"] for leaf in col["leaves"]] for col in row["columns"]]
+            for row in right["rows"]
+        ]
+        assert bands == [[["t-controls", "t-inspector"], ["t-console"]]], (
+            f"side drop should zip the stack and land beside BOTH, got {bands}"
+        )
+    finally:
+        page.close()
+
+
+# ===========================================================================
+# A seam band-insert takes an equal share of the region height (spec 5.1) --
+# never a ~0px sliver, even when band weights are px-scale after a resize.
+# ===========================================================================
+def test_seam_band_insert_has_real_height(dock_context, vite_server: int) -> None:
+    page = _open(dock_context, vite_server)
+    try:
+        _set_layout(
+            page,
+            _dock_layout(
+                docked_right=_stack("controls", "inspector"),
+                floating=[_window("console", x=250, y=400, width=240)],
+            ),
+        )
+        # Resize the band divider so band weights go px-scale.
+        top = _leaf_box(page, "t-controls")
+        seam_y = top["y"] + top["h"]
+        cx = top["x"] + top["w"] / 2
+        page.mouse.move(cx, seam_y)
+        page.mouse.down()
+        page.mouse.move(cx, seam_y + 80, steps=8)
+        page.mouse.up()
+        page.wait_for_timeout(200)
+        # Drop console on the (new) seam between the bands.
+        top2 = _leaf_box(page, "t-controls")
+        _drag_group(
+            page, "t-console", (top2["x"] + top2["w"] / 2, top2["y"] + top2["h"] + 3)
+        )
+        box = _leaf_box(page, "t-console")
+        assert box is not None and box["h"] > 60, (
+            f"seam-inserted band should have a real height, got {box}"
+        )
+    finally:
+        page.close()
