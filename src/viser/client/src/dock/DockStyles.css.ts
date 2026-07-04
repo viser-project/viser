@@ -69,3 +69,15 @@ globalStyle(
   `:where([data-mantine-color-scheme="dark"]) ${headerRuleTop}`,
   { borderTop: "1px solid var(--mantine-color-dark-4)" },
 );
+
+/** Wayfinding text -- the ONE style for every minimized-surface label (bar
+ * segments, spine rows): theme text at chrome emphasis. Spec P3 ("chrome is
+ * quiet") + P13 (labels are the header's tabs, restyled). Sizing (0.85em)
+ * matches the expanded tab strip so minimized labels are literal cousins of
+ * tabs, not a second typography. */
+export const wayfindingText = style({
+  color: "var(--mantine-color-dimmed)",
+  opacity: 0.85,
+  fontWeight: 500,
+  fontSize: "0.85em",
+});

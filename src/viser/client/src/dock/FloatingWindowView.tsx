@@ -15,8 +15,7 @@ import {
   windowAllMinimized,
 } from "./layoutOps";
 import { gripBarBg } from "./DockStyles.css";
-import { GripPill, HandleIconButton, StackHandleBar } from "./handles";
-import { IconPlus } from "@tabler/icons-react";
+import { ChromeToggle, GripPill, StackHandleBar } from "./handles";
 import { TabGroupFrame } from "./TabGroupFrame";
 import { ChipDivider, MinimizedGroupChip } from "./HorizontalMinimizedBand";
 import {
@@ -404,13 +403,13 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         }}
       >
         {collapsed ? (
-          // Fully-minimized FLOATING window: the window's HEADER row kept in
-          // place (P13) -- group label runs from the left with hairline
-          // dividers, and ONE `+` toggle at the bar's right end, where the
-          // expanded header's `-` sat. A press on the bar (including the
-          // slack right of the labels, and drag-through on the `+`) drags
-          // the whole window; a motionless click expands every group. Each
-          // group's label run is its own drop target (data-dock-chip-cell).
+          // Fully-minimized FLOATING window: the window's header row kept in
+          // place (P13) at full win.width -- grip pill (window-drag
+          // signifier), group label runs with dividers, background slack,
+          // and ONE ChromeToggle at the right end (P9: uniform-collapse
+          // makes any expand window-level). Presses on the bar (and drag-
+          // through on the toggle) drag the window; motionless clicks
+          // expand every group.
           <Box
             className={gripBarBg}
             onPointerDown={(event) =>
@@ -427,8 +426,6 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
               WebkitUserSelect: "none",
             }}
           >
-            {/* The window header's grip pill, kept (P13): marks the bar as
-            the window's drag handle. */}
             <Box
               style={{
                 flexShrink: 0,
@@ -446,6 +443,8 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
               return (
                 <React.Fragment key={groupId}>
                   {i > 0 && <ChipDivider />}
+                  {/* data-dock-chip-cell: the group's DROP rect spans the
+                  full bar height (no dead strips above/below labels). */}
                   <Box
                     data-dock-chip-cell="true"
                     style={{
@@ -460,23 +459,12 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                 </React.Fragment>
               );
             })}
-            {/* Slack: window-drag surface (bubbles to the bar handler). */}
             <Box style={{ flexGrow: 1 }} />
-            {/* THE expand signifier for the whole bar (P9): uniform-collapse
-            makes any expand window-level, so exactly one `+`, at the right
-            end. Drag-through: press flows to the bar's window drag; the
-            motionless click comes from the drag-starter's onClick above. */}
-            <HandleIconButton
-              attrs={{ "data-dock-minimize": "true" }}
-              label="Expand panels"
-              title="Expand"
+            <ChromeToggle
               expanded={false}
-              dragThrough
+              label="Expand panels"
               onActivate={toggleAll}
-              placement={{ width: "1.7em", height: "100%", flexShrink: 0 }}
-            >
-              <IconPlus size={12} />
-            </HandleIconButton>
+            />
           </Box>
         ) : (
         <>

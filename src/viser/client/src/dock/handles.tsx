@@ -125,6 +125,55 @@ export function HandleIconButton({
  * therefore pass `onToggle` as the drag-starter's `onClick` too (the bar's
  * onPointerDown), so the motionless-press toggle fires; `onActivate` here then
  * only handles keyboard / synthetic activation. */
+/** Hairline divider between chrome siblings (P10: borders divide, never
+ * enclose). `vertical` separates side-by-side segments in a 36px bar (drawn
+ * inset so it reads as a separator, not a full-height wall); horizontal
+ * separates stacked rail cells. */
+export function ChromeDivider({ vertical = false }: { vertical?: boolean }) {
+  return (
+    <Box
+      style={{
+        flexShrink: 0,
+        backgroundColor: "var(--mantine-color-default-border)",
+        opacity: 0.5,
+        ...(vertical
+          ? { width: 1, alignSelf: "center", height: "60%" }
+          : { height: 1 }),
+      }}
+    />
+  );
+}
+
+/** The +/- toggle placed at a chrome bar's RIGHT end (P13: where the
+ * expanded header's `-` sits; spatially stable across minimize/expand).
+ * Thin wrapper over HandleIconButton fixing the shared geometry so every
+ * bar's toggle is identical. dragThrough by design: a press flows to the
+ * surface's drag handler; the motionless click comes from that handler's
+ * onClick, and onActivate covers keyboard/synthetic activation. */
+export function ChromeToggle({
+  expanded,
+  label,
+  onActivate,
+}: {
+  expanded: boolean;
+  label: string;
+  onActivate: () => void;
+}) {
+  return (
+    <HandleIconButton
+      attrs={{ "data-dock-minimize": "true" }}
+      label={label}
+      title={expanded ? "Minimize" : "Expand"}
+      expanded={expanded}
+      dragThrough
+      onActivate={onActivate}
+      placement={{ width: "1.7em", height: "100%", flexShrink: 0 }}
+    >
+      {expanded ? <IconMinus size={12} /> : <IconPlus size={12} />}
+    </HandleIconButton>
+  );
+}
+
 export function StackHandleBar({
   onPointerDown,
   attrs,
