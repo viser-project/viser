@@ -287,6 +287,7 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
   return (
     <Box
       ref={containerRef}
+      data-dock-scroll
       style={{
         display: "flex",
         flexDirection: "column",
@@ -297,7 +298,9 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
         // With the leaves' render floors, a squeezed column (short viewport,
         // many cells) SCROLLS rather than pushing cells past the container
         // where their chrome becomes unreachable (P5) -- mirrors the
-        // floating stack's overflow rule (P7).
+        // floating stack's overflow rule (P7). data-dock-scroll lets
+        // collectTargets clip leaf rects to the visible box (P1: a
+        // scrolled-out leaf must not be a drop target).
         overflowY: "auto",
         overflowX: "hidden",
       }}

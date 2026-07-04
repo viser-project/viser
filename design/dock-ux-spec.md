@@ -775,6 +775,38 @@ normative sentences pinning the fixes below.
 
 ---
 
+**Update (2026-07-04, stability-loop iterations 4-5):** confirmation
+passes over the iteration-3 changes; all findings were code fixes.
+
+- `ControlPanelDock.tsx` — the region's D21 rail flag joined every
+  resident's docked placement signature: a user's chevron collapse now
+  marks those panels user-touched, so a later single-axis server update
+  can't replay a stale `collapsed=false` and silently un-rail the
+  region (P6, §7).
+- `DockManager.tsx` / `RegionResizer.tsx` — a region-width drag fires
+  ONE user-attributed commit at release (per-frame width commits stay
+  programmatic for perf): without it the ownership diff never saw the
+  gesture and a reconnect replay of a server `set_width` reverted the
+  user's drag (P6).
+- `TabGroupFrame.tsx` — the tab strip reserves its top-right corner (in
+  the strip's own 0.85em basis) when the grip bar hosts the region
+  chevron, so no tab can sit under the chevron's 24px overhang; the
+  unmergeable header's pointer click shares the grip bar's
+  toggle-and-focus path.
+- `MinimizedBar.tsx` — the bar-hosted chevron hands keyboard focus to
+  the rail header, same as the grip-bar path (§4 / edge case 14).
+- `SplitView.tsx` / `layoutOps.ts` — band dividers pass per-band
+  minimums to `cascadeResize` (a band must fit its tallest column's
+  cells), and squeezed docked columns SCROLL (`overflowY: auto`,
+  mirroring the floating stack, P5/P7); `DockManager.collectTargets`
+  clips leaf rects to the scroll box so a scrolled-out leaf is never a
+  drop target (P1).
+- Accepted minor trade: on a LEFT region in the squeezed-scrolling
+  state, the RegionResizer's 5px inward straddle overlaps the column
+  scrollbar's outer edge; the scrollbar's remaining width still
+  scrolls, and narrowing the straddle would cost the region-resize
+  grab everywhere for a rare degenerate state.
+
 ## 11. Resolved decisions (2026-07-03)
 
 Former open questions, decided with the maintainer. Normative sections above

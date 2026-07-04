@@ -253,6 +253,12 @@ export function DockManager({
   // Set for the duration of a drag: lets the per-window ResizeObserver mark
   // the drag's cached target rects stale (a window growing mid-drag).
   const markDragTargetsStaleRef = React.useRef<(() => void) | null>(null);
+  // Layout at the start of a region-width drag: the per-frame width commits
+  // are programmatic (perf: ~60/s), so ONE user-attributed commit fires at
+  // release comparing this snapshot to the final layout -- otherwise the
+  // placement dirty-bit never learns the user resized the region and a
+  // reconnect replay of a server set_width reverts the drag.
+  const regionDragStartLayoutRef = React.useRef<DockLayout | null>(null);
   // Cleanup for an in-flight gesture, run if the manager unmounts mid-drag.
   const activeCleanup = React.useRef<(() => void) | null>(null);
   React.useEffect(() => () => activeCleanup.current?.(), []);
@@ -677,7 +683,27 @@ export function DockManager({
       // inside may be a compact chip (the horizontal band's pill). The group
       // element still scopes the strip/tab lookup.
       const g = readGroup(groupEl, { kind: "docked", nodeId, edge }, leaf);
-      if (g !== null) targets.groups.push(g);
+      if (g === null) return;
+      // Clip to the column's scroll box: with overflowY auto a squeezed,
+      // scrolled column reports leaf rects extending into neighboring bands,
+      // and hitTest's last-match rule would pick the INVISIBLE scrolled-out
+      // leaf over the visible one under the pointer (P1).
+      const scrollEl = leaf.closest("[data-dock-scroll]");
+      if (scrollEl !== null) {
+        const sr = scrollEl.getBoundingClientRect();
+        const top = Math.max(g.rect.top, sr.top);
+        const bottom = Math.min(g.rect.bottom, sr.bottom);
+        if (bottom - top < 8) return; // fully scrolled out: not a target
+        const clipped = new DOMRect(
+          g.rect.left,
+          top,
+          g.rect.width,
+          bottom - top,
+        );
+        g.rect = clipped;
+        g.hitRect = clipped;
+      }
+      targets.groups.push(g);
     });
     // Docked-hosted areas beat their (docked) hosts but sit below all floats.
     for (const t of areasByHost.get(null) ?? []) targets.groups.push(t);
@@ -2094,6 +2120,15 @@ export function DockManager({
                 {resizable && (
                 <RegionResizer
                   edge={edge}
+                  onDragEnd={(cancelled) => {
+                    const start = regionDragStartLayoutRef.current;
+                    regionDragStartLayoutRef.current = null;
+                    if (cancelled || start === null) return;
+                    // One USER commit spanning the whole drag (see the ref
+                    // doc): layout state is already final, this only informs
+                    // the host's ownership diff.
+                    onCommitRef.current?.(start, layoutRef.current, false);
+                  }}
                   // Model-based (unscaled) start: see regionFor's
                   // reservedWidth doc.
                   getStart={() => regions[edge].reservedWidth}
@@ -2105,6 +2140,7 @@ export function DockManager({
                   // region keeps resizing while any column can give or take.
                   makeOnResize={() => {
                     const layout0 = layoutRef.current;
+                    regionDragStartLayoutRef.current = layout0;
                     const tree0 = layout0.docked[edge];
                     if (tree0 === null) return () => {};
                     // Every width-determining column participates (D20:

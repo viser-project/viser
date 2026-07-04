@@ -500,8 +500,14 @@ export function TabGroupFrame({
             // hit box overhangs the strip top-right; reserve that corner so
             // no TAB can sit under it (a press there must never collapse
             // the region when the user aimed at a tab).
+            // In the STRIP's em (fontSize 0.85em below): the chevron's hit
+            // box is laid out in the grip bar's UNSCALED em, so divide or the
+            // reservation comes up ~0.5 base-em short and a tab edge still
+            // sits under the overhang.
             paddingRight:
-              chevronEdge !== null ? `${2 * HANDLE_BTN_EM}em` : undefined,
+              chevronEdge !== null
+                ? `${(2 * HANDLE_BTN_EM) / 0.85}em`
+                : undefined,
             display: "flex",
             flexWrap: "wrap",
             alignItems: "stretch",

@@ -21,12 +21,15 @@ export function RegionResizer({
   edge,
   makeOnResize,
   getStart,
+  onDragEnd,
 }: {
   edge: DockEdge;
   /** Called once per drag (at pointer down) so the handler can snapshot the
    * columns' start widths; returns the per-frame resize handler. */
   makeOnResize: () => (px: number) => void;
   getStart: () => number;
+  /** Called once at release/cancel, AFTER the final width settles. */
+  onDragEnd?: (cancelled: boolean) => void;
 }) {
   // Cancel the in-flight gesture if the resizer unmounts mid-drag (e.g. the
   // region empties), so its window listeners can't fire after unmount.
@@ -53,6 +56,7 @@ export function RegionResizer({
         // Cancel (Escape): resolve back to the drag-start width; the snapshot
         // closure reproduces the original column widths from it.
         if (cancelled) onResize(startWidth);
+        onDragEnd?.(cancelled);
       },
     });
   };
