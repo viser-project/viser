@@ -86,7 +86,10 @@ export function RegionMinimizedRail({
                 nodeId={id}
                 edge={edge}
                 group={g}
-                inStack={leaves.length > 1}
+                // Always inStack inside the region rail: the parent handle
+                // owns the rail's ONE expand signifier (P9) -- a lone cell's
+                // own + would duplicate the identical action right below it.
+                inStack
               />
             </React.Fragment>
           );

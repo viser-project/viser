@@ -415,10 +415,18 @@ export function cascadeResize(opts: {
   const next = weights.map((w, i) =>
     collapsed[i] ? 0 : (w / total) * containerPx,
   );
-  const growIdx = deltaPx > 0 ? index : index + 1;
-  if (collapsed[growIdx]) return null;
+  // The grower is the nearest EXPANDED cell in the grow direction: a fixed
+  // 26px bar adjacent to the seam is skipped rather than dead-ending the
+  // drag (a resize cursor that no-ops in one direction lies -- hit-box loop
+  // finding). Null only when no expanded cell exists on that side.
+  let growIdx = deltaPx > 0 ? index : index + 1;
+  const step = deltaPx > 0 ? -1 : 1;
+  while (growIdx >= 0 && growIdx < weights.length && collapsed[growIdx]) {
+    growIdx += step;
+  }
+  if (growIdx < 0 || growIdx >= weights.length) return null;
   if (deltaPx > 0) {
-    let need = Math.min(deltaPx, maxCell - next[index]);
+    let need = Math.min(deltaPx, maxCell - next[growIdx]);
     const want = need;
     for (let j = index + 1; j < next.length && need > 0.5; j++) {
       if (collapsed[j]) continue;
@@ -428,9 +436,9 @@ export function cascadeResize(opts: {
         need -= give;
       }
     }
-    next[index] += want - need;
+    next[growIdx] += want - need;
   } else if (deltaPx < 0) {
-    let need = Math.min(-deltaPx, maxCell - next[index + 1]);
+    let need = Math.min(-deltaPx, maxCell - next[growIdx]);
     const want = need;
     for (let j = index; j >= 0 && need > 0.5; j--) {
       if (collapsed[j]) continue;
@@ -440,7 +448,7 @@ export function cascadeResize(opts: {
         need -= give;
       }
     }
-    next[index + 1] += want - need;
+    next[growIdx] += want - need;
   }
   return next;
 }
@@ -531,6 +539,13 @@ function detachInPlace(draft: DockLayout, groupId: GroupId): void {
     const region = draft.docked[loc.edge];
     const res = region === null ? null : regionRemoveGroup(region, groupId);
     draft.docked[loc.edge] = res;
+    // An EMPTIED edge sheds its explicit-collapse flag here, at the one
+    // chokepoint every removal path routes through -- otherwise a stale
+    // regionCollapsed would ambush the NEXT region docked on this edge with
+    // a surprise rail (floatRegion guards the same hazard on its own path).
+    if (res === null && isRegionCollapsedOn(draft, loc.edge)) {
+      draft.regionCollapsed = withRegionCollapsed(draft, loc.edge, false);
+    }
   } else {
     const win = draft.floating.find((w) => w.id === loc.windowId);
     if (win === undefined) return;

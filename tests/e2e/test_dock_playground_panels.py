@@ -204,9 +204,11 @@ def test_main_panel_click_header_toggles_collapsed(
         if main_gid is None:
             pytest.skip("main 'Connected' panel not present this run")
 
-        # Unmergeable panel: NO separate minimize button and NO gray grip handle.
-        assert not _has_minimize(page, main_gid), (
-            "the unmergeable main panel must NOT have a [data-dock-minimize] button"
+        # Unmergeable panel: no gray grip handle, but the header DOES carry
+        # the one visible minimize toggle (P9: header-click minimizes, and the
+        # toggle is its signifier).
+        assert _has_minimize(page, main_gid), (
+            "the unmergeable main panel header must have a [data-dock-minimize] toggle"
         )
         assert not _has_grip(page, main_gid), (
             "the unmergeable main panel must NOT have a gray grip ([data-dock-griphandle])"

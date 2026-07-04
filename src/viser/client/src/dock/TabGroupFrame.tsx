@@ -14,7 +14,7 @@ import {
   headerRuleTop,
 } from "./DockStyles.css";
 import { tabListKeyDown } from "./gestures";
-import { GripPill, HandleIconButton } from "./handles";
+import { ChromeToggle, GripPill, HandleIconButton } from "./handles";
 import { PaneSpec, TabGroup } from "./types";
 
 // The active panel's BODY, memoized so it is rebuilt/reconciled only when its
@@ -340,6 +340,7 @@ export function TabGroupFrame({
               onClick: () => dock.toggleCollapsed(group.id),
             });
           }}
+          data-dock-unmergeable-header={group.id}
           style={{
             display: "flex",
             alignItems: "center",
@@ -379,6 +380,17 @@ export function TabGroupFrame({
           {activePane?.titleNode ? (
             <Box style={{ display: "flex", alignItems: "center", width: "100%" }}>
               {activePane?.titleNode}
+              {/* The header's ONE visible minimize signifier (P9: the whole
+              header toggles on click, but an action with zero icons is
+              undiscoverable -- hands-on finding: even the maintainers' probe
+              couldn't find how to minimize the docked main panel). Same
+              drag-through +/- as every other header, at the right end
+              (P13); panel-provided action icons sit just left of it. */}
+              <ChromeToggle
+                expanded={!collapsed}
+                label={collapsed ? "Expand panel" : "Minimize panel"}
+                onActivate={() => dock.toggleCollapsed(group.id)}
+              />
             </Box>
           ) : (
             // Ellipsis on a non-flex child (see the tab-strip note below).

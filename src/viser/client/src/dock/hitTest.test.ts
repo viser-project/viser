@@ -570,11 +570,11 @@ describe("outer-edge dock beside a minimized region strip", () => {
     // Right half -> insert AFTER it.
     const after = run(layout, [tgt], stripLeft - 100, STRIP / 2, STRIP_W)!;
     expect(after.result).toMatchObject({ kind: "insertTab", index: 1 });
-    // Past the labels (trailing space): nearest-label insertion appends at
-    // the end -- functionally merge-append, with an honest line hint (same
-    // convention as the rail, whose insertion also has no range cutoff).
+    // Past the label (trailing space): APPEND via merge, per spec 5.4 --
+    // insertion aims only at the label rect (+8px slack); the rest of the
+    // bar is the append surface, so multi-pane bars keep append reachable.
     const out = run(layout, [tgt], stripLeft - 20, STRIP / 2, STRIP_W)!;
-    expect(out.result).toMatchObject({ kind: "insertTab", index: 1 });
+    expect(out.result).toMatchObject({ kind: "merge", targetGroupId: "g" });
   });
 
   it("a DOCKED chip has no top/bottom split zones; a FLOATING chip snaps at 10px", () => {

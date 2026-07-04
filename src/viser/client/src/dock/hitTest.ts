@@ -817,6 +817,12 @@ export function hitTest(
     const insertResult = () => {
       if (!canInsert || inTopEdge || inBottomEdge) return null;
       if (g.chip === true) {
+        // Spec 5.4: insertion aims at the bar's single title label; a drop
+        // anywhere ELSE on the bar appends (merge). Without this bound the
+        // whole bar width resolved to insert-around-the-active-tab, making
+        // append unreachable on multi-pane bars.
+        const last = g.tabs[g.tabs.length - 1];
+        if (last !== undefined && clientX > last.rect.right + 8) return null;
         const ins = tabInsertion(g.tabs, clientX, clientY);
         return ins === null
           ? null

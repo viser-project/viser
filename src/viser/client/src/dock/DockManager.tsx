@@ -2037,16 +2037,14 @@ export function DockManager({
                     placement={{
                       position: "absolute",
                       top: 0,
-                      // The INNER (canvas-facing) corner: left edge's inner
-                      // side is its right, and vice versa. On the LEFT edge
-                      // that corner also hosts the topmost panel's minimize
-                      // button (the grip bar's right-end `-`, HANDLE_BTN_EM
-                      // wide), so sitting HANDLE_BTN_EM + a small gap inboard
-                      // clears it by construction; the right edge's inner
-                      // corner only overlaps empty grip surface.
-                      ...(edge === "left"
-                        ? { right: `${HANDLE_BTN_EM + 0.2}em` }
-                        : { left: 0 }),
+                      // BOTH edges: inset from the region's RIGHT by the
+                      // button width + a gap. That spot clears the topmost
+                      // surface's right-anchored controls by construction --
+                      // an expanded panel's `-` and a minimized bar's `+`
+                      // both live in the last HANDLE_BTN_EM -- and lands on
+                      // grip/slack surface either way. (The old right-edge
+                      // `left: 0` sat exactly on a topmost BAR's title/face.)
+                      right: `${HANDLE_BTN_EM + 0.2}em`,
                       width: "20px",
                       height: "20px",
                       zIndex: 16,

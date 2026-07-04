@@ -550,7 +550,17 @@ function FloatingStackDivider({
   // after unmount and the shared `resizing` flag can't stick true.
   const activeDrag = React.useRef<(() => void) | null>(null);
   React.useEffect(() => () => activeDrag.current?.(), []);
+  // A seam resizes only when an EXPANDED cell exists on each side (bars are
+  // fixed 26px; cascadeResize skips them to the next expanded grower). With
+  // no expanded cell on one side there is nothing to trade: no resize
+  // cursor, no armed gesture, and crucially no pinHeight() side effect on a
+  // press that would otherwise no-op (hit-box loop finding).
+  const collapsedMask = stack.map((g) => groups[g]?.collapsed === true);
+  const resizable =
+    collapsedMask.slice(0, dividerIndex + 1).some((c) => !c) &&
+    collapsedMask.slice(dividerIndex + 1).some((c) => !c);
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!resizable) return;
     if (event.button !== 0) return;
     if (activeDrag.current !== null) return; // one drag per divider
     event.stopPropagation();
@@ -605,7 +615,7 @@ function FloatingStackDivider({
       style={{
         flexShrink: 0,
         height: "7px",
-        cursor: "ns-resize",
+        cursor: resizable ? "ns-resize" : "default",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
