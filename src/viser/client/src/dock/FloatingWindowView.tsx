@@ -16,6 +16,7 @@ import {
 } from "./layoutOps";
 import { StackHandleBar } from "./handles";
 import { TabGroupFrame } from "./TabGroupFrame";
+import { collapseAnim } from "./DockStyles.css";
 import { MinimizedBar } from "./MinimizedBar";
 import {
   clamp,
@@ -499,6 +500,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                 )}
                 {fixedHeight ? (
                   <Box
+                    className={collapseAnim}
                     style={{
                       flexGrow: collapsedCell ? 0 : weight / stackWeightTotal,
                       flexShrink: collapsedCell ? 0 : 1,
@@ -511,6 +513,9 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                       minHeight: collapsedCell ? 0 : MIN_STACK_CELL_PX,
                       display: "flex",
                       flexDirection: "column",
+                      // Clip: children render committed-size instantly, the
+                      // wrapper eases (see collapseAnim).
+                      overflow: "hidden",
                     }}
                   >
                     {groupNode}
@@ -574,6 +579,9 @@ function FloatingStackDivider({
     const container = stackRef.current;
     if (container === null) return;
     const containerPx = container.getBoundingClientRect().height;
+    // Suppress the minimize/expand transition under this stack for the
+    // drag's duration (per-frame weight writes must land instantly).
+    container.setAttribute("data-dock-resizing", "");
     // Auto-height window: pin the current height so there's a total to divide
     // (re-renders to fixed-height with weighted cells). Capturing happens after,
     // on the persistent grip element.
@@ -611,6 +619,7 @@ function FloatingStackDivider({
       },
       onEnd: (cancelled) => {
         activeDrag.current = null;
+        stackRef.current?.removeAttribute("data-dock-resizing");
         if (cancelled) onSetWeights(startWeights);
       },
     });

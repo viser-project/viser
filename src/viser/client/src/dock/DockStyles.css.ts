@@ -31,6 +31,28 @@ globalStyle(`:where([data-mantine-color-scheme="dark"]) ${gripBarBg}`, {
   backgroundColor: "var(--mantine-color-dark-5)",
 });
 
+/** Minimize/expand motion (P4 as amended): PURE presentation. The model
+ * commits instantly; this class only eases the cell/band wrappers' flex
+ * properties between their committed values. Three off-switches keep it
+ * honest: prefers-reduced-motion (instant), an ancestor's
+ * [data-dock-resizing] (divider drags write weights per frame -- easing
+ * would rubber-band the cells behind the cursor), and nothing else -- no
+ * timers, no transition-gated logic anywhere. */
+export const collapseAnim = style({
+  transition:
+    "flex-grow 160ms ease, flex-basis 160ms ease, min-height 160ms ease",
+  "@media": {
+    "(prefers-reduced-motion: reduce)": {
+      transition: "none",
+    },
+  },
+  selectors: {
+    "[data-dock-resizing] &": {
+      transition: "none",
+    },
+  },
+});
+
 /** Visible keyboard-focus ring for the dock's focusable non-native controls
  * (tabs, minimize/expand buttons). Drawn INSIDE the element (negative offset)
  * so overflow:hidden ancestors -- tab strips, grip bars -- can't clip it. Only

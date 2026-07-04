@@ -869,6 +869,10 @@ export function DockManager({
     };
     container.addEventListener("scroll", markTargetsStale, true);
     window.addEventListener("resize", markTargetsStale);
+    // Minimize/expand transitions (collapseAnim) ease cell geometry for
+    // ~160ms after a commit; cached rects read mid-ease go stale when the
+    // transition settles. Capture phase: fires for every descendant.
+    container.addEventListener("transitionend", markTargetsStale, true);
     // A floating window can also RESIZE mid-drag with no layout change (an
     // auto-height window whose content grows from a server update). The
     // per-window ResizeObserver reports through this ref.
@@ -954,6 +958,7 @@ export function DockManager({
         detach();
         container.removeEventListener("scroll", markTargetsStale, true);
         window.removeEventListener("resize", markTargetsStale);
+        container.removeEventListener("transitionend", markTargetsStale, true);
         markDragTargetsStaleRef.current = null;
         activeCleanup.current = null;
         if (raf !== null) {

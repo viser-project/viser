@@ -33,11 +33,17 @@ _E2E_VIEWPORT = {"width": 960, "height": 600}
 
 @pytest.fixture()
 def browser_context_args(browser_context_args: dict) -> dict:
-    """Shrink the viewport to reduce software-WebGL raster cost on CI."""
+    """Shrink the viewport to reduce software-WebGL raster cost on CI.
+
+    reduced_motion: the dock's minimize/expand transitions honor
+    prefers-reduced-motion (they become instant), so tests keep short fixed
+    waits instead of animation-length sleeps. The playground module context
+    (dock_helpers) sets the same flag."""
     return {
         **browser_context_args,
         "viewport": _E2E_VIEWPORT,
         "device_scale_factor": 1,
+        "reduced_motion": "reduce",
     }
 
 

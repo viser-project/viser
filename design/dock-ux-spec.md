@@ -50,10 +50,20 @@ chrome*: dimmed labels, compact geometry, no content preview, no attention-
 seeking styling. Active-tab highlighting exists only on expanded strips —
 a minimized group has no "active" emphasis because nothing is shown.
 
-**P4 — Deterministic, instant feedback.** No animations, no timers, no
-settle states. Every gesture's effect is visible in the same frame it
-commits. (Decided this session after the animation experiment: motion added
-failure modes without adding comprehension.)
+**P4 — Deterministic core; motion is pure presentation.** The MODEL
+commits instantly: no timers, no settle states, no logic gated on an
+animation finishing — every gesture's effect is in the layout the same
+frame it commits. Minimize/expand MAY animate, but only as presentation:
+a single CSS transition (`collapseAnim`, 160ms) on the cell/band
+wrappers' flex properties between committed values, honoring
+prefers-reduced-motion (instant) and suppressed under an active divider
+drag (`[data-dock-resizing]` — per-frame weight writes must not
+ease-lag the cursor). Drag hit-testing re-reads geometry on
+`transitionend`, so cached rects never lag the visible surface. Region
+collapse (rail) stays instant. *(History: the first animation
+experiment was reverted because motion was entangled with logic; this
+split keeps the determinism while restoring the comprehension cue of
+continuous size change. Amended 2026-07-04.)*
 
 **P5 — No dead ends.** Every reachable state offers a visible way out:
 a minimized group can always be expanded (click) and moved (drag); an

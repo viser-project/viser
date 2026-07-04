@@ -17,6 +17,7 @@ import { Box, Paper } from "@mantine/core";
 import React from "react";
 import { useDock } from "./DockContext";
 import { dragGesture } from "./gestures";
+import { collapseAnim } from "./DockStyles.css";
 import { cascadeResize, isRowMinimized, setNodeWeights } from "./layoutOps";
 import { MinimizedBar } from "./MinimizedBar";
 import { TabGroupFrame } from "./TabGroupFrame";
@@ -124,10 +125,14 @@ export const SplitView = React.memo(function SplitView({
         return (
           <React.Fragment key={row.id}>
             <Box
+              className={collapseAnim}
               style={{
                 flexGrow: minimized ? 0 : row.weight / expandedWeightTotal,
                 flexShrink: minimized ? 0 : 1,
-                flexBasis: minimized ? "auto" : 0,
+                // Numeric when minimized (the tallest column's bar stack),
+                // not "auto": auto is not animatable, and the value is the
+                // same -- bars are fixed 26px (+7px dividers).
+                flexBasis: minimized ? bandBarStackPx(row) : 0,
                 minWidth: 0,
                 minHeight: 0,
                 display: "flex",
@@ -270,6 +275,19 @@ function RowView({ row, edge }: { row: DockRow; edge: DockEdge }) {
 
 /** Render an expanded column: a vertical stack of leaves with horizontal
  * dividers between them. */
+/** A fully-minimized band's rendered height: the tallest column's stack of
+ * 26px bars with 7px dividers between them. Used as the band wrapper's
+ * NUMERIC minimized flex-basis (auto would not animate). */
+function bandBarStackPx(row: DockRow): number {
+  return Math.max(
+    ...row.columns.map(
+      (col) =>
+        col.leaves.length * MINIMIZED_BAR_PX +
+        (col.leaves.length - 1) * SPLIT_DIVIDER_PX,
+    ),
+  );
+}
+
 function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
   const dock = useDock();
   const groups = dock.groups;
@@ -313,6 +331,7 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
         return (
           <React.Fragment key={leaf.id}>
             <Box
+              className={collapseAnim}
               style={{
                 flexGrow: collapsed
                   ? 0
@@ -327,6 +346,10 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
                 // stack's MIN_STACK_CELL_PX floor (P7).
                 minHeight: collapsed ? 0 : MIN_CELL_HEIGHT_PX,
                 display: "flex",
+                // Children render at their committed size the moment the
+                // model changes; the wrapper's size catches up over the
+                // transition, so clip the overhang.
+                overflow: "hidden",
               }}
             >
               <DockLeafView leaf={leaf} edge={edge} />
@@ -486,6 +509,10 @@ function SplitDivider({
     const containerPx = isRow ? rect.width : rect.height;
     const start = isRow ? event.clientX : event.clientY;
 
+    // Per-frame weight writes must land instantly: suppress the
+    // minimize/expand transition (collapseAnim) under this container for
+    // the drag's duration, or cells ease-lag behind the divider.
+    container.setAttribute("data-dock-resizing", "");
     let latest = start;
     activeDrag.current = dragGesture({
       grip: event.currentTarget,
@@ -496,6 +523,7 @@ function SplitDivider({
       flush: () => onResize(latest - start, containerPx),
       onEnd: (cancelled) => {
         activeDrag.current = null;
+        container.removeAttribute("data-dock-resizing");
         if (cancelled) onCancel();
       },
     });
