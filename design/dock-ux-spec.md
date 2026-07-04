@@ -219,9 +219,10 @@ Anatomy is listed top-to-bottom / left-to-right.
 ### 3.3 Band bar (minimized band among expanded bands)
 - One segment per group, tiling the full width edge-to-edge; hairline
   dividers between segments.
-- Segment anatomy (P13) = the group's HEADER kept in place: a small grip
-  pill on the leading edge (the drag signifier), then dimmed icon+title
-  **label per tab** (D9) laid out from the left — literal
+- Segment anatomy (P13/D14) = the group collapsed to its HANDLE: grip-bar
+  scale (26px), small grip pill on the leading edge, then ONE dimmed
+  icon+title (the active tab's) with a `+N` badge naming the other tabs on
+  hover — literal
   cousins of the expanded tab strip — and the `+` toggle at the segment's
   RIGHT end, exactly where the expanded grip bar's `−` sat. No leading
   caps. Labels are separated by spacing, not outlines (P10); when width
@@ -573,6 +574,18 @@ already reflect them; this list preserves the rationale.
   structural commit. Plain docked stacks thereby gain independent
   per-panel minimize (band bars) — docked uniform-collapse coupling no
   longer applies to them.
+- **D14 (single-title bars, 2026-07-04):** minimized horizontal bars show
+  ONE title (active tab + `+N` badge), not a label per tab — supersedes
+  D9's per-tab label rows in bars after hands-on review found them busy
+  against real content. Bars drop to grip-bar scale (MINIMIZED_BAR_PX =
+  26px; P11 floor respected): a minimized panel reads as "the panel
+  collapsed to its handle", visually adjacent to the expanded grip bar
+  with `−`→`+` swapped in place. Per-tab affordances (expand-to-tab,
+  per-pane tear-out) live in the RAIL and the expanded strip; from a bar,
+  the active pane is reachable directly and the rest via one expand.
+  Also: the floating bar's window-scope pill renders STRONG (wider,
+  text-colored) above the per-group pills, ranking the two drag scopes;
+  the rail is confirmed KEPT for all-minimized regions (width reclaim).
 - **D13 (zip-merge aligned neighbors):** adjacent bands with the same
   multi-column partition (equal widths within ~2px) merge by zipping
   corresponding columns — one seam, one set of handles, no double chrome
