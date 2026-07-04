@@ -9,7 +9,6 @@ import {
   DockEdge,
   DockLayout,
   GroupId,
-  NodeId,
   PaneId,
   PaneRegistry,
   TabGroup,
@@ -53,28 +52,9 @@ export interface DockContextValue {
     groupId: GroupId,
     opts?: { onClick?: () => void },
   ) => void;
-  /** Begin dragging a whole top-level docked column by its slim handle: floats
-   * the column as one stacked window, then drags it. A no-motion press fires
-   * `opts.onClick` if given -- the minimized stack's parent + handle uses this
-   * to expand-all on click while still dragging the whole column on motion. */
-  startColumnDrag: (
-    event: React.PointerEvent<HTMLElement>,
-    edge: DockEdge,
-    columnNodeId: NodeId,
-    opts?: { onClick?: () => void },
-  ) => void;
-  /** Begin a press on a minimized band bar's background: a drag floats the
-   * WHOLE band as one window stack (spec D2); a motionless click runs
-   * `opts.onClick` (expand-all). */
-  startBandDrag: (
-    event: React.PointerEvent<HTMLElement>,
-    edge: DockEdge,
-    rowId: NodeId,
-    opts?: { onClick?: () => void },
-  ) => void;
-  /** Begin a press on the all-minimized region rail's parent handle: a drag
+  /** Begin a press on the collapsed region rail's parent handle: a drag
    * floats the WHOLE region as one window stack; a motionless click runs
-   * `opts.onClick` (expand-all). */
+   * `opts.onClick` (expand the region). */
   startRegionDrag: (
     event: React.PointerEvent<HTMLElement>,
     edge: DockEdge,

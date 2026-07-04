@@ -57,12 +57,12 @@ export const MIN_PANEL_WIDTH_PX = 220;
  * thinner than its own minimized strip. */
 export const MIN_REGION_GRAB_PX = 96;
 
-/** Width (px) of the narrow vertical strip used for every fully-minimized
- * docked column. In px (not em) because minimized strips participate in the
- * region-width MODEL: totals and resize math add this constant directly, so
- * the rendered width must match it exactly. */
+/** Width (px) of the vertical RAIL an EXPLICITLY collapsed region draws
+ * (D21). In px (not em) because the rail is the region's reserved width while
+ * collapsed: the drawn-width math uses this constant directly, so the
+ * rendered width must match it exactly. */
 export const MINIMIZED_STRIP_PX = 36;
-/** Height of a minimized horizontal BAR (band bar / floating collapsed bar):
+/** Height of a minimized cell's in-place BAR (the ONE minimized form, D20):
  * grip-bar scale -- the bar reads as "the panel collapsed to its handle"
  * (P13/D14) -- while clearing the P11 20px clickable floor. The 36px
  * MINIMIZED_STRIP_PX above remains the vertical RAIL's width. */
@@ -128,6 +128,12 @@ export interface PaneSpec {
    * for content that manages its own spacing (e.g. the control panel's
    * generated GUI). Unlike `fullBleed`, the body still scrolls/auto-sizes. */
   unpadded?: boolean;
+  /** Optional custom face for this pane's minimized BAR (D19), rendered in
+   * place of the default icon+title when the pane's group holds ONLY this
+   * pane. The bar's gestures (drag, click-to-expand, keyboard) are unchanged;
+   * the face is presentation only. E.g. the control panel's connection-status
+   * row -- same identity minimized as expanded. */
+  minimizedFace?: React.ReactNode;
   /** Renders the panel body. A function (not a node) so content is only built
    * for the active tab and re-evaluated on demand. */
   render: () => React.ReactNode;
@@ -151,10 +157,9 @@ export interface TabGroup {
    * into title fallbacks; `null` forces every consumer to handle the empty
    * case explicitly. */
   activeId: PaneId | null;
-  /** When true, the group is minimized: only its handle + tab strip show, with
-   * the contents hidden. In a stack of 2+ groups this is uniform across the
-   * stack (enforced by normalizeStackCollapseInPlace); a lone group minimizes on its
-   * own. */
+  /** When true, the group is minimized: it renders as its 26px bar (the
+   * header kept in place, P13/D14) with the contents hidden. Per-GROUP (D16):
+   * any cell of any stack minimizes individually; mixed stacks are legal. */
   collapsed?: boolean;
 }
 
@@ -287,8 +292,16 @@ export interface DockLayout {
   groups: Record<GroupId, TabGroup>;
   /** Docked region pinned to each edge, or null when that edge is empty. */
   docked: Record<DockEdge, DockRegion | null>;
-  /** Docked region widths in px per edge: the EXPANDED width-columns' summed
-   * pixels (minimized strips and dividers render on top -- see regionPlan).
+  /** EXPLICIT per-edge region collapse (D21): true renders the edge's whole
+   * region as the 36px vertical rail, regardless of per-cell collapse states.
+   * Toggled only by the region-collapse chevron / rail header (and cleared by
+   * expanding a panel from the rail or floating the region) -- never flips
+   * emergently from cell minimize states. Kept (harmlessly) while the edge is
+   * empty; ops that create a region leave it false. */
+  regionCollapsed: Record<DockEdge, boolean>;
+  /** Docked region widths in px per edge: the width-determining columns'
+   * summed pixels (dividers render on top -- see regionPlan; collapse states
+   * never move width, D20).
    * THE single source of truth for region width. It travels with the layout
    * through every op (clones carry it) and is rewritten only by width
    * reconciliation in applyOp -- so snapshot/restore, persistence, and undo
@@ -322,9 +335,20 @@ export type GroupLocation =
 export const emptyLayout = (): DockLayout => ({
   groups: {},
   docked: { left: null, right: null },
+  regionCollapsed: { left: false, right: false },
   floating: [],
   areas: {},
 });
+
+/** An edge's explicit region-collapse flag (D21), tolerant of layouts that
+ * predate the field (persisted snapshots, test-probe injections): a missing
+ * record reads as expanded. The ONE place the fallback lives. */
+export const isRegionCollapsedOn = (
+  layout: DockLayout,
+  edge: DockEdge,
+): boolean =>
+  (layout.regionCollapsed as Record<DockEdge, boolean> | undefined)?.[edge] ===
+  true;
 
 /** The layout's region widths with defaults filled in (the one place the
  * missing-field fallback lives). */

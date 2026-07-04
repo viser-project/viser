@@ -1,10 +1,10 @@
-// Tests for the region-width model: layout.regionWidth tracks only the
-// EXPANDED width-columns' pixels; minimized columns keep their preserved px
-// in their weight but render as fixed strips ON TOP of regionWidth. The
-// width lives in the layout itself (single source of truth), and
-// reconciliation -- run on every commit -- must (a) recompute the expanded
-// sum when a column's minimized state flips, (b) exclude minimized columns
-// from structural-change sums, and (c) leave pure-internal changes alone.
+// Tests for the region-width model (post-D20): layout.regionWidth is the
+// width-determining columns' summed pixels -- ALL of them, minimized or not
+// (a minimized cell renders as its 26px bar in place at its column's width,
+// so collapse never moves region width). The width lives in the layout
+// itself (single source of truth), and reconciliation -- run on every commit
+// -- must (a) carry widths across structural changes by content identity,
+// and (b) leave pure-internal changes (including collapse toggles) alone.
 
 import { describe, expect, it } from "vitest";
 import {
@@ -58,18 +58,18 @@ describe("lone minimized column: preserved width survives a sibling docking", ()
   it("carries the preserved px into the column weight when a sibling docks", () => {
     const l = loneAt500();
     const m1 = toggleCollapsed(l, "a"); // minimize the lone column
-    expect(recon(l, m1).right).toBe(500); // width kept for restore
+    expect(recon(l, m1).right).toBe(500); // width kept (bar in place, D20)
     const m2 = dockToRegionEdge(m1, ["b"], "right", "left"); // structural
     reconcileRegionWidths(m1, m2);
     const aCol = widthColumns(m2.docked.right!).find((c) =>
       c.leaves.some((lf) => lf.group === "a"),
     )!;
     expect(aCol.weight).toBe(500); // NOT the 96px grab-min floor
-    // Only B is expanded, so the region reserves B's default width.
-    expect(regionWidthsOf(m2).right).toBe(DEFAULT_REGION_PX);
+    // BOTH columns count (D20): a's preserved 500 plus B's default width.
+    expect(regionWidthsOf(m2).right).toBe(500 + DEFAULT_REGION_PX);
   });
 
-  it("expanding afterwards rejoins at the preserved px", () => {
+  it("expanding afterwards changes nothing (width was never dropped)", () => {
     const l = loneAt500();
     const m1 = toggleCollapsed(l, "a");
     reconcileRegionWidths(l, m1);
@@ -104,53 +104,51 @@ describe("widthRow identity flip preserves rendered widths", () => {
   });
 });
 
-describe("reconcileRegionWidths with minimized columns", () => {
-  it("collapse toggle drops the column from the expanded sum", () => {
+describe("reconcileRegionWidths with minimized columns (D20: collapse never moves width)", () => {
+  it("collapse toggle leaves the width alone (bar renders in place)", () => {
     const prev = threeColumns([300, 300, 300]);
     const next = toggleCollapsed(prev, "b");
-    expect(recon(prev, next).right).toBe(600); // a + c only; b is a strip.
+    expect(recon(prev, next).right).toBe(900);
   });
 
-  it("expand toggle rejoins at the preserved pixel weight", () => {
+  it("expand toggle leaves the width alone", () => {
     const prev0 = threeColumns([300, 300, 300]);
     const prev = toggleCollapsed(prev0, "b"); // b minimized
-    expect(recon(prev0, prev).right).toBe(600);
+    expect(recon(prev0, prev).right).toBe(900);
     const next = toggleCollapsed(prev, "b"); // b expands again
-    expect(recon(prev, next).right).toBe(900); // b's preserved 300 rejoins.
+    expect(recon(prev, next).right).toBe(900);
   });
 
-  it("two of three minimized: sum is the lone expanded column", () => {
+  it("two of three minimized: still the full sum", () => {
     const prev = threeColumns([300, 280, 320]);
     const mid = toggleCollapsed(prev, "a");
     recon(prev, mid);
     const next = toggleCollapsed(mid, "b");
-    expect(recon(mid, next).right).toBe(320); // only c is expanded.
+    expect(recon(mid, next).right).toBe(900);
   });
 
-  it("fully minimized keeps the previous width for restore", () => {
+  it("fully minimized keeps the width too", () => {
     const prev = threeColumns([300, 300, 300]);
     let next = toggleCollapsed(prev, "a");
     next = toggleCollapsed(next, "b");
     next = toggleCollapsed(next, "c");
-    // No expanded columns left: regionWidth keeps its value (the strips render
-    // at fixed width regardless; the value only matters again on expand).
     expect(recon(prev, next).right).toBe(900);
   });
 
-  it("pure-internal change (same set, same pattern) leaves widths alone", () => {
+  it("pure-internal change (same column set) leaves widths alone", () => {
     const prev = threeColumns([300, 300, 300]);
     const next = structuredClone(prev);
     expect(recon(prev, next)).toEqual({ left: 0, right: 900 });
   });
 
-  it("structural change sums only the expanded columns", () => {
-    // Start with [a expanded 400, b minimized 200]; undock a -> [b] alone.
+  it("structural change carries every column's px (minimized included)", () => {
+    // Start with [a 400, b minimized 250]; undock a -> [b] alone.
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b") };
     l.docked.right = toRegion(row([leaf("a", 400), leaf("b", 250)]));
     l.regionWidth = { left: 0, right: 650 };
     const prev = toggleCollapsed(l, "b");
-    expect(recon(l, prev).right).toBe(400);
+    expect(recon(l, prev).right).toBe(650);
 
     // Remove a's column entirely (structural: column set changes).
     const next = structuredClone(prev);
@@ -159,7 +157,7 @@ describe("reconcileRegionWidths with minimized columns", () => {
     next.docked.right = {
       rows: [{ ...keepRow, columns: [keepRow.columns[1]] }],
     };
-    // The only remaining column is minimized: fall back to its preserved px.
+    // The remaining (minimized) column keeps its preserved px.
     expect(recon(prev, next).right).toBe(250);
   });
 

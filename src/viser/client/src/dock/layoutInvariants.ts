@@ -22,8 +22,8 @@ import {
 // valid dir, no same-axis nesting, single-child splits) are gone -- they're
 // unrepresentable. What remains are VALUE-level invariants the type can't
 // express: NonEmpty (defensive, in case a cast slipped through), finite/positive
-// weights, uniform-collapse per stack, and the reference/orphan/duplication
-// checks that span the whole layout.
+// weights, and the reference/orphan/duplication checks that span the whole
+// layout.
 
 /** Every (docked) column across both edges (flattened over row bands), in
  * order. */
@@ -66,9 +66,7 @@ function referencedGroupIds(layout: DockLayout): GroupId[] {
  *  9. Floating windows: non-empty stacks, finite geometry, valid stackWeights
  *     (finite/positive, keyed only by groups in the window's stack).
  *  10/11. Unique node ids and floating window ids.
- *  12. `collapsed`, when present, is a boolean.
- *  13. Each area is keyed by its own id.
- *  14. Uniform-collapse per docked column / floating stack. */
+ *  12. `collapsed`, when present, is a boolean. */
 export function invariantViolations(layout: DockLayout): string[] {
   const v: string[] = [];
   const refs = referencedGroupIds(layout);
@@ -185,18 +183,8 @@ export function invariantViolations(layout: DockLayout): string[] {
   // (13 retired: areas no longer duplicate their key in an `id` field -- the
   // mismatch it policed is unrepresentable now.)
 
-  // 14. A stack of 2+ groups is uniform-collapse: every member shares one
-  // collapsed state (a lone group may differ). Enforced by
-  // normalizeStackCollapseInPlace; checked here so any op that violates it is caught.
-  const checkStackUniform = (gids: GroupId[], where: string): void => {
-    if (gids.length < 2) return;
-    const states = gids.map((g) => layout.groups[g]?.collapsed === true);
-    if (states.some((s) => s !== states[0]))
-      v.push(`stack ${where} has mixed collapsed states`);
-  };
-  for (const c of columnsOf(layout))
-    checkStackUniform(c.leaves.map((l) => l.group), `column ${c.id}`);
-  for (const w of layout.floating) checkStackUniform(w.stack, `window ${w.id}`);
+  // (14 retired: uniform-collapse per stack died with D16 -- any cell
+  // minimizes individually, so mixed collapse states are legal and coherent.)
 
   return v;
 }

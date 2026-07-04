@@ -28,6 +28,7 @@ import {
   MIN_REGION_GRAB_PX,
   PaneId,
   emptyLayout,
+  isRegionCollapsedOn,
 } from "./types";
 import {
   leaf,
@@ -52,7 +53,6 @@ import {
   dropOnDockedLeaf,
   insertTabsInto,
   mergeGroupsInto,
-  floatBand,
   floatGroup,
   tearOutPane,
   moveWindow,
@@ -62,9 +62,11 @@ import {
   bringToFront,
   reorderTab,
   toggleCollapsed,
+  expandGroup,
+  setRegionCollapsed,
+  floatRegion,
   minimizeStack,
   expandStack,
-  normalizeStackCollapseInPlace,
   stackGroupIdsOf,
   setActiveTab,
   cascadeResize,
@@ -72,6 +74,76 @@ import {
   setStackWeights,
   widthColumns,
 } from "./layoutOps";
+
+
+// ===========================================================================
+// setRegionCollapsed (D21): explicit region collapse; expands clear it.
+// ===========================================================================
+
+describe("setRegionCollapsed (D21)", () => {
+  it("sets and clears the per-edge flag without touching group states", () => {
+    const layout = makeLayout({ left: col([leaf("a"), leaf("b")]) });
+    layout.groups["a"].collapsed = true; // mixed states are legal (D16)
+    const collapsed = setRegionCollapsed(layout, "left", true);
+    expect(isRegionCollapsedOn(collapsed, "left")).toBe(true);
+    expect(collapsed.groups["a"].collapsed).toBe(true);
+    expect(collapsed.groups["b"].collapsed).not.toBe(true);
+    const restored = setRegionCollapsed(collapsed, "left", false);
+    expect(isRegionCollapsedOn(restored, "left")).toBe(false);
+    expect(restored.groups["a"].collapsed).toBe(true); // per-cell state kept
+  });
+
+  it("collapsing an EMPTY edge is a no-op (nothing to rail)", () => {
+    const layout = makeLayout({ left: leaf("a") });
+    expect(setRegionCollapsed(layout, "right", true)).toBe(layout);
+  });
+
+  it("no-ops when the flag already matches", () => {
+    const layout = makeLayout({ left: leaf("a") });
+    expect(setRegionCollapsed(layout, "left", false)).toBe(layout);
+    const collapsed = setRegionCollapsed(layout, "left", true);
+    expect(setRegionCollapsed(collapsed, "left", true)).toBe(collapsed);
+  });
+
+  it("expandGroup clears the flag for the group's edge", () => {
+    const layout = makeLayout({ left: leaf("a") });
+    layout.groups["a"].collapsed = true;
+    const collapsed = setRegionCollapsed(layout, "left", true);
+    const out = expandGroup(collapsed, "a");
+    expect(out.groups["a"].collapsed).toBe(false);
+    expect(isRegionCollapsedOn(out, "left")).toBe(false);
+  });
+
+  it("expandGroup on an already-expanded group STILL clears the flag (rail spine row)", () => {
+    // A rail cell can back an expanded-state group whose region is simply
+    // collapsed; activating it must reveal it (P5: no dead ends).
+    const layout = makeLayout({ left: leaf("a") });
+    const collapsed = setRegionCollapsed(layout, "left", true);
+    const out = expandGroup(collapsed, "a");
+    expect(isRegionCollapsedOn(out, "left")).toBe(false);
+  });
+
+  it("toggleCollapsed's EXPAND direction clears the flag; minimize leaves it", () => {
+    const layout = makeLayout({ left: leaf("a") });
+    layout.groups["a"].collapsed = true;
+    const collapsed = setRegionCollapsed(layout, "left", true);
+    const out = toggleCollapsed(collapsed, "a"); // expand
+    expect(isRegionCollapsedOn(out, "left")).toBe(false);
+    const backIn = setRegionCollapsed(out, "left", true);
+    const minimized = toggleCollapsed(backIn, "a"); // minimize
+    expect(isRegionCollapsedOn(minimized, "left")).toBe(true);
+  });
+
+  it("floatRegion clears the flag (region gone; next dock starts expanded)", () => {
+    const layout = makeLayout({ left: col([leaf("a"), leaf("b")]) });
+    const collapsed = setRegionCollapsed(layout, "left", true);
+    const res = floatRegion(collapsed, "left", 10, 10, 300);
+    expect(res.windowId).not.toBeNull();
+    expect(res.layout.docked.left).toBeNull();
+    expect(isRegionCollapsedOn(res.layout, "left")).toBe(false);
+  });
+});
+
 
 // ---------------------------------------------------------------------------
 // Shared regression fixtures (used by the bug pins below).
@@ -991,41 +1063,6 @@ describe("mergeGroupsInto", () => {
 });
 
 // ===========================================================================
-// floatBand  (spec D2: band-bar background drags the whole band)
-// ===========================================================================
-
-describe("floatBand", () => {
-  it("floats every leaf of the band as one window stack, in order", () => {
-    // Band = [x | col(a, b)] over band [c]: floating the FIRST band takes
-    // x, a, b (columns left-to-right, leaves top-to-bottom) and leaves [c].
-    const layout = makeLayout({
-      left: rows([
-        row([leaf("x"), col([leaf("a", 3), leaf("b")])]),
-        row([leaf("c")]),
-      ]),
-    });
-    const rowId = layout.docked.left!.rows[0].id;
-    const res = floatBand(layout, "left", rowId, 100, 100, 300);
-    expect(res.windowId).not.toBeNull();
-    const win = res.layout.floating.find((w) => w.id === res.windowId)!;
-    expect(win.stack).toEqual(["x", "a", "b"]);
-    // Leaf weights become the window's stack weights (heights survive).
-    expect(win.stackWeights).toMatchObject({ a: 3, b: 1, x: 1 });
-    // The remaining band survives alone.
-    expect(
-      res.layout.docked.left!.rows.map((r) =>
-        r.columns.map((c) => c.leaves.map((l) => l.group)),
-      ),
-    ).toEqual([[["c"]]]);
-  });
-
-  it("no-op for a missing row id", () => {
-    const layout = makeLayout({ left: leaf("a") });
-    expect(floatBand(layout, "left", "nope", 0, 0, 300).windowId).toBeNull();
-  });
-});
-
-// ===========================================================================
 // floatGroup
 // ===========================================================================
 
@@ -1454,45 +1491,6 @@ describe("minimizeStack / expandStack", () => {
     expect(expandStack(allExpanded, ["a", "b", "c"])).toBe(allExpanded);
     const allMin = minimizeStack(allExpanded, ["a", "b", "c"]);
     expect(minimizeStack(allMin, ["a", "b", "c"])).toBe(allMin);
-  });
-});
-
-// ===========================================================================
-// normalizeStackCollapseInPlace: a 2+ stack is uniform; expanded dominates.
-// ===========================================================================
-
-describe("normalizeStackCollapseInPlace", () => {
-  it("a mixed floating stack -> all expanded (expanded dominates)", () => {
-    const layout = makeLayout({ floating: [{ id: "w1", stack: ["a", "b"] }] });
-    layout.groups["a"].collapsed = true; // a minimized, b expanded -> mixed
-    const changed = normalizeStackCollapseInPlace(layout);
-    expect(changed).toBe(true);
-    expect(layout.groups["a"].collapsed).not.toBe(true);
-    expect(layout.groups["b"].collapsed).not.toBe(true);
-  });
-
-  it("a uniformly-minimized stack is left alone", () => {
-    const layout = makeLayout({ floating: [{ id: "w1", stack: ["a", "b"] }] });
-    layout.groups["a"].collapsed = true;
-    layout.groups["b"].collapsed = true;
-    expect(normalizeStackCollapseInPlace(layout)).toBe(false);
-    expect(layout.groups["a"].collapsed).toBe(true);
-    expect(layout.groups["b"].collapsed).toBe(true);
-  });
-
-  it("a LONE group keeps its own minimized state", () => {
-    const layout = makeLayout({ left: leaf("a") });
-    layout.groups["a"].collapsed = true;
-    expect(normalizeStackCollapseInPlace(layout)).toBe(false);
-    expect(layout.groups["a"].collapsed).toBe(true);
-  });
-
-  it("a mixed docked column -> all expanded", () => {
-    const layout = makeLayout({ left: col([leaf("a"), leaf("b")]) });
-    layout.groups["a"].collapsed = true; // mixed within the column
-    normalizeStackCollapseInPlace(layout);
-    expect(layout.groups["a"].collapsed).not.toBe(true);
-    expect(layout.groups["b"].collapsed).not.toBe(true);
   });
 });
 
@@ -1972,6 +1970,7 @@ describe("unmergeable helpers", () => {
     const layout: DockLayout = {
       groups: { [normal.id]: normal, [special.id]: special },
       docked: { left: null, right: null },
+      regionCollapsed: { left: false, right: false },
       floating: [],
     };
     expect(isGroupUnmergeable(layout, panes, normal.id)).toBe(false);

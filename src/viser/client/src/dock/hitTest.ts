@@ -5,7 +5,7 @@
 // drop a pointer position maps to, plus the geometry of the visual hint. It is
 // intentionally DOM-free so it can be unit tested with synthetic rects.
 
-import { edgeIsSingleLeaf, isRegionMinimized } from "./layoutOps";
+import { edgeIsSingleLeaf } from "./layoutOps";
 import {
   AreaId,
   clamp,
@@ -13,6 +13,7 @@ import {
   DockLayout,
   DropRegion,
   GroupId,
+  isRegionCollapsedOn,
   NodeId,
   PaneId,
   SPLIT_DIVIDER_PX,
@@ -485,31 +486,48 @@ export function hitTest(
     // a per-panel split, just region-wide. (`t` and `sideBand` are declared once
     // at the top of this loop body, shared with the cross-band seam.)
     // A single-leaf region normally suppresses these region-wide bands (its own
-    // per-panel split is identical, full leaf height). But a MINIMIZED region
-    // renders as a SHORT strip, so the per-panel split is only strip-tall and
-    // the large empty region area below it has no "dock beside" target. So when
-    // the region is minimized, keep the FULL-HEIGHT left/right bands:
-    //  - over the EMPTY area below the strip: the whole column width docks a
-    //    sibling (no dead center stripe),
-    //  - over the strip CELL itself: only the outer/inner thirds dock beside
-    //    (full height), leaving the middle third for the cell's own tab-insert /
-    //    merge zones.
-    const regionMinimized = isRegionMinimized(tree, layout.groups);
-    const keepSideBand = regionMinimized;
+    // per-panel split is identical, full leaf height). But a COLLAPSED region
+    // -- explicitly collapsed to the 36px rail (D21), OR one whose every cell
+    // is minimized (in-place bars leave the area below them empty) -- renders
+    // its cells as SHORT strips/bars, so the per-panel split is only
+    // strip-tall and the large empty region area below has no "dock beside"
+    // target; a lone collapsed cell also carries NO per-panel top/bottom
+    // zones (D4: bars have none), so the region bands aren't redundant there.
+    // So when the region is collapsed, keep the FULL-HEIGHT left/right bands
+    // (and the top/bottom bands even for a single leaf):
+    //  - over the EMPTY area below the rail/bars: the whole column width docks
+    //    a sibling (no dead center stripe),
+    //  - over the cell itself: only the outer/inner thirds dock beside (full
+    //    height), leaving the middle for the cell's own tab-insert / merge
+    //    zones.
+    const regionAllCollapsed = tree.rows.every((rw) =>
+      rw.columns.every((c) =>
+        c.leaves.every((lf) => layout.groups[lf.group]?.collapsed === true),
+      ),
+    );
+    const keepSideBand = isRegionCollapsedOn(layout, edge) || regionAllCollapsed;
     const effSideBand = !keepSideBand
       ? sideBand
       : overCollapsedCell(edge)
         ? sideBand // over the strip: thirds (center falls through to the cell)
         : w; // empty area: full column width
 
-    // Top / bottom: full-width line above/below everything.
-    if (cy < REGION_EDGE_PX && !edgeIsSingleLeaf(tree, "top")) {
+    // Top / bottom: full-width line above/below everything. A lone COLLAPSED
+    // leaf keeps these (keepSideBand): its bar has no per-panel top/bottom
+    // split zones (D4), so the region band is the only "above/below" left.
+    if (
+      cy < REGION_EDGE_PX &&
+      (!edgeIsSingleLeaf(tree, "top") || keepSideBand)
+    ) {
       return {
         result: { kind: "regionEdge", edge, side: "top" },
         hint: { left: regionLeft, top: 0, width: w, height: t, variant: "line" },
       };
     }
-    if (crect.height - cy < REGION_EDGE_PX && !edgeIsSingleLeaf(tree, "bottom")) {
+    if (
+      crect.height - cy < REGION_EDGE_PX &&
+      (!edgeIsSingleLeaf(tree, "bottom") || keepSideBand)
+    ) {
       return {
         result: { kind: "regionEdge", edge, side: "bottom" },
         hint: {

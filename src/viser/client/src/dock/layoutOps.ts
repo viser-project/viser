@@ -19,6 +19,7 @@ import {
   FloatingWindow,
   GroupId,
   GroupLocation,
+  isRegionCollapsedOn,
   mapNonEmpty,
   MIN_REGION_GRAB_PX,
   MIN_WINDOW_HEIGHT_PX,
@@ -220,17 +221,9 @@ export function isRowMinimized(
   return row.columns.every((c) => isColumnMinimized(c, groups));
 }
 
-/** A region is "minimized" when every one of its rows is minimized. */
-export function isRegionMinimized(
-  region: DockRegion,
-  groups: Record<GroupId, TabGroup>,
-): boolean {
-  return region.rows.every((r) => isRowMinimized(r, groups));
-}
-
 /** True when the column with id `nodeId` (in either docked region) is fully
- * minimized -- used to decide whether a new cell dropped beside it should adopt
- * the minimized state. False if the column isn't found. */
+ * minimized -- used to skip the shrink-the-leaf split PREVIEW over a
+ * minimized target (nothing to vacate). False if the column isn't found. */
 export function nodeAllMinimized(layout: DockLayout, nodeId: NodeId): boolean {
   for (const edge of ["left", "right"] as const) {
     const region = layout.docked[edge];
@@ -475,9 +468,8 @@ export function findGroupLocation(
 /** The group ids that share a STACK with `groupId` (including itself): a
  * floating window's whole stack, or the leaf groups of the docked COLUMN that
  * contains the group. A LONE group (its own window, or the sole leaf of its
- * column) returns just `[groupId]`. Used to route a minimize toggle to the right
- * granularity -- a stack toggles all-or-nothing, a lone group toggles itself
- * (see the uniform-collapse invariant). */
+ * column) returns just `[groupId]`. Used by chrome that styles a group
+ * differently when stacked (e.g. the unmergeable header's top rule). */
 export function stackGroupIdsOf(
   layout: DockLayout,
   groupId: GroupId,
@@ -1369,40 +1361,10 @@ export function floatRegion(
   }
   const draft = clone(layout);
   stack.forEach((g) => detachInPlace(draft, g));
+  // The region is gone; its explicit collapse flag (D21) must not survive to
+  // ambush the NEXT region docked on this edge with a surprise rail.
+  draft.regionCollapsed = { ...regionCollapsedOf(draft), [edge]: false };
   const win = makeFloatingWindow(x, y, width, stack, undefined, stackWeights);
-  draft.floating.push(win);
-  return { layout: draft, windowId: win.id };
-}
-
-/** Float an entire ROW BAND as ONE window: every leaf across the band's
- * columns (left-to-right, top-to-bottom within each column) becomes the
- * window's stack. Spec D2: the minimized band bar's background drags the
- * whole band as a unit. Same conventions as floatColumn: weights become the
- * window's stackWeights; area groups veto the float. */
-export function floatBand(
-  layout: DockLayout,
-  edge: DockEdge,
-  rowId: NodeId,
-  x: number,
-  y: number,
-  width: number,
-  height?: number,
-): { layout: DockLayout; windowId: WindowId | null } {
-  const row = layout.docked[edge]?.rows.find((r) => r.id === rowId);
-  if (row === undefined) return { layout, windowId: null };
-  const stack = row.columns.flatMap((c) => c.leaves.map((l) => l.group));
-  if (stack.some((g) => isAreaGroup(layout, g))) {
-    return { layout, windowId: null };
-  }
-  const stackWeights: Record<GroupId, number> = {};
-  row.columns.forEach((c) =>
-    c.leaves.forEach((l) => {
-      stackWeights[l.group] = l.weight;
-    }),
-  );
-  const draft = clone(layout);
-  stack.forEach((g) => detachInPlace(draft, g));
-  const win = makeFloatingWindow(x, y, width, stack, height, stackWeights);
   draft.floating.push(win);
   return { layout: draft, windowId: win.id };
 }
@@ -1581,9 +1543,10 @@ export function reorderTab(
   return draft;
 }
 
-/** Toggle a group's minimized (collapsed) state. Only ever invoked on a LONE
- * group (a stack toggles via minimizeStack/expandStack); the commit-time
- * normalization keeps a 2+ stack uniform regardless. */
+/** Toggle a group's minimized (collapsed) state. Per-cell (D16): any group --
+ * lone or stacked -- toggles individually; mixed stacks are legal. The expand
+ * direction also clears the group's region-collapse flag (D21), like
+ * expandGroup: any user expand reveals the panel. */
 export function toggleCollapsed(
   layout: DockLayout,
   groupId: GroupId,
@@ -1592,20 +1555,68 @@ export function toggleCollapsed(
   const group = draft.groups[groupId];
   if (group === undefined) return layout;
   group.collapsed = !group.collapsed;
+  if (group.collapsed !== true)
+    clearRegionCollapsedForGroupInPlace(draft, groupId);
   return draft;
 }
 
-/** Expand a collapsed group (no-op when already expanded or unknown). */
-export function expandGroup(layout: DockLayout, groupId: GroupId): DockLayout {
-  if (layout.groups[groupId]?.collapsed !== true) return layout;
+/** An edge's region-collapse record with defaults filled in (tolerates
+ * layouts predating the field -- persisted snapshots, test literals). */
+function regionCollapsedOf(layout: DockLayout): Record<DockEdge, boolean> {
+  return {
+    left: isRegionCollapsedOn(layout, "left"),
+    right: isRegionCollapsedOn(layout, "right"),
+  };
+}
+
+/** Set an edge's EXPLICIT region-collapse flag (D21). Collapsing an edge with
+ * no region is a no-op (there is nothing to rail); clearing is always legal.
+ * Per-cell collapse states are untouched -- the rail is a view over them. */
+export function setRegionCollapsed(
+  layout: DockLayout,
+  edge: DockEdge,
+  collapsed: boolean,
+): DockLayout {
+  if (collapsed && layout.docked[edge] === null) return layout;
+  if (isRegionCollapsedOn(layout, edge) === collapsed) return layout;
   const draft = clone(layout);
-  draft.groups[groupId].collapsed = false;
+  draft.regionCollapsed = { ...regionCollapsedOf(layout), [edge]: collapsed };
+  return draft;
+}
+
+/** Clear the region-collapse flag for the edge holding `groupId` (if docked),
+ * in place. Every op that EXPANDS a panel routes through this: expanding a
+ * panel from the rail must reveal it, which means un-collapsing its region
+ * (D21) -- otherwise the "expanded" panel would stay hidden behind the rail. */
+function clearRegionCollapsedForGroupInPlace(
+  draft: DockLayout,
+  groupId: GroupId,
+): void {
+  const loc = findGroupLocation(draft, groupId);
+  if (loc?.kind !== "docked" || !isRegionCollapsedOn(draft, loc.edge)) return;
+  draft.regionCollapsed = { ...regionCollapsedOf(draft), [loc.edge]: false };
+}
+
+/** Expand a collapsed group. ALSO clears its region's collapse flag (D21):
+ * expanding from the rail reveals the panel. No-op when the group is already
+ * expanded AND its region isn't collapsed (or the group is unknown). */
+export function expandGroup(layout: DockLayout, groupId: GroupId): DockLayout {
+  const group = layout.groups[groupId];
+  if (group === undefined) return layout;
+  const loc = findGroupLocation(layout, groupId);
+  const regionFlag =
+    loc?.kind === "docked" && isRegionCollapsedOn(layout, loc.edge);
+  if (group.collapsed !== true && !regionFlag) return layout;
+  const draft = clone(layout);
+  if (draft.groups[groupId].collapsed === true)
+    draft.groups[groupId].collapsed = false;
+  clearRegionCollapsedForGroupInPlace(draft, groupId);
   return draft;
 }
 
 /** Minimize a whole stack (a floating window's stack or a docked column's
- * leaves) -- the stack handle's minimize-all button. A stack is uniform by
- * invariant (see normalizeStackCollapse), so this just collapses every group. */
+ * leaves) -- the stack handle's minimize-all button. Bulk convenience only
+ * (D16): collapses every listed group; per-cell states stay legal otherwise. */
 export function minimizeStack(
   layout: DockLayout,
   groupIds: GroupId[],
@@ -1635,18 +1646,6 @@ export function expandStack(
   return draft;
 }
 
-/** Enforce the stack-uniform-collapse invariant: in any stack of 2+ groups (a
- * docked COLUMN's leaves, or a floating window's stack) every member shares one
- * collapsed state. A LONE group (the sole leaf of its column, or its own window)
- * may be independently minimized. When a stack is non-uniform, EXPANDED
- * dominates: the whole stack expands. This makes the "some panels minimized,
- * some short inside one stack" state -- the source of the per-cell weight/render
- * pathology -- unrepresentable. Run on every commit (see applyOp). Mutates
- * `layout` in place; returns whether anything changed.
- *
- * Only `collapsed` is cleared here -- a lone group keeps its own collapse, and a
- * uniformly-minimized stack is left alone (so minimizeStack's all-collapsed
- * result survives). */
 /** Structural fingerprint of a layout: the arrangement of ids and group
  * membership across docked trees and floating stacks, EXCLUDING weights and
  * collapse flags. Two layouts with equal signatures differ only in sizes /
@@ -1801,37 +1800,6 @@ export function canonicalViolations(layout: DockLayout): string[] {
     }
   }
   return out;
-}
-
-export function normalizeStackCollapseInPlace(layout: DockLayout): boolean {
-  let changed = false;
-  const expandAll = (groupIds: GroupId[]): void => {
-    for (const gid of groupIds) {
-      const g = layout.groups[gid];
-      if (g !== undefined && g.collapsed === true) {
-        g.collapsed = false;
-        changed = true;
-      }
-    }
-  };
-  const reconcile = (groupIds: GroupId[]): void => {
-    if (
-      groupIds.length >= 2 &&
-      groupIds.some((gid) => layout.groups[gid]?.collapsed !== true)
-    ) {
-      expandAll(groupIds);
-    }
-  };
-  // Each docked column is one vertical stack.
-  for (const edge of ["left", "right"] as const) {
-    const region = layout.docked[edge];
-    if (region !== null)
-      for (const column of allColumns(region))
-        reconcile(collectLeafGroups(column));
-  }
-  // Floating windows: the stack array is the unit.
-  for (const win of layout.floating) reconcile(win.stack);
-  return changed;
 }
 
 /** Set node weights by node id (a leaf's or a column's) within a docked region.

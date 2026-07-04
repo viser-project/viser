@@ -40,7 +40,12 @@ import {
 } from "./testUtils";
 
 function layoutWith(spec: TreeSpec, ...gids: GroupId[]): DockLayout {
-  return { groups: groups(...gids), docked: { left: toRegion(spec), right: null }, floating: [] };
+  return {
+    groups: groups(...gids),
+    docked: { left: toRegion(spec), right: null },
+    regionCollapsed: { left: false, right: false },
+    floating: [],
+  };
 }
 const reg = (spec: TreeSpec): DockRegion => toRegion(spec)!;
 
@@ -105,6 +110,7 @@ describe("setNodeWeights", () => {
     const layout: DockLayout = {
       groups: groups("a", "b"),
       docked: { left: region, right: null },
+      regionCollapsed: { left: false, right: false },
       floating: [],
     };
     const out = setNodeWeights(layout, "left", { [ca.id]: 3, [cb.id]: 5 });
@@ -117,6 +123,7 @@ describe("setNodeWeights", () => {
     const layout: DockLayout = {
       groups: groups("b", "c"),
       docked: { left: region, right: null },
+      regionCollapsed: { left: false, right: false },
       floating: [],
     };
     const out = setNodeWeights(layout, "left", { [lb.id]: 7, [lc.id]: 2 });
@@ -135,6 +142,7 @@ describe("setNodeWeights", () => {
     const layout: DockLayout = {
       groups: groups("a", "b", "c"),
       docked: { left: region, right: null },
+      regionCollapsed: { left: false, right: false },
       floating: [],
     };
     const out = setNodeWeights(layout, "left", {
@@ -156,6 +164,7 @@ describe("setNodeWeights", () => {
     const layout: DockLayout = {
       groups: groups("a", "b"),
       docked: { left: region, right: null },
+      regionCollapsed: { left: false, right: false },
       floating: [],
     };
     const snapshot = JSON.stringify(layout);
@@ -215,6 +224,7 @@ describe("dropOnDockedLeaf top/bottom: 50/50 split, width preserved", () => {
     const l: DockLayout = {
       groups: groups("a", "b", "c"),
       docked: { left: null, right: region },
+      regionCollapsed: { left: false, right: false },
       floating: [
         { id: "w", x: 0, y: 0, width: 280, height: { mode: "auto" }, stack: ["c"] },
       ],

@@ -158,7 +158,7 @@ def test_random_drags_conserve_panels(
 
 # Multi-band seed: start from a region with stacked bands (one multi-column, one
 # minimized) so the random storm exercises the 4-level band paths -- band
-# inserts at cross-band seams, the horizontal minimized-band bar, and dropping
+# inserts at cross-band seams, in-place minimized bars, and dropping
 # onto/around bands -- which the playground default (no docked bands) never
 # reaches.
 @pytest.mark.parametrize("seed", [1, 2, 5])

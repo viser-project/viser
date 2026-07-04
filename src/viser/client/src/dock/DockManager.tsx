@@ -32,11 +32,9 @@ import {
 } from "./gestures";
 import * as ops from "./layoutOps";
 import { RegionResizer } from "./RegionResizer";
-import {
-  canvasFacingStripOffsetPx,
-  plannedReservedWidth,
-  planRegion,
-} from "./regionPlan";
+import { HandleIconButton } from "./handles";
+import { IconChevronsLeft, IconChevronsRight } from "@tabler/icons-react";
+import { plannedReservedWidth, planRegion } from "./regionPlan";
 import { reconcileRegionWidths } from "./widthReconciliation";
 import { invariantViolations } from "./layoutInvariants";
 import {
@@ -56,6 +54,7 @@ import {
   DockLayout,
   FloatingWindow,
   GroupId,
+  isRegionCollapsedOn,
   MIN_CANVAS_PX,
   MIN_REGION_GRAB_PX,
   NodeId,
@@ -263,13 +262,9 @@ export function DockManager({
   const plans = React.useMemo(
     () => ({
       left:
-        layout.docked.left !== null
-          ? planRegion(layout.docked.left, layout.groups)
-          : null,
+        layout.docked.left !== null ? planRegion(layout.docked.left) : null,
       right:
-        layout.docked.right !== null
-          ? planRegion(layout.docked.right, layout.groups)
-          : null,
+        layout.docked.right !== null ? planRegion(layout.docked.right) : null,
     }),
     [layout],
   );
@@ -339,19 +334,13 @@ export function DockManager({
       if (next === layoutRef.current) return; // no-op op: nothing to commit.
       // Canonical band form (P14/D12/D13) on STRUCTURAL commits only: a pure
       // weight change (a resize mid-gesture) must never restructure the
-      // layout under the user's pointer. Runs BEFORE stack-collapse
-      // normalization so a lone stacked column splits into bands FIRST --
-      // its groups then collapse independently instead of being coupled.
+      // layout under the user's pointer.
       if (
         ops.structureSignature(next) !==
         ops.structureSignature(layoutRef.current)
       ) {
         ops.normalizeCanonicalBandsInPlace(next);
       }
-      // Enforce the stack-uniform-collapse invariant BEFORE width reconciliation
-      // (it can flip cells expanded, which changes the width math). `next` is a
-      // fresh draft here, so in-place mutation is safe.
-      ops.normalizeStackCollapseInPlace(next);
       reconcileRegionWidths(layoutRef.current, next);
       commit(next);
     },
@@ -534,10 +523,10 @@ export function DockManager({
   // next to the only reader:
   //
   //   data-dock-leaf=<nodeId> + data-dock-edge=<left|right>
-  //     A docked drop target. The LEAF wrapper's rect IS the drop rect (both
-  //     minimized renderers size the wrapper to the droppable surface; the
-  //     group element inside may be a compact chip). Rendered by SplitView's
-  //     DockLeafView, VerticalMinimizedColumn (docked), HorizontalMinimizedBand.
+  //     A docked drop target. The LEAF wrapper's rect IS the drop rect (the
+  //     rail sizes the wrapper to the droppable surface; the group element
+  //     inside may be a compact rail cell). Rendered by SplitView's
+  //     DockLeafView and VerticalMinimizedColumn's rail cells (docked).
   //   data-dock-group=<groupId>
   //     The group's element: the leaf wrapper itself OR any descendant (both
   //     accepted). Scopes the strip/tab lookup; carries
@@ -554,8 +543,8 @@ export function DockManager({
   //     A nested area's wrapper; its rect is the drop rect (inset via
   //     hitRect), its group comes from the LAYOUT (an empty area renders no
   //     group element but is still a target).
-  //   data-dock-minimized-band / data-dock-column / data-dock-header /
-  //   data-dock-minimize / data-dock-griphandle
+  //   data-dock-column / data-dock-header / data-dock-minimize /
+  //   data-dock-griphandle
   //     Gesture/measurement hooks only; never drop targets.
 
   const collectTargets = (draggedWindowId: WindowId): DropTargets => {
@@ -592,7 +581,14 @@ export function DockManager({
         stripRect: stripEl?.getBoundingClientRect() ?? null,
         tabs,
         ctx,
-        collapsed: layoutRef.current.groups[groupId]?.collapsed === true,
+        // Collapsed for DROP purposes when the group itself is minimized OR
+        // its whole region is explicitly collapsed (D21): rail cells render
+        // as compact strips regardless of their own collapse state, so they
+        // need the rotated collapsed-target zones either way.
+        collapsed:
+          layoutRef.current.groups[groupId]?.collapsed === true ||
+          (ctx.kind === "docked" &&
+            isRegionCollapsedOn(layoutRef.current, ctx.edge)),
         chip: scopeEl.getAttribute("data-dock-chip") === "true",
         unmergeable: ops.isGroupUnmergeable(layoutRef.current, panes, groupId),
       };
@@ -642,21 +638,13 @@ export function DockManager({
         // skipped here -- the area scan below collects them with area context.
         const index = win.stack.indexOf(gid);
         if (index === -1) return;
-        // A minimized floating window renders its groups as compact chips
-        // inside full-bar-height cells; the CELL is the drop rect (the whole
-        // bar height is droppable), while the chip element still scopes the
-        // group. Expanded groups have no cell wrapper -- fall back to the
-        // group element itself.
-        const cellEl = groupEl.closest("[data-dock-chip-cell]") ?? groupEl;
-        const g = readGroup(
-          groupEl,
-          {
-            kind: "floating",
-            windowId: win.id,
-            index,
-          },
-          cellEl,
-        );
+        // The group element's own rect is the drop rect -- a minimized cell's
+        // element IS its full-width bar (D17), no wrapper needed.
+        const g = readGroup(groupEl, {
+          kind: "floating",
+          windowId: win.id,
+          index,
+        });
         if (g !== null) targets.groups.push(g);
       });
     });
@@ -951,14 +939,11 @@ export function DockManager({
           applyOp(ops.moveWindow(base, windowId, finalX, finalY));
           return;
         }
-        // Dropping a NEW cell (split/snap) beside an all-minimized neighbor
-        // adopts its minimized state: the dragged stack lands collapsed too, so
-        // a minimized column/window stays uniformly minimized. (Merge/insertTab
-        // already inherit the target group's collapsed flag.)
-        const adoptMinimized = (l: DockLayout, neighborAllMin: boolean) =>
-          neighborAllMin ? ops.minimizeStack(l, stack) : l;
         // Widths are reconciled centrally in applyOp, so these just apply the
-        // structural op (no per-path region-width juggling).
+        // structural op (no per-path region-width juggling). Collapse states
+        // travel AS-IS (D16): dropping an expanded stack beside minimized
+        // neighbors never infects it -- collapse changes only by user gesture
+        // or server command.
         if (result.kind === "edge") {
           applyOp(ops.dockToEdge(base, stack, result.edge));
         } else if (result.kind === "regionEdge") {
@@ -967,15 +952,12 @@ export function DockManager({
           applyOp(ops.dockBandAtIndex(base, stack, result.edge, result.index));
         } else if (result.kind === "split") {
           applyOp(
-            adoptMinimized(
-              ops.dropOnDockedLeaf(
-                base,
-                stack,
-                result.edge,
-                result.nodeId,
-                result.region,
-              ),
-              ops.nodeAllMinimized(base, result.nodeId),
+            ops.dropOnDockedLeaf(
+              base,
+              stack,
+              result.edge,
+              result.nodeId,
+              result.region,
             ),
           );
         } else if (result.kind === "merge") {
@@ -990,10 +972,7 @@ export function DockManager({
           );
         } else if (result.kind === "snap") {
           applyOp(
-            adoptMinimized(
-              ops.snapToWindowStack(base, stack, result.windowId, result.index),
-              ops.windowAllMinimized(base, result.windowId),
-            ),
+            ops.snapToWindowStack(base, stack, result.windowId, result.index),
           );
         } else {
           // Exhaustive: adding a DropResult kind is a compile error HERE (at
@@ -1131,8 +1110,8 @@ export function DockManager({
   //   minimized column being dragged, so it would be the siblings' width);
   // - regionWidth for a lone column (its px always lives there).
   // Expanded items keep their measured width. Shared by startGroupDrag (single
-  // tear-out), startTabTearOut, and startColumnDrag (whole-column undock) so
-  // none re-introduces the bug. `groupId` locates the item's column.
+  // tear-out) and startTabTearOut so neither re-introduces the bug. `groupId`
+  // locates the item's column.
   const dockedFloatWidth = (
     edge: DockEdge,
     collapsed: boolean,
@@ -1277,8 +1256,13 @@ export function DockManager({
       dragAfterCommit(e, () => {
         const rect = floatRectFor(`[data-dock-group="${groupId}"]`);
         const loc = ops.findGroupLocation(layoutRef.current, groupId);
+        // Strip-rendered for width purposes when the group is minimized OR
+        // its region is explicitly collapsed (D21: rail cells measure ~36px
+        // regardless of their own collapse state).
         const collapsed =
-          layoutRef.current.groups[groupId]?.collapsed === true;
+          layoutRef.current.groups[groupId]?.collapsed === true ||
+          (loc?.kind === "docked" &&
+            isRegionCollapsedOn(layoutRef.current, loc.edge));
         const floatWidth =
           collapsed && loc?.kind === "docked"
             ? dockedFloatWidth(loc.edge, true, rect.width, groupId)
@@ -1316,94 +1300,6 @@ export function DockManager({
         };
       });
     }, onClick);
-  };
-
-  const startColumnDrag: DockContextValue["startColumnDrag"] = (
-    event,
-    edge,
-    columnNodeId,
-    opts,
-  ) => {
-    armPress(
-      event,
-      (e) => {
-      dragAfterCommit(e, () => {
-        // Measure the COLUMN wrapper (not the 1em handle): floatRectFor clamps
-        // width/height into sane floating ranges, same as a group undock.
-        const rect = floatRectFor(`[data-dock-column="${columnNodeId}"]`);
-        const colNode = ops.findColumnById(layoutRef.current.docked[edge], columnNodeId);
-        const collapsed =
-          colNode !== null && ops.isColumnMinimized(colNode, layoutRef.current.groups);
-        const floatWidth = dockedFloatWidth(
-          edge,
-          collapsed,
-          rect.width,
-          colNode?.leaves[0]?.group,
-        );
-        const res = ops.floatColumn(
-          layoutRef.current,
-          edge,
-          columnNodeId,
-          rect.x,
-          rect.y,
-          floatWidth,
-          rect.height,
-        );
-        // Null when the column was restructured under us or isn't a pure
-        // column anymore; just don't drag.
-        if (res.windowId === null) return null;
-        // applyOp reconciles region widths: removing this column from the
-        // edge's column set lets survivors keep their px and shrinks the
-        // region.
-        flushSync(() => applyOp(res.layout));
-        return {
-          // No single origin group to dim; the whole column left the tree.
-          windowId: res.windowId,
-          groupIdForDim: null,
-          // Clamp into the floated window: a region-tall column floats into a
-          // height-capped window, so a low grab would otherwise gap (same fix as
-          // the group undock above).
-          ...grabOffset(e, rect.x, rect.y, res.windowId),
-        };
-      });
-      },
-      opts?.onClick,
-    );
-  };
-
-  const startBandDrag: DockContextValue["startBandDrag"] = (
-    event,
-    edge,
-    rowId,
-    opts,
-  ) => {
-    armPress(
-      event,
-      (e) => {
-        dragAfterCommit(e, () => {
-          // Measure the band bar itself; float at the region's width (a
-          // minimized band is region-wide, so the bar's measured width IS the
-          // preserved width).
-          const rect = floatRectFor(`[data-dock-minimized-band="${rowId}"]`);
-          const res = ops.floatBand(
-            layoutRef.current,
-            edge,
-            rowId,
-            rect.x,
-            rect.y,
-            regionWidthsOf(layoutRef.current)[edge],
-          );
-          if (res.windowId === null) return null;
-          flushSync(() => applyOp(res.layout));
-          return {
-            windowId: res.windowId,
-            groupIdForDim: null,
-            ...grabOffset(e, rect.x, rect.y, res.windowId),
-          };
-        });
-      },
-      opts?.onClick,
-    );
   };
 
   const startRegionDrag: DockContextValue["startRegionDrag"] = (
@@ -1692,13 +1588,16 @@ export function DockManager({
       (e) => {
         dragAfterCommit(e, () => {
           const rect = floatRectFor(`[data-dock-group="${groupId}"]`);
-          // A minimized cell is strip-narrow, so its measured width is a poor
+          // A rail cell is strip-narrow, so its measured width is a poor
           // panel width; float at the item's preserved expanded width (shared
           // dockedFloatWidth -- column weight in a multi-column region,
-          // regionWidth for a lone column).
+          // regionWidth for a lone column). Rail cells measure ~36px whenever
+          // the REGION is collapsed (D21), whatever the group's own state.
           const loc = ops.findGroupLocation(layoutRef.current, groupId);
           const collapsed =
-            layoutRef.current.groups[groupId]?.collapsed === true;
+            layoutRef.current.groups[groupId]?.collapsed === true ||
+            (loc?.kind === "docked" &&
+              isRegionCollapsedOn(layoutRef.current, loc.edge));
           const floatWidth =
             collapsed && loc?.kind === "docked"
               ? dockedFloatWidth(loc.edge, true, rect.width, groupId)
@@ -1740,8 +1639,6 @@ export function DockManager({
     startTabDrag,
     startTabTearOut,
     startWindowDrag,
-    startColumnDrag,
-    startBandDrag,
     startRegionDrag,
   };
   const gestureRef = React.useRef(gestureImpls);
@@ -1756,9 +1653,6 @@ export function DockManager({
           gestureRef.current.startTabTearOut(...args),
         startWindowDrag: (...args) =>
           gestureRef.current.startWindowDrag(...args),
-        startColumnDrag: (...args) =>
-          gestureRef.current.startColumnDrag(...args),
-        startBandDrag: (...args) => gestureRef.current.startBandDrag(...args),
         startRegionDrag: (...args) =>
           gestureRef.current.startRegionDrag(...args),
       }) satisfies Pick<
@@ -1767,8 +1661,6 @@ export function DockManager({
         | "startTabDrag"
         | "startTabTearOut"
         | "startWindowDrag"
-        | "startColumnDrag"
-        | "startBandDrag"
         | "startRegionDrag"
       >,
     [],
@@ -1790,21 +1682,10 @@ export function DockManager({
   );
   const toggleCollapsed = React.useCallback(
     (groupId: GroupId) => {
-      // Minimize at the right granularity: a group in a 2+ stack toggles the
-      // WHOLE stack (stacks are uniform -- there's no per-cell minimize); a lone
-      // group toggles itself.
-      const l = layoutRef.current;
-      const siblings = ops.stackGroupIdsOf(l, groupId);
-      if (siblings.length >= 2) {
-        const allMin = siblings.every(
-          (g) => l.groups[g]?.collapsed === true,
-        );
-        applyOp(
-          allMin ? ops.expandStack(l, siblings) : ops.minimizeStack(l, siblings),
-        );
-      } else {
-        applyOp(ops.toggleCollapsed(l, groupId));
-      }
+      // Per-CELL minimize everywhere (D16): any group toggles itself, whether
+      // lone or in a 2+ stack. Bulk minimize/expand survives only as the
+      // multi-group window header's toggle-all and the region rail.
+      applyOp(ops.toggleCollapsed(layoutRef.current, groupId));
     },
     [applyOp],
   );
@@ -1843,17 +1724,25 @@ export function DockManager({
       reservedWidth: {
         left:
           plans.left !== null
-            ? plannedReservedWidth(plans.left, regionWidth.left)
+            ? plannedReservedWidth(
+                plans.left,
+                regionWidth.left,
+                isRegionCollapsedOn(layout, "left"),
+              )
             : 0,
         right:
           plans.right !== null
-            ? plannedReservedWidth(plans.right, regionWidth.right)
+            ? plannedReservedWidth(
+                plans.right,
+                regionWidth.right,
+                isRegionCollapsedOn(layout, "right"),
+              )
             : 0,
       },
       containerWidth,
       containerHeight,
     }),
-    [regionWidth, plans, containerWidth, containerHeight],
+    [regionWidth, plans, layout, containerWidth, containerHeight],
   );
 
   // Stable per-window handlers (windowId-first) so FloatingWindowView can be
@@ -1898,10 +1787,10 @@ export function DockManager({
     [applyOp],
   );
 
-  // Each docked region renders its FULL tree: fully-minimized columns are
-  // fixed-width vertical strips that inset the canvas like any other column.
-  // All width accounting (which columns are strips, how much fixed chrome
-  // sits on top of regionWidth) comes from ONE classification: planRegion.
+  // Each docked region renders its FULL tree; a minimized cell is its 26px
+  // bar in place (D20), so region width never depends on collapse states.
+  // The one exception is the EXPLICIT region collapse (D21): the whole
+  // region draws as the 36px rail while its model widths are preserved.
   const regionFor = (edge: DockEdge) => {
     const tree = layout.docked[edge];
     const plan = plans[edge];
@@ -1909,28 +1798,22 @@ export function DockManager({
       return {
         tree,
         reservedWidth: 0,
-        modelReservedWidth: 0,
         resizable: false,
-        resizerStripOffset: 0,
+        collapsed: false,
       };
-    const planned = plannedReservedWidth(plan, regionWidth[edge]);
+    const collapsed = isRegionCollapsedOn(layout, edge);
     return {
       tree,
-      // Resizable whenever ANY band shows expanded content -- not just the
-      // widthRow (`hasExpanded`). A region whose widthRow is all strips can
-      // still render another band full-width; it must keep a working resizer
-      // (which then adjusts regionWidth directly -- see makeOnResize).
-      resizable: plan.anyBandExpanded,
+      // The rail is fixed-width chrome: nothing to resize while collapsed.
+      resizable: !collapsed,
+      collapsed,
       // MODEL-based reserved width. The resizer's drag baseline reads THIS,
       // never the post-scaling rendered width below -- otherwise grabbing the
       // handle under the MIN_CANVAS_PX render-scale guard (or pressing
       // Escape, which re-commits the start width) would bake the
       // temporarily-scaled width into the model and break "widths restore
       // when the viewport grows".
-      reservedWidth: planned,
-      // Inset the resize handle past any canvas-facing minimized strips so it
-      // lands on the first expanded panel's boundary, not the strip's far side.
-      resizerStripOffset: canvasFacingStripOffsetPx(plan, edge),
+      reservedWidth: plannedReservedWidth(plan, regionWidth[edge], collapsed),
     };
   };
   // Keyed by edge (not positional array indices, whose left/right meaning was
@@ -2107,7 +1990,7 @@ export function DockManager({
         {/* Docked regions: every column insets the canvas, with fully-minimized
         columns rendering as fixed-width vertical strips. */}
         {(["left", "right"] as DockEdge[]).map((edge) => {
-          const { tree, resizable, resizerStripOffset } = regions[edge];
+          const { tree, resizable, collapsed } = regions[edge];
           const drawnWidth = renderedWidth[edge];
           return (
           <React.Fragment key={edge}>
@@ -2142,10 +2025,47 @@ export function DockManager({
                 }}
               >
                 <SplitView region={tree} edge={edge} />
+                {/* Region-collapse chevron (D21): a small quiet overlay at
+                the region's top INNER corner, pointing toward the edge.
+                Collapsing is explicit -- never an emergent state flip. The
+                EXPAND affordance while collapsed is the rail's own header
+                (so no chevron renders then). */}
+                {!collapsed && (
+                  <HandleIconButton
+                    attrs={{ "data-dock-region-collapse": edge }}
+                    label="Collapse panel area"
+                    title="Collapse"
+                    expanded
+                    onActivate={() =>
+                      applyOp(
+                        ops.setRegionCollapsed(layoutRef.current, edge, true),
+                      )
+                    }
+                    placement={{
+                      position: "absolute",
+                      top: 0,
+                      // The INNER (canvas-facing) corner: left edge's inner
+                      // side is its right, and vice versa. On the LEFT edge
+                      // that corner also hosts the topmost panel's minimize
+                      // button (the grip bar's right-end `-`), so sit just
+                      // inboard of it; the right edge's inner corner only
+                      // overlaps empty grip surface.
+                      ...(edge === "left" ? { right: "1.9em" } : { left: 0 }),
+                      width: "20px",
+                      height: "20px",
+                      zIndex: 16,
+                    }}
+                  >
+                    {edge === "right" ? (
+                      <IconChevronsRight size={13} />
+                    ) : (
+                      <IconChevronsLeft size={13} />
+                    )}
+                  </HandleIconButton>
+                )}
                 {resizable && (
                 <RegionResizer
                   edge={edge}
-                  stripOffset={resizerStripOffset}
                   // Model-based (unscaled) start: see regionFor's
                   // reservedWidth doc.
                   getStart={() => regions[edge].reservedWidth}
@@ -2159,26 +2079,13 @@ export function DockManager({
                     const layout0 = layoutRef.current;
                     const tree0 = layout0.docked[edge];
                     if (tree0 === null) return () => {};
-                    // Only EXPANDED columns participate: minimized strips are
-                    // fixed-width chrome that the drag passes through, so the
-                    // cursor moves 1:1 with the expanded panes. The plan is
-                    // the same classification the render uses.
-                    const plan = planRegion(tree0, layout0.groups);
-                    const cols = plan.expandedColumns;
-                    // The widthRow can be ALL strips while another band still
-                    // shows expanded content (plan.anyBandExpanded) -- then
-                    // there are no width-carrying columns to redistribute, but
-                    // the region still reserves regionWidth and must resize:
-                    // the drag adjusts the regionWidth scalar directly (the
-                    // expanded band renders full-width and follows). With
-                    // nothing expanded anywhere the resizer isn't rendered.
-                    // Bare mode: the widthRow is all strips while another
-                    // band is expanded (the resizer only renders when
-                    // plan.anyBandExpanded). The reserved width IS regionWidth
-                    // -- an all-strip widthRow renders as full-width bars, not
-                    // side strips, so there is NO chrome in this mode.
-                    const bareRegionResize = cols.length === 0;
-                    const chromePx = bareRegionResize ? 0 : plan.chromePx;
+                    // Every width-determining column participates (D20:
+                    // minimized cells are in-place bars holding their
+                    // column's width). The plan is the same classification
+                    // the render uses.
+                    const plan = planRegion(tree0);
+                    const cols = plan.columns;
+                    const chromePx = plan.chromePx;
                     const startRegion = regionWidthsOf(layoutRef.current)[
                       edge
                     ];
@@ -2198,33 +2105,27 @@ export function DockManager({
                     return (reservedPx: number) => {
                       // The grip reports the desired RESERVED width, which
                       // includes the fixed chrome; subtract it to get the
-                      // expanded columns' share.
-                      let total: number;
+                      // columns' share.
                       let next = layoutRef.current;
-                      if (bareRegionResize) {
-                        // No chrome to subtract in bare mode (see above).
-                        total = Math.max(reservedPx, ops.minRegionWidth());
-                      } else {
-                        const widths = ops.resizeRegionColumns(
-                          init,
-                          mins,
-                          maxs,
-                          reservedPx - chromePx,
-                        );
-                        total = widths.reduce((a, b) => a + b, 0);
-                        // Only rewrite weights for genuinely side-by-side
-                        // columns; a single surfaced column may be a vertical
-                        // child whose weight is a HEIGHT (see applyOp). The
-                        // total goes through the setRegionWidth op so the
-                        // model stays the single source of truth for the
-                        // width.
-                        if (!plan.singleColumn) {
-                          const byId: Record<string, number> = {};
-                          ids.forEach((id, i) => {
-                            byId[id] = widths[i];
-                          });
-                          next = ops.setNodeWeights(next, edge, byId);
-                        }
+                      const widths = ops.resizeRegionColumns(
+                        init,
+                        mins,
+                        maxs,
+                        reservedPx - chromePx,
+                      );
+                      const total = widths.reduce((a, b) => a + b, 0);
+                      // Only rewrite weights for genuinely side-by-side
+                      // columns; a single surfaced column may be a vertical
+                      // child whose weight is a HEIGHT (see applyOp). The
+                      // total goes through the setRegionWidth op so the
+                      // model stays the single source of truth for the
+                      // width.
+                      if (!plan.singleColumn) {
+                        const byId: Record<string, number> = {};
+                        ids.forEach((id, i) => {
+                          byId[id] = widths[i];
+                        });
+                        next = ops.setNodeWeights(next, edge, byId);
                       }
                       // Push floats out of the way of THIS region's edge as it
                       // sweeps inward, using the before/after seam of this very

@@ -151,6 +151,11 @@ export function ControlPanelDockSurface({
             </Box>
           </>
         ),
+        // Minimized face (D19): the same connection-status row the expanded
+        // header shows, action icons omitted -- the panel keeps its identity
+        // when collapsed to its bar (old-viser continuity via the general
+        // pane mechanism, not a special case).
+        minimizedFace: <ConnectionStatus />,
         render: () => <ControlPanelContents showSettings={showSettings} />,
       },
     }),

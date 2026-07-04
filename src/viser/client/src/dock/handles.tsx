@@ -14,15 +14,9 @@ import { keyActivate } from "./gestures";
 export function GripPill({
   width = "2.5em",
   opacity = 0.5,
-  strong = false,
 }: {
   width?: string;
   opacity?: number;
-  /** Parent-scope pills (whole window / whole stack) read visibly heavier
-   * than per-group pills sitting beside them: same glyph, two drag scopes,
-   * so the hierarchy must be visible (user feedback on the minimized bar's
-   * twin pills). Strong = the theme text color instead of dimmed gray. */
-  strong?: boolean;
 }) {
   return (
     <Box
@@ -30,9 +24,7 @@ export function GripPill({
         width,
         height: "0.2em",
         borderRadius: "0.1em",
-        backgroundColor: strong
-          ? "var(--mantine-color-text)"
-          : "var(--mantine-color-dimmed)",
+        backgroundColor: "var(--mantine-color-dimmed)",
         opacity,
       }}
     />

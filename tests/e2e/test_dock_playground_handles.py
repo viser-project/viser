@@ -1,12 +1,11 @@
-"""E2E coverage for dock handle gestures: the docked-column handle, floating
-TOP resize grips, and the stack handle's minimize-all button.
+"""E2E coverage for dock handle gestures: minimized in-place bars (D20), the
+explicit region-collapse rail (D21), floating TOP resize grips, and the stack
+handle's minimize-all button.
 
-Docked-column handle: a top-level docked column with 2+ stacked panels shows a
-slim header bar; dragging it floats the WHOLE column as one stacked window
-(order preserved). Related column quirks pinned here: a minimized column
-stranded behind an expanded one renders as a narrow vertical strip, and a
-split-drop preview onto a single-leaf region must not wipe the region's
-background.
+Minimized chrome: a minimized cell renders its 26px bar in place at its
+column's width; the 36px rail appears only via the region-collapse chevron.
+Related quirks pinned here: a split-drop preview onto a single-leaf region
+must not wipe the region's background.
 
 Floating-window grips and stack handle:
 1. Dragging the TOP edge grip resizes height with the BOTTOM edge held fixed
@@ -140,13 +139,14 @@ def test_stack_canonicalizes_to_independent_bands(
 def test_minimized_column_parent_handle_tears_out_whole_stack(
     dock_context, vite_server: int
 ) -> None:
-    """A FULLY-minimized region renders the packed rail with a parent handle
-    on top (spec 3.2); DRAGGING that handle tears the WHOLE region out as one
-    floating window (it must not just toggle)."""
+    """An EXPLICITLY collapsed region (D21) renders the packed rail with a
+    parent handle on top (spec 3.2); DRAGGING that handle tears the WHOLE
+    region out as one floating window (it must not just toggle)."""
     page = _open(dock_context, vite_server)
     try:
-        # Arrange: two minimized groups docked right (canonical bands; the
-        # all-minimized region renders the rail).
+        # Arrange: two minimized groups docked right (canonical bands), then
+        # collapse the region via the explicit chevron (D21: the rail never
+        # appears emergently from cell minimize states).
         set_layout(
             page,
             dock_layout(
@@ -156,6 +156,11 @@ def test_minimized_column_parent_handle_tears_out_whole_stack(
                 )
             ),
         )
+        assert page.locator("[data-dock-region-rail]").count() == 0, (
+            "the rail must NOT appear just because every cell minimized (D21)"
+        )
+        page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")
+        page.wait_for_timeout(200)
         handle = page.locator("[data-dock-region-rail]")
         assert handle.count() == 1
         box = handle.first.bounding_box()
@@ -198,13 +203,15 @@ def test_undock_minimized_column_keeps_expanded_width(
         region_w = page.evaluate("() => window.__dockLayout.regionWidth.right")
         assert region_w and region_w > 150
 
-        # Minimize each panel via its own button (D12: independent), then
-        # undock the resulting all-minimized region via the rail's handle.
+        # Minimize each panel via its own button (D16: independent), collapse
+        # the region explicitly (D21), then undock via the rail's handle.
         for gid in ("t-controls", "t-inspector"):
             page.eval_on_selector(
                 f'[data-dock-group="{gid}"] [data-dock-minimize]', "e => e.click()"
             )
             page.wait_for_timeout(80)
+        page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")
+        page.wait_for_timeout(200)
         handle = page.locator("[data-dock-region-rail]").first
         box = handle.bounding_box()
         assert box is not None
@@ -234,10 +241,11 @@ def test_undock_minimized_column_keeps_expanded_width(
 def test_floating_minimized_stack_has_draggable_parent_handle(
     dock_context, vite_server: int
 ) -> None:
-    """A fully-minimized FLOATING multi-group stack renders as its HEADER
-    bar (P13): full window width, labels left, one `+` at the right end.
-    Dragging the bar's background slack moves the window; a motionless click
-    there expands every group."""
+    """A fully-minimized FLOATING multi-group stack is the same stack of
+    cells, all rendered as 26px bars (D17), under the window's StackHandleBar
+    -- which exists even when every cell is minimized. Dragging the handle
+    moves the window; a motionless click there expands every group
+    (toggle-all's direction comes from windowAllMinimized)."""
     page = _open(dock_context, vite_server)
     try:
         set_layout(
@@ -254,31 +262,32 @@ def test_floating_minimized_stack_has_draggable_parent_handle(
                 ]
             ),
         )
-        # Chip bar: one chip per stacked group.
-        chips = page.locator("[data-floating-window] [data-dock-group]")
-        assert chips.count() == 2, "chip bar should show one chip per group"
+        # One in-place bar per stacked group (D17: no chip-bar mode).
+        bars = page.locator(
+            "[data-floating-window] [data-dock-group][data-dock-collapsed]"
+        )
+        assert bars.count() == 2, "the stack should show one bar per group"
 
-        # The bar's WINDOW pill (centered in the free run, P13) is the
-        # window-drag signifier; its surface has no handler of its own, so
-        # presses flow to the bar's window drag.
-        def slack_point():
+        # The window's StackHandleBar is the window-drag handle, present
+        # even when all cells are minimized.
+        def handle_point():
             return page.eval_on_selector(
-                "[data-floating-window] [data-dock-window-pill]",
+                "[data-floating-window] [data-floating-handle]",
                 """(el) => {
                     const r = el.getBoundingClientRect();
                     return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
                 }""",
             )
 
-        bar = slack_point()
+        bar = handle_point()
         before = page.evaluate("() => window.__dockLayout.floating[0].x")
         _drag(page, (bar["x"], bar["y"]), (700, 500), steps=18)
         after = page.evaluate("() => window.__dockLayout.floating[0].x")
-        assert abs(after - before) > 50, "dragging the bar should move the window"
+        assert abs(after - before) > 50, "dragging the handle should move the window"
 
-        # A motionless CLICK on the slack expands every group (the bar's
-        # press arbitration: motion drags, no motion expands).
-        bar2 = slack_point()
+        # A motionless CLICK on the handle expands every group (the handle's
+        # press arbitration: motion drags, no motion toggles all).
+        bar2 = handle_point()
         page.mouse.move(bar2["x"], bar2["y"])
         page.mouse.down()
         page.mouse.up()
@@ -287,20 +296,21 @@ def test_floating_minimized_stack_has_draggable_parent_handle(
             """() => window.__dockLayout.floating[0].stack.every(
                 (g) => window.__dockLayout.groups[g].collapsed !== true)"""
         )
-        assert all_expanded, "clicking the bar should expand all groups"
+        assert all_expanded, "clicking the handle should expand all groups"
     finally:
         page.close()
 
 
-def test_sandwiched_minimized_column_renders_vertical_strip(
+def test_sandwiched_minimized_column_renders_in_place_bar(
     dock_context, vite_server: int
 ) -> None:
-    """A minimized column stranded behind an expanded one renders as a narrow
-    vertical strip (~2.6em), expands on its + button, and can be dragged out."""
+    """A minimized column beside an expanded one renders its 26px BAR in place
+    at the column's own width (D20: the column holds its width -- honest
+    geometry), expands on its + toggle, and can be dragged out."""
     page = _open(dock_context, vite_server)
     try:
         # Arrange: [Inspector | Controls] docked right, Controls at the edge
-        # (the minimize/expand clicks and strip drag-out are the subject).
+        # (the minimize/expand clicks and bar drag-out are the subject).
         set_layout(page, dock_layout(docked_right=columns("inspector", "controls")))
 
         def leaf_rect(label):
@@ -331,32 +341,30 @@ def test_sandwiched_minimized_column_renders_vertical_strip(
             )
             page.wait_for_timeout(350)  # wait out the minimize width animation
 
-        # Minimize the OUTER Controls so it's stranded behind the expanded
-        # Inspector.
+        # Minimize the OUTER Controls beside the expanded Inspector.
         assert page.locator('[data-dock-leaf][data-dock-edge="right"]').count() == 2
+        expanded_w = leaf_rect("Controls")["w"]
         click_minimize("Controls")
 
-        strip = leaf_rect("Controls")
-        assert strip is not None
-        assert strip["w"] < 50, f"strip not narrow: {strip['w']}px"
-        # The strip's drop-target leaf sizes to its VISIBLE content (cap + spine
-        # rows), NOT the full region height -- so hitTest zones align with what's
-        # drawn instead of a phantom region-tall box. A 2-row strip is well under
-        # half the 800px viewport.
-        assert 40 < strip["h"] < 300, f"strip should be content-tall: {strip['h']}px"
+        bar = leaf_rect("Controls")
+        assert bar is not None
+        # The column HOLDS its width (D20): the bar spans it, at bar height.
+        assert bar["w"] > expanded_w - 30, (
+            f"bar should keep the column width (~{expanded_w}px): {bar['w']}px"
+        )
+        assert bar["h"] < 40, f"bar should be handle-height: {bar['h']}px"
 
-        # Expand restores the full-width panel.
+        # Expand restores the full panel.
         click_minimize("Controls")
         assert leaf_rect("Controls")["w"] > 150
 
-        # Minimize again and drag the strip out -> floats. Grab the strip's own
-        # (content) box, not a fixed y, since it no longer spans the viewport.
+        # Minimize again and drag the bar out -> floats (still minimized).
         click_minimize("Controls")
         s = leaf_rect("Controls")
         _drag(
             page,
             (s["x"] + s["w"] / 2, s["y"] + s["h"] / 2),
-            (750, 250),
+            (640, 450),
             steps=18,
         )
         floated = page.evaluate(
@@ -367,7 +375,7 @@ def test_sandwiched_minimized_column_renders_vertical_strip(
                 return false;
             }"""
         )
-        assert floated, "dragging the vertical strip out did not float the panel"
+        assert floated, "dragging the in-place bar out did not float the panel"
     finally:
         page.close()
 
@@ -553,11 +561,9 @@ def test_left_panel_minimize_button_clickable_despite_resizer(
 def test_minimized_band_among_siblings_is_horizontal_bar(
     dock_context, vite_server: int
 ) -> None:
-    """A fully-minimized BAND among sibling bands renders as a short FULL-WIDTH
-    horizontal bar (not the narrow vertical column rail), and expands back.
-
-    Regression: a minimized band reused the vertical-column renderer, showing a
-    36px-WIDE vertical rail floating in an otherwise-empty full-width band."""
+    """A minimized cell among sibling bands renders its 26px BAR in place
+    (D20: full column width, handle height -- the ONE minimized form), keeps
+    [data-dock-collapsed]/[data-dock-minimize], and expands back on click."""
     page = _open(dock_context, vite_server, 1280, 900)
     try:
         # Three stacked single-column bands on the right.
@@ -582,38 +588,40 @@ def test_minimized_band_among_siblings_is_horizontal_bar(
         page.wait_for_timeout(450)
         assert collapsed("t-inspector"), "inspector band should be minimized"
 
-        bar = page.locator("[data-dock-minimized-band]").first
-        assert bar.count() == 1, "a minimized band should render the horizontal bar"
+        bar = page.locator('[data-dock-group="t-inspector"][data-dock-collapsed]').first
+        assert bar.count() == 1, "a minimized cell should render its in-place bar"
         box = bar.bounding_box()
         assert box is not None
-        # FULL width (~region width 300), SHORT height (the 36px strip) -- i.e. a
+        # FULL width (~region width 300), SHORT height (26px bar) -- i.e. a
         # horizontal bar, not a 36px-wide vertical rail.
-        assert box["width"] > 150, f"band bar should span the region width: {box}"
-        assert box["height"] < 60, f"band bar should be a short strip: {box}"
+        assert box["width"] > 150, f"the bar should span the column width: {box}"
+        assert box["height"] < 40, f"the bar should be handle-height: {box}"
         assert box["width"] > box["height"] * 2, (
-            f"a minimized band must be HORIZONTAL (w >> h), got {box}"
+            f"a minimized cell must be a HORIZONTAL bar (w >> h), got {box}"
+        )
+        # The bar keeps a per-cell expand toggle (D16/D18).
+        assert (
+            page.locator('[data-dock-group="t-inspector"] [data-dock-minimize]').count()
+            == 1
         )
 
-        # The bar carries a chip for the minimized group; clicking it expands.
-        chip = page.locator(
-            '[data-dock-minimized-band] [data-dock-group="t-inspector"]'
-        ).first
-        assert chip.count() == 1, "the bar should show a chip for the group"
-        cbox = chip.bounding_box()
+        # Clicking the bar's label expands to that tab.
+        label = page.locator('[data-dock-group="t-inspector"] [data-dock-tab]').first
+        cbox = label.bounding_box()
         assert cbox is not None
         page.mouse.click(cbox["x"] + cbox["width"] / 2, cbox["y"] + cbox["height"] / 2)
         page.wait_for_timeout(450)
-        assert not collapsed("t-inspector"), "clicking the chip should expand the band"
+        assert not collapsed("t-inspector"), "clicking the bar should expand the band"
     finally:
         page.close()
 
 
-def test_lone_minimized_band_keeps_full_height_rail(
+def test_lone_minimized_panel_is_bar_until_region_collapsed(
     dock_context, vite_server: int
 ) -> None:
-    """A SOLE minimized band (the whole region minimized to one band) keeps the
-    full-height vertical rail -- the horizontal bar is only for a band that
-    shares the region with expanded siblings."""
+    """Minimizing the ONLY panel of a region renders its in-place bar at the
+    region's full width (D20) -- the 36px rail appears ONLY via the explicit
+    region-collapse chevron (D21), and the rail's header expands it back."""
     page = _open(dock_context, vite_server, 1280, 900)
     try:
         set_layout(page, dock_layout(docked_right=rows("controls")))
@@ -628,27 +636,45 @@ def test_lone_minimized_band_keeps_full_height_rail(
         assert page.evaluate(
             "() => window.__dockLayout.groups['t-controls'].collapsed === true"
         )
-        # No horizontal band bar (lone band uses the vertical rail), and the
-        # collapsed group renders tall + narrow.
-        assert page.locator("[data-dock-minimized-band]").count() == 0, (
-            "a lone minimized band should NOT use the horizontal bar"
+        # The bar in place: full region width, handle height. No rail.
+        assert page.locator("[data-dock-region-rail]").count() == 0, (
+            "minimizing a panel must not flip the region into the rail (D21)"
         )
         leaf = page.locator(
             '[data-dock-leaf][data-dock-edge="right"]'
         ).first.bounding_box()
         assert leaf is not None
-        assert leaf["height"] > leaf["width"], (
-            f"a lone minimized band should be a tall vertical rail, got {leaf}"
+        assert leaf["width"] > leaf["height"], (
+            f"a lone minimized panel should be a wide in-place bar, got {leaf}"
         )
+
+        # Explicitly collapse the region -> the rail (36px), model width kept.
+        page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")
+        page.wait_for_timeout(300)
+        assert page.locator("[data-dock-region-rail]").count() == 1
+        rail = page.locator('[data-dock-region="right"]').bounding_box()
+        assert rail is not None and rail["width"] < 60, (
+            f"collapsed region should draw the ~36px rail, got {rail}"
+        )
+
+        # The rail header's toggle expands the REGION (cells keep their own
+        # collapse states: controls stays a minimized bar).
+        page.eval_on_selector(
+            "[data-dock-region-rail] [data-dock-minimize-all]", "e => e.click()"
+        )
+        page.wait_for_timeout(300)
+        assert page.locator("[data-dock-region-rail]").count() == 0
+        assert page.evaluate(
+            "() => window.__dockLayout.groups['t-controls'].collapsed === true"
+        ), "expanding the region must not expand the cells (D21)"
     finally:
         page.close()
 
 
 def test_minimized_band_is_a_drop_target(dock_context, vite_server: int) -> None:
-    """A minimized band's chip is a DOCKED drop target: dropping a floating panel
-    onto it (center) merges into that band's group. Regression: the horizontal
-    bar dropped the per-leaf data-dock-leaf wrapper, so a minimized band stopped
-    being droppable (and silently disabled seam detection for the region)."""
+    """A minimized cell's in-place bar is a DOCKED drop target: it stays
+    inside its data-dock-leaf wrapper (the drop rect), so dropping a floating
+    panel onto it merges into that group without expanding it."""
     page = _open(dock_context, vite_server, 1280, 900)
     try:
         set_layout(
@@ -667,24 +693,22 @@ def test_minimized_band_is_a_drop_target(dock_context, vite_server: int) -> None
             }"""
         )
         page.wait_for_timeout(450)
-        chip = page.locator(
-            '[data-dock-minimized-band] [data-dock-group="t-controls"]'
-        ).first
-        assert chip.count() == 1
-        cbox = chip.bounding_box()
+        bar = page.locator('[data-dock-group="t-controls"][data-dock-collapsed]').first
+        assert bar.count() == 1
+        cbox = bar.bounding_box()
         assert cbox is not None
-        # The chip must be a real drop target: collectTargets needs a
+        # The bar must be a real drop target: collectTargets needs a
         # data-dock-leaf ancestor with the group as a descendant.
         ok = page.evaluate(
             """() => {
                 const g = document.querySelector(
-                    '[data-dock-minimized-band] [data-dock-group="t-controls"]');
+                    '[data-dock-group="t-controls"][data-dock-collapsed]');
                 const leaf = g && g.closest('[data-dock-leaf]');
                 return !!(leaf && leaf.getAttribute('data-dock-edge') === 'right'
                           && leaf.querySelector('[data-dock-group]'));
             }"""
         )
-        assert ok, "minimized band chip is not a valid docked drop target"
+        assert ok, "minimized in-place bar is not a valid docked drop target"
     finally:
         page.close()
 
@@ -788,9 +812,10 @@ def test_expanded_band_not_squished_by_minimized_wider_band(
 def test_minimized_multigroup_band_chip_gestures(
     dock_context, vite_server: int
 ) -> None:
-    """A minimized band with 2+ groups shows one chip per group. Each chip is an
-    independent control: keyboard Enter expands just that group, and dragging one
-    chip out floats only that group (the others stay docked & minimized)."""
+    """A minimized band with 2+ columns shows one in-place bar per group
+    (D20). Each bar is an independent control (D16): keyboard Enter expands
+    just that group, and dragging one bar out floats only that group (the
+    others stay docked & minimized)."""
     page = _open(dock_context, vite_server, 1280, 900)
     try:
 
@@ -808,12 +833,12 @@ def test_minimized_multigroup_band_chip_gestures(
                 ),
             )
 
-        # Keyboard: focus the inspector chip's tab LABEL (labels are the
+        # Keyboard: focus the inspector bar's tab LABEL (labels are the
         # focusable elements; the container is a pure drag surface), Enter ->
         # expands ONLY inspector.
         seed()
         page.eval_on_selector(
-            '[data-dock-minimized-band] [data-dock-group="t-inspector"] [data-dock-tab]',
+            '[data-dock-group="t-inspector"][data-dock-collapsed] [data-dock-tab]',
             "e => e.focus()",
         )
         page.keyboard.press("Enter")
@@ -828,12 +853,12 @@ def test_minimized_multigroup_band_chip_gestures(
             "() => window.__dockLayout.groups['t-controls'].collapsed === true"
         ), "controls should stay minimized"
 
-        # Tear-out: drag the controls chip to canvas -> floats ONLY controls.
+        # Tear-out: drag the controls bar to canvas -> floats ONLY controls.
         seed()
         chip = page.evaluate(
             """() => {
                 const c = document.querySelector(
-                    '[data-dock-minimized-band] [data-dock-group="t-controls"]');
+                    '[data-dock-group="t-controls"][data-dock-collapsed]');
                 const r = c.getBoundingClientRect();
                 return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
             }"""
@@ -859,13 +884,13 @@ def test_minimized_multigroup_band_chip_gestures(
         page.close()
 
 
-def test_all_bands_minimized_region_is_compact_rail_not_squares(
+def test_all_bands_minimized_then_explicit_collapse_gives_rail(
     dock_context, vite_server: int
 ) -> None:
-    """When EVERY band is minimized, the region is the compact vertical rail (the
-    'collapsed region' affordance), not a stack of full-width horizontal bars
-    squeezed into strip width (which rendered as ~36x36 squares). A band expands
-    back from the rail."""
+    """When EVERY band is minimized, the region stays at full width showing
+    the stacked in-place bars (D20/D21: no emergent rail). The explicit
+    chevron collapses it to the compact vertical rail; expanding a panel from
+    a rail spine row un-collapses the region AND expands that panel."""
     page = _open(dock_context, vite_server, 1280, 900)
     try:
         set_layout(
@@ -879,13 +904,9 @@ def test_all_bands_minimized_region_is_compact_rail_not_squares(
             ),
         )
         page.wait_for_timeout(300)
-        # No horizontal band bars when the whole region is collapsed.
-        assert page.locator("[data-dock-minimized-band]").count() == 0, (
-            "an all-minimized region should use the vertical rail, not horizontal bars"
-        )
-        # Each band's leaf is a NARROW (rail-width) cell, not a tiny square: width
-        # well under height (a vertical rail), and not the squished ~36-wide form
-        # of a horizontal bar with no region width.
+        # All-minimized WITHOUT explicit collapse: three wide in-place bars,
+        # no rail (edge case 12 under D21: bars, never 36x36 squares).
+        assert page.locator("[data-dock-region-rail]").count() == 0
         leaves = page.eval_on_selector_all(
             '[data-dock-leaf][data-dock-edge="right"]',
             """els => els.map(l => {
@@ -893,15 +914,27 @@ def test_all_bands_minimized_region_is_compact_rail_not_squares(
                 return { w: Math.round(r.width), h: Math.round(r.height) };
             })""",
         )
-        assert len(leaves) == 3, f"expected three collapsed band rails, got {leaves}"
+        assert len(leaves) == 3, f"expected three collapsed bars, got {leaves}"
         for lf in leaves:
-            assert lf["w"] < 60, f"rail should be narrow, got {lf}"
-            assert lf["h"] > lf["w"], f"rail should be taller than wide, got {lf}"
+            assert lf["w"] > 150, f"in-place bar should be wide, got {lf}"
+            assert lf["w"] > lf["h"], f"bar should be wider than tall, got {lf}"
 
-        # Expand one band from the rail via its spine ROW (rows own per-band
-        # expand; the parent handle owns the one expand-all +, P9). Rows are
-        # pointer-gesture surfaces, so activate via keyboard (Enter), which
-        # works synthetically.
+        # EXPLICIT collapse -> the 36px rail with one spine cell per leaf.
+        page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")
+        page.wait_for_timeout(300)
+        assert page.locator("[data-dock-region-rail]").count() == 1
+        rail_leaves = page.eval_on_selector_all(
+            '[data-dock-leaf][data-dock-edge="right"]',
+            """els => els.map(l => {
+                const r = l.getBoundingClientRect();
+                return { w: Math.round(r.width), h: Math.round(r.height) };
+            })""",
+        )
+        for lf in rail_leaves:
+            assert lf["w"] < 60, f"rail cell should be narrow, got {lf}"
+
+        # Expand one panel from the rail via its spine ROW (keyboard Enter):
+        # clears regionCollapsed AND expands that group (D21).
         page.eval_on_selector(
             '[data-dock-group="t-controls"] [data-dock-tab]', "e => e.focus()"
         )
@@ -913,6 +946,9 @@ def test_all_bands_minimized_region_is_compact_rail_not_squares(
             )
             is False
         )
+        assert page.locator("[data-dock-region-rail]").count() == 0, (
+            "expanding from the rail must un-collapse the region"
+        )
         w = page.evaluate(
             """() => Math.round(document
                 .querySelector('[data-dock-group="t-controls"]')
@@ -923,13 +959,12 @@ def test_all_bands_minimized_region_is_compact_rail_not_squares(
         page.close()
 
 
-def test_minimized_band_chip_drop_target_fills_bar(
+def test_minimized_bar_fills_its_drop_target_leaf(
     dock_context, vite_server: int
 ) -> None:
-    """The minimized-band chip IS the drop target (collectTargets reads its
-    data-dock-leaf rect). It must fill the bar -- a single chip spans ~the full
-    region width and the full strip height -- so the whole visible bar is
-    droppable, not just a small content-sized chip with dead space beside it."""
+    """The in-place bar fills its data-dock-leaf wrapper (the drop rect
+    collectTargets reads), so the whole visible bar is droppable -- no dead
+    space beside a smaller inner chip."""
     page = _open(dock_context, vite_server, 1280, 900)
     try:
         set_layout(
@@ -944,36 +979,30 @@ def test_minimized_band_chip_drop_target_fills_bar(
         dims = page.evaluate(
             """() => {
                 const g = document.querySelector(
-                    '[data-dock-minimized-band] [data-dock-group="t-inspector"]');
+                    '[data-dock-group="t-inspector"][data-dock-collapsed]');
                 const leaf = g.closest('[data-dock-leaf]');
-                const bar = document.querySelector('[data-dock-minimized-band]');
                 const lr = leaf.getBoundingClientRect();
-                const br = bar.getBoundingClientRect();
+                const br = g.getBoundingClientRect();
                 return {
                     leafW: Math.round(lr.width), leafH: Math.round(lr.height),
                     barW: Math.round(br.width), barH: Math.round(br.height),
                 };
             }"""
         )
-        # The chip's hit area (leaf) fills the bar: nearly full width (minus the
-        # bar's small padding) and the full strip height.
-        assert dims["leafW"] >= dims["barW"] - 24, (
-            f"chip drop target does not fill the bar width: {dims}"
+        assert dims["barW"] >= dims["leafW"] - 4, (
+            f"bar does not fill the drop target width: {dims}"
         )
-        assert dims["leafH"] >= dims["barH"] - 4, (
-            f"chip drop target does not fill the bar height: {dims}"
+        assert dims["barH"] >= dims["leafH"] - 4, (
+            f"bar does not fill the drop target height: {dims}"
         )
     finally:
         page.close()
 
 
-def test_minimized_band_bar_empty_area_accepts_drop(
-    dock_context, vite_server: int
-) -> None:
-    """A REAL drop on the bar's empty area (right of the compact pill) must hit
-    the chip's drop target and merge/insert into the minimized group. Regression:
-    hit testing read the compact pill's rect (not the full-bar leaf wrapper), so
-    drops beside the pill fell through to a no-op window move. The drag source is
+def test_minimized_bar_slack_area_accepts_drop(dock_context, vite_server: int) -> None:
+    """A REAL drop on the bar's slack area (between the label and the right-end
+    toggle) must hit the bar's drop target and merge/insert into the minimized
+    group -- the whole bar is droppable, not just the label. The drag source is
     a FLOATING window so the docked region doesn't reflow mid-drag."""
     page = _open(dock_context, vite_server, 1280, 900)
     try:
@@ -987,22 +1016,23 @@ def test_minimized_band_bar_empty_area_accepts_drop(
         page.wait_for_timeout(300)
         pts = page.evaluate(
             """() => {
-                const bar = document.querySelector('[data-dock-minimized-band]');
-                const pill = bar.querySelector('[data-dock-group]');
+                const bar = document.querySelector(
+                    '[data-dock-group="t-inspector"][data-dock-collapsed]');
+                const label = bar.querySelector('[data-dock-tab]');
                 const br = bar.getBoundingClientRect();
-                const pr = pill.getBoundingClientRect();
+                const pr = label.getBoundingClientRect();
                 return {
-                    // Midway between the pill's right edge and the bar's right
+                    // Midway between the label's right edge and the bar's right
                     // edge, pulled 50px in from the region edge so the region
                     // side band (40px) can't claim the point.
                     dropX: Math.min((pr.right + br.right) / 2, br.right - 50),
                     dropY: br.y + br.height / 2,
-                    pillRight: pr.right,
+                    labelRight: pr.right,
                 };
             }"""
         )
-        if pts["dropX"] < pts["pillRight"] + 10:
-            pytest.skip("no empty bar area beside the pill at this viewport")
+        if pts["dropX"] < pts["labelRight"] + 10:
+            pytest.skip("no slack bar area beside the label at this viewport")
         src = _group_id_for_panel(page, "console")
         _drag(
             page,
@@ -1015,8 +1045,8 @@ def test_minimized_band_bar_empty_area_accepts_drop(
             "() => window.__dockLayout.groups['t-inspector'].paneIds.includes('console')"
         )
         assert merged, (
-            "dropping on the bar's empty area should merge into the minimized "
-            "band's group (drop target must span the bar, not just the pill)"
+            "dropping on the bar's slack area should merge into the minimized "
+            "group (drop target must span the bar, not just the label)"
         )
     finally:
         page.close()

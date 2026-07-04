@@ -149,10 +149,10 @@ def test_minimize_click_on_background_overlapping_window(page: Page) -> None:
 # Height correctness.
 # ===========================================================================
 def test_vertical_stack_bands_minimize_independently(page: Page) -> None:
-    """Spec D12 (inverts the old all-or-nothing pin): a docked stack is
-    canonical BANDS -- each panel keeps its own +/- and minimizes alone,
-    rendering a band bar above/below its expanded sibling. Mixed states are
-    valid; there is no column-level parent handle."""
+    """Spec D12/D16: a docked stack is canonical BANDS -- each panel keeps its
+    own +/- and minimizes alone, rendering its in-place bar above/below its
+    expanded sibling. Mixed states are valid; there is no column-level parent
+    handle (D22)."""
     a, b = "t-controls", "t-inspector"
     set_layout(page, dock_layout(docked_right=stack("controls", "inspector")))
     docked_right = page.eval_on_selector_all(
@@ -170,18 +170,20 @@ def test_vertical_stack_bands_minimize_independently(page: Page) -> None:
     assert n_individual_btns(a) == 1 and n_individual_btns(b) == 1
     assert page.query_selector("[data-dock-column-handle]") is None
 
-    # Minimize A alone: mixed state, band bar renders for A's band.
+    # Minimize A alone: mixed state, A renders its in-place bar (D20) beside
+    # its expanded sibling.
     page.eval_on_selector(
         f'[data-dock-group="{a}"] [data-dock-minimize]', "e => e.click()"
     )
     page.wait_for_timeout(120)
     assert _is_collapsed(page, a) and not _is_collapsed(page, b), (
-        "bands must minimize independently (D12)"
+        "bands must minimize independently (D12/D16)"
     )
-    assert page.query_selector("[data-dock-minimized-band]") is not None, (
-        "the minimized band should render as a band bar beside its sibling"
+    bar = page.query_selector(f'[data-dock-group="{a}"][data-dock-collapsed]')
+    assert bar is not None, (
+        "the minimized cell should render its in-place bar beside its sibling"
     )
-    # Expand A via its band-bar toggle (the + at the segment's right end).
+    # Expand A via its bar's toggle (the + at the bar's right end).
     page.eval_on_selector(
         f'[data-dock-group="{a}"] [data-dock-minimize]', "e => e.click()"
     )

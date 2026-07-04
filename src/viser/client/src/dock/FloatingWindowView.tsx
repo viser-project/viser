@@ -14,10 +14,9 @@ import {
   minimizeStack,
   windowAllMinimized,
 } from "./layoutOps";
-import { gripBarBg } from "./DockStyles.css";
-import { ChromeToggle, GripPill, StackHandleBar } from "./handles";
+import { StackHandleBar } from "./handles";
 import { TabGroupFrame } from "./TabGroupFrame";
-import { ChipDivider, MinimizedGroupChip } from "./HorizontalMinimizedBand";
+import { MinimizedBar } from "./MinimizedBar";
 import {
   clamp,
   FloatingWindow,
@@ -70,15 +69,16 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
   // A fully-minimized window shrinks to its handle(s); it ignores any fixed
   // height and offers no vertical resize (there's nothing to resize).
   const collapsed = windowAllMinimized(dock.layout, win.id);
-  // Minimize-all / expand-all for the whole stack (a stack is uniform-collapse).
-  // Shared by the expanded header and the minimized-strip parent handle.
+  // Bulk minimize-all / expand-all for the whole stack -- the window
+  // header's toggle (the one surviving bulk affordance besides the rail,
+  // D16). Direction: expand when EVERY cell is minimized, else minimize all.
   const toggleAll = () =>
     dock.api.apply((l) =>
       collapsed ? expandStack(l, win.stack) : minimizeStack(l, win.stack),
     );
   // The pinned px height, or undefined when the window auto-sizes to content.
   // flex-grow sums < 1 distribute only that FRACTION of free space;
-  // stackWeights from floatRegion/floatBand carving are fractional, so
+  // stackWeights from floatRegion carving are fractional, so
   // normalize (see SplitView's band note).
   const stackWeightTotal =
     win.stack.reduce((s2, g) => s2 + (win.stackWeights?.[g] ?? 1), 0) || 1;
@@ -324,11 +324,9 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         position: "absolute",
         left: win.x,
         top: win.y,
-        // A fully-minimized window renders as a compact horizontal CHIP BAR
-        // (the same look as a minimized docked band) sized to its chips.
-        // win.width is preserved in the model for restore on expand.
-        // P13/D10: the minimized bar keeps the window's width -- the width
-        // is part of the window's identity (P8); no fit-content jump.
+        // A fully-minimized window is the same stack of cells, all rendered
+        // as 26px bars (D17) at full win.width -- the width is part of the
+        // window's identity (P8); no fit-content jump.
         width: win.width,
         height: collapsed ? undefined : renderedHeight,
         zIndex,
@@ -405,78 +403,15 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
             : {}),
         }}
       >
-        {collapsed ? (
-          // Fully-minimized FLOATING window: the window's header row kept in
-          // place (P13) at full win.width -- grip pill (window-drag
-          // signifier), group label runs with dividers, background slack,
-          // and ONE ChromeToggle at the right end (P9: uniform-collapse
-          // makes any expand window-level). Presses on the bar (and drag-
-          // through on the toggle) drag the window; motionless clicks
-          // expand every group.
-          <Box
-            className={gripBarBg}
-            onPointerDown={(event) =>
-              dock.startWindowDrag(event, win.id, { onClick: toggleAll })
-            }
-            style={{
-              display: "flex",
-              flexDirection: "row",
-              alignItems: "stretch",
-              height: MINIMIZED_BAR_PX,
-              cursor: "grab",
-              touchAction: "none",
-              userSelect: "none",
-              WebkitUserSelect: "none",
-            }}
-          >
-
-            {win.stack.map((groupId, i) => {
-              const group = dock.groups[groupId];
-              if (group === undefined) return null;
-              return (
-                <React.Fragment key={groupId}>
-                  {i > 0 && <ChipDivider />}
-                  {/* data-dock-chip-cell: the group's DROP rect spans the
-                  full bar height (no dead strips above/below labels). */}
-                  <Box
-                    data-dock-chip-cell="true"
-                    style={{
-                      height: "100%",
-                      display: "flex",
-                      alignItems: "stretch",
-                      minWidth: 0,
-                    }}
-                  >
-                    <MinimizedGroupChip group={group} withToggle={false} />
-                  </Box>
-                </React.Fragment>
-              );
-            })}
-            {/* WINDOW-scope pill, centered in the free run like the
-            expanded StackHandleBar's centered pill (P13: no position jump)
-            and STRONGER than any per-group pill, ranking the drag scopes. */}
-            <Box style={{ flexGrow: 1 }} />
-            <Box
-              data-dock-window-pill={win.id}
-              style={{ display: "flex", alignItems: "center", flexShrink: 0 }}
-            >
-              <GripPill width="2.2em" opacity={0.65} strong />
-            </Box>
-            <Box style={{ flexGrow: 1 }} />
-            <ChromeToggle
-              expanded={false}
-              label="Expand panels"
-              onActivate={toggleAll}
-            />
-          </Box>
-        ) : (
         <>
         {/* For a multi-group stack, a window header drags the whole window; each
         group also keeps its own grip bar (which tears it out). A single group
         needs no header -- its own grip bar moves the window. The header's
-        minimize-all button collapses every group at once (and restores the
-        previous min/max mix on expand). A motionless press toggles (via the
-        drag-starter's onClick, since the + is dragThrough); motion drags. */}
+        minimize-all button collapses every group at once; when every cell is
+        minimized (windowAllMinimized) it flips to expand-all. Rendered even
+        when the whole stack is bars (D17): a minimized window is the same
+        stack of cells, just all 26px. A motionless press toggles (via the
+        drag-starter's onClick, since the +/- is dragThrough); motion drags. */}
         {multi && (
           <StackHandleBar
             attrs={{ "data-floating-handle": win.id }}
@@ -511,7 +446,11 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
             if (group === undefined) return null;
             const collapsedCell = group.collapsed === true;
             const weight = win.stackWeights?.[groupId] ?? 1;
-            const groupNode = (
+            // A minimized cell is its 26px bar in place (D17/D20); an
+            // expanded one is the ordinary tab-group frame.
+            const groupNode = collapsedCell ? (
+              <MinimizedBar group={group} />
+            ) : (
               <TabGroupFrame
                 group={group}
                 // Fixed-height windows: groups fill and share the height (the
@@ -556,7 +495,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                     style={{
                       flexGrow: collapsedCell ? 0 : weight / stackWeightTotal,
                       flexShrink: collapsedCell ? 0 : 1,
-                      flexBasis: collapsedCell ? "auto" : 0,
+                      flexBasis: collapsedCell ? MINIMIZED_BAR_PX : 0,
                       // Never shrink below a cell's header: minHeight:0 let an
                       // over-short window collapse a cell under its header,
                       // clipping it and overlapping the next cell. Floor at the
@@ -577,7 +516,6 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
           })}
         </Box>
         </>
-        )}
       </Box>
     </Paper>
   );

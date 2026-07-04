@@ -2,9 +2,9 @@
 // reclaims canvas WIDTH, so instead of "the header kept in place" it is the
 // header ROTATED: gray cap on top (the header's leading edge), one spine row
 // per tab (upright icon over rotated title, wayfinding-styled), hairline
-// dividers between cells. Renders every fully-minimized docked column
-// (lone in a band, or beside expanded columns), and -- as RegionMinimizedRail
-// -- the whole all-minimized region as ONE packed rail.
+// dividers between cells. Renders the EXPLICITLY collapsed region (D21:
+// layout.regionCollapsed[edge]) as ONE packed rail -- the only 36px form
+// left; per-cell minimize renders in-place bars instead (MinimizedBar).
 
 import { Box, Paper } from "@mantine/core";
 import { IconPlus } from "@tabler/icons-react";
@@ -19,60 +19,17 @@ import {
   StackHandleBar,
 } from "./handles";
 import { startCollapsedGroupPress } from "./collapsedPress";
-import { collectLeaves, expandStack } from "./layoutOps";
-import { DockColumn, DockEdge, DockRegion, NodeId, TabGroup } from "./types";
+import { collectLeaves, setRegionCollapsed } from "./layoutOps";
+import { DockEdge, DockRegion, NodeId, TabGroup } from "./types";
 
-export function VerticalMinimizedColumn({
-  column,
-  edge,
-}: {
-  column: DockColumn;
-  edge: DockEdge;
-}) {
-  const dock = useDock();
-  const leaves = collectLeaves(column);
-  return (
-    <Paper
-      radius={0}
-      style={{
-        flexGrow: 1,
-        minWidth: 0,
-        minHeight: 0,
-        display: "flex",
-        flexDirection: "column",
-        // Scroll when there are more rows than fit; never horizontally (the
-        // rail is intentionally narrow). Keeps every tab reachable.
-        overflowX: "hidden",
-        overflowY: "auto",
-        backgroundColor: "var(--mantine-color-body)",
-      }}
-    >
-      {leaves.map(({ id, group }, i) => {
-        const g = dock.groups[group];
-        if (g === undefined) return null;
-        return (
-          <React.Fragment key={id}>
-            {i > 0 && <ChromeDivider />}
-            <VerticalMinimizedCell
-              nodeId={id}
-              edge={edge}
-              group={g}
-              inStack={leaves.length > 1}
-            />
-          </React.Fragment>
-        );
-      })}
-    </Paper>
-  );
-}
-
-/** The ALL-MINIMIZED region as ONE packed rail (spec 3.2): every leaf across
- * every band, contiguous, so the canvas gets the region's width back with no
- * dead gaps. Band structure stays in the MODEL; expanding restores it. The
- * narrow StackHandleBar on top is the rail's parent handle: drag floats the
- * WHOLE region as one window; click / `+` expands everything (P9: the rail's
- * one expand-all signifier -- cells show pills, and per-band expand is the
- * spine row's click). */
+/** The COLLAPSED region as ONE packed rail (spec 3.2 / D21): every leaf
+ * across every band, contiguous, so the canvas gets the region's width back
+ * with no dead gaps. Band structure and per-cell collapse states stay in the
+ * MODEL; expanding the region restores them. The narrow StackHandleBar on
+ * top is the rail's parent handle: drag floats the WHOLE region as one
+ * window; click / `+` EXPANDS THE REGION (clears regionCollapsed -- cells
+ * keep their own collapse states). Spine-row clicks expand the region AND
+ * that panel to that tab (expandToTab clears the flag at the op level). */
 export function RegionMinimizedRail({
   region,
   edge,
@@ -84,8 +41,8 @@ export function RegionMinimizedRail({
   const leaves = region.rows.flatMap((r) =>
     r.columns.flatMap((c) => collectLeaves(c)),
   );
-  const groupIds = leaves.map((l) => l.group);
-  const expandAll = () => dock.api.apply((l) => expandStack(l, groupIds));
+  const expandRegion = () =>
+    dock.api.apply((l) => setRegionCollapsed(l, edge, false));
   return (
     <Box
       style={{
@@ -100,11 +57,11 @@ export function RegionMinimizedRail({
       <StackHandleBar
         attrs={{ "data-dock-region-rail": edge }}
         onPointerDown={(event) =>
-          dock.startRegionDrag(event, edge, { onClick: expandAll })
+          dock.startRegionDrag(event, edge, { onClick: expandRegion })
         }
         collapsed
         narrow
-        onToggle={expandAll}
+        onToggle={expandRegion}
       />
       <Paper
         radius={0}
@@ -139,13 +96,16 @@ export function RegionMinimizedRail({
   );
 }
 
-/** One fully-minimized group as a rail cell: gray cap (a `+` when the cell
- * is alone -- its own expand signifier; a grip pill when stacked, where the
- * parent handle owns expand-all, P9), then one spine row per tab. Used by
- * docked rails (pass nodeId/edge for the drop-target wrapper) and reusable
- * without them. Gestures via startCollapsedGroupPress: row press tears out
- * that pane (still minimized) / row click expands to that tab; cap or
- * background press drags the whole group / click expands (lone cells). */
+/** One group as a rail cell: gray cap (a `+` when the cell is alone -- its
+ * own expand signifier; a grip pill when stacked, where the parent handle
+ * owns expand-region, P9), then one spine row per tab. Used by the region
+ * rail (pass nodeId/edge for the drop-target wrapper) and reusable without
+ * them. Gestures via startCollapsedGroupPress: row press tears out that pane
+ * (still minimized) / row click expands the region to that tab; cap or
+ * background press drags the whole group / click expands (lone cells).
+ * Expansion goes through the ops' expandGroup/expandToTab, which ALSO clear
+ * the region-collapse flag (D21) -- a rail cell may back an expanded-state
+ * group whose region is simply collapsed. */
 export function VerticalMinimizedCell({
   nodeId,
   edge,
@@ -159,6 +119,12 @@ export function VerticalMinimizedCell({
 }) {
   const dock = useDock();
   const docked = nodeId !== undefined && edge !== undefined;
+  // Expand this cell: un-collapse the group AND its region (op-level; the
+  // active tab stays). The rail only renders while the region is collapsed,
+  // so expand is the only direction.
+  const expandCell = () => {
+    if (group.activeId !== null) dock.expandToTab(group.id, group.activeId);
+  };
   const inner = (
     <Box
       data-dock-group={group.id}
@@ -168,7 +134,7 @@ export function VerticalMinimizedCell({
           dock,
           event,
           group.id,
-          inStack ? undefined : () => dock.toggleCollapsed(group.id),
+          inStack ? undefined : expandCell,
         )
       }
       style={{
@@ -210,7 +176,7 @@ export function VerticalMinimizedCell({
             label="Expand panel"
             title="Expand"
             expanded={false}
-            onActivate={() => dock.toggleCollapsed(group.id)}
+            onActivate={expandCell}
             dragThrough
             placement={{ width: "100%", height: "1.7em" }}
           >

@@ -3,13 +3,12 @@
 // `next` (the caller owns it, a fresh draft): top-column weights may be
 // rewritten to pixels, and `next.regionWidth` is always (re)written.
 //
-// Width model: a region's width-determining columns store their EXPANDED
-// pixel widths as tree weights, and `layout.regionWidth[edge]` is the sum
-// over the EXPANDED columns only. Fully-minimized columns keep their
-// preserved pixel width in their weight (it's what they get back on expand)
-// but render as fixed MINIMIZED_STRIP_PX strips that sit ON TOP of
-// regionWidth -- so resize math and the rendered layout agree, and resizing
-// never touches a strip.
+// Width model (post-D20): a region's width-determining columns store their
+// pixel widths as tree weights, and `layout.regionWidth[edge]` is their sum.
+// EVERY column participates -- a minimized cell renders as its 26px bar in
+// place at its column's width, so collapse states never move region width.
+// The explicit region collapse (D21) only overrides the DRAWN width; the
+// model widths here are what expand restores.
 //
 // The width lives IN the layout (DockLayout.regionWidth), so it has one
 // source of truth: clones carry it through every op, snapshots restore it,
@@ -17,12 +16,7 @@
 // writer. Layouts that bypassed the ops (test literals, injected layouts)
 // simply lack the field and get defaults here.
 
-import {
-  collectLeafGroups,
-  minRegionWidth,
-  widthColumns,
-  widthRow,
-} from "./layoutOps";
+import { collectLeafGroups, minRegionWidth, widthColumns, widthRow } from "./layoutOps";
 import { planRegion, RegionPlan } from "./regionPlan";
 import {
   DEFAULT_REGION_PX,
@@ -33,11 +27,11 @@ import {
   regionWidthsOf,
 } from "./types";
 
-// regionWidth is the EXPANDED columns' summed widths with NO dividers -- the
-// inter-column dividers (and strips) are chrome, added on top via the render
-// plan's chromePx (see regionPlan.plannedReservedWidth). So the bounds that
-// clamp regionWidth must NOT include dividers either, or the divider px would
-// be double-counted (once in the floor, once again in chromePx).
+// regionWidth is the columns' summed widths with NO dividers -- the
+// inter-column dividers are chrome, added on top via the render plan's
+// chromePx (see regionPlan.plannedReservedWidth). So the bounds that clamp
+// regionWidth must NOT include dividers either, or the divider px would be
+// double-counted (once in the floor, once again in chromePx).
 
 /** Sum of `cols`' minimum widths (no dividers -- those are chrome), for
  * clamping regionWidth. */
@@ -57,18 +51,14 @@ function colsMin(cols: DockColumn[]): number {
  * - When a region's SET of width-determining columns changes (dock/undock/
  *   merge/unmerge/snap/split), the column weights are rewritten to absolute
  *   pixel widths -- surviving columns keep their previous pixels, new columns
- *   get a default -- and regionWidth becomes the EXPANDED columns' sum.
- * - When only the columns' MINIMIZED pattern changes (collapse/expand
- *   toggles), regionWidth is recomputed from the expanded columns' stored
- *   pixel weights: a column entering minimization leaves the sum (its strip
- *   renders on top); one expanding rejoins at its preserved width.
- * - Pure-internal changes (resize, reorder, floating moves) leave both the
- *   column set and the pattern alone, so widths carry over untouched. An op
- *   that deliberately wrote `next.regionWidth` (setRegionWidth) is trusted:
- *   its value is the carry-over base.
+ *   get a default -- and regionWidth becomes the columns' sum.
+ * - Pure-internal changes (resize, reorder, collapse toggles, floating moves)
+ *   leave the column set alone, so widths carry over untouched. An op that
+ *   deliberately wrote `next.regionWidth` (setRegionWidth) is trusted: its
+ *   value is the carry-over base.
  * - INVARIANT, enforced on every commit: regionWidth is never below the
- *   expanded columns' summed minimum -- now just a tiny grabbable sliver per
- *   column (MIN_REGION_GRAB_PX), NOT the panel-content minimum. A region narrower
+ *   columns' summed minimum -- just a tiny grabbable sliver per column
+ *   (MIN_REGION_GRAB_PX), NOT the panel-content minimum. A region narrower
  *   than its panes' content simply scrolls the body; it does not auto-grow. */
 export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void {
   // Carry-over base: the op's own value when it set one (clones inherit
@@ -80,40 +70,20 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
     const nextTree = next.docked[edge];
     if (nextTree === null) return; // empty edge: keep the width for restore.
     const prevTree = prev.docked[edge];
-    // The region IS a row of columns now, so the width-determining columns are
-    // simply `region.columns` -- plan and reconciler iterate the identical list
-    // (the old "descend into the widest child to guess the columns" logic, and
-    // the LEAD 1 bug it patched, are gone).
+    // The width-determining columns are simply the widest band's columns --
+    // plan and reconciler iterate the identical list.
     const prevCols = prevTree ? widthColumns(prevTree) : [];
-    const nextPlan = planRegion(nextTree, next.groups);
+    const nextPlan = planRegion(nextTree);
     // The plan's columns ARE widthColumns(nextTree) (same array object), so
-    // consuming them keeps this module's per-column indexing (isStrip[i])
-    // aligned with the plan by construction rather than by re-derivation.
+    // consuming them keeps this module's per-column indexing aligned with the
+    // plan by construction rather than by re-derivation.
     const nextCols = nextPlan.columns;
     const sameSet =
       prevCols.length === nextCols.length &&
       prevCols.every((c, i) => c.id === nextCols[i].id);
     if (sameSet) {
-      // Same columns: only a STRIP-pattern flip (collapse/expand toggle)
-      // changes regionWidth -- the toggled column leaves or rejoins the
-      // expanded sum at its stored pixel weight. The strip classification is
-      // the render's (planRegion), NOT raw per-column minimized-ness: a
-      // minimized column stacked above expanded content renders full-width
-      // and must stay in the sum.
-      const prevPlan =
-        prevTree !== null ? planRegion(prevTree, prev.groups) : null;
-      const patternChanged =
-        prevPlan === null ||
-        prevPlan.isStrip.length !== nextPlan.isStrip.length ||
-        prevPlan.isStrip.some((s, i) => s !== nextPlan.isStrip[i]);
-      if (patternChanged && !nextPlan.singleColumn) {
-        const expanded = nextPlan.expandedColumns;
-        if (expanded.length > 0) {
-          // Fully minimized would keep the width for restore; otherwise:
-          const sum = expanded.reduce((s, c) => s + c.weight, 0);
-          nextRW[edge] = Math.max(sum, colsMin(expanded));
-        }
-      }
+      // Same columns: a collapse toggle no longer moves width (bars render in
+      // place at their column's width, D20), so only the floor applies.
       clampRegionWidth(nextRW, edge, nextPlan);
       return;
     }
@@ -128,9 +98,6 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
     // and overtakes), the new widthRow's columns existed in another band --
     // matching only against the old widthRow would treat them as brand new
     // and reset every width to the default.
-    const prevPlan =
-      prevTree !== null ? planRegion(prevTree, prev.groups) : null;
-    const prevExpanded = prevPlan?.expandedColumns ?? [];
     const prevWidthBand = prevTree !== null ? widthRow(prevTree) : null;
     // A prev column's carried-over pixel width:
     // - NON-widthRow columns: their weights are plain flex shares, but the
@@ -139,21 +106,13 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
     //   becomes a widthRow column (widthRow-identity flip).
     // - widthRow columns: weights ARE pixels once the row has multiple
     //   columns (this function wrote them); a SINGLE column's px lives in
-    //   regionWidth instead (its weight is never rewritten). That holds
-    //   whether the column is expanded OR fully minimized: a lone minimized
-    //   column preserves its width in regionWidth too (the pattern-flip
-    //   branch keeps it), while its weight is still the constructor default
-    //   -- reading the weight there returned 1px -> floored to the grab-min,
-    //   so a minimized lone panel came back at 96px after a sibling docked.
+    //   regionWidth instead (its weight is never rewritten).
     const prevPxOf = (band: DockRow, c: DockColumn): number => {
       if (band !== prevWidthBand) {
         const bandTotal = band.columns.reduce((s, x) => s + x.weight, 0) || 1;
         return prevRW[edge] * (c.weight / bandTotal);
       }
-      const lone =
-        prevCols.length === 1 ||
-        (prevExpanded.length === 1 && prevExpanded[0] === c);
-      return lone ? prevRW[edge] : c.weight;
+      return prevCols.length === 1 ? prevRW[edge] : c.weight;
     };
     const prevInfo = (prevTree?.rows ?? []).flatMap((band) =>
       band.columns.map((c) => ({
@@ -169,10 +128,9 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
       );
       if (match !== undefined) {
         match.used = true;
-        // Clamp the carried-over width to THIS column's own min/max: the
-        // column's contents may have changed shape across the op (e.g. a lone
-        // leaf becoming row-rooted raises its per-panel minimum), so the old
-        // pixel width isn't automatically still legal for it.
+        // Clamp the carried-over width to THIS column's own min: the column's
+        // contents may have changed shape across the op, so the old pixel
+        // width isn't automatically still legal for it.
         return Math.max(match.px, minRegionWidth());
       }
       // New column, previously EMPTY edge: the edge's preserved regionWidth
@@ -183,7 +141,7 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
         return Math.max(nextRW[edge], minRegionWidth());
       }
       // New column joining existing content: a sensible default, clamped to
-      // its panes' min/max.
+      // its panes' min.
       return Math.max(DEFAULT_REGION_PX, minRegionWidth());
     });
     // Set the columns' weights to their pixel widths so each renders at
@@ -191,51 +149,36 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
     // genuinely multiple side-by-side columns -- their weights are then widths
     // (children of a row), safe to rewrite. A single surfaced column is either
     // the root leaf (its weight is irrelevant -- it fills the region) or a
-    // lone vertical child of a column root (e.g. column[B, A] -> widthColumns
-    // surfaces just [B]); rewriting that would clobber a HEIGHT weight and
-    // collapse the stack. In both single-column cases we only need regionWidth.
+    // lone vertical child of a column root; rewriting that would clobber a
+    // HEIGHT weight and collapse the stack. In both single-column cases we
+    // only need regionWidth.
     if (nextCols.length > 1) {
       nextCols.forEach((c, i) => {
         c.weight = intended[i];
       });
     }
-    // regionWidth = the EXPANDED (non-strip, per the render plan) columns'
-    // pixels. When the whole region is strips, fall back to the full sum so
-    // the preserved total survives until something expands.
-    const expandedIdx = nextCols
-      .map((c, i) => ({ c, i }))
-      .filter(({ i }) => !nextPlan.isStrip[i]);
-    const summed = (
-      expandedIdx.length > 0
-        ? expandedIdx.map(({ i }) => intended[i])
-        : intended
-    ).reduce((s, w) => s + w, 0);
-    const expandedCols = expandedIdx.map(({ c }) => c);
-    nextRW[edge] =
-      expandedCols.length > 0
-        ? Math.max(summed, colsMin(expandedCols))
-        : summed;
+    // regionWidth = the width-determining columns' summed pixels.
+    const summed = intended.reduce((s, w) => s + w, 0);
+    nextRW[edge] = Math.max(summed, colsMin(nextCols));
     clampRegionWidth(nextRW, edge, nextPlan);
   });
 
   next.regionWidth = nextRW;
 }
 
-/** The on-every-commit invariant: an edge's width is never below its expanded
- * columns' summed minimum. Subsumes the old auto-grow effect (which watched
- * for this after the fact) -- with the floor applied here, a too-narrow
- * region is unrepresentable in committed state. */
+/** The on-every-commit invariant: an edge's width is never below its columns'
+ * summed minimum. Subsumes the old auto-grow effect (which watched for this
+ * after the fact) -- with the floor applied here, a too-narrow region is
+ * unrepresentable in committed state. */
 function clampRegionWidth(
   rw: Record<DockEdge, number>,
   edge: DockEdge,
   plan: RegionPlan,
 ): void {
-  const expanded = plan.expandedColumns;
-  if (expanded.length === 0) return; // fully minimized: width kept for restore.
   // Floor the width on EVERY commit so a server set_width can't drive the region
   // below its panes' summed grab-min (interactive resize already clamps; this
   // guards the server-driven path). The floor is the grabbable sliver, not the
   // content min -- a narrower region scrolls its body. There is no max ceiling.
-  const min = colsMin(expanded);
+  const min = colsMin(plan.columns);
   if (rw[edge] < min) rw[edge] = min;
 }

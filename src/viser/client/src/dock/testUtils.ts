@@ -152,7 +152,12 @@ export function groupsRecord(
 
 /** Minimal layout with `tree` docked on the left (no groups registered). */
 export function dockedLeft(tree: TreeSpec | null): DockLayout {
-  return { groups: {}, docked: { left: toRegion(tree), right: null }, floating: [] };
+  return {
+    groups: {},
+    docked: { left: toRegion(tree), right: null },
+    regionCollapsed: { left: false, right: false },
+    floating: [],
+  };
 }
 
 // ---------------------------------------------------------------------------

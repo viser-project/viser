@@ -458,6 +458,7 @@ describe("outer-edge dock beside a minimized region strip", () => {
     const node = leaf("g");
     const layout = layoutWith({ right: node });
     layout.groups["g"] = group("g", 1, true); // mark the region's group collapsed
+    layout.regionCollapsed.right = true; // the rail is the EXPLICIT collapse (D21)
     // Content-tall strip at the top of the region; empty below.
     const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft, 0, STRIP, 120));
     const out = run(layout, [tgt], stripLeft + STRIP / 2, 500, STRIP_W);
@@ -465,6 +466,38 @@ describe("outer-edge dock beside a minimized region strip", () => {
     expect(out!.result).toMatchObject({ kind: "regionEdge", edge: "right" });
     // Full-height hint line (spans the container), not a strip-tall sliver.
     expect(out!.hint.height).toBeGreaterThan(400);
+  });
+
+  it("lone minimized BAR: the region's bottom edge band docks a band below (D4/D16)", () => {
+    // An in-place bar (D20) carries NO per-panel top/bottom split zones
+    // (D4: docked chips have none), so for a LONE collapsed leaf the
+    // region-edge top/bottom bands must stay available -- otherwise there
+    // is no way to dock below the bar at all (P5).
+    const node = leaf("g");
+    const layout = layoutWith({ right: node });
+    layout.groups["g"] = group("g", 1, true); // all-minimized region
+    // The bar spans the full region width at 26px height, at the top.
+    const barLeft = CONTAINER.width - 300;
+    const tgt: GroupTarget = {
+      groupId: "g",
+      rect: rect(barLeft, 0, 300, 26),
+      stripRect: null,
+      tabs: [],
+      ctx: { kind: "docked", nodeId: leafIdOf(node), edge: "right" },
+      collapsed: true,
+      chip: true,
+    };
+    // Drop at the region's bottom edge, mid-x (clear of the side bands).
+    const out = run(layout, [tgt], barLeft + 150, CONTAINER.height - 4, {
+      left: 300,
+      right: 300,
+    });
+    expect(out).not.toBeNull();
+    expect(out!.result).toEqual({
+      kind: "regionEdge",
+      edge: "right",
+      side: "bottom",
+    });
   });
 
   it("single minimized strip: over the strip's own rows still inserts a tab (cell wins)", () => {

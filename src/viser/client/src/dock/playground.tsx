@@ -168,6 +168,7 @@ const initialLayout: DockLayout = {
     [areaSceneGroup.id]: areaSceneGroup,
     [areaMainGroup.id]: areaMainGroup,
   },
+  regionCollapsed: { left: false, right: false },
   docked: {
     left: {
       rows: [

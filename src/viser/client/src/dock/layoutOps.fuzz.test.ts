@@ -25,11 +25,7 @@ import {
   emptyLayout,
 } from "./types";
 import { invariantViolations } from "./layoutInvariants";
-import {
-  planRegion,
-  plannedReservedWidth,
-  canvasFacingStripOffsetPx,
-} from "./regionPlan";
+import { planRegion, plannedReservedWidth } from "./regionPlan";
 import { regionWidthsOf } from "./types";
 import {
   dockToEdge,
@@ -56,7 +52,6 @@ import {
   minimizeStack,
   expandStack,
   stackGroupIdsOf,
-  normalizeStackCollapseInPlace,
 } from "./layoutOps";
 import {
   mulberry32,
@@ -111,43 +106,21 @@ function geometricViolations(layout: DockLayout): string[] {
   for (const edge of ["left", "right"] as DockEdge[]) {
     const region = layout.docked[edge];
     if (region === null) continue;
-    const plan = planRegion(region, layout.groups);
+    const plan = planRegion(region);
     // Plan internal consistency.
-    if (plan.isStrip.length !== plan.columns.length)
-      v.push(`${edge}: isStrip length ${plan.isStrip.length} != columns ${plan.columns.length}`);
     if (!finite(plan.chromePx) || plan.chromePx < 0)
       v.push(`${edge}: bad chromePx ${plan.chromePx}`);
-    if (plan.expandedColumns.length > plan.columns.length)
-      v.push(`${edge}: more expanded (${plan.expandedColumns.length}) than columns (${plan.columns.length})`);
-    // expandedColumns must be exactly the non-strip columns.
-    const expectExpanded = plan.columns.filter((_, i) => !plan.isStrip[i]).length;
-    if (plan.expandedColumns.length !== expectExpanded)
-      v.push(`${edge}: expandedColumns ${plan.expandedColumns.length} != non-strip ${expectExpanded}`);
-    if (plan.hasExpanded !== plan.expandedColumns.length > 0)
-      v.push(`${edge}: hasExpanded ${plan.hasExpanded} disagrees with expandedColumns`);
-    // Derived widths must be finite and sane.
-    const reserved = plannedReservedWidth(plan, widths[edge]);
-    if (!finite(reserved) || reserved < 0)
-      v.push(`${edge}: bad reserved width ${reserved}`);
-    // Chrome (the widthRow's strips beside expanded columns) is only part of the
-    // reserved width when the widthRow ITSELF has expanded columns. When the
-    // widthRow is all strips but another band is expanded, the widthRow renders
-    // as a full-width horizontal bar (no strip chrome) and reserved = regionWidth
-    // -- which may legitimately be below that (now-irrelevant) chrome value.
-    if (plan.hasExpanded && reserved + 0.001 < plan.chromePx)
-      v.push(`${edge}: reserved ${reserved} < chrome ${plan.chromePx}`);
-    const off = canvasFacingStripOffsetPx(plan, edge);
-    if (!finite(off) || off < 0)
-      v.push(`${edge}: bad strip offset ${off}`);
-    // The canvas-facing strip offset is only meaningful when the widthRow has
-    // expanded columns (it insets the resizer past leading strips). When the
-    // widthRow is all strips, there is no resizer and offset is 0.
-    if (plan.hasExpanded && off > reserved + 0.001)
-      v.push(`${edge}: strip offset ${off} exceeds reserved ${reserved}`);
-    // Per-band coherence: EVERY band must classify without throwing and with a
-    // sensible strip count, not just the width-determining row. A band that is
-    // wholly collapsed is a full-width strip band; a band with any expanded
-    // column is a render row. Either way isColumnMinimized must be total.
+    if (plan.singleColumn !== (plan.columns.length === 1))
+      v.push(`${edge}: singleColumn disagrees with columns length`);
+    // Derived widths must be finite and sane, in both collapse states (D21).
+    for (const regionCollapsed of [false, true]) {
+      const reserved = plannedReservedWidth(plan, widths[edge], regionCollapsed);
+      if (!finite(reserved) || reserved < 0)
+        v.push(`${edge}: bad reserved width ${reserved}`);
+    }
+    // Per-band coherence: isColumnMinimized must be total over every band
+    // (a partial classification is exactly the class of bug the structural
+    // invariants miss).
     for (const band of region.rows) {
       const stripCount = band.columns.filter((c) =>
         isColumnMinimized(c, layout.groups),
@@ -690,12 +663,6 @@ function runSequence(
     }
     // Input immutability: the argument object must be unchanged.
     const mutatedInput = JSON.stringify(before) !== JSON.stringify(beforeSnapshot);
-    // Mirror applyOp: the stack-uniform-collapse invariant holds POST-COMMIT,
-    // and applyOp normalizes before committing. A raw op (e.g. toggleCollapsed
-    // on one group of a stack) may transiently produce a mixed stack; the
-    // production commit path always normalizes it away, so normalize `next`
-    // (a fresh op output -- safe to mutate) before checking invariants.
-    if (next !== before) normalizeStackCollapseInPlace(next);
     const violations = [...invariantViolations(next), ...geometricViolations(next)];
     // Panel conservation: the multiset of panel ids must be invariant.
     if (JSON.stringify(allPanels(next)) !== startPanels) {

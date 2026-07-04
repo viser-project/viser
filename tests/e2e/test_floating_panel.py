@@ -272,19 +272,22 @@ def test_minimize_while_docked_keeps_handle(viser_page: Page) -> None:
     assert _dock_side(viser_page) == "right"
     wide = _panel_box(viser_page)["width"]
 
-    # Click the handle (no motion) to minimize: the panel becomes a narrow
-    # vertical strip, and the handle testid must follow it.
+    # Click the handle (no motion) to minimize: the panel becomes its 26px
+    # in-place BAR (D20 -- full width kept), and the handle testid follows it.
     handle = viser_page.get_by_test_id("floating-panel-handle")
     handle.click()
     viser_page.wait_for_timeout(400)
     handle = viser_page.get_by_test_id("floating-panel-handle")
     expect(handle).to_be_visible()
     strip = handle.bounding_box()
-    assert strip is not None and strip["width"] < 60, (
-        f"minimized docked panel should be a narrow strip, got {strip}"
+    assert strip is not None and strip["height"] < 40, (
+        f"minimized docked panel should be a short bar, got {strip}"
+    )
+    assert strip["width"] > wide - 30, (
+        f"the bar keeps the panel's width (P8/D20), got {strip}"
     )
 
-    # Clicking the strip handle expands it back to a wide docked panel.
+    # Clicking the bar expands it back to a wide docked panel.
     handle.click()
     viser_page.wait_for_timeout(400)
     restored = _panel_box(viser_page)["width"]

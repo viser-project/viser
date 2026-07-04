@@ -449,6 +449,9 @@ def dock_layout(
             "left": _as_region(docked_left),
             "right": _as_region(docked_right),
         },
+        # Explicit region collapse (D21) starts off; tests that want the rail
+        # click the [data-dock-region-collapse] chevron (the real gesture).
+        "regionCollapsed": {"left": False, "right": False},
         "floating": [spec["window"] for spec in floating],
         "areas": {
             "area-scene": {"group": area_scene["id"]},

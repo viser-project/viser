@@ -12,8 +12,8 @@ These lock in fixes for small behavior bugs found by a code audit:
 5. Escape during a DEFERRED-FLOAT drag (dragging a docked group out, which
    commits a float op up front) restores the pre-drag docked layout instead of
    stranding the panel as a floater.
-6. Dropping a panel onto a minimized (collapsed) group auto-expands it, so the
-   dropped panel is visible instead of vanishing into the minimized handle.
+6. Dropping a panel onto a minimized (collapsed) group merges WITHOUT
+   expanding it (organizing minimized panels never expands them).
 7. Escape during a region edge-resize reverts the region to its drag-start
    width instead of keeping the partially-applied size.
 
@@ -278,7 +278,12 @@ def test_escape_reverts_region_resize(dock_context, vite_server) -> None:
 #    cursor 1:1 and the fixed-width minimized strips are left alone
 #    (regionWidth counts expanded columns only; strips render on top).
 # ---------------------------------------------------------------------------
-def test_region_resize_ignores_minimized_columns(dock_context, vite_server) -> None:
+def test_region_resize_distributes_across_minimized_columns(
+    dock_context, vite_server
+) -> None:
+    """Minimized columns HOLD their width (D20: bars in place), so a region
+    resize redistributes across every column -- the region's total tracks the
+    cursor 1:1 and the minimized columns' bars stay wide."""
     page = _open(dock_context, vite_server)
 
     # Arrange: three side-by-side right-docked columns, controls at the edge
@@ -298,19 +303,19 @@ def test_region_resize_ignores_minimized_columns(dock_context, vite_server) -> N
         )
 
     # Minimize the MIDDLE column (inspector) and the region-edge column
-    # (controls): both render as fixed strips sandwiched in the reserved
-    # block, leaving console as the only expanded panel.
+    # (controls): both render as in-place bars at their columns' widths,
+    # leaving console as the only expanded panel.
     for panel in ["inspector", "controls"]:
         gid = _group_id_for_panel(page, panel)
         page.eval_on_selector(
             f'[data-dock-group="{gid}"] [data-dock-minimize]', "e => e.click()"
         )
         page.wait_for_timeout(120)
-    page.wait_for_timeout(350)  # wait out the minimize width animation
+    page.wait_for_timeout(350)  # settle
 
-    before = leaf_width("console")
-    strip_before = leaf_width("inspector")
-    assert strip_before < 60, f"inspector should be a strip, got {strip_before}"
+    region_before = page.evaluate("() => window.__dockLayout.regionWidth.right")
+    bar_before = leaf_width("inspector")
+    assert bar_before > 100, f"inspector bar should hold its width, got {bar_before}"
 
     # Drag the region's edge grip 150px toward the canvas (wider region).
     handle = page.eval_on_selector(
@@ -325,15 +330,14 @@ def test_region_resize_ignores_minimized_columns(dock_context, vite_server) -> N
     page.mouse.up()
     page.wait_for_timeout(120)
 
-    after = leaf_width("console")
-    assert abs((after - before) - 150) < 8, (
-        f"expanded panel should track the cursor 1:1 ({before} -> {after}, wanted +150)"
+    region_after = page.evaluate("() => window.__dockLayout.regionWidth.right")
+    assert abs((region_after - region_before) - 150) < 8, (
+        f"region width should track the cursor 1:1 "
+        f"({region_before} -> {region_after}, wanted +150)"
     )
-    assert abs(leaf_width("inspector") - strip_before) < 2, (
-        "minimized strip width must not change during a region resize"
-    )
-    assert abs(leaf_width("controls") - strip_before) < 2, (
-        "second minimized strip must not change either"
+    # Every column (bars included) got a proportional share of the growth.
+    assert leaf_width("inspector") > bar_before + 20, (
+        "minimized columns participate in the resize (they hold width, D20)"
     )
     page.close()
 
@@ -395,17 +399,17 @@ def test_plus_drag_tears_out_still_minimized(dock_context, vite_server) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 10. The column handle persists when every child is minimized (strips reserve
-#     width; no more canvas-overlay rail), so minimize-all is reversible from
-#     the handle.
+# 10. Per-cell minimize everywhere (D16), and the rail only via the EXPLICIT
+#     region collapse (D21) -- whose header toggle expands the region while
+#     the cells keep their own collapse states.
 # ---------------------------------------------------------------------------
 def test_stack_minimizes_independently_then_region_rail(
     dock_context, vite_server
 ) -> None:
-    """Spec D12: a docked stack canonicalizes to bands, so each panel
-    minimizes INDEPENDENTLY (mixed states are valid). When every band is
-    minimized the region renders the packed rail, whose parent handle
-    expands everything at once."""
+    """Spec D12/D16: a docked stack canonicalizes to bands, so each panel
+    minimizes INDEPENDENTLY (mixed states are valid). Minimizing everything
+    does NOT flip the region into the rail; the explicit chevron does (D21),
+    and the rail header's toggle expands the REGION (per-cell states kept)."""
     page = _open(dock_context, vite_server)
     set_layout(page, dock_layout(docked_right=stack("inspector", "controls")))
     assert page.query_selector("[data-dock-column-handle]") is None
@@ -423,35 +427,42 @@ def test_stack_minimizes_independently_then_region_rail(
     assert page.evaluate(
         "(gid) => window.__dockLayout.groups[gid].collapsed !== true", a
     )
-    # Minimize the second too: the packed region rail appears.
+    # Minimize the second too: still NO rail (D21 -- no emergent form flip).
     page.eval_on_selector(
         f'[data-dock-group="{a}"] [data-dock-minimize]', "e => e.click()"
     )
     page.wait_for_timeout(120)
-    assert page.query_selector("[data-dock-region-rail]") is not None, (
-        "an all-minimized region must render the rail with its parent handle"
+    assert page.query_selector("[data-dock-region-rail]") is None, (
+        "minimizing every cell must not flip the region into the rail (D21)"
     )
-    # The rail handle's toggle expands everything.
+    # The explicit chevron collapses the region into the rail.
+    page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")
+    page.wait_for_timeout(120)
+    assert page.query_selector("[data-dock-region-rail]") is not None, (
+        "the region-collapse chevron must render the rail"
+    )
+    # The rail handle's toggle expands the REGION; cells keep their states.
     page.eval_on_selector(
         "[data-dock-region-rail] [data-dock-minimize-all]", "e => e.click()"
     )
     page.wait_for_timeout(120)
+    assert page.query_selector("[data-dock-region-rail]") is None
     for gid in (a, b):
         assert page.evaluate(
-            "(gid) => window.__dockLayout.groups[gid].collapsed !== true", gid
-        )
+            "(gid) => window.__dockLayout.groups[gid].collapsed === true", gid
+        ), "expanding the region must not expand the cells (D21)"
     page.close()
 
 
 # ---------------------------------------------------------------------------
-# 11. Dropping an expanded panel as a new cell BELOW a minimized strip adopts
-#     the strip's minimized state: the region stays a uniform narrow strip
-#     (both cells minimized) rather than one expanded + one squeezed.
+# 11. Dropping an expanded panel as a new cell BELOW a minimized bar STAYS
+#     expanded (D16 deleted the adoption rules): collapse changes only by
+#     user gesture or server command.
 # ---------------------------------------------------------------------------
-def test_drop_below_strip_adopts_minimized(dock_context, vite_server) -> None:
+def test_drop_below_minimized_bar_stays_expanded(dock_context, vite_server) -> None:
     page = _open(dock_context, vite_server)
     # Arrange: controls docked right + inspector floating (the minimize and the
-    # drop-below-the-strip gesture are the subject).
+    # drop-below-the-bar gesture are the subject).
     set_layout(
         page,
         dock_layout(
@@ -469,16 +480,22 @@ def test_drop_below_strip_adopts_minimized(dock_context, vite_server) -> None:
         "e => { const r = e.getBoundingClientRect(); "
         "return { x: r.x + r.width/2, bottom: r.bottom }; }",
     )
-    # Drop inspector below the strip's rows -> column[strip, inspector], where
-    # the new inspector cell adopts the minimized state.
-    _drag(page, _grip(page, "inspector"), (strip["x"], strip["bottom"] - 10))
+    # Drop inspector at the region's BOTTOM edge band (a lone bar has no
+    # per-panel top/bottom zones, D4 -- the region band is the "below" left,
+    # and it stays available over an all-minimized region) -> a new band
+    # below the bar, which STAYS expanded (mixed states are legal, D16).
+    vh = page.viewport_size["height"]  # type: ignore[index]
+    _drag(page, _grip(page, "inspector"), (strip["x"], vh - 4))
     tree = _layout(page)["docked"]["right"]
-    if tree is None or tree.get("dir") != "column":
+    if tree is None or "inspector" not in str(tree):
         pytest.skip("below-split didn't land this run")
     igid = _group_id_for_panel(page, "inspector")
     assert page.evaluate(
-        "(g) => window.__dockLayout.groups[g].collapsed === true", igid
-    ), "a new cell dropped beside an all-minimized strip should adopt minimized"
+        "(g) => window.__dockLayout.groups[g].collapsed !== true", igid
+    ), "a new cell dropped beside a minimized bar must STAY expanded (D16)"
+    assert page.evaluate(
+        "(g) => window.__dockLayout.groups[g].collapsed === true", gid
+    ), "the minimized neighbor must stay minimized"
 
 
 # ---------------------------------------------------------------------------

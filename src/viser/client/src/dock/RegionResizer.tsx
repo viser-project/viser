@@ -19,17 +19,12 @@ export function RegionResizer({
   edge,
   makeOnResize,
   getStart,
-  stripOffset = 0,
 }: {
   edge: DockEdge;
   /** Called once per drag (at pointer down) so the handler can snapshot the
    * columns' start widths; returns the per-frame resize handler. */
   makeOnResize: () => (px: number) => void;
   getStart: () => number;
-  /** Inset (px) from the region's canvas-facing edge, to skip past leading
-   * minimized strips so the handle sits on the first expanded panel's boundary
-   * (`[strip]│[panel]`) rather than the strip's far side. */
-  stripOffset?: number;
 }) {
   // Cancel the in-flight gesture if the resizer unmounts mid-drag (e.g. the
   // region empties), so its window listeners can't fire after unmount.
@@ -73,13 +68,12 @@ export function RegionResizer({
         // grab can straddle safely down the full remaining height.
         top: GRIP_BAR_CLEARANCE_PX,
         bottom: 0,
-        // The canvas-facing edge of the region, pushed inward past any leading
-        // minimized strips so the handle is on the resized panel's boundary. The
-        // grab STRADDLES the boundary -- a few px inside, the rest on the canvas
-        // side -- so a drag aimed at the visible region edge registers (it
-        // previously sat 12px ENTIRELY outside, so an edge-aimed drag fell on the
-        // panel and did nothing). Overlay, so no layout impact.
-        [edge === "left" ? "right" : "left"]: `${stripOffset - RESIZER_OUTSET_PX}px`,
+        // The canvas-facing edge of the region. The grab STRADDLES the
+        // boundary -- a few px inside, the rest on the canvas side -- so a
+        // drag aimed at the visible region edge registers (it previously sat
+        // 12px ENTIRELY outside, so an edge-aimed drag fell on the panel and
+        // did nothing). Overlay, so no layout impact.
+        [edge === "left" ? "right" : "left"]: `${-RESIZER_OUTSET_PX}px`,
         width: `${RESIZER_OUTSET_PX + RESIZER_INSET_PX}px`,
         cursor: "ew-resize",
         zIndex: 15,
