@@ -42,8 +42,8 @@ const INSERT_LINE_INSET_PX = 4;
 // Thin top/bottom edge band (px) on a content-sized minimized strip: a drop in
 // this band stacks a new cell above/below, while the + cap just inside the top
 // edge stays a MERGE target (capped to a third of the cell so a short strip
-// keeps a merge zone).
-const MINIMIZED_EDGE_BAND_PX = 6;
+// keeps a merge zone). P11 floor: no zone under 8px.
+const MINIMIZED_EDGE_BAND_PX = 8;
 // Chip-bar (floating) segments use a wider snap band (spec D4): 6px was
 // unhittable, and no alternative affordance exists for snapping into a
 // minimized window's stack. Band-bar segments have NO top/bottom zones at

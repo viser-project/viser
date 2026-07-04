@@ -231,7 +231,9 @@ export function MinimizedGroupChip({
             : undefined
         }
         style={{
-          width: "1.3em",
+          // 1.5em ~= 21px: the cap is its own click action (expand group),
+          // so it meets the P11 20px floor in BOTH dimensions on its own.
+          width: "1.5em",
           flexShrink: 0,
           display: "flex",
           alignItems: "center",
