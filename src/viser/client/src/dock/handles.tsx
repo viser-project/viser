@@ -185,11 +185,11 @@ export function ChromeToggle({
   );
 }
 
-/** Region-collapse chevron (D21), rendered inline in the region's TOP-RIGHT
- * cell's chrome row (grip bar / minimized bar / unmergeable header), just
- * inboard of that row's -/+ toggle. NOT drag-through: its host row's
- * motionless click means minimize/expand, so a press here must stay its own
- * gesture (collapse the whole region). */
+/** Region-collapse chevron (D21/D26), rendered at the right end of the
+ * docked region's PARENT HANDLE -- the same spot the rail header's + holds
+ * while collapsed (P13). NOT drag-through: the host bar's press means
+ * drag-the-stack / click-to-collapse, so a press here must stay its own
+ * gesture. */
 export function RegionCollapseChevron({
   edge,
   onActivate,
@@ -239,6 +239,7 @@ export function StackHandleBar({
   narrow = false,
   toggleLabel,
   toggleTitle,
+  endControl,
 }: {
   onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
   attrs: Record<string, string>;
@@ -252,6 +253,10 @@ export function StackHandleBar({
    * ALL panes (the region rail's toggle only clears the region flag). */
   toggleLabel?: string;
   toggleTitle?: string;
+  /** Replace the default +/- toggle with a different right-end control
+   * (the docked region parent handle renders the region-collapse chevron
+   * there instead, D26). */
+  endControl?: React.ReactNode;
 }) {
   return (
     <Box
@@ -270,7 +275,8 @@ export function StackHandleBar({
       }}
     >
       {!narrow && <GripPill width="3em" opacity={0.6} />}
-      {onToggle !== undefined && (
+      {endControl}
+      {endControl === undefined && onToggle !== undefined && (
         <HandleIconButton
           attrs={{ "data-dock-minimize-all": "true" }}
           label={

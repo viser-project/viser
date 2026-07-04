@@ -14,8 +14,7 @@ import { useDock } from "./DockContext";
 import { focusRing, gripBarBg, wayfindingText } from "./DockStyles.css";
 import { focusPaneTab, keyActivate } from "./gestures";
 import { startCollapsedGroupPress } from "./collapsedPress";
-import { ChromeToggle, RegionCollapseChevron } from "./handles";
-import { regionChevronEdge } from "./layoutOps";
+import { ChromeToggle } from "./handles";
 import { MINIMIZED_BAR_PX, TabGroup } from "./types";
 
 /** ONE minimized group as its header kept in place (P13/D14/D20).
@@ -45,10 +44,6 @@ export function MinimizedBar({ group }: { group: TabGroup }) {
     .map((id) => dock.panes[id]?.title ?? id)
     .join(", ");
   const expandGroup = () => dock.toggleCollapsed(group.id);
-  // Region-collapse chevron (D21): the bar hosts it when this group is the
-  // top-right cell of a docked, non-collapsed region (same slot as the
-  // expanded grip bar's -- P13 position constancy).
-  const chevronEdge = regionChevronEdge(dock.layout, group.id);
   // Pane-provided minimized face (D19): single-pane groups only (a multi-tab
   // bar must name its active tab and badge the rest).
   const face =
@@ -159,12 +154,6 @@ export function MinimizedBar({ group }: { group: TabGroup }) {
       handle, D18); the toggle sits at the right end, where the expanded
       header's `-` sat (P13: spatially stable). */}
       <Box style={{ flexGrow: 1 }} />
-      {chevronEdge !== null && (
-        <RegionCollapseChevron
-          edge={chevronEdge}
-          onActivate={() => dock.collapseRegion(chevronEdge, true)}
-        />
-      )}
       <ChromeToggle
         expanded={false}
         label="Expand panel"

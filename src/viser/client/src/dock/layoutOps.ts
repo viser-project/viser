@@ -1466,27 +1466,6 @@ export function floatRegion(
   return { layout: draft, windowId: win.id };
 }
 
-/** The docked edge whose region-collapse chevron THIS group's chrome row
- * hosts, or null. The chevron renders INLINE in the region's top-right
- * cell's chrome row, just inboard of that cell's -/+ toggle (spec 3.3): a
- * positioned overlay cannot know how far panel-provided header content
- * (action icons, custom titleNodes) extends, so the row itself hosts it.
- * No chevron while the region is collapsed -- the rail's own header is the
- * expand affordance. */
-export function regionChevronEdge(
-  layout: DockLayout,
-  groupId: GroupId,
-): DockEdge | null {
-  for (const edge of ["left", "right"] as DockEdge[]) {
-    const tree = layout.docked[edge];
-    if (tree === null || isRegionCollapsedOn(layout, edge)) continue;
-    const band = tree.rows[0];
-    const column = band.columns[band.columns.length - 1];
-    if (column.leaves[0].group === groupId) return edge;
-  }
-  return null;
-}
-
 /** Stamp `collapsed: true` onto groups of a NOT-YET-COMMITTED result draft.
  * Drag-commit companion (P2: drags never change what the user sees): a cell
  * dragged out of a RAILED region is only effectively collapsed -- its own

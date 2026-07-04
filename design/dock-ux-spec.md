@@ -147,8 +147,8 @@ the mouse. NO grip pill (D18): the whole bar is the handle, and a pill
 inside a surface that is entirely handle would be a redundant signifier.
 Pills belong to EXPANDED headers, where the handle is a slice of a larger
 surface — and there the pill centers in the free run LEFT of the header's
-right-end controls (chevron + toggle), not in the bar's full width, so it
-never drifts under the controls in a narrow column.
+right-end control (the `−`/`+` toggle), not in the bar's full width, so
+it never drifts under the control in a narrow column.
 Minimized bars are not a separate chrome language; they are headers.
 One deliberate exception: the vertical rail (a lone minimized docked
 column) exists to reclaim canvas WIDTH, which "keep the header in place"
@@ -205,6 +205,20 @@ Every visual state a group can be in, its anatomy, and its affordances.
 Anatomy is listed top-to-bottom / left-to-right. There are exactly FOUR
 forms: the expanded cell, the bar, the rail, and the floating window.
 
+A docked REGION additionally renders a **parent handle** (D26): a slim
+full-width StackHandleBar above all of its cells — single-panel regions
+included — with the region's content (its bands and cells) below it.
+Centered pill: drag floats the WHOLE stack as one window (the same
+gesture as the rail header it mirrors, P7). The region-collapse chevron
+« / » sits at the bar's right end — the same spot as the rail header's
+`+` (P13 position constancy) — and a motionless click anywhere on the
+bar also collapses (unmarked backing surface, P9). The handle spans the
+region's full width because the rail collapse acts on the whole edge —
+the bar covers exactly what it acts on. Cell chrome rows act on CELLS;
+stack-scope actions live on this stack-scope handle (P12). Expanded
+region header ↔ collapsed rail header are mirrors: drag floats either;
+« collapses / `+` expands.
+
 ### 3.1 Expanded cell (docked or floating-stacked)
 - Grip bar (gray, ~0.9em): drag = move group; holds the minimize (−)
   button. A motionless click anywhere on the grip bar ALSO toggles
@@ -225,9 +239,8 @@ forms: the expanded cell, the bar, the rail, and the floating window.
 - UNMERGEABLE panels render no grip bar: the full-width header — plain
   title or panel-provided titleNode alike — IS the drag handle, and a
   motionless click on its strip background toggles minimize (same
-  backing rule as the grip bar). Its right end carries the
-  region-collapse chevron (only when the cell is the region's top-right,
-  D23) and then the `−`/`+` ChromeToggle, for BOTH title forms — a
+  backing rule as the grip bar). Its right end carries the `−`/`+`
+  ChromeToggle, for BOTH title forms — a
   plain-title header without the toggle would be a zero-signifier
   action (P9: one signifier, not zero).
 
@@ -270,7 +283,8 @@ forms: the expanded cell, the bar, the rail, and the floating window.
   band, contiguous (the canvas gets the region's width back, no dead
   gaps). Band structure and per-cell collapse states stay in the MODEL
   and return intact on expand; the expanded width is remembered (P8).
-- Parent handle (narrow, on top — the analog of the header's top edge):
+- Parent handle (narrow, on top — the analog of the header's top edge,
+  and the mirror of the expanded region's parent handle, D26):
   drag floats the WHOLE region as one window; click or its `+` expands
   the REGION — it clears the flag only, cells keep their own collapse
   states. Its toggle's aria-label is "Expand panel area" (honest label:
@@ -290,23 +304,18 @@ forms: the expanded cell, the bar, the rail, and the floating window.
   (expand ops clear the flag at the op level, §7). Dragging any row tears
   out just that pane (still minimized); dragging the cap or cell
   background moves the whole group.
-- **Region-collapse chevron** (the rail's entry surface, D23): rendered
-  INLINE in the region's top-right cell's chrome row — grip bar,
-  minimized bar, or unmergeable header alike — just inboard of that
-  row's `−`/`+` toggle, on BOTH edges (« on the left edge, » on the
-  right). It is a row participant, not a positioned overlay: an overlay
-  cannot know how far panel-provided header content (action icons,
-  custom titleNodes) extends, and the overlay form occluded the docked
-  main panel's settings icon. Unlike its neighbors it is NOT
-  drag-through: its host row's motionless click already means
-  minimize/expand, so a press on the chevron must stay its own gesture
-  (collapse the region). On the 0.9em grip bar its HIT BOX extends over
-  the strip's top slack to ~24px (P11): unlike the `−`, the chevron has
-  NO whole-bar backing surface — the bar's click is a DIFFERENT action —
-  so the box itself must clear the floor. It renders only while the
-  region is expanded —
-  while collapsed, the expand affordance is the rail's own header (P9:
-  one signifier per action).
+- **Region-collapse chevron** (the rail's entry surface; placement per
+  D26, superseding D23's): sits at the right end of the expanded
+  region's PARENT HANDLE (§3 intro), on BOTH edges (« on the left edge,
+  » on the right) — a stack-scope control on a stack-scope surface
+  (P12), never on any cell's chrome row. NOT drag-through: a press on
+  the chevron stays click-only (collapse the region); the handle bar's
+  own motionless click is the chevron's unmarked backing surface (P9's
+  hit-area rule — same action, one signifier), so no hit-box overhang
+  or strip corner reservation is needed anymore (both deleted with
+  D26). It renders only while the region is expanded — while collapsed,
+  the expand affordance is the rail's own header (P9: one signifier per
+  action).
 
 ### 3.4 Floating window
 - Multi-group: window header bar on top (drag = move window; its toggle
@@ -373,7 +382,8 @@ a click. One active gesture at a time; extra pointers are ignored.
 | Bar background (incl. right slack) | that group (still minimized) | expand that group |
 | Bar title / face | the active pane (tear out, still minimized) | expand to that tab |
 | Bar `+` (right end) | that group (drag-through) | expand that group |
-| Region-collapse chevron | — (click-only; NOT drag-through) | collapse region to the rail |
+| Region parent handle — pill / bar background (expanded region, D26) | whole region (as one window) | collapse region to the rail (unmarked backing for the chevron) |
+| Region-collapse chevron (right end of the region parent handle) | — (click-only; NOT drag-through) | collapse region to the rail; keyboard collapse hands focus to the rail header |
 | Rail header (parent handle) | whole region (as one window) | expand region (cells keep their states; label "Expand panel area") |
 | Rail cell cap / background (quiet pill) | whole group (still minimized) | expand region + group (lone cell only; inert with 2+ cells) |
 | Rail spine row | that pane (still minimized) | expand region to that tab |
@@ -394,9 +404,10 @@ bar is a one-tab `tablist` (its single title is a `tab`), so the pattern
 stays valid for screen readers across the minimize round-trip. Focus never
 falls to `<body>` in EITHER direction: after a keyboard-driven expand,
 focus lands on the expanded strip's tab; after a keyboard-driven MINIMIZE
-or REGION COLLAPSE — whose activated control unmounts with its chrome row —
-focus hands off to the control that replaced it (the bar's `+` toggle, the
-rail's header), i.e. the same-spot control that undoes the action.
+or REGION COLLAPSE — whose activated control unmounts with its host surface
+(a cell's chrome row, the region parent handle) — focus hands off to the
+control that replaced it (the bar's `+` toggle, the rail's header), i.e.
+the same-spot control that undoes the action.
 
 Touch: all drag surfaces set `touch-action: none`; a browser-cancelled
 pointer aborts like Escape (P2).
@@ -767,7 +778,9 @@ normative sentences pinning the fixes below.
   `role="tab"`), keeping the ARIA pattern valid for screen readers (§4).
 - `RegionResizer.tsx` — top clearance raised to 48px, covering the
   TALLEST chrome row (the 2.75em unmergeable titleNode header), so the
-  straddle never shadows the top cell's chevron/toggle.
+  straddle never shadows the top cell's toggle. *(Re-verified after
+  D26: still holds — the unmergeable header's `−` toggle still sits at
+  the canvas corner.)*
 - `DockManager.tsx` / `DockContext.tsx` — region collapse/expand
   gestures route through a `collapseRegion` context op committing as a
   USER op (not `runProgrammatic`), so P6 ownership arbitration records
@@ -817,7 +830,18 @@ passes over the iteration-3 changes; all findings were code fixes.
   scrolls, and narrowing the straddle would cost the region-resize
   grab everywhere for a rare degenerate state.
 
-## 11. Resolved decisions (2026-07-03)
+**Update (2026-07-04, user-directed redesign):** region parent handle
+(D26, superseding D23's placement): every docked region renders a
+full-width StackHandleBar (`data-dock-region-handle`) above its cells —
+pill drag floats the whole stack, a motionless bar click collapses the
+region, and the region-collapse chevron sits at the bar's right end
+(the handle's `endControl`; the chevron component and its internal
+focus handoff to the rail header are unchanged). Per-cell chevron slots
+DELETED — `regionChevronEdge` (`layoutOps.ts`), the chevron hosting in
+`TabGroupFrame.tsx` (grip bar + unmergeable header) and
+`MinimizedBar.tsx`, the ~24px grip-bar hit-box overhang, and the tab
+strip's top-right corner reservation are all removed. §3 (intro
+inventory), §3.1, §3.3, §4, and P13's controls clause re-synced.
 
 Former open questions, decided with the maintainer. Normative sections above
 already reflect them; this list preserves the rationale.
@@ -923,9 +947,9 @@ already reflect them; this list preserves the rationale.
   handle drags the whole region; chevron expands); expanded → normal
   layout, whatever the per-cell collapse states. Expanding a panel FROM
   the rail un-collapses the region and expands that panel. *Chevron
-  placement and the collapsed-state affordance are per D23: inline in
-  the top-right cell's chrome row; no chevron renders while collapsed —
-  the rail's own header is the expand affordance.*
+  placement is per D26 (the right end of the region's parent handle;
+  D23's inline-in-cell placement is superseded); no chevron renders
+  while collapsed — the rail's own header is the expand affordance.*
 - **D22 (nested-column stack handle deleted, 2026-07-04):** §3.1b's
   justification ("the handle signals coupled collapse") died with D16.
   The sometimes-there column handle is removed; nested-stack cells move
@@ -971,7 +995,11 @@ already reflect them; this list preserves the rationale.
   icons, custom titleNodes) extends — it occluded the docked main
   panel's settings icon. NOT drag-through (the host row's motionless
   click already means minimize/expand). No chevron while collapsed: the
-  rail's header is the expand affordance (P9).
+  rail's header is the expand affordance (P9). *Superseded by D26
+  (2026-07-04) on placement: the chevron now sits at the right end of
+  the region's PARENT HANDLE, not in any cell's chrome row. D23's
+  click-only (NOT drag-through) and no-chevron-while-collapsed clauses
+  carry forward.*
 - **D24 (inert dividers beside all-minimized sides, 2026-07-04):** a
   split/stack divider with no expanded cell on one side is INERT — no
   resize cursor, no armed gesture, no height-pin side effect on a press
@@ -997,3 +1025,23 @@ already reflect them; this list preserves the rationale.
   target). The rail header's toggle is labeled "Expand panel area" (it
   clears only the region flag — cells keep their states), and a
   keyboard expand lands focus on the first revealed cell's active tab.
+- **D26 (region parent handle, 2026-07-04; supersedes D23's
+  placement):** user-directed redesign. Every docked region renders a
+  PARENT HANDLE: a slim full-width StackHandleBar above all its cells —
+  single-panel regions included. The centered pill's drag floats the
+  whole stack as one window (the same gesture as the rail header it
+  mirrors, P7); the region-collapse chevron « / » sits at the bar's
+  right end — the same spot as the rail header's `+` (P13 position
+  constancy) — and a motionless bar click also collapses (unmarked
+  backing surface, P9). Rationale, in the user's words: the chevron on
+  the top-right CELL's chrome row "appears on the first panel in a
+  docked stack, but it really applies to all panels in the stack" — a
+  P12 violation (cell chrome must act on cells; stack-scope actions
+  belong on a stack-scope handle). The handle spans the region's full
+  width because the rail collapse acts on the whole edge — the bar
+  covers exactly what it acts on. Expanded region header ↔ collapsed
+  rail header are now mirrors (drag floats either; « collapses / `+`
+  expands). Deleted with the move: the per-cell chevron slots (grip
+  bar, minimized bar, unmergeable header), `regionChevronEdge`, the
+  ~24px grip-bar hit-box overhang, and the tab strip's top-right
+  corner reservation.

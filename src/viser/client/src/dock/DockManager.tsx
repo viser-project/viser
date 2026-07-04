@@ -32,6 +32,7 @@ import {
 } from "./gestures";
 import * as ops from "./layoutOps";
 import { RegionResizer } from "./RegionResizer";
+import { RegionCollapseChevron, StackHandleBar } from "./handles";
 import { plannedReservedWidth, planRegion } from "./regionPlan";
 import { reconcileRegionWidths } from "./widthReconciliation";
 import { invariantViolations } from "./layoutInvariants";
@@ -46,6 +47,7 @@ import {
   tabInsertion,
 } from "./hitTest";
 import {
+  HANDLE_BTN_EM,
   assertNever,
   clamp,
   DockEdge,
@@ -2143,15 +2145,49 @@ export function DockManager({
                   [edge]: 0,
                   width: drawnWidth,
                   display: "flex",
+                  flexDirection: "column",
                   backgroundColor: "var(--mantine-color-body)",
                   zIndex: 5,
                 }}
               >
-                <SplitView region={tree} edge={edge} />
-                {/* The region-collapse chevron (D21) renders INLINE in the
-                top-right cell's chrome row (see regionChevronEdge), not as an
-                overlay here: an overlay cannot clear panel-provided header
-                content (action icons) reliably. */}
+                {/* Region PARENT handle (D26): the whole docked stack's
+                handle -- one bar above everything it acts on. Pill drag
+                floats the entire stack (the same gesture as the rail header
+                it mirrors, P7); the region-collapse chevron sits at the
+                right end, where the rail's + sits (P13), and a motionless
+                bar click is its backing surface (P9). Cell chrome rows act
+                on CELLS; this bar acts on the STACK (P12) -- the chevron
+                previously sat on the top-right cell's row, reading as that
+                panel's control while acting on the whole region. Not
+                rendered while the region is COLLAPSED: the rail has its own
+                parent handle (the narrow header this bar mirrors), and a
+                second chevron above it would duplicate the signifier. */}
+                {!isRegionCollapsedOn(layoutRef.current, edge) && (
+                <StackHandleBar
+                  attrs={{ "data-dock-region-handle": edge }}
+                  onPointerDown={(event) =>
+                    startRegionDrag(event, edge, {
+                      onClick: () => collapseRegion(edge, true),
+                    })
+                  }
+                  endControl={
+                    <RegionCollapseChevron
+                      edge={edge}
+                      onActivate={() => collapseRegion(edge, true)}
+                      placement={{
+                        position: "absolute",
+                        right: 0,
+                        top: 0,
+                        width: `${HANDLE_BTN_EM}em`,
+                        height: "100%",
+                      }}
+                    />
+                  }
+                />
+                )}
+                <Box style={{ flexGrow: 1, minHeight: 0, display: "flex" }}>
+                  <SplitView region={tree} edge={edge} />
+                </Box>
                 {resizable && (
                 <RegionResizer
                   edge={edge}

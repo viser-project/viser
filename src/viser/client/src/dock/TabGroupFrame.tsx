@@ -5,7 +5,7 @@ import { Box, ScrollArea } from "@mantine/core";
 import { IconMinus, IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
-import { isStackedGroup, regionChevronEdge } from "./layoutOps";
+import { isStackedGroup } from "./layoutOps";
 import {
   dockBodyScroll,
   focusRing,
@@ -14,12 +14,7 @@ import {
   headerRuleTop,
 } from "./DockStyles.css";
 import { focusDockControl, tabListKeyDown } from "./gestures";
-import {
-  ChromeToggle,
-  GripPill,
-  HandleIconButton,
-  RegionCollapseChevron,
-} from "./handles";
+import { ChromeToggle, GripPill, HandleIconButton } from "./handles";
 import { HANDLE_BTN_EM, PaneSpec, TabGroup } from "./types";
 
 // The active panel's BODY, memoized so it is rebuilt/reconciled only when its
@@ -114,7 +109,6 @@ const TAB_ROW_EM = "2.4em";
 
 // Font scale for the tab strip (and the plain-title unmergeable header, which
 // mirrors the tab look). Also the em basis to divide by when converting a
-// base-em length into the strip's scaled em (see the chevron reservation).
 const STRIP_FONT_EM = 0.85;
 
 /** Slim handle bar above the tab strip (docked or floating). The bar itself is
@@ -126,7 +120,6 @@ function GripBar({
   collapsed,
   onToggle,
   startDrag,
-  chevron,
 }: {
   collapsed: boolean;
   onToggle: () => void;
@@ -134,8 +127,6 @@ function GripBar({
     event: React.PointerEvent<HTMLDivElement>,
     opts?: { onClick?: () => void },
   ) => void;
-  /** Region-collapse chevron, present only on the region's top-right cell. */
-  chevron?: React.ReactNode;
 }) {
   return (
     <Box
@@ -154,9 +145,8 @@ function GripBar({
         alignItems: "center",
         justifyContent: "center",
         flexShrink: 0,
-        // Center the pill in the run LEFT of the right-end controls (P13):
-        // without this it drifts under the chevron in narrow columns.
-        paddingRight: `${(chevron ? 2 : 1) * HANDLE_BTN_EM}em`,
+        // Center the pill in the run LEFT of the right-end toggle (P13).
+        paddingRight: `${HANDLE_BTN_EM}em`,
         height: "0.9em",
         // Light gray fill marks the handle (one step lighter than the border
         // gray -- see gripBarBg) and separates it from the tabs.
@@ -168,7 +158,6 @@ function GripBar({
     >
       {/* Drag affordance. */}
       <GripPill />
-      {chevron}
       {/* Minimize / expand button: drag-through (see GripBar doc). Every
       group has one (per-cell minimize, D16) -- the multi-group window
       header's toggle-ALL is a distinct action with its own signifier. */}
@@ -229,14 +218,6 @@ export function TabGroupFrame({
   // so it reads as separated from the panel above. Not needed when LONE (nothing
   // above it).
   const stacked = isStackedGroup(dock.layout, group.id);
-  // Region-collapse chevron (D21): non-null only when this group is the
-  // top-right cell of a docked, non-collapsed region -- its chrome row hosts
-  // the chevron inline, just inboard of the -/+ toggle.
-  const chevronEdge = regionChevronEdge(dock.layout, group.id);
-  const collapseRegion = () => {
-    if (chevronEdge === null) return;
-    dock.collapseRegion(chevronEdge, true);
-  };
   // Keyboard/Click minimize unmounts this frame for the in-place bar; focus
   // hands off to the bar's toggle (the same-spot + that undoes it).
   const toggleAndFocusBar = () => {
@@ -334,28 +315,6 @@ export function TabGroupFrame({
           onToggle={toggleAndFocusBar}
           startDrag={(event, opts) =>
             dock.startGroupDrag(event, group.id, opts)
-          }
-          chevron={
-            chevronEdge !== null && (
-              <RegionCollapseChevron
-                edge={chevronEdge}
-                onActivate={collapseRegion}
-                // The 0.9em bar is sub-P11 and, unlike the - toggle, the
-                // chevron has NO whole-bar backing surface (bar click =
-                // minimize, a DIFFERENT action). Extend the hit box over the
-                // strip's top slack to ~24px; paddingBottom keeps the icon
-                // visually centered in the bar itself.
-                placement={{
-                  position: "absolute",
-                  right: `${HANDLE_BTN_EM}em`,
-                  top: 0,
-                  width: `${HANDLE_BTN_EM}em`,
-                  height: `${HANDLE_BTN_EM}em`,
-                  paddingBottom: "0.8em",
-                  zIndex: 2,
-                }}
-              />
-            )
           }
         />
       )}
@@ -459,12 +418,6 @@ export function TabGroupFrame({
               {activePane?.title ?? group.activeId ?? ""}
             </span>
           )}
-          {chevronEdge !== null && (
-            <RegionCollapseChevron
-              edge={chevronEdge}
-              onActivate={collapseRegion}
-            />
-          )}
           {/* The header's ONE visible minimize signifier (P9: the whole
           header toggles on click, but an action with zero icons is
           undiscoverable). Rendered for BOTH title forms -- a plain-title
@@ -496,18 +449,6 @@ export function TabGroupFrame({
             if (stripDragsGroup) dock.startGroupDrag(event, group.id);
           }}
           style={{
-            // When the grip bar above hosts the region chevron, its ~24px
-            // hit box overhangs the strip top-right; reserve that corner so
-            // no TAB can sit under it (a press there must never collapse
-            // the region when the user aimed at a tab).
-            // In the STRIP's em (fontSize STRIP_FONT_EM below): the chevron's
-            // hit box is laid out in the grip bar's UNSCALED em, so divide or
-            // the reservation comes up ~0.5 base-em short and a tab edge
-            // still sits under the overhang.
-            paddingRight:
-              chevronEdge !== null
-                ? `${(2 * HANDLE_BTN_EM) / STRIP_FONT_EM}em`
-                : undefined,
             display: "flex",
             flexWrap: "wrap",
             alignItems: "stretch",
