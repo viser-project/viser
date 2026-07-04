@@ -579,6 +579,52 @@ already reflect them; this list preserves the rationale.
   structural commit. Plain docked stacks thereby gain independent
   per-panel minimize (band bars) — docked uniform-collapse coupling no
   longer applies to them.
+- **D16 (per-cell minimize everywhere, 2026-07-04):** the uniform-collapse
+  invariant is DELETED. Any cell — in a docked column, a zipped grid, or a
+  floating stack — minimizes individually; mixed stacks are legal and
+  coherent (a collapsed cell renders as the 26px bar in place, grow 0).
+  With it die: normalizeStackCollapseInPlace, invariant #14, and the §5.6
+  ADOPTION rules (dropping an expanded panel beside minimized ones no
+  longer infects it — collapse changes only by user gesture or server
+  command, P3 with no exceptions). Bulk minimize/expand survives only as
+  the multi-group window header's toggle and the rail.
+- **D17 (minimized floating stacks are stacked rows, 2026-07-04):** a
+  floating window is ALWAYS a vertical stack of cells, each an expanded
+  panel or a bar. The special all-minimized "chip bar" mode is deleted
+  (with it: inline segments, the window-level right-end `+`, chip-cell
+  drop wrappers, the window pill). Inserting into a minimized stack uses
+  the ordinary stack seams.
+- **D18 (no pills on minimized bars, 2026-07-04):** a minimized bar IS a
+  handle in its entirety (gray chrome, grab cursor); a pill inside it is a
+  redundant signifier. Pills remain on expanded headers, where the handle
+  is a slice of a larger surface. The `strong` pill variant dies with the
+  window pill. P13's pill clause is replaced by the face clause (D19).
+- **D19 (pane-provided minimized face, 2026-07-04):** a pane may provide
+  a custom face for its bar; the default face is icon+title(+N). The MAIN
+  PANEL's face is its connection-status row (same height and colors as
+  expanded, action icons hidden) — old-viser continuity via a general
+  mechanism, not a special case.
+- **D20 (band bar deleted; bars render in place, 2026-07-04):** the
+  segmented HorizontalMinimizedBand form is deleted. A minimized cell
+  renders as its bar IN PLACE, at its column's width; a fully-minimized
+  band is its cells' bars side by side and shrinks to bar height by
+  ordinary flex. MinimizedGroupChip becomes THE one minimized form.
+  Retires D2's band-background drag surface (bands move via their cells
+  or region ops). Accepted: a fully-minimized COLUMN beside expanded
+  siblings shows its bars at the top with empty column space below —
+  honest geometry (the column holds its width; heights are content).
+- **D21 (region collapse is an explicit action, 2026-07-04):** the rail
+  no longer appears emergently when the last panel minimizes (a
+  state-dependent form flip). A region-edge chevron toggles
+  `regionCollapsed[edge]`: collapsed → the 36px rail (spine rows; parent
+  handle drags the whole region; chevron expands); expanded → normal
+  layout, whatever the per-cell collapse states. Expanding a panel FROM
+  the rail un-collapses the region and expands that panel.
+- **D22 (nested-column stack handle deleted, 2026-07-04):** §3.1b's
+  justification ("the handle signals coupled collapse") died with D16.
+  The sometimes-there column handle is removed; nested-stack cells move
+  individually. (floatColumn stays as an op; it just has no dedicated
+  chrome.)
 - **D15 (minimized windows stay width-resizable, 2026-07-04):** a
   fully-minimized floating window keeps its side (width) resize grips —
   the bar holds win.width (P8), and that width remains user-adjustable in
