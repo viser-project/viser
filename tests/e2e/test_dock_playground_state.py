@@ -148,11 +148,11 @@ def test_minimize_click_on_background_overlapping_window(page: Page) -> None:
 # ===========================================================================
 # Height correctness.
 # ===========================================================================
-def test_vertical_stack_minimizes_as_a_unit(page: Page) -> None:
-    """A vertical docked stack minimizes ALL-OR-NOTHING: the individual panels
-    have no per-cell +/- (only the parent stack handle), and toggling that
-    handle collapses/expands every panel together -- there's no mixed
-    'one minimized, one short' state."""
+def test_vertical_stack_bands_minimize_independently(page: Page) -> None:
+    """Spec D12 (inverts the old all-or-nothing pin): a docked stack is
+    canonical BANDS -- each panel keeps its own +/- and minimizes alone,
+    rendering a band bar above/below its expanded sibling. Mixed states are
+    valid; there is no column-level parent handle."""
     a, b = "t-controls", "t-inspector"
     set_layout(page, dock_layout(docked_right=stack("controls", "inspector")))
     docked_right = page.eval_on_selector_all(
@@ -161,29 +161,32 @@ def test_vertical_stack_minimizes_as_a_unit(page: Page) -> None:
     )
     assert a in docked_right and b in docked_right
 
-    # No individual minimize buttons inside a stack -- only the parent handle.
+    # Each panel has its OWN minimize button; no column handle exists.
     def n_individual_btns(gid: str) -> int:
         return page.eval_on_selector_all(
             f'[data-dock-group="{gid}"] [data-dock-minimize]', "els => els.length"
         )
 
-    assert n_individual_btns(a) == 0 and n_individual_btns(b) == 0, (
-        "stacked panels must not show individual +/- buttons"
-    )
-    parent = page.query_selector("[data-dock-column-handle] [data-dock-minimize-all]")
-    assert parent is not None, "a stack must show a parent minimize-all handle"
+    assert n_individual_btns(a) == 1 and n_individual_btns(b) == 1
+    assert page.query_selector("[data-dock-column-handle]") is None
 
-    # The parent handle minimizes BOTH; clicking again expands BOTH.
-    parent.click()
-    page.wait_for_timeout(120)
-    assert _is_collapsed(page, a) and _is_collapsed(page, b), (
-        "the parent handle must minimize the whole stack"
+    # Minimize A alone: mixed state, band bar renders for A's band.
+    page.eval_on_selector(
+        f'[data-dock-group="{a}"] [data-dock-minimize]', "e => e.click()"
     )
-    page.query_selector("[data-dock-column-handle] [data-dock-minimize-all]").click()
     page.wait_for_timeout(120)
-    assert not _is_collapsed(page, a) and not _is_collapsed(page, b), (
-        "the parent handle must expand the whole stack"
+    assert _is_collapsed(page, a) and not _is_collapsed(page, b), (
+        "bands must minimize independently (D12)"
     )
+    assert page.query_selector("[data-dock-minimized-band]") is not None, (
+        "the minimized band should render as a band bar beside its sibling"
+    )
+    # Expand A via its band-bar toggle (the + at the segment's right end).
+    page.eval_on_selector(
+        f'[data-dock-group="{a}"] [data-dock-minimize]', "e => e.click()"
+    )
+    page.wait_for_timeout(120)
+    assert not _is_collapsed(page, a) and not _is_collapsed(page, b)
 
 
 def test_floating_resize_grip_hidden_when_minimized(page: Page) -> None:

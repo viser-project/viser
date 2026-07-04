@@ -29,7 +29,10 @@ import {
 import { StackHandleBar } from "./handles";
 import { HorizontalMinimizedBand } from "./HorizontalMinimizedBand";
 import { TabGroupFrame } from "./TabGroupFrame";
-import { VerticalMinimizedColumn } from "./VerticalMinimizedColumn";
+import {
+  RegionMinimizedRail,
+  VerticalMinimizedColumn,
+} from "./VerticalMinimizedColumn";
 import {
   DockColumn,
   DockEdge,
@@ -77,6 +80,13 @@ export const SplitView = React.memo(function SplitView({
   // which is widthRow-shaped -- see regionPlan.RegionPlan.anyBandExpanded.)
   const bandMinimized = rows.map((r) => isRowMinimized(r, groups));
   const regionHasExpanded = bandMinimized.some((m) => !m);
+
+  // ALL-minimized region: one packed rail over every leaf (spec 3.2),
+  // regardless of band structure -- per-band rendering would strand each
+  // cell in its proportional band slot with dead gaps between them.
+  if (!regionHasExpanded) {
+    return <RegionMinimizedRail region={region} edge={edge} />;
+  }
 
   return (
     <Box

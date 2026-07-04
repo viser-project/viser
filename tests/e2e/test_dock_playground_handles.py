@@ -95,54 +95,44 @@ def _resize_grip(page: Page, window_id: str, edge: str) -> tuple[float, float]:
 # ---------------------------------------------------------------------------
 # Column handle: dragging it floats the whole stack as one window.
 # ---------------------------------------------------------------------------
-def test_column_handle_floats_whole_stack(dock_context, vite_server: int) -> None:
+def test_stack_canonicalizes_to_independent_bands(
+    dock_context, vite_server: int
+) -> None:
+    """Spec D12: an injected 2-group vertical stack canonicalizes into two
+    BANDS -- there is no column-level parent handle; each panel keeps its own
+    grip/minimize, and dragging one panel's grip floats ONLY that panel."""
     page = _open(dock_context, vite_server)
     try:
-        # Arrange: a 2-leaf vertical column docked right, Inspector above
-        # Controls (the column-handle drag below is the subject).
         set_layout(page, dock_layout(docked_right=stack("inspector", "controls")))
-
-        # A 2-leaf pure column -> exactly one column handle.
-        handles = page.locator("[data-dock-column-handle]")
-        assert handles.count() == 1
-        order_before = page.evaluate(
+        bands = page.evaluate(
+            """() => window.__dockLayout.docked.right.rows.map(
+                (r) => r.columns.map((c) => c.leaves.map((l) => l.group)))"""
+        )
+        assert bands == [[["t-inspector"]], [["t-controls"]]], (
+            f"stack should canonicalize to bands, got {bands}"
+        )
+        assert page.locator("[data-dock-column-handle]").count() == 0
+        # Each band's panel has its own minimize button (independence, D12).
+        for gid in ("t-inspector", "t-controls"):
+            assert (
+                page.locator(f'[data-dock-group="{gid}"] [data-dock-minimize]').count()
+                == 1
+            )
+        # Dragging inspector's grip floats ONLY inspector.
+        gx, gy = _grip(page, "Inspector")
+        _drag(page, (gx, gy), (450, 450), steps=18)
+        state = page.evaluate(
             """() => {
-                // The 2-leaf column is the region's single column; its leaves
-                // top-to-bottom are the stack order.
-                const region = window.__dockLayout.docked.right;
-                return region.rows[0].columns[0].leaves.map((leaf) => leaf.group);
+                const l = window.__dockLayout;
+                return {
+                    floated: l.floating.some((w) =>
+                        w.stack.some((g) => l.groups[g].paneIds.includes("inspector"))),
+                    dockedStillHasControls:
+                        JSON.stringify(l.docked.right ?? {}).includes("controls"),
+                };
             }"""
         )
-        assert len(order_before) == 2
-
-        # Drag the column handle to open canvas: the whole column floats as
-        # ONE stacked window, in the same top-to-bottom order.
-        box = handles.first.bounding_box()
-        assert box is not None
-        _drag(
-            page,
-            (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2),
-            (450, 450),
-            steps=18,
-        )
-        state = page.evaluate(
-            """(order) => {
-                const l = window.__dockLayout;
-                const win = l.floating.find(
-                    (w) => w.stack.length === 2 &&
-                        w.stack[0] === order[0] && w.stack[1] === order[1]);
-                return {
-                    dockedRight: l.docked.right,
-                    found: win !== undefined,
-                    hasWeights: win ? win.stackWeights !== undefined : false,
-                };
-            }""",
-            order_before,
-        )
-        assert state["found"], "expected one window stacking both groups in order"
-        assert state["dockedRight"] is None
-        assert state["hasWeights"]
-        assert page.locator("[data-dock-column-handle]").count() == 0
+        assert state["floated"] and state["dockedStillHasControls"]
     finally:
         page.close()
 
@@ -150,13 +140,13 @@ def test_column_handle_floats_whole_stack(dock_context, vite_server: int) -> Non
 def test_minimized_column_parent_handle_tears_out_whole_stack(
     dock_context, vite_server: int
 ) -> None:
-    """A FULLY-minimized docked column keeps its parent handle (the + above the
-    cells); DRAGGING that handle tears the whole stack out as one floating
-    window (it must not just toggle). Regression: the parent +'s button used to
-    swallow the press, so the stack couldn't be dragged out at all."""
+    """A FULLY-minimized region renders the packed rail with a parent handle
+    on top (spec 3.2); DRAGGING that handle tears the WHOLE region out as one
+    floating window (it must not just toggle)."""
     page = _open(dock_context, vite_server)
     try:
-        # Arrange: a 2-leaf vertical column docked right, both minimized.
+        # Arrange: two minimized groups docked right (canonical bands; the
+        # all-minimized region renders the rail).
         set_layout(
             page,
             dock_layout(
@@ -166,7 +156,7 @@ def test_minimized_column_parent_handle_tears_out_whole_stack(
                 )
             ),
         )
-        handle = page.locator("[data-dock-column-handle]")
+        handle = page.locator("[data-dock-region-rail]")
         assert handle.count() == 1
         box = handle.first.bounding_box()
         assert box is not None
@@ -203,17 +193,19 @@ def test_undock_minimized_column_keeps_expanded_width(
     strip rect)."""
     page = _open(dock_context, vite_server)
     try:
-        # A 2-leaf column docked right at the default ~300px region width.
+        # Two stacked panels docked right (canonical bands) at ~300px.
         set_layout(page, dock_layout(docked_right=stack("controls", "inspector")))
         region_w = page.evaluate("() => window.__dockLayout.regionWidth.right")
         assert region_w and region_w > 150
 
-        # Minimize the whole stack via its parent handle, then undock it.
-        page.eval_on_selector(
-            "[data-dock-column-handle] [data-dock-minimize-all]", "e => e.click()"
-        )
-        page.wait_for_timeout(120)
-        handle = page.locator("[data-dock-column-handle]").first
+        # Minimize each panel via its own button (D12: independent), then
+        # undock the resulting all-minimized region via the rail's handle.
+        for gid in ("t-controls", "t-inspector"):
+            page.eval_on_selector(
+                f'[data-dock-group="{gid}"] [data-dock-minimize]', "e => e.click()"
+            )
+            page.wait_for_timeout(80)
+        handle = page.locator("[data-dock-region-rail]").first
         box = handle.bounding_box()
         assert box is not None
         _drag(
@@ -242,10 +234,10 @@ def test_undock_minimized_column_keeps_expanded_width(
 def test_floating_minimized_stack_has_draggable_parent_handle(
     dock_context, vite_server: int
 ) -> None:
-    """A fully-minimized FLOATING multi-group stack renders as a horizontal
-    CHIP BAR (one chip per group) with a leading grip segment as the
-    whole-window handle: dragging it moves the window; clicking it expands
-    every group."""
+    """A fully-minimized FLOATING multi-group stack renders as its HEADER
+    bar (P13): full window width, labels left, one `+` at the right end.
+    Dragging the bar's background slack moves the window; a motionless click
+    there expands every group."""
     page = _open(dock_context, vite_server)
     try:
         set_layout(
@@ -266,29 +258,26 @@ def test_floating_minimized_stack_has_draggable_parent_handle(
         chips = page.locator("[data-floating-window] [data-dock-group]")
         assert chips.count() == 2, "chip bar should show one chip per group"
 
-        # Dragging the bar's leading GRIP segment (the whole-window handle --
-        # chips tile the rest of the bar edge-to-edge) moves the whole window.
-        bar = page.eval_on_selector(
-            "[data-floating-window] [data-dock-bar-handle]",
-            """(h) => {
-                const r = h.getBoundingClientRect();
-                return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-            }""",
-        )
+        # The bar keeps win.width (P13): background SLACK exists between the
+        # labels and the right-end `+` (last ~24px). Aim between them.
+        def slack_point():
+            return page.eval_on_selector(
+                "[data-floating-window]",
+                """(w) => {
+                    const r = w.getBoundingClientRect();
+                    return { x: r.right - 45, y: r.y + r.height / 2 };
+                }""",
+            )
+
+        bar = slack_point()
         before = page.evaluate("() => window.__dockLayout.floating[0].x")
         _drag(page, (bar["x"], bar["y"]), (700, 500), steps=18)
         after = page.evaluate("() => window.__dockLayout.floating[0].x")
         assert abs(after - before) > 50, "dragging the bar should move the window"
 
-        # A motionless CLICK on the grip segment expands every group (the
-        # bar's press arbitration: motion drags, no motion expands).
-        bar2 = page.eval_on_selector(
-            "[data-floating-window] [data-dock-bar-handle]",
-            """(h) => {
-                const r = h.getBoundingClientRect();
-                return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-            }""",
-        )
+        # A motionless CLICK on the slack expands every group (the bar's
+        # press arbitration: motion drags, no motion expands).
+        bar2 = slack_point()
         page.mouse.move(bar2["x"], bar2["y"])
         page.mouse.down()
         page.mouse.up()

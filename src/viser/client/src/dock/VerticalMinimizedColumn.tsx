@@ -10,10 +10,10 @@ import React from "react";
 import { useDock } from "./DockContext";
 import { gripBarBg, focusRing } from "./DockStyles.css";
 import { focusPaneTab, tabListKeyDown } from "./gestures";
-import { GripPill, HandleIconButton } from "./handles";
+import { GripPill, HandleIconButton, StackHandleBar } from "./handles";
 import { startCollapsedGroupPress } from "./collapsedPress";
-import { DockColumn, DockEdge, NodeId, TabGroup } from "./types";
-import { collectLeaves } from "./layoutOps";
+import { DockColumn, DockEdge, DockRegion, NodeId, TabGroup } from "./types";
+import { collectLeaves, expandStack } from "./layoutOps";
 
 export function VerticalMinimizedColumn({
   column,
@@ -67,6 +67,96 @@ export function VerticalMinimizedColumn({
         );
       })}
     </Paper>
+  );
+}
+
+/** The ALL-MINIMIZED region rendered as ONE packed rail (spec 3.2): every
+ * leaf across every band, top to bottom, as contiguous cells -- the band
+ * structure stays in the MODEL (expanding restores it), but visually the
+ * region is a single 36px rail so the canvas gets its width back. Without
+ * this, each band would strand its content-tall cell inside a proportional
+ * band slot, fragmenting the rail with dead gaps.
+ *
+ * The narrow StackHandleBar on top is the rail's parent handle: drag floats
+ * the WHOLE region as one window; the motionless click / `+` expands every
+ * group (P9: the rail's one expand-all signifier). */
+export function RegionMinimizedRail({
+  region,
+  edge,
+}: {
+  region: DockRegion;
+  edge: DockEdge;
+}) {
+  const dock = useDock();
+  const leaves = region.rows.flatMap((r) =>
+    r.columns.flatMap((c) => collectLeaves(c)),
+  );
+  const groupIds = leaves.map((l) => l.group);
+  const expandAll = () =>
+    dock.api.apply((l) => expandStack(l, groupIds));
+  return (
+    <Box
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        height: "100%",
+        minWidth: 0,
+        minHeight: 0,
+      }}
+    >
+      <StackHandleBar
+        attrs={{ "data-dock-region-rail": edge }}
+        onPointerDown={(event) =>
+          dock.startRegionDrag(event, edge, { onClick: expandAll })
+        }
+        collapsed
+        narrow
+        onToggle={expandAll}
+      />
+      <Paper
+        radius={0}
+        style={{
+          flexGrow: 1,
+          minWidth: 0,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          overflowX: "hidden",
+          overflowY: "auto",
+          backgroundColor: "var(--mantine-color-body)",
+        }}
+      >
+        {leaves.map(({ id, group }, i) => {
+          const g = dock.groups[group];
+          if (g === undefined) return null;
+          return (
+            <React.Fragment key={id}>
+              {i > 0 && (
+                <Box
+                  style={{
+                    height: 1,
+                    flexShrink: 0,
+                    backgroundColor: "var(--mantine-color-default-border)",
+                    opacity: 0.5,
+                  }}
+                />
+              )}
+              <VerticalMinimizedCell
+                nodeId={id}
+                edge={edge}
+                group={g}
+                // NOT inStack: the region rail's cells are independent BANDS
+                // (D12), so each keeps its own + (expand just that band) --
+                // a distinct action from the parent handle's expand-all, so
+                // both signifiers are P9-legal.
+                inStack={false}
+              />
+            </React.Fragment>
+          );
+        })}
+      </Paper>
+    </Box>
   );
 }
 

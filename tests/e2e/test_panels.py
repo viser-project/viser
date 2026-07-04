@@ -966,15 +966,16 @@ def test_unminimize_after_sibling_resize_keeps_panel_onscreen(
     viser_page.mouse.up()
     viser_page.wait_for_timeout(300)
 
-    # Minimize the WHOLE column (the column handle owns collapse for a 2+ stack),
-    # then expand it: every cell's restore weight must rescale to the post-resize
-    # px basis so all three come back on-screen with real height.
-    # The column handle's minimize-all button collapses the whole column to a
-    # strip; clicking it again expands. (It sits on the column shell, which wraps
-    # ABOVE the edge-tagged leaves, so it isn't under [data-dock-edge].)
-    viser_page.locator("[data-dock-minimize-all]").first.click()
-    viser_page.wait_for_timeout(300)
-    viser_page.locator("[data-dock-minimize-all]").first.click()
+    # Minimize every band via its own button (D12: stacks are bands with
+    # independent minimize), then expand ALL via the region rail's parent
+    # toggle: every band's restore weight must rescale to the post-resize px
+    # basis so all three come back on-screen with real height.
+    for label in ("ColTop", "ColMid", "ColBot"):
+        viser_page.locator("[data-dock-leaf]").filter(
+            has=_tab(viser_page, label)
+        ).locator("[data-dock-minimize]").first.click()
+        viser_page.wait_for_timeout(150)
+    viser_page.locator("[data-dock-region-rail] [data-dock-minimize-all]").click()
     viser_page.wait_for_timeout(400)
 
     for label in ("ColTop", "ColMid", "ColBot"):

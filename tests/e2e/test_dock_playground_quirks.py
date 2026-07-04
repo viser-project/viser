@@ -399,28 +399,41 @@ def test_plus_drag_tears_out_still_minimized(dock_context, vite_server) -> None:
 #     width; no more canvas-overlay rail), so minimize-all is reversible from
 #     the handle.
 # ---------------------------------------------------------------------------
-def test_column_handle_persists_fully_minimized(dock_context, vite_server) -> None:
+def test_stack_minimizes_independently_then_region_rail(
+    dock_context, vite_server
+) -> None:
+    """Spec D12: a docked stack canonicalizes to bands, so each panel
+    minimizes INDEPENDENTLY (mixed states are valid). When every band is
+    minimized the region renders the packed rail, whose parent handle
+    expands everything at once."""
     page = _open(dock_context, vite_server)
-    # Arrange: a 2-leaf vertical column docked right (the minimize-all clicks
-    # on its column handle are the subject).
     set_layout(page, dock_layout(docked_right=stack("inspector", "controls")))
-    assert page.query_selector("[data-dock-column-handle]") is not None
+    assert page.query_selector("[data-dock-column-handle]") is None
     a = _group_id_for_panel(page, "controls")
     b = _group_id_for_panel(page, "inspector")
 
+    # Minimize ONE panel: the other stays expanded (independence).
     page.eval_on_selector(
-        "[data-dock-column-handle] [data-dock-minimize-all]", "e => e.click()"
+        f'[data-dock-group="{b}"] [data-dock-minimize]', "e => e.click()"
     )
     page.wait_for_timeout(120)
-    assert page.query_selector("[data-dock-column-handle]") is not None, (
-        "the column handle must persist when all children are minimized"
+    assert page.evaluate(
+        "(gid) => window.__dockLayout.groups[gid].collapsed === true", b
     )
-    for gid in (a, b):
-        assert page.evaluate(
-            "(gid) => window.__dockLayout.groups[gid].collapsed === true", gid
-        )
+    assert page.evaluate(
+        "(gid) => window.__dockLayout.groups[gid].collapsed !== true", a
+    )
+    # Minimize the second too: the packed region rail appears.
     page.eval_on_selector(
-        "[data-dock-column-handle] [data-dock-minimize-all]", "e => e.click()"
+        f'[data-dock-group="{a}"] [data-dock-minimize]', "e => e.click()"
+    )
+    page.wait_for_timeout(120)
+    assert page.query_selector("[data-dock-region-rail]") is not None, (
+        "an all-minimized region must render the rail with its parent handle"
+    )
+    # The rail handle's toggle expands everything.
+    page.eval_on_selector(
+        "[data-dock-region-rail] [data-dock-minimize-all]", "e => e.click()"
     )
     page.wait_for_timeout(120)
     for gid in (a, b):

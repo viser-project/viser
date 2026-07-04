@@ -72,6 +72,14 @@ export interface DockContextValue {
     rowId: NodeId,
     opts?: { onClick?: () => void },
   ) => void;
+  /** Begin a press on the all-minimized region rail's parent handle: a drag
+   * floats the WHOLE region as one window stack; a motionless click runs
+   * `opts.onClick` (expand-all). */
+  startRegionDrag: (
+    event: React.PointerEvent<HTMLElement>,
+    edge: DockEdge,
+    opts?: { onClick?: () => void },
+  ) => void;
   /** Begin a press on a tab: a click activates it, a drag tears the panel out
    * into its own floating window. */
   startTabDrag: (

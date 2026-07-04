@@ -1295,6 +1295,40 @@ export function floatColumn(
   return { layout: draft, windowId: win.id };
 }
 
+/** Float an ENTIRE REGION as one window: every leaf across every band
+ * (bands top-to-bottom, columns left-to-right, leaves top-to-bottom), with
+ * heights carried from band weights x leaf shares. Used by the all-minimized
+ * region rail's parent handle -- the region-level analog of floatColumn. */
+export function floatRegion(
+  layout: DockLayout,
+  edge: DockEdge,
+  x: number,
+  y: number,
+  width: number,
+): { layout: DockLayout; windowId: WindowId | null } {
+  const region = layout.docked[edge];
+  if (region === null) return { layout, windowId: null };
+  const stack: GroupId[] = [];
+  const stackWeights: Record<GroupId, number> = {};
+  for (const band of region.rows) {
+    for (const column of band.columns) {
+      const total = column.leaves.reduce((s, l) => s + l.weight, 0) || 1;
+      for (const lf of column.leaves) {
+        stack.push(lf.group);
+        stackWeights[lf.group] = (band.weight * lf.weight) / total;
+      }
+    }
+  }
+  if (stack.some((g) => isAreaGroup(layout, g))) {
+    return { layout, windowId: null };
+  }
+  const draft = clone(layout);
+  stack.forEach((g) => detachInPlace(draft, g));
+  const win = makeFloatingWindow(x, y, width, stack, undefined, stackWeights);
+  draft.floating.push(win);
+  return { layout: draft, windowId: win.id };
+}
+
 /** Float an entire ROW BAND as ONE window: every leaf across the band's
  * columns (left-to-right, top-to-bottom within each column) becomes the
  * window's stack. Spec D2: the minimized band bar's background drags the
@@ -1568,6 +1602,162 @@ export function expandStack(
  * Only `collapsed` is cleared here -- a lone group keeps its own collapse, and a
  * uniformly-minimized stack is left alone (so minimizeStack's all-collapsed
  * result survives). */
+/** Structural fingerprint of a layout: the arrangement of ids and group
+ * membership across docked trees and floating stacks, EXCLUDING weights and
+ * collapse flags. Two layouts with equal signatures differ only in sizes /
+ * collapse -- the distinction canonicalization (below) keys on: pure weight
+ * commits (resizes) must never restructure mid-gesture (P14/D13). */
+export function structureSignature(layout: DockLayout): string {
+  const region = (r: DockRegion | null): string =>
+    r === null
+      ? "-"
+      : r.rows
+          .map((rw) =>
+            rw.columns
+              .map(
+                (c) =>
+                  `${c.id}:${c.leaves.map((l) => `${l.id}/${l.group}`).join(",")}`,
+              )
+              .join("|"),
+          )
+          .join(";");
+  return [
+    region(layout.docked.left),
+    region(layout.docked.right),
+    layout.floating.map((w) => `${w.id}:${w.stack.join(",")}`).join(";"),
+  ].join("##");
+}
+
+// D13 zip tolerance: adjacent bands' column boundaries must align within
+// this many pixels of each other to be considered the same partition.
+const ZIP_TOLERANCE_PX = 2;
+
+/** Canonical band form (spec P14: one structure per picture), run to
+ * fixpoint at STRUCTURAL commits:
+ *
+ *  - D12: full-width vertical stacking is expressed as BANDS. A multi-leaf
+ *    column may exist only when its band has sibling columns; a lone
+ *    multi-leaf column splits into consecutive bands (band weights carved
+ *    by leaf height shares, so nothing moves on screen). Plain docked
+ *    stacks thereby minimize independently (no uniform-collapse coupling).
+ *
+ *  - D13: adjacent bands with the SAME multi-column partition (fractional
+ *    widths equal within ~2px of the region width) zip-merge into one band
+ *    of stacked columns -- one seam, one set of handles, instead of double
+ *    chrome for an aligned grid.
+ *
+ * The two rules cannot cycle: D12 touches only lone-column bands, D13 only
+ * multi-column ones. Id stability: splits keep the original band/column id
+ * on the FIRST fragment and all leaf ids; zips keep the UPPER band's ids.
+ * Returns true when anything changed. */
+export function normalizeCanonicalBandsInPlace(layout: DockLayout): boolean {
+  let changed = false;
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const region = layout.docked[edge];
+    if (region === null) continue;
+    const regionW = Math.max(1, regionWidthsOf(layout)[edge]);
+
+    const fractions = (band: DockRow): number[] => {
+      const total = band.columns.reduce((s, c) => s + c.weight, 0) || 1;
+      return band.columns.map((c) => c.weight / total);
+    };
+    const canZip = (a: DockRow, b: DockRow): boolean => {
+      if (a.columns.length < 2 || a.columns.length !== b.columns.length)
+        return false;
+      const fa = fractions(a);
+      const fb = fractions(b);
+      return fa.every(
+        (f, i) => Math.abs(f - fb[i]) * regionW <= ZIP_TOLERANCE_PX,
+      );
+    };
+    // Rescale a band's leaf weights so each column's leaves sum to the
+    // band's weight -- zipped columns then stack in on-screen proportion.
+    const scaled = (band: DockRow, column: DockColumn): DockLeaf[] => {
+      const total = column.leaves.reduce((s, l) => s + l.weight, 0) || 1;
+      return column.leaves.map((l) => ({
+        ...l,
+        weight: (l.weight / total) * band.weight,
+      }));
+    };
+    const zip = (a: DockRow, b: DockRow): DockRow => ({
+      id: a.id,
+      weight: a.weight + b.weight,
+      columns: mapNonEmpty(a.columns, (ca, i) => {
+        const cb = b.columns[i];
+        const leaves = asNonEmpty([...scaled(a, ca), ...scaled(b, cb)]);
+        // Both inputs are NonEmpty; the concat cannot be empty.
+        return leaves === null ? ca : { ...ca, leaves };
+      }),
+    });
+
+    let rows: DockRow[] = [...region.rows];
+    let dirty = true;
+    while (dirty) {
+      dirty = false;
+      // D12: split lone multi-leaf columns into bands.
+      const split: DockRow[] = [];
+      for (const band of rows) {
+        const only = band.columns.length === 1 ? band.columns[0] : null;
+        if (only !== null && only.leaves.length > 1) {
+          const total = only.leaves.reduce((s, l) => s + l.weight, 0) || 1;
+          only.leaves.forEach((lf, i) => {
+            split.push({
+              id: i === 0 ? band.id : freshId("node"),
+              weight: (band.weight * lf.weight) / total,
+              columns: [
+                {
+                  id: i === 0 ? only.id : freshId("node"),
+                  weight: only.weight,
+                  leaves: [{ ...lf, weight: 1 }],
+                },
+              ],
+            });
+          });
+          dirty = true;
+          changed = true;
+        } else {
+          split.push(band);
+        }
+      }
+      rows = split;
+      // D13: zip-merge aligned multi-column neighbors.
+      for (let i = 0; i + 1 < rows.length; ) {
+        if (canZip(rows[i], rows[i + 1])) {
+          rows.splice(i, 2, zip(rows[i], rows[i + 1]));
+          dirty = true;
+          changed = true;
+        } else {
+          i += 1;
+        }
+      }
+    }
+    const ne = asNonEmpty(rows);
+    if (ne !== null) region.rows = ne;
+  }
+  return changed;
+}
+
+/** Canonical-form violations, for the dev assert + fuzz harness. Only the
+ * D12 half is an INVARIANT: no committed layout may hold a lone multi-leaf
+ * column (nothing but a structural op can create one, and structural
+ * commits normalize). The D13 half is deliberately NOT asserted -- a user
+ * resize may align two bands into a zip-able pair, which is legal at rest
+ * and merges at the next structural commit. */
+export function canonicalViolations(layout: DockLayout): string[] {
+  const out: string[] = [];
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const region = layout.docked[edge];
+    if (region === null) continue;
+    for (const band of region.rows) {
+      if (band.columns.length === 1 && band.columns[0].leaves.length > 1)
+        out.push(
+          `band ${band.id} on ${edge} is a lone multi-leaf column (D12)`,
+        );
+    }
+  }
+  return out;
+}
+
 export function normalizeStackCollapseInPlace(layout: DockLayout): boolean {
   let changed = false;
   const expandAll = (groupIds: GroupId[]): void => {

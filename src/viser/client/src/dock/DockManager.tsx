@@ -311,7 +311,13 @@ export function DockManager({
       if (check) lastProdCheckMs.current = now;
     }
     if (check) {
-      const violations = invariantViolations(next);
+      const violations = [
+        ...invariantViolations(next),
+        // Canonical band form (P14): applyOp normalizes structural commits,
+        // so a violating commit means an op or a bypass produced a
+        // non-canonical shape.
+        ...ops.canonicalViolations(next),
+      ];
       if (violations.length > 0) {
         const msg =
           "[dock] layout invariant violation:\n" + violations.join("\n");
@@ -331,6 +337,17 @@ export function DockManager({
   const applyOp = React.useCallback(
     (next: DockLayout) => {
       if (next === layoutRef.current) return; // no-op op: nothing to commit.
+      // Canonical band form (P14/D12/D13) on STRUCTURAL commits only: a pure
+      // weight change (a resize mid-gesture) must never restructure the
+      // layout under the user's pointer. Runs BEFORE stack-collapse
+      // normalization so a lone stacked column splits into bands FIRST --
+      // its groups then collapse independently instead of being coupled.
+      if (
+        ops.structureSignature(next) !==
+        ops.structureSignature(layoutRef.current)
+      ) {
+        ops.normalizeCanonicalBandsInPlace(next);
+      }
       // Enforce the stack-uniform-collapse invariant BEFORE width reconciliation
       // (it can flip cells expanded, which changes the width math). `next` is a
       // fresh draft here, so in-place mutation is safe.
@@ -1389,6 +1406,36 @@ export function DockManager({
     );
   };
 
+  const startRegionDrag: DockContextValue["startRegionDrag"] = (
+    event,
+    edge,
+    opts,
+  ) => {
+    armPress(
+      event,
+      (e) => {
+        dragAfterCommit(e, () => {
+          const rect = floatRectFor(`[data-dock-region="${edge}"]`);
+          const res = ops.floatRegion(
+            layoutRef.current,
+            edge,
+            rect.x,
+            rect.y,
+            regionWidthsOf(layoutRef.current)[edge],
+          );
+          if (res.windowId === null) return null;
+          flushSync(() => applyOp(res.layout));
+          return {
+            windowId: res.windowId,
+            groupIdForDim: null,
+            ...grabOffset(e, rect.x, rect.y, res.windowId),
+          };
+        });
+      },
+      opts?.onClick,
+    );
+  };
+
   const startTabDrag: DockContextValue["startTabDrag"] = (
     event,
     groupId,
@@ -1695,6 +1742,7 @@ export function DockManager({
     startWindowDrag,
     startColumnDrag,
     startBandDrag,
+    startRegionDrag,
   };
   const gestureRef = React.useRef(gestureImpls);
   gestureRef.current = gestureImpls;
@@ -1711,6 +1759,8 @@ export function DockManager({
         startColumnDrag: (...args) =>
           gestureRef.current.startColumnDrag(...args),
         startBandDrag: (...args) => gestureRef.current.startBandDrag(...args),
+        startRegionDrag: (...args) =>
+          gestureRef.current.startRegionDrag(...args),
       }) satisfies Pick<
         DockContextValue,
         | "startGroupDrag"
@@ -1719,6 +1769,7 @@ export function DockManager({
         | "startWindowDrag"
         | "startColumnDrag"
         | "startBandDrag"
+        | "startRegionDrag"
       >,
     [],
   );
@@ -2078,6 +2129,7 @@ export function DockManager({
             )}
             {tree !== null && (
               <Box
+                data-dock-region={edge}
                 style={{
                   position: "absolute",
                   top: 0,
