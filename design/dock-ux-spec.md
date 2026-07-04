@@ -409,11 +409,20 @@ Behaviors that MUST hold (each is or should be pinned by a test):
 For each table row and catalog item above: find the implementing code and
 the pinning test; record `OK` / `DIFFERS (code)` / `DIFFERS (spec)` /
 `UNTESTED`. Differences get resolved in review — the record of "spec
-changed because X" lives in this file's history. The existing suites to map
-against: `hitTest*.test.ts` (zones, sweep, mirror), `layoutOps*.test.ts`
-(ops, fuzz, lifecycle), `panelPlacement.test.ts` (gating),
-`tests/e2e/test_dock_playground_*` (gestures), `tests/e2e/test_panels.py`
-(server round-trips).
+changed because X" lives in this file's history. The suites: `hitTest*`
+(zones, sweep, mirror), `layoutOps*` (ops, fuzz, lifecycle),
+`panelPlacement` (gating), `tests/e2e/test_dock_playground_*` (gestures),
+`tests/e2e/test_panels.py` (server round-trips).
+
+**Cross-check record — 2026-07-03 (post D1–D9 implementation):** four
+independent audits walked §3+§4 (104 claims), §5 (33), §6+§7+§9 (18+15
+catalog items), and §8 (12). Verdict: **0 DIFFERS** in either direction.
+Alleged coverage gaps were re-verified by hand: the anchor-cycle fallback,
+region-edge-beside-minimized, wrapped-row insertion, and the D4 zone split
+all had existing pins the auditors missed; the one REAL gap — edge case 10
+(mid-drag rect movement without a layout change) — is now pinned by
+`test_viewport_resize_mid_drag_keeps_drop_targets_fresh`, which exercises
+the shared staleness flag via its resize trigger.
 
 ---
 

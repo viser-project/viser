@@ -627,3 +627,49 @@ def test_dragged_window_stays_on_cursor_through_resize(
         f"drop should commit the cursor-aligned x (~{expected}), got {win['x']}"
     )
     page.close()
+
+
+# ---------------------------------------------------------------------------
+# Spec edge case 10: target rects that move MID-DRAG without a layout change
+# (viewport resize here; container scroll shares the same staleness flag) must
+# not desync drop resolution -- the drop lands on what's visibly under the
+# pointer, not on drag-start geometry.
+# ---------------------------------------------------------------------------
+def test_viewport_resize_mid_drag_keeps_drop_targets_fresh(
+    dock_context, vite_server
+) -> None:
+    page = _open(dock_context, vite_server)
+    set_layout(
+        page,
+        dock_layout(
+            docked_right=columns("controls"),
+            floating=[window("console", x=250, y=350, width=240)],
+        ),
+    )
+    gx, gy = _grip(page, "console")
+    page.mouse.move(gx, gy)
+    page.mouse.down()
+    page.mouse.move(500, 300, steps=8)  # drag well clear of the region
+    # Mid-drag the viewport narrows by 300px: the right region's rects shift
+    # left while the layout model is unchanged (no re-collect trigger before
+    # the staleness fix).
+    page.set_viewport_size({"width": 980, "height": 720})
+    page.wait_for_timeout(150)
+    # Drop on the region's NEW content center (region spans ~680..980; the
+    # D1 center-merge third is comfortably around x=830). Against drag-start
+    # rects this point was empty canvas.
+    page.mouse.move(830, 300, steps=6)
+    page.mouse.move(830, 300)
+    page.mouse.up()
+    page.wait_for_timeout(200)
+    merged = page.evaluate(
+        "() => window.__dockLayout.groups['t-controls']?.paneIds ?? []"
+    )
+    docked_right = page.evaluate(
+        "() => JSON.stringify(window.__dockLayout.docked.right ?? {})"
+    )
+    assert "console" in merged or "t-console" in docked_right, (
+        f"drop after mid-drag resize should land in the region "
+        f"(merged={merged}, right={docked_right})"
+    )
+    page.close()
