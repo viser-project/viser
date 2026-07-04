@@ -121,9 +121,11 @@ chrome with the body removed: the grip surface stays — INCLUDING its
 grip-bar gray, which is what bounds the bar against adjacent white panel
 bodies (P10 enclosure-by-surface; a body-colored bar between two panels
 reads as a stray label inside them) — the tab labels stay in place
-(restyled to dimmed wayfinding), the width stays, the header's GRIP PILL
-stays (the visible drag signifier — an unmarked drag surface is not kept
-chrome), and the minimize/expand toggle stays in the SAME position — `−` at the top-right of
+(restyled to dimmed wayfinding), the width stays, and every retained
+element keeps its POSITION through the transition: the grip pill stays
+CENTERED in the bar's free run (as it is on the expanded header — no
+center-to-left jump on minimize), and the minimize/expand toggle stays in
+the SAME position — `−` at the top-right of
 the expanded header becomes `+` at the right end of the minimized bar, so
 the toggle is spatially stable and a mis-click is undone without moving the
 mouse. Minimized bars are not a separate chrome language; they are headers.
@@ -492,6 +494,9 @@ Behaviors that MUST hold (each is or should be pinned by a test):
     the outer half of the strip.
 14. Chip/segment keyboard expand moves focus onto the revealed strip.
 15. Left/right mirrored layouts resolve mirrored drops everywhere (swept).
+16. Expanded panels absorb ALL space freed by minimized siblings — a band/
+    column/cell/stack-cell may never strand dead area because fractional
+    weights summed below 1 (flex-grow factors are normalized per site).
 
 ---
 
@@ -574,6 +579,16 @@ already reflect them; this list preserves the rationale.
   structural commit. Plain docked stacks thereby gain independent
   per-panel minimize (band bars) — docked uniform-collapse coupling no
   longer applies to them.
+- **D15 (minimized windows stay width-resizable, 2026-07-04):** a
+  fully-minimized floating window keeps its side (width) resize grips —
+  the bar holds win.width (P8), and that width remains user-adjustable in
+  either state. Only vertical/corner grips hide (nothing to size). Also
+  from this review round: pill POSITION constancy folded into P13 (pills
+  stay centered through minimize), and edge case 16 added after the
+  fractional flex-grow bug (an expanded band absorbed only half the space
+  freed by a minimized sibling because grow factors summed to 0.5 — CSS
+  distributes only sum(grow) of the free space when the sum is < 1; all
+  weight-driven grow factors are now normalized to sum to 1).
 - **D14 (single-title bars, 2026-07-04):** minimized horizontal bars show
   ONE title (active tab + `+N` badge), not a label per tab — supersedes
   D9's per-tab label rows in bars after hands-on review found them busy

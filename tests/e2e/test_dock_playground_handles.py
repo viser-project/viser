@@ -258,16 +258,15 @@ def test_floating_minimized_stack_has_draggable_parent_handle(
         chips = page.locator("[data-floating-window] [data-dock-group]")
         assert chips.count() == 2, "chip bar should show one chip per group"
 
-        # The bar's leading GRIP PILL is the window-drag signifier (P13); its
-        # surface has no handler of its own, so presses flow to the bar's
-        # window drag. (Label runs can fill the rest of a narrow bar, so the
-        # pill is the RELIABLE whole-window point.)
+        # The bar's WINDOW pill (centered in the free run, P13) is the
+        # window-drag signifier; its surface has no handler of its own, so
+        # presses flow to the bar's window drag.
         def slack_point():
             return page.eval_on_selector(
-                "[data-floating-window]",
-                """(w) => {
-                    const r = w.getBoundingClientRect();
-                    return { x: r.x + 12, y: r.y + r.height / 2 };
+                "[data-floating-window] [data-dock-window-pill]",
+                """(el) => {
+                    const r = el.getBoundingClientRect();
+                    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
                 }""",
             )
 

@@ -81,6 +81,12 @@ export const SplitView = React.memo(function SplitView({
   // which is widthRow-shaped -- see regionPlan.RegionPlan.anyBandExpanded.)
   const bandMinimized = rows.map((r) => isRowMinimized(r, groups));
   const regionHasExpanded = bandMinimized.some((m) => !m);
+  // flex-grow semantics: when grow factors sum to <1, flexbox distributes
+  // only that FRACTION of the free space (the rest strands as dead area).
+  // D12's weight carving produces fractional band weights, so normalize:
+  // expanded bands' grow factors always sum to 1.
+  const expandedWeightTotal =
+    rows.reduce((s, r, i) => s + (bandMinimized[i] ? 0 : r.weight), 0) || 1;
 
   // ALL-minimized region: one packed rail over every leaf (spec 3.2),
   // regardless of band structure -- per-band rendering would strand each
@@ -120,7 +126,7 @@ export const SplitView = React.memo(function SplitView({
           <React.Fragment key={row.id}>
             <Box
               style={{
-                flexGrow: stripBand ? 0 : row.weight,
+                flexGrow: stripBand ? 0 : row.weight / expandedWeightTotal,
                 flexShrink: stripBand ? 0 : 1,
                 flexBasis: stripBand ? MINIMIZED_BAR_PX : 0,
                 minWidth: 0,
@@ -191,6 +197,13 @@ function RowView({ row, edge }: { row: DockRow; edge: DockEdge }) {
   const groups = dock.groups;
   const containerRef = React.useRef<HTMLDivElement>(null);
   const columns = row.columns;
+  // Normalize grow factors (see the band map's note: fractional sums
+  // strand free space).
+  const expandedColWeightTotal =
+    columns.reduce(
+      (s, c) => s + (isColumnMinimized(c, groups) ? 0 : c.weight),
+      0,
+    ) || 1;
 
   return (
     <Box
@@ -212,7 +225,9 @@ function RowView({ row, edge }: { row: DockRow; edge: DockEdge }) {
           <React.Fragment key={column.id}>
             <Box
               style={{
-                flexGrow: collapsedInRow ? 0 : column.weight,
+                flexGrow: collapsedInRow
+                  ? 0
+                  : column.weight / expandedColWeightTotal,
                 flexShrink: collapsedInRow ? 0 : 1,
                 flexBasis: collapsedInRow ? MINIMIZED_STRIP_PX : 0,
                 minWidth: 0,
@@ -341,6 +356,12 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
   const groups = dock.groups;
   const containerRef = React.useRef<HTMLDivElement>(null);
   const leaves = column.leaves;
+  // Normalize grow factors (fractional sums strand free space).
+  const expandedLeafWeightTotal =
+    leaves.reduce(
+      (s, l) => s + (groups[l.group]?.collapsed === true ? 0 : l.weight),
+      0,
+    ) || 1;
 
   return (
     <Box
@@ -363,7 +384,9 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
           <React.Fragment key={leaf.id}>
             <Box
               style={{
-                flexGrow: collapsed ? 0 : leaf.weight,
+                flexGrow: collapsed
+                  ? 0
+                  : leaf.weight / expandedLeafWeightTotal,
                 flexShrink: collapsed ? 0 : 1,
                 flexBasis: collapsed ? "auto" : 0,
                 minWidth: 0,

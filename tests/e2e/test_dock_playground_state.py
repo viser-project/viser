@@ -214,6 +214,14 @@ def test_floating_resize_grip_hidden_when_minimized(page: Page) -> None:
     assert vertical_grips() == 0, (
         "vertical/corner resize grips still present when minimized"
     )
+    # D15: WIDTH grips remain -- a minimized bar keeps win.width (P8) and
+    # that width stays user-adjustable.
+    width_grips = page.eval_on_selector_all(
+        f"{win_sel} *",
+        """els => els.filter(e =>
+            getComputedStyle(e).cursor === 'ew-resize').length""",
+    )
+    assert width_grips > 0, "width grips must remain on a minimized window"
 
 
 def _window_selector_for_group(page: Page, group_id: str) -> str | None:

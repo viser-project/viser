@@ -77,6 +77,11 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       collapsed ? expandStack(l, win.stack) : minimizeStack(l, win.stack),
     );
   // The pinned px height, or undefined when the window auto-sizes to content.
+  // flex-grow sums < 1 distribute only that FRACTION of free space;
+  // stackWeights from floatRegion/floatBand carving are fractional, so
+  // normalize (see SplitView's band note).
+  const stackWeightTotal =
+    win.stack.reduce((s2, g) => s2 + (win.stackWeights?.[g] ?? 1), 0) || 1;
   const pinnedPx = pinnedPxOf(win.height);
   const fixedHeight = pinnedPx !== undefined && !collapsed;
   const renderedHeight =
@@ -337,13 +342,11 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       }}
     >
       {/* Edge resize grips. None when minimized -- the strip is fixed-size
-      chrome (matching a docked minimized column), nothing to resize. */}
-      {!collapsed && (
-        <>
-          <ResizeGrip edge="left" onPointerDown={widthResizeHandler("left")} />
-          <ResizeGrip edge="right" onPointerDown={widthResizeHandler("right")} />
-        </>
-      )}
+      chrome, nothing to resize VERTICALLY -- but width stays resizable
+      (D15): the minimized bar keeps win.width (P8), and that width is
+      user-adjustable in either state. */}
+      <ResizeGrip edge="left" onPointerDown={widthResizeHandler("left")} />
+      <ResizeGrip edge="right" onPointerDown={widthResizeHandler("right")} />
       {!collapsed && (
         <>
           <ResizeGrip
@@ -426,19 +429,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
               WebkitUserSelect: "none",
             }}
           >
-            {/* WINDOW-scope pill: wider + stronger than the per-group
-            pills beside it, so the two drag scopes are visually ranked. */}
-            <Box
-              style={{
-                flexShrink: 0,
-                display: "flex",
-                alignItems: "center",
-                paddingLeft: "0.5em",
-                paddingRight: "0.3em",
-              }}
-            >
-              <GripPill width="1.8em" opacity={0.65} strong />
-            </Box>
+
             {win.stack.map((groupId, i) => {
               const group = dock.groups[groupId];
               if (group === undefined) return null;
@@ -461,6 +452,16 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                 </React.Fragment>
               );
             })}
+            {/* WINDOW-scope pill, centered in the free run like the
+            expanded StackHandleBar's centered pill (P13: no position jump)
+            and STRONGER than any per-group pill, ranking the drag scopes. */}
+            <Box style={{ flexGrow: 1 }} />
+            <Box
+              data-dock-window-pill={win.id}
+              style={{ display: "flex", alignItems: "center", flexShrink: 0 }}
+            >
+              <GripPill width="2.2em" opacity={0.65} strong />
+            </Box>
             <Box style={{ flexGrow: 1 }} />
             <ChromeToggle
               expanded={false}
@@ -553,7 +554,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                 {fixedHeight ? (
                   <Box
                     style={{
-                      flexGrow: collapsedCell ? 0 : weight,
+                      flexGrow: collapsedCell ? 0 : weight / stackWeightTotal,
                       flexShrink: collapsedCell ? 0 : 1,
                       flexBasis: collapsedCell ? "auto" : 0,
                       // Never shrink below a cell's header: minHeight:0 let an

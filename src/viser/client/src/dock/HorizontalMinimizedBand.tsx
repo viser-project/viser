@@ -153,18 +153,6 @@ export function MinimizedGroupChip({
         opacity: dock.draggingGroupId === group.id ? 0.4 : 1,
       }}
     >
-      {/* The header's grip pill, kept (P13): the group-drag signifier. */}
-      <Box
-        style={{
-          flexShrink: 0,
-          display: "flex",
-          alignItems: "center",
-          paddingLeft: "0.5em",
-          paddingRight: "0.15em",
-        }}
-      >
-        <GripPill width="1.1em" opacity={0.4} />
-      </Box>
       {/* The single wayfinding title (D14): the active tab's identity. */}
       <Box
         data-dock-tab={activeId}
@@ -182,7 +170,7 @@ export function MinimizedGroupChip({
           alignItems: "center",
           gap: "0.35em",
           minWidth: 0,
-          paddingLeft: "0.35em",
+          paddingLeft: "0.6em",
           paddingRight: "0.5em",
           cursor: "pointer",
         }}
@@ -221,7 +209,14 @@ export function MinimizedGroupChip({
       )}
       {withToggle && (
         <>
-          {/* Slack: part of the segment's group-drag surface. */}
+          {/* The header's grip pill, kept IN PLACE (P13): centered in the
+          free run, exactly like the expanded grip bar's centered pill -- no
+          center-to-left jump across the minimize transition. The flanking
+          slack is the segment's group-drag surface. */}
+          <Box style={{ flexGrow: 1 }} />
+          <Box style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+            <GripPill width="1.6em" opacity={0.45} />
+          </Box>
           <Box style={{ flexGrow: 1 }} />
           <ChromeToggle
             expanded={false}
