@@ -7,20 +7,14 @@
 // left; per-cell minimize renders in-place bars instead (MinimizedBar).
 
 import { Box, Paper } from "@mantine/core";
-import { IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
 import { focusRing, gripBarBg, wayfindingText } from "./DockStyles.css";
 import { focusPaneTab, tabListKeyDown } from "./gestures";
-import {
-  ChromeDivider,
-  GripPill,
-  HandleIconButton,
-  StackHandleBar,
-} from "./handles";
+import { ChromeDivider, GripPill, StackHandleBar } from "./handles";
 import { startCollapsedGroupPress } from "./collapsedPress";
 import { collectLeaves, setRegionCollapsed } from "./layoutOps";
-import { HANDLE_BTN_EM, DockEdge, DockRegion, NodeId, TabGroup } from "./types";
+import { DockEdge, DockRegion, NodeId, TabGroup } from "./types";
 
 /** The COLLAPSED region as ONE packed rail (spec 3.2 / D21): every leaf
  * across every band, contiguous, so the canvas gets the region's width back
@@ -41,8 +35,16 @@ export function RegionMinimizedRail({
   const leaves = region.rows.flatMap((r) =>
     r.columns.flatMap((c) => collectLeaves(c)),
   );
-  const expandRegion = () =>
+  // Expand the REGION: clears only the D21 flag -- cells keep their own
+  // collapse states (a minimized cell comes back as an in-place bar). Focus
+  // then lands on the first revealed cell's active tab, never on <body>
+  // (spec 4 / edge case 14; the tab may be an expanded strip's tab or a
+  // bar's title -- both carry data-dock-tab).
+  const expandRegion = () => {
     dock.api.apply((l) => setRegionCollapsed(l, edge, false));
+    const firstGroup = dock.groups[leaves[0]?.group ?? ""];
+    if (firstGroup?.activeId != null) focusPaneTab(firstGroup.activeId);
+  };
   return (
     <Box
       style={{
@@ -62,6 +64,11 @@ export function RegionMinimizedRail({
         collapsed
         narrow
         onToggle={expandRegion}
+        // Honest label: this expands the panel AREA (clears the region flag);
+        // cells keep their own minimize states, so "Expand all panes" (the
+        // floating window header's accurate wording) would lie here.
+        toggleLabel="Expand panel area"
+        toggleTitle="Expand"
       />
       <Paper
         radius={0}
@@ -86,10 +93,13 @@ export function RegionMinimizedRail({
                 nodeId={id}
                 edge={edge}
                 group={g}
-                // Always inStack inside the region rail: the parent handle
-                // owns the rail's ONE expand signifier (P9) -- a lone cell's
-                // own + would duplicate the identical action right below it.
-                inStack
+                // The parent handle owns the rail's ONE visible expand
+                // signifier (P9) -- every cell cap is a quiet pill. But with a
+                // SINGLE cell the cap/background is unmarked surface backing
+                // that same action (P9's hit-area rule), so a motionless
+                // click there still expands; with 2+ cells a background
+                // click stays inert (which cell would it mean?).
+                clickExpands={leaves.length === 1}
               />
             </React.Fragment>
           );
@@ -113,12 +123,14 @@ export function VerticalMinimizedCell({
   nodeId,
   edge,
   group,
-  inStack = false,
+  clickExpands = false,
 }: {
   nodeId?: NodeId;
   edge?: DockEdge;
   group: TabGroup;
-  inStack?: boolean;
+  /** Motionless click on the cap/background expands region + group. On only
+   * when the cell is the rail's SOLE cell (unambiguous target). */
+  clickExpands?: boolean;
 }) {
   const dock = useDock();
   const docked = nodeId !== undefined && edge !== undefined;
@@ -137,7 +149,7 @@ export function VerticalMinimizedCell({
           dock,
           event,
           group.id,
-          inStack ? undefined : expandCell,
+          clickExpands ? expandCell : undefined,
         )
       }
       style={{
@@ -153,39 +165,20 @@ export function VerticalMinimizedCell({
         opacity: dock.draggingGroupId === group.id ? 0.4 : 1,
       }}
     >
-      {/* Gray cap: the rotated header's leading edge. Lone cell: the `+`
-      expand toggle (drag-through: drag tears out, click expands). Stacked
-      cell: a grip pill -- expand-all lives on the parent handle (P9). */}
+      {/* Gray cap: the rotated header's leading edge, always a quiet grip
+      pill -- the rail's ONE + lives on the parent handle above (P9). */}
       <Box
         className={gripBarBg}
         style={{
           flexShrink: 0,
           width: "100%",
-          ...(inStack
-            ? {
-                height: "1em",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }
-            : {}),
+          height: "1em",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
         }}
       >
-        {inStack ? (
-          <GripPill width="0.9em" opacity={0.35} />
-        ) : (
-          <HandleIconButton
-            attrs={{ "data-dock-minimize": "true" }}
-            label="Expand panel"
-            title="Expand"
-            expanded={false}
-            onActivate={expandCell}
-            dragThrough
-            placement={{ width: "100%", height: `${HANDLE_BTN_EM}em` }}
-          >
-            <IconPlus size={12} />
-          </HandleIconButton>
-        )}
+        <GripPill width="0.9em" opacity={0.35} />
       </Box>
       {/* One spine row per tab: the header's tabs, rotated + wayfinding. */}
       <Box

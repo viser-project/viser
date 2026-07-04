@@ -237,7 +237,7 @@ describe("dropOnDockedLeaf top/bottom: 50/50 split, width preserved", () => {
     const out = dropOnDockedLeaf(l, ["c"], "right", targetId, "top");
     const aCol = widthColumns(out.docked.right!)[0];
     expect(aCol.leaves.map((x) => x.group)).toEqual(["c", "a"]); // C on top
-    expect(aCol.leaves.map((x) => x.weight)).toEqual([1, 1]); // 50/50 height
+    expect(aCol.leaves.map((x) => x.weight)).toEqual([0.5, 0.5]); // 50/50 height
     // The column keeps A's horizontal weight (297) so its width is preserved.
     expect(aCol.weight).toBe(297);
     // B is untouched.
@@ -249,7 +249,7 @@ describe("dropOnDockedLeaf top/bottom: 50/50 split, width preserved", () => {
     const out = dropOnDockedLeaf(l, ["c"], "right", targetId, "bottom");
     const aCol = widthColumns(out.docked.right!)[0];
     expect(aCol.leaves.map((x) => x.group)).toEqual(["a", "c"]); // dragged last
-    expect(aCol.leaves.map((x) => x.weight)).toEqual([1, 1]);
+    expect(aCol.leaves.map((x) => x.weight)).toEqual([0.5, 0.5]);
   });
 });
 

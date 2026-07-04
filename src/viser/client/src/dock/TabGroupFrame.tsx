@@ -5,7 +5,11 @@ import { Box, ScrollArea } from "@mantine/core";
 import { IconMinus, IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
-import { isStackedGroup } from "./layoutOps";
+import {
+  isStackedGroup,
+  regionChevronEdge,
+  setRegionCollapsed,
+} from "./layoutOps";
 import {
   dockBodyScroll,
   focusRing,
@@ -14,8 +18,13 @@ import {
   headerRuleTop,
 } from "./DockStyles.css";
 import { tabListKeyDown } from "./gestures";
-import { ChromeToggle, GripPill, HandleIconButton } from "./handles";
-import { PaneSpec, TabGroup } from "./types";
+import {
+  ChromeToggle,
+  GripPill,
+  HandleIconButton,
+  RegionCollapseChevron,
+} from "./handles";
+import { HANDLE_BTN_EM, PaneSpec, TabGroup } from "./types";
 
 // The active panel's BODY, memoized so it is rebuilt/reconciled only when its
 // OWN inputs change -- not on every unrelated dock op. A tab switch or a
@@ -116,6 +125,7 @@ function GripBar({
   collapsed,
   onToggle,
   startDrag,
+  chevron,
 }: {
   collapsed: boolean;
   onToggle: () => void;
@@ -123,6 +133,8 @@ function GripBar({
     event: React.PointerEvent<HTMLDivElement>,
     opts?: { onClick?: () => void },
   ) => void;
+  /** Region-collapse chevron, present only on the region's top-right cell. */
+  chevron?: React.ReactNode;
 }) {
   return (
     <Box
@@ -152,6 +164,7 @@ function GripBar({
     >
       {/* Drag affordance. */}
       <GripPill />
+      {chevron}
       {/* Minimize / expand button: drag-through (see GripBar doc). Every
       group has one (per-cell minimize, D16) -- the multi-group window
       header's toggle-ALL is a distinct action with its own signifier. */}
@@ -212,6 +225,14 @@ export function TabGroupFrame({
   // so it reads as separated from the panel above. Not needed when LONE (nothing
   // above it).
   const stacked = isStackedGroup(dock.layout, group.id);
+  // Region-collapse chevron (D21): non-null only when this group is the
+  // top-right cell of a docked, non-collapsed region -- its chrome row hosts
+  // the chevron inline, just inboard of the -/+ toggle.
+  const chevronEdge = regionChevronEdge(dock.layout, group.id);
+  const collapseRegion = () => {
+    if (chevronEdge !== null)
+      dock.api.apply((l) => setRegionCollapsed(l, chevronEdge, true));
+  };
 
   // Tablist keyboard pattern: ArrowLeft/Right activate the neighbor tab and
   // move focus with it; Enter/Space activate the focused tab.
@@ -300,6 +321,21 @@ export function TabGroupFrame({
           startDrag={(event, opts) =>
             dock.startGroupDrag(event, group.id, opts)
           }
+          chevron={
+            chevronEdge !== null && (
+              <RegionCollapseChevron
+                edge={chevronEdge}
+                onActivate={collapseRegion}
+                placement={{
+                  position: "absolute",
+                  right: `${HANDLE_BTN_EM}em`,
+                  top: 0,
+                  width: `${HANDLE_BTN_EM}em`,
+                  height: "100%",
+                }}
+              />
+            )
+          }
         />
       )}
 
@@ -378,25 +414,22 @@ export function TabGroupFrame({
           }}
         >
           {activePane?.titleNode ? (
-            <Box style={{ display: "flex", alignItems: "center", width: "100%" }}>
+            <Box
+              style={{
+                display: "flex",
+                alignItems: "center",
+                flexGrow: 1,
+                minWidth: 0,
+              }}
+            >
               {activePane?.titleNode}
-              {/* The header's ONE visible minimize signifier (P9: the whole
-              header toggles on click, but an action with zero icons is
-              undiscoverable -- hands-on finding: even the maintainers' probe
-              couldn't find how to minimize the docked main panel). Same
-              drag-through +/- as every other header, at the right end
-              (P13); panel-provided action icons sit just left of it. */}
-              <ChromeToggle
-                expanded={!collapsed}
-                label={collapsed ? "Expand panel" : "Minimize panel"}
-                onActivate={() => dock.toggleCollapsed(group.id)}
-              />
             </Box>
           ) : (
             // Ellipsis on a non-flex child (see the tab-strip note below).
             <span
               style={{
                 minWidth: 0,
+                flexGrow: 1,
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
@@ -405,6 +438,23 @@ export function TabGroupFrame({
               {activePane?.title ?? group.activeId ?? ""}
             </span>
           )}
+          {chevronEdge !== null && (
+            <RegionCollapseChevron
+              edge={chevronEdge}
+              onActivate={collapseRegion}
+            />
+          )}
+          {/* The header's ONE visible minimize signifier (P9: the whole
+          header toggles on click, but an action with zero icons is
+          undiscoverable). Rendered for BOTH title forms -- a plain-title
+          unmergeable panel otherwise reproduces the same zero-signifier
+          defect. Same right-end +/- as every other chrome row (P13);
+          panel-provided action icons sit just left of it. */}
+          <ChromeToggle
+            expanded={!collapsed}
+            label={collapsed ? "Expand panel" : "Minimize panel"}
+            onActivate={() => dock.toggleCollapsed(group.id)}
+          />
         </Box>
       ) : (
         /* Tab strip. Bordered "original Viser" style: a thick rule below each

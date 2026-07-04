@@ -4,7 +4,12 @@
 // (floating multi-group window header / docked column handle).
 
 import { Box } from "@mantine/core";
-import { IconMinus, IconPlus } from "@tabler/icons-react";
+import {
+  IconChevronsLeft,
+  IconChevronsRight,
+  IconMinus,
+  IconPlus,
+} from "@tabler/icons-react";
 import React from "react";
 import { focusRing } from "./DockStyles.css";
 import { keyActivate } from "./gestures";
@@ -180,12 +185,52 @@ export function ChromeToggle({
   );
 }
 
+/** Region-collapse chevron (D21), rendered inline in the region's TOP-RIGHT
+ * cell's chrome row (grip bar / minimized bar / unmergeable header), just
+ * inboard of that row's -/+ toggle. NOT drag-through: its host row's
+ * motionless click means minimize/expand, so a press here must stay its own
+ * gesture (collapse the whole region). */
+export function RegionCollapseChevron({
+  edge,
+  onActivate,
+  placement,
+}: {
+  edge: "left" | "right";
+  onActivate: () => void;
+  placement?: React.CSSProperties;
+}) {
+  return (
+    <HandleIconButton
+      attrs={{ "data-dock-region-collapse": edge }}
+      label="Collapse panel area"
+      title="Collapse"
+      expanded
+      onActivate={onActivate}
+      placement={
+        placement ?? {
+          width: `${HANDLE_BTN_EM}em`,
+          height: "100%",
+          flexShrink: 0,
+        }
+      }
+    >
+      {edge === "right" ? (
+        <IconChevronsRight size={13} />
+      ) : (
+        <IconChevronsLeft size={13} />
+      )}
+    </HandleIconButton>
+  );
+}
+
 export function StackHandleBar({
   onPointerDown,
   attrs,
   collapsed = false,
   onToggle,
   narrow = false,
+  toggleLabel,
+  toggleTitle,
 }: {
   onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
   attrs: Record<string, string>;
@@ -195,6 +240,10 @@ export function StackHandleBar({
   /** The bar sits on a minimized STRIP (~36px wide): there is no room for the
    * centered pill next to the button, so the button alone fills the bar. */
   narrow?: boolean;
+  /** Override the toggle's aria-label when the action is NOT expand/minimize
+   * ALL panes (the region rail's toggle only clears the region flag). */
+  toggleLabel?: string;
+  toggleTitle?: string;
 }) {
   return (
     <Box
@@ -216,8 +265,10 @@ export function StackHandleBar({
       {onToggle !== undefined && (
         <HandleIconButton
           attrs={{ "data-dock-minimize-all": "true" }}
-          label={collapsed ? "Expand all panes" : "Minimize all panes"}
-          title={collapsed ? "Expand all" : "Minimize all"}
+          label={
+            toggleLabel ?? (collapsed ? "Expand all panes" : "Minimize all panes")
+          }
+          title={toggleTitle ?? (collapsed ? "Expand all" : "Minimize all")}
           expanded={!collapsed}
           onActivate={onToggle}
           // Press flows to the bar's drag gesture (drag = tear out the whole

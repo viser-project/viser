@@ -371,7 +371,17 @@ export function hitTest(
     }
     return false;
   };
-  const skipRegionEdges = overInsertableStrip();
+  // A floating window visually covering a region-band spot claims the
+  // pointer first (3.5 back-to-front): a drop there should target the float's
+  // cell, not dock a column THROUGH it into the region underneath.
+  const overFloatingTarget = (): boolean => {
+    for (const t of targets.groups) {
+      if (t.ctx.kind !== "floating") continue;
+      if (inside(t.hitRect ?? t.rect, clientX, clientY)) return true;
+    }
+    return false;
+  };
+  const skipRegionEdges = overInsertableStrip() || overFloatingTarget();
 
   // Is the pointer over a COLLAPSED strip cell of the given docked edge? Such a
   // cell owns its own (short, content-tall) drop zones -- tab-insert / merge /
@@ -670,6 +680,59 @@ export function hitTest(
         ),
       };
     }
+    // Floating-stack divider dead spot: the pointer sits on the divider gap
+    // between two stacked cells of a floating window. Same recovery as the
+    // docked seam above -- map it to the snap at that index instead of
+    // blinking to NONE (a release there would float a new window at the
+    // pointer). Targets are back-to-front, so the LAST match is topmost.
+    let fseam: {
+      windowId: string;
+      index: number;
+      left: number;
+      width: number;
+      gapCenter: number;
+    } | null = null;
+    for (const lower of targets.groups) {
+      if (lower.ctx.kind !== "floating") continue;
+      for (const upper of targets.groups) {
+        if (
+          upper === lower ||
+          upper.ctx.kind !== "floating" ||
+          upper.ctx.windowId !== lower.ctx.windowId
+        )
+          continue;
+        const gap = lower.rect.top - upper.rect.bottom;
+        if (gap < -1 || gap > SEAM_GAP_MAX_PX) continue;
+        if (
+          clientX >= lower.rect.left &&
+          clientX <= lower.rect.right &&
+          clientY >= upper.rect.bottom &&
+          clientY <= lower.rect.top
+        ) {
+          fseam = {
+            windowId: lower.ctx.windowId,
+            index: lower.ctx.index,
+            left: lower.rect.left,
+            width: lower.rect.width,
+            gapCenter: (upper.rect.bottom + lower.rect.top) / 2,
+          };
+        }
+      }
+    }
+    if (fseam !== null) {
+      return {
+        result: { kind: "snap", windowId: fseam.windowId, index: fseam.index },
+        hint: rel(
+          {
+            left: fseam.left,
+            top: fseam.gapCenter - LINE_PX / 2,
+            width: fseam.width,
+            height: LINE_PX,
+          },
+          "line",
+        ),
+      };
+    }
     return null;
   }
   // Capture the narrowed target as a const: `g` is a mutated `let`, so the
@@ -952,11 +1015,14 @@ export function hitTest(
   const hBand =
     r.width > 0 ? Math.min(SPLIT_BAND, SPLIT_BAND_H_MAX_PX / r.width) : SPLIT_BAND;
   if (g.ctx.kind === "docked") {
-    // Content area splits THIS panel: left/right/below; center merges. "Above
-    // this panel" is NOT here -- it lives in the grip bar above the tabs (3a),
-    // so "above" always reads as physically above the tabs, never below them.
-    let region: "bottom" | "left" | "right" | null = null;
-    if (ry > 1 - vBand) region = "bottom";
+    // Content area splits THIS panel: top/left/right/below; center merges.
+    // The grip bar (3a) ALSO splits above -- the content-top band exists so
+    // the upper content area honors spec 5.2's split band instead of silently
+    // widening the merge zone (an accidental merge is the one destructive
+    // gesture D1's generous bands exist to prevent).
+    let region: "top" | "bottom" | "left" | "right" | null = null;
+    if (ry < vBand) region = "top";
+    else if (ry > 1 - vBand) region = "bottom";
     else if (rx < hBand) region = "left";
     else if (rx > 1 - hBand) region = "right";
     if (region !== null) {

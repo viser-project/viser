@@ -32,8 +32,6 @@ import {
 } from "./gestures";
 import * as ops from "./layoutOps";
 import { RegionResizer } from "./RegionResizer";
-import { HandleIconButton } from "./handles";
-import { IconChevronsLeft, IconChevronsRight } from "@tabler/icons-react";
 import { plannedReservedWidth, planRegion } from "./regionPlan";
 import { reconcileRegionWidths } from "./widthReconciliation";
 import { invariantViolations } from "./layoutInvariants";
@@ -48,7 +46,6 @@ import {
   tabInsertion,
 } from "./hitTest";
 import {
-  HANDLE_BTN_EM,
   assertNever,
   clamp,
   DockEdge,
@@ -253,6 +250,9 @@ export function DockManager({
   // window's position, and an anchor/pull write mid-drag would detach the
   // window from the cursor (the drop commits the final position anyway).
   const draggingWindowIdRef = React.useRef<WindowId | null>(null);
+  // Set for the duration of a drag: lets the per-window ResizeObserver mark
+  // the drag's cached target rects stale (a window growing mid-drag).
+  const markDragTargetsStaleRef = React.useRef<(() => void) | null>(null);
   // Cleanup for an in-flight gesture, run if the manager unmounts mid-drag.
   const activeCleanup = React.useRef<(() => void) | null>(null);
   React.useEffect(() => () => activeCleanup.current?.(), []);
@@ -601,54 +601,14 @@ export function DockManager({
       return buildTarget(rectEl, el, groupId, ctx);
     };
 
-    container.querySelectorAll("[data-dock-leaf]").forEach((leaf) => {
-      const nodeId = leaf.getAttribute("data-dock-leaf");
-      const edge = parseDockEdge(leaf.getAttribute("data-dock-edge"));
-      const groupEl = leaf.matches("[data-dock-group]")
-        ? leaf
-        : leaf.querySelector("[data-dock-group]");
-      if (nodeId === null || edge === null || groupEl === null) return;
-      // The LEAF wrapper's box is the drop target: both minimized renderers
-      // size the wrapper to the full droppable surface while the group element
-      // inside may be a compact chip (the horizontal band's pill). The group
-      // element still scopes the strip/tab lookup.
-      const g = readGroup(groupEl, { kind: "docked", nodeId, edge }, leaf);
-      if (g !== null) targets.groups.push(g);
-    });
-    // Iterate floating windows in front-order (array order = z), not DOM order
-    // (which is stable/by-id), so targets are ordered back-to-front and hitTest
-    // can pick the topmost (last) match over overlapping windows.
-    layoutRef.current.floating.forEach((win) => {
-      if (win.id === draggedWindowId) return;
-      const winEl = container.querySelector(
-        `[data-floating-window="${win.id}"]`,
-      );
-      if (winEl === null) return;
-      winEl.querySelectorAll("[data-dock-group]").forEach((groupEl) => {
-        const gid = groupEl.getAttribute("data-dock-group");
-        if (gid === null) return;
-        // Snap index comes from the MODEL, not DOM enumeration: a nested
-        // DockArea inside a panel's body also renders a [data-dock-group],
-        // which would shift DOM-order indices past it (snap above/below then
-        // lands at the wrong stack position). Groups not in the stack are
-        // skipped here -- the area scan below collects them with area context.
-        const index = win.stack.indexOf(gid);
-        if (index === -1) return;
-        // The group element's own rect is the drop rect -- a minimized cell's
-        // element IS its full-width bar (D17), no wrapper needed.
-        const g = readGroup(groupEl, {
-          kind: "floating",
-          windowId: win.id,
-          index,
-        });
-        if (g !== null) targets.groups.push(g);
-      });
-    });
-    // Nested dockable areas. Pushed LAST so that when an area sits inside a
-    // docked/floating panel's body, hovering it makes the area (the topmost
-    // match) win over its host. The area's group id comes from the layout (not
-    // the DOM), so an EMPTY area -- which renders no inner group/strip -- is
-    // still a valid drop target sized to its wrapper.
+    // Nested dockable areas, collected up front and keyed by HOST window
+    // (null = hosted in a docked panel). Each area is pushed right AFTER its
+    // host's group targets, so it beats its host (the area is visually inside
+    // it) but NOT a different floating window stacked above the host --
+    // targets stay strictly back-to-front (3.5). The area's group id comes
+    // from the layout (not the DOM), so an EMPTY area -- which renders no
+    // inner group/strip -- is still a valid drop target sized to its wrapper.
+    const areasByHost = new Map<string | null, GroupTarget[]>();
     const areas = layoutRef.current.areas ?? {};
     container.querySelectorAll("[data-dock-area]").forEach((areaEl) => {
       const areaId = areaEl.getAttribute("data-dock-area");
@@ -659,7 +619,7 @@ export function DockManager({
       // Never offer an area that lives INSIDE the dragged window: dropping the
       // window into its own nested area would make the host a child of itself
       // (a containment cycle). Floating windows already skip the dragged one
-      // above; areas are found by a container-wide scan, so filter here too.
+      // below; areas are found by a container-wide scan, so filter here too.
       if (
         areaEl.closest(`[data-floating-window="${draggedWindowId}"]`) !== null
       )
@@ -697,7 +657,61 @@ export function DockManager({
       const mx = r.width - 2 * mxRaw >= AREA_HIT_INSET_PX ? mxRaw : 0;
       const mb = r.height - mbRaw >= AREA_HIT_INSET_PX ? mbRaw : 0;
       t.hitRect = new DOMRect(r.left + mx, r.top, r.width - 2 * mx, r.height - mb);
-      targets.groups.push(t);
+      const hostWinId =
+        areaEl
+          .closest("[data-floating-window]")
+          ?.getAttribute("data-floating-window") ?? null;
+      const list = areasByHost.get(hostWinId) ?? [];
+      list.push(t);
+      areasByHost.set(hostWinId, list);
+    });
+    container.querySelectorAll("[data-dock-leaf]").forEach((leaf) => {
+      const nodeId = leaf.getAttribute("data-dock-leaf");
+      const edge = parseDockEdge(leaf.getAttribute("data-dock-edge"));
+      const groupEl = leaf.matches("[data-dock-group]")
+        ? leaf
+        : leaf.querySelector("[data-dock-group]");
+      if (nodeId === null || edge === null || groupEl === null) return;
+      // The LEAF wrapper's box is the drop target: both minimized renderers
+      // size the wrapper to the full droppable surface while the group element
+      // inside may be a compact chip (the horizontal band's pill). The group
+      // element still scopes the strip/tab lookup.
+      const g = readGroup(groupEl, { kind: "docked", nodeId, edge }, leaf);
+      if (g !== null) targets.groups.push(g);
+    });
+    // Docked-hosted areas beat their (docked) hosts but sit below all floats.
+    for (const t of areasByHost.get(null) ?? []) targets.groups.push(t);
+    // Iterate floating windows in front-order (array order = z), not DOM order
+    // (which is stable/by-id), so targets are ordered back-to-front and hitTest
+    // can pick the topmost (last) match over overlapping windows.
+    layoutRef.current.floating.forEach((win) => {
+      if (win.id === draggedWindowId) return;
+      const winEl = container.querySelector(
+        `[data-floating-window="${win.id}"]`,
+      );
+      if (winEl === null) return;
+      winEl.querySelectorAll("[data-dock-group]").forEach((groupEl) => {
+        const gid = groupEl.getAttribute("data-dock-group");
+        if (gid === null) return;
+        // Snap index comes from the MODEL, not DOM enumeration: a nested
+        // DockArea inside a panel's body also renders a [data-dock-group],
+        // which would shift DOM-order indices past it (snap above/below then
+        // lands at the wrong stack position). Groups not in the stack are
+        // skipped here -- the area scan below collects them with area context.
+        const index = win.stack.indexOf(gid);
+        if (index === -1) return;
+        // The group element's own rect is the drop rect -- a minimized cell's
+        // element IS its full-width bar (D17), no wrapper needed.
+        const g = readGroup(groupEl, {
+          kind: "floating",
+          windowId: win.id,
+          index,
+        });
+        if (g !== null) targets.groups.push(g);
+      });
+      // This window's nested areas, right after its cells: the area wins over
+      // its host but stays below any window stacked in front.
+      for (const t of areasByHost.get(win.id) ?? []) targets.groups.push(t);
     });
     return targets;
   };
@@ -817,6 +831,10 @@ export function DockManager({
     };
     container.addEventListener("scroll", markTargetsStale, true);
     window.addEventListener("resize", markTargetsStale);
+    // A floating window can also RESIZE mid-drag with no layout change (an
+    // auto-height window whose content grows from a server update). The
+    // per-window ResizeObserver reports through this ref.
+    markDragTargetsStaleRef.current = markTargetsStale;
     // The dragged stack is fixed for the whole drag; if it holds an unmergeable
     // panel, hitTest suppresses merge/insertTab results (and their hints).
     const draggingUnmergeable = (
@@ -898,6 +916,7 @@ export function DockManager({
         detach();
         container.removeEventListener("scroll", markTargetsStale, true);
         window.removeEventListener("resize", markTargetsStale);
+        markDragTargetsStaleRef.current = null;
         activeCleanup.current = null;
         if (raf !== null) {
           cancelAnimationFrame(raf);
@@ -1271,6 +1290,10 @@ export function DockManager({
         // Effectively-collapsed docked cells float at their preserved
         // expanded width (see dockedFloatWidthForGroup).
         const floatWidth = dockedFloatWidthForGroup(groupId, rect.width);
+        const wasRailedCell =
+          ops.findGroupLocation(layoutRef.current, groupId)?.kind ===
+            "docked" &&
+          ops.isGroupEffectivelyCollapsed(layoutRef.current, groupId);
         // A panel whose body is a full-bleed nested area needs a definite
         // height to fill (it collapses to 0 in an auto-height window). Give
         // the undocked window the panel's current rendered height in that
@@ -1289,6 +1312,10 @@ export function DockManager({
         // Null only for an area's backing group, which no UI surface offers a
         // group-drag for; bail rather than drag a window that doesn't exist.
         if (res.windowId === null) return null;
+        // A cell dragged out of a railed region floats STILL minimized: only
+        // its region's flag was set, so stamp the group's own flag (P2 --
+        // the user was dragging a minimized bar, not a full panel).
+        if (wasRailedCell) ops.stampCollapsedInPlace(res.layout, [groupId]);
         // applyOp reconciles region widths: undocking this column removes it
         // from the region's column set, so siblings keep their widths and the
         // region shrinks by the removed column's width. A minimized panel
@@ -1316,6 +1343,7 @@ export function DockManager({
       (e) => {
         dragAfterCommit(e, () => {
           const rect = floatRectFor(`[data-dock-region="${edge}"]`);
+          const wasRailed = isRegionCollapsedOn(layoutRef.current, edge);
           const res = ops.floatRegion(
             layoutRef.current,
             edge,
@@ -1324,6 +1352,14 @@ export function DockManager({
             regionWidthsOf(layoutRef.current)[edge],
           );
           if (res.windowId === null) return null;
+          // Dragging the RAIL out keeps its minimized look: the new window's
+          // cells render as bars (P2), with the header's expand-all one click
+          // away. Without this an all-expanded region would pop full-size.
+          if (wasRailed) {
+            const win = res.layout.floating.find((w) => w.id === res.windowId);
+            if (win !== undefined)
+              ops.stampCollapsedInPlace(res.layout, [...win.stack]);
+          }
           flushSync(() => applyOp(res.layout));
           return {
             windowId: res.windowId,
@@ -1595,6 +1631,10 @@ export function DockManager({
           // Effectively-collapsed docked cells float at their preserved
           // expanded width (see dockedFloatWidthForGroup).
           const floatWidth = dockedFloatWidthForGroup(groupId, rect.width);
+          const wasRailedCell =
+            ops.findGroupLocation(layoutRef.current, groupId)?.kind ===
+              "docked" &&
+            ops.isGroupEffectivelyCollapsed(layoutRef.current, groupId);
           const res = ops.tearOutPane(
             layoutRef.current,
             groupId,
@@ -1605,6 +1645,11 @@ export function DockManager({
           );
           // No-op (pane not in the group / area group): nothing floated.
           if (res.windowId === null) return null;
+          // A spine row torn out of the rail stays minimized (spec 4): the
+          // source group's own flag may be false (region-flag collapse), so
+          // stamp the torn group directly.
+          if (wasRailedCell && res.floatingGroupId !== null)
+            ops.stampCollapsedInPlace(res.layout, [res.floatingGroupId]);
           const newWindowId = res.windowId;
           // The torn pane floats AS-IS: a pane torn from a minimized strip stays
           // minimized (tearOutPane copies the source's collapsed flag). Dragging
@@ -1946,7 +1991,12 @@ export function DockManager({
   React.useEffect(() => {
     const el = containerRef.current;
     if (el === null) return;
-    const observer = new ResizeObserver(() => reanchorFloats());
+    const observer = new ResizeObserver(() => {
+      reanchorFloats();
+      // Cached drag-target rects go stale when a window's rendered size
+      // changes mid-drag (auto-height growth); see markTargetsStale.
+      markDragTargetsStaleRef.current?.();
+    });
     el.querySelectorAll("[data-floating-window]").forEach((winEl) =>
       observer.observe(winEl),
     );
@@ -1983,7 +2033,7 @@ export function DockManager({
         {/* Docked regions: every column insets the canvas, with fully-minimized
         columns rendering as fixed-width vertical strips. */}
         {(["left", "right"] as DockEdge[]).map((edge) => {
-          const { tree, resizable, collapsed } = regions[edge];
+          const { tree, resizable } = regions[edge];
           const drawnWidth = renderedWidth[edge];
           return (
           <React.Fragment key={edge}>
@@ -2018,45 +2068,10 @@ export function DockManager({
                 }}
               >
                 <SplitView region={tree} edge={edge} />
-                {/* Region-collapse chevron (D21): a small quiet overlay at
-                the region's top INNER corner, pointing toward the edge.
-                Collapsing is explicit -- never an emergent state flip. The
-                EXPAND affordance while collapsed is the rail's own header
-                (so no chevron renders then). */}
-                {!collapsed && (
-                  <HandleIconButton
-                    attrs={{ "data-dock-region-collapse": edge }}
-                    label="Collapse panel area"
-                    title="Collapse"
-                    expanded
-                    onActivate={() =>
-                      applyOp(
-                        ops.setRegionCollapsed(layoutRef.current, edge, true),
-                      )
-                    }
-                    placement={{
-                      position: "absolute",
-                      top: 0,
-                      // BOTH edges: inset from the region's RIGHT by the
-                      // button width + a gap. That spot clears the topmost
-                      // surface's right-anchored controls by construction --
-                      // an expanded panel's `-` and a minimized bar's `+`
-                      // both live in the last HANDLE_BTN_EM -- and lands on
-                      // grip/slack surface either way. (The old right-edge
-                      // `left: 0` sat exactly on a topmost BAR's title/face.)
-                      right: `${HANDLE_BTN_EM + 0.2}em`,
-                      width: "20px",
-                      height: "20px",
-                      zIndex: 16,
-                    }}
-                  >
-                    {edge === "right" ? (
-                      <IconChevronsRight size={13} />
-                    ) : (
-                      <IconChevronsLeft size={13} />
-                    )}
-                  </HandleIconButton>
-                )}
+                {/* The region-collapse chevron (D21) renders INLINE in the
+                top-right cell's chrome row (see regionChevronEdge), not as an
+                overlay here: an overlay cannot clear panel-provided header
+                content (action icons) reliably. */}
                 {resizable && (
                 <RegionResizer
                   edge={edge}

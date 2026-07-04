@@ -885,9 +885,6 @@ export function dropOnDockedLeaf(
   edge: DockEdge,
   targetNodeId: NodeId,
   region: DropRegion,
-  /** Optional weights so callers can preserve absolute sizes (e.g. a left/right
-   * split that grows the region keeps the existing column's width). */
-  weights?: { dragged: number; target: number },
 ): DockLayout {
   draggedGroupIds = withoutAreaGroups(layout, draggedGroupIds);
   const ne = asNonEmpty(draggedGroupIds);
@@ -909,16 +906,18 @@ export function dropOnDockedLeaf(
   const live = findLeaf(liveRegion, targetNodeId);
   if (liveRegion === null || live === null) return layout;
 
-  const dw = weights?.dragged ?? 1;
-  const tw = weights?.target ?? 1;
   const targetColumn = live.column; // a reference into the cloned draft
   const targetRow = live.row;
 
   const li = targetColumn.leaves.findIndex((l) => l.id === targetNodeId);
 
+  // Sibling weights may be on any scale (divider drags write px values), so
+  // new-vs-target defaults derive from the TARGET's current weight: each side
+  // takes half, which is scale-invariant and matches the hint's 50/50 promise.
   if (region === "top" || region === "bottom") {
-    // Insert the dragged leaf(s) into the target's column, above/below it. The
-    // target keeps its (resized) weight; the dragged leaves take `dw`.
+    // Insert the dragged leaf(s) into the target's column, above/below it.
+    const dw = live.leaf.weight / 2;
+    const tw = live.leaf.weight / 2;
     targetColumn.leaves[li] = { ...live.leaf, weight: tw };
     const banded = mapNonEmpty(ne, (g) => makeLeaf(g, dw));
     const at = region === "top" ? li : li + 1;
@@ -935,6 +934,8 @@ export function dropOnDockedLeaf(
   // band the flat Region->Row->Column->Leaf model cannot nest a row inside a
   // column, so the new column spans the whole band beside the target's column
   // instead (and the hint spans the band to match).
+  const dw = targetColumn.weight / 2;
+  const tw = targetColumn.weight / 2;
   const newColumn = buildColumn(ne, dw, stackHeights);
   if (targetRow.columns.length === 1 && targetColumn.leaves.length > 1) {
     const above = targetColumn.leaves.slice(0, li);
@@ -1409,6 +1410,44 @@ export function floatRegion(
   const win = makeFloatingWindow(x, y, width, stack, undefined, stackWeights);
   draft.floating.push(win);
   return { layout: draft, windowId: win.id };
+}
+
+/** The docked edge whose region-collapse chevron THIS group's chrome row
+ * hosts, or null. The chevron renders INLINE in the region's top-right
+ * cell's chrome row, just inboard of that cell's -/+ toggle (spec 3.3): a
+ * positioned overlay cannot know how far panel-provided header content
+ * (action icons, custom titleNodes) extends, so the row itself hosts it.
+ * No chevron while the region is collapsed -- the rail's own header is the
+ * expand affordance. */
+export function regionChevronEdge(
+  layout: DockLayout,
+  groupId: GroupId,
+): DockEdge | null {
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const tree = layout.docked[edge];
+    if (tree === null || isRegionCollapsedOn(layout, edge)) continue;
+    const band = tree.rows[0];
+    const column = band.columns[band.columns.length - 1];
+    if (column.leaves[0].group === groupId) return edge;
+  }
+  return null;
+}
+
+/** Stamp `collapsed: true` onto groups of a NOT-YET-COMMITTED result draft.
+ * Drag-commit companion (P2: drags never change what the user sees): a cell
+ * dragged out of a RAILED region is only effectively collapsed -- its own
+ * flag is usually false -- so floating it as-is would pop a full-size window
+ * mid-drag. The caller stamps the floated group(s) so the window renders as
+ * the minimized bar the user was dragging. Server float commands do NOT do
+ * this: for them position and collapse are independent axes (P6). */
+export function stampCollapsedInPlace(
+  draft: DockLayout,
+  groupIds: GroupId[],
+): void {
+  for (const g of groupIds) {
+    const group = draft.groups[g];
+    if (group !== undefined) group.collapsed = true;
+  }
 }
 
 /** Pull a single panel out of its group into a new floating window. If the
@@ -2102,9 +2141,13 @@ function ensurePanelGroup(
   }
   // Apply the collapsed field (always applied -- no prevCollapsed): true sets
   // the group's collapsed flag; false expands it; null/undefined leaves it
-  // untouched.
-  if (typeof collapsed === "boolean") {
-    draft.groups[groupId].collapsed = collapsed;
+  // untouched. Expanding routes through expandGroupInPlace so a docked
+  // panel's region-collapse flag clears too (spec 7 / P6: a server expand
+  // must be visible, never hidden behind the rail).
+  if (collapsed === true) {
+    draft.groups[groupId].collapsed = true;
+  } else if (collapsed === false) {
+    expandGroupInPlace(draft, groupId);
   }
   return groupId;
 }

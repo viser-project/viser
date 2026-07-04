@@ -79,9 +79,16 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
   // The pinned px height, or undefined when the window auto-sizes to content.
   // flex-grow sums < 1 distribute only that FRACTION of free space;
   // stackWeights from floatRegion carving are fractional, so
-  // normalize (see SplitView's band note).
+  // normalize (see SplitView's band note). Minimized cells render flexGrow 0,
+  // so they must not count toward the total either -- otherwise a pinned
+  // window with a minimized cell strands the freed height as dead space.
   const stackWeightTotal =
-    win.stack.reduce((s2, g) => s2 + (win.stackWeights?.[g] ?? 1), 0) || 1;
+    win.stack.reduce(
+      (s2, g) =>
+        s2 +
+        (dock.groups[g]?.collapsed === true ? 0 : (win.stackWeights?.[g] ?? 1)),
+      0,
+    ) || 1;
   const pinnedPx = pinnedPxOf(win.height);
   const fixedHeight = pinnedPx !== undefined && !collapsed;
   const renderedHeight =
@@ -608,11 +615,17 @@ function FloatingStackDivider({
       },
     });
   };
+  // Hit area wider than the divider's 7px layout footprint (P11 zone floor is
+  // 8px; the docked analog grabs ~12px): an invisible centered overlay
+  // extends the grab zone without thickening the drawn seam. Same pattern as
+  // SplitView's divider overlay -- only when resizable.
+  const overhang = resizable ? Math.max(0, (12 - 7) / 2) : 0;
   return (
     <Box
       data-floating-divider={dividerIndex}
       onPointerDown={onPointerDown}
       style={{
+        position: "relative",
         flexShrink: 0,
         height: "7px",
         cursor: resizable ? "ns-resize" : "default",
@@ -623,6 +636,17 @@ function FloatingStackDivider({
         zIndex: 2,
       }}
     >
+      {resizable && (
+        <Box
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            top: -overhang,
+            height: 7 + 2 * overhang,
+          }}
+        />
+      )}
       <Box
         style={{
           height: "1px",

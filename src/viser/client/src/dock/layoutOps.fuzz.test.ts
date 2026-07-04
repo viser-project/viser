@@ -424,13 +424,9 @@ function buildOp(
       // BUG #2 is FIXED: a non-center self-drop (dragged set includes the target
       // leaf's group) is now a safe no-op. We deliberately DO exercise this
       // shape to confirm it never loses a panel.
-      const weights =
-        rng() < 0.5
-          ? { dragged: int(rng, 1, 5), target: int(rng, 1, 5) }
-          : undefined;
       return {
-        desc: `dropOnDockedLeaf([${gs}], ${t.edge}, ${t.nodeId}, ${region}, ${JSON.stringify(weights)})`,
-        apply: (x) => dropOnDockedLeaf(x, gs, t.edge, t.nodeId, region, weights),
+        desc: `dropOnDockedLeaf([${gs}], ${t.edge}, ${t.nodeId}, ${region})`,
+        apply: (x) => dropOnDockedLeaf(x, gs, t.edge, t.nodeId, region),
       };
     }
     case "insertTabsInto": {

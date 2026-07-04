@@ -106,8 +106,14 @@ its narrow dimension; every clickable control is at least 20px in each
 dimension or backed by a larger unmarked hit surface. A zone that cannot
 afford its minimum in context is REMOVED, not shrunk — a sub-minimum zone
 is worse than none, because it converts intent into misfires. (D4 applied
-this: the band bar's 6px zones were removed outright, the chip bar's
-widened to 10px.)
+this: the band bar's 6px zones were removed outright, the floating bar's
+snap zones sized to `min(10px, barHeight/3)` — thirds so all three of a
+26px bar's zones clear the 8px floor.) Backing may come from the
+control's HOST ROW: the
+~14–16px chrome toggles on grip bars, minimized bars, and unmergeable
+headers satisfy the minimum because a motionless click anywhere on
+their bar performs the same action (D6 as amended) — the full bar is
+the unmarked hit surface.
 
 **P12 — Granularity nests.** Interactive surfaces compose by containment:
 the SMALLEST interactive unit under the pointer owns the press (label →
@@ -185,7 +191,12 @@ Anatomy is listed top-to-bottom / left-to-right. There are exactly FOUR
 forms: the expanded cell, the bar, the rail, and the floating window.
 
 ### 3.1 Expanded cell (docked or floating-stacked)
-- Grip bar (gray, ~0.9em): drag = move group; holds the minimize (−) button.
+- Grip bar (gray, ~0.9em): drag = move group; holds the minimize (−)
+  button. A motionless click anywhere on the grip bar ALSO toggles
+  minimize (D6 as amended): the `−` stays the only visible signifier;
+  the bar surface is unmarked backing for the same action (P9's
+  hit-area rule, P11 backing for the sub-20px toggle, and P7 symmetry
+  with the minimized bar's click-to-expand).
 - The (−) sits on EVERY expanded cell — stacked cells included (D16:
   per-cell minimize everywhere). There is no collective column handle
   (D22): its old justification ("the handle signals coupled collapse")
@@ -196,6 +207,14 @@ forms: the expanded cell, the bar, the rail, and the floating window.
 - Body: panel content; scrolls internally; never a drag surface.
 - The (−) button is drag-through: dragging it moves the panel (P5 — no inert
   pixels); motionless click minimizes.
+- UNMERGEABLE panels render no grip bar: the full-width header — plain
+  title or panel-provided titleNode alike — IS the drag handle, and a
+  motionless click on its strip background toggles minimize (same
+  backing rule as the grip bar). Its right end carries the
+  region-collapse chevron (only when the cell is the region's top-right,
+  D23) and then the `−`/`+` ChromeToggle, for BOTH title forms — a
+  plain-title header without the toggle would be a zero-signifier
+  action (P9: one signifier, not zero).
 
 ### 3.2 The bar (THE minimized form, D20)
 - A group collapsed to its handle: 26px (`MINIMIZED_BAR_PX`), grip-bar
@@ -213,12 +232,13 @@ forms: the expanded cell, the bar, the rail, and the floating window.
   (D18): the whole bar IS the handle, and a pill inside a surface that is
   entirely handle would be a redundant signifier. Pills remain on
   expanded headers, where the handle is a slice of a larger surface.
-- Face (D19): a single-pane group whose pane provides a minimized face
-  renders it in place of the default icon+title, inside the same hit
-  surface (gestures and keyboard behavior unchanged). The MAIN PANEL's
-  face is its connection-status row (same height and colors as expanded,
-  action icons hidden) — old-viser continuity via a general mechanism,
-  not a special case.
+- Face (D19, as amended): a single-pane group whose pane provides a
+  minimized face renders it in place of the default icon+title, inside
+  the same hit surface (gestures and keyboard behavior unchanged) — ON
+  the standard 26px gray MinimizedBar surface, like every other bar.
+  The MAIN PANEL's face is its connection-status row (action icons
+  hidden) — old-viser continuity via a general mechanism, not a special
+  case.
 - Gestures: title/face click expands to that tab; title/face drag tears
   the active pane out, still minimized (a single-pane group floats
   wholesale, ids stable). `+` click expands the group; it is
@@ -238,25 +258,36 @@ forms: the expanded cell, the bar, the rail, and the floating window.
 - Parent handle (narrow, on top — the analog of the header's top edge):
   drag floats the WHOLE region as one window; click or its `+` expands
   the REGION — it clears the flag only, cells keep their own collapse
-  states.
-- Per cell: gray cap — a `+` button when the rail holds a single cell
-  (its own expand signifier), a small grip pill when stacked (P9
-  signifier budget: exactly ONE `+`, on the parent handle — three `+`s in
-  a 36px strip read as three different mysteries); then one **spine row
-  per tab** (upright icon above rotated title), dimmed; hairline dividers
-  between cells.
+  states. Its toggle's aria-label is "Expand panel area" (honest label:
+  "Expand all panes" would lie — cells keep their states). After a
+  keyboard-driven expand, focus lands on the first revealed cell's
+  active tab, never on `<body>`.
+- Per cell: gray cap — ALWAYS a quiet grip pill (D25; P9 signifier
+  budget: exactly ONE `+` per rail, on the parent handle — three `+`s
+  in a 36px strip read as three different mysteries); then one **spine
+  row per tab** (upright icon above rotated title), dimmed; hairline
+  dividers between cells. When the rail holds a SINGLE cell, a
+  motionless click on the cap or cell background still expands region +
+  group — unmarked backing surface for the parent handle's action
+  (P9's hit-area rule); with 2+ cells a background click is inert
+  (which cell would it mean?).
 - Clicking a spine row expands the region AND that panel *to that tab*
   (expand ops clear the flag at the op level, §7). Dragging any row tears
   out just that pane (still minimized); dragging the cap or cell
   background moves the whole group.
-- **Region-collapse chevron** (the rail's entry surface): a quiet 20px
-  chevron overlay at the expanded region's top INNER (canvas-facing)
-  corner, pointing toward the edge. Placement judgment call: on the LEFT
-  edge that corner also hosts the topmost panel's `−` (the grip bar's
-  right-end button), so the chevron sits just inboard of it; on the right
-  edge it sits in the corner, which overlaps only empty grip surface. It
-  renders only while the region is expanded — while collapsed, the expand
-  affordance is the rail's own header (P9: one signifier per action).
+- **Region-collapse chevron** (the rail's entry surface, D23): rendered
+  INLINE in the region's top-right cell's chrome row — grip bar,
+  minimized bar, or unmergeable header alike — just inboard of that
+  row's `−`/`+` toggle, on BOTH edges (« on the left edge, » on the
+  right). It is a row participant, not a positioned overlay: an overlay
+  cannot know how far panel-provided header content (action icons,
+  custom titleNodes) extends, and the overlay form occluded the docked
+  main panel's settings icon. Unlike its neighbors it is NOT
+  drag-through: its host row's motionless click already means
+  minimize/expand, so a press on the chevron must stay its own gesture
+  (collapse the region). It renders only while the region is expanded —
+  while collapsed, the expand affordance is the rail's own header (P9:
+  one signifier per action).
 
 ### 3.4 Floating window
 - Multi-group: window header bar on top (drag = move window; its toggle
@@ -280,7 +311,13 @@ forms: the expanded cell, the bar, the rail, and the floating window.
   phase; does not consume the press). Front order is paint order only —
   raising never reorders the DOM (in-flight clicks survive).
 - Overlapping windows resolve drops back-to-front: the topmost target under
-  the pointer wins.
+  the pointer wins. Drop targets are collected in front-order (window
+  z-order, not DOM order), and a nested area's targets rank immediately
+  above their HOST window — above the host's own cells, below any window
+  stacked in front — never above unrelated floating windows.
+- Region-edge bands yield while the pointer is over a floating window's
+  cell (the same back-to-front rule): a drop there targets the float,
+  never docks a column THROUGH it into the region underneath.
 - Multi-client: layout is per-client state; server placement commands fan
   out to every client and each client's gate arbitrates against its own
   user's touches (P6). Clients never sync layouts with each other.
@@ -300,19 +337,22 @@ a click. One active gesture at a time; extra pointers are ignored.
 
 | Grabbed surface | Drag moves | Motionless click |
 |---|---|---|
-| Grip bar / strip background (expanded) | that group | — |
+| Grip bar (expanded) | that group | toggle minimize (unmarked backing for the `−`, D6 as amended) |
+| Tab strip background (expanded) | that group | — |
+| Unmergeable header (full width, either title form) | that group | toggle minimize |
 | (−) minimize button | that group (drag-through) | minimize group |
 | Tab | that pane (tear out / reorder) | activate tab |
 | Window header bar (floating multi) | whole window | minimize all (expand all when every cell is a bar) |
 | Bar background (incl. right slack) | that group (still minimized) | expand that group |
 | Bar title / face | the active pane (tear out, still minimized) | expand to that tab |
 | Bar `+` (right end) | that group (drag-through) | expand that group |
-| Region-collapse chevron | — (click-only overlay) | collapse region to the rail |
-| Rail header (parent handle) | whole region (as one window) | expand region (cells keep their states) |
-| Rail cell cap (`+` / pill) | whole group (still minimized) | expand region + group (lone cell only) |
+| Region-collapse chevron | — (click-only; NOT drag-through) | collapse region to the rail |
+| Rail header (parent handle) | whole region (as one window) | expand region (cells keep their states; label "Expand panel area") |
+| Rail cell cap / background (quiet pill) | whole group (still minimized) | expand region + group (lone cell only; inert with 2+ cells) |
 | Rail spine row | that pane (still minimized) | expand region to that tab |
 | Region resize divider | region width | — |
-| Split divider | neighboring cells/columns | — |
+| Split divider (expanded cell on each side) | neighboring cells/columns | — |
+| Split divider (a side all-minimized) | — (INERT, D24: no resize cursor, no gesture) | — |
 | Window edge/bottom grips | window size | — |
 
 Escape during any of the above restores the exact pre-gesture layout,
@@ -351,7 +391,9 @@ and changing one is a spec change.
    region containing a multi-column band cannot be zipped (rows can't
    nest), so the drop joins the first band and the hint spans only that
    band. Suppressed where they'd duplicate a per-cell split (single leaf
-   edge-wise). Hints span the true affected extent either way (P1).
+   edge-wise), and while the pointer is over a floating window's cell
+   (§3.5 back-to-front: the float claims the pointer). Hints span the
+   true affected extent either way (P1).
    A seam band-insert takes an EQUAL SHARE of the region height (the mean
    of the existing bands' weights) — never a fixed weight that a px-scale
    region would render as a 0px sliver.
@@ -369,13 +411,20 @@ and changing one is a spec change.
   the new panel sits beside just this cell; otherwise the new column spans
   the band and the hint is drawn band-tall (P1).
 - Content top/bottom bands (25%, ≤100px): split above/below this cell.
+  The content-TOP band SPLITS ABOVE — it duplicates the grip bar's
+  intent from below the strip, so merge is the MIDDLE only. (Restored
+  to code in iteration 2: the implementation had silently widened the
+  merge zone over the upper content area, making an accidental merge —
+  the one destructive gesture D1's generous bands exist to prevent —
+  the default.)
 - Content center — roughly the middle third each way — merges (become a
   tab). Splits are the easy default; merging requires clearer aim (D1).
   Suppressed for unmergeable panels.
 
 ### 5.3 Rail cell zones (rotated §5.2; rail cells exist only inside the collapsed region rail, D21)
 - 8px outer/inner side slivers: dock a column beside.
-- 6px top/bottom edges: stack a cell above/below.
+- 8px top/bottom edges (`MINIMIZED_EDGE_BAND_PX` — P11's zone floor):
+  stack a cell above/below.
 - Over a spine row: insert at that tab position.
 - Rest (the cap): merge, staying minimized.
 
@@ -389,9 +438,12 @@ and changing one is a spec change.
   D20 migration: the cell and band seams immediately adjacent already
   express "insert above/below", and thin zones inside a 26px bar would be
   unhittable (P11: removed, not shrunk).
-- Floating bars are ordinary stack cells (D17): ~10px top/bottom snap
-  zones insert into the window's stack at that seam — the D4 width; no
-  alternative affordance exists for snapping between two bars.
+- Floating bars are ordinary stack cells (D17): top/bottom snap zones of
+  `min(10px, barHeight/3)` — ≈8.67px on the 26px bar — insert into the
+  window's stack at that seam; no alternative affordance exists for
+  snapping between two bars. D4's flat 10px remedy is unsatisfiable on a
+  26px bar (two 10px zones would leave a sub-8px middle merge zone);
+  thirds keep all three zones at or above P11's 8px floor.
 
 ### 5.5 Hints and previews
 - **Line** = an insertion boundary (3px bar), drawn at the true landing
@@ -404,7 +456,14 @@ and changing one is a spec change.
   line — widths don't change until drop. Collapsed targets never shrink.
 - Drop targets are snapshotted at drag start and refreshed on any layout
   change, container scroll, or window resize; hints therefore never lag the
-  visible geometry.
+  visible geometry. A floating window growing MID-DRAG (auto-height
+  content) also marks the cached target rects stale — size changes with
+  no layout commit are still geometry changes.
+- Divider gaps are never dead spots: a pointer over the gap between two
+  stacked docked panels maps to the seam split it sits in the middle of,
+  and the divider gap inside a floating stack has the same recovery —
+  it maps to the snap at that index — so the hint never flickers to
+  "no drop" while crossing a seam.
 
 ### 5.6 Adoption rules — DELETED (D16)
 The collapse-infection rules died with uniform-collapse: mixed stacks are
@@ -428,6 +487,24 @@ expands it, §9 item 1).
 - **Minimums**: expanded columns ≥ ~120px grab minimum; cells ≥ ~50px;
   windows ≥ 100px height. Resizes clamp; they never squeeze a cell below
   its header.
+- **Split defaults**: a top/bottom leaf drop and a left/right column
+  drop both default the two sides to HALF the target's current weight.
+  Sibling weights may be on any scale (divider drags write px values),
+  so a fixed default weight could render as a 0px sliver; half-the-
+  target is scale-invariant and keeps the hint's 50/50 promise (P1).
+- **Dividers** (D24): a split/stack divider is INERT — no resize cursor,
+  no armed gesture, and no height-pin side effect — unless an expanded
+  cell exists on EACH side (bars are fixed 26px; with none there is
+  nothing to trade, and a resize cursor that no-ops lies). When
+  resizable, a drag walks PAST minimized bars to the nearest expanded
+  neighbor on each side (cascadeResize), so a seam adjacent to a bar
+  still resizes instead of dead-ending. Floating stack dividers carry
+  the same ~12px invisible grab overlay as docked ones (P11) — only
+  while resizable.
+- **Stack grow normalization**: flex-grow factors are normalized per
+  site (edge case 16) over EXPANDED cells only — minimized cells render
+  flexGrow 0 and are excluded from the total, so a pinned window with a
+  minimized cell never strands the freed height as dead space.
 - **Round-trips** (P8): float→dock carries the stack's height ratios into
   the column; dock→float restores the remembered window size; minimize→
   expand holds width by construction (the bar renders in place, D20), and
@@ -467,12 +544,23 @@ expands it, §9 item 1).
   un-collapses that panel's region — an "expanded" panel hidden behind
   the rail would be a dead end (P5). The rail header's click/`+` clears
   ONLY the flag (cells keep their own collapse states); a spine-row click
-  expands the region AND that panel to that tab.
+  expands the region AND that panel to that tab. SERVER expands take the
+  same path: a placement's `collapsed = false` routes through the shared
+  expand op, clearing the group's flag AND its region's collapse flag —
+  a server expand is always visible, never hidden behind the rail (P6).
 - Expand targets: a bar's title/face click expands to the active tab; a
   bar's `+` or background click expands the group on its previous active
   tab; the window header's toggle expands everything it owns.
 - Tearing a pane out of a minimized group floats it STILL minimized
   (expanding is exclusively a click; drags never change collapse — P2).
+- Dragging a cell (spine row or cap) out of a RAILED region floats it
+  still minimized too. The cell's own flag is usually false (the rail is
+  a view over the model), so the drag COMMIT stamps `collapsed: true`
+  onto the floated group — the user was dragging a minimized bar, and
+  floating it full-size would pop a window mid-drag (P2). Dragging the
+  whole rail out floats a window of minimized bars the same way (every
+  stack cell stamped). Server float commands never stamp: for the
+  server, position and collapse are independent axes (P6).
 - A collapsed (railed) region reserves exactly 36px; it is still a full
   drop target and still hosts region-edge docking on its outer side.
 
@@ -526,7 +614,9 @@ Behaviors that MUST hold (each is or should be pinned by a test):
 15. Left/right mirrored layouts resolve mirrored drops everywhere (swept).
 16. Expanded panels absorb ALL space freed by minimized siblings — a band/
     column/cell/stack-cell may never strand dead area because fractional
-    weights summed below 1 (flex-grow factors are normalized per site).
+    weights summed below 1 (flex-grow factors are normalized per site,
+    over EXPANDED cells only — minimized cells render flexGrow 0 and
+    are excluded from the total, §6).
 
 ---
 
@@ -566,6 +656,29 @@ chevron / rail-header rows, §5.3–5.4 rewritten for in-place bars, §5.6
 region collapse, §9 items 1/12/13/14 updated. The next cross-check pass
 (the protocol above) is owed after the stability loop.
 
+**Update (2026-07-04, stability-loop iteration 2):** three audits
+(hit-box, display, UX) plus the real-example pass drove D23–D25 and
+amendments to D4/D6/D19, all reflected in the normative sections above:
+the region-collapse chevron moved inline into the top-right cell's
+chrome row on both edges (D23, §3.3); grip-bar / unmergeable-header
+click now backs the minimize toggle (D6 as amended, §3.1/§4/P11);
+dividers beside all-minimized sides are inert and cascadeResize walks
+past bars (D24, §4/§6); the floating bar snap band is
+`min(10px, barHeight/3)` (D4 as amended, §5.4); the main panel's
+minimized face sits on the standard 26px gray bar (D19 as amended,
+commit 2e1fdfc8, §3.2); rail caps unified to quiet pills with
+lone-cell backing clicks, the "Expand panel area" label, and
+focus-on-first-revealed-tab (D25, §3.3/§4); the minimized-strip edge
+bands are 8px (§5.3); split defaults are half-the-target's-weight and
+stack grow normalization excludes minimized cells (§6, edge case 16);
+rail drag-outs stamp the collapse flag at commit while server floats
+never do, and server expands route through the shared expand op
+(§7); targets order back-to-front with area targets host-adjacent,
+region bands yield over floats, floating seams got docked-style
+dead-spot recovery, and mid-drag window growth marks target rects
+stale (§3.5/§5.1/§5.5). One pure code restoration: the content-top
+band had silently merged; it splits above again (§5.2).
+
 ---
 
 ## 11. Resolved decisions (2026-07-03)
@@ -584,12 +697,22 @@ already reflect them; this list preserves the rationale.
   the canvas cost is accepted and the resizer is the recovery.
 - **D4 (thin zones):** band-bar segments lose their 6px top/bottom zones
   (seams next door cover the intent); chip-bar segments keep snap zones,
-  widened to ~10px.
+  widened to ~10px. *Amended (iteration 2, 2026-07-04): on the 26px bar
+  the flat 10px remedy is unsatisfiable — two 10px zones leave a sub-8px
+  middle, breaking P11 for the merge zone. The snap band is
+  `min(10px, barHeight/3)` (≈8.67px on a 26px bar), keeping all three
+  zones ≥ the 8px floor.*
 - **D5 (tear-out granularity):** resolved by D9 — per-tab labels give
   per-tab tear-out on every minimized surface.
 - **D6 (minimize gesture):** the (−) button stays the only minimize
   affordance. Double-click rejected: it would extend the P2 grammar
-  globally for one shortcut.
+  globally for one shortcut. *Amended (iteration 2, 2026-07-04): the `−`
+  stays the only visible SIGNIFIER, but a motionless click on the grip
+  bar (or an unmergeable header's strip background) toggles the same
+  action — the bar surface is unmarked backing (P9's hit-area rule, P11
+  backing for the ~14–16px chrome toggle, and P7 symmetry with the
+  minimized bar's click-to-expand). Single click within the P2 grammar,
+  not a new gesture; the double-click rejection stands.*
 - **D7 (release over nothing):** always float at the pointer. Motion means
   move; Escape is the abort.
 - **D8 (main panel):** fully ordinary — merges, stacks, minimizes like any
@@ -639,9 +762,15 @@ already reflect them; this list preserves the rationale.
   window pill. P13's pill clause is replaced by the face clause (D19).
 - **D19 (pane-provided minimized face, 2026-07-04):** a pane may provide
   a custom face for its bar; the default face is icon+title(+N). The MAIN
-  PANEL's face is its connection-status row (same height and colors as
-  expanded, action icons hidden) — old-viser continuity via a general
-  mechanism, not a special case.
+  PANEL's face is its connection-status row (action icons hidden) —
+  old-viser continuity via a general mechanism, not a special case.
+  *Amended (real-example pass, commit 2e1fdfc8): the original "same
+  height and colors as expanded" is withdrawn — the face renders ON the
+  standard 26px gray MinimizedBar surface like every other bar. P13
+  SURFACE constancy across all minimized forms won over per-panel
+  height/color constancy: one odd-height, body-colored bar among gray
+  26px siblings read as a stray widget, not a minimized panel. The face
+  keeps its own content colors inside that surface.*
 - **D20 (band bar deleted; bars render in place, 2026-07-04):** the
   segmented HorizontalMinimizedBand form is deleted. A minimized cell
   renders as its bar IN PLACE, at its column's width; a fully-minimized
@@ -657,7 +786,10 @@ already reflect them; this list preserves the rationale.
   `regionCollapsed[edge]`: collapsed → the 36px rail (spine rows; parent
   handle drags the whole region; chevron expands); expanded → normal
   layout, whatever the per-cell collapse states. Expanding a panel FROM
-  the rail un-collapses the region and expands that panel.
+  the rail un-collapses the region and expands that panel. *Chevron
+  placement and the collapsed-state affordance are per D23: inline in
+  the top-right cell's chrome row; no chevron renders while collapsed —
+  the rail's own header is the expand affordance.*
 - **D22 (nested-column stack handle deleted, 2026-07-04):** §3.1b's
   justification ("the handle signals coupled collapse") died with D16.
   The sometimes-there column handle is removed; nested-stack cells move
@@ -694,3 +826,32 @@ already reflect them; this list preserves the rationale.
   minimize (per-cell minimize inside a zipped grid is not offered; the
   future relaxation would be mixed-collapse docked columns rendering a
   36px strip cell).
+- **D23 (inline region-collapse chevron, 2026-07-04):** the chevron is
+  no longer a positioned overlay at the region's top inner corner. It
+  renders INLINE in the region's top-right cell's chrome row — grip
+  bar, minimized bar, or unmergeable header alike — just inboard of
+  that row's `−`/`+` toggle, on BOTH edges (« left, » right). Rationale:
+  an overlay cannot know how far panel-provided header content (action
+  icons, custom titleNodes) extends — it occluded the docked main
+  panel's settings icon. NOT drag-through (the host row's motionless
+  click already means minimize/expand). No chevron while collapsed: the
+  rail's header is the expand affordance (P9).
+- **D24 (inert dividers beside all-minimized sides, 2026-07-04):** a
+  split/stack divider with no expanded cell on one side is INERT — no
+  resize cursor, no armed gesture, no height-pin side effect on a press
+  that would otherwise no-op (a resize cursor that no-ops lies; hit-box
+  loop finding). When resizable, cascadeResize walks past minimized
+  bars to the next expanded neighbor, so a seam adjacent to a bar still
+  resizes instead of dead-ending. Floating stack dividers gain the same
+  ~12px invisible grab overlay as docked ones (P11), only while
+  resizable.
+- **D25 (one `+` per rail; caps are always quiet pills, 2026-07-04):**
+  the rail cell cap no longer flips between a `+` button (lone cell)
+  and a pill (stacked): it is ALWAYS a quiet grip pill, and the rail's
+  ONE visible expand signifier lives on the parent handle (P9). For a
+  LONE cell, a motionless click on the cap/background still expands
+  region + group — unmarked backing surface for the same action (P9's
+  hit-area rule); with 2+ cells a background click is inert (ambiguous
+  target). The rail header's toggle is labeled "Expand panel area" (it
+  clears only the region flag — cells keep their states), and a
+  keyboard expand lands focus on the first revealed cell's active tab.

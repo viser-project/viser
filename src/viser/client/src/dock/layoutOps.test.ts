@@ -632,17 +632,17 @@ describe("dropOnDockedLeaf", () => {
     });
   });
 
-  it("the new split inherits the target leaf's weight; children get drag/target weights", () => {
+  it("a top/bottom drop splits the target's weight in half (scale-invariant)", () => {
     const layout = makeLayout({
       left: row([leaf("a", 4), leaf("t", 7)]),
       floating: [{ id: "w1", stack: ["b"] }],
     });
     const id = leafIdOf(layout, "left", "t");
     // Drop "b" above "t" -> a column split replacing the "t" leaf, weight 7.
-    const out = dropOnDockedLeaf(layout, ["b"], "left", id, "top", {
-      dragged: 1,
-      target: 3,
-    });
+    // Each side takes half the target's weight: sibling weights may be on a
+    // px scale after divider drags, so absolute defaults (1/1) would render
+    // the pair as slivers; halves keep the hint's 50/50 promise.
+    const out = dropOnDockedLeaf(layout, ["b"], "left", id, "top");
     expect(shapeOf(out.docked.left, true)).toEqual({
       dir: "row",
       weight: 1,
@@ -652,8 +652,8 @@ describe("dropOnDockedLeaf", () => {
           dir: "column",
           weight: 7, // inherited from the replaced target leaf
           children: [
-            { leaf: "b", weight: 1 },
-            { leaf: "t", weight: 3 },
+            { leaf: "b", weight: 3.5 },
+            { leaf: "t", weight: 3.5 },
           ],
         },
       ],
