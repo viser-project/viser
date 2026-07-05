@@ -50,7 +50,7 @@ const MINIMIZED_EDGE_BAND_PX = 8;
 // (a flat 10px would leave a sub-8px middle on a 26px bar). DOCKED bars have
 // NO top/bottom zones at all -- the column seams and region-edge bands next
 // door express the intent.
-const CHIP_SNAP_BAND_PX = 10;
+const BAR_SNAP_BAND_PX = 10;
 // Rendered thickness (px) of an insertion-LINE hint -- the thin bar drawn for
 // every "insert here" drop (per-panel split, region-edge span, cross-band seam).
 const LINE_PX = 3;
@@ -917,7 +917,7 @@ export function hitTest(
       g.bar === true
         ? gt.ctx.kind === "docked"
           ? 0
-          : Math.min(CHIP_SNAP_BAND_PX, r.height / 3)
+          : Math.min(BAR_SNAP_BAND_PX, r.height / 3)
         : Math.min(MINIMIZED_EDGE_BAND_PX, r.height / 3);
     const inTopEdge = edgeBand > 0 && clientY < r.top + edgeBand;
     const inBottomEdge = edgeBand > 0 && clientY > r.bottom - edgeBand;

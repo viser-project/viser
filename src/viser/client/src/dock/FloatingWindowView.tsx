@@ -224,7 +224,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         : measureMaxHeight();
     // Floor at the content height when it's below MIN_HEIGHT_PX, so a short
     // panel (e.g. one button) can shrink back to its natural size rather than
-    // being trapped at the 100px minimum.
+    // being trapped at the 50px minimum.
     const minHeight = Math.min(MIN_HEIGHT_PX, contentHeight);
     // The content-height detent only exists when content fits the resize range
     // (it can be outside it for a top grip whose bottom edge is fixed, or when

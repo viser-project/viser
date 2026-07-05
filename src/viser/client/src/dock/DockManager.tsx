@@ -1400,6 +1400,33 @@ export function DockManager({
     }, onClick);
   };
 
+  const startColumnDrag: DockContextValue["startColumnDrag"] = (
+    event,
+    edge,
+    columnId,
+  ) => {
+    armPress(event, (e) => {
+      dragAfterCommit(e, () => {
+        const rect = floatRectFor(`[data-dock-column="${columnId}"]`);
+        const res = ops.floatColumn(
+          layoutRef.current,
+          edge,
+          columnId,
+          rect.x,
+          rect.y,
+          rect.width,
+        );
+        if (res.windowId === null) return null;
+        flushSync(() => applyOp(res.layout));
+        return {
+          windowId: res.windowId,
+          groupIdForDim: null,
+          ...grabOffset(e, rect.x, rect.y, res.windowId),
+        };
+      });
+    });
+  };
+
   const startRegionDrag: DockContextValue["startRegionDrag"] = (
     event,
     edge,
@@ -1825,6 +1852,7 @@ export function DockManager({
       expandToTab,
       toggleCollapsed,
       collapseRegion,
+      startColumnDrag,
       draggingGroupId,
       draggingTabId,
     }),
@@ -1837,6 +1865,7 @@ export function DockManager({
       expandToTab,
       toggleCollapsed,
       collapseRegion,
+      startColumnDrag,
       draggingGroupId,
       draggingTabId,
     ],
@@ -2159,10 +2188,17 @@ export function DockManager({
                 on CELLS; this bar acts on the STACK (P12) -- the chevron
                 previously sat on the top-right cell's row, reading as that
                 panel's control while acting on the whole region. Not
-                rendered while the region is COLLAPSED: the rail has its own
-                parent handle (the narrow header this bar mirrors), and a
-                second chevron above it would duplicate the signifier. */}
-                {!isRegionCollapsedOn(layoutRef.current, edge) && (
+                rendered while the region is COLLAPSED (the rail has its own
+                parent handle -- the narrow header this bar mirrors; a second
+                chevron above it would duplicate the signifier), and not
+                rendered for a MULTI-COLUMN region (D27): there the handle
+                would span two independent visual columns while its drag
+                flattened them into one stack -- each column carries its own
+                handle instead (SplitView), and no region-level collapse is
+                offered because the rail is a single packed strip that would
+                flatten columns the same way. */}
+                {!isRegionCollapsedOn(layoutRef.current, edge) &&
+                  tree.rows.every((rw) => rw.columns.length === 1) && (
                 <StackHandleBar
                   attrs={{ "data-dock-region-handle": edge }}
                   onPointerDown={(event) =>

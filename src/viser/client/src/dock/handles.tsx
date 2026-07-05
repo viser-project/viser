@@ -121,21 +121,6 @@ export function HandleIconButton({
   );
 }
 
-/** Slim header bar that drags a whole stack of groups: a floating multi-group
- * window or a docked pure column. Body-colored so it reads as the stack's
- * *container*, distinct from the child groups' gray grip bars.
- *
- * With `onToggle`, the bar gets a bulk toggle: minimize or expand every
- * child group at once (direction: expand when EVERY cell is minimized, else
- * minimize all). Since D16 each child ALSO carries its own per-cell +/- --
- * bulk and per-cell are distinct actions with distinct signifiers (P9).
- *
- * The toggle button is `dragThrough`: a real pointer press flows to the bar's
- * own onPointerDown (the click-vs-drag arbiter), so dragging the + still drags
- * the whole stack out and only a motionless click toggles. Callers must
- * therefore pass `onToggle` as the drag-starter's `onClick` too (the bar's
- * onPointerDown), so the motionless-press toggle fires; `onActivate` here then
- * only handles keyboard / synthetic activation. */
 /** Hairline divider between chrome siblings (P10: borders divide, never
  * enclose). `vertical` separates side-by-side segments in a 36px bar (drawn
  * inset so it reads as a separator, not a full-height wall); horizontal
@@ -231,6 +216,21 @@ export function RegionCollapseChevron({
   );
 }
 
+/** Slim header bar that drags a whole stack of groups: a floating multi-group
+ * window or a docked pure column. Body-colored so it reads as the stack's
+ * *container*, distinct from the child groups' gray grip bars.
+ *
+ * With `onToggle`, the bar gets a bulk toggle: minimize or expand every
+ * child group at once (direction: expand when EVERY cell is minimized, else
+ * minimize all). Since D16 each child ALSO carries its own per-cell +/- --
+ * bulk and per-cell are distinct actions with distinct signifiers (P9).
+ *
+ * The toggle button is `dragThrough`: a real pointer press flows to the bar's
+ * own onPointerDown (the click-vs-drag arbiter), so dragging the + still drags
+ * the whole stack out and only a motionless click toggles. Callers must
+ * therefore pass `onToggle` as the drag-starter's `onClick` too (the bar's
+ * onPointerDown), so the motionless-press toggle fires; `onActivate` here then
+ * only handles keyboard / synthetic activation. */
 export function StackHandleBar({
   onPointerDown,
   attrs,

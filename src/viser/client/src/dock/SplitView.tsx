@@ -24,6 +24,7 @@ import {
   isRowMinimized,
   setNodeWeights,
 } from "./layoutOps";
+import { StackHandleBar } from "./handles";
 import { MinimizedBar } from "./MinimizedBar";
 import { TabGroupFrame } from "./TabGroupFrame";
 import { RegionMinimizedRail } from "./VerticalMinimizedColumn";
@@ -85,6 +86,11 @@ export const SplitView = React.memo(function SplitView({
 }) {
   const dock = useDock();
   const groups = dock.groups;
+  // D27: a region where every band has ONE column is a single visual
+  // column -- the region-level parent handle covers it honestly. Any
+  // multi-column band means independent visual columns: each carries its
+  // own handle (rendered by RowView), and the region handle is suppressed.
+  const columnHandles = !region.rows.every((rw) => rw.columns.length === 1);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const rows = region.rows;
   // Per-band collapsed mask, computed ONCE: the band map and every divider's
@@ -143,7 +149,11 @@ export const SplitView = React.memo(function SplitView({
                 display: "flex",
               }}
             >
-              <RowView row={row} edge={edge} />
+              <RowView
+                row={row}
+                edge={edge}
+                columnHandles={columnHandles}
+              />
             </Box>
             {index < rows.length - 1 &&
               (() => {
@@ -192,7 +202,16 @@ export const SplitView = React.memo(function SplitView({
 /** Render one row band: a HORIZONTAL row of columns with vertical dividers
  * between them. (This was the region renderer in the 3-level model; it now
  * renders a single band, with the region stacking bands above it.) */
-function RowView({ row, edge }: { row: DockRow; edge: DockEdge }) {
+function RowView({
+  row,
+  edge,
+  columnHandles = false,
+}: {
+  row: DockRow;
+  edge: DockEdge;
+  /** Render a parent handle above each column (multi-column regions, D27). */
+  columnHandles?: boolean;
+}) {
   const dock = useDock();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const columns = row.columns;
@@ -225,9 +244,26 @@ function RowView({ row, edge }: { row: DockRow; edge: DockEdge }) {
                 minWidth: 0,
                 minHeight: 0,
                 display: "flex",
+                flexDirection: "column",
               }}
             >
-              <ColumnView column={column} edge={edge} />
+              {/* Per-column parent handle (D27): this visual column's own
+              drag handle -- floating it preserves the column as a stacked
+              window instead of flattening the whole region. Pill only: no
+              chevron, since the rail is a whole-edge form that would
+              flatten columns (the region handle carries it when the
+              region IS one column). */}
+              {columnHandles && (
+                <StackHandleBar
+                  attrs={{ "data-dock-column-handle": column.id }}
+                  onPointerDown={(event) =>
+                    dock.startColumnDrag(event, edge, column.id)
+                  }
+                />
+              )}
+              <Box style={{ flexGrow: 1, minHeight: 0, display: "flex" }}>
+                <ColumnView column={column} edge={edge} />
+              </Box>
             </Box>
             {index < columns.length - 1 && (
               <SplitDivider

@@ -4,7 +4,7 @@
 // split tree by hand.
 
 import React from "react";
-import {
+import { NodeId,
   AreaId,
   DockEdge,
   DockLayout,
@@ -96,6 +96,13 @@ export interface DockContextValue {
    * rail-header gesture. A USER commit (not runProgrammatic), so ownership
    * arbitration learns the user set/cleared the flag (P6). */
   collapseRegion: (edge: DockEdge, on: boolean) => void;
+  /** Drag one visual column out of a multi-column region as a stacked
+   * window (D27) -- the per-column parent handle's gesture. */
+  startColumnDrag: (
+    event: React.PointerEvent<HTMLDivElement>,
+    edge: DockEdge,
+    columnId: NodeId,
+  ) => void;
   /** Group currently being dragged, or null. Used to dim its origin. */
   draggingGroupId: GroupId | null;
   /** Tab currently being reordered within its strip, or null. The frame

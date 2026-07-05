@@ -59,7 +59,9 @@ wrappers' flex properties between committed values, honoring
 prefers-reduced-motion (instant) and suppressed under an active divider
 drag (`[data-dock-resizing]` — per-frame weight writes must not
 ease-lag the cursor). Drag hit-testing re-reads geometry on
-`transitionend`, so cached rects never lag the visible surface. Region
+`transitionend` (filtered to the eased flex properties, so unrelated
+hover-color transitions don't thrash the cache), so cached rects never
+lag the visible surface. Region
 collapse (rail) stays instant. *(History: the first animation
 experiment was reverted because motion was entangled with logic; this
 split keeps the determinism while restoring the comprehension cue of
@@ -146,9 +148,15 @@ so the toggle is spatially stable and a mis-click is undone without moving
 the mouse. NO grip pill (D18): the whole bar is the handle, and a pill
 inside a surface that is entirely handle would be a redundant signifier.
 Pills belong to EXPANDED headers, where the handle is a slice of a larger
-surface — and there the pill centers in the free run LEFT of the header's
-right-end control (the `−`/`+` toggle), not in the bar's full width, so
-it never drifts under the control in a narrow column.
+surface — and there the pill TRUE-CENTERS in the bar's full width, so the
+grip bars, the region parent handle, and the floating window header all
+share one centerline (P7). The right-end toggle is the bar's only control
+and the pill clears it at the layout's minimum widths. *(Re-amended
+2026-07-04: the earlier free-run offset — centering left of the right-end
+controls — existed for the era when the region chevron ALSO sat on the
+grip bar; with D26 moving the chevron to the parent handle, one narrow
+toggle no longer justified a pill sitting off-center from the handles
+directly above and below it.)*
 Minimized bars are not a separate chrome language; they are headers.
 One deliberate exception: the vertical rail (a lone minimized docked
 column) exists to reclaim canvas WIDTH, which "keep the header in place"
@@ -194,7 +202,7 @@ with different gestures are indistinguishable bugs.
 | **Region collapse** | The explicit per-edge flag (D21), toggled by the region chevron / rail header. While set, the whole region renders as the rail; per-cell collapse states are untouched underneath. |
 | **Rail** | The EXPLICITLY collapsed region: one packed ~36px-wide vertical strip holding every leaf of the region. Never appears emergently. |
 | **Area** | A nested dockable surface inside a panel body (flat tab group; no splits). |
-| **Main panel** | The control panel; a normal group with a stable identity and the viser icon. |
+| **Main panel** | The control panel: an ordinary group in the MODEL (docks, stacks, floats, minimizes like any other) that opts into `unmergeable` and a titleNode header (the connection-status row; minimized face per D19). |
 | **Unmergeable panel** | A panel that may never become a tab of another group (and vice versa). It renders a full-width header instead of a tab strip; drops on it offer splits/snaps only, never merge/insert. |
 
 ---
@@ -205,19 +213,44 @@ Every visual state a group can be in, its anatomy, and its affordances.
 Anatomy is listed top-to-bottom / left-to-right. There are exactly FOUR
 forms: the expanded cell, the bar, the rail, and the floating window.
 
-A docked REGION additionally renders a **parent handle** (D26): a slim
+A docked REGION that is a single VISUAL COLUMN — every band has one
+column (D27) — additionally renders a **parent handle** (D26): a slim
 full-width StackHandleBar above all of its cells — single-panel regions
 included — with the region's content (its bands and cells) below it.
 Centered pill: drag floats the WHOLE stack as one window (the same
-gesture as the rail header it mirrors, P7). The region-collapse chevron
+gesture as the rail header it mirrors, P7) — honest there, because the
+float preserves the stack exactly (P1/P8). The region-collapse chevron
 « / » sits at the bar's right end — the same spot as the rail header's
 `+` (P13 position constancy) — and a motionless click anywhere on the
 bar also collapses (unmarked backing surface, P9). The handle spans the
-region's full width because the rail collapse acts on the whole edge —
-the bar covers exactly what it acts on. Cell chrome rows act on CELLS;
-stack-scope actions live on this stack-scope handle (P12). Expanded
+region's full width because everything it acts on — the one visual
+column it floats, the edge the rail collapse rails — IS that full width
+(D26 as scoped by D27): the bar covers exactly what it acts on. Cell
+chrome rows act on CELLS; stack-scope actions live on this stack-scope
+handle (P12). The handle
+renders only while the region is EXPANDED — while railed it does not
+exist; the rail's own header is the parent handle there (a second
+chevron above the rail would duplicate the signifier, P9). Expanded
 region header ↔ collapsed rail header are mirrors: drag floats either;
 « collapses / `+` expands.
+
+A region holding any MULTI-COLUMN band suppresses the region-level
+handle (D27): it would span independent visual columns while its drag
+flattened them into one stack — a hint promising less than the drop
+delivers (P1) and a stack-scope control over things that aren't one
+stack (P12). Instead EVERY column of EVERY band renders its own
+**column parent handle** at its top: the same slim StackHandleBar
+(`data-dock-column-handle`), pill only. Drag floats THAT column as a
+stacked window (the existing floatColumn op; leaf order and height
+ratios preserved, P8); a motionless click does nothing — the bar
+carries no action signifier, so it performs no action (P9: zero
+signifiers, zero actions). NO chevron on column handles: the D21 rail
+is a whole-edge form whose single packed strip would flatten columns
+exactly the way the region-wide drag did — so a multi-column region
+offers no region collapse at all. Deliberate, P5-checked gap: per-cell
+minimize remains on every cell, and dragging a column out of a
+2-column region leaves a single-column region whose region handle
+(chevron included) reappears automatically.
 
 ### 3.1 Expanded cell (docked or floating-stacked)
 - Grip bar (gray, ~0.9em): drag = move group; holds the minimize (−)
@@ -228,9 +261,11 @@ region header ↔ collapsed rail header are mirrors: drag floats either;
   with the minimized bar's click-to-expand).
 - The (−) sits on EVERY expanded cell — stacked cells included (D16:
   per-cell minimize everywhere). There is no collective column handle
-  (D22): its old justification ("the handle signals coupled collapse")
-  died with uniform-collapse, so nested-stack cells move individually;
-  floating a whole column survives as an op with no dedicated chrome.
+  FOR COLLAPSE (D22): its old justification ("the handle signals
+  coupled collapse") died with uniform-collapse, so nested-stack cells
+  minimize individually. Floating a whole column is the column parent
+  handle's drag where one renders (multi-column regions, D27 — scope
+  chrome, not collapse chrome) and remains a chrome-less op otherwise.
 - Tab strip: one tab per pane; wraps to multiple rows; empty strip area drags
   the group; active tab underlined in accent color.
 - Body: panel content; scrolls internally; never a drag surface.
@@ -315,7 +350,10 @@ region header ↔ collapsed rail header are mirrors: drag floats either;
   or strip corner reservation is needed anymore (both deleted with
   D26). It renders only while the region is expanded — while collapsed,
   the expand affordance is the rail's own header (P9: one signifier per
-  action).
+  action) — and only while the region is a single visual column: a
+  multi-column region has no region handle and no chevron (D27 — the
+  rail would flatten its columns), so no region-collapse entry exists
+  there.
 
 ### 3.4 Floating window
 - Multi-group: window header bar on top (drag = move window; its toggle
@@ -382,8 +420,9 @@ a click. One active gesture at a time; extra pointers are ignored.
 | Bar background (incl. right slack) | that group (still minimized) | expand that group |
 | Bar title / face | the active pane (tear out, still minimized) | expand to that tab |
 | Bar `+` (right end) | that group (drag-through) | expand that group |
-| Region parent handle — pill / bar background (expanded region, D26) | whole region (as one window) | collapse region to the rail (unmarked backing for the chevron) |
+| Region parent handle — pill / bar background (expanded single-visual-column region, D26/D27) | whole region (as one window) | collapse region to the rail (unmarked backing for the chevron) |
 | Region-collapse chevron (right end of the region parent handle) | — (click-only; NOT drag-through) | collapse region to the rail; keyboard collapse hands focus to the rail header |
+| Column parent handle (each column of a multi-column region, D27; pill only) | that visual column (as one stacked window, height ratios preserved) | — (no signifier, no action, P9) |
 | Rail header (parent handle) | whole region (as one window) | expand region (cells keep their states; label "Expand panel area") |
 | Rail cell cap / background (quiet pill) | whole group (still minimized) | expand region + group (lone cell only; inert with 2+ cells) |
 | Rail spine row | that pane (still minimized) | expand region to that tab |
@@ -429,7 +468,9 @@ and changing one is a spec change.
    insert would resolve always beats region-level bands (specific intent
    beats broad intent).
 3. **Region edge bands** (occupied edge): 8px top/bottom = full-span band
-   above/below everything; 40px outer/inner side = full-height column beside
+   above/below everything; 40px outer/inner side (each capped to a third of
+   the region width, so the two bands always leave a middle third for the
+   per-cell zones underneath) = full-height column beside
    everything — for a canonical stack (all bands single-column) the op ZIPS
    the bands into one nested column so "beside everything" is literal; a
    region containing a multi-column band cannot be zipped (rows can't
@@ -532,9 +573,12 @@ expands it, §9 item 1).
   panels never shrink because something arrived (P3 outranks canvas
   preservation; the resizer is the recovery). Applies to per-cell splits
   and region-edge docks alike.
-- **Minimums**: expanded columns ≥ ~120px grab minimum; cells ≥ ~50px;
-  windows ≥ 100px height. Resizes clamp; they never squeeze a cell below
-  its header. The cell minimum is also a RENDER floor on expanded docked
+- **Minimums**: expanded columns / regions / windows ≥ 96px grab-width
+  minimum (`MIN_REGION_GRAB_PX`; the ~220px CONTENT minimum is the body's —
+  below it the panel scrolls horizontally rather than squeezing); cells ≥
+  ~50px; windows ≥ 50px height (floored at the content height when the
+  content is shorter, so a short panel can shrink to its natural size).
+  Resizes clamp; they never squeeze a cell below its header. The cell minimum is also a RENDER floor on expanded docked
   leaves (mirroring the floating stack's, P7): repeated same-target
   splits halve weights geometrically, and without the floor the smallest
   cell clips its own grip bar + strip.
@@ -601,7 +645,11 @@ expands it, §9 item 1).
   clearing is always legal. The chevron and rail-header gestures commit
   as USER ops (P6): ownership arbitration must learn the user set or
   cleared the flag, or a stale server placement could silently re-flip a
-  rail the user just toggled.
+  rail the user just toggled. A MULTI-COLUMN region exposes no collapse
+  entry at all (D27): the rail's single packed strip would flatten its
+  columns, so the chevron lives only on the single-visual-column
+  region's parent handle. Deliberate, P5-checked gap — per-cell
+  minimize stays available everywhere.
 - Expand ops clear the flag (D21): every op that expands a docked panel
   (expand-group, expand-to-tab, a toggle landing on expanded) also
   un-collapses that panel's region — an "expanded" panel hidden behind
@@ -828,7 +876,13 @@ passes over the iteration-3 changes; all findings were code fixes.
   state, the RegionResizer's 5px inward straddle overlaps the column
   scrollbar's outer edge; the scrollbar's remaining width still
   scrolls, and narrowing the straddle would cost the region-resize
-  grab everywhere for a rare degenerate state.
+  grab everywhere for a rare degenerate state. *(Re-verified
+  2026-07-04: the straddle is now TWO strips sharing one handler —
+  the 10px canvas-side strip runs full height (it can never cover
+  panel chrome), while the 5px over-the-panel strip starts below the
+  48px chrome clearance — so the scrollbar overlap is only that inner
+  strip below y=48; above it the scrollbar is clear. The trade
+  stands.)*
 
 **Update (2026-07-04, user-directed redesign):** region parent handle
 (D26, superseding D23's placement): every docked region renders a
@@ -842,6 +896,85 @@ DELETED — `regionChevronEdge` (`layoutOps.ts`), the chevron hosting in
 `MinimizedBar.tsx`, the ~24px grip-bar hit-box overhang, and the tab
 strip's top-right corner reservation are all removed. §3 (intro
 inventory), §3.1, §3.3, §4, and P13's controls clause re-synced.
+
+**Cross-check record — 2026-07-04 (full §10-protocol pass, post
+stability loop + D26; working tree incl. the pill re-centering):** one
+audit walked every normative section against `src/viser/client/src/dock/*`,
+`ControlPanelDock.tsx`, and `tests/e2e/conftest.py`. Per-section verdicts
+(claims checked → DIFFERS/STALE found, all resolved as SPEC fixes; no code
+changed):
+
+- **§1 principles** (~40): 1 — P13's pill clause still said the pill
+  centers in the free run left of the right-end controls; the free-run
+  offset was removed with D26 (grip pills true-center again, sharing the
+  parent handle's and window header's centerline). P4 as amended verified
+  end to end: `collapseAnim` eases flex-grow/flex-basis/min-height at
+  160ms, `prefers-reduced-motion` → none, `[data-dock-resizing]` set by
+  BOTH divider kinds (SplitView's SplitDivider and the floating
+  FloatingStackDivider), e2e `reduced_motion="reduce"` in both browser
+  contexts; a truthfulness parenthetical added: the `transitionend`
+  re-read is propertyName-gated to the eased properties.
+- **§2 vocabulary** (13 rows): 1 — the Main panel row said "a normal
+  group … viser icon"; the shipped control panel is `unmergeable` with a
+  titleNode header (and no icon field). Row rewritten; D8 gains a
+  matching amendment note.
+- **§3 surfaces** (~55): 0 DIFFERS. D26 parent handle matches code
+  exactly (`data-dock-region-handle` StackHandleBar, chevron as
+  `endControl`, bar click = collapse backing, chevron click-only with
+  focus handoff to the rail header); the collapsed-state gate (no parent
+  handle while railed) was implicit and is now stated outright in the §3
+  intro. Bars/rail/floating anatomy all verified (one-tab tablist, D19
+  face on the standard 26px bar, D25 quiet caps, D15 width grips).
+- **§4 gestures** (18 rows + keyboard/touch): 0. Every row traced to its
+  handler (startCollapsedGroupPress, startRegionDrag, drag-through
+  toggles, inert-height-divider gating via expandedFlags, Escape
+  restores incl. rail drag-out stamping).
+- **§5 drop system** (~35): 1 — item 3's side bands are 40px CAPPED at a
+  third of the region width (hitTest's `sideBand`); cap now recorded.
+  Zone taxonomy, bar zones (docked: no top/bottom; floating:
+  `min(10px, h/3)`), seam recoveries, owning-window mask, halves over
+  railed empty area, mean-weight band inserts all match.
+- **§6 sizing** (~20): 1 — the minimums bullet was stale: the grab
+  minimum is 96px (`MIN_REGION_GRAB_PX`, was ~120) and the window height
+  floor is 50px (`MIN_WINDOW_HEIGHT_PX`, was 100; commits "Reduce
+  minimum panel heights to 50px" et al. postdate the sentence). Split
+  defaults, cascadeResize walk-past, grow normalization over expanded
+  cells only, round-trips: all match.
+- **§7 minimize/expand** (~15): 0. Expand ops clear the rail flag at the
+  op level (expandGroupInPlace), collapseRegion commits as a USER op,
+  rail drag-outs stamp `collapsed` at commit, server floats never do.
+- **§8 server placement** (12): 0. applyPanelPlacement orders position →
+  collapsed → size; ControlPanelDock's placement signatures include the
+  D21 rail flag and region width.
+- **§9 edge cases** (16): 0.
+- **§10 records**: 1 — the iteration-4/5 accepted-trade note predated
+  the RegionResizer's two-strip straddle; re-verified and annotated (the
+  5px inner strip still overlaps a squeezed left region's scrollbar, but
+  only below the 48px clearance).
+
+Code-side observations recorded for review, NOT fixed here: a stale
+"trapped at the 100px minimum" comment in FloatingWindowView (the floor
+is 50px); hitTest's `CHIP_SNAP_BAND_PX` name outliving the chip-bar form
+(naming only); RegionCollapseChevron's focus handoff runs on POINTER
+activation too, not just keyboard (harmless — the ring is
+:focus-visible-only — but inconsistent with gestures.ts's stated
+keyboard-only-focus policy); StackHandleBar's doc comment in handles.tsx
+is stranded above ChromeDivider.
+
+**Update (2026-07-04, post-pass, user-directed):** D27 landed —
+parent-handle scope is a VISUAL COLUMN; per-column pill-only handles
+(`data-dock-column-handle`, `SplitView`/`RowView`) for regions with any
+multi-column band, region handle + chevron suppressed there
+(`DockManager`'s render gate), drag via the new `startColumnDrag`
+context op routing through the EXISTING `floatColumn` (heights
+preserved). This supersedes the D26 record's "spans the region's full
+width because the rail collapse acts on the whole edge" rationale in
+the multi-column case (see D26's scoping note / D27). §3 intro, §3.1
+(D22 clause), §3.3 chevron, §4 table, and §7 updated. Two of the
+code-side observations above were also fixed in the same working tree:
+`CHIP_SNAP_BAND_PX` renamed `BAR_SNAP_BAND_PX`, the stale "trapped at
+the 100px minimum" comment now says 50px (and the stranded
+StackHandleBar doc comment was re-homed above its component).
 
 Former open questions, decided with the maintainer. Normative sections above
 already reflect them; this list preserves the rationale.
@@ -876,7 +1009,13 @@ already reflect them; this list preserves the rationale.
 - **D7 (release over nothing):** always float at the pointer. Motion means
   move; Escape is the abort.
 - **D8 (main panel):** fully ordinary — merges, stacks, minimizes like any
-  group. Its specialness is identity + icon only.
+  group. Its specialness is identity + icon only. *(Amended: the shipped
+  control panel opts into `unmergeable` (its header is the connection-status
+  titleNode, not a tab strip), so "merges like any group" no longer applies
+  to it. The general-mechanism point stands — unmergeability is a per-pane
+  property any panel may set, not main-panel special-casing; docking,
+  stacking, floating, and per-cell minimize all remain ordinary. §2's Main
+  panel row is the normative statement.)*
 - **D9 (segment anatomy):** one label per tab inside band/chip-bar
   segments (rail analog; click = expand to tab, drag = tear pane out),
   degrading to `ActiveTitle +N` when width runs out. *Partially superseded
@@ -954,7 +1093,11 @@ already reflect them; this list preserves the rationale.
   justification ("the handle signals coupled collapse") died with D16.
   The sometimes-there column handle is removed; nested-stack cells move
   individually. (floatColumn stays as an op; it just has no dedicated
-  chrome.)
+  chrome.) *(Partially superseded by D27: multi-column regions render a
+  per-column parent handle whose drag IS floatColumn — justified by
+  scope honesty (P1/P12), not by the coupled-collapse signal D22
+  buried. Single-visual-column regions still have no column-level
+  chrome.)*
 - **D15 (minimized windows stay width-resizable, 2026-07-04):** a
   fully-minimized floating window keeps its side (width) resize grips —
   the bar holds win.width (P8), and that width remains user-adjustable in
@@ -1044,4 +1187,33 @@ already reflect them; this list preserves the rationale.
   expands). Deleted with the move: the per-cell chevron slots (grip
   bar, minimized bar, unmergeable header), `regionChevronEdge`, the
   ~24px grip-bar hit-box overhang, and the tab strip's top-right
-  corner reservation.
+  corner reservation. *(Scoped by D27, 2026-07-04: the region-wide
+  handle — and with it the full-width rationale above — holds only
+  when the region is one VISUAL column, i.e. every band single-column.
+  Multi-column regions suppress it in favor of per-column handles.)*
+- **D27 (parent-handle scope is a VISUAL COLUMN; per-column handles
+  for zipped bands, 2026-07-04):** user-directed. With `[A][B]` zipped
+  over `[A][C]`, in the user's words: "there are two columns. So there
+  should be two separate parent handles. There's some weirdness right
+  now where there's only one parent handle, and dragging it out
+  produces [A]/[B]/[C]" — the region-wide handle covered two
+  independent visual columns while its drag FLATTENED them into one
+  stack (P1: the hint/handle promised the region as one unit while the
+  drop destroyed its structure; P8: the round-trip lost the shape; P12
+  again: one control spanning things that aren't one stack). As
+  implemented: (a) a region where EVERY band has one column is one
+  visual column — the region-level parent handle renders as before
+  (pill + chevron; its drag floats the whole region, honest there
+  because the float preserves the stack); (b) any multi-column band
+  suppresses the region handle, and each column in each band renders
+  its own parent handle at its top (`data-dock-column-handle`, a
+  pill-only StackHandleBar) whose drag floats THAT column as a stacked
+  window via the existing floatColumn op (leaf order + height ratios
+  preserved); a motionless click on it is a no-op (no signifier, no
+  action, P9). (c) NO chevron on column handles: the D21 rail is a
+  whole-edge form whose single packed strip would flatten columns
+  exactly as the region-wide drag did, so multi-column regions offer
+  no region collapse — a deliberate, P5-checked gap (per-cell minimize
+  survives everywhere). Nice property: dragging a column out of a
+  2-column zip leaves a single-column region, so the region handle
+  (chevron included) reappears automatically.
