@@ -57,6 +57,7 @@ import {
   isRegionCollapsedOn,
   MIN_CANVAS_PX,
   MIN_REGION_GRAB_PX,
+  MINIMIZED_STRIP_PX,
   NodeId,
   PaneId,
   PaneRegistry,
@@ -1404,27 +1405,53 @@ export function DockManager({
     event,
     edge,
     columnId,
+    opts,
   ) => {
-    armPress(event, (e) => {
-      dragAfterCommit(e, () => {
-        const rect = floatRectFor(`[data-dock-column="${columnId}"]`);
-        const res = ops.floatColumn(
-          layoutRef.current,
-          edge,
-          columnId,
-          rect.x,
-          rect.y,
-          rect.width,
-        );
-        if (res.windowId === null) return null;
-        flushSync(() => applyOp(res.layout));
-        return {
-          windowId: res.windowId,
-          groupIdForDim: null,
-          ...grabOffset(e, rect.x, rect.y, res.windowId),
-        };
-      });
-    });
+    armPress(
+      event,
+      (e) => {
+        dragAfterCommit(e, () => {
+          const rect = floatRectFor(`[data-dock-column="${columnId}"]`);
+          const column = ops.findColumnById(
+            layoutRef.current.docked[edge],
+            columnId,
+          );
+          const wasRailed = column?.railed === true;
+          // A RAILED column measures strip-narrow; float it at its preserved
+          // expanded width instead (same policy as dockedFloatWidth: trust
+          // the weight only when the reconciler wrote pixels into it).
+          const floatWidth =
+            wasRailed && column !== null && column.weight >= ops.minRegionWidth()
+              ? column.weight
+              : rect.width;
+          const res = ops.floatColumn(
+            layoutRef.current,
+            edge,
+            columnId,
+            rect.x,
+            rect.y,
+            floatWidth,
+          );
+          if (res.windowId === null) return null;
+          // Dragging a railed column out keeps its minimized look: the new
+          // window's cells render as bars (P2), mirroring the region-rail
+          // drag stamp -- the cells' own flags are usually false (the rail
+          // is a view over the model).
+          if (wasRailed) {
+            const win = res.layout.floating.find((w) => w.id === res.windowId);
+            if (win !== undefined)
+              ops.stampCollapsedInPlace(res.layout, [...win.stack]);
+          }
+          flushSync(() => applyOp(res.layout));
+          return {
+            windowId: res.windowId,
+            groupIdForDim: null,
+            ...grabOffset(e, rect.x, rect.y, res.windowId),
+          };
+        });
+      },
+      opts?.onClick,
+    );
   };
 
   const startRegionDrag: DockContextValue["startRegionDrag"] = (
@@ -1827,6 +1854,15 @@ export function DockManager({
     },
     [applyOp],
   );
+  const railColumn = React.useCallback(
+    (edge: DockEdge, columnId: NodeId, on: boolean) => {
+      // A USER op (like collapseRegion): ownership arbitration must learn
+      // the user railed/expanded the column, or a stale server placement
+      // could silently re-flip it (P6).
+      applyOp(ops.setColumnRailed(layoutRef.current, edge, columnId, on));
+    },
+    [applyOp],
+  );
   const toggleCollapsed = React.useCallback(
     (groupId: GroupId) => {
       // Per-CELL minimize everywhere (D16): any group toggles itself, whether
@@ -1852,6 +1888,7 @@ export function DockManager({
       expandToTab,
       toggleCollapsed,
       collapseRegion,
+      railColumn,
       startColumnDrag,
       draggingGroupId,
       draggingTabId,
@@ -1865,6 +1902,7 @@ export function DockManager({
       expandToTab,
       toggleCollapsed,
       collapseRegion,
+      railColumn,
       startColumnDrag,
       draggingGroupId,
       draggingTabId,
@@ -1954,8 +1992,10 @@ export function DockManager({
     const collapsed = isRegionCollapsedOn(layout, edge);
     return {
       tree,
-      // The rail is fixed-width chrome: nothing to resize while collapsed.
-      resizable: !collapsed,
+      // The rail is fixed-width chrome: nothing to resize while collapsed --
+      // and likewise when every width-determining COLUMN is railed (each is
+      // a fixed 36px strip).
+      resizable: !collapsed && plan.columns.some((c) => c.railed !== true),
       // MODEL-based reserved width. The resizer's drag baseline reads THIS,
       // never the post-scaling rendered width below -- otherwise grabbing the
       // handle under the MIN_CANVAS_PX render-scale guard (or pressing
@@ -2251,13 +2291,26 @@ export function DockManager({
                     };
                     const tree0 = layout0.docked[edge];
                     if (tree0 === null) return { onFrame: () => {}, onEnd };
-                    // Every width-determining column participates (D20:
-                    // minimized cells are in-place bars holding their
-                    // column's width). The plan is the same classification
-                    // the render uses.
+                    // Every EXPANDED width-determining column participates
+                    // (D20: minimized cells are in-place bars holding their
+                    // column's width). RAILED columns are excluded from the
+                    // redistribution: they render at the fixed strip width
+                    // and their weights are preserved for restore (P8), so
+                    // their strip px rides with the divider chrome as fixed
+                    // width instead. The plan is the same classification the
+                    // render uses.
                     const plan = planRegion(tree0);
-                    const cols = plan.columns;
-                    const chromePx = plan.chromePx;
+                    const cols = plan.columns.filter((c) => c.railed !== true);
+                    const railedCols = plan.columns.filter(
+                      (c) => c.railed === true,
+                    );
+                    const fixedPx =
+                      plan.chromePx +
+                      railedCols.length * MINIMIZED_STRIP_PX;
+                    const railedWeightPx = railedCols.reduce(
+                      (s, c) => s + c.weight,
+                      0,
+                    );
                     const startRegion = regionWidthsOf(layoutRef.current)[
                       edge
                     ];
@@ -2276,16 +2329,21 @@ export function DockManager({
                     const ids = cols.map((c) => c.id);
                     const onFrame = (reservedPx: number) => {
                       // The grip reports the desired RESERVED width, which
-                      // includes the fixed chrome; subtract it to get the
-                      // columns' share.
+                      // includes the fixed chrome (dividers + railed
+                      // strips); subtract it to get the expanded columns'
+                      // share.
                       let next = layoutRef.current;
                       const widths = ops.resizeRegionColumns(
                         init,
                         mins,
                         maxs,
-                        reservedPx - chromePx,
+                        reservedPx - fixedPx,
                       );
-                      const total = widths.reduce((a, b) => a + b, 0);
+                      const expandedTotal = widths.reduce((a, b) => a + b, 0);
+                      // Model regionWidth stays the ALL-EXPANDED sum: the
+                      // railed columns' preserved pixel weights ride along
+                      // untouched so expanding them restores their widths.
+                      const total = expandedTotal + railedWeightPx;
                       // Only rewrite weights for genuinely side-by-side
                       // columns; a single surfaced column may be a vertical
                       // child whose weight is a HEIGHT (see applyOp). The
@@ -2312,7 +2370,9 @@ export function DockManager({
                         edge,
                         containerWidthRef.current,
                         reservedWidthRef.current[edge], // old reserved (pre-commit)
-                        total + chromePx, // new reserved (cols + chrome)
+                        // New reserved: expanded cols + fixed chrome
+                        // (dividers + railed strips).
+                        expandedTotal + fixedPx,
                         draggingWindowIdRef.current,
                       );
                       // Flush the width commit so this render updates

@@ -150,10 +150,16 @@ export function ChromeToggle({
   expanded,
   label,
   onActivate,
+  compact = false,
 }: {
   expanded: boolean;
   label: string;
   onActivate: () => void;
+  /** Smaller, quieter form for hosts that carry their own prominent
+   * controls (the unmergeable panel header's action icons): the toggle is
+   * ONLY a signifier there -- the whole header is the click target -- so it
+   * can shrink without costing hit area (P11's backing-surface rule). */
+  compact?: boolean;
 }) {
   return (
     <HandleIconButton
@@ -163,9 +169,17 @@ export function ChromeToggle({
       expanded={expanded}
       dragThrough
       onActivate={onActivate}
-      placement={{ width: `${HANDLE_BTN_EM}em`, height: "100%", flexShrink: 0 }}
+      placement={{
+        width: compact ? "1.2em" : `${HANDLE_BTN_EM}em`,
+        height: "100%",
+        flexShrink: 0,
+      }}
     >
-      {expanded ? <IconMinus size={12} /> : <IconPlus size={12} />}
+      {expanded ? (
+        <IconMinus size={compact ? 10 : 12} />
+      ) : (
+        <IconPlus size={compact ? 10 : 12} />
+      )}
     </HandleIconButton>
   );
 }
@@ -206,6 +220,51 @@ export function RegionCollapseChevron({
           flexShrink: 0,
         }
       }
+    >
+      {edge === "right" ? (
+        <IconChevronsRight size={13} />
+      ) : (
+        <IconChevronsLeft size={13} />
+      )}
+    </HandleIconButton>
+  );
+}
+
+/** Column-collapse chevron: the per-COLUMN sibling of RegionCollapseChevron,
+ * rendered at the right end of a column parent handle whose band has sibling
+ * columns (D27). It rails exactly what its handle owns -- that one column --
+ * and, like the region chevron, is NOT drag-through: a press here stays
+ * click-only while the host bar's own motionless click remains its unmarked
+ * backing surface. */
+export function ColumnCollapseChevron({
+  edge,
+  columnId,
+  onActivate,
+}: {
+  edge: "left" | "right";
+  columnId: string;
+  onActivate: () => void;
+}) {
+  return (
+    <HandleIconButton
+      attrs={{ "data-dock-column-collapse": columnId }}
+      label="Collapse column"
+      title="Collapse"
+      expanded
+      onActivate={() => {
+        onActivate();
+        // A keyboard collapse unmounts the chevron with its handle; hand
+        // focus to the column rail's toggle (the same-spot undo control)
+        // instead of <body> -- spec 4 / edge case 14.
+        focusDockControl(
+          `[data-dock-column-rail="${columnId}"] [data-dock-minimize-all]`,
+        );
+      }}
+      placement={{
+        width: `${HANDLE_BTN_EM}em`,
+        height: "100%",
+        flexShrink: 0,
+      }}
     >
       {edge === "right" ? (
         <IconChevronsRight size={13} />

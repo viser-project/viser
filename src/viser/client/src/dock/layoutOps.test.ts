@@ -35,6 +35,7 @@ import {
   row,
   rows,
   col,
+  columnIdOf,
   makeLayout,
   shapeOf,
   groupsInTree,
@@ -64,6 +65,11 @@ import {
   toggleCollapsed,
   expandGroup,
   setRegionCollapsed,
+  setColumnRailed,
+  isGroupEffectivelyCollapsed,
+  isRailedDockedCell,
+  normalizeCanonicalBandsInPlace,
+  collectLeafGroups,
   floatRegion,
   minimizeStack,
   expandStack,
@@ -141,6 +147,125 @@ describe("setRegionCollapsed (D21)", () => {
     expect(res.windowId).not.toBeNull();
     expect(res.layout.docked.left).toBeNull();
     expect(isRegionCollapsedOn(res.layout, "left")).toBe(false);
+  });
+});
+
+// ===========================================================================
+// setColumnRailed (per-column rail): a column collapsed to a 36px spine in
+// place, with its width weight preserved. Expands clear it; docking beside a
+// region-railed region converts the region flag into column flags.
+// ===========================================================================
+
+describe("setColumnRailed (per-column rail)", () => {
+  /** Left edge: one band, two single-leaf columns [a | b]. */
+  const twoColumns = () => {
+    const ca = col([leaf("a")]);
+    const cb = col([leaf("b")]);
+    const layout = makeLayout({ left: row([ca, cb]) });
+    return { layout, aColId: columnIdOf(ca) };
+  };
+
+  it("round-trips, no-ops on a missing column, and expand-to-tab clears it", () => {
+    const { layout, aColId } = twoColumns();
+    const on = setColumnRailed(layout, "left", aColId, true);
+    expect(on.docked.left!.rows[0].columns[0].railed).toBe(true);
+    // Per-cell collapse states are untouched (the rail is a view over them).
+    expect(on.groups["a"].collapsed).not.toBe(true);
+    // Clearing (or setting) on a missing column is a no-op.
+    expect(setColumnRailed(on, "left", "missing", false)).toBe(on);
+    expect(setColumnRailed(on, "left", aColId, true)).toBe(on);
+    const off = setColumnRailed(on, "left", aColId, false);
+    expect(off.docked.left!.rows[0].columns[0].railed).toBeUndefined();
+    // The expand-to-tab path (setActiveTab + expandGroup) clears the
+    // containing column's railed flag: expanding reveals the panel (P5).
+    const expanded = expandGroup(setActiveTab(on, "a", "a:0"), "a");
+    expect(expanded.docked.left!.rows[0].columns[0].railed).toBeUndefined();
+  });
+
+  it("a group in a railed column reads as effectively collapsed", () => {
+    const { layout, aColId } = twoColumns();
+    const on = setColumnRailed(layout, "left", aColId, true);
+    expect(isGroupEffectivelyCollapsed(on, "a")).toBe(true);
+    expect(isRailedDockedCell(on, "a")).toBe(true);
+    expect(isGroupEffectivelyCollapsed(on, "b")).toBe(false);
+    expect(isRailedDockedCell(on, "b")).toBe(false);
+  });
+
+  it("side-docking beside a region-railed region converts to column rails", () => {
+    const layout = makeLayout({
+      left: leaf("a"),
+      floating: [{ id: "w", stack: ["n"] }],
+    });
+    const railed = setRegionCollapsed(layout, "left", true);
+    const out = dockToRegionEdge(railed, ["n"], "left", "right");
+    // Region flag off; the OLD column railed; the newcomer expanded.
+    expect(isRegionCollapsedOn(out, "left")).toBe(false);
+    const cols = out.docked.left!.rows[0].columns;
+    expect(cols.map((c) => collectLeafGroups(c))).toEqual([["a"], ["n"]]);
+    expect(cols[0].railed).toBe(true);
+    expect(cols[1].railed).toBeUndefined();
+  });
+
+  it("conversion through the D13-style zip rails the zipped stack", () => {
+    // A railed multi-band stack side-docked: the bands zip into one column,
+    // which stays railed (every source column was), beside the expanded
+    // newcomer.
+    const layout = makeLayout({
+      left: rows([leaf("a"), leaf("b")]),
+      floating: [{ id: "w", stack: ["n"] }],
+    });
+    const railed = setRegionCollapsed(layout, "left", true);
+    const out = dockToRegionEdge(railed, ["n"], "left", "left");
+    expect(isRegionCollapsedOn(out, "left")).toBe(false);
+    const cols = out.docked.left!.rows[0].columns;
+    expect(cols.map((c) => collectLeafGroups(c))).toEqual([["n"], ["a", "b"]]);
+    expect(cols[0].railed).toBeUndefined();
+    expect(cols[1].railed).toBe(true);
+  });
+
+  it("D13 zip keeps railed only when BOTH halves carried it", () => {
+    const layout = makeLayout({
+      left: rows([row([leaf("a"), leaf("b")]), row([leaf("c"), leaf("d")])]),
+    });
+    const region = layout.docked.left!;
+    region.rows[0].columns[0].railed = true; // a railed above...
+    region.rows[1].columns[0].railed = true; // ...and c below -> kept
+    region.rows[1].columns[1].railed = true; // d railed but b not -> dropped
+    expect(normalizeCanonicalBandsInPlace(layout)).toBe(true);
+    expect(layout.docked.left!.rows).toHaveLength(1);
+    const cols = layout.docked.left!.rows[0].columns;
+    expect(cols[0].railed).toBe(true);
+    expect(cols[1].railed).toBeUndefined();
+  });
+
+  it("a railed lone multi-leaf column promotes to the REGION rail (D12 + orphan rule)", () => {
+    // The column IS the region's whole visual column: carrying the flag onto
+    // D12's split fragments would leave illegal lone-railed bands, so the
+    // composed contract is the whole-region rail with column flags cleared.
+    const layout = makeLayout({ left: col([leaf("a"), leaf("b")]) });
+    layout.docked.left!.rows[0].columns[0].railed = true;
+    expect(normalizeCanonicalBandsInPlace(layout)).toBe(true);
+    expect(isRegionCollapsedOn(layout, "left")).toBe(true);
+    expect(layout.docked.left!.rows).toHaveLength(2);
+    for (const band of layout.docked.left!.rows)
+      expect(band.columns[0].railed).toBeUndefined();
+  });
+
+  it("orphan rule: a lone railed column among expanded bands degrades to bars", () => {
+    // Two single-column bands; the second's column railed (the shape left
+    // behind when a railed column's expanded band-siblings depart). The
+    // railed form is only legal beside siblings: the flag clears and the
+    // column's groups minimize to in-place bars instead (intent kept, no
+    // stranded dead space), and the region does NOT rail (band 1 expanded).
+    const layout = makeLayout({
+      left: rows([row([leaf("a")]), row([leaf("b")])]),
+    });
+    layout.docked.left!.rows[1].columns[0].railed = true;
+    expect(normalizeCanonicalBandsInPlace(layout)).toBe(true);
+    expect(isRegionCollapsedOn(layout, "left")).toBe(false);
+    expect(layout.docked.left!.rows[1].columns[0].railed).toBeUndefined();
+    expect(layout.groups["b"].collapsed).toBe(true);
+    expect(layout.groups["a"].collapsed).not.toBe(true);
   });
 });
 

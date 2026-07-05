@@ -505,33 +505,38 @@ export function findGroupLocation(
 }
 
 /** True when a group READS as collapsed: its own collapsed flag is set, OR it
- * is docked on an edge whose whole region is explicitly collapsed to the rail
- * (D21) -- rail cells render as compact strips regardless of their own
- * per-cell collapse state. */
+ * is docked under a rail form it doesn't own -- its edge's explicit region
+ * collapse (D21) or its containing COLUMN's railed flag -- and renders as a
+ * compact strip regardless of its own per-cell collapse state. */
 export function isGroupEffectivelyCollapsed(
   layout: DockLayout,
   groupId: GroupId,
 ): boolean {
-  if (layout.groups[groupId]?.collapsed === true) return true;
-  const loc = findGroupLocation(layout, groupId);
-  return loc?.kind === "docked" && isRegionCollapsedOn(layout, loc.edge);
+  return (
+    layout.groups[groupId]?.collapsed === true ||
+    isRailedDockedCell(layout, groupId)
+  );
 }
 
-/** True when a group is DOCKED and reads as collapsed there (its own flag, or
- * its edge's explicit region collapse, D21) -- i.e. the drag paths' "was this
- * a railed/bar cell" pre-op check, done in one findGroupLocation walk. For
- * docked groups this matches isGroupEffectivelyCollapsed exactly; non-docked
- * groups are always false. */
+/** True when a group is DOCKED and reads as collapsed there (its own flag,
+ * its edge's explicit region collapse, or its containing column's railed
+ * flag) -- i.e. the drag paths' "was this a railed/bar cell" pre-op check,
+ * done in ONE region walk (the walk also yields the containing column, which
+ * the location kinds alone don't). Non-docked groups are always false. */
 export function isRailedDockedCell(
   layout: DockLayout,
   groupId: GroupId,
 ): boolean {
-  const loc = findGroupLocation(layout, groupId);
-  return (
-    loc?.kind === "docked" &&
-    (layout.groups[groupId]?.collapsed === true ||
-      isRegionCollapsedOn(layout, loc.edge))
-  );
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const found = findGroupInRegion(layout.docked[edge], groupId);
+    if (found === null) continue;
+    return (
+      layout.groups[groupId]?.collapsed === true ||
+      isRegionCollapsedOn(layout, edge) ||
+      found.column.railed === true
+    );
+  }
+  return false;
 }
 
 /** The group ids that share a STACK with `groupId` (including itself): a
@@ -728,6 +733,10 @@ export function dockToEdge(
   if (existing === null) {
     draft.docked[edge] = regionOf(column);
   } else {
+    // A column joining a region-railed region converts the region rail into
+    // per-column rails first: the old content stays railed, the newcomer
+    // lands expanded (visible, P5).
+    convertRegionRailToColumnRailsInPlace(draft, edge);
     // Add the new column at the OUTERMOST position (far left for "left", far
     // right for "right") of the FIRST row band. The common region is a single
     // row, so this is just the row gaining a column; with multiple bands the
@@ -788,6 +797,11 @@ export function dockToRegionEdge(
   // Regions with a multi-column band can't be zipped (rows can't nest);
   // there the new column joins the FIRST band, and hitTest draws the hint
   // first-band-tall to match (P1).
+  //
+  // A side dock beside a region-railed region converts the region rail into
+  // per-column rails first: the old content stays railed, the newcomer lands
+  // expanded (visible, P5).
+  convertRegionRailToColumnRailsInPlace(draft, edge);
   const dw = weights?.dragged ?? 1;
   const column = buildColumn(ne, dw, stackHeights);
   const zippable =
@@ -804,10 +818,17 @@ export function dockToRegionEdge(
     });
     const zipLeaves = asNonEmpty(leaves);
     if (zipLeaves !== null) {
+      // The zip merges every band's column into one; it stays railed only
+      // when ALL of them were (the D13 rule -- a half-railed merge must
+      // reveal the expanded half's content).
+      const zipRailed = existing.rows.every(
+        (r) => r.columns[0].railed === true,
+      );
       const zipped: DockColumn = {
         id: existing.rows[0].columns[0].id,
         weight: weights?.existing ?? existing.rows[0].columns[0].weight,
         leaves: zipLeaves,
+        ...(zipRailed ? { railed: true } : {}),
       };
       const columns: NonEmpty<DockColumn> =
         side === "left" ? [column, zipped] : [zipped, column];
@@ -989,6 +1010,11 @@ export function dropOnDockedLeaf(
   // band the flat Region->Row->Column->Leaf model cannot nest a row inside a
   // column, so the new column spans the whole band beside the target's column
   // instead (and the hint spans the band to match).
+  //
+  // A side drop into a region-railed region converts the region rail into
+  // per-column rails first: the old content (the target's column included)
+  // stays railed, the newcomer lands expanded (visible, P5).
+  convertRegionRailToColumnRailsInPlace(draft, edge);
   const half = targetColumn.weight / 2;
   const newColumn = buildColumn(ne, half, stackHeights);
   if (targetRow.columns.length === 1 && targetColumn.leaves.length > 1) {
@@ -999,11 +1025,21 @@ export function dropOnDockedLeaf(
     const total = targetColumn.leaves.reduce((s, l) => s + l.weight, 0) || 1;
     const share = (leaves: DockLeaf[]) =>
       (targetRow.weight * leaves.reduce((s, l) => s + l.weight, 0)) / total;
+    // Split fragments carry the source column's railed flag (the D12 rule:
+    // a band split of a railed column leaves every fragment railed).
     const bandOf = (leaves: DockLeaf[]): DockRow | null => {
       const ls = asNonEmpty(leaves);
       return ls === null
         ? null
-        : buildRow({ id: freshId("node"), weight: 1, leaves: ls }, share(leaves));
+        : buildRow(
+            {
+              id: freshId("node"),
+              weight: 1,
+              leaves: ls,
+              ...(targetColumn.railed === true ? { railed: true } : {}),
+            },
+            share(leaves),
+          );
     };
     // The target's own column keeps its id (and with it its reconciled width).
     const targetCol: DockColumn = {
@@ -1707,6 +1743,45 @@ export function setRegionCollapsed(
   return draft;
 }
 
+/** Set a COLUMN's railed flag: while set, the column renders as a 36px spine
+ * strip in place; its width weight is preserved for restore (P8). The
+ * per-column analog of setRegionCollapsed -- the column-collapse chevron's
+ * op. Setting or clearing on a missing column is a no-op, as is a value that
+ * already matches. Per-cell collapse states are untouched (the rail is a
+ * view over them). */
+export function setColumnRailed(
+  layout: DockLayout,
+  edge: DockEdge,
+  columnId: NodeId,
+  on: boolean,
+): DockLayout {
+  const found = findColumn(layout.docked[edge], columnId);
+  if (found === null || (found.column.railed === true) === on) return layout;
+  const draft = clone(layout);
+  const column = findColumn(draft.docked[edge], columnId)!.column;
+  if (on) column.railed = true;
+  else delete column.railed;
+  return draft;
+}
+
+/** Convert an edge's whole-region rail (D21) into per-column rails, in
+ * place: clear regionCollapsed and mark every PRE-EXISTING column railed.
+ * Called by every op that ADDS a side-by-side column to a region-railed
+ * region, BEFORE the insert -- the old content stays railed in place while
+ * the newcomer lands expanded (the region flag would otherwise swallow the
+ * new column into the rail). No-op when the edge isn't region-railed or
+ * holds no region. */
+function convertRegionRailToColumnRailsInPlace(
+  draft: DockLayout,
+  edge: DockEdge,
+): void {
+  const region = draft.docked[edge];
+  if (region === null || !isRegionCollapsedOn(draft, edge)) return;
+  draft.regionCollapsed = withRegionCollapsed(draft, edge, false);
+  for (const row of region.rows)
+    for (const column of row.columns) column.railed = true;
+}
+
 /** Clear the region-collapse flag for the edge holding `groupId` (if docked),
  * in place. Every op that EXPANDS a panel routes through this: expanding a
  * panel from the rail must reveal it, which means un-collapsing its region
@@ -1723,9 +1798,30 @@ function clearRegionCollapsedForGroupInPlace(
   return true;
 }
 
-/** Expand `groupId` in place: clear its own collapsed flag and its region's
- * collapse flag (D21). Shared by expandGroup and toggleCollapsed's expand
- * direction. Returns whether anything changed. */
+/** Clear the railed flag of the docked COLUMN holding `groupId` (if any), in
+ * place -- the per-column mirror of clearRegionCollapsedForGroupInPlace:
+ * expanding a panel from a column rail must reveal it (P5/P6), so every
+ * expand path routes through this via expandGroupInPlace. Returns whether a
+ * flag was actually cleared. */
+function clearColumnRailedForGroupInPlace(
+  draft: DockLayout,
+  groupId: GroupId,
+): boolean {
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const found = findGroupInRegion(draft.docked[edge], groupId);
+    if (found === null) continue;
+    if (found.column.railed !== true) return false;
+    delete found.column.railed;
+    return true;
+  }
+  return false;
+}
+
+/** Expand `groupId` in place: clear its own collapsed flag, its region's
+ * collapse flag (D21), and its containing column's railed flag. Shared by
+ * expandGroup and toggleCollapsed's expand direction, so every expand path
+ * (toggle, expand-to-tab, server collapsed:false) reveals the panel. Returns
+ * whether anything changed. */
 function expandGroupInPlace(draft: DockLayout, groupId: GroupId): boolean {
   let changed = false;
   const group = draft.groups[groupId];
@@ -1734,6 +1830,7 @@ function expandGroupInPlace(draft: DockLayout, groupId: GroupId): boolean {
     changed = true;
   }
   if (clearRegionCollapsedForGroupInPlace(draft, groupId)) changed = true;
+  if (clearColumnRailedForGroupInPlace(draft, groupId)) changed = true;
   return changed;
 }
 
@@ -1828,6 +1925,36 @@ export function normalizeCanonicalBandsInPlace(layout: DockLayout): boolean {
   for (const edge of ["left", "right"] as DockEdge[]) {
     const region = layout.docked[edge];
     if (region === null) continue;
+    // Orphaned column rails (D28): the railed form is only legal BESIDE
+    // expanded siblings -- a railed column that ends up alone in its band
+    // would render as a 36px strip inside a full-width band, stranding dead
+    // space. Degrade to the legal minimized form for the new geometry:
+    // - every column in the region railed and single-column throughout ->
+    //   promote to the whole-region rail (the add-conversion's inverse);
+    // - a lone railed column among expanded bands -> clear the flag and
+    //   minimize its groups to in-place bars (keeps the user's "minimized"
+    //   intent without the dead space).
+    const singleColumn = region.rows.every((rw) => rw.columns.length === 1);
+    if (singleColumn) {
+      const railedLoners = region.rows
+        .map((rw) => rw.columns[0])
+        .filter((c) => c.railed === true);
+      if (railedLoners.length > 0) {
+        if (railedLoners.length === region.rows.length) {
+          layout.regionCollapsed = withRegionCollapsed(layout, edge, true);
+        }
+        for (const c of railedLoners) {
+          delete c.railed;
+          if (railedLoners.length < region.rows.length) {
+            for (const lf of c.leaves) {
+              const g = layout.groups[lf.group];
+              if (g !== undefined) g.collapsed = true;
+            }
+          }
+        }
+        changed = true;
+      }
+    }
     const regionW = Math.max(1, regionWidthsOf(layout)[edge]);
 
     const fractions = (band: DockRow): number[] => {
@@ -1859,7 +1986,13 @@ export function normalizeCanonicalBandsInPlace(layout: DockLayout): boolean {
         const cb = b.columns[i];
         const leaves = asNonEmpty([...scaled(a, ca), ...scaled(b, cb)]);
         // Both inputs are NonEmpty; the concat cannot be empty.
-        return leaves === null ? ca : { ...ca, leaves };
+        if (leaves === null) return ca;
+        const merged: DockColumn = { ...ca, leaves };
+        // The merged column stays railed only when BOTH halves were: a
+        // half-railed merge must reveal the expanded half's content. (The
+        // spread carried ca's flag; drop it unless cb matches.)
+        if (cb.railed !== true) delete merged.railed;
+        return merged;
       }),
     });
 
@@ -1882,6 +2015,9 @@ export function normalizeCanonicalBandsInPlace(layout: DockLayout): boolean {
                   id: i === 0 ? only.id : freshId("node"),
                   weight: only.weight,
                   leaves: [{ ...lf, weight: 1 }],
+                  // Fragments of a railed column stay railed (the split is
+                  // a pure re-expression of the same picture, P14).
+                  ...(only.railed === true ? { railed: true } : {}),
                 },
               ],
             });

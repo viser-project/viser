@@ -341,7 +341,12 @@ export function TabGroupFrame({
           // the panel above.
           className={
             activePane?.titleNode
-              ? [!collapsed && headerRule, stacked && headerRuleTop]
+              ? // Top rule ALWAYS when docked (`fill`): a parent handle now
+                // sits above every docked panel, and the rule is the visual
+                // separator between it and the panel's own header. Floating
+                // keeps the stacked-only condition (a lone window has
+                // nothing above the header).
+                [!collapsed && headerRule, (fill || stacked) && headerRuleTop]
                   .filter(Boolean)
                   .join(" ") || undefined
               : undefined
@@ -426,6 +431,10 @@ export function TabGroupFrame({
             expanded={!collapsed}
             label={collapsed ? "Expand panel" : "Minimize panel"}
             onActivate={toggleAndFocusBar}
+            // Compact: this header carries the panel's own action icons and
+            // the whole header is the minimize click target -- the toggle is
+            // a quiet signifier, not a hit area.
+            compact
           />
         </Box>
       ) : (

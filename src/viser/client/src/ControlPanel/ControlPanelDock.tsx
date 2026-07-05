@@ -70,9 +70,17 @@ function groupPlacementSignatures(
     // silently un-rail the region the user just collapsed (P6).
     const rail = isRegionCollapsedOn(layout, edge) ? "R" : "-";
     for (const row of region.rows)
-      for (const column of row.columns)
+      for (const column of row.columns) {
+        // The containing column's railed state joins the signature like the
+        // region's `:R` term: a user's column-rail toggle must mark that
+        // column's residents touched, for the same P6 replay hazard.
+        const colRail = column.railed === true ? "r" : "-";
         for (const { id, group } of ops.collectLeaves(column))
-          sigs.set(group, `d:${edge}:${id}:${collapsed(group)}:${w}:${rail}`);
+          sigs.set(
+            group,
+            `d:${edge}:${id}:${collapsed(group)}:${w}:${rail}:${colRail}`,
+          );
+      }
   }
   // Floating: signature = the window (id + position/size) the group sits in, plus
   // its collapsed state. Deliberately NOT the stack index -- a group that stays

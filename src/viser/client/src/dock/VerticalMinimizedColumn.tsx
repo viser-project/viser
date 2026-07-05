@@ -14,7 +14,7 @@ import { focusPaneTab, tabListKeyDown } from "./gestures";
 import { ChromeDivider, GripPill, StackHandleBar } from "./handles";
 import { startCollapsedGroupPress } from "./collapsedPress";
 import { collectLeaves } from "./layoutOps";
-import { DockEdge, DockRegion, NodeId, TabGroup } from "./types";
+import { DockColumn, DockEdge, DockRegion, NodeId, TabGroup } from "./types";
 
 /** The COLLAPSED region as ONE packed rail (spec 3.2 / D21): every leaf
  * across every band, contiguous, so the canvas gets the region's width back
@@ -99,6 +99,95 @@ export function RegionMinimizedRail({
                 // that same action (P9's hit-area rule), so a motionless
                 // click there still expands; with 2+ cells a background
                 // click stays inert (which cell would it mean?).
+                clickExpands={leaves.length === 1}
+              />
+            </React.Fragment>
+          );
+        })}
+      </Paper>
+    </Box>
+  );
+}
+
+/** One RAILED COLUMN as a 36px spine strip in place (per-column rail): the
+ * RegionMinimizedRail's shape scoped to a single column of a band. The
+ * narrow StackHandleBar on top is the column's parent handle while railed:
+ * drag floats the COLUMN as one stacked window (order + height ratios
+ * preserved); click / `+` EXPANDS THE COLUMN (clears its railed flag --
+ * cells keep their own collapse states). Spine-row clicks expand the column
+ * AND that panel to that tab (expandToTab clears the flag at the op level). */
+export function ColumnRail({
+  column,
+  edge,
+}: {
+  column: DockColumn;
+  edge: DockEdge;
+}) {
+  const dock = useDock();
+  const leaves = collectLeaves(column);
+  // Expand the COLUMN: clears only its railed flag -- cells keep their own
+  // collapse states (a minimized cell comes back as an in-place bar). Focus
+  // then lands on the first revealed cell's active tab, never on <body>
+  // (edge case 14) -- mirrors RegionMinimizedRail's expandRegion.
+  const expandColumn = () => {
+    dock.railColumn(edge, column.id, false);
+    const firstGroup = dock.groups[leaves[0]?.group ?? ""];
+    if (firstGroup?.activeId != null) focusPaneTab(firstGroup.activeId);
+  };
+  return (
+    <Box
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        height: "100%",
+        minWidth: 0,
+        minHeight: 0,
+      }}
+    >
+      <StackHandleBar
+        attrs={{ "data-dock-column-rail": column.id }}
+        onPointerDown={(event) =>
+          dock.startColumnDrag(event, edge, column.id, {
+            onClick: expandColumn,
+          })
+        }
+        collapsed
+        narrow
+        onToggle={expandColumn}
+        // Honest label: this expands the COLUMN (clears its railed flag);
+        // cells keep their own minimize states, so "Expand all panes" would
+        // lie here -- same wording rule as the region rail's header.
+        toggleLabel="Expand column"
+        toggleTitle="Expand"
+      />
+      <Paper
+        radius={0}
+        style={{
+          flexGrow: 1,
+          minWidth: 0,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          overflowX: "hidden",
+          overflowY: "auto",
+          backgroundColor: "var(--mantine-color-body)",
+        }}
+      >
+        {leaves.map(({ id, group }, i) => {
+          const g = dock.groups[group];
+          if (g === undefined) return null;
+          return (
+            <React.Fragment key={id}>
+              {i > 0 && <ChromeDivider />}
+              <VerticalMinimizedCell
+                nodeId={id}
+                edge={edge}
+                group={g}
+                // Same signifier budget as the region rail (P9/D25): the
+                // parent handle owns the ONE visible expand control; a LONE
+                // cell's cap/background is unmarked backing for it, while
+                // with 2+ cells a background click stays inert.
                 clickExpands={leaves.length === 1}
               />
             </React.Fragment>

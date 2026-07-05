@@ -42,12 +42,30 @@ export function planRegion(region: DockRegion): RegionPlan {
 
 /** Rendered (reserved) width of the region: the EXPLICIT collapse state (D21)
  * reserves exactly the 36px rail; otherwise regionWidth plus divider chrome.
- * Model widths are untouched by collapse, so expand restores them exactly. */
+ * Model widths are untouched by collapse, so expand restores them exactly.
+ *
+ * Per-COLUMN rails: a railed width-column renders at the fixed strip width
+ * while its stored weight is preserved for restore (P8), so the rendered
+ * width swaps that column's SHARE of regionWidth out for MINIMIZED_STRIP_PX.
+ * The share is proportional over the plan's column weights: with reconciled
+ * (pixel) weights it is exact, and it degrades gracefully for unreconciled
+ * flex-share weights (test literals, pre-reconcile drafts). */
 export function plannedReservedWidth(
   plan: RegionPlan,
   regionWidthPx: number,
   regionCollapsed: boolean,
 ): number {
   if (regionCollapsed) return MINIMIZED_STRIP_PX;
-  return regionWidthPx + plan.chromePx;
+  const railedCount = plan.columns.filter((c) => c.railed === true).length;
+  if (railedCount === 0) return regionWidthPx + plan.chromePx;
+  const totalW = plan.columns.reduce((s, c) => s + c.weight, 0) || 1;
+  const expandedW = plan.columns.reduce(
+    (s, c) => s + (c.railed === true ? 0 : c.weight),
+    0,
+  );
+  return (
+    (regionWidthPx * expandedW) / totalW +
+    railedCount * MINIMIZED_STRIP_PX +
+    plan.chromePx
+  );
 }

@@ -220,6 +220,14 @@ export interface DockColumn {
   leaves: NonEmpty<DockLeaf>;
   /** Flex weight relative to sibling columns within the row (horizontal). */
   weight: number;
+  /** Per-COLUMN rail: when true, this column renders as a 36px spine strip in
+   * place (its leaves as rail cells) while its width weight is preserved for
+   * restore (P8). Only meaningful for columns in multi-column bands -- the
+   * whole-region rail (regionCollapsed, D21) remains the single-column-region
+   * form. Set by the column-collapse chevron and by ops that dock a new
+   * column beside a region-railed region (the old content stays railed, the
+   * newcomer lands expanded); cleared by every expand path. */
+  railed?: boolean;
 }
 
 export interface DockRow {

@@ -96,12 +96,20 @@ export interface DockContextValue {
    * rail-header gesture. A USER commit (not runProgrammatic), so ownership
    * arbitration learns the user set/cleared the flag (P6). */
   collapseRegion: (edge: DockEdge, on: boolean) => void;
+  /** Collapse/expand a docked COLUMN to/from its per-column rail -- the
+   * column-collapse chevron and column-rail-header gesture. A USER commit
+   * like collapseRegion, for the same P6 reason. */
+  railColumn: (edge: DockEdge, columnId: NodeId, on: boolean) => void;
   /** Drag one visual column out of a multi-column region as a stacked
-   * window (D27) -- the per-column parent handle's gesture. */
+   * window (D27) -- the per-column parent handle's gesture. A no-motion
+   * press fires `opts.onClick` if given -- the RAILED column's rail header
+   * uses this to expand the column on click while still dragging the whole
+   * column on motion. */
   startColumnDrag: (
     event: React.PointerEvent<HTMLDivElement>,
     edge: DockEdge,
     columnId: NodeId,
+    opts?: { onClick?: () => void },
   ) => void;
   /** Group currently being dragged, or null. Used to dim its origin. */
   draggingGroupId: GroupId | null;

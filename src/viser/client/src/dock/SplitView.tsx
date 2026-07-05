@@ -24,10 +24,10 @@ import {
   isRowMinimized,
   setNodeWeights,
 } from "./layoutOps";
-import { StackHandleBar } from "./handles";
+import { ColumnCollapseChevron, StackHandleBar } from "./handles";
 import { MinimizedBar } from "./MinimizedBar";
 import { TabGroupFrame } from "./TabGroupFrame";
-import { RegionMinimizedRail } from "./VerticalMinimizedColumn";
+import { ColumnRail, RegionMinimizedRail } from "./VerticalMinimizedColumn";
 import {
   DockColumn,
   DockEdge,
@@ -38,6 +38,7 @@ import {
   isRegionCollapsedOn,
   MIN_REGION_GRAB_PX,
   MINIMIZED_BAR_PX,
+  MINIMIZED_STRIP_PX,
   SPLIT_DIVIDER_PX,
   TabGroup,
 } from "./types";
@@ -63,13 +64,22 @@ const DIVIDER_GRAB_PX = 12;
 // from) the bars' lower halves.
 const COLUMN_HANDLE_PX = 16;
 
+// Height floor for a band whose every column is RAILED: rail spines scroll
+// at any height, so the band needs only a usable grab height, not a per-leaf
+// sum.
+const ALL_RAILED_BAND_MIN_PX = 60;
+
 function bandMinPx(
   row: DockRow,
   groups: Record<GroupId, TabGroup>,
   withColumnHandle: boolean,
 ): number {
-  return Math.max(
-    ...row.columns.map((col) =>
+  // RAILED columns don't raise the floor: their spine strips scroll/fit at
+  // any height, unlike expanded cells and bars whose chrome has fixed
+  // per-leaf heights.
+  const floors = row.columns
+    .filter((col) => col.railed !== true)
+    .map((col) =>
       col.leaves.reduce(
         (px, lf, i) =>
           px +
@@ -79,8 +89,8 @@ function bandMinPx(
           (i > 0 ? SPLIT_DIVIDER_PX : 0),
         withColumnHandle ? COLUMN_HANDLE_PX : 0,
       ),
-    ),
-  );
+    );
+  return floors.length > 0 ? Math.max(...floors) : ALL_RAILED_BAND_MIN_PX;
 }
 
 /** Render a docked region: a VERTICAL stack of full-width row bands, with
@@ -226,10 +236,18 @@ function RowView({
   const dock = useDock();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const columns = row.columns;
-  // Columns always hold their width (D20): a fully-minimized column shows its
-  // bars at the top with empty space below -- honest geometry -- so every
-  // column participates in the grow normalization and in resizes.
-  const colWeightTotal = columns.reduce((s, c) => s + c.weight, 0) || 1;
+  // Per-column rail mask: a RAILED column renders as a fixed 36px spine
+  // strip (its width weight preserved for restore, P8) -- the one exception
+  // to "columns always hold their width" (D20, which still covers columns of
+  // in-place BARS: those show their bars at the top with empty space below).
+  const columnRailed = columns.map((c) => c.railed === true);
+  const { atOrBefore: expandedAtOrBefore, after: expandedAfter } =
+    expandedFlags(columnRailed);
+  // Railed columns hold no flexible width, so EXPANDED columns' grow factors
+  // normalize over expanded weights only -- a fractional grow sum would
+  // strand the freed space as dead area (edge case 16).
+  const colWeightTotal =
+    columns.reduce((s, c, i) => s + (columnRailed[i] ? 0 : c.weight), 0) || 1;
 
   return (
     <Box
@@ -244,49 +262,85 @@ function RowView({
       }}
     >
       {columns.map((column, index) => {
+        const railed = columnRailed[index];
         return (
           <React.Fragment key={column.id}>
             <Box
               data-dock-column={column.id}
               style={{
-                flexGrow: column.weight / colWeightTotal,
-                flexShrink: 1,
-                flexBasis: 0,
+                flexGrow: railed ? 0 : column.weight / colWeightTotal,
+                flexShrink: railed ? 0 : 1,
+                flexBasis: railed ? MINIMIZED_STRIP_PX : 0,
                 minWidth: 0,
                 minHeight: 0,
                 display: "flex",
                 flexDirection: "column",
               }}
             >
-              {/* Per-column parent handle (D27): this visual column's own
-              drag handle -- floating it preserves the column as a stacked
-              window instead of flattening the whole region. Pill only: no
-              chevron, since the rail is a whole-edge form that would
-              flatten columns (the region handle carries it when the
-              region IS one column). */}
-              {columnHandles && (
-                <StackHandleBar
-                  attrs={{ "data-dock-column-handle": column.id }}
-                  onPointerDown={(event) =>
-                    dock.startColumnDrag(event, edge, column.id)
-                  }
-                />
+              {railed ? (
+                // Per-column rail: the column collapsed to its 36px spine
+                // strip in place. Its own narrow header is the parent
+                // handle while railed (a separate handle above it would
+                // duplicate the signifier, P9).
+                <ColumnRail column={column} edge={edge} />
+              ) : (
+                <>
+                  {/* Per-column parent handle (D27): this visual column's
+                  own drag handle -- floating it preserves the column as a
+                  stacked window instead of flattening the whole region. The
+                  column-collapse chevron sits at its right end when the
+                  band has sibling columns: it rails exactly this column. A
+                  lone column of a single-column band in a MIXED region
+                  keeps a pill-only handle -- railing it would strand dead
+                  space across its full-width band. */}
+                  {columnHandles && (
+                    <StackHandleBar
+                      attrs={{ "data-dock-column-handle": column.id }}
+                      onPointerDown={(event) =>
+                        dock.startColumnDrag(event, edge, column.id, {
+                          // With a chevron present, a motionless bar click
+                          // backs its action (P9's hit-area rule -- same as
+                          // the region handle's bar).
+                          onClick:
+                            columns.length >= 2
+                              ? () => dock.railColumn(edge, column.id, true)
+                              : undefined,
+                        })
+                      }
+                      endControl={
+                        columns.length >= 2 ? (
+                          <ColumnCollapseChevron
+                            edge={edge}
+                            columnId={column.id}
+                            onActivate={() =>
+                              dock.railColumn(edge, column.id, true)
+                            }
+                          />
+                        ) : undefined
+                      }
+                    />
+                  )}
+                  <Box style={{ flexGrow: 1, minHeight: 0, display: "flex" }}>
+                    <ColumnView column={column} edge={edge} />
+                  </Box>
+                </>
               )}
-              <Box style={{ flexGrow: 1, minHeight: 0, display: "flex" }}>
-                <ColumnView column={column} edge={edge} />
-              </Box>
             </Box>
             {index < columns.length - 1 && (
               <SplitDivider
                 dir="row"
-                resizable
+                // A railed column is fixed-width chrome: the divider resizes
+                // only when an expanded column sits on both sides of it
+                // (bars still hold their column's width, D24 -- only RAILED
+                // columns go inert).
+                resizable={expandedAtOrBefore[index] && expandedAfter[index]}
                 containerRef={containerRef}
                 onResize={(deltaPx, containerPx) =>
                   resizeCells({
                     dock,
                     edge,
                     cells: columns,
-                    collapsed: columns.map(() => false),
+                    collapsed: columnRailed,
                     index,
                     deltaPx,
                     containerPx,
