@@ -56,7 +56,18 @@ const DIVIDER_GRAB_PX = 12;
  * as the band divider's per-band min-cell floor and as a fully-minimized
  * band's NUMERIC flex-basis (auto would not animate; with every leaf
  * collapsed this is exactly the bar-stack height). */
-function bandMinPx(row: DockRow, groups: Record<GroupId, TabGroup>): number {
+// A per-column parent handle's rendered height (StackHandleBar, 1em at the
+// root font) -- part of every column's content height in a multi-column
+// region (D27), so band floors must count it or an all-minimized band's box
+// comes up short and the next band's chrome paints over (and steals presses
+// from) the bars' lower halves.
+const COLUMN_HANDLE_PX = 16;
+
+function bandMinPx(
+  row: DockRow,
+  groups: Record<GroupId, TabGroup>,
+  withColumnHandle: boolean,
+): number {
   return Math.max(
     ...row.columns.map((col) =>
       col.leaves.reduce(
@@ -66,7 +77,7 @@ function bandMinPx(row: DockRow, groups: Record<GroupId, TabGroup>): number {
             ? MINIMIZED_BAR_PX
             : MIN_CELL_HEIGHT_PX) +
           (i > 0 ? SPLIT_DIVIDER_PX : 0),
-        0,
+        withColumnHandle ? COLUMN_HANDLE_PX : 0,
       ),
     ),
   );
@@ -143,7 +154,7 @@ export const SplitView = React.memo(function SplitView({
                 // Numeric when minimized (the tallest column's bar stack),
                 // not "auto": auto is not animatable, and the value is the
                 // same -- bars are fixed 26px (+7px dividers).
-                flexBasis: minimized ? bandMinPx(row, groups) : 0,
+                flexBasis: minimized ? bandMinPx(row, groups, columnHandles) : 0,
                 minWidth: 0,
                 minHeight: 0,
                 display: "flex",
@@ -177,7 +188,7 @@ export const SplitView = React.memo(function SplitView({
                         // column's cells (expanded 50px / bars 26px +
                         // dividers), or the leaves' own render floors
                         // overflow into the band below.
-                        minCell: rows.map((band) => bandMinPx(band, groups)),
+                        minCell: rows.map((band) => bandMinPx(band, groups, columnHandles)),
                       })
                     }
                     onCancel={() =>
