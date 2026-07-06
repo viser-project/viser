@@ -709,17 +709,18 @@ def test_dock_beside_fullbleed_main_panel_does_not_merge_into_area(
 
 
 # ===========================================================================
-# 13. D30: the per-cell minimize CONTROL exists only where the panel IS its
-#     whole stack. Seed a band holding a 2-leaf column (controls/inspector --
-#     a multi-leaf column survives canonicalization only beside a sibling
+# 13. D30/D31: the per-cell minimize CONTROL exists only where the panel IS
+#     its whole stack. Seed a band holding a 2-leaf column (controls/inspector
+#     -- a multi-leaf column survives canonicalization only beside a sibling
 #     column, D12) next to a lone 1-leaf column (console):
 #     * the stacked cells' grip bars carry NO [data-dock-minimize] (their
 #       collapse control is the stack's chevron on the column parent handle);
 #     * the lone cell keeps its -;
-#     * a stacked cell minimized via set_layout (the server path) still
+#     * a stacked cell minimized via set_layout (the model path) still
 #       renders its 26px bar with the right-end + -- [data-dock-minimize] on
 #       the [data-dock-bar] surface is the EXPAND toggle, never gated (P5) --
-#       and clicking it expands the cell.
+#       and clicking it expands the WHOLE stack (D31: collapse is
+#       stack-scoped in both directions).
 # ===========================================================================
 def test_stacked_cells_have_no_minimize_control_lone_cell_does(
     dock_context, vite_server: int
@@ -751,7 +752,7 @@ def test_stacked_cells_have_no_minimize_control_lone_cell_does(
             "a lone docked cell must keep its per-cell minimize toggle (D30)"
         )
 
-        # Server-created mixed state: minimize the stacked inspector via layout.
+        # Model-seeded mixed state: minimize the stacked inspector via layout.
         set_layout(
             page,
             dock_layout(
@@ -771,11 +772,37 @@ def test_stacked_cells_have_no_minimize_control_lone_cell_does(
         # The expanded stacked sibling still has no -.
         assert not _has_minimize(page, "t-controls")
 
-        # The + expands the cell (per-cell expand stays ungated).
-        bar_toggle.click()
+        # The + expands the WHOLE stack (D31): seed BOTH stacked cells
+        # collapsed, click one bar's + -- no collapsed sibling may remain in
+        # the column, while the sibling column (console) is untouched.
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=columns(
+                    stack(
+                        group("controls", collapsed=True),
+                        group("inspector", collapsed=True),
+                    ),
+                    "console",
+                )
+            ),
+        )
+        assert _model_collapsed(page, "t-inspector")
+        assert _model_collapsed(page, "t-controls")
+        page.eval_on_selector(
+            '[data-dock-group="t-inspector"][data-dock-bar="true"] '
+            "[data-dock-minimize]",
+            "e => e.click()",
+        )
         page.wait_for_timeout(350)  # wait out the expand animation
         assert not _model_collapsed(page, "t-inspector"), (
-            "clicking the bar's + should expand the stacked cell"
+            "clicking a stacked bar's + should expand it"
+        )
+        assert not _model_collapsed(page, "t-controls"), (
+            "clicking a stacked bar's + must expand the WHOLE stack (D31)"
+        )
+        assert not _model_collapsed(page, "t-console"), (
+            "the sibling column must be untouched by the stack expand"
         )
     finally:
         page.close()

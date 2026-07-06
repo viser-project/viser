@@ -1751,6 +1751,7 @@ export function DockManager({
     event,
     groupId,
     paneId,
+    opts,
   ) => {
     armPress(
       event,
@@ -1794,7 +1795,9 @@ export function DockManager({
         });
       },
       // No-motion click: expand the group to this tab (reveal its content).
-      () => expandToTab(groupId, paneId),
+      // A caller override (a stacked bar's title, which expands the whole
+      // stack, D31) replaces the default.
+      opts?.onClick ?? (() => expandToTab(groupId, paneId)),
     );
   };
 
@@ -1847,6 +1850,21 @@ export function DockManager({
       ),
     [applyOp],
   );
+  const expandStackOf = React.useCallback(
+    // D31: a stacked bar's expand affordances reveal the WHOLE stack (its
+    // visual column), so collapse stays stack-scoped in both directions.
+    // `toPaneId` (a bar's title click) activates that tab first.
+    (groupId: GroupId, toPaneId?: PaneId) =>
+      applyOp(
+        ops.expandStackOf(
+          toPaneId === undefined
+            ? layoutRef.current
+            : ops.setActiveTab(layoutRef.current, groupId, toPaneId),
+          groupId,
+        ),
+      ),
+    [applyOp],
+  );
   const collapseRegion = React.useCallback(
     (edge: DockEdge, on: boolean) => {
       applyOp(ops.setRegionCollapsed(layoutRef.current, edge, on));
@@ -1864,11 +1882,11 @@ export function DockManager({
   );
   const toggleCollapsed = React.useCallback(
     (groupId: GroupId) => {
-      // The MODEL op stays per-cell (D16): any group can toggle itself,
-      // whether lone or in a 2+ stack (server API + bar expands rely on it).
-      // The UI's minimize CONTROL is narrower (D30): it renders only where
-      // the panel IS its whole stack; a stacked cell's collapse control is
-      // its stack's chevron / the window header's toggle-all.
+      // The MODEL op stays per-cell (D16): any group can toggle itself.
+      // The UI's CONTROLS are narrower: minimize renders only where the
+      // panel IS its whole stack (D30), and a stacked bar's expand routes
+      // through expandStackOf instead (D31) -- so this toggle is only ever
+      // driven from lone-in-visual-column chrome.
       applyOp(ops.toggleCollapsed(layoutRef.current, groupId));
     },
     [applyOp],
@@ -1887,6 +1905,7 @@ export function DockManager({
       ...stableGestures,
       activateTab,
       expandToTab,
+      expandStackOf,
       toggleCollapsed,
       collapseRegion,
       railColumn,
@@ -1901,6 +1920,7 @@ export function DockManager({
       stableGestures,
       activateTab,
       expandToTab,
+      expandStackOf,
       toggleCollapsed,
       collapseRegion,
       railColumn,

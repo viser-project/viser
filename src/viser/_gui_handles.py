@@ -55,7 +55,6 @@ from ._messages import (
     GuiRemoveMessage,
     GuiRgbaProps,
     GuiRgbProps,
-    GuiSetPanelCollapsedMessage,
     GuiSetPanelHeightMessage,
     GuiSetPanelPositionMessage,
     GuiSetPanelWidthMessage,
@@ -869,7 +868,7 @@ class _PlacementMixin:
 
     Placement is WRITE-ONLY from the server: there is no placement state stored
     or read back here. Each command fires one per-axis message
-    (``GuiSetPanel{Position,Width,Height,Collapsed}Message``); the client owns all
+    (``GuiSetPanel{Position,Width,Height}Message``); the client owns all
     placement state. The messages are ``update_simple`` updates that coalesce
     per-type, persist, and replay to late joiners -- so e.g. ``set_width`` never
     carries a position and cannot re-dock a panel the user has moved.
@@ -1043,36 +1042,6 @@ class _PlacementMixin:
             GuiSetPanelHeightMessage(self._placement_uuid, height, counter=0, run_id="")
         )
 
-    def minimize(self) -> None:
-        """Minimize the panel (collapse it to a handle / strip).
-
-        Imperative, like the ``dock_*`` / :meth:`float` commands: it always
-        minimizes -- the first call sets the initial collapsed state, and a later
-        call re-minimizes a panel even if the user expanded it in the browser.
-        Replayed to clients that connect later.
-
-        TODO: add a matching imperative collapse/expand method for folders
-        (:meth:`GuiApi.add_folder`), which today only has the
-        ``expand_by_default`` creation kwarg.
-        """
-        self._queue_placement(
-            GuiSetPanelCollapsedMessage(
-                self._placement_uuid, True, counter=0, run_id=""
-            )
-        )
-
-    def expand(self) -> None:
-        """Expand (un-minimize) the panel, the inverse of :meth:`minimize`.
-
-        Imperative like :meth:`minimize`: it always expands, even if the user
-        minimized the panel in the browser. Replayed to clients that connect
-        later."""
-        self._queue_placement(
-            GuiSetPanelCollapsedMessage(
-                self._placement_uuid, False, counter=0, run_id=""
-            )
-        )
-
 
 class PanelHandle(
     _PlacementMixin,
@@ -1094,8 +1063,8 @@ class PanelHandle(
     current layout is never read back from clients. There are no readable
     ``.width`` / position properties, and a user dragging the panel afterward wins
     until the next explicit command. (This is why sizing is ``set_width()`` rather
-    than a ``.width`` property.) Collapse is imperative too: :meth:`minimize` /
-    :meth:`expand`.
+    than a ``.width`` property.) Collapse (minimize/expand) is a client-side
+    gesture only: the server has no collapse command.
 
     The server owns a panel's existence: users can rearrange, drag, minimize, and
     resize a panel, but cannot close it from the UI. A panel disappears only when

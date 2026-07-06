@@ -1,8 +1,8 @@
 // THE single decision point for applying server placement to a panel -- shared
 // by the main control panel and standalone panels so their gating can't drift.
 //
-// The server's four placement commands are per-axis (position / width / height
-// / collapsed), each stamped with (counter, runId). This gate decides PER AXIS
+// The server's three placement commands are per-axis (position / width /
+// height), each stamped with (counter, runId). This gate decides PER AXIS
 // whether the stored command should be (re)applied:
 //
 // - Panel not yet user-touched: every present axis applies (a reconnect/re-run
@@ -61,13 +61,11 @@ export function gatePlacement(
   const position = freshAxis("position");
   const width = freshAxis("width");
   const height = freshAxis("height");
-  const collapsed = freshAxis("collapsed");
   const applied: AppliedAxes = {};
   for (const [axis, stored] of [
     ["position", position],
     ["width", width],
     ["height", height],
-    ["collapsed", collapsed],
   ] as const) {
     if (stored !== undefined)
       applied[axis] = { counter: stored.counter, runId: stored.runId };
@@ -77,13 +75,9 @@ export function gatePlacement(
       position: position?.value ?? null,
       width: width?.value ?? null,
       height: height?.value ?? null,
-      collapsed: collapsed?.value ?? null,
     },
     applied,
     anyFresh:
-      position !== undefined ||
-      width !== undefined ||
-      height !== undefined ||
-      collapsed !== undefined,
+      position !== undefined || width !== undefined || height !== undefined,
   };
 }

@@ -76,6 +76,7 @@ export interface DockContextValue {
     event: React.PointerEvent<HTMLElement>,
     groupId: GroupId,
     paneId: PaneId,
+    opts?: { onClick?: () => void },
   ) => void;
   /** Drag the entire floating window (its whole snap-stack) by its header. A
    * no-motion press fires `opts.onClick` if given -- the minimized floating
@@ -90,6 +91,11 @@ export interface DockContextValue {
   /** Select a tab AND expand the group if minimized -- clicking a tab to read it
    * should reveal its content, not just switch the (hidden) active tab. */
   expandToTab: (groupId: GroupId, paneId: PaneId) => void;
+  /** Expand the WHOLE stack containing the group (D31: collapse is
+   * stack-scoped in both directions -- a stacked bar's expand affordances
+   * reveal the whole stack, never one cell of it). Optionally activates
+   * `toPaneId` on the pressed group first (a bar's title click). */
+  expandStackOf: (groupId: GroupId, toPaneId?: PaneId) => void;
   /** Toggle a group's minimized state (tap on its handle). */
   toggleCollapsed: (groupId: GroupId) => void;
   /** Collapse/expand a docked EDGE to/from its rail (D21) -- the chevron and

@@ -613,9 +613,9 @@ class GuiApi:
         # to clients that connect after the reset; sending the defaults here
         # coalesces over the stale ones (same redundancy key per message type) so
         # late joiners -- and connected clients -- get the default control panel
-        # (a top-right float, expanded) instead of a layout the user never asked
+        # (a top-right float) instead of a layout the user never asked
         # for. Placement is write-only, so we just send; there's no state to read.
-        # Bump the main panel's layout counter once and stamp it on all four
+        # Bump the main panel's layout counter once and stamp it on all three
         # reset messages, so a connected client that had rearranged the control
         # panel still sees this deliberate reset (counter increment beats its
         # last-applied), while a normal reconnect replay -- same counter -- is
@@ -625,14 +625,6 @@ class GuiApi:
             _messages.GuiSetPanelPositionMessage(
                 CONTROL_PANEL_ID,
                 {"kind": "float", "x": None, "y": None},
-                counter=reset_counter,
-                run_id=self._layout_run_id,
-            )
-        )
-        self._websock_interface.queue_message(
-            _messages.GuiSetPanelCollapsedMessage(
-                CONTROL_PANEL_ID,
-                False,
                 counter=reset_counter,
                 run_id=self._layout_run_id,
             )
@@ -855,6 +847,8 @@ class GuiApi:
         Returns:
             A handle that can be used as a context to populate the folder.
         """
+        # TODO: consider an imperative collapse/expand method on the folder
+        # handle; today only the `expand_by_default` creation kwarg exists.
         folder_container_id = _make_uuid()
         order = _apply_default_order(order)
         props = _messages.GuiFolderProps(
@@ -1046,8 +1040,8 @@ class GuiApi:
         :meth:`PanelHandle.remove` (there is no UI close button). See also
         :attr:`main_panel` to place the main control panel.
 
-        To start a panel minimized, call :meth:`PanelHandle.minimize` (an
-        imperative command like ``dock_*``).
+        Panels always start expanded; minimizing is a browser-side gesture,
+        not a server command.
 
         Args:
             key: Optional stable identity for the panel, unique among live

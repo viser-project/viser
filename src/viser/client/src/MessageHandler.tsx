@@ -280,15 +280,6 @@ function useMessageHandler() {
         );
         return;
       }
-      case "GuiSetPanelCollapsedMessage": {
-        viewer.guiActions.setPanelCollapsed(
-          message.uuid,
-          message.collapsed,
-          message.counter,
-          message.run_id,
-        );
-        return;
-      }
       // Configure the theme.
       case "ThemeConfigurationMessage": {
         setTheme(message);

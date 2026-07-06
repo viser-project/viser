@@ -22,11 +22,11 @@ export interface PlacementAxis<T> {
   runId: string;
 }
 
-export type PlacementAxisName = "position" | "width" | "height" | "collapsed";
+export type PlacementAxisName = "position" | "width" | "height";
 
 /** Client-owned placement state for a single panel (a standalone panel keyed by
  * its uuid, or the main control panel keyed by CONTROL_PANEL_ID). Each of the
- * four write-only `GuiSetPanel*` messages merges its single axis here; the dock
+ * three write-only `GuiSetPanel*` messages merges its single axis here; the dock
  * applies each axis INDEPENDENTLY (a set_width can never re-apply a stale
  * position -- the axes carry their own counters). */
 export interface PanelPlacementState {
@@ -34,7 +34,6 @@ export interface PanelPlacementState {
   // null value = override cleared (revert to default/theme width; auto height).
   width?: PlacementAxis<number | null>;
   height?: PlacementAxis<number | null>;
-  collapsed?: PlacementAxis<boolean>;
 }
 
 /** The (counter, runId) stamp of the last server command APPLIED for one axis
@@ -170,12 +169,6 @@ export interface GuiActions {
   setPanelHeight: (
     uuid: string,
     height: number | null,
-    counter: number,
-    runId: string,
-  ) => void;
-  setPanelCollapsed: (
-    uuid: string,
-    collapsed: boolean,
     counter: number,
     runId: string,
   ) => void;
@@ -500,13 +493,12 @@ export function useGuiState(initialServer: string) {
           return { commands: next };
         });
       },
-      // The four write-only GuiSetPanel* messages each merge their single AXIS
+      // The three write-only GuiSetPanel* messages each merge their single AXIS
       // here, with the sending command's (counter, runId) stamp. One factory,
       // one axis apiece.
       setPanelPosition: setPanelAxis("position"),
       setPanelWidth: setPanelAxis("width"),
       setPanelHeight: setPanelAxis("height"),
-      setPanelCollapsed: setPanelAxis("collapsed"),
       recordPanelLayoutApplied: (stableKey, applied) => {
         store.set((state) => {
           const prev = state.panelLayoutTracking[stableKey];

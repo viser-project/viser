@@ -17,8 +17,9 @@ A panel is a dockable container; tabs are its content. Placement is imperative:
   the docked regions change.
 * :meth:`viser.PanelHandle.set_width` / :meth:`viser.PanelHandle.set_height`
   size a panel (``set_height`` applies to floating panels only).
-* :meth:`viser.PanelHandle.minimize` minimizes a panel (an imperative command
-  like ``dock_*``); the user can expand/re-collapse it thereafter.
+
+Panels always start expanded; minimizing is a browser-side gesture (the panel
+header's ``-`` button or the dock chevrons), not a server command.
 
 Placement is replayed to clients that connect later, but is not continuously
 synchronized: once a panel is placed, users can freely drag, dock, and minimize
@@ -41,10 +42,8 @@ def main() -> None:
 
     server.scene.add_frame("/axes", axes_length=1.0, axes_radius=0.02)
 
-    # A panel docked to the right edge, with two tabs. minimize() starts it
-    # collapsed -- it renders as a handle/strip the user can click to expand; the
-    # user controls collapse/expand thereafter. minimize() is imperative like the
-    # dock_*/float commands (the server can re-minimize a panel later too).
+    # A panel docked to the right edge, with two tabs. Panels start expanded;
+    # the user can minimize them in the browser (the `-` button / chevrons).
     # `key=` gives the panel a stable identity: clients remember per-panel
     # layout state (e.g. "the user moved this panel") across reconnects and
     # program restarts. Without it, identity is inferred from tab labels.
@@ -56,22 +55,20 @@ def main() -> None:
         server.gui.add_markdown("A second tab in the same panel.")
     stats_panel.dock_right()
     stats_panel.set_width(320)
-    stats_panel.minimize()
 
     # A floating panel at an explicit position. x/y are viewport-relative (the
     # canvas inside docked panels), so this stays clear of the left-docked main
-    # panel below and shifts if the docked regions change. Left expanded.
+    # panel below and shifts if the docked regions change.
     tools_panel = server.gui.add_panel(key="tools")
     with tools_panel.add_tab("Tools", viser.Icon.TOOL):
         randomize = server.gui.add_button("Randomize point cloud")
     tools_panel.float(x=30, y=30, width=260)
 
-    # A panel stacked below the docked stats panel (a column split), minimized.
+    # A panel stacked below the docked stats panel (a column split).
     log_panel = server.gui.add_panel(key="logs")
     with log_panel.add_tab("Log", viser.Icon.TERMINAL):
         log = server.gui.add_markdown("Waiting for events...")
     log_panel.dock_below(stats_panel)
-    log_panel.minimize()
 
     # The main control panel can be placed too -- here, docked to the left.
     server.gui.main_panel.dock_left()

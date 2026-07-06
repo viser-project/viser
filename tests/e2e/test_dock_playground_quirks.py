@@ -406,11 +406,12 @@ def test_plus_drag_tears_out_still_minimized(dock_context, vite_server) -> None:
 #     expands the region while the cells keep their own collapse states.
 # ---------------------------------------------------------------------------
 def test_stack_cells_lack_minimize_then_region_rail(dock_context, vite_server) -> None:
-    """Spec D12/D30: a docked stack canonicalizes to bands forming ONE visual
-    column, so its cells render NO cell-level minimize control (the region
-    chevron is the stack's collapse control). Mixed per-cell states remain
-    valid in the model: a seeded bar renders beside its expanded sibling and
-    keeps its + (expand stays per-cell). All-cells-collapsed does NOT flip the
+    """Spec D12/D30/D31: a docked stack canonicalizes to bands forming ONE
+    visual column, so its cells render NO cell-level minimize control (the
+    region chevron is the stack's collapse control). Mixed per-cell states
+    remain valid in the model: a seeded bar renders beside its expanded
+    sibling and keeps its + (the + renders on every bar; its scope is the
+    stack, D31). All-cells-collapsed does NOT flip the
     region into the rail; the explicit chevron does (D21), and the rail
     header's toggle expands the REGION (per-cell states kept)."""
     page = _open(dock_context, vite_server)
@@ -448,7 +449,7 @@ def test_stack_cells_lack_minimize_then_region_rail(dock_context, vite_server) -
             f'[data-dock-group="{b}"] [data-dock-minimize]', "els => els.length"
         )
         == 1
-    ), "every minimized bar keeps its + (D30)"
+    ), "every minimized bar keeps its + (D30; stack-scoped since D31)"
     # Seed the second collapsed too: still NO rail (D21 -- no emergent flip).
     set_layout(
         page,

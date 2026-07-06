@@ -606,13 +606,15 @@ def test_minimized_band_among_siblings_is_horizontal_bar(
         assert box["width"] > box["height"] * 2, (
             f"a minimized cell must be a HORIZONTAL bar (w >> h), got {box}"
         )
-        # Every bar keeps its per-cell expand toggle, even in a stack (D30).
+        # Every bar keeps its expand toggle, even in a stack (D30; the
+        # toggle's scope is the stack since D31).
         assert (
             page.locator('[data-dock-group="t-inspector"] [data-dock-minimize]').count()
             == 1
         )
 
-        # Clicking the bar's label expands to that tab.
+        # Clicking the bar's label expands to that tab (stack-scoped, D31 --
+        # the siblings here are already expanded).
         label = page.locator('[data-dock-group="t-inspector"] [data-dock-tab]').first
         cbox = label.bounding_box()
         assert cbox is not None

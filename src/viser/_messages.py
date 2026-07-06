@@ -1749,7 +1749,7 @@ class FloatPlacement(TypedDict):
 # per-axis messages below. There is no server-side placement state to read back;
 # all placement state lives on the client. Each message is an `update_simple`
 # entity update (entity "gui"), so they coalesce latest-wins PER MESSAGE TYPE
-# (position / width / height / collapsed stay in independent slots, never
+# (position / width / height stay in independent slots, never
 # clobbering each other), persist in the buffer, replay to late-joining clients,
 # and are purged when the panel is removed. This is the same lifecycle used by
 # scene SetPositionMessage / SetOrientationMessage. Because e.g. set_width emits
@@ -1810,22 +1810,6 @@ class GuiSetPanelHeightMessage(
 
     uuid: str
     height: Optional[float]
-    counter: int
-    """Per-panel layout-update counter; see GuiSetPanelPositionMessage."""
-    run_id: str
-    """Sending GuiApi instance id; see GuiSetPanelPositionMessage."""
-
-
-@dataclasses.dataclass
-class GuiSetPanelCollapsedMessage(
-    Message,
-    entity=EntityLifecycle("gui", "update_simple", "uuid"),
-    include_in_scene_serialization=False,
-):
-    """Minimize (collapse) or expand a panel. Write-only."""
-
-    uuid: str
-    collapsed: bool
     counter: int
     """Per-panel layout-update counter; see GuiSetPanelPositionMessage."""
     run_id: str

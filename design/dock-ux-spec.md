@@ -57,7 +57,8 @@ them (e.g. nothing to drag) simply doesn't respond, it never reinterprets.
 
 **P3 — Content is sacred, chrome is quiet.** Panels never move, resize, or
 change collapse state except as the direct result of (a) a user gesture, (b)
-an explicit server command, or (c) a structural necessity spelled out in this
+an explicit server command (position/size only — there is no server collapse
+command, D31), or (c) a structural necessity spelled out in this
 doc (§7). Minimized forms are *wayfinding chrome*: dimmed labels, compact
 geometry, no content preview, no attention-seeking styling. Active-tab
 highlighting exists only on expanded tab strips — a minimized group has no
@@ -88,8 +89,8 @@ inside a panel's chrome.
 
 **P6 — The user owns the layout; the server owns intent.** Placement is
 write-only from the server (per-axis messages; the server never reads layout
-back). A *new* server command always applies — `minimize()` always
-minimizes, `dock_left()` always docks left. A *replayed/stale* command never
+back). A *new* server command always applies — `dock_left()` always docks
+left, `set_width()` always sizes. A *replayed/stale* command never
 overrides what the user has touched since. The counter/run-id stamps exist
 to make "new vs stale" decidable; there is no other arbitration.
 
@@ -334,7 +335,10 @@ reappears automatically.
   tabs on hover (D14); then slack; then the `+` toggle at the RIGHT
   end, exactly where the expanded header's `−` sat. The `+` renders on
   EVERY bar, stacked cells included — expand is never gated (D30, P5)
-  — even though a stacked cell's expanded header carries no `−`. NO
+  — even though a stacked cell's expanded header carries no `−`. On a
+  STACKED bar the `+` expands the WHOLE stack (D31; aria label "Expand
+  panels"): collapse is stack-scoped in both directions, so one bar of
+  a minimized stack never expands alone. NO
   grip pill (D18):
   the whole bar IS the handle, and a pill inside a surface that is
   entirely handle would be a redundant signifier. Pills remain on
@@ -349,7 +353,11 @@ reappears automatically.
   tears the active pane out, still minimized (a single-pane group
   floats wholesale, ids stable). A `+` click expands the group; the `+`
   is drag-through. Any other press — background, right slack — drags
-  the whole group; a motionless click there expands. Per-tab
+  the whole group; a motionless click there expands. Every expand
+  above is STACK-scoped when the bar is stacked (D31): the `+`, the
+  background click, and the title click all reveal the whole visual
+  column (the title path still activates its tab); a lone bar expands
+  just itself. Per-tab
   affordances beyond the active pane live in the rail and the expanded
   tab strip (D14): the active pane is reachable directly, the rest via
   one expand.
@@ -416,9 +424,10 @@ reappears automatically.
   group's own grip bar moves the window (and, being its whole stack,
   keeps its `−`, D30).
 - Each cell renders as §3.1 without the docked context, or as its bar
-  (§3.2) when collapsed — expanded and minimized cells mix freely
-  (mixes arise from per-cell expand, server commands, or degradation;
-  the UI minimizes stacked cells only all-at-once, D30).
+  (§3.2) when collapsed — expanded and minimized cells may still mix
+  (mixes arise only from structural composition now: docking or
+  dropping beside bars, no adoption — D16/D31; the UI minimizes AND
+  expands stacked cells only all-at-once, D30/D31).
 - Side grips resize width; top/bottom/corner grips resize height (pin),
   with a detent that snaps back to auto-height at the content height. A
   fully-minimized window keeps its WIDTH grips (D15 — the bars hold
@@ -473,9 +482,9 @@ a click. One active gesture at a time; extra pointers are ignored.
 | (−) minimize button (lone-in-stack cells only, D30) | that group (drag-through) | minimize group |
 | Tab | that pane (tear out / reorder) | activate tab |
 | Window header (floating multi-group) | whole window | minimize all (expand all when every cell is a bar) |
-| Bar background (incl. right slack) | that group (still minimized) | expand that group |
-| Bar title / face | the active pane (tear out, still minimized) | expand to that tab |
-| Bar `+` (right end) | that group (drag-through) | expand that group |
+| Bar background (incl. right slack) | that group (still minimized) | expand — the whole stack when stacked (D31), else that group |
+| Bar title / face | the active pane (tear out, still minimized) | expand to that tab — the whole stack when stacked (D31) |
+| Bar `+` (right end) | that group (drag-through) | expand — the whole stack when stacked (D31, "Expand panels"), else that group |
 | Region parent handle — pill / background (expanded single-visual-column region, D26/D27) | whole region (as one stacked window) | collapse region to the rail (unmarked backing for its chevron) |
 | Region-collapse chevron (right end of the region parent handle) | — (click-only; NOT drag-through) | collapse region to the rail; keyboard collapse hands focus to the rail header |
 | Column parent handle — pill / background (each column of every band in a multi-column region, D27) | that visual column (as one stacked window, height ratios preserved) | rail that column when the handle hosts a chevron (unmarked backing for it, P9); no action on a pill-only handle |
@@ -613,8 +622,8 @@ and changing one is a spec change.
   "no drop" while crossing a seam.
 
 There are no adoption rules — a dropped panel never inherits its
-neighbors' collapse state. Collapse changes ONLY by user gesture or
-server command (P3 without exceptions, D16). The one structural
+neighbors' collapse state. Collapse changes ONLY by user gesture
+(P3 without exceptions, D16/D31). The one structural
 survivor: panes merged INTO a group become tabs of it and so share its
 collapsed flag — dropping into a minimized group never expands it (§9
 item 1).
@@ -694,17 +703,25 @@ item 1).
   flag; mixed stacks are legal and coherent: a collapsed cell renders
   as its 26px bar IN PLACE (grow 0, D20) and expanded siblings absorb
   the freed space (edge case 16). The uniform-collapse invariant is
-  deleted; nothing normalizes collapse states at commit.
-- The minimize CONTROL is scoped (D30): one collapse control per
-  scope, on that scope's nearest handle. The per-cell `−` renders only
-  where the cell IS its whole stack (a lone docked cell, a
+  deleted; nothing normalizes collapse states at commit. Since D31,
+  mixes are reached only STRUCTURALLY (docking/dropping beside bars —
+  no adoption, D16) — the collapse OPS themselves act per whole stack,
+  so a stack minimized together stays uniform.
+- BOTH collapse directions are scoped (D30/D31): one collapse control
+  per scope, on that scope's nearest handle. The per-cell `−` renders
+  only where the cell IS its whole stack (a lone docked cell, a
   single-group window); a 2+ stack collapses via its stack's control —
   the parent handle's chevron (docked) or the window header's
-  toggle-all (floating). EXPAND is never gated: every bar keeps its
-  `+` and click-to-expand (P5), so mixed states — from per-cell
-  expand, server commands, or degradation — always offer a way out.
-  `panel.minimize()` stays per-panel; the UI can no longer MINIMIZE a
-  single stacked cell.
+  toggle-all (floating). EXPAND is never gated — every bar keeps its
+  `+` and click-to-expand (P5) — but it is scoped the same way (D31):
+  a stacked bar's every expand affordance (`+`, background click,
+  title click) expands the WHOLE stack — its visual column: the
+  window's stack, all bands of a single-visual-column region, or the
+  model column of a zipped band — routing every member through the
+  shared expand op, so the rail flags clear too. P5's way out of a
+  structurally-composed mixed stack IS the stack-scope expand. There
+  is no server collapse command (D31): collapse changes only by user
+  gesture.
 - Exactly two minimized forms exist: the BAR (per-cell, in place, §3.2)
   and the RAIL (explicit, at region or column scope, §3.3). Neither
   appears emergently: an all-bars region is still an all-bars region at
@@ -753,13 +770,11 @@ item 1).
   railed flag — an "expanded" panel hidden behind a rail would be a
   dead end (P5). The rail header's click/`+` clears ONLY its scope's
   flag (cells keep their own collapse states); a spine-row click
-  expands the scope AND that panel to that tab. SERVER expands take the
-  same path: a placement's `collapsed = false` routes through the
-  shared expand op — a server expand is always visible, never hidden
-  behind a rail (P6).
+  expands the scope AND that panel to that tab.
 - Expand targets: a bar's title/face click expands to the active tab; a
-  bar's `+` or background click expands the group on its previous active
-  tab; the window header's toggle expands everything it owns.
+  bar's `+` or background click expands on the previous active tab; each
+  acts on the whole stack when the bar is stacked (D31); the window
+  header's toggle expands everything it owns.
 - Tearing a pane out of a minimized group floats it STILL minimized
   (expanding is exclusively a click; drags never change collapse — P2).
 - Dragging a cell (spine row or cap) out of ANY rail floats it still
@@ -769,8 +784,8 @@ item 1).
   floating it full-size would pop a window mid-drag (P2). Dragging a
   whole rail out by its header — region or column scope — floats a
   window of minimized bars the same way (every stack cell stamped).
-  Server float commands never stamp: for the server, position and
-  collapse are independent axes (P6).
+  Server float commands never stamp: the server has no collapse axis
+  (D31); `float()` moves the group and leaves its collapse state alone.
 - A railed region reserves exactly 36px; it is still a full drop target
   and still hosts region-edge docking on its outer side. A railed
   column reserves the same 36px inside its band.
@@ -779,20 +794,19 @@ item 1).
 
 ## 8. Server placement semantics
 
-- Four independent write-only axes per panel: position, width, height,
-  collapsed. A message carries exactly one axis; applying one axis can never
-  disturb another (no yank by construction).
+- Three independent write-only axes per panel: position, width, height
+  (there is no collapse axis — minimize/expand is a client-side gesture
+  only, D31). A message carries exactly one axis; applying one axis can
+  never disturb another (no yank by construction).
 - Fresh vs stale: each panel has a monotonically increasing layout counter
   per server run. An arriving axis message applies iff the user hasn't
   touched that panel since the message's stamp (gate open), or the stamp is
   provably newer than the last applied one. Late joiners replay the latest
   message per axis and reconstruct the same placement.
 - When several axes of one panel apply together (a replay bundle), the
-  order is position first, THEN collapsed, then size. An expand must
-  see the panel's FINAL location, so it clears the DESTINATION region's
-  rail (§7), never the departing one's. Collapsed-before-position would
-  un-rail a rail the user explicitly set as the panel leaves it, and a
-  dock-into-railed-region bundle would land its expand invisibly.
+  order is position first, then size — size ops resolve against the
+  panel's FINAL location (region width when docked, window size when
+  floating).
 - Split placements (`dock_below(anchor)` etc.) defer until the anchor is
   actually docked; if the anchor can never dock (hidden, emptied, cyclic),
   the placement falls back to a right-edge dock rather than hanging (P5).
@@ -807,7 +821,7 @@ Behaviors that MUST hold (each is or should be pinned by a test):
 
 1. Drop on a minimized group merges *without expanding it*; and a drop
    beside minimized neighbors never minimizes the dropped stack (no
-   adoption, D16 — collapse changes only by gesture or server command).
+   adoption, D16 — collapse changes only by user gesture, D31).
 2. Escape after expand-on-drag restores the minimized state.
 3. Dragging a (−)/(+) button never toggles; a motionless click never moves.
 4. A viewport resize between press and drag-threshold doesn't teleport the
@@ -914,7 +928,14 @@ effective collapse, region→column conversion incl. the zip path, D13
 zip-keep, D12 split-carry). D30 (2026-07-05, working tree) rescoped the
 per-cell `−` to lone-in-stack cells, with §2–§4/§7 re-synced and an e2e
 pin added (stacked cells bare, lone cell `−`, stacked bar keeps `+`).
-The next full protocol pass is owed on D27–D30.
+D31 (2026-07-05, working tree) made collapse stack-scoped in BOTH
+directions and deleted the server collapse axis, with §3/§4/§7/§8
+re-synced, new `layoutOps` pins (expandStackOf: floating stack, plain
+docked stack, zipped column, flag clearing), and the e2e suites
+reworked (UI-gesture minimize seeding; a stacked bar's `+` expands the
+stack). The §8 ordering finding above ("position → collapsed → size")
+is historical: the bundle is position → size since D31.
+The next full protocol pass is owed on D27–D31.
 
 Accepted trade (re-verified 2026-07-04): on a LEFT region squeezed into
 the scrolling state, the RegionResizer's 5px over-the-panel strip (the
@@ -1042,11 +1063,14 @@ folded into final text (the play-by-play lives in git history).
   are legal and coherent. With it died normalizeStackCollapseInPlace,
   invariant #14, and the adoption rules (dropping an expanded panel
   beside minimized ones no longer infects it — collapse changes only by
-  user gesture or server command, P3 with no exceptions). Bulk toggles
+  user gesture or server command, P3 with no exceptions; the server
+  half has since been deleted, D31). Bulk toggles
   survive only as the multi-group window header's toggle and the rail.
-  Amended by D30: the MODEL keeps per-cell collapse (server API, bar
-  rendering, per-cell expand all unchanged), but the UI's minimize
-  CONTROL now renders only where the cell is its whole stack.
+  Amended by D30: the MODEL keeps per-cell collapse, but the UI's
+  minimize CONTROL now renders only where the cell is its whole stack.
+  Amended by D31: the stacked bar's EXPAND is stack-scoped too, and the
+  server collapse API is gone — per-cell collapse survives in the model
+  (bar rendering, lone-cell toggles, rail drag-out stamping).
 - **D17 (minimized floating stacks are stacked rows, 2026-07-04):** a
   floating window is ALWAYS a vertical stack of cells, each an expanded
   panel or a bar. The special all-minimized "chip bar" mode is deleted
@@ -1205,12 +1229,35 @@ folded into final text (the play-by-play lives in git history).
   toggle-all (floating) — a stacked cell offers NO cell-level minimize
   from the UI. EXPAND is deliberately ungated everywhere: every bar
   keeps its right-end `+` and click-to-expand, rails their spine rows
-  (P5 — server- or degradation-created mixed states always offer a way
-  out; expanding one bar of an all-minimized stack remains legal, so
-  mixed stacks are still reachable in the expand direction). Unchanged:
-  the model and server API (`panel.minimize()` stays per-panel; a
-  collapsed group renders its bar wherever it lives) and the main
-  panel's minimized face. What the user loses is only the mixed-state
-  ENTRY in the minimize direction; what the UI sheds is a per-cell
-  affordance that promised finer granularity than a stack's collapse
-  story wants.
+  (P5). D30 originally left that per-cell expand PER-CELL — "expanding
+  one bar of an all-minimized stack remains legal, so mixed stacks are
+  still reachable in the expand direction" — and kept the server's
+  per-panel collapse axis (`panel.minimize()`); BOTH clauses are
+  superseded by D31 (a stacked bar's expand is stack-scoped; the
+  server axis is deleted). Still standing from D30: the control
+  scoping itself, the model's per-cell flag (a collapsed group renders
+  its bar wherever it lives), and the main panel's minimized face.
+- **D31 (collapse is stack-scoped in BOTH directions; no server
+  collapse axis, 2026-07-05):** user-directed, twice. On the server
+  API: "Perhaps we should get rid of the `.minimize()` method in
+  Python? it would be simpler that way." — `minimize()`/`expand()` and
+  `GuiSetPanelCollapsedMessage` are DELETED; panel placement is
+  position/width/height only (§8), and collapse changes only by user
+  gesture (P3/P6 simplify: no collapse command to arbitrate, no
+  collapsed replay bundle, no position→collapsed ordering rule). On
+  the UI: "It's strange that panels in a stack can still be
+  individually expanded after they're all minimized together." — D30
+  had scoped only the MINIMIZE direction; D31 scopes expand the same
+  way. A stacked bar's every expand affordance (`+` — labeled "Expand
+  panels" — background click, title click) routes through
+  `expandStackOf`: every group of the bar's VISUAL column (the
+  floating window's stack; all bands of a single-visual-column region;
+  the model column of a zipped band) expands through the shared expand
+  internals, rail flags clearing too. Lone bars keep per-group
+  behavior. Consequence: COLLAPSE ops can no longer produce or
+  preserve a mixed stack — a stack minimized together expands together,
+  so its bars stay uniform; the only remaining mixed-stack sources are
+  structural composition (docking/dropping beside bars — no adoption,
+  D16) and degradation, and P5's way out of those is exactly the
+  stack-scope expand. The model keeps the per-cell flag (lone-cell
+  minimize, rail drag-out stamping, bar rendering are unchanged).

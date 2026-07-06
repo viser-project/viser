@@ -121,16 +121,6 @@ describe("gatePlacement", () => {
     expect(g.placement.position).toEqual(DOCK_RIGHT);
   });
 
-  it("collapsed=false (a real value) passes through, distinct from absent", () => {
-    const g = gatePlacement(
-      entry({ collapsed: { value: false, counter: 1, runId: RUN_A } }),
-      undefined,
-      true,
-    );
-    expect(g.placement.collapsed).toBe(false);
-    expect(g.placement.position).toBeNull();
-  });
-
   it("no entry at all: nothing fresh, all axes null", () => {
     const g = gatePlacement(undefined, undefined, true);
     expect(g.anyFresh).toBe(false);
@@ -138,7 +128,6 @@ describe("gatePlacement", () => {
       position: null,
       width: null,
       height: null,
-      collapsed: null,
     });
   });
 });

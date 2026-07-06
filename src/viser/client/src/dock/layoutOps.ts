@@ -1849,8 +1849,8 @@ function clearColumnRailedForGroupInPlace(
 /** Expand `groupId` in place: clear its own collapsed flag, its region's
  * collapse flag (D21), and its containing column's railed flag. Shared by
  * expandGroup and toggleCollapsed's expand direction, so every expand path
- * (toggle, expand-to-tab, server collapsed:false) reveals the panel. Returns
- * whether anything changed. */
+ * (toggle, expand-to-tab) reveals the panel. Returns whether anything
+ * changed. */
 function expandGroupInPlace(draft: DockLayout, groupId: GroupId): boolean {
   let changed = false;
   const group = draft.groups[groupId];
@@ -1899,6 +1899,51 @@ export function expandStack(
     if (group !== undefined) group.collapsed = false;
   }
   return draft;
+}
+
+/** The group ids of the VISUAL COLUMN (D27's scope) containing `groupId`:
+ * a floating window's whole stack; ALL bands' leaves in a single-visual-column
+ * docked region (every band one column); the MODEL column's leaves in a
+ * multi-column (zipped) band. Unplaced / area groups: just the group. */
+function visualStackGroupIdsOf(
+  layout: DockLayout,
+  groupId: GroupId,
+): GroupId[] {
+  const win = layout.floating.find((w) => w.stack.includes(groupId));
+  if (win !== undefined) return [...win.stack];
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const region = layout.docked[edge];
+    const found = findGroupInRegion(region, groupId);
+    if (found === null) continue;
+    if (region!.rows.every((rw) => rw.columns.length === 1)) {
+      const ids: GroupId[] = [];
+      for (const rw of region!.rows)
+        for (const c of rw.columns) ids.push(...collectLeafGroups(c));
+      return ids;
+    }
+    return collectLeafGroups(found.column);
+  }
+  return [groupId];
+}
+
+/** Expand the WHOLE stack containing `groupId` (D31: collapse is stack-scoped
+ * in BOTH directions -- a stacked bar's expand reveals its whole stack, so a
+ * stack's bars stay uniform). Scope is the group's VISUAL column: every group
+ * of the containing floating window's stack, or every leaf group of the
+ * containing visual column when docked (all bands in a single-visual-column
+ * region; the model column in a zipped band). Every member routes through the
+ * shared expand internals, so the region/column rail flags clear too (P5).
+ * No-op (same reference) when nothing changes. */
+export function expandStackOf(
+  layout: DockLayout,
+  groupId: GroupId,
+): DockLayout {
+  if (layout.groups[groupId] === undefined) return layout;
+  const draft = clone(layout);
+  let changed = false;
+  for (const gid of visualStackGroupIdsOf(draft, groupId))
+    if (expandGroupInPlace(draft, gid)) changed = true;
+  return changed ? draft : layout;
 }
 
 /** Structural fingerprint of a layout: the arrangement of ids and group
@@ -2203,7 +2248,6 @@ export interface PanelPlacement {
   position: PanelPosition | null;
   width: number | null;
   height: number | null;
-  collapsed: boolean | null;
 }
 
 /** Default float geometry when the server leaves x/y/size unspecified: the
@@ -2393,7 +2437,7 @@ function resolveAnchorLeaf(
  * both standalone panels and the control panel).
  *
  * Each field of `placement` is the latest value the server wrote, and is ALWAYS
- * applied when present -- there is no before/after gating. Because the four
+ * applied when present -- there is no before/after gating. Because the three
  * write-only commands are independent (a set_width carries no position), applying
  * any single field can never re-dock a panel: a position re-docks/re-floats only
  * when `position != null`, and that only happens when the server actually sent a
@@ -2560,20 +2604,6 @@ export function applyPanelPlacement(
         _exhaustive,
       );
     }
-  }
-
-  // Collapsed axis -- applied AFTER position, so an expand sees the group's
-  // FINAL location: expanding routes through expandGroupInPlace, which also
-  // clears the (destination) region's collapse flag (spec 7 / P6: a server
-  // expand is always visible, never hidden behind the rail). Applied before
-  // position, it would clear the DEPARTING region's rail -- un-railing a
-  // rail the user explicitly set, for a panel that then leaves it -- and a
-  // dock-into-railed-region bundle would land invisible.
-  if (placement.collapsed === true) {
-    const g = draft.groups[groupId];
-    if (g !== undefined) g.collapsed = true;
-  } else if (placement.collapsed === false) {
-    expandGroupInPlace(draft, groupId);
   }
 
   // Size: width is region width when docked / window width when floating; height

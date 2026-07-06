@@ -65,9 +65,9 @@ function groupPlacementSignatures(
     if (region === null) continue;
     const w = Math.round(regionWidthsOf(layout)[edge]);
     // The region's D21 rail flag is part of every resident's signature: a
-    // user's chevron collapse must mark those panels touched, or a later
-    // single-axis server update would replay a stale collapsed=false and
-    // silently un-rail the region the user just collapsed (P6).
+    // user's chevron collapse must mark those panels touched, or a stale
+    // single-axis server replay (position/width) could silently rearrange a
+    // region the user just collapsed (P6).
     const rail = isRegionCollapsedOn(layout, edge) ? "R" : "-";
     for (const row of region.rows)
       for (const column of row.columns) {

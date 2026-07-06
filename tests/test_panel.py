@@ -1,7 +1,7 @@
 """Unit tests for the standalone panel API (add_panel / main_panel).
 
-These cover the Python handle layer: that placement commands (dock/float/size/
-minimize) each queue the right per-axis message (placement is write-only -- no
+These cover the Python handle layer: that placement commands (dock/float/size)
+each queue the right per-axis message (placement is write-only -- no
 server-side state to read back), that those messages persist in the broadcast
 buffer for replay to late-joining clients, and that scope / anchor validation
 raises as specified.
@@ -69,7 +69,7 @@ def test_add_panel_is_dedicated_entity() -> None:
         root = server.gui._container_handle_from_uuid["root"]
         assert panel._impl.uuid not in root._children
         # No placement messages until a command is issued (write-only: state
-        # only exists once a dock/float/size/minimize command is called).
+        # only exists once a dock/float/size command is called).
         assert _buffered_types(server, panel._impl.uuid) == {m.GuiPanelMessage}
     finally:
         server.stop()
@@ -235,36 +235,6 @@ def test_float_sends_position_and_optional_size() -> None:
         server.stop()
 
 
-def test_minimize_sends_collapsed_message() -> None:
-    """minimize() queues a Collapsed(True) message; a fresh panel queues none."""
-    server = _make_server()
-    try:
-        panel = server.gui.add_panel()
-        uuid = panel._impl.uuid
-        assert m.GuiSetPanelCollapsedMessage not in _buffered_types(server, uuid)
-        panel.minimize()
-        assert _latest(server, uuid, m.GuiSetPanelCollapsedMessage).collapsed is True
-    finally:
-        server.stop()
-
-
-def test_expand_sends_collapsed_false() -> None:
-    """expand() is the imperative inverse of minimize(): Collapsed(False), with
-    a bumped counter so it beats an earlier minimize in the coalesced buffer."""
-    server = _make_server()
-    try:
-        panel = server.gui.add_panel()
-        uuid = panel._impl.uuid
-        panel.minimize()
-        first = _latest(server, uuid, m.GuiSetPanelCollapsedMessage)
-        panel.expand()
-        latest = _latest(server, uuid, m.GuiSetPanelCollapsedMessage)
-        assert latest.collapsed is False
-        assert latest.counter > first.counter
-    finally:
-        server.stop()
-
-
 def test_remove_purges_buffered_placement_messages() -> None:
     """Removing a panel purges its buffered per-axis placement messages (they
     share the panel's `gui` entity), so a late-joining client can't replay
@@ -275,7 +245,6 @@ def test_remove_purges_buffered_placement_messages() -> None:
         uuid = panel._impl.uuid
         panel.dock_right()
         panel.set_width(300)
-        panel.minimize()
         assert m.GuiSetPanelPositionMessage in _buffered_types(server, uuid)
         panel.remove()
         # Only the remove tombstone remains (it coalesces over the create via
@@ -364,23 +333,18 @@ def test_main_panel_float_after_dock() -> None:
 
 
 def test_reset_resets_main_panel_placement_to_default() -> None:
-    """gui.reset() returns the control panel to its default (top-right float,
-    expanded) by sending default per-axis messages. These coalesce over any prior
-    main-panel placement, so a stale dock/minimize doesn't replay to clients that
+    """gui.reset() returns the control panel to its default (top-right float)
+    by sending default per-axis messages. These coalesce over any prior
+    main-panel placement, so a stale dock doesn't replay to clients that
     connect after the reset (regression: placement persisted across reset)."""
     server = _make_server()
     try:
         server.gui.main_panel.dock_left()
-        server.gui.main_panel.minimize()
         server.gui.reset()
-        # The latest buffered Position is the default float; collapsed is cleared.
+        # The latest buffered Position is the default float.
         assert _latest(
             server, CONTROL_PANEL_ID, m.GuiSetPanelPositionMessage
         ).position == {"kind": "float", "x": None, "y": None}
-        assert (
-            _latest(server, CONTROL_PANEL_ID, m.GuiSetPanelCollapsedMessage).collapsed
-            is False
-        )
     finally:
         server.stop()
 

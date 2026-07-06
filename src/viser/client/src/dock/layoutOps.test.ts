@@ -74,6 +74,7 @@ import {
   floatRegion,
   minimizeStack,
   expandStack,
+  expandStackOf,
   stackGroupIdsOf,
   setActiveTab,
   cascadeResize,
@@ -1645,6 +1646,75 @@ describe("minimizeStack / expandStack", () => {
     expect(expandStack(allExpanded, ["a", "b", "c"])).toBe(allExpanded);
     const allMin = minimizeStack(allExpanded, ["a", "b", "c"]);
     expect(minimizeStack(allMin, ["a", "b", "c"])).toBe(allMin);
+  });
+});
+
+// ===========================================================================
+// expandStackOf (D31): expanding from any one bar of a stack reveals the
+// WHOLE stack (its visual column) -- collapse is stack-scoped in both
+// directions, so a stack's bars stay uniform.
+// ===========================================================================
+
+describe("expandStackOf (D31)", () => {
+  it("floating stack: expands every group of the containing window", () => {
+    let layout = makeLayout({
+      floating: [{ id: "w1", stack: ["a", "b", "c"] }],
+    });
+    layout = minimizeStack(layout, ["a", "b", "c"]);
+    const out = expandStackOf(layout, "b");
+    // PIN: no collapsed sibling remains in the stack after a bar expand.
+    for (const g of ["a", "b", "c"])
+      expect(out.groups[g].collapsed).toBe(false);
+  });
+
+  it("docked plain stack (canonical bands): expands ALL bands' leaves", () => {
+    // D12 shape: a plain stack is consecutive single-column bands -- one
+    // visual column, so the stack scope is the whole region.
+    let layout = makeLayout({
+      right: rows([row([leaf("a")]), row([leaf("b")])]),
+    });
+    layout = minimizeStack(layout, ["a", "b"]);
+    const out = expandStackOf(layout, "a");
+    expect(out.groups["a"].collapsed).toBe(false);
+    expect(out.groups["b"].collapsed).toBe(false);
+  });
+
+  it("zipped column: expands the model column only; sibling column untouched", () => {
+    let layout = makeLayout({
+      left: rows([row([col([leaf("a"), leaf("b")]), col([leaf("c"), leaf("d")])])]),
+    });
+    layout = minimizeStack(layout, ["a", "b", "c"]);
+    const out = expandStackOf(layout, "a");
+    expect(out.groups["a"].collapsed).toBe(false);
+    expect(out.groups["b"].collapsed).toBe(false);
+    expect(out.groups["c"].collapsed).toBe(true); // sibling column untouched
+    expect(out.groups["d"].collapsed).not.toBe(true);
+  });
+
+  it("routes through the shared expand internals: rail flags clear too", () => {
+    // Region flag (single-visual-column region)...
+    let layout = makeLayout({
+      right: rows([row([leaf("a")]), row([leaf("b")])]),
+    });
+    layout = minimizeStack(layout, ["a", "b"]);
+    layout = setRegionCollapsed(layout, "right", true);
+    const out = expandStackOf(layout, "b");
+    expect(isRegionCollapsedOn(out, "right")).toBe(false);
+    expect(out.groups["a"].collapsed).toBe(false);
+    // ...and the column flag (zipped band).
+    const ca = col([leaf("x"), leaf("y")]);
+    let zipped = makeLayout({ left: row([ca, leaf("z")]) });
+    zipped = setColumnRailed(zipped, "left", columnIdOf(ca), true);
+    const zOut = expandStackOf(zipped, "x");
+    expect(zOut.docked.left!.rows[0].columns[0].railed).toBeUndefined();
+  });
+
+  it("no-op (same reference) when the whole stack is already expanded", () => {
+    const layout = makeLayout({
+      floating: [{ id: "w1", stack: ["a", "b"] }],
+    });
+    expect(expandStackOf(layout, "a")).toBe(layout);
+    expect(expandStackOf(layout, "zzz")).toBe(layout); // unknown group
   });
 });
 
