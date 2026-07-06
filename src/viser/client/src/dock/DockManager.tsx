@@ -47,7 +47,6 @@ import {
   tabInsertion,
 } from "./hitTest";
 import {
-  HANDLE_BTN_EM,
   assertNever,
   clamp,
   DockEdge,
@@ -2250,13 +2249,6 @@ export function DockManager({
                     <RegionCollapseChevron
                       edge={edge}
                       onActivate={() => collapseRegion(edge, true)}
-                      placement={{
-                        position: "absolute",
-                        right: 0,
-                        top: 0,
-                        width: `${HANDLE_BTN_EM}em`,
-                        height: "100%",
-                      }}
                     />
                   }
                 />

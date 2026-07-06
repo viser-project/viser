@@ -192,11 +192,9 @@ export function ChromeToggle({
 export function RegionCollapseChevron({
   edge,
   onActivate,
-  placement,
 }: {
   edge: "left" | "right";
   onActivate: () => void;
-  placement?: React.CSSProperties;
 }) {
   return (
     <HandleIconButton
@@ -213,13 +211,11 @@ export function RegionCollapseChevron({
           `[data-dock-region-rail="${edge}"] [data-dock-minimize-all]`,
         );
       }}
-      placement={
-        placement ?? {
-          width: `${HANDLE_BTN_EM}em`,
-          height: "100%",
-          flexShrink: 0,
-        }
-      }
+      placement={{
+        width: `${HANDLE_BTN_EM}em`,
+        height: "100%",
+        flexShrink: 0,
+      }}
     >
       {edge === "right" ? (
         <IconChevronsRight size={13} />
@@ -334,7 +330,22 @@ export function StackHandleBar({
       }}
     >
       {!narrow && <GripPill width="3em" opacity={0.6} />}
-      {endControl}
+      {endControl !== undefined && (
+        // The slot owns its geometry: end controls ALWAYS sit at the bar's
+        // right end, regardless of caller -- position is not a per-call-site
+        // decision (two call sites once produced two placements).
+        <Box
+          style={{
+            position: "absolute",
+            right: 0,
+            top: 0,
+            height: "100%",
+            display: "flex",
+          }}
+        >
+          {endControl}
+        </Box>
+      )}
       {endControl === undefined && onToggle !== undefined && (
         <HandleIconButton
           attrs={{ "data-dock-minimize-all": "true" }}
