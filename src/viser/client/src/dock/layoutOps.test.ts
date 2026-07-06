@@ -45,7 +45,7 @@ import {
   toRegion,
 } from "./testUtils";
 import {
-  isLoneInVisualColumn,
+  isSoleFloatingGroup,
   edgeIsSingleLeaf,
   minRegionWidth,
   findGroupLocation,
@@ -89,16 +89,17 @@ import {
 // ===========================================================================
 
 describe("setRegionCollapsed (D21)", () => {
-  it("sets and clears the per-edge flag without touching group states", () => {
-    const layout = makeLayout({ left: col([leaf("a"), leaf("b")]) });
-    layout.groups["a"].collapsed = true; // mixed states are legal (D16)
-    const collapsed = setRegionCollapsed(layout, "left", true);
+  it("sets and clears the per-edge flag without touching column rails", () => {
+    const ca = col([leaf("a")]);
+    const layout = makeLayout({ left: row([ca, leaf("b")]) });
+    const withRail = setColumnRailed(layout, "left", columnIdOf(ca), true);
+    const collapsed = setRegionCollapsed(withRail, "left", true);
     expect(isRegionCollapsedOn(collapsed, "left")).toBe(true);
-    expect(collapsed.groups["a"].collapsed).toBe(true);
-    expect(collapsed.groups["b"].collapsed).not.toBe(true);
+    expect(collapsed.docked.left!.rows[0].columns[0].railed).toBe(true);
     const restored = setRegionCollapsed(collapsed, "left", false);
     expect(isRegionCollapsedOn(restored, "left")).toBe(false);
-    expect(restored.groups["a"].collapsed).toBe(true); // per-cell state kept
+    // The column store is untouched by the region toggle.
+    expect(restored.docked.left!.rows[0].columns[0].railed).toBe(true);
   });
 
   it("collapsing an EMPTY edge is a no-op (nothing to rail)", () => {
@@ -113,42 +114,41 @@ describe("setRegionCollapsed (D21)", () => {
     expect(setRegionCollapsed(collapsed, "left", true)).toBe(collapsed);
   });
 
-  it("expandGroup clears the flag for the group's edge", () => {
-    const layout = makeLayout({ left: leaf("a") });
-    layout.groups["a"].collapsed = true;
-    const collapsed = setRegionCollapsed(layout, "left", true);
-    const out = expandGroup(collapsed, "a");
-    expect(out.groups["a"].collapsed).toBe(false);
-    expect(isRegionCollapsedOn(out, "left")).toBe(false);
-  });
-
-  it("expandGroup on an already-expanded group STILL clears the flag (rail spine row)", () => {
-    // A rail cell can back an expanded-state group whose region is simply
-    // collapsed; activating it must reveal it (P5: no dead ends).
+  it("expandGroup clears the flag for the group's edge (rail spine row)", () => {
+    // A rail cell's group carries no state of its own (D38): expanding it
+    // must reveal it by clearing the REGION's flag (P5: no dead ends).
     const layout = makeLayout({ left: leaf("a") });
     const collapsed = setRegionCollapsed(layout, "left", true);
     const out = expandGroup(collapsed, "a");
     expect(isRegionCollapsedOn(out, "left")).toBe(false);
+    // Idempotent: nothing left to clear -> same reference.
+    expect(expandGroup(out, "a")).toBe(out);
   });
 
-  it("toggleCollapsed's EXPAND direction clears the flag; minimize leaves it", () => {
+  it("toggleCollapsed on a sole docked panel targets the REGION store (D32)", () => {
     const layout = makeLayout({ left: leaf("a") });
-    layout.groups["a"].collapsed = true;
     const collapsed = setRegionCollapsed(layout, "left", true);
-    const out = toggleCollapsed(collapsed, "a"); // expand
+    const out = toggleCollapsed(collapsed, "a"); // expand -> clears region flag
     expect(isRegionCollapsedOn(out, "left")).toBe(false);
-    const backIn = setRegionCollapsed(out, "left", true);
-    const minimized = toggleCollapsed(backIn, "a"); // minimize
+    const minimized = toggleCollapsed(out, "a"); // minimize -> region store
     expect(isRegionCollapsedOn(minimized, "left")).toBe(true);
   });
 
-  it("floatRegion clears the flag (region gone; next dock starts expanded)", () => {
+  it("floatRegion clears the flag and births a COLLAPSED window (identity)", () => {
     const layout = makeLayout({ left: col([leaf("a"), leaf("b")]) });
     const collapsed = setRegionCollapsed(layout, "left", true);
     const res = floatRegion(collapsed, "left", 10, 10, 300);
     expect(res.windowId).not.toBeNull();
     expect(res.layout.docked.left).toBeNull();
     expect(isRegionCollapsedOn(res.layout, "left")).toBe(false);
+    // The state MOVED to the window store (D38: transfers are identity).
+    expect(res.layout.floating[0].collapsed).toBe(true);
+  });
+
+  it("floatRegion of an EXPANDED region births an expanded window", () => {
+    const layout = makeLayout({ left: col([leaf("a"), leaf("b")]) });
+    const res = floatRegion(layout, "left", 10, 10, 300);
+    expect(res.layout.floating[0].collapsed).not.toBe(true);
   });
 });
 
@@ -159,31 +159,25 @@ describe("setRegionCollapsed (D21)", () => {
 // ===========================================================================
 
 describe("setColumnRailed (per-column rail)", () => {
-  it("isLoneInVisualColumn: plain band-stacks are ONE visual column (D30)", () => {
-    // Canonical plain stack: two bands, one single-leaf column each. The
-    // visual column is the whole region, so NEITHER cell is lone -- the
-    // model-column count alone would wrongly call both lone (D12 shape).
-    const layout = makeLayout({
-      right: rows([row([leaf("a")]), row([leaf("b")])]),
-    });
-    expect(isLoneInVisualColumn(layout, "a")).toBe(false);
-    expect(isLoneInVisualColumn(layout, "b")).toBe(false);
-  });
-
-  it("isLoneInVisualColumn: zip columns and sole panels", () => {
-    // Zipped band: a 1-leaf column beside a 2-leaf column. The 1-leaf
-    // column IS its visual column (lone); the 2-leaf column's cells share
-    // theirs. A region's sole panel is lone; a 2-stack floating window's
-    // cells are not.
+  it("isSoleFloatingGroup: floating singles only (D32)", () => {
+    // The panel-level collapse control's gate: true ONLY for the sole
+    // group of a floating window. Docked panels -- sole panels of a
+    // region included -- are false (docked collapse is chevron -> rail),
+    // as are stacked floating cells and unplaced groups.
     const layout = makeLayout({
       right: rows([row([col([leaf("b"), leaf("c")]), leaf("a")])]),
       left: leaf("m"),
-      floating: [{ id: "w1", stack: ["x", "y"] }],
+      floating: [
+        { id: "w1", stack: ["x", "y"] },
+        { id: "w2", stack: ["z"] },
+      ],
     });
-    expect(isLoneInVisualColumn(layout, "a")).toBe(true);
-    expect(isLoneInVisualColumn(layout, "b")).toBe(false);
-    expect(isLoneInVisualColumn(layout, "m")).toBe(true);
-    expect(isLoneInVisualColumn(layout, "x")).toBe(false);
+    expect(isSoleFloatingGroup(layout, "z")).toBe(true);
+    expect(isSoleFloatingGroup(layout, "x")).toBe(false);
+    expect(isSoleFloatingGroup(layout, "y")).toBe(false);
+    expect(isSoleFloatingGroup(layout, "a")).toBe(false);
+    expect(isSoleFloatingGroup(layout, "m")).toBe(false); // docked sole panel
+    expect(isSoleFloatingGroup(layout, "nowhere")).toBe(false);
   });
 
   /** Left edge: one band, two single-leaf columns [a | b]. */
@@ -198,8 +192,6 @@ describe("setColumnRailed (per-column rail)", () => {
     const { layout, aColId } = twoColumns();
     const on = setColumnRailed(layout, "left", aColId, true);
     expect(on.docked.left!.rows[0].columns[0].railed).toBe(true);
-    // Per-cell collapse states are untouched (the rail is a view over them).
-    expect(on.groups["a"].collapsed).not.toBe(true);
     // Clearing (or setting) on a missing column is a no-op.
     expect(setColumnRailed(on, "left", "missing", false)).toBe(on);
     expect(setColumnRailed(on, "left", aColId, true)).toBe(on);
@@ -280,12 +272,13 @@ describe("setColumnRailed (per-column rail)", () => {
       expect(band.columns[0].railed).toBeUndefined();
   });
 
-  it("orphan rule: a lone railed column among expanded bands degrades to bars", () => {
+  it("store migration: a lone railed column among expanded bands EXPANDS (D38)", () => {
     // Two single-column bands; the second's column railed (the shape left
-    // behind when a railed column's expanded band-siblings depart). The
-    // railed form is only legal beside siblings: the flag clears and the
-    // column's groups minimize to in-place bars instead (intent kept, no
-    // stranded dead space), and the region does NOT rail (band 1 expanded).
+    // behind when a railed column's expanded band-siblings depart). That
+    // geometry has no legal collapsed form: it can't be the region store
+    // (the region isn't all collapsed) and docked bars are gone (D32/D38),
+    // so the flag DROPS -- the column expands (the pre-D38 degrade-to-bars
+    // rule is dead).
     const layout = makeLayout({
       left: rows([row([leaf("a")]), row([leaf("b")])]),
     });
@@ -293,8 +286,6 @@ describe("setColumnRailed (per-column rail)", () => {
     expect(normalizeCanonicalBandsInPlace(layout)).toBe(true);
     expect(isRegionCollapsedOn(layout, "left")).toBe(false);
     expect(layout.docked.left!.rows[1].columns[0].railed).toBeUndefined();
-    expect(layout.groups["b"].collapsed).toBe(true);
-    expect(layout.groups["a"].collapsed).not.toBe(true);
   });
 });
 
@@ -1602,43 +1593,82 @@ describe("reorderTab", () => {
 // toggleCollapsed
 // ===========================================================================
 
-describe("toggleCollapsed", () => {
-  it("toggles undefined -> true -> false", () => {
-    const layout = makeLayout({ left: leaf("a") });
+describe("toggleCollapsed (D38: one flag per container)", () => {
+  it("floating: toggles the WINDOW's flag", () => {
+    const layout = makeLayout({ floating: [{ id: "w1", stack: ["a"] }] });
     const once = toggleCollapsed(layout, "a");
-    expect(once.groups["a"].collapsed).toBe(true);
+    expect(once.floating[0].collapsed).toBe(true);
     const twice = toggleCollapsed(once, "a");
-    expect(twice.groups["a"].collapsed).toBe(false);
+    expect(twice.floating[0].collapsed).not.toBe(true);
+  });
+
+  it("multi-group window: the same ONE flag (toggle-all is just toggle)", () => {
+    const layout = makeLayout({ floating: [{ id: "w1", stack: ["a", "b"] }] });
+    const once = toggleCollapsed(layout, "b");
+    expect(once.floating[0].collapsed).toBe(true);
+    expect(isGroupEffectivelyCollapsed(once, "a")).toBe(true);
+    expect(isGroupEffectivelyCollapsed(once, "b")).toBe(true);
+  });
+
+  it("docked, single-visual-column region: targets the REGION store (D32)", () => {
+    const layout = makeLayout({
+      right: rows([row([leaf("a")]), row([leaf("b")])]),
+    });
+    const once = toggleCollapsed(layout, "a");
+    expect(isRegionCollapsedOn(once, "right")).toBe(true);
+    const twice = toggleCollapsed(once, "a");
+    expect(isRegionCollapsedOn(twice, "right")).toBe(false);
+  });
+
+  it("docked beside content: targets the containing COLUMN's railed flag", () => {
+    const ca = col([leaf("a")]);
+    const layout = makeLayout({ left: row([ca, leaf("b")]) });
+    const once = toggleCollapsed(layout, "a");
+    expect(once.docked.left!.rows[0].columns[0].railed).toBe(true);
+    expect(isRegionCollapsedOn(once, "left")).toBe(false);
+    const twice = toggleCollapsed(once, "a");
+    expect(twice.docked.left!.rows[0].columns[0].railed).toBeUndefined();
   });
 
   it("returns input for an unknown group", () => {
     const layout = makeLayout({ left: leaf("a") });
     expect(toggleCollapsed(layout, "zzz")).toBe(layout);
   });
-
 });
 
 // ===========================================================================
-// minimizeStack / expandStack (the stack handle's minimize-all button) -- bulk
-// all/none convenience over independently-collapsible cells (D16); mixed
-// per-cell states stay legal outside these helpers.
+// minimizeStack / expandStack (the stack handle's minimize toggle). Under
+// D38 these resolve the stack's CONTAINER and flip its one flag: the window's
+// collapsed, or the docked scope's store (region / column railed).
 // ===========================================================================
 
-describe("minimizeStack / expandStack", () => {
+describe("minimizeStack / expandStack (D38)", () => {
   const stacked = () =>
     makeLayout({ floating: [{ id: "w1", stack: ["a", "b", "c"] }] });
 
-  it("minimize collapses every group; expand expands every group", () => {
+  it("floating: minimize sets the WINDOW flag; expand clears it", () => {
     const min = minimizeStack(stacked(), ["a", "b", "c"]);
-    for (const g of ["a", "b", "c"]) expect(min.groups[g].collapsed).toBe(true);
+    expect(min.floating[0].collapsed).toBe(true);
+    for (const g of ["a", "b", "c"])
+      expect(isGroupEffectivelyCollapsed(min, g)).toBe(true);
     const max = expandStack(min, ["a", "b", "c"]);
-    for (const g of ["a", "b", "c"]) expect(max.groups[g].collapsed).toBe(false);
+    expect(max.floating[0].collapsed).not.toBe(true);
+    for (const g of ["a", "b", "c"])
+      expect(isGroupEffectivelyCollapsed(max, g)).toBe(false);
   });
 
-  it("minimize from a partial state still collapses all", () => {
-    const layout = toggleCollapsed(stacked(), "a"); // a minimized, b/c expanded
-    const min = minimizeStack(layout, ["a", "b", "c"]);
-    for (const g of ["a", "b", "c"]) expect(min.groups[g].collapsed).toBe(true);
+  it("docked: single-visual-column region -> REGION store; beside content -> column rail", () => {
+    const plain = makeLayout({
+      right: rows([row([leaf("a")]), row([leaf("b")])]),
+    });
+    const min = minimizeStack(plain, ["a", "b"]);
+    expect(isRegionCollapsedOn(min, "right")).toBe(true);
+
+    const cxy = col([leaf("x"), leaf("y")]);
+    const zipped = makeLayout({ left: row([cxy, leaf("z")]) });
+    const railed = minimizeStack(zipped, ["x", "y"]);
+    expect(railed.docked.left!.rows[0].columns[0].railed).toBe(true);
+    expect(isRegionCollapsedOn(railed, "left")).toBe(false);
   });
 
   it("no-ops return the input layout unchanged", () => {
@@ -1650,66 +1680,61 @@ describe("minimizeStack / expandStack", () => {
 });
 
 // ===========================================================================
-// expandStackOf (D31): expanding from any one bar of a stack reveals the
-// WHOLE stack (its visual column) -- collapse is stack-scoped in both
-// directions, so a stack's bars stay uniform.
+// expandStackOf: expanding from any one bar of a stack reveals the WHOLE
+// stack. Under D38 this is structural -- collapse IS container state, so the
+// op is exactly "clear the container's one flag".
 // ===========================================================================
 
-describe("expandStackOf (D31)", () => {
-  it("floating stack: expands every group of the containing window", () => {
+describe("expandStackOf (D38)", () => {
+  it("floating stack: clears the window's flag (whole stack reveals)", () => {
     let layout = makeLayout({
       floating: [{ id: "w1", stack: ["a", "b", "c"] }],
     });
     layout = minimizeStack(layout, ["a", "b", "c"]);
     const out = expandStackOf(layout, "b");
-    // PIN: no collapsed sibling remains in the stack after a bar expand.
+    expect(out.floating[0].collapsed).not.toBe(true);
     for (const g of ["a", "b", "c"])
-      expect(out.groups[g].collapsed).toBe(false);
+      expect(isGroupEffectivelyCollapsed(out, g)).toBe(false);
   });
 
-  it("docked plain stack (canonical bands): expands ALL bands' leaves", () => {
+  it("docked plain stack (canonical bands): clears the REGION flag", () => {
     // D12 shape: a plain stack is consecutive single-column bands -- one
-    // visual column, so the stack scope is the whole region.
+    // visual column, so the stack scope's store is the region flag.
     let layout = makeLayout({
       right: rows([row([leaf("a")]), row([leaf("b")])]),
     });
     layout = minimizeStack(layout, ["a", "b"]);
     const out = expandStackOf(layout, "a");
-    expect(out.groups["a"].collapsed).toBe(false);
-    expect(out.groups["b"].collapsed).toBe(false);
-  });
-
-  it("zipped column: expands the model column only; sibling column untouched", () => {
-    let layout = makeLayout({
-      left: rows([row([col([leaf("a"), leaf("b")]), col([leaf("c"), leaf("d")])])]),
-    });
-    layout = minimizeStack(layout, ["a", "b", "c"]);
-    const out = expandStackOf(layout, "a");
-    expect(out.groups["a"].collapsed).toBe(false);
-    expect(out.groups["b"].collapsed).toBe(false);
-    expect(out.groups["c"].collapsed).toBe(true); // sibling column untouched
-    expect(out.groups["d"].collapsed).not.toBe(true);
-  });
-
-  it("routes through the shared expand internals: rail flags clear too", () => {
-    // Region flag (single-visual-column region)...
-    let layout = makeLayout({
-      right: rows([row([leaf("a")]), row([leaf("b")])]),
-    });
-    layout = minimizeStack(layout, ["a", "b"]);
-    layout = setRegionCollapsed(layout, "right", true);
-    const out = expandStackOf(layout, "b");
     expect(isRegionCollapsedOn(out, "right")).toBe(false);
-    expect(out.groups["a"].collapsed).toBe(false);
-    // ...and the column flag (zipped band).
-    const ca = col([leaf("x"), leaf("y")]);
-    let zipped = makeLayout({ left: row([ca, leaf("z")]) });
-    zipped = setColumnRailed(zipped, "left", columnIdOf(ca), true);
-    const zOut = expandStackOf(zipped, "x");
-    expect(zOut.docked.left!.rows[0].columns[0].railed).toBeUndefined();
+    expect(isGroupEffectivelyCollapsed(out, "b")).toBe(false);
   });
 
-  it("no-op (same reference) when the whole stack is already expanded", () => {
+  it("zipped column: clears the model column's rail only; sibling untouched", () => {
+    const cab = col([leaf("a"), leaf("b")]);
+    const ccd = col([leaf("c"), leaf("d")]);
+    let layout = makeLayout({ left: row([cab, ccd]) });
+    layout = setColumnRailed(layout, "left", columnIdOf(cab), true);
+    layout = setColumnRailed(layout, "left", columnIdOf(ccd), true);
+    const out = expandStackOf(layout, "a");
+    expect(out.docked.left!.rows[0].columns[0].railed).toBeUndefined();
+    expect(out.docked.left!.rows[0].columns[1].railed).toBe(true); // sibling
+    expect(isGroupEffectivelyCollapsed(out, "c")).toBe(true);
+  });
+
+  it("clears BOTH docked flags when stacked (region takes render precedence)", () => {
+    // A railed column under a region-railed edge: one expand reveals it --
+    // both stores clear (P5: an "expanded" panel behind a rail is a dead
+    // end).
+    const ca = col([leaf("x"), leaf("y")]);
+    let layout = makeLayout({ left: row([ca, leaf("z")]) });
+    layout = setColumnRailed(layout, "left", columnIdOf(ca), true);
+    layout = setRegionCollapsed(layout, "left", true);
+    const out = expandStackOf(layout, "x");
+    expect(isRegionCollapsedOn(out, "left")).toBe(false);
+    expect(out.docked.left!.rows[0].columns[0].railed).toBeUndefined();
+  });
+
+  it("no-op (same reference) when the container is already expanded", () => {
     const layout = makeLayout({
       floating: [{ id: "w1", stack: ["a", "b"] }],
     });

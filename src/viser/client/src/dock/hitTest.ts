@@ -45,11 +45,10 @@ const INSERT_LINE_INSET_PX = 4;
 // edge stays a MERGE target (capped to a third of the cell so a short strip
 // keeps a merge zone). P11 floor: no zone under 8px.
 const MINIMIZED_EDGE_BAND_PX = 8;
-// FLOATING minimized bars use a wider snap band (spec D4, amended): capped
-// at a third of the bar height so all three zones stay >= the 8px P11 floor
-// (a flat 10px would leave a sub-8px middle on a 26px bar). DOCKED bars have
-// NO top/bottom zones at all -- the column seams and region-edge bands next
-// door express the intent.
+// A FLOATING bar's snap band (spec 5.4): capped at a third of the bar height
+// so all three zones stay >= the 8px P11 floor (a flat 10px would leave a
+// sub-8px middle on a 26px bar). Bars are floating-only (D32/D38: docked
+// collapse renders as the rail), so there is no docked-bar variant.
 const BAR_SNAP_BAND_PX = 10;
 // Rendered thickness (px) of an insertion-LINE hint -- the thin bar drawn for
 // every "insert here" drop (per-panel split, region-edge span, cross-band seam).
@@ -123,10 +122,11 @@ export interface GroupTarget {
    * has no content area, so its whole bar is treated as a 5-way drop zone.
    * Optional so existing target literals (e.g. in tests) stay valid. */
   collapsed?: boolean;
-  /** True when a COLLAPSED group renders as a horizontal bar (a docked cell's
-   * or floating stack's in-place bar) rather than the vertical rail cell. A
-   * bar is a single visual unit with no per-tab rows, so the collapsed branch
-   * offers merge instead of the rail's Y-based per-row tab insertion. */
+  /** True when a COLLAPSED group renders as a horizontal bar -- a collapsed
+   * FLOATING window's cell (D38) -- rather than a vertical rail cell (the
+   * only docked collapsed form, D32). Bars lay their tab labels out
+   * horizontally, so the collapsed branch uses X-based label insertion and
+   * the floating snap bands instead of the rail's Y-based rows. */
   bar?: boolean;
   /** True when the group holds an unmergeable panel: nothing may be merged or
    * inserted into it, so its content area is merge-suppressed (drops there fall
@@ -519,14 +519,12 @@ export function hitTest(
     // at the top of this loop body, shared with the cross-band seam.)
     // A single-leaf region normally suppresses these region-wide bands (its own
     // per-panel split is identical, full leaf height). But a COLLAPSED region
-    // -- explicitly collapsed to the 36px rail (D21), OR one whose every cell
-    // is minimized (in-place bars leave the area below them empty) -- renders
-    // its cells as SHORT strips/bars, so the per-panel split is only
-    // strip-tall and the large empty region area below has no "dock beside"
-    // target; a lone collapsed cell also carries NO per-panel top/bottom
-    // zones (D4: bars have none), so the region bands aren't redundant there.
-    // So when the region is collapsed, keep the FULL-HEIGHT left/right bands
-    // (and the top/bottom bands even for a single leaf):
+    // -- explicitly railed at region scope (D21), OR one whose every column
+    // is railed (D28) -- renders its cells as SHORT content-tall rail cells,
+    // so the per-panel split is only cell-tall and the large empty region
+    // area below has no "dock beside" target. So when the region is
+    // collapsed, keep the FULL-HEIGHT left/right bands (and the top/bottom
+    // bands even for a single leaf):
     //  - over the EMPTY area below the rail/bars: the column's left/right
     //    HALVES dock a sibling on that side (no dead center stripe),
     //  - over the cell itself: only the outer/inner thirds dock beside (full
@@ -534,7 +532,7 @@ export function hitTest(
     //    zones.
     const keepSideBand =
       isRegionCollapsedOn(layout, edge) ||
-      tree.rows.every((rw) => isRowMinimized(rw, layout.groups));
+      tree.rows.every((rw) => isRowMinimized(rw));
     const effSideBand = !keepSideBand
       ? sideBand
       : overCollapsedCell(edge)
@@ -904,33 +902,29 @@ export function hitTest(
     // The edge bands are thin pixel strips at the cell's very top/bottom, so the
     // + cap (just inside the top edge) stays a MERGE target rather than being
     // swallowed by an "above" zone. Insertion is suppressed for an unmergeable
-    // drag (can't become tabs), an unmergeable target, or a BAR target (a
-    // horizontal bar with no per-tab rows -- Y-based row insertion would pick
-    // an arbitrary index there; a drop on a bar merges instead).
+    // drag (can't become tabs) or an unmergeable target.
     const canInsert =
       !draggingUnmergeable && !g.unmergeable && g.tabs.length > 0;
     // Top/bottom edge bands: rail cells keep thin 8px stack-above/below
-    // zones; horizontal BARS differ by context (spec D4) -- a docked bar has
-    // NONE (the column seams next door already say "insert above/below"), a
-    // floating bar gets the wider min(10px, height/3) snap band.
+    // zones; a FLOATING bar (the only bar form, D32/D38) gets the wider
+    // min(10px, height/3) snap band (spec 5.4).
     const edgeBand =
       g.bar === true
-        ? gt.ctx.kind === "docked"
-          ? 0
-          : Math.min(BAR_SNAP_BAND_PX, r.height / 3)
+        ? Math.min(BAR_SNAP_BAND_PX, r.height / 3)
         : Math.min(MINIMIZED_EDGE_BAND_PX, r.height / 3);
-    const inTopEdge = edgeBand > 0 && clientY < r.top + edgeBand;
-    const inBottomEdge = edgeBand > 0 && clientY > r.bottom - edgeBand;
+    const inTopEdge = clientY < r.top + edgeBand;
+    const inBottomEdge = clientY > r.bottom - edgeBand;
     // Tab insertion matches the segment's orientation: rail cells stack rows
     // vertically (Y-based, horizontal line); bars lay labels out
     // horizontally (2D nearest-tab, vertical line) -- spec D9.
     const insertResult = () => {
       if (!canInsert || inTopEdge || inBottomEdge) return null;
       if (g.bar === true) {
-        // Spec 5.4: insertion aims at the bar's single title label; a drop
-        // anywhere ELSE on the bar appends (merge). Without this bound the
-        // whole bar width resolved to insert-around-the-active-tab, making
-        // append unreachable on multi-pane bars.
+        // Spec 5.4 (D36): insertion aims at the bar's VISIBLE tab labels --
+        // per-label rects via the same 2D nearest-tab as expanded strips --
+        // and a drop right of the LAST label appends (merge). Without that
+        // bound the whole bar width resolved to insert-around-the-nearest
+        // label, making append unreachable.
         const last = g.tabs[g.tabs.length - 1];
         if (last !== undefined && clientX > last.rect.right + 8) return null;
         const ins = tabInsertion(g.tabs, clientX, clientY);

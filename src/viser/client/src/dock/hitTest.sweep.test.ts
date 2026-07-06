@@ -20,7 +20,7 @@ import {
   GroupTarget,
   ContainerRect,
 } from "./hitTest";
-import { edgeIsSingleLeaf } from "./layoutOps";
+import { edgeIsSingleLeaf, isGroupEffectivelyCollapsed } from "./layoutOps";
 import {
   DockEdge,
   DockLayout,
@@ -381,21 +381,24 @@ function layouts(): {
   }
   {
     // THREE bands: a wide band on top, a single full-width band, and a
-    // side-by-side band -- with a collapsed group so a band renders as a strip.
+    // side-by-side band -- with a RAILED column (D38's docked collapsed
+    // form) so a collapsed strip participates in the sweep.
     const l = emptyLayout();
     l.groups = {
       a: group("a"),
       b: group("b"),
-      c: group("c", 2, true), // collapsed -> its band renders as a strip
+      c: group("c", 2),
       d: group("d"),
       e: group("e"),
       f: group("f"),
     };
+    const railedEF = colS([leaf("e"), leaf("f")]);
+    if (railedEF.kind === "col") railedEF.column.railed = true;
     l.docked.left = toRegion(
       rows([
         row([leaf("a"), leaf("b")]),
         row([leaf("c")]),
-        row([leaf("d"), colS([leaf("e"), leaf("f")])]),
+        row([leaf("d"), railedEF]),
       ]),
     );
     out.push({ name: "three bands w/ collapsed (left)", layout: l, multiBand: true });
@@ -690,10 +693,10 @@ describe("hitTest left/right mirror symmetry", () => {
   for (const { name, layout } of layouts()) {
     it(`mirrored pointer resolves to the mirrored result (${name})`, () => {
       const targets = targetsFor(layout);
-      // Surface the model's collapsed flags on the targets so the collapsed
-      // (3z) branch participates in the symmetry check too.
+      // Surface the model's CONTAINER collapse state (D38) on the targets so
+      // the collapsed (3z) branch participates in the symmetry check too.
       for (const t of targets.groups)
-        if (layout.groups[t.groupId]?.collapsed === true) t.collapsed = true;
+        if (isGroupEffectivelyCollapsed(layout, t.groupId)) t.collapsed = true;
       const mLayout = mirrorLayout(layout);
       const mTargets = mirrorTargets(targets);
       const errors: string[] = [];

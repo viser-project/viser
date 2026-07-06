@@ -8,8 +8,10 @@
 //   commands are not swallowed by the server scope's higher counters.
 
 import { describe, expect, it } from "vitest";
-import type { PanelPlacementState } from "./GuiState";
+import type { PanelLayoutEntry, PanelPlacementState } from "./GuiState";
 import { gatePlacement } from "./placementGate";
+import { applyPanelPlacement, findPaneGroup } from "../dock/layoutOps";
+import { emptyLayout } from "../dock/types";
 
 const RUN_A = "runAAAAA";
 const RUN_B = "runBBBBB";
@@ -129,5 +131,109 @@ describe("gatePlacement", () => {
       width: null,
       height: null,
     });
+  });
+});
+
+// The gate -> applyPanelPlacement chain as the placement coordinator drives it
+// (two passes = two server messages), pinning that a later `set_height` /
+// `set_width` actually lands on the floating window model. This is the joint
+// the coordinator exercises per pass; keep it covered end to end so a gating
+// or bundle-shape change can't silently stop pinning window geometry.
+describe("gate -> apply sequence: float then set_height/set_width", () => {
+  const PANE = "pane-a";
+  const BOUNDS = { width: 1280, height: 800, leftInset: 0, rightInset: 0 };
+
+  it("live: float applies first, set_height(300) pins on the next pass", () => {
+    // Pass 1: only the position axis is stored (panel.float(x=..., y=...)).
+    const entry1 = entry({
+      position: {
+        value: { kind: "float", x: 120, y: 120 },
+        counter: 1,
+        runId: RUN_A,
+      },
+    });
+    const g1 = gatePlacement(entry1, undefined, false);
+    let layout = applyPanelPlacement(
+      emptyLayout(),
+      [PANE],
+      g1.placement,
+      () => null,
+      { canvasBounds: BOUNDS },
+    );
+    expect(layout.floating).toHaveLength(1);
+    expect(layout.floating[0].height).toEqual({ mode: "auto" });
+
+    // Pass 2: set_height(300) merged its axis; the panel is now placed and its
+    // position axis already applied (recorded in tracking).
+    const tracking: PanelLayoutEntry = {
+      applied: g1.applied,
+      userTouched: false,
+    };
+    const entry2 = entry({
+      ...entry1,
+      height: { value: 300, counter: 2, runId: RUN_A },
+    });
+    const placed = findPaneGroup(layout, PANE) !== null;
+    expect(placed).toBe(true);
+    const g2 = gatePlacement(entry2, tracking, placed);
+    expect(g2.anyFresh).toBe(true);
+    layout = applyPanelPlacement(layout, [PANE], g2.placement, () => null, {
+      canvasBounds: BOUNDS,
+    });
+    expect(layout.floating).toHaveLength(1);
+    expect(layout.floating[0].height).toEqual({ mode: "pinned", px: 300 });
+  });
+
+  it("live: set_width(360) after float resizes the window", () => {
+    const entry1 = entry({
+      position: {
+        value: { kind: "float", x: 120, y: 120 },
+        counter: 1,
+        runId: RUN_A,
+      },
+    });
+    const g1 = gatePlacement(entry1, undefined, false);
+    let layout = applyPanelPlacement(
+      emptyLayout(),
+      [PANE],
+      g1.placement,
+      () => null,
+      { canvasBounds: BOUNDS },
+    );
+    const tracking: PanelLayoutEntry = {
+      applied: g1.applied,
+      userTouched: false,
+    };
+    const entry2 = entry({
+      ...entry1,
+      width: { value: 360, counter: 2, runId: RUN_A },
+    });
+    const g2 = gatePlacement(entry2, tracking, true);
+    layout = applyPanelPlacement(layout, [PANE], g2.placement, () => null, {
+      canvasBounds: BOUNDS,
+    });
+    expect(layout.floating).toHaveLength(1);
+    expect(layout.floating[0].width).toBe(360);
+  });
+
+  it("replay: float + set_height stored before the first pass pin in one apply", () => {
+    const both = entry({
+      position: {
+        value: { kind: "float", x: 120, y: 120 },
+        counter: 1,
+        runId: RUN_A,
+      },
+      height: { value: 300, counter: 2, runId: RUN_A },
+    });
+    const g = gatePlacement(both, undefined, false);
+    const layout = applyPanelPlacement(
+      emptyLayout(),
+      [PANE],
+      g.placement,
+      () => null,
+      { canvasBounds: BOUNDS },
+    );
+    expect(layout.floating).toHaveLength(1);
+    expect(layout.floating[0].height).toEqual({ mode: "pinned", px: 300 });
   });
 });

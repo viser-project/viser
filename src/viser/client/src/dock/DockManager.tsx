@@ -33,6 +33,7 @@ import {
 import * as ops from "./layoutOps";
 import { RegionResizer } from "./RegionResizer";
 import { RegionCollapseChevron, StackHandleBar } from "./handles";
+import { regionWidthAnim } from "./DockStyles.css";
 import { plannedReservedWidth, planRegion } from "./regionPlan";
 import { reconcileRegionWidths } from "./widthReconciliation";
 import { invariantViolations } from "./layoutInvariants";
@@ -68,7 +69,6 @@ import {
 // Keep at least this much of a floating window's top-left corner on-screen so
 // its handle stays reachable (panes may otherwise overflow off-screen).
 const KEEP_VISIBLE_PX = 40;
-
 
 /** Clamp a floating window's top-left corner so the handle stays reachable. The
  * corner stays within the container (no off-top/left), but the window body may
@@ -271,8 +271,7 @@ export function DockManager({
   // during a region resize). Shared by all three consumers below.
   const plans = React.useMemo(
     () => ({
-      left:
-        layout.docked.left !== null ? planRegion(layout.docked.left) : null,
+      left: layout.docked.left !== null ? planRegion(layout.docked.left) : null,
       right:
         layout.docked.right !== null ? planRegion(layout.docked.right) : null,
     }),
@@ -311,8 +310,7 @@ export function DockManager({
     if (!import.meta.env.DEV) {
       const now = performance.now();
       check =
-        invariantWarnBudget.current > 0 &&
-        now - lastProdCheckMs.current >= 250;
+        invariantWarnBudget.current > 0 && now - lastProdCheckMs.current >= 250;
       if (check) lastProdCheckMs.current = now;
     }
     if (check) {
@@ -589,7 +587,8 @@ export function DockManager({
         // badge): an invisible element must not be an insertion target (P1).
         if (getComputedStyle(t).visibility === "hidden") return;
         const paneId = t.getAttribute("data-dock-tab");
-        if (paneId !== null) tabs.push({ paneId, rect: t.getBoundingClientRect() });
+        if (paneId !== null)
+          tabs.push({ paneId, rect: t.getBoundingClientRect() });
       });
       return {
         groupId,
@@ -597,8 +596,9 @@ export function DockManager({
         stripRect: stripEl?.getBoundingClientRect() ?? null,
         tabs,
         ctx,
-        // Effectively-collapsed cells (own flag OR region rail, D21) need the
-        // rotated collapsed-target zones -- see isGroupEffectivelyCollapsed.
+        // Container-collapsed cells (window flag / column rail / region
+        // rail, D38) need the collapsed-target zones -- see
+        // isGroupEffectivelyCollapsed.
         collapsed: ops.isGroupEffectivelyCollapsed(layoutRef.current, groupId),
         bar: scopeEl.getAttribute("data-dock-bar") === "true",
         unmergeable: ops.isGroupUnmergeable(layoutRef.current, panes, groupId),
@@ -671,7 +671,12 @@ export function DockManager({
       const mbRaw = Math.min(AREA_HIT_INSET_PX, r.height * 0.28);
       const mx = r.width - 2 * mxRaw >= AREA_HIT_INSET_PX ? mxRaw : 0;
       const mb = r.height - mbRaw >= AREA_HIT_INSET_PX ? mbRaw : 0;
-      t.hitRect = new DOMRect(r.left + mx, r.top, r.width - 2 * mx, r.height - mb);
+      t.hitRect = new DOMRect(
+        r.left + mx,
+        r.top,
+        r.width - 2 * mx,
+        r.height - mb,
+      );
       const hostWinId =
         areaEl
           .closest("[data-floating-window]")
@@ -885,10 +890,15 @@ export function DockManager({
     // color/background transitions end on every hover and would otherwise
     // spuriously invalidate the cache.
     const onTransitionEnd = (e: TransitionEvent) => {
+      // The D34 transitions' eased properties: cell/band/column flex
+      // (collapseAnim), the region container's width (regionWidthAnim),
+      // and a floating window's collapse height (windowCollapseAnim).
       if (
         e.propertyName === "flex-grow" ||
         e.propertyName === "flex-basis" ||
-        e.propertyName === "min-height"
+        e.propertyName === "min-height" ||
+        e.propertyName === "width" ||
+        e.propertyName === "height"
       )
         markTargetsStale();
     };
@@ -942,7 +952,12 @@ export function DockManager({
       // always reachable.
       const desiredLeft = e.clientX - crect.left - grabX;
       const desiredTop = e.clientY - crect.top - grabY;
-      [finalX, finalY] = clampCorner(desiredLeft, desiredTop, crect.width, crect.height);
+      [finalX, finalY] = clampCorner(
+        desiredLeft,
+        desiredTop,
+        crect.width,
+        crect.height,
+      );
       el.style.transform = `translate(${finalX - restingLeft}px, ${finalY - restingTop}px)`;
       const hit = hitTest(
         layoutRef.current,
@@ -1351,53 +1366,52 @@ export function DockManager({
         return;
       }
     }
-    armPress(event, (e) => {
-      dragAfterCommit(e, () => {
-        const rect = floatRectFor(`[data-dock-group="${groupId}"]`);
-        // Effectively-collapsed docked cells float at their preserved
-        // expanded width (see dockedFloatWidthForGroup).
-        const floatWidth = dockedFloatWidthForGroup(groupId, rect.width);
-        const wasRailedCell = ops.isRailedDockedCell(
-          layoutRef.current,
-          groupId,
-        );
-        // A panel whose body is a full-bleed nested area needs a definite
-        // height to fill (it collapses to 0 in an auto-height window). Give
-        // the undocked window the panel's current rendered height in that
-        // case; ordinary panes keep auto-height (content-sized) as before.
-        const needsHeight = (
-          layoutRef.current.groups[groupId]?.paneIds ?? []
-        ).some((p) => panes[p]?.fullBleed === true);
-        const res = ops.floatGroup(
-          layoutRef.current,
-          groupId,
-          rect.x,
-          rect.y,
-          floatWidth,
-          needsHeight ? rect.height : undefined,
-        );
-        // Null only for an area's backing group, which no UI surface offers a
-        // group-drag for; bail rather than drag a window that doesn't exist.
-        if (res.windowId === null) return null;
-        // A cell dragged out of a railed region floats STILL minimized: only
-        // its region's flag was set, so stamp the group's own flag (P2 --
-        // the user was dragging a minimized bar, not a full panel).
-        if (wasRailedCell) ops.stampCollapsedInPlace(res.layout, [groupId]);
-        // applyOp reconciles region widths: undocking this column removes it
-        // from the region's column set, so siblings keep their widths and the
-        // region shrinks by the removed column's width. A minimized panel
-        // floats out STILL minimized (it renders as a one-cell strip window) --
-        // expanding is click-only, never a side effect of dragging.
-        flushSync(() => applyOp(res.layout));
-        // Clamp the grab into the floated window: the source (a region-tall
-        // minimized strip / docked column) can be far bigger than the result.
-        return {
-          windowId: res.windowId,
-          groupIdForDim: groupId,
-          ...grabOffset(e, rect.x, rect.y, res.windowId),
-        };
-      });
-    }, onClick);
+    armPress(
+      event,
+      (e) => {
+        dragAfterCommit(e, () => {
+          const rect = floatRectFor(`[data-dock-group="${groupId}"]`);
+          // Effectively-collapsed docked cells float at their preserved
+          // expanded width (see dockedFloatWidthForGroup).
+          const floatWidth = dockedFloatWidthForGroup(groupId, rect.width);
+          // A panel whose body is a full-bleed nested area needs a definite
+          // height to fill (it collapses to 0 in an auto-height window). Give
+          // the undocked window the panel's current rendered height in that
+          // case; ordinary panes keep auto-height (content-sized) as before.
+          const needsHeight = (
+            layoutRef.current.groups[groupId]?.paneIds ?? []
+          ).some((p) => panes[p]?.fullBleed === true);
+          const res = ops.floatGroup(
+            layoutRef.current,
+            groupId,
+            rect.x,
+            rect.y,
+            floatWidth,
+            needsHeight ? rect.height : undefined,
+          );
+          // Null only for an area's backing group, which no UI surface offers a
+          // group-drag for; bail rather than drag a window that doesn't exist.
+          if (res.windowId === null) return null;
+          // A cell dragged out of a railed region floats STILL minimized:
+          // floatGroup inherits the source container's collapse state onto the
+          // new window (identity transfer, D38).
+          // applyOp reconciles region widths: undocking this column removes it
+          // from the region's column set, so siblings keep their widths and the
+          // region shrinks by the removed column's width. A minimized panel
+          // floats out STILL minimized (it renders as a one-cell strip window) --
+          // expanding is click-only, never a side effect of dragging.
+          flushSync(() => applyOp(res.layout));
+          // Clamp the grab into the floated window: the source (a region-tall
+          // minimized strip / docked column) can be far bigger than the result.
+          return {
+            windowId: res.windowId,
+            groupIdForDim: groupId,
+            ...grabOffset(e, rect.x, rect.y, res.windowId),
+          };
+        });
+      },
+      onClick,
+    );
   };
 
   const startColumnDrag: DockContextValue["startColumnDrag"] = (
@@ -1420,7 +1434,9 @@ export function DockManager({
           // expanded width instead (same policy as dockedFloatWidth: trust
           // the weight only when the reconciler wrote pixels into it).
           const floatWidth =
-            wasRailed && column !== null && column.weight >= ops.minRegionWidth()
+            wasRailed &&
+            column !== null &&
+            column.weight >= ops.minRegionWidth()
               ? column.weight
               : rect.width;
           const res = ops.floatColumn(
@@ -1432,15 +1448,9 @@ export function DockManager({
             floatWidth,
           );
           if (res.windowId === null) return null;
-          // Dragging a railed column out keeps its minimized look: the new
-          // window's cells render as bars (P2), mirroring the region-rail
-          // drag stamp -- the cells' own flags are usually false (the rail
-          // is a view over the model).
-          if (wasRailed) {
-            const win = res.layout.floating.find((w) => w.id === res.windowId);
-            if (win !== undefined)
-              ops.stampCollapsedInPlace(res.layout, [...win.stack]);
-          }
+          // Dragging a railed column out keeps its minimized look: floatColumn
+          // inherits the rail state onto the new window's own flag (identity
+          // transfer, D38), so its cells render as bars.
           flushSync(() => applyOp(res.layout));
           return {
             windowId: res.windowId,
@@ -1463,7 +1473,6 @@ export function DockManager({
       (e) => {
         dragAfterCommit(e, () => {
           const rect = floatRectFor(`[data-dock-region="${edge}"]`);
-          const wasRailed = isRegionCollapsedOn(layoutRef.current, edge);
           const res = ops.floatRegion(
             layoutRef.current,
             edge,
@@ -1472,14 +1481,10 @@ export function DockManager({
             regionWidthsOf(layoutRef.current)[edge],
           );
           if (res.windowId === null) return null;
-          // Dragging the RAIL out keeps its minimized look: the new window's
-          // cells render as bars (P2), with the header's expand-all one click
-          // away. Without this an all-expanded region would pop full-size.
-          if (wasRailed) {
-            const win = res.layout.floating.find((w) => w.id === res.windowId);
-            if (win !== undefined)
-              ops.stampCollapsedInPlace(res.layout, [...win.stack]);
-          }
+          // Dragging the RAIL out keeps its minimized look: floatRegion
+          // inherits the region-rail state onto the new window's own flag
+          // (identity transfer, D38), so its cells render as bars with the
+          // header's expand one click away.
           flushSync(() => applyOp(res.layout));
           return {
             windowId: res.windowId,
@@ -1511,7 +1516,8 @@ export function DockManager({
     // Accumulated translateX on the dragged tab (so it follows the cursor).
     let tabTx = 0;
     const draggedTabEl = () =>
-      stripEl?.querySelector<HTMLElement>(`[data-dock-tab="${paneId}"]`) ?? null;
+      stripEl?.querySelector<HTMLElement>(`[data-dock-tab="${paneId}"]`) ??
+      null;
 
     // Set when the reorder phase arms; restores page-wide text selection and
     // the grabbing cursor.
@@ -1563,10 +1569,6 @@ export function DockManager({
       cleanup();
       dragAfterCommit(e, () => {
         const src = floatRectFor(`[data-dock-group="${groupId}"]`);
-        const wasRailedCell = ops.isRailedDockedCell(
-          layoutRef.current,
-          groupId,
-        );
         const res = ops.tearOutPane(
           layoutRef.current,
           groupId,
@@ -1578,11 +1580,8 @@ export function DockManager({
         // No-op tear-out (pane not in the group): nothing floated, nothing to
         // reposition.
         if (res.windowId === null) return null;
-        // A tab torn out of a railed region floats STILL minimized (P2): the
-        // source group's own flag may be false (region-flag collapse), so
-        // stamp the torn group directly -- same guard as startTabTearOut.
-        if (wasRailedCell && res.floatingGroupId !== null)
-          ops.stampCollapsedInPlace(res.layout, [res.floatingGroupId]);
+        // A tab torn out of a collapsed container floats STILL minimized:
+        // tearOutPane births the window collapsed (identity transfer, D38).
         const newWindowId = res.windowId;
         flushSync(() => applyOp(res.layout));
 
@@ -1761,10 +1760,6 @@ export function DockManager({
           // Effectively-collapsed docked cells float at their preserved
           // expanded width (see dockedFloatWidthForGroup).
           const floatWidth = dockedFloatWidthForGroup(groupId, rect.width);
-          const wasRailedCell = ops.isRailedDockedCell(
-            layoutRef.current,
-            groupId,
-          );
           const res = ops.tearOutPane(
             layoutRef.current,
             groupId,
@@ -1775,15 +1770,11 @@ export function DockManager({
           );
           // No-op (pane not in the group / area group): nothing floated.
           if (res.windowId === null) return null;
-          // A spine row torn out of the rail stays minimized (spec 4): the
-          // source group's own flag may be false (region-flag collapse), so
-          // stamp the torn group directly.
-          if (wasRailedCell && res.floatingGroupId !== null)
-            ops.stampCollapsedInPlace(res.layout, [res.floatingGroupId]);
           const newWindowId = res.windowId;
-          // The torn pane floats AS-IS: a pane torn from a minimized strip stays
-          // minimized (tearOutPane copies the source's collapsed flag). Dragging
-          // never expands -- only the no-motion click below (expandToTab) does.
+          // The torn pane floats AS-IS: a spine row torn out of the rail
+          // stays minimized -- tearOutPane births the window collapsed
+          // (identity transfer, D38). Dragging never expands -- only the
+          // no-motion click below (expandToTab) does.
           flushSync(() => applyOp(res.layout));
           // Clamp the grab into the freshly-floated window (the source strip is
           // region-tall; the result is a short window).
@@ -1816,8 +1807,7 @@ export function DockManager({
   const stableGestures = React.useMemo(
     () =>
       ({
-        startGroupDrag: (...args) =>
-          gestureRef.current.startGroupDrag(...args),
+        startGroupDrag: (...args) => gestureRef.current.startGroupDrag(...args),
         startTabDrag: (...args) => gestureRef.current.startTabDrag(...args),
         startTabTearOut: (...args) =>
           gestureRef.current.startTabTearOut(...args),
@@ -1882,11 +1872,12 @@ export function DockManager({
   );
   const toggleCollapsed = React.useCallback(
     (groupId: GroupId) => {
-      // The MODEL op stays per-cell (D16): any group can toggle itself.
-      // The UI's CONTROLS are narrower: minimize renders only where the
-      // panel IS its whole stack (D30), and a stacked bar's expand routes
-      // through expandStackOf instead (D31) -- so this toggle is only ever
-      // driven from lone-in-visual-column chrome.
+      // D38: the MODEL op resolves the group's CONTAINER and flips its one
+      // flag (window collapsed / column railed / regionCollapsed). The UI's
+      // CONTROLS are narrower still: the panel-level minimize renders only
+      // on a single-group floating window (D32), and a bar's expand routes
+      // through expandStackOf instead -- so this toggle is only ever driven
+      // from single-group floating-window chrome.
       applyOp(ops.toggleCollapsed(layoutRef.current, groupId));
     },
     [applyOp],
@@ -2013,10 +2004,11 @@ export function DockManager({
     const collapsed = isRegionCollapsedOn(layout, edge);
     return {
       tree,
-      // The rail is fixed-width chrome: nothing to resize while collapsed --
-      // and likewise when every width-determining COLUMN is railed (each is
-      // a fixed 36px strip).
-      resizable: !collapsed && plan.columns.some((c) => c.railed !== true),
+      // The rail is fixed-width chrome: nothing to resize while collapsed.
+      // An all-railed WIDTH ROW still resizes when a narrower band holds
+      // expanded content (that band spans the region's content width and
+      // needs a live resizer; the drag then adjusts regionWidth directly).
+      resizable: !collapsed && plan.hasExpandedContent,
       // MODEL-based reserved width. The resizer's drag baseline reads THIS,
       // never the post-scaling rendered width below -- otherwise grabbing the
       // handle under the MIN_CANVAS_PX render-scale guard (or pressing
@@ -2179,68 +2171,74 @@ export function DockManager({
   return (
     <DockContext.Provider value={contextValue}>
       <DockMetricsContext.Provider value={metrics}>
-      <Box
-        ref={containerRef}
-        data-dock-root
-        style={{
-          position: "relative",
-          width: "100%",
-          height: "100%",
-          overflow: "hidden",
-        }}
-      >
-        {/* Center content, inset by docked regions. */}
         <Box
+          ref={containerRef}
+          data-dock-root
           style={{
-            position: "absolute",
-            top: 0,
-            bottom: 0,
-            left: leftInset,
-            right: rightInset,
+            position: "relative",
+            width: "100%",
+            height: "100%",
+            overflow: "hidden",
           }}
         >
-          {children}
-        </Box>
+          {/* Center content, inset by docked regions. */}
+          <Box
+            style={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              left: leftInset,
+              right: rightInset,
+            }}
+          >
+            {children}
+          </Box>
 
-        {/* Docked regions: every column insets the canvas, with fully-minimized
+          {/* Docked regions: every column insets the canvas, with fully-minimized
         columns rendering as fixed-width vertical strips. */}
-        {(["left", "right"] as DockEdge[]).map((edge) => {
-          const { tree, resizable } = regions[edge];
-          const drawnWidth = renderedWidth[edge];
-          return (
-          <React.Fragment key={edge}>
-            {/* Canvas-facing shadow on a div BEHIND the panes (zIndex 1), so it
-            only shows over the canvas, never on top of a panel. */}
-            {tree !== null && (
-              <Box
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  bottom: 0,
-                  [edge]: 0,
-                  width: drawnWidth,
-                  zIndex: 1,
-                  pointerEvents: "none",
-                  boxShadow: "0 0 1em 0 rgba(0,0,0,0.1)",
-                }}
-              />
-            )}
-            {tree !== null && (
-              <Box
-                data-dock-region={edge}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  bottom: 0,
-                  [edge]: 0,
-                  width: drawnWidth,
-                  display: "flex",
-                  flexDirection: "column",
-                  backgroundColor: "var(--mantine-color-body)",
-                  zIndex: 5,
-                }}
-              >
-                {/* Region PARENT handle (D26): the whole docked stack's
+          {(["left", "right"] as DockEdge[]).map((edge) => {
+            const { tree, resizable } = regions[edge];
+            const drawnWidth = renderedWidth[edge];
+            return (
+              <React.Fragment key={edge}>
+                {/* Canvas-facing shadow on a div BEHIND the panes (zIndex 1), so it
+            only shows over the canvas, never on top of a panel. Carries the
+            same D34 width ease as the region box so the shadow tracks it. */}
+                {tree !== null && (
+                  <Box
+                    className={regionWidthAnim}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      bottom: 0,
+                      [edge]: 0,
+                      width: drawnWidth,
+                      zIndex: 1,
+                      pointerEvents: "none",
+                      boxShadow: "0 0 1em 0 rgba(0,0,0,0.1)",
+                    }}
+                  />
+                )}
+                {tree !== null && (
+                  <Box
+                    data-dock-region={edge}
+                    // D34: rail collapse/expand eases the region container's
+                    // width between committed values (presentation only; the
+                    // canvas insets and drop math read the committed model).
+                    className={regionWidthAnim}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      bottom: 0,
+                      [edge]: 0,
+                      width: drawnWidth,
+                      display: "flex",
+                      flexDirection: "column",
+                      backgroundColor: "var(--mantine-color-body)",
+                      zIndex: 5,
+                    }}
+                  >
+                    {/* Region PARENT handle (D26): the whole docked stack's
                 handle -- one bar above everything it acts on. Pill drag
                 floats the entire stack (the same gesture as the rail header
                 it mirrors, P7); the region-collapse chevron sits at the
@@ -2258,208 +2256,256 @@ export function DockManager({
                 handle instead (SplitView), and no region-level collapse is
                 offered because the rail is a single packed strip that would
                 flatten columns the same way. */}
-                {!isRegionCollapsedOn(layoutRef.current, edge) &&
-                  tree.rows.every((rw) => rw.columns.length === 1) && (
-                <StackHandleBar
-                  attrs={{ "data-dock-region-handle": edge }}
-                  onPointerDown={(event) =>
-                    startRegionDrag(event, edge, {
-                      onClick: () => collapseRegion(edge, true),
-                    })
-                  }
-                  endControl={
-                    <RegionCollapseChevron
-                      edge={edge}
-                      onActivate={() => collapseRegion(edge, true)}
-                    />
-                  }
-                />
+                    {!isRegionCollapsedOn(layoutRef.current, edge) &&
+                      tree.rows.every((rw) => rw.columns.length === 1) && (
+                        <StackHandleBar
+                          attrs={{ "data-dock-region-handle": edge }}
+                          onPointerDown={(event) =>
+                            startRegionDrag(event, edge, {
+                              onClick: () => collapseRegion(edge, true),
+                            })
+                          }
+                          endControl={
+                            <RegionCollapseChevron
+                              edge={edge}
+                              onActivate={() => collapseRegion(edge, true)}
+                            />
+                          }
+                        />
+                      )}
+                    <Box style={{ flexGrow: 1, minHeight: 0, display: "flex" }}>
+                      <SplitView region={tree} edge={edge} />
+                    </Box>
+                    {resizable && (
+                      <RegionResizer
+                        edge={edge}
+                        // Model-based (unscaled) start: see regionFor's
+                        // reservedWidth doc.
+                        getStart={() => regions[edge].reservedWidth}
+                        // Called once per drag: snapshots the columns' start widths
+                        // and limits (and the drag-start layout, which serves the
+                        // end-commit), and returns the per-frame + end handlers.
+                        // Widths are redistributed across ALL columns from their
+                        // drag-start proportions, clamping each to its own min/max
+                        // and handing the difference to columns that still have
+                        // room -- so the region keeps resizing while any column can
+                        // give or take.
+                        makeOnResize={() => {
+                          const layout0 = layoutRef.current;
+                          // Per-frame width writes must land instantly: suppress
+                          // the D34 width/flex transitions under the whole dock
+                          // for the drag's duration (regionWidthAnim/collapseAnim
+                          // read the [data-dock-resizing] ancestor), or the region
+                          // would ease-lag behind the cursor.
+                          containerRef.current?.setAttribute(
+                            "data-dock-resizing",
+                            "",
+                          );
+                          const onEnd = (cancelled: boolean) => {
+                            containerRef.current?.removeAttribute(
+                              "data-dock-resizing",
+                            );
+                            // Skip on cancel (Escape restored the start widths) and
+                            // on a click without motion (no frame committed, layout
+                            // unchanged). Otherwise fire ONE user-attributed commit
+                            // spanning the whole drag: layout state is already
+                            // final, this only informs the host's ownership diff.
+                            if (cancelled || layout0 === layoutRef.current)
+                              return;
+                            onCommitRef.current?.(
+                              layout0,
+                              layoutRef.current,
+                              false,
+                            );
+                          };
+                          const tree0 = layout0.docked[edge];
+                          if (tree0 === null)
+                            return { onFrame: () => {}, onEnd };
+                          // Every EXPANDED width-determining column participates.
+                          // RAILED columns are excluded from the
+                          // redistribution: they render at the fixed strip width
+                          // and their weights are preserved for restore (P8), so
+                          // their strip px rides with the divider chrome as fixed
+                          // width instead. The plan is the same classification the
+                          // render uses.
+                          const plan = planRegion(tree0);
+                          const cols = plan.columns.filter(
+                            (c) => c.railed !== true,
+                          );
+                          const railedCols = plan.columns.filter(
+                            (c) => c.railed === true,
+                          );
+                          // Every width-row column railed (expanded content lives
+                          // in a narrower band): there is no width-carrying column
+                          // to redistribute, so the drag adjusts regionWidth
+                          // DIRECTLY. Reserved = regionWidth + divider chrome in
+                          // that geometry (see plannedReservedWidth), so the rails
+                          // do NOT ride as fixed px there.
+                          const allRailedWidthRow = cols.length === 0;
+                          const fixedPx = allRailedWidthRow
+                            ? plan.chromePx
+                            : plan.chromePx +
+                              railedCols.length * MINIMIZED_STRIP_PX;
+                          const railedWeightPx = railedCols.reduce(
+                            (s, c) => s + c.weight,
+                            0,
+                          );
+                          const startRegion = regionWidthsOf(layoutRef.current)[
+                            edge
+                          ];
+                          // Weights are pixels for side-by-side columns (the
+                          // reconciler wrote them); a single surfaced column's px
+                          // is the regionWidth itself (its weight may be a height).
+                          const init = plan.singleColumn
+                            ? [startRegion]
+                            : cols.map((c) => c.weight);
+                          const mins = cols.map(() => ops.minRegionWidth());
+                          // No per-column max: a region drag is bounded only by its
+                          // columns' grab-mins (and the render-time canvas guard), not
+                          // a fixed per-panel width -- matching the width reconciler
+                          // and SplitView divider drags.
+                          const maxs = cols.map(() => Infinity);
+                          const ids = cols.map((c) => c.id);
+                          const onFrame = (reservedPx: number) => {
+                            // The grip reports the desired RESERVED width, which
+                            // includes the fixed chrome (dividers + railed
+                            // strips); subtract it to get the expanded columns'
+                            // share.
+                            let next = layoutRef.current;
+                            const widths = ops.resizeRegionColumns(
+                              init,
+                              mins,
+                              maxs,
+                              reservedPx - fixedPx,
+                            );
+                            const expandedTotal = widths.reduce(
+                              (a, b) => a + b,
+                              0,
+                            );
+                            // Model regionWidth stays the ALL-EXPANDED sum: the
+                            // railed columns' preserved pixel weights ride along
+                            // untouched so expanding them restores their widths.
+                            // With an all-railed width row the cursor writes
+                            // regionWidth directly (nothing to redistribute).
+                            const total = allRailedWidthRow
+                              ? Math.max(
+                                  ops.minRegionWidth(),
+                                  reservedPx - fixedPx,
+                                )
+                              : expandedTotal + railedWeightPx;
+                            // Only rewrite weights for genuinely side-by-side
+                            // columns; a single surfaced column may be a vertical
+                            // child whose weight is a HEIGHT (see applyOp). The
+                            // total goes through the setRegionWidth op so the
+                            // model stays the single source of truth for the
+                            // width.
+                            if (!plan.singleColumn) {
+                              const byId: Record<string, number> = {};
+                              ids.forEach((id, i) => {
+                                byId[id] = widths[i];
+                              });
+                              next = ops.setNodeWeights(next, edge, byId);
+                            }
+                            // Push floats out of the way of THIS region's edge as it
+                            // sweeps inward, using the before/after seam of this very
+                            // drag frame -- no history needed. A float that was fully
+                            // on the canvas (its edge clear of the OLD seam) and would
+                            // now be covered (past the NEW seam) is pushed flush, so it
+                            // stays fully on the canvas; one already overlapping (edge
+                            // past the old seam) is left alone, and a receding seam
+                            // pushes nothing.
+                            next = pushFloatsAheadOfSeam(
+                              next,
+                              edge,
+                              containerWidthRef.current,
+                              reservedWidthRef.current[edge], // old reserved (pre-commit)
+                              // New reserved: expanded cols + fixed chrome
+                              // (dividers + railed strips), or regionWidth +
+                              // chrome for an all-railed width row.
+                              (allRailedWidthRow ? total : expandedTotal) +
+                                fixedPx,
+                              draggingWindowIdRef.current,
+                            );
+                            // Flush the width commit so this render updates
+                            // reservedWidthRef (the canvas wrapper's new insets) before
+                            // we tell the host the canvas's new size. Mark the commit as
+                            // drag-originated so the inset effect (which fires inside
+                            // this flushSync) doesn't ALSO re-clamp unanchored floats --
+                            // the drag already moved them flush with the seam.
+                            regionResizeDraggingRef.current = true;
+                            try {
+                              // Per-frame commits stay PROGRAMMATIC even though the
+                              // dirty-bit does track region width: running the
+                              // user-gesture commit handler ~60x/s is wasted work,
+                              // and an Escape-cancel must leave no user-attributed
+                              // trace. The single user commit spanning the whole
+                              // drag fires at release instead (see onEnd above).
+                              flushSync(() =>
+                                runProgrammatic(() =>
+                                  applyOp(
+                                    ops.setRegionWidth(next, edge, total),
+                                  ),
+                                ),
+                              );
+                            } finally {
+                              regionResizeDraggingRef.current = false;
+                            }
+                            // Hand the host (the 3D canvas) the AUTHORITATIVE new
+                            // canvas size we just produced -- containerWidth minus the
+                            // freshly-committed insets -- so it resizes the GL
+                            // backbuffer on THIS tick. We must NOT let the host read
+                            // canvas.clientWidth instead: the new inset isn't reliably
+                            // reflowed yet mid-drag, so a re-measure lags and the scene
+                            // trails the divider (and only snaps on release).
+                            const reserved = reservedWidthRef.current;
+                            onRegionResizeFrameRef.current?.(
+                              Math.max(
+                                0,
+                                containerWidthRef.current -
+                                  reserved.left -
+                                  reserved.right,
+                              ),
+                              containerHeight,
+                            );
+                          };
+                          return { onFrame, onEnd };
+                        }}
+                      />
+                    )}
+                  </Box>
                 )}
-                <Box style={{ flexGrow: 1, minHeight: 0, display: "flex" }}>
-                  <SplitView region={tree} edge={edge} />
-                </Box>
-                {resizable && (
-                <RegionResizer
-                  edge={edge}
-                  // Model-based (unscaled) start: see regionFor's
-                  // reservedWidth doc.
-                  getStart={() => regions[edge].reservedWidth}
-                  // Called once per drag: snapshots the columns' start widths
-                  // and limits (and the drag-start layout, which serves the
-                  // end-commit), and returns the per-frame + end handlers.
-                  // Widths are redistributed across ALL columns from their
-                  // drag-start proportions, clamping each to its own min/max
-                  // and handing the difference to columns that still have
-                  // room -- so the region keeps resizing while any column can
-                  // give or take.
-                  makeOnResize={() => {
-                    const layout0 = layoutRef.current;
-                    const onEnd = (cancelled: boolean) => {
-                      // Skip on cancel (Escape restored the start widths) and
-                      // on a click without motion (no frame committed, layout
-                      // unchanged). Otherwise fire ONE user-attributed commit
-                      // spanning the whole drag: layout state is already
-                      // final, this only informs the host's ownership diff.
-                      if (cancelled || layout0 === layoutRef.current) return;
-                      onCommitRef.current?.(layout0, layoutRef.current, false);
-                    };
-                    const tree0 = layout0.docked[edge];
-                    if (tree0 === null) return { onFrame: () => {}, onEnd };
-                    // Every EXPANDED width-determining column participates
-                    // (D20: minimized cells are in-place bars holding their
-                    // column's width). RAILED columns are excluded from the
-                    // redistribution: they render at the fixed strip width
-                    // and their weights are preserved for restore (P8), so
-                    // their strip px rides with the divider chrome as fixed
-                    // width instead. The plan is the same classification the
-                    // render uses.
-                    const plan = planRegion(tree0);
-                    const cols = plan.columns.filter((c) => c.railed !== true);
-                    const railedCols = plan.columns.filter(
-                      (c) => c.railed === true,
-                    );
-                    const fixedPx =
-                      plan.chromePx +
-                      railedCols.length * MINIMIZED_STRIP_PX;
-                    const railedWeightPx = railedCols.reduce(
-                      (s, c) => s + c.weight,
-                      0,
-                    );
-                    const startRegion = regionWidthsOf(layoutRef.current)[
-                      edge
-                    ];
-                    // Weights are pixels for side-by-side columns (the
-                    // reconciler wrote them); a single surfaced column's px
-                    // is the regionWidth itself (its weight may be a height).
-                    const init = plan.singleColumn
-                      ? [startRegion]
-                      : cols.map((c) => c.weight);
-                    const mins = cols.map(() => ops.minRegionWidth());
-                    // No per-column max: a region drag is bounded only by its
-                    // columns' grab-mins (and the render-time canvas guard), not
-                    // a fixed per-panel width -- matching the width reconciler
-                    // and SplitView divider drags.
-                    const maxs = cols.map(() => Infinity);
-                    const ids = cols.map((c) => c.id);
-                    const onFrame = (reservedPx: number) => {
-                      // The grip reports the desired RESERVED width, which
-                      // includes the fixed chrome (dividers + railed
-                      // strips); subtract it to get the expanded columns'
-                      // share.
-                      let next = layoutRef.current;
-                      const widths = ops.resizeRegionColumns(
-                        init,
-                        mins,
-                        maxs,
-                        reservedPx - fixedPx,
-                      );
-                      const expandedTotal = widths.reduce((a, b) => a + b, 0);
-                      // Model regionWidth stays the ALL-EXPANDED sum: the
-                      // railed columns' preserved pixel weights ride along
-                      // untouched so expanding them restores their widths.
-                      const total = expandedTotal + railedWeightPx;
-                      // Only rewrite weights for genuinely side-by-side
-                      // columns; a single surfaced column may be a vertical
-                      // child whose weight is a HEIGHT (see applyOp). The
-                      // total goes through the setRegionWidth op so the
-                      // model stays the single source of truth for the
-                      // width.
-                      if (!plan.singleColumn) {
-                        const byId: Record<string, number> = {};
-                        ids.forEach((id, i) => {
-                          byId[id] = widths[i];
-                        });
-                        next = ops.setNodeWeights(next, edge, byId);
-                      }
-                      // Push floats out of the way of THIS region's edge as it
-                      // sweeps inward, using the before/after seam of this very
-                      // drag frame -- no history needed. A float that was fully
-                      // on the canvas (its edge clear of the OLD seam) and would
-                      // now be covered (past the NEW seam) is pushed flush, so it
-                      // stays fully on the canvas; one already overlapping (edge
-                      // past the old seam) is left alone, and a receding seam
-                      // pushes nothing.
-                      next = pushFloatsAheadOfSeam(
-                        next,
-                        edge,
-                        containerWidthRef.current,
-                        reservedWidthRef.current[edge], // old reserved (pre-commit)
-                        // New reserved: expanded cols + fixed chrome
-                        // (dividers + railed strips).
-                        expandedTotal + fixedPx,
-                        draggingWindowIdRef.current,
-                      );
-                      // Flush the width commit so this render updates
-                      // reservedWidthRef (the canvas wrapper's new insets) before
-                      // we tell the host the canvas's new size. Mark the commit as
-                      // drag-originated so the inset effect (which fires inside
-                      // this flushSync) doesn't ALSO re-clamp unanchored floats --
-                      // the drag already moved them flush with the seam.
-                      regionResizeDraggingRef.current = true;
-                      try {
-                        // Per-frame commits stay PROGRAMMATIC even though the
-                        // dirty-bit does track region width: running the
-                        // user-gesture commit handler ~60x/s is wasted work,
-                        // and an Escape-cancel must leave no user-attributed
-                        // trace. The single user commit spanning the whole
-                        // drag fires at release instead (see onEnd above).
-                        flushSync(() =>
-                          runProgrammatic(() =>
-                            applyOp(ops.setRegionWidth(next, edge, total)),
-                          ),
-                        );
-                      } finally {
-                        regionResizeDraggingRef.current = false;
-                      }
-                      // Hand the host (the 3D canvas) the AUTHORITATIVE new
-                      // canvas size we just produced -- containerWidth minus the
-                      // freshly-committed insets -- so it resizes the GL
-                      // backbuffer on THIS tick. We must NOT let the host read
-                      // canvas.clientWidth instead: the new inset isn't reliably
-                      // reflowed yet mid-drag, so a re-measure lags and the scene
-                      // trails the divider (and only snaps on release).
-                      const reserved = reservedWidthRef.current;
-                      onRegionResizeFrameRef.current?.(
-                        Math.max(0, containerWidthRef.current - reserved.left - reserved.right),
-                        containerHeight,
-                      );
-                    };
-                    return { onFrame, onEnd };
-                  }}
-                />
-                )}
-              </Box>
-            )}
-          </React.Fragment>
-          );
-        })}
+              </React.Fragment>
+            );
+          })}
 
-        {/* Floating windows. The `floating` array order is the front-order
+          {/* Floating windows. The `floating` array order is the front-order
         (last = topmost), but we render in a STABLE order (by id) and drive
         stacking with z-index. That way raising a window (bringToFront reorders
         the array) only changes z-index -- it never moves the DOM node, which
         would otherwise eat an in-flight click on e.g. the minimize button. */}
-        {layout.floating
-          .map((win, frontOrder) => ({ win, frontOrder }))
-          .sort((a, b) => (a.win.id < b.win.id ? -1 : a.win.id > b.win.id ? 1 : 0))
-          .map(({ win, frontOrder }) => (
-            <FloatingWindowView
-              key={win.id}
-              win={win}
-              zIndex={10 + frontOrder}
-              containerHeight={containerHeight}
-              onResize={onWindowResize}
-              onResizeHeight={onWindowResizeHeight}
-              onSetStackWeights={onWindowSetStackWeights}
-              onFront={onWindowFront}
-            />
-          ))}
+          {layout.floating
+            .map((win, frontOrder) => ({ win, frontOrder }))
+            .sort((a, b) =>
+              a.win.id < b.win.id ? -1 : a.win.id > b.win.id ? 1 : 0,
+            )
+            .map(({ win, frontOrder }) => (
+              <FloatingWindowView
+                key={win.id}
+                win={win}
+                zIndex={10 + frontOrder}
+                containerHeight={containerHeight}
+                onResize={onWindowResize}
+                onResizeHeight={onWindowResizeHeight}
+                onSetStackWeights={onWindowSetStackWeights}
+                onFront={onWindowFront}
+              />
+            ))}
 
-        {/* Drop hint: a persistent element positioned imperatively by
+          {/* Drop hint: a persistent element positioned imperatively by
         showHint. Its style prop is a module constant, so React's style diff
         never touches the imperative mutations across re-renders. */}
-        <div ref={hintRef} style={HINT_BASE_STYLE} />
-      </Box>
+          <div ref={hintRef} style={HINT_BASE_STYLE} />
+        </Box>
       </DockMetricsContext.Provider>
     </DockContext.Provider>
   );

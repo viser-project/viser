@@ -67,7 +67,9 @@ function layoutTargets(
           rect: r,
           stripRect: rect(x, y + STRIP_OFFSET, cw, STRIP_H),
           tabs,
-          collapsed: g?.collapsed === true ? true : undefined,
+          // D38: collapsed-ness derives from the CONTAINER (the column's
+          // railed flag; region collapse is handled at region scope).
+          collapsed: column.railed === true ? true : undefined,
           ctx: { kind: "docked", nodeId: lf.id, edge },
         });
       });

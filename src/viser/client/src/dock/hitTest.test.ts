@@ -270,9 +270,7 @@ describe("screen edge zones", () => {
 describe("screen-edge dock next to an occupied region", () => {
   function minimizedRight(collapsed: boolean) {
     const l = emptyLayout();
-    l.groups = {
-      m: { ...group("m"), collapsed },
-    };
+    l.groups = { m: group("m") };
     l.docked.right = {
       rows: [
         {
@@ -284,6 +282,8 @@ describe("screen-edge dock next to an occupied region", () => {
         },
       ],
     };
+    // D38: docked collapse is the REGION's flag (the rail), not group state.
+    if (collapsed) l.regionCollapsed.right = true;
     return l;
   }
 
@@ -457,8 +457,7 @@ describe("outer-edge dock beside a minimized region strip", () => {
     // "dock a column beside" zone (regionEdge) -- not a dead None.
     const node = leaf("g");
     const layout = layoutWith({ right: node });
-    layout.groups["g"] = group("g", 1, true); // mark the region's group collapsed
-    layout.regionCollapsed.right = true; // the rail is the EXPLICIT collapse (D21)
+    layout.regionCollapsed.right = true; // the rail is the ONE docked store (D38)
     // Content-tall strip at the top of the region; empty below.
     const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft, 0, STRIP, 120));
     const out = run(layout, [tgt], stripLeft + STRIP / 2, 500, STRIP_W);
@@ -468,30 +467,16 @@ describe("outer-edge dock beside a minimized region strip", () => {
     expect(out!.hint.height).toBeGreaterThan(400);
   });
 
-  it("lone minimized BAR: the region's bottom edge band docks a band below (D4/D16)", () => {
-    // An in-place bar (D20) carries NO per-panel top/bottom split zones
-    // (D4: docked bars have none), so for a LONE collapsed leaf the
-    // region-edge top/bottom bands must stay available -- otherwise there
-    // is no way to dock below the bar at all (P5).
+  it("lone railed cell: the region's bottom edge band docks a band below", () => {
+    // A railed region's cell is content-tall, so for a LONE collapsed leaf
+    // the region-edge top/bottom bands must stay available -- otherwise
+    // there is no way to dock below the rail at all (P5).
     const node = leaf("g");
     const layout = layoutWith({ right: node });
-    layout.groups["g"] = group("g", 1, true); // all-minimized region
-    // The bar spans the full region width at 26px height, at the top.
-    const barLeft = CONTAINER.width - 300;
-    const tgt: GroupTarget = {
-      groupId: "g",
-      rect: rect(barLeft, 0, 300, 26),
-      stripRect: null,
-      tabs: [],
-      ctx: { kind: "docked", nodeId: leafIdOf(node), edge: "right" },
-      collapsed: true,
-      bar: true,
-    };
-    // Drop at the region's bottom edge, mid-x (clear of the side bands).
-    const out = run(layout, [tgt], barLeft + 150, CONTAINER.height - 4, {
-      left: 300,
-      right: 300,
-    });
+    layout.regionCollapsed.right = true; // the rail is the ONE docked store (D38)
+    const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft, 0, STRIP, 120));
+    // Drop at the region's bottom edge, far below the content-tall cell.
+    const out = run(layout, [tgt], stripLeft + STRIP / 2, CONTAINER.height - 4, STRIP_W);
     expect(out).not.toBeNull();
     expect(out!.result).toEqual({
       kind: "regionEdge",
@@ -503,7 +488,7 @@ describe("outer-edge dock beside a minimized region strip", () => {
   it("single minimized strip: over the strip's own rows still inserts a tab (cell wins)", () => {
     const node = leaf("g");
     const layout = layoutWith({ right: node });
-    layout.groups["g"] = group("g", 1, true);
+    layout.regionCollapsed.right = true;
     const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft, 0, STRIP, 120));
     tgt.tabs = [{ paneId: "p", rect: rect(stripLeft, 40, STRIP, 30) }];
     // Over a row (inside the strip cell) -> the cell's tab-insert wins, not the
@@ -546,66 +531,80 @@ describe("outer-edge dock beside a minimized region strip", () => {
     }
   });
 
-  it("a BAR target inserts HORIZONTALLY over its labels, merges elsewhere", () => {
-    // A bar lays its per-tab labels out horizontally (spec D9): over a
-    // label the drop inserts at that X position (2D nearest-tab, vertical
-    // line) -- never the rail's Y-based row insertion, which would pick an
-    // arbitrary index on a ~24px-tall segment. Off the labels (the cap /
-    // trailing space) the drop merges.
-    const node = leaf("g");
-    const layout = layoutWith({ right: node });
-    layout.groups["g"] = group("g", 1, true);
-    // A wide, bar-height wrapper (the horizontal in-place bar's leaf wrapper).
-    const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft - 200, 0, 236, STRIP));
-    tgt.bar = true;
-    tgt.tabs = [{ paneId: "p", rect: rect(stripLeft - 190, 6, 120, 24) }];
-    // Left half of the label -> insert BEFORE it; vertical line hint.
-    const before = run(layout, [tgt], stripLeft - 160, STRIP / 2, STRIP_W)!;
+  // A FLOATING collapsed window's cell -- the only bar form (D32/D38) -- as
+  // a hit-test target. Two labels per D36: insertion aims at the VISIBLE
+  // label rects.
+  const floatingBar = () => {
+    const flayout = layoutWith({});
+    flayout.groups["g"] = group("g");
+    flayout.floating = [
+      // D38: the WINDOW carries the collapse flag (its cell renders as a bar).
+      {
+        id: "w",
+        x: 300,
+        y: 100,
+        width: 300,
+        height: { mode: "auto" as const },
+        stack: ["g"],
+        collapsed: true,
+      },
+    ];
+    const ftgt: GroupTarget = {
+      groupId: "g",
+      rect: rect(300, 100, 300, STRIP),
+      stripRect: null,
+      tabs: [
+        { paneId: "p0", rect: rect(310, 106, 80, 24) },
+        { paneId: "p1", rect: rect(390, 106, 80, 24) },
+      ],
+      ctx: { kind: "floating", windowId: "w", index: 0 },
+      collapsed: true,
+      bar: true,
+    };
+    return { flayout, ftgt };
+  };
+
+  it("a BAR inserts HORIZONTALLY across its visible labels, appends past the last (D36)", () => {
+    // A bar lays its per-tab labels out horizontally: over a label the drop
+    // inserts at that X position (2D nearest-tab, vertical line) -- never
+    // the rail's Y-based row insertion. tabInsertion consumes the SAME
+    // per-label rects the expanded strip uses, so multi-label bars (D36)
+    // resolve every boundary; right of the LAST label the drop appends
+    // (merge), per spec 5.4's label-bounded rule.
+    const { flayout, ftgt } = floatingBar();
+    const midY = 100 + STRIP / 2;
+    // Left half of label 0 -> insert BEFORE it; vertical line hint.
+    const before = run(flayout, [ftgt], 320, midY, STRIP_W)!;
     expect(before.result).toMatchObject({
       kind: "insertTab",
       targetGroupId: "g",
       index: 0,
     });
     expect(before.hint.width).toBeLessThan(before.hint.height);
-    // Right half -> insert AFTER it.
-    const after = run(layout, [tgt], stripLeft - 100, STRIP / 2, STRIP_W)!;
-    expect(after.result).toMatchObject({ kind: "insertTab", index: 1 });
-    // Past the label (trailing space): APPEND via merge, per spec 5.4 --
-    // insertion aims only at the label rect (+8px slack); the rest of the
-    // bar is the append surface, so multi-pane bars keep append reachable.
-    const out = run(layout, [tgt], stripLeft - 20, STRIP / 2, STRIP_W)!;
+    // Between the labels -> index 1 (right half of label 0 / left of label 1).
+    const between = run(flayout, [ftgt], 385, midY, STRIP_W)!;
+    expect(between.result).toMatchObject({ kind: "insertTab", index: 1 });
+    // Right half of label 1 -> index 2.
+    const after = run(flayout, [ftgt], 460, midY, STRIP_W)!;
+    expect(after.result).toMatchObject({ kind: "insertTab", index: 2 });
+    // Past the last label (+8px slack): APPEND via merge -- the trailing
+    // slack is the append surface, so append stays reachable (spec 5.4).
+    const out = run(flayout, [ftgt], 520, midY, STRIP_W)!;
     expect(out.result).toMatchObject({ kind: "merge", targetGroupId: "g" });
   });
 
-  it("a DOCKED bar has no top/bottom split zones; a FLOATING bar snaps at 10px", () => {
-    // Spec D4: docked bars lose the 6px stack zones (band seams next
-    // door express the intent); floating bars keep snap zones at 10px.
-    const node = leaf("g");
-    const layout = layoutWith({ right: node });
-    layout.groups["g"] = group("g", 1, true);
-    const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft - 200, 0, 236, STRIP));
-    tgt.bar = true;
-    tgt.tabs = [];
-    // 3px from the docked bar's top edge: NOT a split -- merge instead.
-    const dockedOut = run(layout, [tgt], stripLeft - 100, 3, STRIP_W)!;
-    expect(dockedOut.result.kind).toBe("merge");
-    // Floating bar: same press 3px from the top IS a snap (band is 10px).
-    const flayout = layoutWith({});
-    flayout.groups["g"] = group("g", 1, true);
-    flayout.floating = [
-      { id: "w", x: 300, y: 100, width: 236, height: { mode: "auto" }, stack: ["g"] },
-    ];
-    const ftgt: GroupTarget = {
-      groupId: "g",
-      rect: rect(300, 100, 236, STRIP),
-      stripRect: null,
-      tabs: [],
-      ctx: { kind: "floating", windowId: "w", index: 0 },
-      collapsed: true,
-      bar: true,
-    };
-    const fout = run(flayout, [ftgt], 400, 103, STRIP_W)!;
-    expect(fout.result).toMatchObject({ kind: "snap", windowId: "w", index: 0 });
+  it("a FLOATING bar snaps above/below within its 10px edge bands", () => {
+    // Spec 5.4: floating bars are ordinary stack cells (D17) with
+    // min(10px, height/3) snap bands at their top/bottom edges.
+    const { flayout, ftgt } = floatingBar();
+    const top = run(flayout, [ftgt], 450, 103, STRIP_W)!;
+    expect(top.result).toMatchObject({ kind: "snap", windowId: "w", index: 0 });
+    const bottom = run(flayout, [ftgt], 450, 100 + STRIP - 3, STRIP_W)!;
+    expect(bottom.result).toMatchObject({
+      kind: "snap",
+      windowId: "w",
+      index: 1,
+    });
   });
 });
 
@@ -850,7 +849,7 @@ describe("collapsed-target vertical zones (content-sized strip)", () => {
   });
   const baseLayout = () => {
     const l = emptyLayout();
-    l.groups = { s: group("s", 1, true) };
+    l.groups = { s: group("s") };
     l.docked.right = {
       rows: [
         {
@@ -862,6 +861,8 @@ describe("collapsed-target vertical zones (content-sized strip)", () => {
         },
       ],
     };
+    // D38: the strip is the region rail -- the container store, not a group flag.
+    l.regionCollapsed.right = true;
     return l;
   };
 

@@ -202,52 +202,51 @@ export function findColumnById(
 // Collapse / minimization.
 // ---------------------------------------------------------------------------
 
-/** A column is "minimized" when EVERY leaf in it is collapsed -- then it needs
- * no real width and renders as a narrow vertical strip. (One well-typed level;
- * no subtree recursion to get wrong -- this is what fixed the `[A][B]/[C]`
- * height-reclaim bug.) */
-export function isColumnMinimized(
-  column: DockColumn,
-  groups: Record<GroupId, TabGroup>,
-): boolean {
-  return column.leaves.every((l) => groups[l.group]?.collapsed === true);
+/** A docked column is "minimized" exactly when its container flag is set
+ * (D38): it renders as the 36px rail in place. Leaf-level collapse no longer
+ * exists, so this is purely the column's own `railed` flag (region-level
+ * collapse is handled at region scope by the callers). */
+export function isColumnMinimized(column: DockColumn): boolean {
+  return column.railed === true;
 }
 
-/** A row is "minimized" when every one of its columns is minimized. */
-export function isRowMinimized(
-  row: DockRow,
-  groups: Record<GroupId, TabGroup>,
-): boolean {
-  return row.columns.every((c) => isColumnMinimized(c, groups));
+/** A row band is "minimized" when every one of its columns is railed. */
+export function isRowMinimized(row: DockRow): boolean {
+  return row.columns.every((c) => isColumnMinimized(c));
 }
 
-/** True when the column with id `nodeId` (in either docked region) is fully
- * minimized -- used to skip the shrink-the-leaf split PREVIEW over a
- * minimized target (nothing to vacate). False if the column isn't found. */
+/** True when the column with id `nodeId` (in either docked region) renders
+ * collapsed -- its own railed flag or its edge's region collapse (D38). Used
+ * to skip the shrink-the-leaf split PREVIEW over a minimized target (nothing
+ * to vacate). False if the column isn't found. */
 export function nodeAllMinimized(layout: DockLayout, nodeId: NodeId): boolean {
   for (const edge of ["left", "right"] as const) {
     const region = layout.docked[edge];
     const found = findColumn(region, nodeId);
-    if (found !== null) return isColumnMinimized(found.column, layout.groups);
-    // A leaf id may also be passed (a single-leaf column dropped beside): treat
-    // a fully-minimized enclosing column as minimized.
+    if (found !== null)
+      return (
+        isRegionCollapsedOn(layout, edge) || isColumnMinimized(found.column)
+      );
+    // A leaf id may also be passed (a single-leaf column dropped beside): the
+    // enclosing column's container state decides.
     const leaf = findLeaf(region, nodeId);
-    if (leaf !== null) return isColumnMinimized(leaf.column, layout.groups);
+    if (leaf !== null)
+      return (
+        isRegionCollapsedOn(layout, edge) || isColumnMinimized(leaf.column)
+      );
   }
   return false;
 }
 
-/** True when every group in a floating window's stack is minimized. */
+/** True when a floating window is minimized: its ONE container flag (D38).
+ * (Name kept from the per-group era so call sites read unchanged; "all
+ * minimized" and "minimized" are the same thing now.) */
 export function windowAllMinimized(
   layout: DockLayout,
   windowId: WindowId,
 ): boolean {
   const win = layout.floating.find((w) => w.id === windowId);
-  return (
-    win !== undefined &&
-    win.stack.length > 0 &&
-    win.stack.every((g) => layout.groups[g]?.collapsed === true)
-  );
+  return win !== undefined && win.collapsed === true;
 }
 
 /** In-order group ids of every leaf in a column. */
@@ -504,25 +503,24 @@ export function findGroupLocation(
   return null;
 }
 
-/** True when a group READS as collapsed: its own collapsed flag is set, OR it
- * is docked under a rail form it doesn't own -- its edge's explicit region
- * collapse (D21) or its containing COLUMN's railed flag -- and renders as a
- * compact strip regardless of its own per-cell collapse state. */
+/** True when a group READS as collapsed -- derived purely from its CONTAINER
+ * (D38): the floating window's `collapsed` flag, or (docked) its edge's
+ * region collapse / its containing column's railed flag. Groups carry no
+ * collapse state of their own. */
 export function isGroupEffectivelyCollapsed(
   layout: DockLayout,
   groupId: GroupId,
 ): boolean {
-  return (
-    layout.groups[groupId]?.collapsed === true ||
-    isRailedDockedCell(layout, groupId)
-  );
+  const win = layout.floating.find((w) => w.stack.includes(groupId));
+  if (win !== undefined) return win.collapsed === true;
+  return isRailedDockedCell(layout, groupId);
 }
 
-/** True when a group is DOCKED and reads as collapsed there (its own flag,
- * its edge's explicit region collapse, or its containing column's railed
- * flag) -- i.e. the drag paths' "was this a railed/bar cell" pre-op check,
- * done in ONE region walk (the walk also yields the containing column, which
- * the location kinds alone don't). Non-docked groups are always false. */
+/** True when a group is DOCKED and reads as collapsed there (its edge's
+ * explicit region collapse or its containing column's railed flag, D38) --
+ * i.e. the drag paths' "was this a railed cell" pre-op check, done in ONE
+ * region walk (the walk also yields the containing column, which the
+ * location kinds alone don't). Non-docked groups are always false. */
 export function isRailedDockedCell(
   layout: DockLayout,
   groupId: GroupId,
@@ -531,9 +529,7 @@ export function isRailedDockedCell(
     const found = findGroupInRegion(layout.docked[edge], groupId);
     if (found === null) continue;
     return (
-      layout.groups[groupId]?.collapsed === true ||
-      isRegionCollapsedOn(layout, edge) ||
-      found.column.railed === true
+      isRegionCollapsedOn(layout, edge) || found.column.railed === true
     );
   }
   return false;
@@ -561,37 +557,19 @@ export function stackGroupIdsOf(
   return [groupId];
 }
 
-/** True when `groupId` shares a stack with at least one OTHER group (a 2+
- * floating stack or a 2+-leaf docked column) -- the boolean companion to
- * stackGroupIdsOf for chrome that only needs the yes/no, without building
- * the id array. */
-/** D30 gate: does this panel constitute its WHOLE visual column (D27's
- * scope)? Only then does it carry a cell-level minimize control -- a panel
- * sharing its visual column collapses via the column's chevron instead
- * (one collapse control per scope, P12). Floating: sole group of its
- * window. Docked: sole leaf of its model column, and -- in a single-column
- * region, where the visual column is the WHOLE region -- sole leaf of the
- * region. Area-hosted and unplaced groups count as lone.
- * NOT isStackedGroup: that counts the model column only, and a plain
- * docked stack canonicalizes (D12) into bands of single-leaf columns. */
-export function isLoneInVisualColumn(
+/** D32 gate: is this group the SOLE group of a FLOATING window? Only there
+ * does the panel-level collapse control (the grip bar's `-` / the
+ * unmergeable header's compact toggle, plus their backing clicks) render:
+ * when scopes coincide the LARGEST coinciding scope owns collapse, so a
+ * docked panel -- lone or stacked -- never carries one (docked collapse is
+ * uniformly the chevron -> rail). Replaces the pre-D32 isLoneInVisualColumn
+ * gate, which also matched docked sole panels. */
+export function isSoleFloatingGroup(
   layout: DockLayout,
   groupId: GroupId,
 ): boolean {
   const win = layout.floating.find((w) => w.stack.includes(groupId));
-  if (win !== undefined) return win.stack.length === 1;
-  for (const edge of ["left", "right"] as DockEdge[]) {
-    const region = layout.docked[edge];
-    const found = findGroupInRegion(region, groupId);
-    if (found === null) continue;
-    if (found.column.leaves.length >= 2) return false;
-    if (!region!.rows.every((rw) => rw.columns.length === 1)) return true;
-    let leaves = 0;
-    for (const rw of region!.rows)
-      for (const c of rw.columns) leaves += c.leaves.length;
-    return leaves === 1;
-  }
-  return true;
+  return win !== undefined && win.stack.length === 1;
 }
 
 export function isStackedGroup(layout: DockLayout, groupId: GroupId): boolean {
@@ -710,23 +688,27 @@ function buildColumn(
 
 /** Detach every group in `groupIds` from the draft, returning the preserved
  * per-group height shares of the floating window that held ALL of them (its
- * whole stack being docked), or undefined when the groups aren't coming from
- * one window. Capture-then-detach lives in ONE helper because the ORDER is
- * load-bearing: detachInPlace deletes each departing group's stackWeights
- * entry as it leaves, so the weights must be copied out first -- this is the
- * inverse of floatColumn, which wrote them, and it's what lets a floated
- * 70/30 stack dock back at 70/30. */
+ * whole stack being docked; `heights` undefined when the groups aren't
+ * coming from one window) plus whether that source window was COLLAPSED --
+ * transfers are identity (D38): docking a collapsed window rails/collapses
+ * the landing scope, so the callers need the source container's state after
+ * the window itself is gone. Capture-then-detach lives in ONE helper because
+ * the ORDER is load-bearing: detachInPlace deletes each departing group's
+ * stackWeights entry as it leaves, so the weights must be copied out first --
+ * this is the inverse of floatColumn, which wrote them, and it's what lets a
+ * floated 70/30 stack dock back at 70/30. */
 function detachAllPreservingStackWeights(
   draft: DockLayout,
   groupIds: NonEmpty<GroupId>,
-): Record<GroupId, number> | undefined {
+): { heights: Record<GroupId, number> | undefined; sourceCollapsed: boolean } {
   const win = draft.floating.find((w) =>
     groupIds.every((g) => w.stack.includes(g)),
   );
-  const weights =
+  const heights =
     win?.stackWeights === undefined ? undefined : { ...win.stackWeights };
+  const sourceCollapsed = win?.collapsed === true;
   groupIds.forEach((g) => detachInPlace(draft, g));
-  return weights;
+  return { heights, sourceCollapsed };
 }
 
 /** A row of one column. */
@@ -756,12 +738,21 @@ export function dockToEdge(
   const ne = asNonEmpty(groupIds);
   if (ne === null) return layout;
   const draft = clone(layout);
-  const stackHeights = detachAllPreservingStackWeights(draft, ne);
+  const { heights: stackHeights, sourceCollapsed } =
+    detachAllPreservingStackWeights(draft, ne);
   const column = buildColumn(ne, 1, stackHeights);
   const existing = draft.docked[edge];
   if (existing === null) {
     draft.docked[edge] = regionOf(column);
+    // Identity transfer (D38): a collapsed window docked onto an empty edge
+    // becomes the region rail (it is the region's sole visual column, so the
+    // region flag is the canonical store).
+    if (sourceCollapsed)
+      draft.regionCollapsed = withRegionCollapsed(draft, edge, true);
   } else {
+    // Identity transfer (D38): a collapsed window docked BESIDE existing
+    // content lands as a railed column.
+    if (sourceCollapsed) column.railed = true;
     // A column joining a region-railed region converts the region rail into
     // per-column rails first: the old content stays railed, the newcomer
     // lands expanded (visible, P5).
@@ -804,10 +795,15 @@ export function dockToRegionEdge(
   const ne = asNonEmpty(groupIds);
   if (ne === null) return layout;
   const draft = clone(layout);
-  const stackHeights = detachAllPreservingStackWeights(draft, ne);
+  const { heights: stackHeights, sourceCollapsed } =
+    detachAllPreservingStackWeights(draft, ne);
   const existing = draft.docked[edge];
   if (existing === null) {
     draft.docked[edge] = regionOf(buildColumn(ne, 1, stackHeights));
+    // Identity transfer (D38): a collapsed window docked onto an empty edge
+    // becomes the region rail.
+    if (sourceCollapsed)
+      draft.regionCollapsed = withRegionCollapsed(draft, edge, true);
     return draft;
   }
   if (side === "top" || side === "bottom") {
@@ -816,7 +812,15 @@ export function dockToRegionEdge(
     // band-insert mechanics (index, weight rescale) live in insertBandAtIndex;
     // the outer top/bottom are just its boundary cases.
     const index = side === "top" ? 0 : existing.rows.length;
-    return insertBandAtIndex(draft, ne, edge, index, weights, stackHeights);
+    return insertBandAtIndex(
+      draft,
+      ne,
+      edge,
+      index,
+      weights,
+      stackHeights,
+      sourceCollapsed,
+    );
   }
   // left / right: a new full-height column beside EVERYTHING. A multi-band
   // region of single-column bands (the canonical stack, D12) can only host
@@ -833,6 +837,9 @@ export function dockToRegionEdge(
   convertRegionRailToColumnRailsInPlace(draft, edge);
   const dw = weights?.dragged ?? 1;
   const column = buildColumn(ne, dw, stackHeights);
+  // Identity transfer (D38): a collapsed window docked beside content lands
+  // as a railed column.
+  if (sourceCollapsed) column.railed = true;
   const zippable =
     existing.rows.length > 1 &&
     existing.rows.every((r) => r.columns.length === 1);
@@ -912,11 +919,18 @@ function insertBandAtIndex(
   index: number,
   weights?: { existing: number; dragged: number },
   leafWeights?: Record<GroupId, number>,
+  /** D38 identity transfer: the dragged groups came from a COLLAPSED window,
+   * so the landing scope collapses -- the region flag when the band IS the
+   * new region, else the new band's column rails (canonicalization then
+   * resolves the store for the final geometry). */
+  sourceCollapsed = false,
 ): DockLayout {
   const existing = draft.docked[edge];
   if (existing === null) {
     // No region yet: the band IS the region (index is irrelevant).
     draft.docked[edge] = regionOf(buildColumn(groupIds, 1, leafWeights));
+    if (sourceCollapsed)
+      draft.regionCollapsed = withRegionCollapsed(draft, edge, true);
     return draft;
   }
   // Default weight: the MEAN of the existing bands' weights, so the new
@@ -926,7 +940,9 @@ function insertBandAtIndex(
   const meanW =
     existing.rows.reduce((s, r) => s + r.weight, 0) / existing.rows.length;
   const draggedW = weights?.dragged ?? meanW;
-  const band = buildRow(buildColumn(groupIds, 1, leafWeights), draggedW);
+  const bandColumn = buildColumn(groupIds, 1, leafWeights);
+  if (sourceCollapsed) bandColumn.railed = true;
+  const band = buildRow(bandColumn, draggedW);
   if (weights !== undefined) {
     const total = existing.rows.reduce((s, r) => s + r.weight, 0) || 1;
     existing.rows.forEach((r) => {
@@ -953,7 +969,8 @@ export function dockBandAtIndex(
   const ne = asNonEmpty(groupIds);
   if (ne === null) return layout;
   const draft = clone(layout);
-  const stackHeights = detachAllPreservingStackWeights(draft, ne);
+  const { heights: stackHeights, sourceCollapsed } =
+    detachAllPreservingStackWeights(draft, ne);
   // Detaching dragged groups that shared this edge can drop bands, shifting the
   // target index. Re-clamp against the post-detach region so the band still
   // lands in range (the caller's index was computed against the pre-detach
@@ -967,6 +984,7 @@ export function dockBandAtIndex(
     clamp(index, 0, max),
     weights,
     stackHeights,
+    sourceCollapsed,
   );
 }
 
@@ -996,7 +1014,8 @@ export function dropOnDockedLeaf(
   }
 
   const draft = clone(layout);
-  const stackHeights = detachAllPreservingStackWeights(draft, ne);
+  const { heights: stackHeights, sourceCollapsed } =
+    detachAllPreservingStackWeights(draft, ne);
   // Re-find the target leaf AFTER detach. If a dragged group shared this edge,
   // detaching it may have dropped the target's column; if the target is gone (a
   // self-drop), abort rather than orphaning the dragged groups.
@@ -1046,6 +1065,10 @@ export function dropOnDockedLeaf(
   convertRegionRailToColumnRailsInPlace(draft, edge);
   const half = targetColumn.weight / 2;
   const newColumn = buildColumn(ne, half, stackHeights);
+  // Identity transfer (D38): a collapsed window dropped as a NEW column
+  // lands railed. (top/bottom drops JOIN the target's column instead -- the
+  // receiving container's state wins there, so no flag travels.)
+  if (sourceCollapsed) newColumn.railed = true;
   if (targetRow.columns.length === 1 && targetColumn.leaves.length > 1) {
     const above = targetColumn.leaves.slice(0, li);
     const below = targetColumn.leaves.slice(li + 1);
@@ -1451,9 +1474,15 @@ export function floatGroup(
   height?: number,
 ): { layout: DockLayout; windowId: WindowId | null } {
   if (isAreaGroup(layout, groupId)) return { layout, windowId: null };
+  // Identity transfer (D38): a group floated out of a COLLAPSED container
+  // (a railed column / railed region / collapsed window) is born collapsed --
+  // the new window inherits the source container's state (P2: the user was
+  // dragging a bar or rail cell, not a full panel).
+  const sourceCollapsed = isGroupEffectivelyCollapsed(layout, groupId);
   const draft = clone(layout);
   detachInPlace(draft, groupId);
   const win = makeFloatingWindow(x, y, width, [groupId], height);
+  if (sourceCollapsed) win.collapsed = true;
   draft.floating.push(win);
   return { layout: draft, windowId: win.id };
 }
@@ -1486,10 +1515,15 @@ export function floatColumn(
   column.leaves.forEach((l) => {
     stackWeights[l.group] = l.weight;
   });
+  // Identity transfer (D38): floating a RAILED column (or a column of a
+  // region-railed region) yields a COLLAPSED window.
+  const sourceCollapsed =
+    column.railed === true || isRegionCollapsedOn(layout, edge);
 
   const draft = clone(layout);
   stack.forEach((g) => detachInPlace(draft, g));
   const win = makeFloatingWindow(x, y, width, stack, height, stackWeights);
+  if (sourceCollapsed) win.collapsed = true;
   draft.floating.push(win);
   return { layout: draft, windowId: win.id };
 }
@@ -1521,32 +1555,24 @@ export function floatRegion(
   if (stack.some((g) => isAreaGroup(layout, g))) {
     return { layout, windowId: null };
   }
+  // Identity transfer (D38): floating a RAILED region yields a COLLAPSED
+  // window (the flag moves from the region store to the window store).
+  const sourceCollapsed = isRegionCollapsedOn(layout, edge);
   const draft = clone(layout);
   stack.forEach((g) => detachInPlace(draft, g));
   // The region is gone; its explicit collapse flag (D21) must not survive to
   // ambush the NEXT region docked on this edge with a surprise rail.
   draft.regionCollapsed = withRegionCollapsed(draft, edge, false);
   const win = makeFloatingWindow(x, y, width, stack, undefined, stackWeights);
+  if (sourceCollapsed) win.collapsed = true;
   draft.floating.push(win);
   return { layout: draft, windowId: win.id };
 }
 
-/** Stamp `collapsed: true` onto groups of a NOT-YET-COMMITTED result draft.
- * Drag-commit companion (P2: drags never change what the user sees): a cell
- * dragged out of a RAILED region is only effectively collapsed -- its own
- * flag is usually false -- so floating it as-is would pop a full-size window
- * mid-drag. The caller stamps the floated group(s) so the window renders as
- * the minimized bar the user was dragging. Server float commands do NOT do
- * this: for them position and collapse are independent axes (P6). */
-export function stampCollapsedInPlace(
-  draft: DockLayout,
-  groupIds: GroupId[],
-): void {
-  for (const g of groupIds) {
-    const group = draft.groups[g];
-    if (group !== undefined) group.collapsed = true;
-  }
-}
+// NOTE(D38): stampCollapsedInPlace is GONE. Transfers are identity at the op
+// level: floatGroup/floatColumn/floatRegion/tearOutPane inherit the source
+// container's collapse state onto the new window's own flag, so drag paths
+// no longer post-stamp group flags (there are none).
 
 /** Pull a single panel out of its group into a new floating window. If the
  * panel was the only one in its group, the whole group floats instead (no new
@@ -1587,6 +1613,11 @@ export function tearOutPane(
       floatingGroupId: groupId,
     };
   }
+  // Identity transfer (D38): a pane torn out of a COLLAPSED container (a
+  // collapsed window's bar label, a rail spine row) floats as a collapsed
+  // window -- born collapsed; expanding is a click-only gesture. Same rule
+  // as the wholesale-float branch above (floatGroup inherits it there).
+  const sourceCollapsed = isGroupEffectivelyCollapsed(layout, groupId);
   const draft = clone(layout);
   const src = draft.groups[groupId];
   src.paneIds = src.paneIds.filter((p) => p !== paneId);
@@ -1595,13 +1626,9 @@ export function tearOutPane(
   if (src.paneIds.length === 0) src.activeId = null;
   else if (src.activeId === paneId) src.activeId = src.paneIds[0];
   const newGroup = makeGroup([paneId]);
-  // The torn pane inherits the source's minimized state: dragging a tab out of
-  // a minimized strip floats it STILL minimized (expanding is a click-only
-  // gesture). Same as the 1-pane wholesale-float branch above, which floats the
-  // source group with its collapsed flag intact.
-  if (src.collapsed === true) newGroup.collapsed = true;
   draft.groups[newGroup.id] = newGroup;
   const win = makeFloatingWindow(x, y, width, [newGroup.id]);
+  if (sourceCollapsed) win.collapsed = true;
   draft.floating.push(win);
   return { layout: draft, windowId: win.id, floatingGroupId: newGroup.id };
 }
@@ -1722,20 +1749,51 @@ export function reorderTab(
   return draft;
 }
 
-/** Toggle a group's minimized (collapsed) state. Per-cell (D16): any group --
- * lone or stacked -- toggles individually; mixed stacks are legal. The expand
- * direction shares expandGroup's path (expandGroupInPlace), which also clears
- * the group's region-collapse flag (D21): any user expand reveals the panel. */
+/** Toggle the collapse state of the CONTAINER holding `groupId` (D38):
+ * collapse is one boolean per container, so the toggle resolves the group's
+ * container and flips ITS flag -- a floating window's `collapsed`, or (for
+ * docked groups) the largest coinciding scope's store (D32): the region flag
+ * when the region is a single visual column, else the containing column's
+ * railed flag. The expand direction shares expandGroup's path
+ * (expandGroupInPlace), which clears every container flag over the group. */
 export function toggleCollapsed(
   layout: DockLayout,
   groupId: GroupId,
 ): DockLayout {
-  const group = layout.groups[groupId];
-  if (group === undefined) return layout;
-  const draft = clone(layout);
-  if (group.collapsed === true) expandGroupInPlace(draft, groupId);
-  else draft.groups[groupId].collapsed = true;
-  return draft;
+  if (layout.groups[groupId] === undefined) return layout;
+  if (isGroupEffectivelyCollapsed(layout, groupId)) {
+    const draft = clone(layout);
+    return expandGroupInPlace(draft, groupId) ? draft : layout;
+  }
+  return collapseContainerOf(layout, groupId);
+}
+
+/** Collapse the container holding `groupId` (D38): floating -> the window's
+ * flag; docked -> the LARGEST coinciding scope's store (D32/P15): the region
+ * flag when the region is a single visual column (every band one column,
+ * D27), else the containing column's railed flag. Area-hosted / unplaced
+ * groups have no collapsible container: no-op. */
+function collapseContainerOf(
+  layout: DockLayout,
+  groupId: GroupId,
+): DockLayout {
+  const loc = findGroupLocation(layout, groupId);
+  if (loc === null || loc.kind === "area") return layout;
+  if (loc.kind === "floating") {
+    const draft = clone(layout);
+    const win = draft.floating.find((w) => w.id === loc.windowId);
+    if (win === undefined) return layout;
+    win.collapsed = true;
+    return draft;
+  }
+  const region = layout.docked[loc.edge];
+  if (region === null) return layout;
+  if (region.rows.every((rw) => rw.columns.length === 1)) {
+    return setRegionCollapsed(layout, loc.edge, true);
+  }
+  const found = findGroupInRegion(region, groupId);
+  if (found === null) return layout;
+  return setColumnRailed(layout, loc.edge, found.column.id, true);
 }
 
 /** An edge's region-collapse record with defaults filled in (tolerates
@@ -1793,13 +1851,16 @@ export function setColumnRailed(
   return draft;
 }
 
-/** Convert an edge's whole-region rail (D21) into per-column rails, in
- * place: clear regionCollapsed and mark every PRE-EXISTING column railed.
- * Called by every op that ADDS a side-by-side column to a region-railed
- * region, BEFORE the insert -- the old content stays railed in place while
- * the newcomer lands expanded (the region flag would otherwise swallow the
- * new column into the rail). No-op when the edge isn't region-railed or
- * holds no region. */
+/** STORE MIGRATION (D38, collapse law 5), narrowing direction: when a
+ * region-railed region gains a side-by-side column, the region flag is no
+ * longer the canonical store (the region stops being one visual column), so
+ * the state migrates DOWN -- clear regionCollapsed and mark every
+ * PRE-EXISTING column railed, in place. Called by every op that ADDS a
+ * column to a region-railed region, BEFORE the insert: the old content
+ * stays railed while the newcomer lands per ITS transfer rule (expanded for
+ * an expanded source, railed for a collapsed one -- the region flag would
+ * otherwise swallow the new column into the rail). No-op when the edge
+ * isn't region-railed or holds no region. */
 function convertRegionRailToColumnRailsInPlace(
   draft: DockLayout,
   edge: DockEdge,
@@ -1846,104 +1907,79 @@ function clearColumnRailedForGroupInPlace(
   return false;
 }
 
-/** Expand `groupId` in place: clear its own collapsed flag, its region's
- * collapse flag (D21), and its containing column's railed flag. Shared by
- * expandGroup and toggleCollapsed's expand direction, so every expand path
- * (toggle, expand-to-tab) reveals the panel. Returns whether anything
- * changed. */
+/** Clear the `collapsed` flag of the floating window holding `groupId` (if
+ * any), in place -- the floating mirror of the docked clears below: every
+ * expand path routes through this via expandGroupInPlace, so a bar's expand
+ * affordances all clear the window's ONE flag (D38). Returns whether a flag
+ * was actually cleared. */
+function clearWindowCollapsedForGroupInPlace(
+  draft: DockLayout,
+  groupId: GroupId,
+): boolean {
+  const win = draft.floating.find((w) => w.stack.includes(groupId));
+  if (win === undefined || win.collapsed !== true) return false;
+  delete win.collapsed;
+  return true;
+}
+
+/** Expand `groupId`'s CONTAINER in place (D38): clear its floating window's
+ * collapsed flag, its region's collapse flag (D21), and its containing
+ * column's railed flag. Shared by expandGroup and toggleCollapsed's expand
+ * direction, so every expand path (toggle, expand-to-tab, bar/rail expand)
+ * reveals the panel. Returns whether anything changed. */
 function expandGroupInPlace(draft: DockLayout, groupId: GroupId): boolean {
   let changed = false;
-  const group = draft.groups[groupId];
-  if (group?.collapsed === true) {
-    group.collapsed = false;
-    changed = true;
-  }
+  if (clearWindowCollapsedForGroupInPlace(draft, groupId)) changed = true;
   if (clearRegionCollapsedForGroupInPlace(draft, groupId)) changed = true;
   if (clearColumnRailedForGroupInPlace(draft, groupId)) changed = true;
   return changed;
 }
 
-/** Expand a collapsed group. ALSO clears its region's collapse flag (D21):
- * expanding from the rail reveals the panel. No-op when the group is already
- * expanded AND its region isn't collapsed (or the group is unknown). */
+/** Expand the container holding `groupId` (D38): clears the floating
+ * window's / region's / column's collapse flag, whichever applies. No-op
+ * when nothing is collapsed over the group (or the group is unknown). */
 export function expandGroup(layout: DockLayout, groupId: GroupId): DockLayout {
   if (layout.groups[groupId] === undefined) return layout;
   const draft = clone(layout);
   return expandGroupInPlace(draft, groupId) ? draft : layout;
 }
 
-/** Minimize a whole stack (a floating window's stack or a docked column's
- * leaves) -- the stack handle's minimize-all button. Bulk convenience only
- * (D16): collapses every listed group; per-cell states stay legal otherwise. */
+/** Minimize a whole stack -- the stack handle's minimize toggle. Under D38
+ * this is just "collapse the container of the stack's groups": the caller
+ * passes a window's stack or a docked column's leaf groups, and the shared
+ * container resolution sets that ONE flag. No-op when already collapsed. */
 export function minimizeStack(
   layout: DockLayout,
   groupIds: GroupId[],
 ): DockLayout {
-  if (groupIds.every((gid) => layout.groups[gid]?.collapsed === true))
-    return layout;
-  const draft = clone(layout);
-  stampCollapsedInPlace(draft, groupIds);
-  return draft;
+  const first = groupIds[0];
+  if (first === undefined || layout.groups[first] === undefined) return layout;
+  if (isGroupEffectivelyCollapsed(layout, first)) return layout;
+  return collapseContainerOf(layout, first);
 }
 
-/** Expand a whole stack -- the inverse of minimizeStack. */
+/** Expand a whole stack -- the inverse of minimizeStack: clears the
+ * container's one flag (D38). */
 export function expandStack(
   layout: DockLayout,
   groupIds: GroupId[],
 ): DockLayout {
-  if (groupIds.every((gid) => layout.groups[gid]?.collapsed !== true))
-    return layout;
-  const draft = clone(layout);
-  for (const gid of groupIds) {
-    const group = draft.groups[gid];
-    if (group !== undefined) group.collapsed = false;
-  }
-  return draft;
+  const first = groupIds[0];
+  if (first === undefined) return layout;
+  return expandGroup(layout, first);
 }
 
-/** The group ids of the VISUAL COLUMN (D27's scope) containing `groupId`:
- * a floating window's whole stack; ALL bands' leaves in a single-visual-column
- * docked region (every band one column); the MODEL column's leaves in a
- * multi-column (zipped) band. Unplaced / area groups: just the group. */
-function visualStackGroupIdsOf(
-  layout: DockLayout,
-  groupId: GroupId,
-): GroupId[] {
-  const win = layout.floating.find((w) => w.stack.includes(groupId));
-  if (win !== undefined) return [...win.stack];
-  for (const edge of ["left", "right"] as DockEdge[]) {
-    const region = layout.docked[edge];
-    const found = findGroupInRegion(region, groupId);
-    if (found === null) continue;
-    if (region!.rows.every((rw) => rw.columns.length === 1)) {
-      const ids: GroupId[] = [];
-      for (const rw of region!.rows)
-        for (const c of rw.columns) ids.push(...collectLeafGroups(c));
-      return ids;
-    }
-    return collectLeafGroups(found.column);
-  }
-  return [groupId];
-}
-
-/** Expand the WHOLE stack containing `groupId` (D31: collapse is stack-scoped
- * in BOTH directions -- a stacked bar's expand reveals its whole stack, so a
- * stack's bars stay uniform). Scope is the group's VISUAL column: every group
- * of the containing floating window's stack, or every leaf group of the
- * containing visual column when docked (all bands in a single-visual-column
- * region; the model column in a zipped band). Every member routes through the
- * shared expand internals, so the region/column rail flags clear too (P5).
+/** Expand the WHOLE stack containing `groupId`. Under D38 this is exactly
+ * expandGroup -- collapse lives on the container, so clearing its one flag
+ * reveals the whole stack (D31's per-member walk reduced to a flag clear).
+ * Kept as its own export because chrome distinguishes "expand the stack I'm
+ * in" (a stacked bar's affordances) from per-panel expands at call sites.
  * No-op (same reference) when nothing changes. */
 export function expandStackOf(
   layout: DockLayout,
   groupId: GroupId,
 ): DockLayout {
-  if (layout.groups[groupId] === undefined) return layout;
-  const draft = clone(layout);
-  let changed = false;
-  for (const gid of visualStackGroupIdsOf(draft, groupId))
-    if (expandGroupInPlace(draft, gid)) changed = true;
-  return changed ? draft : layout;
+  return expandGroup(layout, groupId);
 }
 
 /** Structural fingerprint of a layout: the arrangement of ids and group
@@ -1999,15 +2035,16 @@ export function normalizeCanonicalBandsInPlace(layout: DockLayout): boolean {
   for (const edge of ["left", "right"] as DockEdge[]) {
     const region = layout.docked[edge];
     if (region === null) continue;
-    // Orphaned column rails (D28): the railed form is only legal BESIDE
-    // expanded siblings -- a railed column that ends up alone in its band
-    // would render as a 36px strip inside a full-width band, stranding dead
-    // space. Degrade to the legal minimized form for the new geometry:
-    // - every column in the region railed and single-column throughout ->
-    //   promote to the whole-region rail (the add-conversion's inverse);
-    // - a lone railed column among expanded bands -> clear the flag and
-    //   minimize its groups to in-place bars (keeps the user's "minimized"
-    //   intent without the dead space).
+    // Store migration at canonicalization (D38, collapse law 5): when scopes
+    // widen structurally, the flag moves to the canonical store.
+    // - Every band single-column and every column railed -> the railed run
+    //   IS the whole visual column, whose canonical store is the REGION
+    //   flag: migrate (set regionCollapsed, drop the column flags).
+    // - A lone railed column among EXPANDED bands (single-column region):
+    //   the railed form has no legal geometry there -- it can't be the
+    //   region store (the region isn't all collapsed) and docked bars are
+    //   gone (D32) -- so the flag DROPS and the column expands: the only
+    //   legal state for that geometry.
     const singleColumn = region.rows.every((rw) => rw.columns.length === 1);
     if (singleColumn) {
       const railedLoners = region.rows
@@ -2017,15 +2054,7 @@ export function normalizeCanonicalBandsInPlace(layout: DockLayout): boolean {
         if (railedLoners.length === region.rows.length) {
           layout.regionCollapsed = withRegionCollapsed(layout, edge, true);
         }
-        for (const c of railedLoners) {
-          delete c.railed;
-          if (railedLoners.length < region.rows.length) {
-            for (const lf of c.leaves) {
-              const g = layout.groups[lf.group];
-              if (g !== undefined) g.collapsed = true;
-            }
-          }
-        }
+        for (const c of railedLoners) delete c.railed;
         changed = true;
       }
     }

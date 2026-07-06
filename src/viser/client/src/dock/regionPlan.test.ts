@@ -30,12 +30,17 @@ describe("planRegion", () => {
     expect(plannedReservedWidth(plan, 300, false)).toBe(300);
   });
 
-  it("a MINIMIZED single leaf still reserves the full width (bar in place, D20)", () => {
+  it("a RAILED width-column swaps its share for the strip width (D28/D38)", () => {
     const l = emptyLayout();
-    l.groups = groups(["a", true]);
-    l.docked.left = toRegion(leaf("a"));
+    l.groups = groups("a", "b");
+    l.docked.left = toRegion(row([leaf("a"), leaf("b")]));
+    l.docked.left!.rows[0].columns[0].railed = true;
     const plan = planRegion(l.docked.left!);
-    expect(plannedReservedWidth(plan, 300, false)).toBe(300);
+    // Equal weights: the expanded column keeps half of 300, the railed one
+    // renders at the fixed strip, plus the divider chrome.
+    expect(plannedReservedWidth(plan, 300, false)).toBe(
+      150 + MINIMIZED_STRIP_PX + SPLIT_DIVIDER_PX,
+    );
   });
 
   it("two side-by-side columns: divider chrome only", () => {
@@ -58,6 +63,23 @@ describe("planRegion", () => {
     expect(plan.chromePx).toBe(SPLIT_DIVIDER_PX);
   });
 
+  it("an ALL-RAILED width band with an expanded sibling band keeps content width", () => {
+    const l = emptyLayout();
+    l.groups = groups("a", "b", "c");
+    l.docked.right = toRegion(
+      rows([row([leaf("a"), leaf("b")]), row([leaf("c")])]),
+    );
+    const band = l.docked.right!.rows[0];
+    band.columns[0].railed = true;
+    band.columns[1].railed = true;
+    const plan = planRegion(l.docked.right!);
+    // The width-determining band is all rails, but band 2 (c) is expanded
+    // content: the region must keep its content width, not shrink to rail
+    // chrome (which squished c to ~strip width).
+    expect(plan.hasExpandedContent).toBe(true);
+    expect(plannedReservedWidth(plan, 300, false)).toBe(300 + SPLIT_DIVIDER_PX);
+  });
+
   it("an EXPLICITLY collapsed region reserves exactly the rail width (D21)", () => {
     const plan = planOf(row([leaf("a"), leaf("b")]));
     expect(plannedReservedWidth(plan, 300, true)).toBe(MINIMIZED_STRIP_PX);
@@ -65,15 +87,17 @@ describe("planRegion", () => {
 });
 
 describe("reconcile: collapse states never move region width (D20)", () => {
-  it("minimizing a lone panel keeps the preserved width", () => {
+  it("minimizing a lone panel (region store, D38) keeps the preserved width", () => {
     const l = emptyLayout();
-    l.groups = groups(["a"]);
+    l.groups = groups("a");
     l.docked.right = toRegion(leaf("a", 320));
     l.regionWidth = { left: 0, right: 320 };
+    // A sole docked panel's toggle targets the REGION store (D32/D38).
     const next = toggleCollapsed(l, "a");
     reconcileRegionWidths(l, next);
     expect(next.regionWidth!.right).toBe(320);
     const plan = planRegion(next.docked.right!);
+    // Model width preserved; the rail is drawn via the region-collapsed arg.
     expect(plannedReservedWidth(plan, next.regionWidth!.right, false)).toBe(
       320,
     );
@@ -81,7 +105,7 @@ describe("reconcile: collapse states never move region width (D20)", () => {
 
   it("explicit region collapse keeps the model width for restore", () => {
     const l = emptyLayout();
-    l.groups = groups(["a"]);
+    l.groups = groups("a");
     l.docked.right = toRegion(leaf("a", 320));
     l.regionWidth = { left: 0, right: 320 };
     const collapsed = setRegionCollapsed(l, "right", true);

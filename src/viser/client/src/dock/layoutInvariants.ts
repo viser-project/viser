@@ -66,7 +66,8 @@ function referencedGroupIds(layout: DockLayout): GroupId[] {
  *  9. Floating windows: non-empty stacks, finite geometry, valid stackWeights
  *     (finite/positive, keyed only by groups in the window's stack).
  *  10/11. Unique node ids and floating window ids.
- *  12. `collapsed`, when present, is a boolean. */
+ *  12. Container collapse flags (window `collapsed` / column `railed`, D38)
+ *      are booleans when present; groups carry NO collapse flag. */
 export function invariantViolations(layout: DockLayout): string[] {
   const v: string[] = [];
   const refs = referencedGroupIds(layout);
@@ -174,17 +175,28 @@ export function invariantViolations(layout: DockLayout): string[] {
   const wids = layout.floating.map((w) => w.id);
   if (new Set(wids).size !== wids.length) v.push(`duplicate floating window ids`);
 
-  // 12. collapsed is a boolean when present.
+  // 12. Container collapse flags (D38) are booleans when present, and no
+  // group carries one (group-level collapse is unrepresentable -- a stray
+  // wire/persisted `collapsed` on a group would silently resurrect the
+  // pre-D38 model).
+  for (const w of layout.floating) {
+    if (w.collapsed !== undefined && typeof w.collapsed !== "boolean")
+      v.push(`floating window ${w.id} collapsed is not boolean`);
+  }
+  for (const c of columnsOf(layout)) {
+    if (c.railed !== undefined && typeof c.railed !== "boolean")
+      v.push(`column ${c.id} railed is not boolean`);
+  }
   for (const [gid, group] of Object.entries(layout.groups)) {
-    if (group.collapsed !== undefined && typeof group.collapsed !== "boolean")
-      v.push(`group ${gid} collapsed is not boolean`);
+    if ((group as { collapsed?: unknown }).collapsed !== undefined)
+      v.push(`group ${gid} carries a group-level collapsed flag (D38)`);
   }
 
   // (13 retired: areas no longer duplicate their key in an `id` field -- the
   // mismatch it policed is unrepresentable now.)
 
-  // (14 retired: uniform-collapse per stack died with D16 -- any cell
-  // minimizes individually, so mixed collapse states are legal and coherent.)
+  // (14 retired twice over: uniform-collapse per stack became structural in
+  // D38 -- groups have no collapse flag, so a mixed stack is unrepresentable.)
 
   return v;
 }

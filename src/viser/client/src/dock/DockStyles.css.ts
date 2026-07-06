@@ -53,6 +53,52 @@ export const collapseAnim = style({
   },
 });
 
+/** D34 sibling of collapseAnim for the docked REGION container: railing /
+ * expanding a region swaps its content for the 36px rail, and this eases the
+ * container's WIDTH between the committed values (the canvas insets commit
+ * instantly -- motion is pure presentation). Same off-switches: reduced
+ * motion, and an ancestor's [data-dock-resizing] (the region resizer writes
+ * widths per frame; easing would lag the cursor). */
+export const regionWidthAnim = style({
+  transition: "width 160ms ease",
+  "@media": {
+    "(prefers-reduced-motion: reduce)": {
+      transition: "none",
+    },
+  },
+  selectors: {
+    "[data-dock-resizing] &": {
+      transition: "none",
+    },
+  },
+});
+
+/** D34 sibling of collapseAnim for a FLOATING window's collapse: eases the
+ * window's HEIGHT between committed values. Both endpoints are numeric for a
+ * PINNED window (px pinned height <-> the collapsed bars' calc() sum), so
+ * the round-trip eases; an AUTO-height window's expanded height is `auto`,
+ * which CSS cannot interpolate -- that transition is instant (documented
+ * gap: an honest auto endpoint would need a DOM measure, and motion may
+ * never gate on measurement, P4). */
+export const windowCollapseAnim = style({
+  transition: "height 160ms ease",
+  "@media": {
+    "(prefers-reduced-motion: reduce)": {
+      transition: "none",
+    },
+  },
+  selectors: {
+    "[data-dock-resizing] &": {
+      transition: "none",
+    },
+    // The window's own grip resizes write height per frame; the attribute
+    // goes on the Paper itself (no dock-level ancestor flag exists there).
+    "&[data-dock-resizing]": {
+      transition: "none",
+    },
+  },
+});
+
 /** Visible keyboard-focus ring for the dock's focusable non-native controls
  * (tabs, minimize/expand buttons). Drawn INSIDE the element (negative offset)
  * so overflow:hidden ancestors -- tab strips, grip bars -- can't clip it. Only

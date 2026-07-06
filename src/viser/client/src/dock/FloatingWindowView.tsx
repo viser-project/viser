@@ -10,25 +10,23 @@ import { dragGesture } from "./gestures";
 import {
   cappedWindowHeight,
   cascadeResize,
-  expandedFlags,
   expandStack,
   minimizeStack,
   windowAllMinimized,
 } from "./layoutOps";
 import { StackHandleBar } from "./handles";
 import { TabGroupFrame } from "./TabGroupFrame";
-import { collapseAnim } from "./DockStyles.css";
+import { collapseAnim, windowCollapseAnim } from "./DockStyles.css";
 import { MinimizedBar } from "./MinimizedBar";
 import {
-  minimizedBarBasis,
+  collapsedWindowHeightCss,
   clamp,
   FloatingWindow,
   GroupId,
   MIN_REGION_GRAB_PX,
   MIN_WINDOW_HEIGHT_PX,
-
+  SPLIT_DIVIDER_PX,
   pinnedPxOf,
-  TabGroup,
 } from "./types";
 
 // A width-resize always leaves this much canvas visible (the original
@@ -73,48 +71,41 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
   const multi = win.stack.length > 1;
   const paperRef = React.useRef<HTMLDivElement>(null);
   const stackRef = React.useRef<HTMLDivElement>(null);
-  // A fully-minimized window shrinks to its handle(s); it ignores any fixed
+  // A collapsed window shrinks to its stack of bars; it ignores any fixed
   // height and offers no vertical resize (there's nothing to resize).
   const collapsed = windowAllMinimized(dock.layout, win.id);
-  // Bulk minimize-all / expand-all for the whole stack -- the window
-  // header's toggle, which since D30 is the stack's ONE collapse control
-  // (stacked cells carry no per-cell `-`; their bars keep the per-cell `+`).
-  // Direction: expand when EVERY cell is minimized, else minimize all.
-  const toggleAll = () =>
+  // The window's ONE collapse toggle (D38): the header's right-end control
+  // (multi-group windows; a single-group window's grip bar toggle sets the
+  // same flag). Plain collapse/expand of the window -- the old "minimize
+  // all / expand all" pair is simply this toggle.
+  const toggleWindowCollapsed = () =>
     dock.api.apply((l) =>
       collapsed ? expandStack(l, win.stack) : minimizeStack(l, win.stack),
     );
   // The pinned px height, or undefined when the window auto-sizes to content.
   // flex-grow sums < 1 distribute only that FRACTION of free space;
   // stackWeights from floatRegion carving are fractional, so
-  // normalize (see SplitView's band note). Minimized cells render flexGrow 0,
-  // so they must not count toward the total either -- otherwise a pinned
-  // window with a minimized cell strands the freed height as dead space.
+  // normalize (see SplitView's band note).
   const stackWeightTotal =
-    win.stack.reduce(
-      (s2, g) =>
-        s2 +
-        (dock.groups[g]?.collapsed === true ? 0 : (win.stackWeights?.[g] ?? 1)),
-      0,
-    ) || 1;
+    win.stack.reduce((s2, g) => s2 + (win.stackWeights?.[g] ?? 1), 0) || 1;
   const pinnedPx = pinnedPxOf(win.height);
   const fixedHeight = pinnedPx !== undefined && !collapsed;
-  // Per-divider resizable flags over the stack's collapsed mask: a seam
-  // resizes only when an EXPANDED cell exists on each side (bars are fixed
-  // 26px; cascadeResize skips them to the next expanded grower). With no
-  // expanded cell on one side there is nothing to trade: no resize cursor,
-  // no armed gesture, and crucially no pinHeight() side effect on a press
-  // that would otherwise no-op (hit-box loop finding). Same prefix/suffix
-  // flags as SplitView's dividers.
-  const stackCollapsedMask = win.stack.map(
-    (g) => dock.groups[g]?.collapsed === true,
-  );
-  const { atOrBefore: expandedAtOrBefore, after: expandedAfter } =
-    expandedFlags(stackCollapsedMask);
   const renderedHeight =
     pinnedPx !== undefined
       ? cappedWindowHeight(pinnedPx, containerHeight)
       : undefined;
+  // The collapsed window's height as a deterministic calc() (header + bars +
+  // dividers) rather than `auto`: it gives the D34 height transition an
+  // honest numeric endpoint, so collapsing a PINNED window eases px -> calc
+  // and expanding eases back. (An AUTO-height window's expanded height is
+  // `auto`, which CSS cannot interpolate -- that direction snaps; see the
+  // windowCollapseAnim note.)
+  const collapsedHeight = collapsed
+    ? collapsedWindowHeightCss(
+        win.stack.map((g) => dock.groups[g]),
+        dock.panes,
+      )
+    : undefined;
 
   // Cancel an in-flight grip gesture if this window unmounts mid-resize (e.g.
   // another client docks it away), so its listeners can't fire afterwards. One
@@ -266,6 +257,9 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       if (event.button !== 0) return;
       if (activeGrip.current !== null) return;
       event.stopPropagation();
+      // Per-frame height writes must track the cursor 1:1: suppress the D34
+      // height ease (windowCollapseAnim) on this window for the drag.
+      paperRef.current?.setAttribute("data-dock-resizing", "");
       const startY = event.clientY;
       const { startHeight, heightFrom, snappedToContent, yFor, heightToCommit } =
         vResizeStart(vside);
@@ -282,6 +276,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
           onResizeHeight(win.id, heightToCommit(pending), yFor(pending)),
         onEnd: (cancelled) => {
           activeGrip.current = null;
+          paperRef.current?.removeAttribute("data-dock-resizing");
           setSnappedToContent(false);
           if (cancelled)
             onResizeHeight(win.id, startHeight, yFor(startHeight));
@@ -297,6 +292,8 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       if (event.button !== 0) return;
       if (activeGrip.current !== null) return;
       event.stopPropagation();
+      // Corner drags also write height per frame: suppress the D34 ease.
+      paperRef.current?.setAttribute("data-dock-resizing", "");
       const startX = event.clientX;
       const startY = event.clientY;
       const startWidth = win.width;
@@ -326,6 +323,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         },
         onEnd: (cancelled) => {
           activeGrip.current = null;
+          paperRef.current?.removeAttribute("data-dock-resizing");
           setSnappedToContent(false);
           if (cancelled) {
             onResize(
@@ -347,15 +345,17 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       shadow="0.1em 0 1em 0 rgba(0,0,0,0.1)"
       radius="sm"
       onPointerDownCapture={() => onFront(win.id)}
+      className={windowCollapseAnim}
       style={{
         position: "absolute",
         left: win.x,
         top: win.y,
-        // A fully-minimized window is the same stack of cells, all rendered
-        // as 26px bars (D17) at full win.width -- the width is part of the
-        // window's identity (P8); no fit-content jump.
+        // A collapsed window is the same stack of cells, all rendered as
+        // 26px bars (D17) at full win.width -- the width is part of the
+        // window's identity (P8); no fit-content jump. Its height is the
+        // bars' computed sum (numeric, so the collapse can ease -- D34).
         width: win.width,
-        height: collapsed ? undefined : renderedHeight,
+        height: collapsed ? collapsedHeight : renderedHeight,
         zIndex,
         overflow: "visible",
         boxSizing: "border-box",
@@ -434,19 +434,23 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         {/* For a multi-group stack, a window header drags the whole window; each
         group also keeps its own grip bar (which tears it out). A single group
         needs no header -- its own grip bar moves the window. The header's
-        minimize-all button collapses every group at once; when every cell is
-        minimized (windowAllMinimized) it flips to expand-all. Rendered even
-        when the whole stack is bars (D17): a minimized window is the same
-        stack of cells, just all 26px. A motionless press toggles (via the
-        drag-starter's onClick, since the +/- is dragThrough); motion drags. */}
+        right-end toggle flips the window's ONE collapse flag (D38); it is
+        the collapsed window's ONLY expand signifier (T4 -> D25: the bars
+        below carry no individual +, staying unmarked backing). Rendered
+        even when the whole stack is bars (D17): a collapsed window is the
+        same stack of cells, just all 26px. A motionless press toggles (via
+        the drag-starter's onClick, since the +/- is dragThrough); motion
+        drags. */}
         {multi && (
           <StackHandleBar
             attrs={{ "data-floating-handle": win.id }}
             onPointerDown={(event) =>
-              dock.startWindowDrag(event, win.id, { onClick: toggleAll })
+              dock.startWindowDrag(event, win.id, {
+                onClick: toggleWindowCollapsed,
+              })
             }
             collapsed={collapsed}
-            onToggle={toggleAll}
+            onToggle={toggleWindowCollapsed}
           />
         )}
 
@@ -471,12 +475,15 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
           {win.stack.map((groupId, index) => {
             const group = dock.groups[groupId];
             if (group === undefined) return null;
-            const collapsedCell = group.collapsed === true;
             const weight = win.stackWeights?.[groupId] ?? 1;
-            // A minimized cell is its 26px bar in place (D17/D20); an
-            // expanded one is the ordinary tab-group frame.
-            const groupNode = collapsedCell ? (
-              <MinimizedBar group={group} />
+            // D38: the window's ONE flag decides every cell's rendering --
+            // a collapsed window renders every cell as its bar (a
+            // single-group window = one bar; face bar for a face pane).
+            // The bar's right-end + renders only when the bar IS the whole
+            // window (T4 -> D25: a multi-group window's expand signifier
+            // is its header's toggle alone).
+            const groupNode = collapsed ? (
+              <MinimizedBar group={group} expandControl={!multi} />
             ) : (
               <TabGroupFrame
                 group={group}
@@ -507,10 +514,9 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                     stackRef={stackRef}
                     dividerIndex={index - 1}
                     stack={win.stack}
-                    groups={dock.groups}
-                    resizable={
-                      expandedAtOrBefore[index - 1] && expandedAfter[index - 1]
-                    }
+                    // D38: an expanded window is all expanded cells (every
+                    // divider trades); a collapsed one is all bars (none do).
+                    resizable={!collapsed}
                     weightOf={(g) => win.stackWeights?.[g] ?? 1}
                     onSetWeights={(weights) => onSetStackWeights(win.id, weights)}
                     isFixed={fixedHeight}
@@ -521,20 +527,20 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                   />
                 )}
                 {fixedHeight ? (
+                  // Expanded pinned window only (fixedHeight is false while
+                  // collapsed): cells share the pinned height by weight.
                   <Box
                     className={collapseAnim}
                     style={{
-                      flexGrow: collapsedCell ? 0 : weight / stackWeightTotal,
-                      flexShrink: collapsedCell ? 0 : 1,
-                      flexBasis: collapsedCell
-                        ? minimizedBarBasis(group, dock.panes)
-                        : 0,
+                      flexGrow: weight / stackWeightTotal,
+                      flexShrink: 1,
+                      flexBasis: 0,
                       // Never shrink below a cell's header: minHeight:0 let an
                       // over-short window collapse a cell under its header,
                       // clipping it and overlapping the next cell. Floor at the
                       // min stack-cell height; the stack scrolls when the sum
                       // exceeds the window.
-                      minHeight: collapsedCell ? 0 : MIN_STACK_CELL_PX,
+                      minHeight: MIN_STACK_CELL_PX,
                       display: "flex",
                       flexDirection: "column",
                       // Clip: children render committed-size instantly, the
@@ -564,7 +570,6 @@ function FloatingStackDivider({
   stackRef,
   dividerIndex,
   stack,
-  groups,
   resizable,
   weightOf,
   onSetWeights,
@@ -574,10 +579,9 @@ function FloatingStackDivider({
   stackRef: React.RefObject<HTMLDivElement>;
   dividerIndex: number;
   stack: GroupId[];
-  groups: Record<GroupId, TabGroup>;
-  /** False when no expanded cell sits on one side of the seam: nothing to
-   * trade, so no resize cursor, no armed gesture, and no pinHeight() side
-   * effect. Computed by the parent via the shared expandedFlags. */
+  /** False while the window is collapsed (all bars, D38): nothing to trade,
+   * so no resize cursor, no armed gesture, and no pinHeight() side
+   * effect. */
   resizable: boolean;
   weightOf: (g: GroupId) => number;
   onSetWeights: (weights: Record<GroupId, number>) => void;
@@ -620,7 +624,10 @@ function FloatingStackDivider({
         latest = e.clientY;
       },
       flush: () => {
-        const collapsed = stack.map((g) => groups[g]?.collapsed === true);
+        // D38: dividers only exist on an EXPANDED window (a collapsed one is
+        // all bars and none of its seams are resizable), so the mask is
+        // uniformly false.
+        const collapsed = stack.map(() => false);
         const next = cascadeResize({
           weights: stack.map((g) => weightOf(g)),
           collapsed,
@@ -653,7 +660,7 @@ function FloatingStackDivider({
       style={{
         position: "relative",
         flexShrink: 0,
-        height: "7px",
+        height: SPLIT_DIVIDER_PX,
         cursor: resizable ? "ns-resize" : "default",
         display: "flex",
         alignItems: "center",
@@ -669,7 +676,7 @@ function FloatingStackDivider({
             left: 0,
             right: 0,
             top: -DIVIDER_OVERHANG_PX,
-            height: 7 + 2 * DIVIDER_OVERHANG_PX,
+            height: SPLIT_DIVIDER_PX + 2 * DIVIDER_OVERHANG_PX,
           }}
         />
       )}

@@ -18,10 +18,17 @@ import {
   resizeWindow,
   resizeWindowHeight,
   resolveRequestedFloatPosition,
+  setRegionCollapsed,
   tearOutPane,
   widthColumns,
 } from "./layoutOps";
-import { emptyLayout, DockLayout, pinnedPxOf, regionWidthsOf } from "./types";
+import {
+  emptyLayout,
+  DockLayout,
+  isRegionCollapsedOn,
+  pinnedPxOf,
+  regionWidthsOf,
+} from "./types";
 
 const BOUNDS_1000 = {
   width: 1000,
@@ -267,24 +274,24 @@ describe("applyPanelPlacement", () => {
     expect(out.floating).toHaveLength(0);
   });
 
-  it("leaves a user-collapsed group collapsed (no collapse axis exists)", () => {
-    // Placement carries no collapse axis: a size/position re-apply must not
-    // disturb a group the user minimized in the browser.
+  it("leaves a user-collapsed container collapsed (no collapse axis exists)", () => {
+    // Placement carries no collapse axis (D31/D38): a size/position re-apply
+    // must not disturb a container the user minimized in the browser -- here
+    // the docked region's rail flag (the D38 store for a sole docked panel).
     let layout = applyPanelPlacement(
       emptyLayout(),
       ["p"],
       at({ kind: "edge", edge: "right" }),
       () => null,
     );
-    const gid = findPaneGroup(layout, "p")!;
-    layout.groups[gid].collapsed = true;
+    layout = setRegionCollapsed(layout, "right", true);
     layout = applyPanelPlacement(
       layout,
       ["p"],
       { ...at({ kind: "edge", edge: "right" }), width: 300 },
       () => null,
     );
-    expect(layout.groups[findPaneGroup(layout, "p")!].collapsed).toBe(true);
+    expect(isRegionCollapsedOn(layout, "right")).toBe(true);
   });
 
   it("repositions an already-placed panel (float -> dock right)", () => {

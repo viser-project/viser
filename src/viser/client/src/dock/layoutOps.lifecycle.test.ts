@@ -267,11 +267,14 @@ describe("floatColumn", () => {
     expect(out.floating[0].height).toEqual({ mode: "auto" });
   });
 
-  it("preserves a collapsed group's state in the floated stack", () => {
+  it("floats a RAILED column as a COLLAPSED window (identity transfer, D38)", () => {
     const l = colLayout();
-    l.groups["b"].collapsed = true;
+    l.docked.left!.rows[0].columns.find((c) => c.id === "COL")!.railed = true;
     const { layout: out } = floatColumn(l, "left", "COL", 0, 0, 300);
-    expect(out.groups["b"].collapsed).toBe(true);
+    expect(out.floating[0].collapsed).toBe(true);
+    // An expanded column floats expanded.
+    const { layout: out2 } = floatColumn(colLayout(), "left", "COL", 0, 0, 300);
+    expect(out2.floating[0].collapsed).not.toBe(true);
   });
 
   it("guards: unknown node, wrong edge, leaf id (not a column) -> no-op", () => {

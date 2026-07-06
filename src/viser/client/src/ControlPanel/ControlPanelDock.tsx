@@ -45,15 +45,14 @@ const MemoizedGeneratedGuiContainer = React.memo(GeneratedGuiContainer);
 const PANEL_PAD_PX = 15;
 
 /** Per-group placement signature in a layout: where the group sits + its
- * collapsed state + (for a floating group) its window geometry. Used to detect
- * which panels a user gesture actually MOVED/resized/(un)minimized, so only
- * those get flagged user-touched. Returns a map keyed by group id. */
+ * container's collapse state (D38) + (for a floating group) its window
+ * geometry. Used to detect which panels a user gesture actually
+ * MOVED/resized/(un)minimized, so only those get flagged user-touched.
+ * Returns a map keyed by group id. */
 function groupPlacementSignatures(
   layout: DockLayout,
 ): Map<string, string> {
   const sigs = new Map<string, string>();
-  const collapsed = (gid: string) =>
-    layout.groups[gid]?.collapsed === true ? "c" : "e";
   // Docked: signature = edge + the group's node id (its slot in the region) +
   // the REGION's width. The width matters so a user's region resize flags the
   // docked panels there as touched -- otherwise a reconnect replay of a server
@@ -76,21 +75,21 @@ function groupPlacementSignatures(
         // column's residents touched, for the same P6 replay hazard.
         const colRail = column.railed === true ? "r" : "-";
         for (const { id, group } of ops.collectLeaves(column))
-          sigs.set(
-            group,
-            `d:${edge}:${id}:${collapsed(group)}:${w}:${rail}:${colRail}`,
-          );
+          sigs.set(group, `d:${edge}:${id}:${w}:${rail}:${colRail}`);
       }
   }
-  // Floating: signature = the window (id + position/size) the group sits in, plus
-  // its collapsed state. Deliberately NOT the stack index -- a group that stays
-  // in the same window hasn't been "relocated" by the user, so tearing a SIBLING
-  // out (which shifts the others' indices) must not flag the ones left behind.
+  // Floating: signature = the window (id + position/size) the group sits in,
+  // plus the WINDOW's collapse flag (D38 -- collapse is container state).
+  // Deliberately NOT the stack index -- a group that stays in the same window
+  // hasn't been "relocated" by the user, so tearing a SIBLING out (which
+  // shifts the others' indices) must not flag the ones left behind.
   for (const win of layout.floating) {
     const wsig = `f:${win.id}:${Math.round(win.x)},${Math.round(
       win.y,
-    )},${Math.round(win.width)},${JSON.stringify(win.height)}`;
-    for (const gid of win.stack) sigs.set(gid, `${wsig}:${collapsed(gid)}`);
+    )},${Math.round(win.width)},${JSON.stringify(win.height)}:${
+      win.collapsed === true ? "c" : "e"
+    }`;
+    for (const gid of win.stack) sigs.set(gid, wsig);
   }
   return sigs;
 }
@@ -525,8 +524,11 @@ function ControlPanelDockSync({
       : ops.findGroupLocation(dock.layout, controlGroupId);
   const side: "left" | "right" | "none" =
     location?.kind === "docked" ? location.edge : "none";
+  // D38: collapse is container state, so "expanded" derives from the panel's
+  // container (window collapsed / column railed / region collapsed).
   const expanded =
-    controlGroupId === null || dock.groups[controlGroupId]?.collapsed !== true;
+    controlGroupId === null ||
+    !ops.isGroupEffectivelyCollapsed(dock.layout, controlGroupId);
   // RENDERED width (expanded px + strip/divider chrome): the notifications
   // offset must clear everything the region actually draws, not just the
   // expanded columns' model width.

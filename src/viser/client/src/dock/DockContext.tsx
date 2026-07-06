@@ -91,12 +91,13 @@ export interface DockContextValue {
   /** Select a tab AND expand the group if minimized -- clicking a tab to read it
    * should reveal its content, not just switch the (hidden) active tab. */
   expandToTab: (groupId: GroupId, paneId: PaneId) => void;
-  /** Expand the WHOLE stack containing the group (D31: collapse is
-   * stack-scoped in both directions -- a stacked bar's expand affordances
-   * reveal the whole stack, never one cell of it). Optionally activates
-   * `toPaneId` on the pressed group first (a bar's title click). */
+  /** Expand the container holding the group (D38: collapse is ONE flag per
+   * container, so any bar's expand affordance reveals the whole window).
+   * Optionally activates `toPaneId` on the pressed group first (a bar's
+   * label click). */
   expandStackOf: (groupId: GroupId, toPaneId?: PaneId) => void;
-  /** Toggle a group's minimized state (tap on its handle). */
+  /** Toggle the collapse flag of the group's CONTAINER (D38) -- driven only
+   * from a single-group floating window's chrome (D32). */
   toggleCollapsed: (groupId: GroupId) => void;
   /** Collapse/expand a docked EDGE to/from its rail (D21) -- the chevron and
    * rail-header gesture. A USER commit (not runProgrammatic), so ownership

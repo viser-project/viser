@@ -123,7 +123,7 @@ function geometricViolations(layout: DockLayout): string[] {
     // invariants miss).
     for (const band of region.rows) {
       const stripCount = band.columns.filter((c) =>
-        isColumnMinimized(c, layout.groups),
+        isColumnMinimized(c),
       ).length;
       if (stripCount < 0 || stripCount > band.columns.length)
         v.push(`${edge}: band ${band.id} bad strip count ${stripCount}`);
@@ -201,22 +201,24 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
       },
     },
     {
-      // THREE bands, one of them fully minimized, plus a second edge -- the
-      // worst-case multi-band geometry: a collapsed band that must render as a
-      // fixed-height strip while sibling bands stay expanded, exercising the
-      // band-height flex rule (loneBand/stripBand) and per-band minimize.
-      name: "three bands w/ collapsed band + right edge",
+      // THREE bands, one column RAILED (D38's docked collapsed form), plus a
+      // second edge -- the worst-case multi-band geometry: a railed strip
+      // beside expanded siblings, exercising the band-height flex rule and
+      // the container collapse stores.
+      name: "three bands w/ railed column + right edge",
       make: () => {
         const l = emptyLayout();
         l.groups = {
           a: grp("a", 1),
           b: grp("b", 1),
-          c: grp("c", 1, true), // collapsed -> its band is a strip
+          c: grp("c", 1),
           d: grp("d", 1),
           e: grp("e", 2),
         };
+        const railedB = colS([leaf("b")]);
+        if (railedB.kind === "col") railedB.column.railed = true;
         l.docked.left = toRegion(
-          rows([row([leaf("a"), leaf("b")]), row([leaf("c")]), row([leaf("d")])]),
+          rows([row([leaf("a"), railedB]), row([leaf("c")]), row([leaf("d")])]),
         );
         l.docked.right = toRegion(rowS([leaf("e")]));
         return l;

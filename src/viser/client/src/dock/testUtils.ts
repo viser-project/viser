@@ -128,25 +128,16 @@ export function leafIdsOf(spec: TreeSpec): NodeId[] {
 // ---------------------------------------------------------------------------
 // Group builders. `group("a", 2)` holds panes "a.0", "a.1".
 // ---------------------------------------------------------------------------
-export function group(id: string, panelCount = 1, collapsed?: boolean): TabGroup {
+export function group(id: string, panelCount = 1): TabGroup {
   const paneIds = Array.from({ length: panelCount }, (_, i) => `${id}.${i}`);
-  return {
-    id,
-    paneIds,
-    activeId: paneIds[0],
-    ...(collapsed !== undefined ? { collapsed } : {}),
-  };
+  return { id, paneIds, activeId: paneIds[0] };
 }
 
-/** Record of single-panel groups; pass [id, collapsed] to mark one collapsed. */
-export function groupsRecord(
-  ...specs: (string | [string, boolean?])[]
-): Record<GroupId, TabGroup> {
+/** Record of single-panel groups. (No collapse form: groups carry no collapse
+ * state under D38 -- seed container flags on windows/columns/regions.) */
+export function groupsRecord(...ids: string[]): Record<GroupId, TabGroup> {
   const out: Record<GroupId, TabGroup> = {};
-  for (const s of specs) {
-    const [id, collapsed] = typeof s === "string" ? [s, undefined] : s;
-    out[id] = group(id, 1, collapsed);
-  }
+  for (const id of ids) out[id] = group(id, 1);
   return out;
 }
 
@@ -194,6 +185,8 @@ export function floatingWindow(opts: {
   height?: number;
   stackWeights?: Record<GroupId, number>;
   anchor?: { x: number; y: number };
+  /** The window's ONE collapse flag (D38). */
+  collapsed?: boolean;
 }): FloatingWindow {
   const w: FloatingWindow = {
     id: opts.id,
@@ -205,6 +198,7 @@ export function floatingWindow(opts: {
   };
   if (opts.stackWeights !== undefined) w.stackWeights = opts.stackWeights;
   if (opts.anchor !== undefined) w.anchor = opts.anchor;
+  if (opts.collapsed !== undefined) w.collapsed = opts.collapsed;
   return w;
 }
 
@@ -218,6 +212,7 @@ export function makeLayout(opts: {
     y?: number;
     width?: number;
     height?: number;
+    collapsed?: boolean;
   }[];
   groups?: Record<string, number>; // name -> panel count (for multi-panel)
 }): DockLayout {

@@ -3,7 +3,7 @@
 // handle bars, and the stack handle bar that drags a whole group stack
 // (floating multi-group window header / docked column handle).
 
-import { Box } from "@mantine/core";
+import { Box, Tooltip } from "@mantine/core";
 import {
   IconChevronsLeft,
   IconChevronsRight,
@@ -13,7 +13,7 @@ import {
 import React from "react";
 import { focusRing } from "./DockStyles.css";
 import { focusDockControl, keyActivate } from "./gestures";
-import { HANDLE_BTN_EM } from "./types";
+import { HANDLE_BTN_EM, STACK_HANDLE_EM } from "./types";
 
 /** Centered grip line drawn inside every drag handle (grip bars, stack
  * handles, the vertical minimized strip). */
@@ -42,9 +42,11 @@ export function GripPill({
  * clear these buttons (e.g. the region-collapse chevron's inset). Lives here,
  * with the button it sizes, rather than in types.ts. */
 
-/** Hover-highlighted icon button used inside handles (per-group minimize on
- * the grip bar, minimize-all on a stack handle, expand on a vertical strip
- * cell). `placement` overrides the default right-edge absolute anchoring.
+/** Hover-highlighted icon button used inside handles (the single-group
+ * floating window's minimize on the grip bar, the window header's toggle,
+ * expand on a rail header). `placement` overrides the default right-edge
+ * absolute anchoring. Wrapped in a real Tooltip (D35) -- `tooltip` is the
+ * short hover text; `label` stays the aria-label.
  *
  * Two pointer modes:
  * - Default: swallows pointerdown so pressing the button can't arm the
@@ -57,7 +59,7 @@ export function GripPill({
  *   parent's, so the toggle can't fire twice. */
 export function HandleIconButton({
   label,
-  title,
+  tooltip,
   expanded,
   onActivate,
   attrs,
@@ -66,7 +68,7 @@ export function HandleIconButton({
   children,
 }: {
   label: string;
-  title: string;
+  tooltip: string;
   expanded: boolean;
   onActivate: () => void;
   attrs: Record<string, string>;
@@ -76,6 +78,7 @@ export function HandleIconButton({
 }) {
   const [hover, setHover] = React.useState(false);
   return (
+    <Tooltip label={tooltip} openDelay={300} withinPortal>
     <Box
       {...attrs}
       role="button"
@@ -83,7 +86,6 @@ export function HandleIconButton({
       className={focusRing}
       aria-label={label}
       aria-expanded={expanded}
-      title={title}
       onKeyDown={keyActivate(onActivate)}
       onPointerDown={
         dragThrough ? undefined : (event) => event.stopPropagation()
@@ -118,6 +120,7 @@ export function HandleIconButton({
     >
       {children}
     </Box>
+    </Tooltip>
   );
 }
 
@@ -165,7 +168,7 @@ export function ChromeToggle({
     <HandleIconButton
       attrs={{ "data-dock-minimize": "true" }}
       label={label}
-      title={expanded ? "Minimize" : "Expand"}
+      tooltip={expanded ? "Minimize" : "Expand"}
       expanded={expanded}
       dragThrough
       onActivate={onActivate}
@@ -186,9 +189,11 @@ export function ChromeToggle({
 
 /** Region-collapse chevron (D21/D26), rendered at the right end of the
  * docked region's PARENT HANDLE -- the same spot the rail header's + holds
- * while collapsed (P13). NOT drag-through: the host bar's press means
- * drag-the-stack / click-to-collapse, so a press here must stay its own
- * gesture. */
+ * while collapsed (P13). Drag-through like every other right-end control
+ * (T6 resolved): a press flows to the host bar's drag arbitration -- motion
+ * drags the stack, a motionless click collapses via the bar's own onClick
+ * backing (the same action). onActivate covers keyboard and synthetic
+ * clicks (element.click(), detail === 0) and keeps the focus handoff. */
 export function RegionCollapseChevron({
   edge,
   onActivate,
@@ -200,8 +205,9 @@ export function RegionCollapseChevron({
     <HandleIconButton
       attrs={{ "data-dock-region-collapse": edge }}
       label="Collapse panel area"
-      title="Collapse"
+      tooltip="Collapse"
       expanded
+      dragThrough
       onActivate={() => {
         onActivate();
         // A keyboard collapse unmounts the chevron with its chrome row; hand
@@ -229,9 +235,10 @@ export function RegionCollapseChevron({
 /** Column-collapse chevron: the per-COLUMN sibling of RegionCollapseChevron,
  * rendered at the right end of a column parent handle whose band has sibling
  * columns (D27). It rails exactly what its handle owns -- that one column --
- * and, like the region chevron, is NOT drag-through: a press here stays
- * click-only while the host bar's own motionless click remains its unmarked
- * backing surface. */
+ * and, like the region chevron, is drag-through (T6 resolved): a press flows
+ * to the host bar (drag = float the column; motionless click = rail it, via
+ * the bar's onClick backing), while onActivate covers keyboard/synthetic
+ * activation and keeps the focus handoff. */
 export function ColumnCollapseChevron({
   edge,
   columnId,
@@ -245,8 +252,9 @@ export function ColumnCollapseChevron({
     <HandleIconButton
       attrs={{ "data-dock-column-collapse": columnId }}
       label="Collapse column"
-      title="Collapse"
+      tooltip="Collapse"
       expanded
+      dragThrough
       onActivate={() => {
         onActivate();
         // A keyboard collapse unmounts the chevron with its handle; hand
@@ -275,12 +283,10 @@ export function ColumnCollapseChevron({
  * window or a docked pure column. Body-colored so it reads as the stack's
  * *container*, distinct from the child groups' gray grip bars.
  *
- * With `onToggle`, the bar gets a bulk toggle: minimize or expand every
- * child group at once (direction: expand when EVERY cell is minimized, else
- * minimize all). This is the stack's ONE collapse control (D30): stacked
- * cells carry no per-cell `-` (their minimized bars keep the per-cell `+` --
- * expand is never gated), so bulk and per-cell expand stay distinct actions
- * with distinct signifiers (P9).
+ * With `onToggle`, the bar gets the stack's ONE collapse control
+ * (D30/D32/D38): it flips the container's single flag -- a floating window's
+ * `collapsed`, or a rail header's expand -- so it is plain collapse/expand
+ * of the scope, not a bulk "toggle all".
  *
  * The toggle button is `dragThrough`: a real pointer press flows to the bar's
  * own onPointerDown (the click-vs-drag arbiter), so dragging the + still drags
@@ -295,21 +301,21 @@ export function StackHandleBar({
   onToggle,
   narrow = false,
   toggleLabel,
-  toggleTitle,
+  toggleTooltip,
   endControl,
 }: {
   onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
   attrs: Record<string, string>;
-  /** Derived stack state: true when EVERY child group is minimized. */
+  /** The container's ONE collapse flag (D38), as rendered state. */
   collapsed?: boolean;
   onToggle?: () => void;
   /** The bar sits on a minimized STRIP (~36px wide): there is no room for the
    * centered pill next to the button, so the button alone fills the bar. */
   narrow?: boolean;
-  /** Override the toggle's aria-label when the action is NOT expand/minimize
-   * ALL panes (the region rail's toggle only clears the region flag). */
+  /** Override the toggle's aria-label when the action is scoped narrower
+   * than the window's panels (the rail headers' honest wording). */
   toggleLabel?: string;
-  toggleTitle?: string;
+  toggleTooltip?: string;
   /** Replace the default +/- toggle with a different right-end control
    * (the docked region parent handle renders the region-collapse chevron
    * there instead, D26). */
@@ -322,7 +328,7 @@ export function StackHandleBar({
       style={{
         position: "relative",
         flexShrink: 0,
-        height: "1em",
+        height: `${STACK_HANDLE_EM}em`,
         cursor: "grab",
         backgroundColor: "var(--mantine-color-body)",
         touchAction: "none",
@@ -351,10 +357,10 @@ export function StackHandleBar({
       {endControl === undefined && onToggle !== undefined && (
         <HandleIconButton
           attrs={{ "data-dock-minimize-all": "true" }}
-          label={
-            toggleLabel ?? (collapsed ? "Expand all panes" : "Minimize all panes")
-          }
-          title={toggleTitle ?? (collapsed ? "Expand all" : "Minimize all")}
+          // One flag per container (D38), so the default action is plain
+          // collapse/expand of the window's panels -- no "all" language.
+          label={toggleLabel ?? (collapsed ? "Expand panels" : "Minimize panels")}
+          tooltip={toggleTooltip ?? (collapsed ? "Expand" : "Minimize")}
           expanded={!collapsed}
           onActivate={onToggle}
           // Press flows to the bar's drag gesture (drag = tear out the whole

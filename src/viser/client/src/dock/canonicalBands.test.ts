@@ -109,7 +109,9 @@ describe("structureSignature", () => {
     const sig = structureSignature(l);
     const l2 = structuredClone(l);
     l2.docked.left!.rows[0].columns[0].weight = 999;
-    l2.groups["a"] = group("a", 1, true);
+    // Container collapse flags (D38) are excluded from the signature.
+    l2.docked.left!.rows[0].columns[0].railed = true;
+    l2.regionCollapsed = { left: true, right: false };
     expect(structureSignature(l2)).toBe(sig);
     const l3 = structuredClone(l);
     l3.docked.left!.rows[0].columns[0].leaves[0].group = "b2";

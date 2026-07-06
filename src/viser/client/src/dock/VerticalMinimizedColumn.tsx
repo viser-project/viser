@@ -1,10 +1,11 @@
-// Minimized VERTICAL chrome (spec 3.2): the rail -- the P13 exception that
-// reclaims canvas WIDTH, so instead of "the header kept in place" it is the
-// header ROTATED: gray cap on top (the header's leading edge), one spine row
-// per tab (upright icon over rotated title, wayfinding-styled), hairline
-// dividers between cells. Renders the EXPLICITLY collapsed region (D21:
-// layout.regionCollapsed[edge]) as ONE packed rail -- the only 36px form
-// left; per-cell minimize renders in-place bars instead (MinimizedBar).
+// Minimized VERTICAL chrome (spec 3.3): the rail -- the ONE docked collapsed
+// rendering (D38/D32), and the P13 exception that reclaims canvas WIDTH: so
+// instead of "the header kept in place" it is the header ROTATED: gray cap
+// on top (the header's leading edge), one spine row per tab (upright icon
+// over rotated title, wayfinding-styled), hairline dividers between cells.
+// Two scopes, one form: the whole region (D21: regionCollapsed[edge]) as
+// ONE packed rail, or a single column of a multi-column band (D28:
+// column.railed) in place. The bar (MinimizedBar) is the FLOATING analog.
 
 import { Box, Paper } from "@mantine/core";
 import React from "react";
@@ -16,14 +17,14 @@ import { startCollapsedGroupPress } from "./collapsedPress";
 import { collectLeaves } from "./layoutOps";
 import { DockColumn, DockEdge, DockRegion, NodeId, TabGroup } from "./types";
 
-/** The COLLAPSED region as ONE packed rail (spec 3.2 / D21): every leaf
+/** The COLLAPSED region as ONE packed rail (spec 3.3 / D21): every leaf
  * across every band, contiguous, so the canvas gets the region's width back
- * with no dead gaps. Band structure and per-cell collapse states stay in the
- * MODEL; expanding the region restores them. The narrow StackHandleBar on
- * top is the rail's parent handle: drag floats the WHOLE region as one
- * window; click / `+` EXPANDS THE REGION (clears regionCollapsed -- cells
- * keep their own collapse states). Spine-row clicks expand the region AND
- * that panel to that tab (expandToTab clears the flag at the op level). */
+ * with no dead gaps. Band structure stays in the MODEL; expanding the
+ * region restores it. The narrow StackHandleBar on top is the rail's
+ * parent handle: drag floats the WHOLE region as one COLLAPSED window
+ * (identity transfer, D38); click / `+` EXPANDS THE REGION (clears its one
+ * flag). Spine-row clicks expand the region to that tab (expandToTab
+ * clears the flag at the op level). */
 export function RegionMinimizedRail({
   region,
   edge,
@@ -35,11 +36,9 @@ export function RegionMinimizedRail({
   const leaves = region.rows.flatMap((r) =>
     r.columns.flatMap((c) => collectLeaves(c)),
   );
-  // Expand the REGION: clears only the D21 flag -- cells keep their own
-  // collapse states (a minimized cell comes back as an in-place bar). Focus
-  // then lands on the first revealed cell's active tab, never on <body>
-  // (spec 4 / edge case 14; the tab may be an expanded strip's tab or a
-  // bar's title -- both carry data-dock-tab).
+  // Expand the REGION: clears the region's ONE flag (D38) and reveals
+  // every cell expanded. Focus then lands on the first revealed cell's
+  // active tab, never on <body> (spec 4 / edge case 14).
   const expandRegion = () => {
     dock.collapseRegion(edge, false);
     const firstGroup = dock.groups[leaves[0]?.group ?? ""];
@@ -64,11 +63,10 @@ export function RegionMinimizedRail({
         collapsed
         narrow
         onToggle={expandRegion}
-        // Honest label: this expands the panel AREA (clears the region flag);
-        // cells keep their own minimize states, so "Expand all panes" (the
-        // floating window header's accurate wording) would lie here.
+        // Honest scope label: this expands the panel AREA (clears the
+        // region's one flag, D38).
         toggleLabel="Expand panel area"
-        toggleTitle="Expand"
+        toggleTooltip="Expand"
       />
       <Paper
         radius={0}
@@ -112,10 +110,10 @@ export function RegionMinimizedRail({
 /** One RAILED COLUMN as a 36px spine strip in place (per-column rail): the
  * RegionMinimizedRail's shape scoped to a single column of a band. The
  * narrow StackHandleBar on top is the column's parent handle while railed:
- * drag floats the COLUMN as one stacked window (order + height ratios
- * preserved); click / `+` EXPANDS THE COLUMN (clears its railed flag --
- * cells keep their own collapse states). Spine-row clicks expand the column
- * AND that panel to that tab (expandToTab clears the flag at the op level). */
+ * drag floats the COLUMN as one COLLAPSED stacked window (order + height
+ * ratios preserved; identity transfer, D38); click / `+` EXPANDS THE
+ * COLUMN (clears its one railed flag). Spine-row clicks expand the column
+ * to that tab (expandToTab clears the flag at the op level). */
 export function ColumnRail({
   column,
   edge,
@@ -125,10 +123,9 @@ export function ColumnRail({
 }) {
   const dock = useDock();
   const leaves = collectLeaves(column);
-  // Expand the COLUMN: clears only its railed flag -- cells keep their own
-  // collapse states (a minimized cell comes back as an in-place bar). Focus
-  // then lands on the first revealed cell's active tab, never on <body>
-  // (edge case 14) -- mirrors RegionMinimizedRail's expandRegion.
+  // Expand the COLUMN: clears its ONE railed flag (D38) and reveals every
+  // cell expanded. Focus then lands on the first revealed cell's active
+  // tab, never on <body> (edge case 14) -- mirrors expandRegion.
   const expandColumn = () => {
     dock.railColumn(edge, column.id, false);
     const firstGroup = dock.groups[leaves[0]?.group ?? ""];
@@ -155,11 +152,10 @@ export function ColumnRail({
         collapsed
         narrow
         onToggle={expandColumn}
-        // Honest label: this expands the COLUMN (clears its railed flag);
-        // cells keep their own minimize states, so "Expand all panes" would
-        // lie here -- same wording rule as the region rail's header.
+        // Honest scope label: this expands the COLUMN (clears its railed
+        // flag, D38) -- same wording rule as the region rail's header.
         toggleLabel="Expand column"
-        toggleTitle="Expand"
+        toggleTooltip="Expand"
       />
       <Paper
         radius={0}

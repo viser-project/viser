@@ -74,8 +74,21 @@ export const MINIMIZED_BAR_PX = 26;
 // bar's own font context so it tracks the header exactly; FACE_BAR_PX is
 // the px estimate (2.75em at Mantine's ~14.8px body font) used only where
 // layout math needs a number (band floors).
-export const FACE_BAR_EM = "2.75em";
+export const FACE_BAR_HEIGHT_EM = 2.75;
+export const FACE_BAR_EM = `${FACE_BAR_HEIGHT_EM}em`;
 export const FACE_BAR_PX = 41;
+
+/** Horizontal padding (em) of the unmergeable titleNode header -- and, by
+ * D33's EXACT constancy, of its face bar: the label row keeps identical x
+ * offsets and the compact toggle keeps the same right inset across the
+ * minimize/expand round-trip. One constant so the two surfaces cannot
+ * drift. */
+export const HEADER_PAD_EM = 0.75;
+
+/** Height (em) of a stack handle bar (floating window header, docked parent
+ * handle, rail header). Shared with collapsedWindowHeightCss so a collapsed
+ * window's computed height agrees with the rendered chrome. */
+export const STACK_HANDLE_EM = 1;
 
 /** Does this group's bar carry a pane-provided face (lone pane only)? */
 export function hasMinimizedFace(
@@ -106,6 +119,26 @@ export function minimizedBarPx(
   panes: Record<string, PaneSpec>,
 ): number {
   return hasMinimizedFace(group, panes) ? FACE_BAR_PX : MINIMIZED_BAR_PX;
+}
+
+/** A collapsed floating window's rendered height as a CSS calc() (D34): the
+ * window header (multi-group only) plus each cell's bar plus the dividers
+ * between them. Every term is deterministic chrome -- bars are fixed
+ * MINIMIZED_BAR_PX / FACE_BAR_EM, dividers SPLIT_DIVIDER_PX -- so the
+ * collapse transition gets an HONEST numeric endpoint without measuring the
+ * DOM. Em terms stay em (they resolve in the window's own font context, so
+ * face bars track the header exactly); px terms stay px. */
+export function collapsedWindowHeightCss(
+  stackGroups: (TabGroup | undefined)[],
+  panes: Record<string, PaneSpec>,
+): string {
+  let em = stackGroups.length > 1 ? STACK_HANDLE_EM : 0;
+  let px = Math.max(0, stackGroups.length - 1) * SPLIT_DIVIDER_PX;
+  for (const g of stackGroups) {
+    if (hasMinimizedFace(g, panes)) em += FACE_BAR_HEIGHT_EM;
+    else px += MINIMIZED_BAR_PX;
+  }
+  return `calc(${em}em + ${px}px)`;
 }
 /** Width/height (em) of the square handle icon buttons (+/- toggles, the
  * region chevron's clearance). One constant so offsets that must clear a
@@ -201,10 +234,11 @@ export interface TabGroup {
    * into title fallbacks; `null` forces every consumer to handle the empty
    * case explicitly. */
   activeId: PaneId | null;
-  /** When true, the group is minimized: it renders as its 26px bar (the
-   * header kept in place, P13/D14) with the contents hidden. Per-GROUP (D16):
-   * any cell of any stack minimizes individually; mixed stacks are legal. */
-  collapsed?: boolean;
+  // NOTE(D38): there is deliberately NO `collapsed` field. Collapse is ONE
+  // state at STACK scope, stored per container (FloatingWindow.collapsed,
+  // DockColumn.railed, DockLayout.regionCollapsed) -- a partially collapsed
+  // stack is unrepresentable by construction. Groups don't collapse; the
+  // thing that holds them does.
 }
 
 /** Non-empty array: at least one element. Lets the type system guarantee a
@@ -315,6 +349,14 @@ export interface FloatingWindow {
   height: WindowHeight;
   /** Tab groups stacked top to bottom. */
   stack: GroupId[];
+  /** The window's ONE collapse flag (D38): while true, the whole window is
+   * minimized and renders as its stack of 26px bars at full `width` (a face
+   * bar for a lone main-panel window). One of the three container collapse
+   * stores (with DockColumn.railed and DockLayout.regionCollapsed) -- the
+   * `-` / window-header toggle flips it; every bar's expand affordance
+   * clears it. Transfers are identity: docking a collapsed window rails the
+   * landing scope, floating a railed scope sets this flag. */
+  collapsed?: boolean;
   /** Per-group height weights for a multi-group stack (groupId -> flex weight),
    * used when the window has a pinned `height` so a draggable divider can
    * redistribute height between stacked groups. Missing groups default to

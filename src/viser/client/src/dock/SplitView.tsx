@@ -8,10 +8,11 @@
 //   ColumnView   maps column.leaves   -> a vertical flex stack of leaves, with
 //                draggable horizontal dividers between stacked leaves.
 //
-// A minimized LEAF renders as its 26px bar IN PLACE (D20) -- there is no
-// per-column strip form and no band-bar form. The one 36px vertical rail is
-// the EXPLICIT region-collapse state (D21): layout.regionCollapsed[edge]
-// swaps the whole region for RegionMinimizedRail.
+// Docked collapse is the RAIL, at exactly two scopes (D38/D32): the whole
+// region (layout.regionCollapsed[edge] swaps the region for
+// RegionMinimizedRail) or one column of a multi-column band (column.railed
+// swaps that column for ColumnRail). Leaves are always expanded here --
+// per-leaf collapse is unrepresentable, and bars are a floating-only form.
 
 import { Box, Paper } from "@mantine/core";
 import React from "react";
@@ -25,25 +26,18 @@ import {
   setNodeWeights,
 } from "./layoutOps";
 import { ColumnCollapseChevron, StackHandleBar } from "./handles";
-import { MinimizedBar } from "./MinimizedBar";
 import { TabGroupFrame } from "./TabGroupFrame";
 import { ColumnRail, RegionMinimizedRail } from "./VerticalMinimizedColumn";
 import {
-  minimizedBarBasis,
-  minimizedBarPx,
-  PaneSpec,
   DockColumn,
   DockEdge,
   DockLeaf,
   DockRegion,
   DockRow,
-  GroupId,
   isRegionCollapsedOn,
   MIN_REGION_GRAB_PX,
-
   MINIMIZED_STRIP_PX,
   SPLIT_DIVIDER_PX,
-  TabGroup,
 } from "./types";
 
 // Minimum height for a stacked (column) cell; row cells use the per-panel width.
@@ -54,43 +48,30 @@ const MIN_CELL_HEIGHT_PX = 50;
 // zone to this so it's comfortable to hit without thickening the seam.
 const DIVIDER_GRAB_PX = 12;
 
-/** A band's minimum rendered height: the tallest column's stack of cells at
- * their render floors -- 26px bars for collapsed leaves, MIN_CELL_HEIGHT_PX
- * for expanded ones -- plus 7px dividers between stacked leaves. Serves both
- * as the band divider's per-band min-cell floor and as a fully-minimized
- * band's NUMERIC flex-basis (auto would not animate; with every leaf
- * collapsed this is exactly the bar-stack height). */
 // A per-column parent handle's rendered height (StackHandleBar, 1em at the
 // root font) -- part of every column's content height in a multi-column
-// region (D27), so band floors must count it or an all-minimized band's box
-// comes up short and the next band's chrome paints over (and steals presses
-// from) the bars' lower halves.
+// region (D27), so band floors must count it or a band's box comes up short
+// and the next band's chrome paints over (and steals presses from) it.
 const COLUMN_HANDLE_PX = 16;
 
 // Height floor for a band whose every column is RAILED: rail spines scroll
 // at any height, so the band needs only a usable grab height, not a per-leaf
-// sum.
+// sum. Doubles as the all-railed band's numeric flex-basis (auto would not
+// animate the D34 collapse transition).
 const ALL_RAILED_BAND_MIN_PX = 60;
 
-function bandMinPx(
-  row: DockRow,
-  groups: Record<GroupId, TabGroup>,
-  panes: Record<string, PaneSpec>,
-  withColumnHandle: boolean,
-): number {
-  // RAILED columns don't raise the floor: their spine strips scroll/fit at
-  // any height, unlike expanded cells and bars whose chrome has fixed
-  // per-leaf heights.
+/** A band's minimum rendered height: the tallest EXPANDED column's stack of
+ * cells at their render floors (MIN_CELL_HEIGHT_PX each, plus dividers),
+ * used as the band divider's per-band min-cell floor. RAILED columns don't
+ * raise the floor -- their spine strips scroll/fit at any height -- so an
+ * all-railed band floors at the fixed grab height. */
+function bandMinPx(row: DockRow, withColumnHandle: boolean): number {
   const floors = row.columns
     .filter((col) => col.railed !== true)
     .map((col) =>
       col.leaves.reduce(
-        (px, lf, i) =>
-          px +
-          (groups[lf.group]?.collapsed === true
-            ? minimizedBarPx(groups[lf.group], panes)
-            : MIN_CELL_HEIGHT_PX) +
-          (i > 0 ? SPLIT_DIVIDER_PX : 0),
+        (px, _lf, i) =>
+          px + MIN_CELL_HEIGHT_PX + (i > 0 ? SPLIT_DIVIDER_PX : 0),
         withColumnHandle ? COLUMN_HANDLE_PX : 0,
       ),
     );
@@ -110,7 +91,6 @@ export const SplitView = React.memo(function SplitView({
   edge: DockEdge;
 }) {
   const dock = useDock();
-  const groups = dock.groups;
   // D27: a region where every band has ONE column is a single visual
   // column -- the region-level parent handle covers it honestly. Any
   // multi-column band means independent visual columns: each carries its
@@ -119,10 +99,10 @@ export const SplitView = React.memo(function SplitView({
   const containerRef = React.useRef<HTMLDivElement>(null);
   const rows = region.rows;
   // Per-band collapsed mask, computed ONCE: the band map and every divider's
-  // resizable check read it. A fully-minimized band (every cell a bar)
-  // shrinks to its content -- the bars -- by ordinary flex (grow 0), so
-  // expanded bands absorb the freed height (edge case 16).
-  const bandMinimized = rows.map((r) => isRowMinimized(r, groups));
+  // resizable check read it. A band is minimized when EVERY column is
+  // railed: it shrinks to the fixed rail grab height (grow 0), so expanded
+  // bands absorb the freed height (edge case 16).
+  const bandMinimized = rows.map((r) => isRowMinimized(r));
   const { atOrBefore: expandedAtOrBefore, after: expandedAfter } =
     expandedFlags(bandMinimized);
   // flex-grow semantics: when grow factors sum to <1, flexbox distributes
@@ -153,10 +133,10 @@ export const SplitView = React.memo(function SplitView({
       }}
     >
       {rows.map((row, index) => {
-        // A fully-minimized band holds no flexible height: it sizes to its
-        // content (its cells' 26px bars) so sibling bands absorb the freed
-        // space. Bands ALWAYS render RowView (D20) -- a collapsed cell is a
-        // bar in place, not a separate band-bar form.
+        // An all-railed band holds no flexible height: it sizes to the
+        // fixed rail grab height so sibling bands absorb the freed space
+        // (edge case 16). Bands always render RowView; the railed columns
+        // inside it render their ColumnRails.
         const minimized = bandMinimized[index];
         return (
           <React.Fragment key={row.id}>
@@ -165,20 +145,16 @@ export const SplitView = React.memo(function SplitView({
               style={{
                 flexGrow: minimized ? 0 : row.weight / expandedWeightTotal,
                 flexShrink: minimized ? 0 : 1,
-                // Numeric when minimized (the tallest column's bar stack),
-                // not "auto": auto is not animatable, and the value is the
-                // same -- bars are fixed 26px (+7px dividers).
-                flexBasis: minimized ? bandMinPx(row, groups, dock.panes, columnHandles) : 0,
+                // Numeric when minimized, not "auto": auto is not
+                // animatable (D34), and the value is fixed chrome (an
+                // all-railed band is rail strips at the grab-height floor).
+                flexBasis: minimized ? ALL_RAILED_BAND_MIN_PX : 0,
                 minWidth: 0,
                 minHeight: 0,
                 display: "flex",
               }}
             >
-              <RowView
-                row={row}
-                edge={edge}
-                columnHandles={columnHandles}
-              />
+              <RowView row={row} edge={edge} columnHandles={columnHandles} />
             </Box>
             {index < rows.length - 1 &&
               (() => {
@@ -187,7 +163,9 @@ export const SplitView = React.memo(function SplitView({
                 return (
                   <SplitDivider
                     dir="column"
-                    resizable={expandedAtOrBefore[index] && expandedAfter[index]}
+                    resizable={
+                      expandedAtOrBefore[index] && expandedAfter[index]
+                    }
                     containerRef={containerRef}
                     onResize={(deltaPx, containerPx) =>
                       resizeCells({
@@ -195,14 +173,17 @@ export const SplitView = React.memo(function SplitView({
                         edge,
                         cells: rows,
                         collapsed: bandMinimized,
+                        collapsedPx: ALL_RAILED_BAND_MIN_PX,
                         index,
                         deltaPx,
                         containerPx,
                         // Per-band floor: a band must fit its tallest
-                        // column's cells (expanded 50px / bars 26px +
-                        // dividers), or the leaves' own render floors
-                        // overflow into the band below.
-                        minCell: rows.map((band) => bandMinPx(band, groups, dock.panes, columnHandles)),
+                        // expanded column's cells (50px each + dividers),
+                        // or the leaves' own render floors overflow into
+                        // the band below.
+                        minCell: rows.map((band) =>
+                          bandMinPx(band, columnHandles),
+                        ),
                       })
                     }
                     onCancel={() =>
@@ -242,8 +223,7 @@ function RowView({
   const columns = row.columns;
   // Per-column rail mask: a RAILED column renders as a fixed 36px spine
   // strip (its width weight preserved for restore, P8) -- the one exception
-  // to "columns always hold their width" (D20, which still covers columns of
-  // in-place BARS: those show their bars at the top with empty space below).
+  // to "columns always hold their width".
   const columnRailed = columns.map((c) => c.railed === true);
   const { atOrBefore: expandedAtOrBefore, after: expandedAfter } =
     expandedFlags(columnRailed);
@@ -271,6 +251,11 @@ function RowView({
           <React.Fragment key={column.id}>
             <Box
               data-dock-column={column.id}
+              // D34: railing/expanding a column eases the wrapper's flex
+              // width (basis 0 <-> the fixed 36px strip) -- same
+              // presentation-only transition as cell collapse, suppressed
+              // under an active divider drag.
+              className={collapseAnim}
               style={{
                 flexGrow: railed ? 0 : column.weight / colWeightTotal,
                 flexShrink: railed ? 0 : 1,
@@ -335,8 +320,7 @@ function RowView({
                 dir="row"
                 // A railed column is fixed-width chrome: the divider resizes
                 // only when an expanded column sits on both sides of it
-                // (bars still hold their column's width, D24 -- only RAILED
-                // columns go inert).
+                // (D24: only RAILED columns go inert).
                 resizable={expandedAtOrBefore[index] && expandedAfter[index]}
                 containerRef={containerRef}
                 onResize={(deltaPx, containerPx) =>
@@ -345,6 +329,7 @@ function RowView({
                     edge,
                     cells: columns,
                     collapsed: columnRailed,
+                    collapsedPx: MINIMIZED_STRIP_PX,
                     index,
                     deltaPx,
                     containerPx,
@@ -373,17 +358,13 @@ function RowView({
  * dividers between them. */
 function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
   const dock = useDock();
-  const groups = dock.groups;
   const containerRef = React.useRef<HTMLDivElement>(null);
   const leaves = column.leaves;
-  // Per-leaf collapsed mask, computed once: the leaf map, every divider's
-  // resizable flags, and resizeCells all read it.
-  const leafCollapsed = leaves.map((l) => groups[l.group]?.collapsed === true);
-  const { atOrBefore: expandedAtOrBefore, after: expandedAfter } =
-    expandedFlags(leafCollapsed);
+  // D38: leaf-level collapse is unrepresentable (docked collapse is the
+  // column/region rail, rendered elsewhere), so every leaf here is
+  // expanded and every divider between them resizes.
   // Normalize grow factors (fractional sums strand free space).
-  const expandedLeafWeightTotal =
-    leaves.reduce((s, l, i) => s + (leafCollapsed[i] ? 0 : l.weight), 0) || 1;
+  const leafWeightTotal = leaves.reduce((s, l) => s + l.weight, 0) || 1;
 
   return (
     <Box
@@ -407,29 +388,21 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
       }}
     >
       {leaves.map((leaf, index) => {
-        // A minimized leaf renders as its 26px bar in place (D20): fixed
-        // basis, no grow/shrink, so its siblings absorb the freed height. Its
-        // weight is preserved in the model and restored when expanded.
-        const collapsed = leafCollapsed[index];
         return (
           <React.Fragment key={leaf.id}>
             <Box
               className={collapseAnim}
               style={{
-                flexGrow: collapsed
-                  ? 0
-                  : leaf.weight / expandedLeafWeightTotal,
-                flexShrink: collapsed ? 0 : 1,
-                flexBasis: collapsed
-                  ? minimizedBarBasis(groups[leaf.group], dock.panes)
-                  : 0,
+                flexGrow: leaf.weight / leafWeightTotal,
+                flexShrink: 1,
+                flexBasis: 0,
                 minWidth: 0,
                 // Expanded cells never render below their own chrome
                 // (spec 6): repeated same-target splits halve weights
                 // geometrically, and without a floor the smallest cell
                 // clips its grip bar + tab strip. Mirrors the floating
                 // stack's MIN_STACK_CELL_PX floor (P7).
-                minHeight: collapsed ? 0 : MIN_CELL_HEIGHT_PX,
+                minHeight: MIN_CELL_HEIGHT_PX,
                 display: "flex",
                 // Children render at their committed size the moment the
                 // model changes; the wrapper's size catches up over the
@@ -439,37 +412,36 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
             >
               <DockLeafView leaf={leaf} edge={edge} />
             </Box>
-            {index < leaves.length - 1 &&
-              (() => {
-                return (
-                  <SplitDivider
-                    dir="column"
-                    resizable={expandedAtOrBefore[index] && expandedAfter[index]}
-                    containerRef={containerRef}
-                    onResize={(deltaPx, containerPx) =>
-                      resizeCells({
-                        dock,
-                        edge,
-                        cells: leaves,
-                        collapsed: leafCollapsed,
-                        index,
-                        deltaPx,
-                        containerPx,
-                        minCell: MIN_CELL_HEIGHT_PX,
-                      })
-                    }
-                    onCancel={() =>
-                      dock.api.apply((l) =>
-                        setNodeWeights(
-                          l,
-                          edge,
-                          Object.fromEntries(leaves.map((lf) => [lf.id, lf.weight])),
-                        ),
-                      )
-                    }
-                  />
-                );
-              })()}
+            {index < leaves.length - 1 && (
+              <SplitDivider
+                dir="column"
+                resizable
+                containerRef={containerRef}
+                onResize={(deltaPx, containerPx) =>
+                  resizeCells({
+                    dock,
+                    edge,
+                    cells: leaves,
+                    collapsed: leaves.map(() => false),
+                    index,
+                    deltaPx,
+                    containerPx,
+                    minCell: MIN_CELL_HEIGHT_PX,
+                  })
+                }
+                onCancel={() =>
+                  dock.api.apply((l) =>
+                    setNodeWeights(
+                      l,
+                      edge,
+                      Object.fromEntries(
+                        leaves.map((lf) => [lf.id, lf.weight]),
+                      ),
+                    ),
+                  )
+                }
+              />
+            )}
           </React.Fragment>
         );
       })}
@@ -480,15 +452,19 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
 /** Shared cascade-resize commit for both levels (columns in a region row,
  * leaves in a column stack). The math is axis-agnostic (cascadeResize works on
  * `number[]` weights), so the only per-axis input is the cell list, the
- * collapsed mask, and the min-cell floor. Collapsed cells aren't resized, but
- * their preserved weight is rescaled onto the same px basis as their resized
- * siblings -- or, on expand, a now-tiny flex-unit weight next to px-magnitude
- * siblings would collapse the cell to ~0. */
+ * collapsed mask, the fixed chrome px a collapsed cell renders at, and the
+ * min-cell floor. Collapsed (railed) cells are fixed-width chrome (D28/D38):
+ * their STORED weight is preserved untouched for restore (P8), and their
+ * rendered extent is subtracted from the container so the expanded cells'
+ * new weights stay on the true px basis. */
 function resizeCells(opts: {
   dock: ReturnType<typeof useDock>;
   edge: DockEdge;
   cells: readonly { id: string; weight: number }[];
   collapsed: boolean[];
+  /** Rendered px of ONE collapsed cell (36px rail strip / all-railed band
+   * floor). Only read where the mask has collapsed cells. */
+  collapsedPx?: number;
   index: number;
   deltaPx: number;
   containerPx: number;
@@ -496,10 +472,11 @@ function resizeCells(opts: {
 }): void {
   const { dock, edge, cells, collapsed, index, deltaPx, containerPx, minCell } =
     opts;
+  const collapsedCount = collapsed.filter(Boolean).length;
   const next = cascadeResize({
     weights: cells.map((c) => c.weight),
     collapsed,
-    containerPx,
+    containerPx: containerPx - collapsedCount * (opts.collapsedPx ?? 0),
     dividerIndex: index,
     deltaPx,
     minCell,
@@ -507,12 +484,11 @@ function resizeCells(opts: {
     maxCell: Infinity,
   });
   if (next === null) return;
-  const totalAll = cells.reduce((s, c) => s + c.weight, 0) || 1;
   const byId: Record<string, number> = {};
   cells.forEach((c, i) => {
-    byId[c.id] = collapsed[i]
-      ? (c.weight / totalAll) * containerPx
-      : next[i];
+    // Collapsed cells keep their stored weight (P8: preserved for restore;
+    // they render at fixed chrome width regardless).
+    if (!collapsed[i]) byId[c.id] = next[i];
   });
   dock.api.apply((l) => setNodeWeights(l, edge, byId));
 }
@@ -550,11 +526,11 @@ function DockLeafView({ leaf, edge }: { leaf: DockLeaf; edge: DockEdge }) {
 function DockLeafFrame({ groupId }: { groupId: string }) {
   const group = useDock().groups[groupId];
   if (group === undefined) return null;
-  // A minimized group is its bar, in place (D20). The leaf wrapper (Paper)
-  // above still carries data-dock-leaf/-edge -- it is the drop target.
-  if (group.collapsed === true) return <MinimizedBar group={group} />;
-  // Docked leaves can be resized narrower than the panel-content minimum, so
-  // their body shows a persistent horizontal scrollbar pinned to the bottom.
+  // D38: docked cells never render as bars -- a collapsed docked container
+  // is the column/region RAIL (rendered by RowView/SplitView), so a leaf
+  // that renders here is always the expanded frame. Docked leaves can be
+  // resized narrower than the panel-content minimum, so their body shows a
+  // persistent horizontal scrollbar pinned to the bottom.
   return <TabGroupFrame group={group} stripDragsGroup persistentScrollbar />;
 }
 

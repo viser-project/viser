@@ -27,6 +27,11 @@ export interface RegionPlan {
   singleColumn: boolean;
   /** Fixed chrome on top of regionWidth: the inter-column dividers. */
   chromePx: number;
+  /** Whether ANY column in ANY band is expanded (non-railed). When the
+   * width-determining band is fully railed, expanded content in a NARROWER
+   * band still needs the region's content width -- without this the region
+   * reserved only rail chrome and squished that band to strip width. */
+  hasExpandedContent: boolean;
 }
 
 export function planRegion(region: DockRegion): RegionPlan {
@@ -37,6 +42,9 @@ export function planRegion(region: DockRegion): RegionPlan {
     columns,
     singleColumn: columns.length === 1,
     chromePx: (columns.length - 1) * SPLIT_DIVIDER_PX,
+    hasExpandedContent: region.rows.some((r) =>
+      r.columns.some((c) => c.railed !== true),
+    ),
   };
 }
 
@@ -58,6 +66,11 @@ export function plannedReservedWidth(
   if (regionCollapsed) return MINIMIZED_STRIP_PX;
   const railedCount = plan.columns.filter((c) => c.railed === true).length;
   if (railedCount === 0) return regionWidthPx + plan.chromePx;
+  // Width-determining band fully railed, but a narrower band holds expanded
+  // content: the region keeps its content width for that band (the pre-D38
+  // "all-strip widthRow" regression, re-expressed for rails).
+  if (railedCount === plan.columns.length && plan.hasExpandedContent)
+    return regionWidthPx + plan.chromePx;
   const totalW = plan.columns.reduce((s, c) => s + c.weight, 0) || 1;
   const expandedW = plan.columns.reduce(
     (s, c) => s + (c.railed === true ? 0 : c.weight),
