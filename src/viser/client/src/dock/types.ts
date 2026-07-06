@@ -67,6 +67,46 @@ export const MINIMIZED_STRIP_PX = 36;
  * (P13/D14) -- while clearing the P11 20px clickable floor. The 36px
  * MINIMIZED_STRIP_PX above remains the vertical RAIL's width. */
 export const MINIMIZED_BAR_PX = 26;
+// A FACE-bearing bar (a lone pane with a minimizedFace -- the main panel's
+// connection-status bar) renders at the unmergeable titleNode header's own
+// height: minimizing removes the content but never moves or shrinks the
+// label row (D19, restored). The RENDERED height is FACE_BAR_EM in the
+// bar's own font context so it tracks the header exactly; FACE_BAR_PX is
+// the px estimate (2.75em at Mantine's ~14.8px body font) used only where
+// layout math needs a number (band floors).
+export const FACE_BAR_EM = "2.75em";
+export const FACE_BAR_PX = 41;
+
+/** Does this group's bar carry a pane-provided face (lone pane only)? */
+export function hasMinimizedFace(
+  group: TabGroup | undefined,
+  panes: Record<string, PaneSpec>,
+): boolean {
+  return (
+    group !== undefined &&
+    group.paneIds.length === 1 &&
+    panes[group.paneIds[0]]?.minimizedFace !== undefined
+  );
+}
+
+/** Rendered height of a group's minimized bar for STYLE use (height /
+ * flex-basis): the header's em height for a face bar, the compact px bar
+ * otherwise. Same font context as the header, so constancy is exact. */
+export function minimizedBarBasis(
+  group: TabGroup | undefined,
+  panes: Record<string, PaneSpec>,
+): number | string {
+  return hasMinimizedFace(group, panes) ? FACE_BAR_EM : MINIMIZED_BAR_PX;
+}
+
+/** Bar height as a NUMBER for layout math (band floors); px estimate for
+ * face bars. Keep in sync with minimizedBarBasis. */
+export function minimizedBarPx(
+  group: TabGroup | undefined,
+  panes: Record<string, PaneSpec>,
+): number {
+  return hasMinimizedFace(group, panes) ? FACE_BAR_PX : MINIMIZED_BAR_PX;
+}
 /** Width/height (em) of the square handle icon buttons (+/- toggles, the
  * region chevron's clearance). One constant so offsets that must clear a
  * button derive from the size they are dodging. */

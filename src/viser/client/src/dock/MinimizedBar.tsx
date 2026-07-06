@@ -11,11 +11,12 @@
 import { Box } from "@mantine/core";
 import React from "react";
 import { useDock } from "./DockContext";
-import { focusRing, gripBarBg, wayfindingText } from "./DockStyles.css";
+import { focusRing, wayfindingText } from "./DockStyles.css";
 import { focusPaneTab, keyActivate } from "./gestures";
 import { startCollapsedGroupPress } from "./collapsedPress";
 import { ChromeToggle } from "./handles";
-import { MINIMIZED_BAR_PX, TabGroup } from "./types";
+import { isLoneInVisualColumn } from "./layoutOps";
+import { minimizedBarBasis, TabGroup } from "./types";
 
 /** ONE minimized group as its header kept in place (P13/D14/D20).
  *
@@ -24,8 +25,11 @@ import { MINIMIZED_BAR_PX, TabGroup } from "./types";
  * single label rect working. Gestures via startCollapsedGroupPress: a
  * title press tears out the active pane (single-pane groups float
  * wholesale, ids stable); any other press drags the whole group;
- * motionless clicks expand. The right-end ChromeToggle expands THIS group
- * (per-cell expand, D16 -- distinct per bar, so P9-legal).
+ * motionless clicks expand. Expand SCOPE is D31's: a bar that is its whole
+ * visual column expands just itself; a STACKED bar's every expand
+ * affordance (`+`, background click, title click) reveals the WHOLE stack
+ * (collapse is stack-scoped in both directions -- no per-cell expand out
+ * of a stack the user minimized as one).
  *
  * A SINGLE-pane group whose pane provides `minimizedFace` renders the face
  * instead of the default icon+title (D19); the face still sits inside the
@@ -43,7 +47,15 @@ export function MinimizedBar({ group }: { group: TabGroup }) {
     .filter((id) => id !== activeId)
     .map((id) => dock.panes[id]?.title ?? id)
     .join(", ");
-  const expandGroup = () => dock.toggleCollapsed(group.id);
+  // D31 scope: a lone bar (its whole visual column) expands per-group; a
+  // stacked bar expands its whole stack.
+  const lone = isLoneInVisualColumn(dock.layout, group.id);
+  const expandBar = () =>
+    lone ? dock.toggleCollapsed(group.id) : dock.expandStackOf(group.id);
+  const expandToActive = () =>
+    lone
+      ? dock.expandToTab(group.id, activeId)
+      : dock.expandStackOf(group.id, activeId);
   // Pane-provided minimized face (D19): single-pane groups only (a multi-tab
   // bar must name its active tab and badge the rest).
   const face =
@@ -59,18 +71,31 @@ export function MinimizedBar({ group }: { group: TabGroup }) {
       // tablist so the pattern stays valid for screen readers.
       role="tablist"
       aria-orientation="horizontal"
-      className={gripBarBg}
       onPointerDown={(event) => {
         // The bar owns its press; without this it would ALSO arm an
         // enclosing surface's drag (P12: one press, one level).
         event.stopPropagation();
-        startCollapsedGroupPress(dock, event, group.id, expandGroup);
+        startCollapsedGroupPress(
+          dock,
+          event,
+          group.id,
+          expandBar,
+          // A stacked bar's title click expands the WHOLE stack to that
+          // tab (D31); a lone bar keeps the default per-group expandToTab.
+          lone ? undefined : (pane) => dock.expandStackOf(group.id, pane),
+        );
       }}
       style={{
         display: "flex",
         flexDirection: "row",
         alignItems: "stretch",
-        height: MINIMIZED_BAR_PX,
+        // Face bars keep the expanded header's own height (D19): the label
+        // row neither moves nor shrinks on minimize. Others use the compact
+        // bar height.
+        height: minimizedBarBasis(group, dock.panes),
+        // The panel's own surface, not chrome gray: a bar IS the panel,
+        // sleeping (user-directed; body color tracks light/dark scheme).
+        backgroundColor: "var(--mantine-color-body)",
         flexShrink: 0,
         width: "100%",
         minWidth: 0,
@@ -96,7 +121,7 @@ export function MinimizedBar({ group }: { group: TabGroup }) {
         }
         title={face !== undefined ? undefined : title}
         onKeyDown={keyActivate(() => {
-          dock.expandToTab(group.id, activeId);
+          expandToActive();
           focusPaneTab(activeId);
         })}
         style={{
@@ -156,9 +181,10 @@ export function MinimizedBar({ group }: { group: TabGroup }) {
       <Box style={{ flexGrow: 1 }} />
       <ChromeToggle
         expanded={false}
-        label="Expand panel"
+        // Honest scope label (D31): a stacked bar's `+` expands the stack.
+        label={lone ? "Expand panel" : "Expand panels"}
         onActivate={() => {
-          expandGroup();
+          expandBar();
           focusPaneTab(activeId);
         }}
       />

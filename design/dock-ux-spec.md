@@ -345,10 +345,12 @@ reappears automatically.
   expanded headers, where the handle is a slice of a larger surface.
 - Face (D19): a single-pane group whose pane provides a minimized face
   renders it in place of the default icon+title, inside the same hit
-  surface (gestures and keyboard behavior unchanged) — ON the standard
-  26px gray MinimizedBar surface, like every other bar. The MAIN
-  PANEL's face is its connection-status row (action icons hidden) —
-  old-viser continuity via a general mechanism, not a special case.
+  surface (gestures and keyboard behavior unchanged) — at the
+  unmergeable header's own 2.75em height, so minimizing never moves or
+  shrinks the label row. All bars sit on the panel's body surface
+  (light or dark scheme), not chrome gray. The MAIN PANEL's face is
+  its connection-status row (action icons hidden) — old-viser
+  continuity via a general mechanism, not a special case.
 - Gestures: a title/face click expands to that tab; a title/face drag
   tears the active pane out, still minimized (a single-pane group
   floats wholesale, ids stable). A `+` click expands the group; the `+`
@@ -1082,16 +1084,20 @@ folded into final text (the play-by-play lives in git history).
   is a redundant signifier. Pills remain on expanded headers, where the
   handle is a slice of a larger surface. The `strong` pill variant died
   with the window pill.
-- **D19 (pane-provided minimized face, 2026-07-04; final after the
-  real-example pass):** a pane may provide a custom face for its bar
-  (default: icon+title+N), rendered ON the standard 26px gray
-  MinimizedBar surface like every other bar — P13 SURFACE constancy won
-  over per-panel height/color constancy (one odd-height, body-colored
-  bar among gray siblings read as a stray widget, not a minimized
-  panel); the face keeps its own content colors inside that surface.
+- **D19 (pane-provided minimized face; height and surface restored,
+  2026-07-06):** a pane may provide a custom face for its bar (default:
+  icon+title+N). A face-bearing lone pane's bar renders at the
+  unmergeable header's OWN height (FACE_BAR_PX = the 2.75em header) on
+  the panel's body surface: minimizing removes the content but never
+  moves, shrinks, or recolors the label row. All other bars are the
+  compact MINIMIZED_BAR_PX form, also body-surfaced (user-directed,
+  2026-07-06: "a bar IS the panel, sleeping" — the earlier gray-surface
+  uniformity traded this away and both trades were reversed on use).
   The MAIN PANEL's face is its connection-status row (action icons
   hidden) — old-viser continuity via a general mechanism, not a special
-  case.
+  case. Layout sites that reserve bar space (flex bases, band floors)
+  agree with the bar's rendered height through one helper
+  (`minimizedBarPx`).
 - **D20 (band bar deleted; bars render in place, 2026-07-04):** the
   segmented HorizontalMinimizedBand form is deleted. A minimized cell
   renders as its bar IN PLACE at its column's width; a fully-minimized

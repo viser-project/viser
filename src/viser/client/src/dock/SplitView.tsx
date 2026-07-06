@@ -29,6 +29,9 @@ import { MinimizedBar } from "./MinimizedBar";
 import { TabGroupFrame } from "./TabGroupFrame";
 import { ColumnRail, RegionMinimizedRail } from "./VerticalMinimizedColumn";
 import {
+  minimizedBarBasis,
+  minimizedBarPx,
+  PaneSpec,
   DockColumn,
   DockEdge,
   DockLeaf,
@@ -37,7 +40,7 @@ import {
   GroupId,
   isRegionCollapsedOn,
   MIN_REGION_GRAB_PX,
-  MINIMIZED_BAR_PX,
+
   MINIMIZED_STRIP_PX,
   SPLIT_DIVIDER_PX,
   TabGroup,
@@ -72,6 +75,7 @@ const ALL_RAILED_BAND_MIN_PX = 60;
 function bandMinPx(
   row: DockRow,
   groups: Record<GroupId, TabGroup>,
+  panes: Record<string, PaneSpec>,
   withColumnHandle: boolean,
 ): number {
   // RAILED columns don't raise the floor: their spine strips scroll/fit at
@@ -84,7 +88,7 @@ function bandMinPx(
         (px, lf, i) =>
           px +
           (groups[lf.group]?.collapsed === true
-            ? MINIMIZED_BAR_PX
+            ? minimizedBarPx(groups[lf.group], panes)
             : MIN_CELL_HEIGHT_PX) +
           (i > 0 ? SPLIT_DIVIDER_PX : 0),
         withColumnHandle ? COLUMN_HANDLE_PX : 0,
@@ -164,7 +168,7 @@ export const SplitView = React.memo(function SplitView({
                 // Numeric when minimized (the tallest column's bar stack),
                 // not "auto": auto is not animatable, and the value is the
                 // same -- bars are fixed 26px (+7px dividers).
-                flexBasis: minimized ? bandMinPx(row, groups, columnHandles) : 0,
+                flexBasis: minimized ? bandMinPx(row, groups, dock.panes, columnHandles) : 0,
                 minWidth: 0,
                 minHeight: 0,
                 display: "flex",
@@ -198,7 +202,7 @@ export const SplitView = React.memo(function SplitView({
                         // column's cells (expanded 50px / bars 26px +
                         // dividers), or the leaves' own render floors
                         // overflow into the band below.
-                        minCell: rows.map((band) => bandMinPx(band, groups, columnHandles)),
+                        minCell: rows.map((band) => bandMinPx(band, groups, dock.panes, columnHandles)),
                       })
                     }
                     onCancel={() =>
@@ -416,7 +420,9 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
                   ? 0
                   : leaf.weight / expandedLeafWeightTotal,
                 flexShrink: collapsed ? 0 : 1,
-                flexBasis: collapsed ? MINIMIZED_BAR_PX : 0,
+                flexBasis: collapsed
+                  ? minimizedBarBasis(groups[leaf.group], dock.panes)
+                  : 0,
                 minWidth: 0,
                 // Expanded cells never render below their own chrome
                 // (spec 6): repeated same-target splits halve weights

@@ -272,16 +272,27 @@ def test_minimize_while_docked_keeps_handle(viser_page: Page) -> None:
     assert _dock_side(viser_page) == "right"
     wide = _panel_box(viser_page)["width"]
 
-    # Click the handle (no motion) to minimize: the panel becomes its 26px
-    # in-place BAR (D20 -- full width kept), and the handle testid follows it.
+    # Click the handle (no motion) to minimize: the panel becomes its
+    # in-place BAR (D20 -- full width kept), and the handle testid follows
+    # it. A FACE bar (the control panel's connection-status row) keeps the
+    # header's own height (D19 restored): the label row must not move or
+    # shrink, so pin equality with the pre-minimize handle height.
+    # Measure the HEADER box, not the testid (the connection-status row is
+    # the header's content box while expanded but stretches to fill the bar
+    # while minimized -- the constant thing is the header's outer height).
+    expanded_h = viser_page.eval_on_selector(
+        "[data-dock-unmergeable-header]",
+        "e => e.getBoundingClientRect().height",
+    )
     handle = viser_page.get_by_test_id("floating-panel-handle")
     handle.click()
     viser_page.wait_for_timeout(400)
     handle = viser_page.get_by_test_id("floating-panel-handle")
     expect(handle).to_be_visible()
     strip = handle.bounding_box()
-    assert strip is not None and strip["height"] < 40, (
-        f"minimized docked panel should be a short bar, got {strip}"
+    assert strip is not None and abs(strip["height"] - expanded_h) <= 2, (
+        f"minimized face bar must keep the header height "
+        f"(expanded {expanded_h}), got {strip}"
     )
     assert strip["width"] > wide - 30, (
         f"the bar keeps the panel's width (P8/D20), got {strip}"

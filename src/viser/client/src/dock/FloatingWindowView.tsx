@@ -20,12 +20,13 @@ import { TabGroupFrame } from "./TabGroupFrame";
 import { collapseAnim } from "./DockStyles.css";
 import { MinimizedBar } from "./MinimizedBar";
 import {
+  minimizedBarBasis,
   clamp,
   FloatingWindow,
   GroupId,
   MIN_REGION_GRAB_PX,
   MIN_WINDOW_HEIGHT_PX,
-  MINIMIZED_BAR_PX,
+
   pinnedPxOf,
   TabGroup,
 } from "./types";
@@ -525,7 +526,9 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                     style={{
                       flexGrow: collapsedCell ? 0 : weight / stackWeightTotal,
                       flexShrink: collapsedCell ? 0 : 1,
-                      flexBasis: collapsedCell ? MINIMIZED_BAR_PX : 0,
+                      flexBasis: collapsedCell
+                        ? minimizedBarBasis(group, dock.panes)
+                        : 0,
                       // Never shrink below a cell's header: minHeight:0 let an
                       // over-short window collapse a cell under its header,
                       // clipping it and overlapping the next cell. Floor at the
