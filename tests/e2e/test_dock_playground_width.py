@@ -15,8 +15,9 @@ default; pure-internal changes leave widths untouched:
   default (~300, clamped per-panel).
 * Dock->undock round-trips keep widths stable.
 * No spurious width jump at drag start/drop beyond the ~divider reclaim.
-* M1: with one column of a multi-column region minimized (partially overlaid),
-  dragging the reserved divider resizes (no longer a silent no-op).
+* M1: with one column of a multi-column region RAILED (36px strip, D28/D38),
+  dragging the divider between the expanded columns resizes (no longer a
+  silent no-op).
 
 Divider cascade ("push" resize in SplitView) -- dragging a divider grows the
 pane on the drag side and shrinks the panes on the OTHER side in order: when
@@ -58,9 +59,9 @@ from playwright.sync_api import Page  # noqa: E402
 
 from .dock_helpers import (
     MIN_CELL_HEIGHT_PX,
+    click_column_chevron,
     columns,
     dock_layout,
-    group,
     open_playground,
     rows,
     set_layout,
@@ -144,9 +145,11 @@ def _right_group_ids(page: Page) -> list[str]:
     return [c["g"] for c in _right_columns(page)]
 
 
-def _minimize(page: Page, gid: str) -> None:
-    page.locator(f'[data-dock-group="{gid}"] [data-dock-minimize]').first.click()
-    # Wait out the minimize width animation so widths are measured once settled.
+def _rail(page: Page, gid: str) -> None:
+    """Rail the column holding `gid` via its chevron (the docked collapse
+    gesture since D32; docked cells carry no minimize control)."""
+    click_column_chevron(page, gid)
+    # Wait out the rail width animation so widths are measured once settled.
     page.wait_for_timeout(350)
 
 
@@ -299,11 +302,11 @@ def test_no_width_jump_at_drag_start(page: Page) -> None:
 # ===========================================================================
 # (M1) Reserved divider resizes even when a column is minimized/overlaid.
 # ===========================================================================
-def test_reserved_divider_resizes_with_minimized_column(page: Page) -> None:
-    """Build a 3-column right region, minimize the OUTERMOST column (it overlays),
-    then drag the divider between the two reserved columns. Previously this was a
-    silent no-op (the reserved subtree reused the full split's id); now it must
-    actually resize."""
+def test_reserved_divider_resizes_with_railed_column(page: Page) -> None:
+    """Build a 3-column right region, RAIL the OUTERMOST column (36px fixed
+    strip), then drag the divider between the two expanded columns.
+    Previously this was a silent no-op (the reserved subtree reused the full
+    split's id); now it must actually resize."""
     # Arrange: a 3-column right region (the divider drag is the subject).
     set_layout(
         page, dock_layout(docked_right=columns("controls", "inspector", "console"))
@@ -311,10 +314,10 @@ def test_reserved_divider_resizes_with_minimized_column(page: Page) -> None:
     cols = _right_group_ids(page)
     assert len(cols) == 3, f"injected 3-column right region wrong: {cols}"
 
-    # Minimize the outermost (last, farthest from canvas) so it overlays and the
-    # reserved subtree keeps two columns + a divider between them.
+    # Rail the outermost (last, farthest from canvas): a fixed 36px strip;
+    # the two expanded columns keep a live divider between them.
     outermost = cols[-1]
-    _minimize(page, outermost)
+    _rail(page, outermost)
 
     col0, col1 = cols[0], cols[1]
     w0_before = _width(page, col0)
@@ -620,19 +623,19 @@ def test_narrow_region_scrolls_body_with_bottom_scrollbar(page: Page) -> None:
 
 
 # ===========================================================================
-# All-strip widthRow with an expanded sibling band: the region must keep a
-# WORKING resizer that adjusts regionWidth directly (there are no
-# width-carrying columns to redistribute). Regression for the "expanded region
-# with no resize handle" hole.
+# All-RAILED widthRow with an expanded sibling band: the region must keep a
+# WORKING resizer. Regression for the "expanded region with no resize handle"
+# hole (rails are fixed-width chrome; the expanded band still needs a live
+# resizer).
 # ===========================================================================
-def test_region_resizer_works_when_widthrow_all_minimized(page: Page) -> None:
+def test_region_resizer_works_when_widthrow_all_railed(page: Page) -> None:
     set_layout(
         page,
         dock_layout(
             docked_right=rows(
                 columns(
-                    group("controls", collapsed=True),
-                    group("inspector", collapsed=True),
+                    stack("controls", railed=True),
+                    stack("inspector", railed=True),
                 ),
                 "console",
             )
@@ -642,7 +645,7 @@ def test_region_resizer_works_when_widthrow_all_minimized(page: Page) -> None:
     handle = page.query_selector('[data-dock-region-resize="right"]')
     assert handle is not None, (
         "region with an expanded band must render a resizer even when the "
-        "width-determining band is all strips"
+        "width-determining band is all rails"
     )
     before = page.evaluate("() => window.__dockLayout.regionWidth.right")
     hb = handle.bounding_box()

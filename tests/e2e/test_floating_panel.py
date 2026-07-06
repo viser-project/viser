@@ -259,24 +259,19 @@ def test_deprecated_control_layout_docks_right(
     assert _canvas_box(viser_page)["x"] < 5
 
 
-def test_minimize_while_docked_keeps_handle(viser_page: Page) -> None:
-    """Minimizing a DOCKED control panel must keep the floating-panel-handle
-    testid reachable (on the minimized strip) and clicking it must expand the
-    panel again -- the original FloatingPanel kept its handle through
-    minimize."""
+def test_minimize_floating_keeps_face_bar_geometry(viser_page: Page) -> None:
+    """D33 constancy pin, FLOATING: a header click (no motion) minimizes the
+    single-group floating control panel to its FACE bar -- the header kept
+    in place. The bar keeps the header's exact outer height (the compact
+    toggle sits at the same header inset) and the window's width; clicking
+    again expands it back. (Since D32 the header-click minimize exists ONLY
+    on a single-group floating window; the docked flow is the chevron --
+    see the companion test.)"""
     viser_page.set_viewport_size(_VIEWPORT)
     viser_page.wait_for_timeout(300)
-
-    # Dock to the right edge.
-    _drag_handle_to(viser_page, (_VIEWPORT["width"] - 8, 300))
-    assert _dock_side(viser_page) == "right"
+    assert _dock_side(viser_page) == "none"
     wide = _panel_box(viser_page)["width"]
 
-    # Click the handle (no motion) to minimize: the panel becomes its
-    # in-place BAR (D20 -- full width kept), and the handle testid follows
-    # it. A FACE bar (the control panel's connection-status row) keeps the
-    # header's own height (D19 restored): the label row must not move or
-    # shrink, so pin equality with the pre-minimize handle height.
     # Measure the HEADER box, not the testid (the connection-status row is
     # the header's content box while expanded but stretches to fill the bar
     # while minimized -- the constant thing is the header's outer height).
@@ -289,16 +284,62 @@ def test_minimize_while_docked_keeps_handle(viser_page: Page) -> None:
     viser_page.wait_for_timeout(400)
     handle = viser_page.get_by_test_id("floating-panel-handle")
     expect(handle).to_be_visible()
-    strip = handle.bounding_box()
-    assert strip is not None and abs(strip["height"] - expanded_h) <= 2, (
+    bar = handle.bounding_box()
+    assert bar is not None and abs(bar["height"] - expanded_h) <= 2, (
         f"minimized face bar must keep the header height "
-        f"(expanded {expanded_h}), got {strip}"
+        f"(expanded {expanded_h}), got {bar}"
     )
-    assert strip["width"] > wide - 30, (
-        f"the bar keeps the panel's width (P8/D20), got {strip}"
+    assert bar["width"] > wide - 30, (
+        f"the bar keeps the window's width (P8/D17/D20), got {bar}"
     )
 
-    # Clicking the bar expands it back to a wide docked panel.
+    # Clicking the bar expands it back to the full panel.
+    handle.click()
+    viser_page.wait_for_timeout(400)
+    restored = _panel_box(viser_page)
+    assert restored["width"] > wide - 30
+    assert restored["height"] > bar["height"] + 40, (
+        f"expand should restore the panel body ({bar['height']} -> "
+        f"{restored['height']})"
+    )
+
+
+def test_docked_collapse_via_chevron_keeps_handle(viser_page: Page) -> None:
+    """Docked, the control panel has NO header-click minimize (D32): its
+    collapse affordance is the region chevron, which renders the 36px rail.
+    The floating-panel-handle testid follows to the rail cell, and clicking
+    it expands the panel again (a lone rail cell's background backs the
+    expand, P9)."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(300)
+
+    # Dock to the right edge.
+    _drag_handle_to(viser_page, (_VIEWPORT["width"] - 8, 300))
+    assert _dock_side(viser_page) == "right"
+    wide = _panel_box(viser_page)["width"]
+
+    # A header click must NOT minimize while docked (drag-only surface).
+    viser_page.get_by_test_id("floating-panel-handle").click()
+    viser_page.wait_for_timeout(300)
+    assert viser_page.locator("[data-dock-group][data-dock-collapsed]").count() == 0, (
+        "a docked header click must not minimize (D32)"
+    )
+
+    # The chevron collapses the region to its rail; the handle testid moves
+    # to the rail cell.
+    chevron = viser_page.locator("[data-dock-region-collapse='right']")
+    expect(chevron).to_have_count(1)
+    chevron.click()
+    viser_page.wait_for_timeout(400)
+    expect(viser_page.locator("[data-dock-region-rail]")).to_have_count(1)
+    handle = viser_page.get_by_test_id("floating-panel-handle")
+    expect(handle).to_be_visible()
+    strip = handle.bounding_box()
+    assert strip is not None and strip["width"] < 60, (
+        f"the docked collapsed form is the ~36px rail cell, got {strip}"
+    )
+
+    # Clicking the rail cell expands the panel back to a wide docked panel.
     handle.click()
     viser_page.wait_for_timeout(400)
     restored = _panel_box(viser_page)["width"]

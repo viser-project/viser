@@ -235,9 +235,69 @@ def grip_center(page: Page, panel_id: str) -> tuple[float, float]:
 
 
 def collapsed(page: Page, gid: str) -> bool:
+    """Whether the group's CONTAINER reads as collapsed (D38): its floating
+    window's ``collapsed`` flag, or -- when docked -- its edge's
+    ``regionCollapsed`` / its containing column's ``railed`` flag. Groups
+    carry no collapse state of their own."""
     return page.evaluate(
-        "(gid) => window.__dockLayout.groups[gid].collapsed === true", gid
+        """(gid) => {
+            const l = window.__dockLayout;
+            const win = l.floating.find((w) => w.stack.includes(gid));
+            if (win !== undefined) return win.collapsed === true;
+            for (const edge of ["left", "right"]) {
+                const region = l.docked[edge];
+                if (region === null) continue;
+                for (const row of region.rows)
+                    for (const column of row.columns)
+                        for (const lf of column.leaves)
+                            if (lf.group === gid)
+                                return (
+                                    l.regionCollapsed[edge] === true ||
+                                    column.railed === true
+                                );
+            }
+            return false;
+        }""",
+        gid,
     )
+
+
+def region_collapsed(page: Page, edge: str) -> bool:
+    """The docked region's D38 collapse store for `edge` (the packed rail)."""
+    return page.evaluate("(e) => window.__dockLayout.regionCollapsed[e] === true", edge)
+
+
+def column_railed_for_group(page: Page, gid: str) -> bool | None:
+    """The `railed` flag of the docked COLUMN holding `gid` (None if the group
+    is not docked). One of the three D38 collapse stores."""
+    return page.evaluate(
+        """(gid) => {
+            for (const edge of ["left", "right"]) {
+                const region = window.__dockLayout.docked[edge];
+                if (region === null) continue;
+                for (const row of region.rows)
+                    for (const col of row.columns)
+                        for (const lf of col.leaves)
+                            if (lf.group === gid) return col.railed === true;
+            }
+            return null;
+        }""",
+        gid,
+    )
+
+
+def click_column_chevron(page: Page, gid: str) -> None:
+    """Synthetic-click the column-collapse chevron of the column holding `gid`
+    (drag-through controls still activate on element.click(), D32/T6)."""
+    page.evaluate(
+        """(gid) => {
+            const g = document.querySelector(`[data-dock-group="${gid}"]`);
+            const col = g.closest('[data-dock-column]');
+            col.querySelector('[data-dock-column-collapse]').click();
+        }""",
+        gid,
+    )
+    page.wait_for_timeout(200)
 
 
 def hint_visible(page: Page) -> bool:
@@ -261,7 +321,9 @@ def hint_visible(page: Page) -> bool:
 # Conventions:
 # * A "panel spec" names one tab group: a panel id string ("controls"), a list
 #   of panel ids for a merged tab strip (["controls", "inspector"]), or a full
-#   group dict from group() when activeId/collapsed matter.
+#   group dict from group() when activeId matters. Collapse is CONTAINER
+#   state (D38): seed it via window(collapsed=True) / stack(railed=True),
+#   never on a group.
 # * Injected ids are derived from the first panel id with a "t-" prefix
 #   (group "t-controls", leaf "t-n-controls", window "t-w-controls") so tests
 #   can reference them directly and they never collide with the freshId-
@@ -277,14 +339,16 @@ def hint_visible(page: Page) -> bool:
 _split_counter = itertools.count()
 
 
-def group(
-    panels: str | Sequence[str], active: str | None = None, collapsed: bool = False
-) -> dict:
-    """TabGroup literal for a panel spec; id is 't-' + first panel id."""
+def group(panels: str | Sequence[str], active: str | None = None) -> dict:
+    """TabGroup literal for a panel spec; id is 't-' + first panel id.
+
+    D38: groups carry NO collapse state (a group-level flag would trip the
+    layout invariants). Seed collapse on the CONTAINER instead:
+    ``window(..., collapsed=True)`` for floating, ``stack(..., railed=True)``
+    for a docked column, or click the region chevron for the region rail.
+    """
     ids = [panels] if isinstance(panels, str) else list(panels)
     g: dict = {"id": f"t-{ids[0]}", "paneIds": ids, "activeId": active or ids[0]}
-    if collapsed:
-        g["collapsed"] = True
     return g
 
 
@@ -300,10 +364,11 @@ def _leaf(g: dict, weight: float = 1) -> dict:
     }
 
 
-def _column(*cells, weight: float = 1) -> dict:
+def _column(*cells, weight: float = 1, railed: bool = False) -> dict:
     """A DockColumn spec: a vertical stack of leaves (one tab group each).
     Returns {"column": DockColumn, "groups": [...]}. A column always has >=1
-    leaf (the flat model forbids empty / nested-split columns)."""
+    leaf (the flat model forbids empty / nested-split columns). ``railed``
+    seeds the column's D38 collapse store (the 36px spine strip)."""
     leaves: list[dict] = []
     groups: list[dict] = []
     for cell in cells:
@@ -315,14 +380,17 @@ def _column(*cells, weight: float = 1) -> dict:
         "leaves": leaves,
         "weight": weight,
     }
+    if railed:
+        column["railed"] = True
     return {"column": column, "groups": groups}
 
 
-def stack(*cells) -> dict:
+def stack(*cells, railed: bool = False) -> dict:
     """Docked-region spec: ONE column of vertically stacked groups (top to
     bottom). Pass to dock_layout(docked_*=...) -- it wraps as a 1-column region.
-    A single cell is a 1-leaf column."""
-    return _column(*cells)
+    A single cell is a 1-leaf column. ``railed=True`` seeds the column
+    collapsed to its rail (the D38 docked container store)."""
+    return _column(*cells, railed=railed)
 
 
 def _row(*cells, weight: float = 1) -> dict:
@@ -357,8 +425,8 @@ def rows(*bands) -> dict:
     groups: list[dict] = []
     for band in bands:
         # columns()/stack()/already-a-row specs coerce to a row band WITHOUT
-        # eagerly calling _row (which only accepts panel/stack cells, not a
-        # region/row dict). A bare panel or stack() falls through to _row.
+        # eagerly calling _row (which only accepts panel/stack cells, not
+        # a region/row dict). A bare panel or stack() falls through to _row.
         if isinstance(band, dict) and "row" in band:
             out_rows.append(band["row"])
             groups.extend(band["groups"])
@@ -405,9 +473,12 @@ def window(
     y: float,
     width: float = 280,
     height: float | None = None,
+    collapsed: bool = False,
 ) -> dict:
     """Floating-window spec: one tab group per panel spec; 2+ specs make a
-    snapped stack (top to bottom). Pass to dock_layout(floating=[...])."""
+    snapped stack (top to bottom). Pass to dock_layout(floating=[...]).
+    ``collapsed=True`` seeds the window's ONE collapse flag (D38): the whole
+    window renders as its stack of bars."""
     groups = [_as_group(s) for s in panel_specs]
     # `height` is a WindowHeight tagged union: auto-track content, or pinned px.
     win: dict = {
@@ -420,6 +491,8 @@ def window(
         else {"mode": "pinned", "px": height},
         "stack": [g["id"] for g in groups],
     }
+    if collapsed:
+        win["collapsed"] = True
     return {"window": win, "groups": groups}
 
 

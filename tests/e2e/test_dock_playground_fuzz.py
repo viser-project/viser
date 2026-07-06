@@ -156,16 +156,16 @@ def test_random_drags_conserve_panels(
         page.close()
 
 
-# Multi-band seed: start from a region with stacked bands (one multi-column, one
-# minimized) so the random storm exercises the 4-level band paths -- band
-# inserts at cross-band seams, in-place minimized bars, and dropping
+# Multi-band seed: start from a region with stacked bands (one multi-column
+# with a RAILED column, one plain) so the random storm exercises the 4-level
+# band paths -- band inserts at cross-band seams, rail cells, and dropping
 # onto/around bands -- which the playground default (no docked bands) never
 # reaches.
 @pytest.mark.parametrize("seed", [1, 2, 5])
 def test_random_drags_multiband_seed_conserve_and_no_errors(
     dock_context, vite_server: int, seed: int
 ) -> None:
-    from .dock_helpers import columns, dock_layout, group, rows, set_layout, window
+    from .dock_helpers import columns, dock_layout, rows, set_layout, stack, window
 
     vw, vh = 1280, 900
     page = dock_context.new_page()
@@ -174,16 +174,17 @@ def test_random_drags_multiband_seed_conserve_and_no_errors(
     try:
         page.goto(f"http://localhost:{vite_server}{PLAYGROUND_PATH}")
         page.wait_for_selector("[data-dock-group]")
-        # Right edge: [controls | inspector] band over a minimized [console]
-        # band; a floating `scene` to drag around. (scene is a non-area,
-        # mergeable pane -- the area panes layers/props/history can't be reused
-        # here without putting a pane in two groups.)
+        # Right edge: a [controls(railed) | inspector] band over a plain
+        # [console] band; a floating `scene` to drag around. (scene is a
+        # non-area, mergeable pane -- the area panes layers/props/history
+        # can't be reused here without putting a pane in two groups.) The
+        # railed column keeps a rail surface in the storm (D28/D38).
         set_layout(
             page,
             dock_layout(
                 docked_right=rows(
-                    columns("controls", "inspector"),
-                    group("console", collapsed=True),
+                    columns(stack("controls", railed=True), "inspector"),
+                    "console",
                 ),
                 floating=[window("scene", x=200, y=200)],
             ),

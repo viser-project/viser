@@ -261,12 +261,13 @@ def test_multi_tab_panel_shows_all_tabs(
     expect(_tab(viser_page, "Two")).to_be_visible()
 
 
-def test_lone_docked_panel_minimizes_via_toggle(
+def test_lone_docked_panel_collapses_via_chevron(
     viser_page: Page, viser_server: viser.ViserServer
 ) -> None:
     """Minimize is a browser-side gesture only (the server collapse axis is
-    gone, D31): a lone docked panel carries the cell-level `-` (D30), and
-    clicking it collapses the panel to its in-place bar, label kept."""
+    gone, D31). A lone DOCKED panel carries NO cell-level `-` (D32); the
+    region chevron is its only collapse affordance and renders the 36px
+    rail, label kept as a spine row."""
     viser_page.set_viewport_size(_VIEWPORT)
     viser_page.wait_for_timeout(300)
 
@@ -278,13 +279,20 @@ def test_lone_docked_panel_minimizes_via_toggle(
         has=_tab(viser_page, "Mini")
     )
     expect(leaf).to_have_count(1, timeout=5_000)
-    leaf.locator("[data-dock-minimize]").first.click()
-    # Collapsed: exactly one group carries the collapsed marker, and its label
-    # shows on the minimized bar (a collapsed group hides its tab strip, so we
-    # check the label text, not a [data-dock-tab]).
-    expect(viser_page.locator("[data-dock-group][data-dock-collapsed]")).to_have_count(
+    # No cell-level minimize on a docked cell (D32) -- and no bar surface.
+    expect(leaf.locator("[data-dock-minimize]")).to_have_count(0)
+    expect(leaf.locator("[data-dock-bar]")).to_have_count(0)
+    # The region chevron collapses to the rail; the label shows on the spine.
+    viser_page.locator("[data-dock-region-collapse='right']").click()
+    expect(viser_page.locator("[data-dock-region-rail]")).to_have_count(
         1, timeout=5_000
     )
+    expect(
+        viser_page.locator(
+            "[data-dock-leaf][data-dock-edge='right'] [data-dock-group]"
+            "[data-dock-collapsed]"
+        )
+    ).to_have_count(1)
     expect(viser_page.get_by_text("Mini")).to_be_visible()
 
 
@@ -317,6 +325,70 @@ def test_tab_added_does_not_move_panel(
     # Same horizontal position (didn't move edges / re-float to top-left default).
     assert abs(after["x"] - before["x"]) < 20, (
         f"panel moved after a tab was added: x {before['x']} -> {after['x']}"
+    )
+
+
+def test_set_height_pins_floating_window(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """A live set_height(300) after float() pins the floating WINDOW's height
+    (auto/content height -> fixed 300px). Asserted on the panel's own window --
+    located by its tab -- not the first [data-floating-window] in the DOM,
+    which is the control panel's."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(300)
+
+    panel = viser_server.gui.add_panel()
+    with panel.add_tab("Pinned"):
+        viser_server.gui.add_markdown("short content")
+    panel.float(x=120, y=120)
+    expect(_tab(viser_page, "Pinned")).to_be_visible(timeout=5_000)
+
+    win = viser_page.locator("[data-floating-window]").filter(
+        has=_tab(viser_page, "Pinned")
+    )
+
+    def win_box() -> dict:
+        box = win.first.bounding_box()
+        assert box is not None
+        return box
+
+    auto_h = win_box()["height"]
+    assert abs(auto_h - 300) > 10, (
+        f"content height {auto_h} too close to 300 for the pin to be observable"
+    )
+
+    panel.set_height(300)
+    viser_page.wait_for_timeout(500)
+    pinned_h = win_box()["height"]
+    assert abs(pinned_h - 300) <= 2, (
+        f"set_height(300) did not pin the window height ({auto_h} -> {pinned_h})"
+    )
+
+
+def test_set_width_resizes_floating_window(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """A live set_width(360) after float() resizes the panel's floating window."""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(300)
+
+    panel = viser_server.gui.add_panel()
+    with panel.add_tab("Sized"):
+        viser_server.gui.add_markdown("width target")
+    panel.float(x=120, y=120)
+    expect(_tab(viser_page, "Sized")).to_be_visible(timeout=5_000)
+
+    win = viser_page.locator("[data-floating-window]").filter(
+        has=_tab(viser_page, "Sized")
+    )
+
+    panel.set_width(360)
+    viser_page.wait_for_timeout(500)
+    box = win.first.bounding_box()
+    assert box is not None
+    assert abs(box["width"] - 360) <= 2, (
+        f"set_width(360) did not resize the window (width {box['width']})"
     )
 
 
@@ -804,13 +876,13 @@ def test_many_docked_panels_do_not_occlude_canvas(
     assert tag == "CANVAS", f"canvas occluded by a docked region (got <{tag}>)"
 
 
-def test_minimized_multitab_strip_rows_expand_to_tab(
+def test_multitab_bar_shows_all_labels_and_rail_rows_expand_to_tab(
     viser_page: Page, viser_server: viser.ViserServer
 ) -> None:
-    """A minimized docked panel with multiple tabs shows ONE label (the active
-    tab, with a +N badge) on its in-place bar (D14); the per-tab rows live in
-    the RAIL (explicit region collapse, D21) -- clicking a rail row expands the
-    region AND the panel to THAT tab."""
+    """A collapsed FLOATING multi-tab panel's bar shows EVERY fitting label
+    (D36 -- +N only for overflow); docked, the panel collapses only via the
+    region chevron, whose RAIL shows one spine row per tab -- clicking a rail
+    row expands the region AND lands on THAT tab."""
     viser_page.set_viewport_size(_VIEWPORT)
     viser_page.wait_for_timeout(300)
 
@@ -819,21 +891,30 @@ def test_minimized_multitab_strip_rows_expand_to_tab(
         viser_server.gui.add_markdown("alpha body")
     with panel.add_tab("Beta"):
         viser_server.gui.add_markdown("beta body")
+    # Float clear of the top-left notifications layer (the software-WebGL
+    # notice), which would otherwise intercept the bar clicks below.
+    panel.float(x=340, y=400, width=300)
+    expect(_tab(viser_page, "Alpha")).to_be_visible(timeout=5_000)
+
+    # Minimize the floating window via its `-` (single-group window, D32).
+    win = viser_page.locator("[data-floating-window]").filter(
+        has=_tab(viser_page, "Alpha")
+    )
+    win.locator("[data-dock-minimize]").first.click()
+    bar = viser_page.locator("[data-dock-bar]")
+    expect(bar).to_have_count(1, timeout=5_000)
+    # D36: BOTH labels render on the bar (they fit at 300px); no +N badge.
+    expect(bar.locator("[data-dock-tab]:not([aria-hidden='true'])")).to_have_count(2)
+    expect(bar.get_by_text("+1")).to_have_count(0)
+
+    # Expand (bar label click clears the window's one flag), then dock right.
+    bar.locator("[data-dock-tab]").first.click()
+    expect(viser_page.locator("[data-dock-bar]")).to_have_count(0, timeout=5_000)
     panel.dock_right()
-    # Minimize via the UI: the lone docked panel keeps its cell-level `-`
-    # (D30); the server has no collapse command (D31).
     leaf = viser_page.locator("[data-dock-leaf][data-dock-edge='right']").filter(
         has=_tab(viser_page, "Alpha")
     )
     expect(leaf).to_have_count(1, timeout=5_000)
-    leaf.locator("[data-dock-minimize]").first.click()
-
-    bar = viser_page.locator("[data-dock-group][data-dock-collapsed]")
-    expect(bar).to_have_count(1, timeout=5_000)
-    # The bar shows ONE wayfinding label -- the active tab's -- plus a +1
-    # badge for the hidden tab (D14: single-title bars).
-    expect(bar.locator("[data-dock-tab]")).to_have_count(1)
-    expect(bar.get_by_text("+1")).to_be_visible()
 
     # Collapse the region: the rail shows one spine row PER tab.
     viser_page.locator("[data-dock-region-collapse='right']").click()
@@ -845,19 +926,20 @@ def test_minimized_multitab_strip_rows_expand_to_tab(
     # Click the Beta row -> the region un-collapses, the panel expands, AND
     # Beta's body shows.
     rail_rows.filter(has_text="Beta").first.click()
-    expect(viser_page.locator("[data-dock-group][data-dock-collapsed]")).to_have_count(
+    expect(viser_page.locator("[data-dock-region-rail]")).to_have_count(
         0, timeout=5_000
     )
     expect(viser_page.get_by_text("beta body")).to_be_visible(timeout=5_000)
 
 
-def test_undock_minimized_panel_keeps_width(
+def test_undock_railed_panel_keeps_width(
     viser_page: Page, viser_server: viser.ViserServer
 ) -> None:
-    """Regression: dock a panel (default ~300px), minimize it, drag it out to
-    float, then expand. The floated window must keep the panel's width, NOT the
-    narrow minimized-strip width (~96px). Before the fix, floatRectFor measured
-    the collapsed strip's DOM width and the window stayed ~96px after expand."""
+    """Regression: dock a panel (default ~300px), collapse the region to its
+    rail (chevron, D32), drag the rail cell out to float, then expand. The
+    floated window (born collapsed, D38) must keep the panel's width, NOT
+    the narrow rail width (~36px). Before the fix, floatRectFor measured the
+    collapsed strip's DOM width and the window stayed narrow after expand."""
     viser_page.set_viewport_size(_VIEWPORT)
     viser_page.wait_for_timeout(300)
 
@@ -874,16 +956,19 @@ def test_undock_minimized_panel_keeps_width(
     docked_w = leaf.bounding_box()["width"]
     assert docked_w > 200, f"docked panel should be wide, got {docked_w}"
 
-    # Minimize, then drag the bar out into the canvas to float it. Drop it in
-    # the LOWER-LEFT canvas -- clear of the control panel (top-right corner), so
-    # the bar tears out to a SOLO floating window instead of snapping into the
-    # control panel's stack.
-    leaf.locator("[data-dock-minimize]").first.click()
+    # Collapse the region to its rail, then drag the rail CELL out into the
+    # canvas to float it. Drop it in the LOWER-LEFT canvas -- clear of the
+    # control panel (top-right corner), so it tears out to a SOLO floating
+    # window instead of snapping into the control panel's stack.
+    viser_page.locator("[data-dock-region-collapse='right']").click()
     viser_page.wait_for_timeout(400)
-    strip = viser_page.locator("[data-dock-group][data-dock-collapsed]").first
+    strip = viser_page.locator(
+        "[data-dock-leaf][data-dock-edge='right'] [data-dock-group]"
+        "[data-dock-collapsed]"
+    ).first
     sb = strip.bounding_box()
     drop_x, drop_y = 320, _VIEWPORT["height"] - 160
-    viser_page.mouse.move(sb["x"] + sb["width"] / 2, sb["y"] + sb["height"] / 2)
+    viser_page.mouse.move(sb["x"] + sb["width"] / 2, sb["y"] + 20)
     viser_page.mouse.down()
     viser_page.mouse.move(drop_x, drop_y, steps=12)
     viser_page.mouse.move(drop_x, drop_y)
@@ -895,13 +980,13 @@ def test_undock_minimized_panel_keeps_width(
     )
     expect(win).to_have_count(1, timeout=5_000)
     # Expand via the bar's label and assert the width survived (not
-    # collapsed to the bar height's worth of chrome).
+    # collapsed to the rail width's worth of chrome).
     win.locator("[data-dock-group] [data-dock-tab]").first.focus()
     viser_page.keyboard.press("Enter")
     viser_page.wait_for_timeout(400)
     expanded_w = win.bounding_box()["width"]
     assert expanded_w > 200, (
-        f"undocked+expanded panel collapsed to strip width: {expanded_w}px"
+        f"undocked+expanded panel collapsed to rail width: {expanded_w}px"
     )
 
 
@@ -943,15 +1028,14 @@ def test_emptied_docked_panel_revives(
 def test_unminimize_after_sibling_resize_keeps_panel_onscreen(
     viser_page: Page, viser_server: viser.ViserServer
 ) -> None:
-    """D31 pin: in a docked column [Top, Mid, Bottom], resize the Top/Mid
-    divider (rewrites the expanded cells' weights to a px scale), then drive
-    the whole stack into minimized bars via UI gestures -- the region chevron
-    rails the stack, and dragging the rail header out floats it as a window
-    of minimized bars (every cell stamped collapsed, spec 7; the server has
-    no collapse command). Clicking ONE bar's + then expands the WHOLE stack
-    (D31: collapse is stack-scoped in both directions): no collapsed sibling
-    may remain, and every panel must come back with real height, on
-    screen."""
+    """D38 pin: in a docked column [Top, Mid, Bottom], resize the Top/Mid
+    divider (rewrites the expanded cells' weights to a px scale), then rail
+    the stack via the region chevron and drag the rail header out: the
+    region floats as ONE COLLAPSED window of bars (identity transfer, D38;
+    the server has no collapse command). The window header's toggle -- the
+    multi-group window's ONE expand control (the bars carry no +) -- then
+    expands the whole stack: every panel must come back with real height,
+    on screen."""
     viser_page.set_viewport_size(_VIEWPORT)
     viser_page.wait_for_timeout(300)
     vh = _VIEWPORT["height"]
@@ -1008,9 +1092,13 @@ def test_unminimize_after_sibling_resize_keeps_panel_onscreen(
     expect(win.locator("[data-dock-group][data-dock-collapsed]")).to_have_count(
         3, timeout=5_000
     )
+    # Multi-group collapsed window: the bars carry NO individual + (T4/D25);
+    # the window header's toggle is the one expand control.
+    expect(win.locator("[data-dock-bar] [data-dock-minimize]")).to_have_count(0)
 
-    # ONE bar's + expands the WHOLE stack (D31) -- no collapsed sibling left.
-    win.locator("[data-dock-minimize]").first.click()
+    # The header toggle clears the window's ONE flag (D38) -- everything
+    # expands; no collapsed cell can remain (nothing stores one).
+    win.locator("[data-dock-minimize-all]").first.click()
     expect(win.locator("[data-dock-group][data-dock-collapsed]")).to_have_count(
         0, timeout=5_000
     )
@@ -1091,27 +1179,24 @@ def test_docked_resize_pushes_fully_on_canvas_float(
     )
 
 
-def test_example_11_panels_minimized_chrome(
+def test_example_11_panels_collapsed_chrome(
     viser_page: Page, viser_server: viser.ViserServer
 ) -> None:
-    """Real-content pin of the 11_panels example's minimized states:
+    """Real-content pin of the 11_panels example's collapsed chrome under
+    D32/D38:
 
-    1. A panel minimized via the UI (its lone `-`, clicked before a sibling
-       stacks above it) renders as an IN-PLACE bar (D20) at full region
-       width; docking a sibling above leaves it minimized (no adoption,
-       edge case 1); the rail never appears emergently (D21).
+    1. A lone docked panel has NO cell-level `-` and never renders a bar
+       (docked bars do not exist); docking a sibling above it stacks both
+       expanded, still with no cell toggles.
     2. The explicit region-collapse chevron gives the 36px rail with exactly
        ONE expand control (the parent handle -- cells show pills, P9).
-    3. After expanding stats from the rail (spine row: un-collapses the
-       region and expands that panel), the still-minimized log bar must be
-       visually BOUNDED against the white panel body above it: its surface
-       is the grip-bar gray, not the body color (P13/P10)."""
+    3. Expanding stats from its rail spine row clears the region's one flag
+       and reveals BOTH panels expanded with real heights (no per-cell
+       collapse residue exists, D38)."""
     viser_page.set_viewport_size(_VIEWPORT)
     viser_page.wait_for_timeout(300)
 
-    # Logs docks alone first: a lone docked panel keeps its cell-level `-`
-    # (D30), the only UI entry into a minimized docked cell now that the
-    # server collapse axis is gone (D31).
+    # Logs docks alone first: no cell-level `-` anywhere in the dock (D32).
     logs = viser_server.gui.add_panel(key="logs")
     with logs.add_tab("Log"):
         viser_server.gui.add_markdown("log content")
@@ -1121,36 +1206,20 @@ def test_example_11_panels_minimized_chrome(
         has=_tab(viser_page, "Log")
     )
     expect(log_leaf).to_have_count(1, timeout=5_000)
-    log_leaf.locator("[data-dock-minimize]").first.click()
-    expect(viser_page.locator("[data-dock-group][data-dock-collapsed]")).to_have_count(
-        1, timeout=5_000
-    )
+    expect(log_leaf.locator("[data-dock-minimize]")).to_have_count(0)
 
-    # Stats stacks above the minimized log bar -- which stays minimized (no
-    # adoption, edge case 1) while stats lands expanded.
+    # Stats stacks above logs; both cells render expanded, no cell toggles,
+    # no bars (D32: docked bars do not exist).
     stats = viser_server.gui.add_panel(key="stats")
     with stats.add_tab("Stats"):
         viser_server.gui.add_markdown("stats content")
     stats.dock_above(logs)
     expect(_tab(viser_page, "Stats")).to_be_visible(timeout=5_000)
-
-    # One in-place bar beside the expanded panel, NO rail (D21). The stacked
-    # expanded cell carries no `-` (D30), so the bar's + is the region's only
-    # cell toggle -- and its scope is now the stack (D31).
-    bars = viser_page.locator(
-        "[data-dock-leaf][data-dock-edge='right'] [data-dock-group][data-dock-collapsed]"
-    )
-    expect(bars).to_have_count(1, timeout=5_000)
-    assert viser_page.locator("[data-dock-region-rail]").count() == 0, (
-        "minimizing panels must not flip the region into the rail (D21)"
-    )
-    n_cell_toggles = viser_page.locator(
-        "[data-dock-edge='right'] [data-dock-minimize]"
-    ).count()
-    assert n_cell_toggles == 1, (
-        f"only the bar carries a toggle -- stacked expanded cells have no `-` "
-        f"(got {n_cell_toggles})"
-    )
+    assert (
+        viser_page.locator("[data-dock-edge='right'] [data-dock-minimize]").count() == 0
+    ), "docked cells must not carry a `-` (D32)"
+    assert viser_page.locator("[data-dock-edge='right'] [data-dock-bar]").count() == 0
+    assert viser_page.locator("[data-dock-region-rail]").count() == 0
 
     # EXPLICIT collapse via the chevron -> the rail, with exactly ONE expand
     # control: the parent handle (cells show pills, P9).
@@ -1170,7 +1239,7 @@ def test_example_11_panels_minimized_chrome(
     )
 
     # Expand stats via its spine row (keyboard; rows are gesture surfaces):
-    # un-collapses the region AND expands stats (D21).
+    # clears the region's ONE flag and lands on stats (D21/D38).
     row = viser_page.locator(
         "[data-dock-leaf][data-dock-edge='right'] [data-dock-tab]"
     ).first
@@ -1180,20 +1249,20 @@ def test_example_11_panels_minimized_chrome(
     expect(_tab(viser_page, "Stats")).to_be_visible()
     assert viser_page.locator("[data-dock-region-rail]").count() == 0
 
-    # The log bar renders with the grip-bar surface: its background must
-    # DIFFER from the body color of the expanded panel above (P13/P10).
-    colors = viser_page.evaluate(
-        """() => {
-        const bar = document.querySelector(
-            '[data-dock-leaf][data-dock-edge="right"] [data-dock-group][data-dock-collapsed]');
-        const body = document.querySelector('[data-dock-leaf][data-dock-edge="right"]');
-        return {
-          bar: bar ? getComputedStyle(bar).backgroundColor : null,
-          body: body ? getComputedStyle(body.querySelector('[data-dock-group]')).backgroundColor : null,
-        };
-    }"""
-    )
-    assert colors["bar"] is not None
-    assert colors["bar"] != colors["body"], (
-        f"minimized bar must be bounded by surface contrast, got {colors}"
-    )
+    # BOTH panels come back expanded with real heights: a partially
+    # collapsed stack is unrepresentable (D38).
+    assert (
+        viser_page.locator(
+            "[data-dock-edge='right'] [data-dock-group][data-dock-collapsed]"
+        ).count()
+        == 0
+    ), "no collapsed cell may remain after the region expands (D38)"
+    for label in ("Stats", "Log"):
+        box = (
+            viser_page.locator("[data-dock-leaf][data-dock-edge='right']")
+            .filter(has=_tab(viser_page, label))
+            .first.bounding_box()
+        )
+        assert box is not None and box["height"] > 60, (
+            f"{label} should render expanded with real height, got {box}"
+        )

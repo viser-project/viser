@@ -9,8 +9,9 @@ change, not pixel-perfect geometry):
 * tab tear-out: drag a docked panel's grip out to a free area -> it floats.
 * tab reorder: drag one tab past another within a group.
 * snap two floating panels: drag one floating panel onto another -> one window.
-* minimize-via-button: clicking the dedicated minimize button collapses/restores
-  (and a no-motion tap on the drag handle does NOT collapse, by design).
+* minimize-via-button: clicking a single-group FLOATING window's minimize
+  button collapses/restores it (D32: the `-` exists only there; docked cells
+  render no minimize control at all).
 """
 
 from __future__ import annotations
@@ -193,65 +194,91 @@ def test_snap_two_floating_panels(page: Page) -> None:
     assert co_located, "expected the two panels to share one floating window"
 
 
-def _docked_collapsed(page: Page) -> bool:
-    """Whether the docked group is minimized (via its data-dock-collapsed flag).
-    The handle bar is now DRAG-ONLY; a dedicated minimize button toggles state,
-    so a no-motion press on the handle intentionally does nothing."""
-    return (
-        page.locator(
-            '[data-dock-leaf] [data-dock-group][data-dock-collapsed="true"]'
-        ).count()
-        > 0
+def _win_collapsed(page: Page, gid: str) -> bool:
+    """Whether the floating window holding `gid` is collapsed (D38: the
+    window's ONE flag; rendered as the group's bar)."""
+    return page.evaluate(
+        """(gid) => {
+            const w = window.__dockLayout.floating.find(
+                (w) => w.stack.includes(gid));
+            return !!w && w.collapsed === true;
+        }""",
+        gid,
     )
 
 
-def _wait_collapsed(page: Page, want: bool) -> None:
-    """Poll until the docked group's collapsed state matches `want` (avoids
+def _wait_win_collapsed(page: Page, gid: str, want: bool) -> None:
+    """Poll until the window's collapsed state matches `want` (avoids
     fixed-sleep flakiness when the machine is busy)."""
     page.wait_for_function(
-        """(want) => {
-            const el = document.querySelector('[data-dock-leaf] [data-dock-group]');
-            return !!el && (el.getAttribute('data-dock-collapsed') === 'true') === want;
+        """([gid, want]) => {
+            const w = window.__dockLayout.floating.find(
+                (w) => w.stack.includes(gid));
+            return !!w && (w.collapsed === true) === want;
         }""",
-        arg=want,
+        arg=[gid, want],
         timeout=3000,
     )
 
 
 def test_minimize_via_button(page: Page) -> None:
-    """Clicking the dedicated minimize button (data-dock-minimize) toggles the
-    group's collapsed state; a second click restores it. (The grip handle is
-    drag-only -- a no-motion press there does nothing by design.)"""
-    btn = page.locator("[data-dock-leaf] [data-dock-minimize]").first
-    assert btn.count() > 0, "expected a minimize button on the docked group"
-    assert not _docked_collapsed(page), "should start expanded"
+    """Clicking a single-group FLOATING window's minimize button toggles the
+    window's ONE collapsed flag (D38); the bar's + restores it. Docked cells
+    render NO minimize control at all (D32)."""
+    # D32: no `-` anywhere in the docked region.
+    assert page.locator("[data-dock-leaf] [data-dock-minimize]").count() == 0, (
+        "docked cells must not render a minimize control (D32)"
+    )
+    gid = _floating_group_ids(page)[0]
+    btn = page.locator(f'[data-dock-group="{gid}"] [data-dock-minimize]').first
+    assert btn.count() > 0, "expected a minimize button on the floating window"
+    assert not _win_collapsed(page, gid), "should start expanded"
 
     btn.click()
-    _wait_collapsed(page, True)
+    _wait_win_collapsed(page, gid, True)
 
-    btn.click()
-    _wait_collapsed(page, False)
+    # Collapsed: the bar's right-end + (same data-dock-minimize hook).
+    page.locator(f'[data-dock-group="{gid}"] [data-dock-minimize]').first.click()
+    _wait_win_collapsed(page, gid, False)
 
 
 def test_handle_tap_toggles_minimize(page: Page) -> None:
-    """A motionless tap anywhere on the grip HANDLE toggles minimize/expand --
-    consistent with the main panel's header. (A real drag still moves the panel;
-    the click-vs-drag threshold keeps a tap from being read as a drag.)"""
+    """A motionless tap on a single-group FLOATING window's grip handle
+    toggles minimize (D32: panel = window there, so the handle backs the
+    toggle); a tap on the bar expands it again. A DOCKED cell's grip is
+    drag-only -- a no-motion tap does nothing (its collapse control is the
+    region chevron)."""
+    # Docked: a no-motion tap on the grip must NOT collapse anything.
     leaf_grip = page.locator("[data-dock-leaf] [data-dock-griphandle]").first
     box = leaf_grip.bounding_box()
     assert box is not None
     cx, cy = _center(box)
-
-    assert not _docked_collapsed(page)
-    # Tap (no motion) -> collapses.
     page.mouse.move(cx, cy)
     page.mouse.down()
     page.mouse.up()
     page.wait_for_timeout(120)
-    assert _docked_collapsed(page), "a no-motion handle tap should collapse"
+    assert (
+        page.locator("[data-dock-leaf] [data-dock-group][data-dock-collapsed]").count()
+        == 0
+    ), "a docked grip tap must not collapse (drag-only surface, D32)"
+    assert page.evaluate(
+        "() => Object.values(window.__dockLayout.regionCollapsed)"
+        ".every((v) => v !== true)"
+    )
 
-    # Tap again -> expands. (The collapsed strip's cell is the handle now.)
-    strip = page.locator("[data-dock-group][data-dock-collapsed]").first
+    # Floating single-group window: tap collapses; tap on the bar expands.
+    gid = _floating_group_ids(page)[0]
+    fgrip = page.locator(f'[data-dock-group="{gid}"] [data-dock-griphandle]').first
+    fbox = fgrip.bounding_box()
+    assert fbox is not None
+    fx, fy = _center(fbox)
+    page.mouse.move(fx, fy)
+    page.mouse.down()
+    page.mouse.up()
+    page.wait_for_timeout(120)
+    assert _win_collapsed(page, gid), "a no-motion handle tap should collapse"
+
+    strip = page.locator(f'[data-dock-group="{gid}"][data-dock-collapsed]').first
     sbox = strip.bounding_box()
     assert sbox is not None
     sx, sy = _center(sbox)
@@ -259,4 +286,4 @@ def test_handle_tap_toggles_minimize(page: Page) -> None:
     page.mouse.down()
     page.mouse.up()
     page.wait_for_timeout(120)
-    assert not _docked_collapsed(page), "a tap on the collapsed handle should expand"
+    assert not _win_collapsed(page, gid), "a tap on the bar should expand"

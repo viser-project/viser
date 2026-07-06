@@ -5,17 +5,19 @@ rAF / ResizeObserver races and stale-closure bugs live. Skips cleanly if the
 client toolchain is missing.
 
 Coverage:
-* rapid minimize/expand clicks on the handle button (incl. on a BACKGROUND /
-  overlapping floating window) -- no click is lost to a DOM reorder;
-* dock/undock height: collapsed vertical-stack siblings expand; the floating
-  bottom/corner resize grips are hidden while minimized;
+* rapid minimize/expand clicks on a floating window's toggle (incl. on a
+  BACKGROUND / overlapping floating window) -- no click is lost to a DOM
+  reorder (docked cells carry no toggle since D32);
+* docked stack chrome: no cell-level toggles; the region chevron/rail header
+  round-trip; the floating bottom/corner resize grips are hidden while
+  minimized;
 * page/container RESIZE: floating panels' top-left corner stays on-screen and
   nothing is stranded;
 * rapid mixed gesture sequences don't desync panel state or throw;
 * rapid SEQUENTIAL tab reorders (reorder, release, immediately reorder another):
   no stuck 'dragging' tab and no leftover transform (MED-1 settle-timer fix);
-* region outer-edge divider with a minimized/overlaid canvas-adjacent column:
-  the reserved area tracks the cursor 1:1 with no jump on grab (MED-2 fix).
+* region edge resizer with a RAILED canvas-adjacent column: the expanded
+  column tracks the cursor 1:1 with no jump on grab (MED-2 fix).
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ import pytest
 from playwright.sync_api import Page  # noqa: E402
 
 from .dock_helpers import (
+    click_column_chevron,
     collect_errors,
     columns,
     dock_layout,
@@ -85,11 +88,11 @@ def _panel_ids(page: Page) -> list[str]:
 # Rapid minimize/expand -- no lost clicks (the reported flake).
 # ===========================================================================
 def test_rapid_minimize_expand_no_lost_clicks(page: Page) -> None:
-    """Click the minimize button N times fast; the collapsed state must end up
-    matching the click parity exactly (no click swallowed by a DOM reorder)."""
-    docked = page.locator("[data-dock-leaf] [data-dock-group]").first
-    gid = docked.get_attribute("data-dock-group")
-    assert gid is not None
+    """Click a single-group floating window's minimize button N times fast;
+    the collapsed state must end up matching the click parity exactly (no
+    click swallowed by a DOM reorder). (The `-` exists only on single-group
+    floating windows since D32; docked cells carry no toggle.)"""
+    gid = _floating_group_ids(page)[0]
     btn = _minimize_btn(page, gid)
 
     assert not _is_collapsed(page, gid)
@@ -148,15 +151,13 @@ def test_minimize_click_on_background_overlapping_window(page: Page) -> None:
 # ===========================================================================
 # Height correctness.
 # ===========================================================================
-def test_vertical_stack_band_bar_plus_expands_stack(page: Page) -> None:
-    """Spec D12/D30/D31: a docked stack is canonical BANDS forming ONE visual
-    column -- its cells carry NO cell-level minimize control (the region
-    chevron is the stack's collapse control) and there is no column-level
-    parent handle (D22). Mixed per-cell collapse states stay valid in the
-    MODEL: a band seeded collapsed renders its in-place bar (D20) beside its
-    expanded sibling -- and a stacked bar's + expands the WHOLE stack (D31:
-    collapse is stack-scoped in both directions; no collapsed sibling is
-    left behind)."""
+def test_vertical_stack_rail_roundtrip(page: Page) -> None:
+    """Spec D12/D32/D38: a docked stack is canonical BANDS forming ONE visual
+    column -- its cells carry NO cell-level minimize control and there is no
+    column-level parent handle; the region chevron is the stack's ONE
+    collapse control. The chevron renders the packed rail; the rail header's
+    + clears the region's one flag and everything comes back expanded (a
+    partially collapsed stack is unrepresentable, D38)."""
     a, b = "t-controls", "t-inspector"
     set_layout(page, dock_layout(docked_right=stack("controls", "inspector")))
     docked_right = page.eval_on_selector_all(
@@ -165,7 +166,7 @@ def test_vertical_stack_band_bar_plus_expands_stack(page: Page) -> None:
     )
     assert a in docked_right and b in docked_right
 
-    # No cell-level minimize on stacked cells (D30); no column handle;
+    # No cell-level minimize on stacked cells (D32); no column handle;
     # the region's chevron is the stack's collapse control.
     def n_individual_btns(gid: str) -> int:
         return page.eval_on_selector_all(
@@ -175,41 +176,28 @@ def test_vertical_stack_band_bar_plus_expands_stack(page: Page) -> None:
     assert n_individual_btns(a) == 0 and n_individual_btns(b) == 0
     assert page.query_selector("[data-dock-column-handle]") is None
     assert page.query_selector('[data-dock-region-collapse="right"]') is not None
+    # Docked cells never render bars (D32/D38).
+    assert page.query_selector('[data-dock-edge="right"] [data-dock-bar]') is None
 
-    # Seed A collapsed (the model path): mixed state, A renders its in-place
-    # bar (D20) beside its expanded sibling.
-    set_layout(
-        page,
-        dock_layout(docked_right=stack(group("controls", collapsed=True), "inspector")),
+    # Chevron -> the packed rail: both cells render as narrow rail cells.
+    page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")
+    page.wait_for_timeout(200)
+    assert page.query_selector("[data-dock-region-rail]") is not None
+    assert _is_collapsed(page, a) and _is_collapsed(page, b), (
+        "both cells render as rail cells while the region is collapsed"
     )
-    assert _is_collapsed(page, a) and not _is_collapsed(page, b), (
-        "band collapse states are per-cell in the model (D12/D30)"
-    )
-    bar = page.query_selector(f'[data-dock-group="{a}"][data-dock-collapsed]')
-    assert bar is not None, (
-        "the minimized cell should render its in-place bar beside its sibling"
-    )
-    # Seed BOTH collapsed, then expand via A's bar + (the + every bar keeps):
-    # the WHOLE stack expands (D31), and the re-expanded stacked cells still
-    # show no minus.
-    set_layout(
-        page,
-        dock_layout(
-            docked_right=stack(
-                group("controls", collapsed=True), group("inspector", collapsed=True)
-            )
-        ),
-    )
-    assert _is_collapsed(page, a) and _is_collapsed(page, b)
+
+    # Rail header's + -> the ONE flag clears; the whole stack expands (no
+    # collapsed sibling can be left behind: nothing stores one, D38).
     page.eval_on_selector(
-        f'[data-dock-group="{a}"] [data-dock-minimize]', "e => e.click()"
+        "[data-dock-region-rail] [data-dock-minimize-all]", "e => e.click()"
     )
-    page.wait_for_timeout(120)
+    page.wait_for_timeout(200)
     assert not _is_collapsed(page, a) and not _is_collapsed(page, b), (
-        "a stacked bar's + must expand the whole stack (D31)"
+        "expanding the region reveals every cell expanded (D38)"
     )
     assert n_individual_btns(a) == 0, (
-        "an expanded stacked cell must not grow a cell-level minimize (D30)"
+        "an expanded stacked cell must not grow a cell-level minimize (D32)"
     )
 
 
@@ -547,10 +535,12 @@ def _reserved_width(page: Page) -> int | None:
     return boxes[0] if len(boxes) == 1 else None
 
 
-def test_overlaid_region_divider_tracks_without_jump(page: Page) -> None:
-    """2-column right region with the canvas-adjacent column minimized (overlaid);
-    dragging the region's outer-edge divider must move the reserved area 1:1 with
-    the cursor and NOT jump on grab (the MED-2 reserved-width fix)."""
+def test_railed_region_divider_tracks_without_jump(page: Page) -> None:
+    """2-column right region with the canvas-adjacent column RAILED (36px
+    fixed strip, D28/D38); dragging the region's edge resizer must move the
+    expanded (reserved) column 1:1 with the cursor and NOT jump on grab (the
+    MED-2 reserved-width fix): the railed column is fixed-width chrome, so
+    the growth lands entirely on the expanded column."""
     fids = _floating_group_ids(page)
     assert len(fids) >= 2
     a, b = fids[0], fids[1]
@@ -567,24 +557,26 @@ def test_overlaid_region_divider_tracks_without_jump(page: Page) -> None:
     if len(cols) != 2:
         pytest.skip("did not produce a 2-column right region this run")
 
-    # For a RIGHT region the canvas-adjacent column is the FIRST one; minimize it.
+    # For a RIGHT region the canvas-adjacent column is the FIRST one; rail it
+    # via its column chevron (the docked collapse gesture, D32).
     inner = cols[0]
-    _minimize_btn(page, inner).click()
-    page.wait_for_timeout(350)  # wait out the minimize width animation
+    click_column_chevron(page, inner)
+    page.wait_for_timeout(350)  # wait out the rail width animation
     if not _is_collapsed(page, inner):
-        pytest.skip("inner column did not collapse this run")
+        pytest.skip("inner column did not rail this run")
 
     reserved0 = _reserved_width(page)
     if reserved0 is None:
         pytest.skip("could not isolate a single reserved column this run")
 
-    # The reserved region's canvas-facing edge (left edge of the reserved box for
-    # a right region) is where the divider grip sits.
-    reserved_left = page.eval_on_selector(
-        f'[data-dock-leaf][data-dock-edge="right"] [data-dock-group="{cols[1]}"]',
-        "e => Math.round(e.closest('[data-dock-leaf]').getBoundingClientRect().left)",
+    # The region's edge resizer sits at its canvas-facing boundary (the
+    # railed strip's left edge for a right region).
+    handle = page.eval_on_selector(
+        '[data-dock-region-resize="right"]',
+        "e => { const r = e.getBoundingClientRect(); "
+        "return { x: r.x + r.width/2, y: r.y + r.height*0.75 }; }",
     )
-    gx, gy = reserved_left, 400
+    gx, gy = handle["x"], handle["y"]
 
     page.mouse.move(gx, gy)
     page.mouse.down()
@@ -606,7 +598,7 @@ def test_overlaid_region_divider_tracks_without_jump(page: Page) -> None:
     assert abs((drag_w - reserved0) - 60) <= 14, (
         f"reserved area did not track 1:1: {reserved0} -> {drag_w} (expected ~+60)"
     )
-    # The minimized column is still overlaid (not lost).
+    # The railed column is still the fixed 36px strip (not lost, not grown).
     assert _is_collapsed(page, inner)
 
 
@@ -620,11 +612,12 @@ def test_width_only_shrink_keeps_collapsed_strip_in_place(page: Page) -> None:
         dock_layout(
             floating=[
                 window(
-                    group("controls", collapsed=True),
+                    "controls",
                     x=600,
                     y=700,
                     width=280,
                     height=380,
+                    collapsed=True,
                 )
             ]
         ),
@@ -656,11 +649,12 @@ def test_expand_of_pinned_height_window_keeps_height(
             dock_layout(
                 floating=[
                     window(
-                        group("controls", collapsed=True),
+                        "controls",
                         x=300,
                         y=150,
                         width=280,
                         height=360,
+                        collapsed=True,
                     )
                 ]
             ),
