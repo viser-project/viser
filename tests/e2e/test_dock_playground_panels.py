@@ -16,6 +16,9 @@ against the standalone-Vite playground (``/dock_test.html``, HMR disabled):
     fills it).
 12. Dropping a floater on the OUTER edge band of the full-bleed main panel splits
     BESIDE it rather than merging into the inner full-bleed area.
+13. D30: stacked cells (a 2-leaf docked column) render NO per-cell minimize in
+    their grip bars, a lone sibling cell keeps its -, and a stacked cell
+    minimized via the layout still renders its bar's + (expand is never gated).
 
 Same harness as ``test_dock_playground_dropzones.py``. Run with::
 
@@ -31,7 +34,8 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import Page  # noqa: E402
 
-from .dock_helpers import columns, dock_layout, group, set_layout, stack, window
+from .dock_helpers import collapsed as _model_collapsed
+from .dock_helpers import columns, dock_layout, group, rows, set_layout, stack, window
 from .dock_helpers import drag as _drag
 from .dock_helpers import open_playground as _open
 
@@ -699,6 +703,105 @@ def test_dock_beside_fullbleed_main_panel_does_not_merge_into_area(
         assert not merged_into_area, (
             f"controls merged INTO area-main ({area_main_after}); the outer side "
             "band should split beside the full-bleed panel, not merge into its area"
+        )
+    finally:
+        page.close()
+
+
+# ===========================================================================
+# 13. D30: the per-cell minimize CONTROL exists only where the panel IS its
+#     whole stack. Seed a band holding a 2-leaf column (controls/inspector --
+#     a multi-leaf column survives canonicalization only beside a sibling
+#     column, D12) next to a lone 1-leaf column (console):
+#     * the stacked cells' grip bars carry NO [data-dock-minimize] (their
+#       collapse control is the stack's chevron on the column parent handle);
+#     * the lone cell keeps its -;
+#     * a stacked cell minimized via set_layout (the server path) still
+#       renders its 26px bar with the right-end + -- [data-dock-minimize] on
+#       the [data-dock-bar] surface is the EXPAND toggle, never gated (P5) --
+#       and clicking it expands the cell.
+# ===========================================================================
+def test_stacked_cells_have_no_minimize_control_lone_cell_does(
+    dock_context, vite_server: int
+) -> None:
+    page = _open(dock_context, vite_server, 1400, 800)
+    try:
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=columns(stack("controls", "inspector"), "console")
+            ),
+        )
+
+        # Stacked cells: draggable grip bar, but no cell-level minimize toggle.
+        for gid in ("t-controls", "t-inspector"):
+            assert _has_grip(page, gid), f"{gid} should keep its grip bar"
+            assert not _has_minimize(page, gid), (
+                f"stacked cell {gid} must NOT render a per-cell minimize (D30); "
+                "its collapse control is the column handle's chevron"
+            )
+        # The stack's collapse control exists: the column parent handle's chevron.
+        assert page.query_selector("[data-dock-column-collapse]") is not None, (
+            "the 2-leaf column's parent handle should carry the rail chevron"
+        )
+
+        # The lone sibling cell IS its whole stack: it keeps the -.
+        assert _has_grip(page, "t-console")
+        assert _has_minimize(page, "t-console"), (
+            "a lone docked cell must keep its per-cell minimize toggle (D30)"
+        )
+
+        # Server-created mixed state: minimize the stacked inspector via layout.
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=columns(
+                    stack("controls", group("inspector", collapsed=True)), "console"
+                )
+            ),
+        )
+        assert _model_collapsed(page, "t-inspector")
+        bar_toggle = page.query_selector(
+            '[data-dock-group="t-inspector"][data-dock-bar="true"] [data-dock-minimize]'
+        )
+        assert bar_toggle is not None, (
+            "a minimized stacked cell must render its bar with the right-end + "
+            "(expand is never gated, D30/P5)"
+        )
+        # The expanded stacked sibling still has no -.
+        assert not _has_minimize(page, "t-controls")
+
+        # The + expands the cell (per-cell expand stays ungated).
+        bar_toggle.click()
+        page.wait_for_timeout(350)  # wait out the expand animation
+        assert not _model_collapsed(page, "t-inspector"), (
+            "clicking the bar's + should expand the stacked cell"
+        )
+    finally:
+        page.close()
+
+
+def test_plain_stack_cells_have_no_minimize_control(
+    dock_context, vite_server: int
+) -> None:
+    """D30 visual-column scope: a PLAIN docked stack (two bands, one leaf
+    each -- the canonical D12 shape) is ONE visual column, so neither cell
+    carries the cell-level minus even though each sits alone in its MODEL
+    column. The collapse control is the region handle's chevron."""
+    page = _open(dock_context, vite_server, 1400, 800)
+    try:
+        set_layout(
+            page,
+            dock_layout(docked_right=rows("controls", "inspector")),
+        )
+        for gid in ("t-controls", "t-inspector"):
+            assert _has_grip(page, gid), f"{gid} should keep its grip bar"
+            assert not _has_minimize(page, gid), (
+                f"plain-stack cell {gid} must NOT render a per-cell minimize "
+                "(D30: the stack is one visual column)"
+            )
+        assert page.query_selector('[data-dock-region-collapse="right"]') is not None, (
+            "the single-visual-column region's handle should carry the chevron"
         )
     finally:
         page.close()

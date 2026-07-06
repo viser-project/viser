@@ -939,9 +939,12 @@ def test_unminimize_after_sibling_resize_keeps_panel_onscreen(
     beside px-magnitude siblings and collapses to ~0 height -- off the bottom of
     the viewport.
 
-    Minimize is per-cell (D16), so we exercise the rescale by minimizing every
-    band individually and expanding each back after the resize, asserting every
-    panel returns on-screen with real height."""
+    Stacked cells carry no cell-level minimize control (D30: the region
+    chevron collapses the whole stack), so the minimized states come from the
+    server API (panel.minimize(), the model path -- per-cell collapse is
+    unchanged there); each band is then expanded back via its bar's + (every
+    bar keeps one), asserting every panel returns on-screen with real
+    height."""
     viser_page.set_viewport_size(_VIEWPORT)
     viser_page.wait_for_timeout(300)
     vh = _VIEWPORT["height"]
@@ -975,15 +978,17 @@ def test_unminimize_after_sibling_resize_keeps_panel_onscreen(
     viser_page.mouse.up()
     viser_page.wait_for_timeout(300)
 
-    # Minimize every band via its own button (D16: bands minimize
-    # independently), then expand each back the same way: every band's restore
-    # weight must rescale to the post-resize px basis so all three come back
-    # on-screen with real height.
-    for label in ("ColTop", "ColMid", "ColBot"):
-        viser_page.locator("[data-dock-leaf]").filter(
-            has=_tab(viser_page, label)
-        ).locator("[data-dock-minimize]").first.click()
-        viser_page.wait_for_timeout(150)
+    # Minimize every band from the server (stacked cells have no cell-level
+    # minimize control, D30; the model keeps per-cell collapse), then expand
+    # each back via its bar's + (the UI direction that stays legal): every
+    # band's restore weight must rescale to the post-resize px basis so all
+    # three come back on-screen with real height.
+    for panel in (top, mid, bottom):
+        panel.minimize()
+    expect(
+        viser_page.locator("[data-dock-edge='right'] [data-dock-collapsed]")
+    ).to_have_count(3, timeout=5_000)
+    viser_page.wait_for_timeout(150)
     for label in ("ColTop", "ColMid", "ColBot"):
         viser_page.locator("[data-dock-leaf]").filter(
             has=_tab(viser_page, label)

@@ -5,7 +5,7 @@ import { Box, ScrollArea } from "@mantine/core";
 import { IconMinus, IconPlus } from "@tabler/icons-react";
 import React from "react";
 import { useDock } from "./DockContext";
-import { isStackedGroup } from "./layoutOps";
+import { isLoneInVisualColumn, isStackedGroup } from "./layoutOps";
 import {
   dockBodyScroll,
   focusRing,
@@ -112,17 +112,21 @@ const TAB_ROW_EM = "2.4em";
 const STRIP_FONT_EM = 0.85;
 
 /** Slim handle bar above the tab strip (docked or floating). The bar itself is
- * a drag handle (centered grip line + grab cursor); a button on the right
- * minimizes/expands the group. The button is drag-THROUGH: pressing it and
- * moving drags the panel like the bar would (a drag from the EXPAND button
- * tears out the full panel), while a motionless release toggles. */
+ * a drag handle (centered grip line + grab cursor); when the panel is its
+ * whole stack (D30) a button on the right minimizes/expands the group. The
+ * button is drag-THROUGH: pressing it and moving drags the panel like the bar
+ * would (a drag from the EXPAND button tears out the full panel), while a
+ * motionless release toggles. */
 function GripBar({
   collapsed,
   onToggle,
   startDrag,
 }: {
   collapsed: boolean;
-  onToggle: () => void;
+  /** Per-cell minimize -- present only when the panel IS its whole stack
+   * (D30): a stacked cell's collapse control is its stack's chevron, so the
+   * cell-level toggle (and the bar click that backs it) disappears there. */
+  onToggle?: () => void;
   startDrag: (
     event: React.PointerEvent<HTMLDivElement>,
     opts?: { onClick?: () => void },
@@ -133,10 +137,9 @@ function GripBar({
       data-dock-griphandle
       className={gripBarBg}
       onPointerDown={(event) => {
-        // A motionless tap toggles minimize/expand (the +/- is a redundant
-        // explicit cue for the same action -- every group minimizes
-        // individually, D16). A real drag moves the panel AS-IS (expanding is
-        // click-only).
+        // A motionless tap toggles minimize/expand WHERE the toggle exists
+        // (lone-in-stack cells, D30); otherwise the bar is drag-only. A real
+        // drag moves the panel AS-IS (expanding is click-only).
         startDrag(event, { onClick: onToggle });
       }}
       style={{
@@ -156,19 +159,23 @@ function GripBar({
     >
       {/* Drag affordance. */}
       <GripPill />
-      {/* Minimize / expand button: drag-through (see GripBar doc). Every
-      group has one (per-cell minimize, D16) -- the multi-group window
-      header's toggle-ALL is a distinct action with its own signifier. */}
-      <HandleIconButton
-        attrs={{ "data-dock-minimize": "true" }}
-        label={collapsed ? "Expand panel" : "Minimize panel"}
-        title={collapsed ? "Expand" : "Minimize"}
-        expanded={!collapsed}
-        onActivate={onToggle}
-        dragThrough
-      >
-        {collapsed ? <IconPlus size={12} /> : <IconMinus size={12} />}
-      </HandleIconButton>
+      {/* Minimize / expand toggle -- present only when this panel IS its
+      whole stack (D30): a stacked cell's collapse control is the stack's
+      chevron on its parent handle (one collapse control per scope, P12);
+      the multi-group window header's toggle-ALL is likewise its own
+      scope's control. */}
+      {onToggle !== undefined && (
+        <HandleIconButton
+          attrs={{ "data-dock-minimize": "true" }}
+          label={collapsed ? "Expand panel" : "Minimize panel"}
+          title={collapsed ? "Expand" : "Minimize"}
+          expanded={!collapsed}
+          onActivate={onToggle}
+          dragThrough
+        >
+          {collapsed ? <IconPlus size={12} /> : <IconMinus size={12} />}
+        </HandleIconButton>
+      )}
     </Box>
   );
 }
@@ -216,6 +223,10 @@ export function TabGroupFrame({
   // so it reads as separated from the panel above. Not needed when LONE (nothing
   // above it).
   const stacked = isStackedGroup(dock.layout, group.id);
+  // D30: the cell-level minimize control exists only when this panel IS its
+  // whole visual column (see isLoneInVisualColumn -- NOT `stacked`, which
+  // counts the model column and misses plain band-stacks).
+  const loneInStack = isLoneInVisualColumn(dock.layout, group.id);
   // Keyboard/Click minimize unmounts this frame for the in-place bar; focus
   // hands off to the bar's toggle (the same-spot + that undoes it).
   const toggleAndFocusBar = () => {
@@ -303,14 +314,16 @@ export function TabGroupFrame({
         opacity: dimmed ? 0.4 : 1,
       }}
     >
-      {/* Move-handle grip bar (with a minimize/expand button), above the tabs. */}
+      {/* Move-handle grip bar (with a minimize/expand button where the panel
+      is its whole stack, D30), above the tabs. */}
       {/* The gray grip bar is shown for ordinary groups. An UNMERGEABLE panel
-      has no separate grip: its full-width header IS the handle, and clicking it
-      (no drag) toggles minimize -- matching the live FloatingPanel. */}
+      has no separate grip: its full-width header IS the handle, and -- when
+      lone in its stack -- clicking it (no drag) toggles minimize, matching
+      the live FloatingPanel. */}
       {stripDragsGroup && !unmergeable && (
         <GripBar
           collapsed={collapsed}
-          onToggle={toggleAndFocusBar}
+          onToggle={loneInStack ? toggleAndFocusBar : undefined}
           startDrag={(event, opts) =>
             dock.startGroupDrag(event, group.id, opts)
           }
@@ -353,10 +366,11 @@ export function TabGroupFrame({
           }
           onPointerDown={(event) => {
             if (!stripDragsGroup) return;
-            // Click-to-minimize: minimize is per-GROUP now (D16), so a tap on
-            // the header toggles just this panel -- stacked or not.
+            // Click-to-minimize only where the panel IS its stack (D30):
+            // a stacked cell's collapse control is its stack's chevron /
+            // toggle-all, so the header is drag-only there.
             dock.startGroupDrag(event, group.id, {
-              onClick: toggleAndFocusBar,
+              onClick: loneInStack ? toggleAndFocusBar : undefined,
             });
           }}
           data-dock-unmergeable-header={group.id}
@@ -425,17 +439,21 @@ export function TabGroupFrame({
           header toggles on click, but an action with zero icons is
           undiscoverable). Rendered for BOTH title forms -- a plain-title
           unmergeable panel otherwise reproduces the same zero-signifier
-          defect. Same right-end +/- as every other chrome row (P13);
-          panel-provided action icons sit just left of it. */}
-          <ChromeToggle
-            expanded={!collapsed}
-            label={collapsed ? "Expand panel" : "Minimize panel"}
-            onActivate={toggleAndFocusBar}
-            // Compact: this header carries the panel's own action icons and
-            // the whole header is the minimize click target -- the toggle is
-            // a quiet signifier, not a hit area.
-            compact
-          />
+          defect -- but ONLY where the panel is its whole stack (D30): a
+          stacked cell has no cell-level minimize, so a toggle here would
+          be a dead signifier. Same right-end +/- as every other chrome
+          row (P13); panel-provided action icons sit just left of it. */}
+          {loneInStack && (
+            <ChromeToggle
+              expanded={!collapsed}
+              label={collapsed ? "Expand panel" : "Minimize panel"}
+              onActivate={toggleAndFocusBar}
+              // Compact: this header carries the panel's own action icons and
+              // the whole header is the minimize click target -- the toggle is
+              // a quiet signifier, not a hit area.
+              compact
+            />
+          )}
         </Box>
       ) : (
         /* Tab strip. Bordered "original Viser" style: a thick rule below each

@@ -99,7 +99,9 @@ def test_stack_canonicalizes_to_independent_bands(
 ) -> None:
     """Spec D12: an injected 2-group vertical stack canonicalizes into two
     BANDS -- there is no column-level parent handle; each panel keeps its own
-    grip/minimize, and dragging one panel's grip floats ONLY that panel."""
+    grip, and dragging one panel's grip floats ONLY that panel. The stack is
+    ONE visual column (D30): its cells carry NO cell-level minimize; the
+    region handle's chevron is the stack's collapse control."""
     page = _open(dock_context, vite_server)
     try:
         set_layout(page, dock_layout(docked_right=stack("inspector", "controls")))
@@ -111,12 +113,14 @@ def test_stack_canonicalizes_to_independent_bands(
             f"stack should canonicalize to bands, got {bands}"
         )
         assert page.locator("[data-dock-column-handle]").count() == 0
-        # Each band's panel has its own minimize button (independence, D12).
+        # A plain stack is ONE visual column (D30): its cells render NO
+        # cell-level minimize; the region chevron is the collapse control.
         for gid in ("t-inspector", "t-controls"):
             assert (
                 page.locator(f'[data-dock-group="{gid}"] [data-dock-minimize]').count()
-                == 1
+                == 0
             )
+        assert page.locator('[data-dock-region-collapse="right"]').count() == 1
         # Dragging inspector's grip floats ONLY inspector.
         gx, gy = _grip(page, "Inspector")
         _drag(page, (gx, gy), (450, 450), steps=18)
@@ -198,18 +202,23 @@ def test_undock_minimized_column_keeps_expanded_width(
     strip rect)."""
     page = _open(dock_context, vite_server)
     try:
-        # Two stacked panels docked right (canonical bands) at ~300px.
-        set_layout(page, dock_layout(docked_right=stack("controls", "inspector")))
+        # Two stacked panels docked right (canonical bands) at ~300px, both
+        # cells seeded minimized (D30: a plain stack's cells carry no
+        # cell-level minimize control, so the model path sets the states).
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=stack(
+                    group("controls", collapsed=True),
+                    group("inspector", collapsed=True),
+                )
+            ),
+        )
         region_w = page.evaluate("() => window.__dockLayout.regionWidth.right")
         assert region_w and region_w > 150
 
-        # Minimize each panel via its own button (D16: independent), collapse
-        # the region explicitly (D21), then undock via the rail's handle.
-        for gid in ("t-controls", "t-inspector"):
-            page.eval_on_selector(
-                f'[data-dock-group="{gid}"] [data-dock-minimize]', "e => e.click()"
-            )
-            page.wait_for_timeout(80)
+        # Collapse the region explicitly (D21), then undock via the rail's
+        # handle.
         page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")
         page.wait_for_timeout(200)
         handle = page.locator("[data-dock-region-rail]").first
@@ -563,13 +572,20 @@ def test_minimized_band_among_siblings_is_horizontal_bar(
 ) -> None:
     """A minimized cell among sibling bands renders its 26px BAR in place
     (D20: full column width, handle height -- the ONE minimized form), keeps
-    [data-dock-collapsed]/[data-dock-minimize], and expands back on click."""
+    [data-dock-collapsed]/[data-dock-minimize], and expands back on click.
+    The mixed state is seeded via set_layout (D30: cells of a plain stack
+    carry no cell-level minimize control; bars still render anywhere)."""
     page = _open(dock_context, vite_server, 1280, 900)
     try:
-        # Three stacked single-column bands on the right.
+        # Three stacked single-column bands on the right; the MIDDLE band
+        # (inspector) seeded minimized.
         set_layout(
             page,
-            dock_layout(docked_right=rows("controls", "inspector", "console")),
+            dock_layout(
+                docked_right=rows(
+                    "controls", group("inspector", collapsed=True), "console"
+                )
+            ),
         )
 
         def collapsed(gid: str) -> bool:
@@ -577,15 +593,6 @@ def test_minimized_band_among_siblings_is_horizontal_bar(
                 "(g) => window.__dockLayout.groups[g].collapsed === true", gid
             )
 
-        # Minimize the MIDDLE band (inspector).
-        page.evaluate(
-            """() => {
-                const g = document.querySelector('[data-dock-group="t-inspector"]');
-                g.closest('[data-dock-leaf]')
-                 .querySelector('[data-dock-minimize]').click();
-            }"""
-        )
-        page.wait_for_timeout(450)
         assert collapsed("t-inspector"), "inspector band should be minimized"
 
         bar = page.locator('[data-dock-group="t-inspector"][data-dock-collapsed]').first
@@ -599,7 +606,7 @@ def test_minimized_band_among_siblings_is_horizontal_bar(
         assert box["width"] > box["height"] * 2, (
             f"a minimized cell must be a HORIZONTAL bar (w >> h), got {box}"
         )
-        # The bar keeps a per-cell expand toggle (D16/D18).
+        # Every bar keeps its per-cell expand toggle, even in a stack (D30).
         assert (
             page.locator('[data-dock-group="t-inspector"] [data-dock-minimize]').count()
             == 1
@@ -674,25 +681,19 @@ def test_lone_minimized_panel_is_bar_until_region_collapsed(
 def test_minimized_band_is_a_drop_target(dock_context, vite_server: int) -> None:
     """A minimized cell's in-place bar is a DOCKED drop target: it stays
     inside its data-dock-leaf wrapper (the drop rect), so dropping a floating
-    panel onto it merges into that group without expanding it."""
+    panel onto it merges into that group without expanding it. The minimized
+    state is seeded via set_layout (D30: stacked cells carry no cell-level
+    minimize control; bars still render anywhere)."""
     page = _open(dock_context, vite_server, 1280, 900)
     try:
+        # Top band (controls) seeded minimized.
         set_layout(
             page,
             dock_layout(
-                docked_right=rows("controls", "inspector"),
+                docked_right=rows(group("controls", collapsed=True), "inspector"),
                 floating=[window("console", x=300, y=300)],
             ),
         )
-        # Minimize the top band (controls).
-        page.evaluate(
-            """() => {
-                const g = document.querySelector('[data-dock-group="t-controls"]');
-                g.closest('[data-dock-leaf]')
-                 .querySelector('[data-dock-minimize]').click();
-            }"""
-        )
-        page.wait_for_timeout(450)
         bar = page.locator('[data-dock-group="t-controls"][data-dock-collapsed]').first
         assert bar.count() == 1
         cbox = bar.bounding_box()

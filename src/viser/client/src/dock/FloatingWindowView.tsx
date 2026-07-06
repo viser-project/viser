@@ -76,8 +76,9 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
   // height and offers no vertical resize (there's nothing to resize).
   const collapsed = windowAllMinimized(dock.layout, win.id);
   // Bulk minimize-all / expand-all for the whole stack -- the window
-  // header's toggle (the one surviving bulk affordance besides the rail,
-  // D16). Direction: expand when EVERY cell is minimized, else minimize all.
+  // header's toggle, which since D30 is the stack's ONE collapse control
+  // (stacked cells carry no per-cell `-`; their bars keep the per-cell `+`).
+  // Direction: expand when EVERY cell is minimized, else minimize all.
   const toggleAll = () =>
     dock.api.apply((l) =>
       collapsed ? expandStack(l, win.stack) : minimizeStack(l, win.stack),

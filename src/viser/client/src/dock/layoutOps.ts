@@ -565,6 +565,35 @@ export function stackGroupIdsOf(
  * floating stack or a 2+-leaf docked column) -- the boolean companion to
  * stackGroupIdsOf for chrome that only needs the yes/no, without building
  * the id array. */
+/** D30 gate: does this panel constitute its WHOLE visual column (D27's
+ * scope)? Only then does it carry a cell-level minimize control -- a panel
+ * sharing its visual column collapses via the column's chevron instead
+ * (one collapse control per scope, P12). Floating: sole group of its
+ * window. Docked: sole leaf of its model column, and -- in a single-column
+ * region, where the visual column is the WHOLE region -- sole leaf of the
+ * region. Area-hosted and unplaced groups count as lone.
+ * NOT isStackedGroup: that counts the model column only, and a plain
+ * docked stack canonicalizes (D12) into bands of single-leaf columns. */
+export function isLoneInVisualColumn(
+  layout: DockLayout,
+  groupId: GroupId,
+): boolean {
+  const win = layout.floating.find((w) => w.stack.includes(groupId));
+  if (win !== undefined) return win.stack.length === 1;
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const region = layout.docked[edge];
+    const found = findGroupInRegion(region, groupId);
+    if (found === null) continue;
+    if (found.column.leaves.length >= 2) return false;
+    if (!region!.rows.every((rw) => rw.columns.length === 1)) return true;
+    let leaves = 0;
+    for (const rw of region!.rows)
+      for (const c of rw.columns) leaves += c.leaves.length;
+    return leaves === 1;
+  }
+  return true;
+}
+
 export function isStackedGroup(layout: DockLayout, groupId: GroupId): boolean {
   const win = layout.floating.find((w) => w.stack.includes(groupId));
   if (win !== undefined) return win.stack.length >= 2;

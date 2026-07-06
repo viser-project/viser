@@ -215,7 +215,7 @@ Chrome anatomy referenced throughout:
 
 | Term | Meaning |
 |---|---|
-| **Grip bar** | The gray chrome row atop an expanded cell: drag handle for the group, host of the `−` toggle. Unmergeable panels render their full-width header in its place. |
+| **Grip bar** | The gray chrome row atop an expanded cell: drag handle for the group; hosts the `−` toggle where the cell is its whole stack (D30). Unmergeable panels render their full-width header in its place. |
 | **Tab strip** | The row(s) of tabs below a grip bar; wraps to multiple rows. |
 | **Pill** | The centered grip mark on a handle surface (grip bars, parent handles, window headers, rail caps). A signifier only — the whole surface drags. |
 | **Chevron** | The « / » collapse control at the right end of a parent handle; the rail's entry point. |
@@ -279,30 +279,38 @@ single-column region whose region-scope handle, chevron included,
 reappears automatically.
 
 ### 3.1 Expanded cell (docked or floating-stacked)
-- Grip bar (gray, ~0.9em): drag moves the group; holds the minimize
-  (−) button. A motionless click anywhere on the grip bar ALSO toggles
-  minimize (D6): the `−` stays the only visible signifier, and the
-  grip-bar surface is unmarked backing for the same action (P9's
-  hit-area rule, P11 backing for the sub-20px toggle, P7 symmetry with
-  the bar's click-to-expand).
-- The (−) sits on EVERY expanded cell, stacked cells included (D16:
-  per-cell minimize everywhere). Nested-stack cells minimize
-  individually; no cell-level control ever collapses a whole column
-  (D22). Column-SCOPE actions live on the column parent handle where
-  one renders (multi-column regions: drag floats the column, its
-  chevron rails it); elsewhere floating a column remains a chrome-less
-  op.
+- Grip bar (gray, ~0.9em): drag moves the group. Where the cell IS its
+  whole stack it holds the minimize (−) button, and a motionless click
+  anywhere on the grip bar ALSO toggles minimize (D6): the `−` stays
+  the only visible signifier, and the grip-bar surface is unmarked
+  backing for the same action (P9's hit-area rule, P11 backing for the
+  sub-20px toggle, P7 symmetry with the bar's click-to-expand).
+- The (−) renders ONLY where the cell is its whole VISUAL column
+  (D30): the sole panel of a single-visual-column region, a 1-leaf
+  column of a zipped band, or a single-group floating window — a
+  plain docked stack is one visual column, so its cells carry none. A STACKED cell has no
+  cell-level minimize — its collapse control is the stack's, on the
+  stack's nearest handle: the parent handle's chevron (docked) or the
+  window header's toggle-all (floating); its grip bar is drag-only
+  (no `−`, no backing click). One collapse control per scope (P12); no
+  cell-level control ever collapses a whole column (D22). Column-SCOPE
+  actions live on the column parent handle where one renders
+  (multi-column regions: drag floats the column, its chevron rails
+  it); elsewhere floating a column remains a chrome-less op.
 - Tab strip: one tab per pane; wraps to multiple rows; the empty strip
   area drags the group; the active tab is underlined in accent color.
 - Body: panel content; scrolls internally; never a drag surface.
 - The (−) button is drag-through: dragging it moves the panel (P5 — no
   inert pixels); a motionless click minimizes.
 - UNMERGEABLE panels render no grip bar. The full-width header — plain
-  title or panel-provided titleNode alike — IS the drag handle, and a
-  motionless click on its background toggles minimize (same backing
-  rule as the grip bar). Its right end carries the `−`/`+` ChromeToggle
-  for BOTH title forms; a plain-title header without the toggle would
-  be a zero-signifier action (P9: one signifier, not zero). The toggle
+  title or panel-provided titleNode alike — IS the drag handle, and,
+  where the panel is its whole stack, a motionless click on its
+  background toggles minimize (same backing rule as the grip bar). Its
+  right end then carries the `−`/`+` ChromeToggle for BOTH title
+  forms; a plain-title header without the toggle would be a
+  zero-signifier action (P9: one signifier, not zero). Stacked, the
+  header follows the grip-bar rule (D30): drag-only, no toggle, no
+  backing click. The toggle
   is the COMPACT ChromeToggle variant (1.2em wide, 10px icon, D29): the
   whole header is the click target, so the toggle is a pure signifier
   and shrinks without hit-area cost (P11's backing rule) instead of
@@ -324,7 +332,10 @@ reappears automatically.
 - Anatomy (P13: the expanded header kept in place): ONE dimmed
   icon+title — the active tab's — with a `+N` badge naming the other
   tabs on hover (D14); then slack; then the `+` toggle at the RIGHT
-  end, exactly where the expanded header's `−` sat. NO grip pill (D18):
+  end, exactly where the expanded header's `−` sat. The `+` renders on
+  EVERY bar, stacked cells included — expand is never gated (D30, P5)
+  — even though a stacked cell's expanded header carries no `−`. NO
+  grip pill (D18):
   the whole bar IS the handle, and a pill inside a surface that is
   entirely handle would be a redundant signifier. Pills remain on
   expanded headers, where the handle is a slice of a larger surface.
@@ -396,14 +407,18 @@ reappears automatically.
 ### 3.4 Floating window
 - Multi-group: a window header on top. Drag moves the window; its
   toggle minimizes all cells, flipping to expand-all when every cell is
-  a bar — the one surviving bulk affordance besides the rail (D16). The
+  a bar — the stack's one collapse control (D16/D30: stacked cells
+  carry no per-cell `−`). The
   header is ALWAYS present for a multi-group stack, even when every
   cell is a bar (D17): a fully-minimized window is the same stack of
   cells, all 26px, at full `win.width` (P8 — no fit-content jump, no
   separate chip-bar form). Single-group windows have no header; the
-  group's own grip bar moves the window.
+  group's own grip bar moves the window (and, being its whole stack,
+  keeps its `−`, D30).
 - Each cell renders as §3.1 without the docked context, or as its bar
-  (§3.2) when collapsed — expanded and minimized cells mix freely.
+  (§3.2) when collapsed — expanded and minimized cells mix freely
+  (mixes arise from per-cell expand, server commands, or degradation;
+  the UI minimizes stacked cells only all-at-once, D30).
 - Side grips resize width; top/bottom/corner grips resize height (pin),
   with a detent that snaps back to auto-height at the content height. A
   fully-minimized window keeps its WIDTH grips (D15 — the bars hold
@@ -451,10 +466,11 @@ a click. One active gesture at a time; extra pointers are ignored.
 
 | Grabbed surface | Drag moves | Motionless click |
 |---|---|---|
-| Grip bar (expanded) | that group | toggle minimize (unmarked backing for the `−`, D6) |
+| Grip bar (expanded, cell = its whole stack) | that group | toggle minimize (unmarked backing for the `−`, D6) |
+| Grip bar (expanded, stacked cell) | that group | — (no cell-level minimize, D30) |
 | Tab strip background (expanded) | that group | — |
-| Unmergeable header (full width, either title form) | that group | toggle minimize |
-| (−) minimize button | that group (drag-through) | minimize group |
+| Unmergeable header (full width, either title form) | that group | toggle minimize (lone-in-stack only, D30; drag-only when stacked) |
+| (−) minimize button (lone-in-stack cells only, D30) | that group (drag-through) | minimize group |
 | Tab | that pane (tear out / reorder) | activate tab |
 | Window header (floating multi-group) | whole window | minimize all (expand all when every cell is a bar) |
 | Bar background (incl. right slack) | that group (still minimized) | expand that group |
@@ -673,20 +689,31 @@ item 1).
 
 ## 7. Minimize / expand semantics
 
-- Collapse is per-GROUP, period (D16). Any cell — in a docked column, a
-  zipped grid, or a floating stack — minimizes individually; mixed stacks
-  are legal and coherent: a collapsed cell renders as its 26px bar IN
-  PLACE (grow 0, D20) and expanded siblings absorb the freed space (edge
-  case 16). The uniform-collapse invariant is deleted; nothing normalizes
-  collapse states at commit.
+- Collapse is per-GROUP in the MODEL, period (D16). Any cell — in a
+  docked column, a zipped grid, or a floating stack — holds its own
+  flag; mixed stacks are legal and coherent: a collapsed cell renders
+  as its 26px bar IN PLACE (grow 0, D20) and expanded siblings absorb
+  the freed space (edge case 16). The uniform-collapse invariant is
+  deleted; nothing normalizes collapse states at commit.
+- The minimize CONTROL is scoped (D30): one collapse control per
+  scope, on that scope's nearest handle. The per-cell `−` renders only
+  where the cell IS its whole stack (a lone docked cell, a
+  single-group window); a 2+ stack collapses via its stack's control —
+  the parent handle's chevron (docked) or the window header's
+  toggle-all (floating). EXPAND is never gated: every bar keeps its
+  `+` and click-to-expand (P5), so mixed states — from per-cell
+  expand, server commands, or degradation — always offer a way out.
+  `panel.minimize()` stays per-panel; the UI can no longer MINIMIZE a
+  single stacked cell.
 - Exactly two minimized forms exist: the BAR (per-cell, in place, §3.2)
   and the RAIL (explicit, at region or column scope, §3.3). Neither
   appears emergently: an all-bars region is still an all-bars region at
   full width — a state-dependent form flip would move chrome the user
   didn't touch (P3).
-- Bulk toggles survive in exactly two places (D16): the multi-group
+- Bulk toggles live in exactly two places (D16): the multi-group
   window header's toggle (minimize-all, flipping to expand-all when every
-  cell is a bar) and the rail. Everything else is per-cell.
+  cell is a bar) and the rail. Everything else is per-cell — expand
+  everywhere, minimize where the cell is its stack (D30).
 - Rail collapse is explicit (D21/D28): the region chevron sets
   `regionCollapsed[edge]`, the column chevron sets its column's
   `railed`; while set, that scope renders as the packed 36px rail
@@ -884,8 +911,10 @@ D27 (per-column handles) landed immediately after this pass with §3/§4/
 §7 re-synced; D28/D29 (2026-07-05, working tree) landed after that with
 their sections re-synced and new `layoutOps` pins (rail round-trip,
 effective collapse, region→column conversion incl. the zip path, D13
-zip-keep, D12 split-carry). The next full protocol pass is owed on
-D27–D29.
+zip-keep, D12 split-carry). D30 (2026-07-05, working tree) rescoped the
+per-cell `−` to lone-in-stack cells, with §2–§4/§7 re-synced and an e2e
+pin added (stacked cells bare, lone cell `−`, stacked bar keeps `+`).
+The next full protocol pass is owed on D27–D30.
 
 Accepted trade (re-verified 2026-07-04): on a LEFT region squeezed into
 the scrolling state, the RegionResizer's 5px over-the-panel strip (the
@@ -954,7 +983,9 @@ folded into final text (the play-by-play lives in git history).
   host row (grip bar, unmergeable header) is unmarked backing for the
   same action (P9's hit-area rule, P11 backing for the small toggle, P7
   symmetry with the bar's click-to-expand). Double-click rejected: it
-  would extend the P2 grammar globally for one shortcut.
+  would extend the P2 grammar globally for one shortcut. Scoped by D30:
+  the `−` and its backing click exist only where the cell is its whole
+  stack; a stacked cell's row is drag-only.
 - **D7 (release over nothing, 2026-07-03):** always float at the
   pointer. Motion means move; Escape is the abort.
 - **D8 (main panel, 2026-07-03, amended):** ordinary in the MODEL —
@@ -1013,6 +1044,9 @@ folded into final text (the play-by-play lives in git history).
   beside minimized ones no longer infects it — collapse changes only by
   user gesture or server command, P3 with no exceptions). Bulk toggles
   survive only as the multi-group window header's toggle and the rail.
+  Amended by D30: the MODEL keeps per-cell collapse (server API, bar
+  rendering, per-cell expand all unchanged), but the UI's minimize
+  CONTROL now renders only where the cell is its whole stack.
 - **D17 (minimized floating stacks are stacked rows, 2026-07-04):** a
   floating window is ALWAYS a vertical stack of cells, each an expanded
   panel or a bar. The special all-minimized "chip bar" mode is deleted
@@ -1153,3 +1187,30 @@ folded into final text (the play-by-play lives in git history).
   pure signifier and can shrink without hit-area cost (P11's
   backing-surface rule). The user judged the full-size form visually
   heavy beside the panel's own action icons.
+- **D30 (one collapse control per scope, 2026-07-05; amends D16 and
+  scopes D6):** user-directed. In the user's words: "Either all panels
+  are minimized or none of them are. This would be simpler." The
+  granularity story: one collapse control per scope, sitting on that
+  scope's nearest handle. The cell-level `−` — the grip bar's toggle
+  with its bar-click backing, and the unmergeable header's compact
+  toggle with its header-click — renders only where the cell IS its
+  whole VISUAL column (D27's scope; `isLoneInVisualColumn`): a docked
+  panel with no other leaf in its visual column — the sole panel of a
+  single-visual-column region, or a 1-leaf column of a zipped band —
+  or a single-group floating window. A plain docked stack is ONE
+  visual column, so none of its cells is lone (the model-column count
+  would say otherwise: D12 canonicalizes plain stacks into single-leaf
+  columns). A 2+ stack's collapse control is the stack's: the parent
+  handle's chevron (docked; rails the scope) or the window header's
+  toggle-all (floating) — a stacked cell offers NO cell-level minimize
+  from the UI. EXPAND is deliberately ungated everywhere: every bar
+  keeps its right-end `+` and click-to-expand, rails their spine rows
+  (P5 — server- or degradation-created mixed states always offer a way
+  out; expanding one bar of an all-minimized stack remains legal, so
+  mixed stacks are still reachable in the expand direction). Unchanged:
+  the model and server API (`panel.minimize()` stays per-panel; a
+  collapsed group renders its bar wherever it lives) and the main
+  panel's minimized face. What the user loses is only the mixed-state
+  ENTRY in the minimize direction; what the UI sheds is a per-cell
+  affordance that promised finer granularity than a stack's collapse
+  story wants.

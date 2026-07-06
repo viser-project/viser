@@ -399,41 +399,67 @@ def test_plus_drag_tears_out_still_minimized(dock_context, vite_server) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 10. Per-cell minimize everywhere (D16), and the rail only via the EXPLICIT
-#     region collapse (D21) -- whose header toggle expands the region while
-#     the cells keep their own collapse states.
+# 10. A plain docked stack is ONE visual column (D30): its cells carry NO
+#     cell-level minimize control; mixed per-cell collapse states stay valid
+#     in the MODEL (seeded via set_layout, bars keep their +). The rail comes
+#     only from the EXPLICIT region collapse (D21) -- whose header toggle
+#     expands the region while the cells keep their own collapse states.
 # ---------------------------------------------------------------------------
-def test_stack_minimizes_independently_then_region_rail(
-    dock_context, vite_server
-) -> None:
-    """Spec D12/D16: a docked stack canonicalizes to bands, so each panel
-    minimizes INDEPENDENTLY (mixed states are valid). Minimizing everything
-    does NOT flip the region into the rail; the explicit chevron does (D21),
-    and the rail header's toggle expands the REGION (per-cell states kept)."""
+def test_stack_cells_lack_minimize_then_region_rail(dock_context, vite_server) -> None:
+    """Spec D12/D30: a docked stack canonicalizes to bands forming ONE visual
+    column, so its cells render NO cell-level minimize control (the region
+    chevron is the stack's collapse control). Mixed per-cell states remain
+    valid in the model: a seeded bar renders beside its expanded sibling and
+    keeps its + (expand stays per-cell). All-cells-collapsed does NOT flip the
+    region into the rail; the explicit chevron does (D21), and the rail
+    header's toggle expands the REGION (per-cell states kept)."""
     page = _open(dock_context, vite_server)
     set_layout(page, dock_layout(docked_right=stack("inspector", "controls")))
     assert page.query_selector("[data-dock-column-handle]") is None
     a = _group_id_for_panel(page, "controls")
     b = _group_id_for_panel(page, "inspector")
 
-    # Minimize ONE panel: the other stays expanded (independence).
-    page.eval_on_selector(
-        f'[data-dock-group="{b}"] [data-dock-minimize]', "e => e.click()"
+    # D30: neither stacked cell renders a cell-level minimize control.
+    for gid in (a, b):
+        assert (
+            page.eval_on_selector_all(
+                f'[data-dock-group="{gid}"] [data-dock-minimize]', "els => els.length"
+            )
+            == 0
+        ), "a plain stack's cells must not render a cell-level minimize (D30)"
+
+    # Seed ONE cell collapsed (the model path): the other stays expanded, the
+    # bar renders in place and keeps its + (per-cell expand, D30).
+    set_layout(
+        page,
+        dock_layout(docked_right=stack(group("inspector", collapsed=True), "controls")),
     )
-    page.wait_for_timeout(120)
     assert page.evaluate(
         "(gid) => window.__dockLayout.groups[gid].collapsed === true", b
     )
     assert page.evaluate(
         "(gid) => window.__dockLayout.groups[gid].collapsed !== true", a
     )
-    # Minimize the second too: still NO rail (D21 -- no emergent form flip).
-    page.eval_on_selector(
-        f'[data-dock-group="{a}"] [data-dock-minimize]', "e => e.click()"
+    assert (
+        page.query_selector(f'[data-dock-group="{b}"][data-dock-collapsed]') is not None
     )
-    page.wait_for_timeout(120)
+    assert (
+        page.eval_on_selector_all(
+            f'[data-dock-group="{b}"] [data-dock-minimize]', "els => els.length"
+        )
+        == 1
+    ), "every minimized bar keeps its + (D30)"
+    # Seed the second collapsed too: still NO rail (D21 -- no emergent flip).
+    set_layout(
+        page,
+        dock_layout(
+            docked_right=stack(
+                group("inspector", collapsed=True), group("controls", collapsed=True)
+            )
+        ),
+    )
     assert page.query_selector("[data-dock-region-rail]") is None, (
-        "minimizing every cell must not flip the region into the rail (D21)"
+        "collapsing every cell must not flip the region into the rail (D21)"
     )
     # The explicit chevron collapses the region into the rail.
     page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")

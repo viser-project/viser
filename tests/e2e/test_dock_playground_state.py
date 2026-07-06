@@ -148,11 +148,13 @@ def test_minimize_click_on_background_overlapping_window(page: Page) -> None:
 # ===========================================================================
 # Height correctness.
 # ===========================================================================
-def test_vertical_stack_bands_minimize_independently(page: Page) -> None:
-    """Spec D12/D16: a docked stack is canonical BANDS -- each panel keeps its
-    own +/- and minimizes alone, rendering its in-place bar above/below its
-    expanded sibling. Mixed states are valid; there is no column-level parent
-    handle (D22)."""
+def test_vertical_stack_band_bars_expand_independently(page: Page) -> None:
+    """Spec D12/D30: a docked stack is canonical BANDS forming ONE visual
+    column -- its cells carry NO cell-level minimize control (the region
+    chevron is the stack's collapse control) and there is no column-level
+    parent handle (D22). Mixed per-cell collapse states stay valid in the
+    MODEL: a band seeded collapsed renders its in-place bar (D20) beside its
+    expanded sibling, and the bar's + expands ONLY that band."""
     a, b = "t-controls", "t-inspector"
     set_layout(page, dock_layout(docked_right=stack("controls", "inspector")))
     docked_right = page.eval_on_selector_all(
@@ -161,34 +163,40 @@ def test_vertical_stack_bands_minimize_independently(page: Page) -> None:
     )
     assert a in docked_right and b in docked_right
 
-    # Each panel has its OWN minimize button; no column handle exists.
+    # No cell-level minimize on stacked cells (D30); no column handle;
+    # the region's chevron is the stack's collapse control.
     def n_individual_btns(gid: str) -> int:
         return page.eval_on_selector_all(
             f'[data-dock-group="{gid}"] [data-dock-minimize]', "els => els.length"
         )
 
-    assert n_individual_btns(a) == 1 and n_individual_btns(b) == 1
+    assert n_individual_btns(a) == 0 and n_individual_btns(b) == 0
     assert page.query_selector("[data-dock-column-handle]") is None
+    assert page.query_selector('[data-dock-region-collapse="right"]') is not None
 
-    # Minimize A alone: mixed state, A renders its in-place bar (D20) beside
-    # its expanded sibling.
-    page.eval_on_selector(
-        f'[data-dock-group="{a}"] [data-dock-minimize]', "e => e.click()"
+    # Seed A collapsed (the model path): mixed state, A renders its in-place
+    # bar (D20) beside its expanded sibling.
+    set_layout(
+        page,
+        dock_layout(docked_right=stack(group("controls", collapsed=True), "inspector")),
     )
-    page.wait_for_timeout(120)
     assert _is_collapsed(page, a) and not _is_collapsed(page, b), (
-        "bands must minimize independently (D12/D16)"
+        "band collapse states are per-cell in the model (D12/D30)"
     )
     bar = page.query_selector(f'[data-dock-group="{a}"][data-dock-collapsed]')
     assert bar is not None, (
         "the minimized cell should render its in-place bar beside its sibling"
     )
-    # Expand A via its bar's toggle (the + at the bar's right end).
+    # Expand A via its bar's toggle (the + every bar keeps, D30): only A
+    # expands, and the re-expanded stacked cell still shows no minus.
     page.eval_on_selector(
         f'[data-dock-group="{a}"] [data-dock-minimize]', "e => e.click()"
     )
     page.wait_for_timeout(120)
     assert not _is_collapsed(page, a) and not _is_collapsed(page, b)
+    assert n_individual_btns(a) == 0, (
+        "an expanded stacked cell must not grow a cell-level minimize (D30)"
+    )
 
 
 def test_floating_resize_grip_hidden_when_minimized(page: Page) -> None:

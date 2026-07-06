@@ -277,8 +277,10 @@ export function ColumnCollapseChevron({
  *
  * With `onToggle`, the bar gets a bulk toggle: minimize or expand every
  * child group at once (direction: expand when EVERY cell is minimized, else
- * minimize all). Since D16 each child ALSO carries its own per-cell +/- --
- * bulk and per-cell are distinct actions with distinct signifiers (P9).
+ * minimize all). This is the stack's ONE collapse control (D30): stacked
+ * cells carry no per-cell `-` (their minimized bars keep the per-cell `+` --
+ * expand is never gated), so bulk and per-cell expand stay distinct actions
+ * with distinct signifiers (P9).
  *
  * The toggle button is `dragThrough`: a real pointer press flows to the bar's
  * own onPointerDown (the click-vs-drag arbiter), so dragging the + still drags

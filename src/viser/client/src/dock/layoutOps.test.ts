@@ -45,6 +45,7 @@ import {
   toRegion,
 } from "./testUtils";
 import {
+  isLoneInVisualColumn,
   edgeIsSingleLeaf,
   minRegionWidth,
   findGroupLocation,
@@ -157,6 +158,33 @@ describe("setRegionCollapsed (D21)", () => {
 // ===========================================================================
 
 describe("setColumnRailed (per-column rail)", () => {
+  it("isLoneInVisualColumn: plain band-stacks are ONE visual column (D30)", () => {
+    // Canonical plain stack: two bands, one single-leaf column each. The
+    // visual column is the whole region, so NEITHER cell is lone -- the
+    // model-column count alone would wrongly call both lone (D12 shape).
+    const layout = makeLayout({
+      right: rows([row([leaf("a")]), row([leaf("b")])]),
+    });
+    expect(isLoneInVisualColumn(layout, "a")).toBe(false);
+    expect(isLoneInVisualColumn(layout, "b")).toBe(false);
+  });
+
+  it("isLoneInVisualColumn: zip columns and sole panels", () => {
+    // Zipped band: a 1-leaf column beside a 2-leaf column. The 1-leaf
+    // column IS its visual column (lone); the 2-leaf column's cells share
+    // theirs. A region's sole panel is lone; a 2-stack floating window's
+    // cells are not.
+    const layout = makeLayout({
+      right: rows([row([col([leaf("b"), leaf("c")]), leaf("a")])]),
+      left: leaf("m"),
+      floating: [{ id: "w1", stack: ["x", "y"] }],
+    });
+    expect(isLoneInVisualColumn(layout, "a")).toBe(true);
+    expect(isLoneInVisualColumn(layout, "b")).toBe(false);
+    expect(isLoneInVisualColumn(layout, "m")).toBe(true);
+    expect(isLoneInVisualColumn(layout, "x")).toBe(false);
+  });
+
   /** Left edge: one band, two single-leaf columns [a | b]. */
   const twoColumns = () => {
     const ca = col([leaf("a")]);

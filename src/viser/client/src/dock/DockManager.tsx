@@ -1864,9 +1864,11 @@ export function DockManager({
   );
   const toggleCollapsed = React.useCallback(
     (groupId: GroupId) => {
-      // Per-CELL minimize everywhere (D16): any group toggles itself, whether
-      // lone or in a 2+ stack. Bulk minimize/expand survives only as the
-      // multi-group window header's toggle-all and the region rail.
+      // The MODEL op stays per-cell (D16): any group can toggle itself,
+      // whether lone or in a 2+ stack (server API + bar expands rely on it).
+      // The UI's minimize CONTROL is narrower (D30): it renders only where
+      // the panel IS its whole stack; a stacked cell's collapse control is
+      // its stack's chevron / the window header's toggle-all.
       applyOp(ops.toggleCollapsed(layoutRef.current, groupId));
     },
     [applyOp],
