@@ -711,8 +711,12 @@ sub-question (§10).
   also a RENDER floor on expanded docked leaves (mirroring the floating
   stack's, P7) — without it repeated same-target splits clip the
   smallest cell's chrome. Railed columns don't raise their band's height
-  floor (a rail scrolls); an all-railed band floors at ~60px grab
-  height.
+  floor (a rail's spine scrolls internally); an all-railed band's
+  divider MIN is the ~60px grab floor — but bands never
+  height-COLLAPSE: rails hold width, not height, so an all-railed band
+  renders full-height rail strips like any band (the bars-era band
+  collapse squeezed rails into a sliver behind a scrollbar — fixed
+  2026-07-06, pinned by the full-height rail e2e test).
 - **Split defaults**: a top/bottom leaf drop and a left/right column
   drop both default the two sides to HALF the target's current weight —
   sibling weights may be on any scale (divider drags write px), so only
