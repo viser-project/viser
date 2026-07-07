@@ -264,14 +264,31 @@ function RowView({
                 minHeight: 0,
                 display: "flex",
                 flexDirection: "column",
+                // During the width ease the CONTENT already renders its
+                // committed form; clip the reveal (same rule as bars) so
+                // the transient never shows final-size icons floating in a
+                // wide box -- that flash reads as "weirdly small icons".
+                overflow: "hidden",
               }}
             >
               {railed ? (
                 // Per-column rail: the column collapsed to its 36px spine
-                // strip in place. Its own narrow header is the parent
-                // handle while railed (a separate handle above it would
-                // duplicate the signifier, P9).
-                <ColumnRail column={column} edge={edge} />
+                // strip in place, rendered AT its final width inside the
+                // easing wrapper (P1: the content is the committed result;
+                // the wrapper only reveals it). Its own narrow header is
+                // the parent handle while railed (a separate handle above
+                // it would duplicate the signifier, P9).
+                <Box
+                  style={{
+                    width: MINIMIZED_STRIP_PX,
+                    flexShrink: 0,
+                    height: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  <ColumnRail column={column} edge={edge} />
+                </Box>
               ) : (
                 <>
                   {/* Per-column parent handle (D27): this visual column's
