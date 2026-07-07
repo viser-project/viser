@@ -471,10 +471,15 @@ describe("outer-edge dock beside a minimized region strip", () => {
     expect(out!.hint.height).toBeGreaterThan(400);
   });
 
-  it("lone railed cell: the region's bottom edge band docks a band below", () => {
-    // A railed region's cell is content-tall, so for a LONE collapsed leaf
-    // the region-edge top/bottom bands must stay available -- otherwise
-    // there is no way to dock below the rail at all (P5).
+  it("lone railed cell: the region's bottom edge resolves to a SIDE dock, never a band below the rail", () => {
+    // Stability pass 2026-07 (model audit finding 1): regionEdge top/bottom
+    // over a D21-railed region are SUPPRESSED -- a band docked above/below
+    // the rail would be silently swallowed INTO the rail (insertBandAtIndex
+    // keeps the region flag, collapsing the dropped stack; edge case 1
+    // forbids a drop collapsing the dropped stack). The bottom area still
+    // isn't dead: the D21 halves resolve it to "dock a column beside"
+    // (left/right), which converts the rail honestly and lands the newcomer
+    // expanded.
     const node = leaf("g");
     const layout = layoutWith({ right: node });
     layout.regionCollapsed.right = true; // the rail is the ONE docked store (D38)
@@ -482,11 +487,43 @@ describe("outer-edge dock beside a minimized region strip", () => {
     // Drop at the region's bottom edge, far below the content-tall cell.
     const out = run(layout, [tgt], stripLeft + STRIP / 2, CONTAINER.height - 4, STRIP_W);
     expect(out).not.toBeNull();
-    expect(out!.result).toEqual({
-      kind: "regionEdge",
-      edge: "right",
-      side: "bottom",
-    });
+    expect(out!.result.kind).toBe("regionEdge");
+    const side = (out!.result as { side: string }).side;
+    expect(side === "left" || side === "right").toBe(true);
+  });
+
+  it("D21-railed multi-band region: no bandInsert / top / bottom anywhere -- drops join the rail", () => {
+    // Model audit finding 1 (seam variant): a 2-band region-railed region's
+    // interior seam used to resolve bandInsert -- committed via
+    // insertBandAtIndex WITHOUT converting the region rail, so the dropped
+    // expanded stack rendered inside the rail. The seam and the regionEdge
+    // top/bottom zones are suppressed over a railed region; drops at the
+    // packed rail's cell boundaries hit the cells' own zones instead, and
+    // only the honest left/right side docks remain at region scope.
+    const top = leaf("g1");
+    const bot = leaf("g2");
+    const tree = colSplit([top, bot]);
+    const layout = layoutWith({ right: tree });
+    layout.regionCollapsed.right = true;
+    // Packed rail: two content-tall cells, a hairline apart (the packed
+    // strip renders no band boxes on screen).
+    const t1 = collapsedRightTarget("g1", leafIdOf(top), rect(stripLeft, 0, STRIP, 120));
+    const t2 = collapsedRightTarget("g2", leafIdOf(bot), rect(stripLeft, 121, STRIP, 120));
+    // Pointer at the cell boundary, mid-strip: a rail-cell zone (stack
+    // above/below = split, or merge/insertTab), NEVER a band insert.
+    const out = run(layout, [t1, t2], stripLeft + STRIP / 2, 121, STRIP_W);
+    expect(out).not.toBeNull();
+    expect(["split", "merge", "insertTab"]).toContain(out!.result.kind);
+    // And nowhere over the whole strip does bandInsert or a top/bottom
+    // regionEdge appear.
+    for (let y = 0; y <= CONTAINER.height; y += 8) {
+      const r = run(layout, [t1, t2], stripLeft + STRIP / 2, y, STRIP_W);
+      if (r === null) continue;
+      expect(r.result.kind).not.toBe("bandInsert");
+      if (r.result.kind === "regionEdge") {
+        expect(["left", "right"]).toContain((r.result as { side: string }).side);
+      }
+    }
   });
 
   it("single minimized strip: over the strip's own rows still inserts a tab (cell wins)", () => {
@@ -826,6 +863,54 @@ describe("seam between vertically-stacked docked panels is one stable target", (
       region: "bottom",
     });
     expect(out.hint.top + out.hint.height / 2).toBeCloseTo(frame.bottom, 0);
+  });
+});
+
+// regression (zones audit #4, spec 5.5): the T-JUNCTION where the vertical
+// column gap crosses one column's horizontal cell seam used to be a ~7x7px
+// dead pocket -- the horizontal recovery needs the pointer inside the lower
+// cell's x-span (it's in the column gap), and the vertical recovery required
+// BOTH flanking columns to have a cell CONTAINING clientY (the left column's
+// cells meet at a seam exactly there). The vertical recovery now falls back
+// per side to the nearest cell by y-distance (bounded by the seam gap).
+describe("T-junction of a column gap and a cell seam is not dead", () => {
+  // col0 = a over b (a[0..396], 7px seam, b[403..800]); col1 = c full height;
+  // column gap x in (146, 153).
+  const A = rect(0, 0, 146, 396);
+  const B = rect(0, 403, 146, 397);
+  const C = rect(153, 0, 147, 800);
+  const tree = rowSplit([colSplit([leaf("a"), leaf("b")]), leaf("c")]);
+  const junctionLayout = layoutWith({ left: tree });
+  const ids = leafIdsOf(tree);
+  const junctionTargets = () => [
+    dockedTarget("a", ids[0], "left", A),
+    dockedTarget("b", ids[1], "left", B),
+    dockedTarget("c", ids[2], "left", C),
+  ];
+
+  it("the pocket resolves to the column insert at the vertical seam", () => {
+    // Dead-center of the junction: x in the column gap, y in the a/b seam.
+    const out = run(junctionLayout, junctionTargets(), 150, 400);
+    expect(out).not.toBeNull();
+    // Right half of the gap -> split LEFT of c (same landing as right-of-b).
+    expect(out!.result).toEqual({
+      kind: "split",
+      edge: "left",
+      nodeId: ids[2],
+      region: "left",
+    });
+    // Left half -> split RIGHT of the left column's nearest cell.
+    const out2 = run(junctionLayout, junctionTargets(), 148, 400);
+    expect(out2).not.toBeNull();
+    expect(out2!.result.kind).toBe("split");
+    expect((out2!.result as { region: string }).region).toBe("right");
+  });
+
+  it("no null anywhere along the vertical gap, seam heights included", () => {
+    for (let y = 0; y <= 800; y += 1) {
+      const out = run(junctionLayout, junctionTargets(), 149, y);
+      expect(out, `null at y=${y}`).not.toBeNull();
+    }
   });
 });
 

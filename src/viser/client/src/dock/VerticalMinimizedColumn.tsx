@@ -11,7 +11,7 @@ import { Box, Paper } from "@mantine/core";
 import React from "react";
 import { useDock } from "./DockContext";
 import { focusRing, gripBarBg, wayfindingText } from "./DockStyles.css";
-import { focusPaneTab, tabListKeyDown } from "./gestures";
+import { focusPaneTabOrGroup, tabListKeyDown } from "./gestures";
 import { ChromeDivider, GripPill, StackHandleBar } from "./handles";
 import { startCollapsedGroupPress } from "./collapsedPress";
 import { collectLeaves } from "./layoutOps";
@@ -38,11 +38,14 @@ export function RegionMinimizedRail({
   );
   // Expand the REGION: clears the region's ONE flag (D38) and reveals
   // every cell expanded. Focus then lands on the first revealed cell's
-  // active tab, never on <body> (spec 4 / edge case 14).
+  // active tab -- or, for an unmergeable panel with no tab strip, its
+  // header's toggle / the group element -- never on <body> (spec 4 /
+  // edge case 14).
   const expandRegion = () => {
     dock.collapseRegion(edge, false);
     const firstGroup = dock.groups[leaves[0]?.group ?? ""];
-    if (firstGroup?.activeId != null) focusPaneTab(firstGroup.activeId);
+    if (firstGroup?.activeId != null)
+      focusPaneTabOrGroup(firstGroup.activeId, firstGroup.id);
   };
   return (
     <Box
@@ -70,6 +73,11 @@ export function RegionMinimizedRail({
       />
       <Paper
         radius={0}
+        // The packed strip SCROLLS; the marker makes DockManager's target
+        // scanner clip cell drop rects to this box, so an overflowing spine
+        // can't bleed targets past the rail (region-rail cells stay
+        // content-sized otherwise -- the D21 halves cover the empty area).
+        data-dock-scroll="true"
         style={{
           flexGrow: 1,
           minWidth: 0,
@@ -125,11 +133,13 @@ export function ColumnRail({
   const leaves = collectLeaves(column);
   // Expand the COLUMN: clears its ONE railed flag (D38) and reveals every
   // cell expanded. Focus then lands on the first revealed cell's active
-  // tab, never on <body> (edge case 14) -- mirrors expandRegion.
+  // tab (unmergeable fallback: header toggle / group element), never on
+  // <body> (edge case 14) -- mirrors expandRegion.
   const expandColumn = () => {
     dock.railColumn(edge, column.id, false);
     const firstGroup = dock.groups[leaves[0]?.group ?? ""];
-    if (firstGroup?.activeId != null) focusPaneTab(firstGroup.activeId);
+    if (firstGroup?.activeId != null)
+      focusPaneTabOrGroup(firstGroup.activeId, firstGroup.id);
   };
   return (
     <Box
@@ -138,7 +148,8 @@ export function ColumnRail({
       // inside size to content, so DockManager's target scanner extends the
       // first/last cell's drop rect to this root's box (data-dock-rail-root)
       // -- the header run and the empty tail below the spine rows must not
-      // be dead pixels.
+      // be dead pixels -- and CLAMPS every cell to it, so an overflowing
+      // (scrolling) spine can't bleed drop targets into the next band.
       data-dock-rail-root={column.id}
       style={{
         display: "flex",
@@ -285,7 +296,9 @@ export function VerticalMinimizedCell({
             nextKey: "ArrowDown",
             onActivate: (id) => {
               dock.expandToTab(group.id, id);
-              focusPaneTab(id);
+              // Unmergeable fallback (edge case 14): the expanded cell may
+              // render no tab element to land on.
+              focusPaneTabOrGroup(id, group.id);
             },
           });
           return (

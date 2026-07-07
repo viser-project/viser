@@ -24,6 +24,7 @@ import {
   mapNonEmpty,
   MIN_REGION_GRAB_PX,
   MIN_WINDOW_HEIGHT_PX,
+  MINIMIZED_STRIP_PX,
   NodeId,
   NonEmpty,
   PaneId,
@@ -685,10 +686,14 @@ function buildColumn(
 /** Detach every group in `groupIds` from the draft, returning the preserved
  * per-group height shares of the floating window that held ALL of them (its
  * whole stack being docked; `heights` undefined when the groups aren't
- * coming from one window) plus whether that source window was COLLAPSED --
- * transfers are identity (D38): docking a collapsed window rails/collapses
+ * coming from one window) plus whether the source CONTAINER was COLLAPSED --
+ * transfers are identity (D38): docking a collapsed container rails/collapses
  * the landing scope, so the callers need the source container's state after
- * the window itself is gone. Capture-then-detach lives in ONE helper because
+ * the container itself is gone. The source may be a floating window (every
+ * user drag-dock path -- drags float first) OR a docked railed cell /
+ * region-railed cell: server-driven docked->docked moves (applyPanelPlacement
+ * edge/split) never float in between, and their collapse must carry the same
+ * way the float path's does. Capture-then-detach lives in ONE helper because
  * the ORDER is load-bearing: detachInPlace deletes each departing group's
  * stackWeights entry as it leaves, so the weights must be copied out first --
  * this is the inverse of floatColumn, which wrote them, and it's what lets a
@@ -702,7 +707,10 @@ function detachAllPreservingStackWeights(
   );
   const heights =
     win?.stackWeights === undefined ? undefined : { ...win.stackWeights };
-  const sourceCollapsed = win?.collapsed === true;
+  const sourceCollapsed =
+    win !== undefined
+      ? win.collapsed === true
+      : groupIds.every((g) => isRailedDockedCell(draft, g));
   groupIds.forEach((g) => detachInPlace(draft, g));
   return { heights, sourceCollapsed };
 }
@@ -1799,6 +1807,11 @@ function collapseContainerOf(
   }
   const found = findGroupInRegion(region, groupId);
   if (found === null) return layout;
+  // Mixed region: the column store. setColumnRailed's band-scoped gate makes
+  // this a no-op for a band's SOLE column (railing it would strand its
+  // band's full width as dead space, D28) -- the lone column of a
+  // single-column band in a mixed region has no docked collapse (its
+  // handle is pill-only in chrome too, D32).
   return setColumnRailed(layout, loc.edge, found.column.id, true);
 }
 
@@ -1841,7 +1854,15 @@ export function setRegionCollapsed(
  * per-column analog of setRegionCollapsed -- the column-collapse chevron's
  * op. Setting or clearing on a missing column is a no-op, as is a value that
  * already matches. Per-cell collapse states are untouched (the rail is a
- * view over them). */
+ * view over them).
+ *
+ * Band-scoped rail gate (D28, stability pass 2026-07): railing a band's
+ * SOLE column is refused (no-op) unless the region is all-single-column --
+ * there the caller should target the REGION store instead
+ * (collapseContainerOf does). In a MIXED region a lone railed column would
+ * strand its band's remaining full width as dead space; canonicalization
+ * makes that state unrepresentable, and this gate keeps programmatic
+ * callers from minting it at the op level. */
 export function setColumnRailed(
   layout: DockLayout,
   edge: DockEdge,
@@ -1850,6 +1871,12 @@ export function setColumnRailed(
 ): DockLayout {
   const found = findColumn(layout.docked[edge], columnId);
   if (found === null || (found.column.railed === true) === on) return layout;
+  if (
+    on &&
+    found.row.columns.length === 1 &&
+    !layout.docked[edge]!.rows.every((rw) => rw.columns.length === 1)
+  )
+    return layout;
   const draft = clone(layout);
   const column = findColumn(draft.docked[edge], columnId)!.column;
   if (on) column.railed = true;
@@ -2041,29 +2068,6 @@ export function normalizeCanonicalBandsInPlace(layout: DockLayout): boolean {
   for (const edge of ["left", "right"] as DockEdge[]) {
     const region = layout.docked[edge];
     if (region === null) continue;
-    // Store migration at canonicalization (D38, collapse law 5): when scopes
-    // widen structurally, the flag moves to the canonical store.
-    // - Every band single-column and every column railed -> the railed run
-    //   IS the whole visual column, whose canonical store is the REGION
-    //   flag: migrate (set regionCollapsed, drop the column flags).
-    // - A lone railed column among EXPANDED bands (single-column region):
-    //   the railed form has no legal geometry there -- it can't be the
-    //   region store (the region isn't all collapsed) and docked bars are
-    //   gone (D32) -- so the flag DROPS and the column expands: the only
-    //   legal state for that geometry.
-    const singleColumn = region.rows.every((rw) => rw.columns.length === 1);
-    if (singleColumn) {
-      const railedLoners = region.rows
-        .map((rw) => rw.columns[0])
-        .filter((c) => c.railed === true);
-      if (railedLoners.length > 0) {
-        if (railedLoners.length === region.rows.length) {
-          layout.regionCollapsed = withRegionCollapsed(layout, edge, true);
-        }
-        for (const c of railedLoners) delete c.railed;
-        changed = true;
-      }
-    }
     const regionW = Math.max(1, regionWidthsOf(layout)[edge]);
 
     const fractions = (band: DockRow): number[] => {
@@ -2151,6 +2155,32 @@ export function normalizeCanonicalBandsInPlace(layout: DockLayout): boolean {
     }
     const ne = asNonEmpty(rows);
     if (ne !== null) region.rows = ne;
+
+    // Store migration at canonicalization (D38, collapse law 5), run on the
+    // FINAL band form (a D12 split's fragments arrive railed, P14, and
+    // resolve here). The rule is BAND-scoped: a railed column that is its
+    // band's SOLE column has no legal committed geometry of its own (a 36px
+    // rail inside a full-width band strands dead space, D28), so:
+    //  - every band single-column and every column railed -> the railed run
+    //    IS the whole visual column, whose canonical store is the REGION
+    //    flag: migrate (set regionCollapsed, drop the column flags);
+    //  - otherwise -- expanded single-column siblings, OR a MIXED region
+    //    with a multi-column band elsewhere -- the flag DROPS and the
+    //    column expands: the only legal state for that geometry. The
+    //    "stranded railed loner in a mixed region" is thereby
+    //    unrepresentable in committed state (invariant #13).
+    const singleColumn = region.rows.every((rw) => rw.columns.length === 1);
+    const railedLoners = region.rows
+      .filter((rw) => rw.columns.length === 1)
+      .map((rw) => rw.columns[0])
+      .filter((c) => c.railed === true);
+    if (railedLoners.length > 0) {
+      if (singleColumn && railedLoners.length === region.rows.length) {
+        layout.regionCollapsed = withRegionCollapsed(layout, edge, true);
+      }
+      for (const c of railedLoners) delete c.railed;
+      changed = true;
+    }
   }
   return changed;
 }
@@ -2224,9 +2254,21 @@ export function setNodeWeights(
   return draft;
 }
 
-/** Set an edge's region width (px) directly -- the region resizer's write
- * path. The value becomes the carry-over base for width reconciliation on
- * commit (which still enforces its min/max invariants). */
+/** Set an edge's region width (px) directly -- the region resizer's and the
+ * server set_width's write path. The value becomes the carry-over base for
+ * width reconciliation on commit (which still enforces its min/max
+ * invariants).
+ *
+ * D40: regionWidth is the width row's rendered need whenever that row holds
+ * an expanded column, so a bare width write must land IN the expanded
+ * width-row weights too -- otherwise reconciliation would re-derive the old
+ * sum and snap the width straight back. The redistribution mirrors the
+ * region resizer's (proportional from current widths, clamped per column):
+ * railed columns keep their P8 restore weights untouched (they render the
+ * fixed 36px strip), and the committed width is what the weights actually
+ * absorbed. A single width column's px lives in regionWidth alone (its
+ * weight may be a height share), and a fully-railed width row carries the
+ * width as the region's content need -- both unchanged here. */
 export function setRegionWidth(
   layout: DockLayout,
   edge: DockEdge,
@@ -2235,6 +2277,25 @@ export function setRegionWidth(
   if (!Number.isFinite(px) || regionWidthsOf(layout)[edge] === px)
     return layout;
   const draft = clone(layout);
+  const region = draft.docked[edge];
+  if (region !== null) {
+    const cols = widthColumns(region);
+    const expanded = cols.filter((c) => c.railed !== true);
+    if (cols.length > 1 && expanded.length > 0) {
+      const railedPx =
+        (cols.length - expanded.length) * MINIMIZED_STRIP_PX;
+      const widths = resizeRegionColumns(
+        expanded.map((c) => c.weight),
+        expanded.map(() => minRegionWidth()),
+        expanded.map(() => Infinity),
+        px - railedPx,
+      );
+      expanded.forEach((c, i) => {
+        c.weight = widths[i];
+      });
+      px = railedPx + widths.reduce((a, b) => a + b, 0);
+    }
+  }
   draft.regionWidth = { ...regionWidthsOf(layout), [edge]: px };
   return draft;
 }

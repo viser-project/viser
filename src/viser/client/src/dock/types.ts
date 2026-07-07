@@ -394,8 +394,10 @@ export interface DockLayout {
    * region as the 36px vertical rail, regardless of per-cell collapse states.
    * Toggled only by the region-collapse chevron / rail header (and cleared by
    * expanding a panel from the rail or floating the region) -- never flips
-   * emergently from cell minimize states. Kept (harmlessly) while the edge is
-   * empty; ops that create a region leave it false. */
+   * emergently from cell minimize states. NEVER set while the edge is empty:
+   * detachInPlace clears it at the one chokepoint when an edge empties (and
+   * floatRegion clears its own path), so a stale flag can't ambush the next
+   * region docked there with a surprise rail (invariant #14). */
   regionCollapsed: Record<DockEdge, boolean>;
   /** Docked region widths in px per edge: the width-determining columns'
    * summed pixels (dividers render on top -- see regionPlan; collapse states

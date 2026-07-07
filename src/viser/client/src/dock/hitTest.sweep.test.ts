@@ -92,9 +92,15 @@ function dockedTargets(
     for (const column of band.columns) {
       if (column.railed === true) {
         // ColumnRail: header, then content-tall cells; drop rects of the
-        // first/last cell extend to the strip box (fix: rails' droppable
-        // surface is the full strip -- no dead header run or empty tail).
+        // first/last cell extend to the strip box (rails' droppable surface
+        // is the full strip -- no dead header run or empty tail) AND every
+        // cell is CLAMPED to the rail root (band) box -- an overflowing
+        // spine must not bleed targets into the next band (the scanner's
+        // clamp, stability pass 2026-07). Fully-overflowed cells are
+        // dropped.
         const cw = MINIMIZED_STRIP_PX;
+        const railTop = bandTop;
+        const railBottom = bandTop + bandH;
         let cellTop = bandTop + RAIL_HEADER;
         column.leaves.forEach((lf, li) => {
           const group = layout.groups[lf.group];
@@ -109,11 +115,13 @@ function dockedTargets(
               RAIL_ROW,
             ),
           }));
-          const top = li === 0 ? bandTop : cellTop;
+          const top = li === 0 ? railTop : Math.max(cellTop, railTop);
           const bottom =
             li === column.leaves.length - 1
-              ? Math.max(bandTop + bandH, cellTop + cellH)
-              : cellTop + cellH;
+              ? railBottom
+              : Math.min(cellTop + cellH, railBottom);
+          cellTop += cellH + 1; // hairline ChromeDivider
+          if (bottom - top < 8) return; // fully overflowed: not a target
           out.push({
             groupId: lf.group,
             rect: rect(colLeft, top, cw, bottom - top),
@@ -122,7 +130,6 @@ function dockedTargets(
             ctx: { kind: "docked", nodeId: lf.id, edge },
             collapsed: true,
           });
-          cellTop += cellH + 1; // hairline ChromeDivider
         });
         colLeft += cw;
         continue;
@@ -483,6 +490,26 @@ function layouts(): {
       ]),
     );
     out.push({ name: "three bands w/ collapsed (left)", layout: l, multiBand: true });
+  }
+  {
+    // V8 (zones audit #1): a railed column whose 5-tab spine OVERFLOWS its
+    // short band, with an expanded band below. The scanner clamps rail cell
+    // rects to the rail root (band) box, so the overflowing spine never
+    // bleeds targets into band 1 -- previously the last cell's Math.max
+    // extension put ~100-200px of rail target over the lower band's panel
+    // (cross-band commits, displaced seam, over-tall side hints).
+    const l = emptyLayout();
+    l.groups = { a: group("a"), b: group("b", 5), d: group("d") };
+    const railedB = colS([leaf("b")]);
+    if (railedB.kind === "col") railedB.column.railed = true;
+    l.docked.left = toRegion(
+      rows([row([leaf("a"), railedB], 1), row([leaf("d")], 3)]),
+    );
+    out.push({
+      name: "rail spine overflowing its band (V8)",
+      layout: l,
+      multiBand: true,
+    });
   }
   {
     // Multi-band on BOTH edges -- the densest geometry, where left and right

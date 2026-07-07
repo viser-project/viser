@@ -5,7 +5,11 @@
 // the explicit region collapse, which plannedReservedWidth keys on directly.
 
 import { describe, expect, it } from "vitest";
-import { setRegionCollapsed, toggleCollapsed } from "./layoutOps";
+import {
+  setColumnRailed,
+  setRegionCollapsed,
+  toggleCollapsed,
+} from "./layoutOps";
 import { planRegion, plannedReservedWidth } from "./regionPlan";
 import { emptyLayout, MINIMIZED_STRIP_PX, SPLIT_DIVIDER_PX } from "./types";
 import { reconcileRegionWidths } from "./widthReconciliation";
@@ -30,15 +34,27 @@ describe("planRegion", () => {
     expect(plannedReservedWidth(plan, 300, false)).toBe(300);
   });
 
-  it("a RAILED width-column swaps its share for the strip width (D28/D38)", () => {
+  it("a RAILED width-column swaps its px for the strip width (D28/D38/D40)", () => {
+    // regionWidth is the rendered content need, maintained by
+    // reconciliation: railing a width-row column moves it by exactly
+    // (weight - 36), so the reserved width swaps the column's px for the
+    // fixed strip while the weight keeps the P8 restore width.
     const l = emptyLayout();
     l.groups = groups("a", "b");
-    l.docked.left = toRegion(row([leaf("a"), leaf("b")]));
-    l.docked.left!.rows[0].columns[0].railed = true;
-    const plan = planRegion(l.docked.left!);
-    // Equal weights: the expanded column keeps half of 300, the railed one
-    // renders at the fixed strip, plus the divider chrome.
-    expect(plannedReservedWidth(plan, 300, false)).toBe(
+    l.docked.left = toRegion(row([leaf("a", 150), leaf("b", 150)]));
+    l.regionWidth = { left: 300, right: 300 };
+    const next = setColumnRailed(
+      l,
+      "left",
+      l.docked.left!.rows[0].columns[0].id,
+      true,
+    );
+    reconcileRegionWidths(l, next);
+    expect(next.regionWidth!.left).toBe(150 + MINIMIZED_STRIP_PX);
+    // The railed column's WEIGHT is untouched (P8 restore width).
+    expect(next.docked.left!.rows[0].columns[0].weight).toBe(150);
+    const plan = planRegion(next.docked.left!);
+    expect(plannedReservedWidth(plan, next.regionWidth!.left, false)).toBe(
       150 + MINIMIZED_STRIP_PX + SPLIT_DIVIDER_PX,
     );
   });
@@ -63,21 +79,45 @@ describe("planRegion", () => {
     expect(plan.chromePx).toBe(SPLIT_DIVIDER_PX);
   });
 
-  it("an ALL-RAILED width band with an expanded sibling band keeps content width", () => {
+  it("an ALL-RAILED width band with NOTHING expanded reserves rails + chrome", () => {
+    // Pure rails: railing every width-row column of a single-band region
+    // walks regionWidth down to exactly the rails (D40) -- an all-railed
+    // region never reserves a phantom content width (zones audit W14).
+    const l = emptyLayout();
+    l.groups = groups("a", "b");
+    l.docked.right = toRegion(row([leaf("a", 150), leaf("b", 150)]));
+    l.regionWidth = { left: 300, right: 300 };
+    const cols = l.docked.right!.rows[0].columns;
+    const cur = setColumnRailed(l, "right", cols[0].id, true);
+    reconcileRegionWidths(l, cur);
+    const next = setColumnRailed(cur, "right", cur.docked.right!.rows[0].columns[1].id, true);
+    reconcileRegionWidths(cur, next);
+    expect(next.regionWidth!.right).toBe(2 * MINIMIZED_STRIP_PX);
+    const plan = planRegion(next.docked.right!);
+    expect(plannedReservedWidth(plan, next.regionWidth!.right, false)).toBe(
+      2 * MINIMIZED_STRIP_PX + SPLIT_DIVIDER_PX,
+    );
+  });
+
+  it("an ALL-RAILED width band does NOT squish an expanded band elsewhere (D40)", () => {
+    // The e2e-pinned honest behavior: with the width-determining band fully
+    // railed but a narrower band expanded, regionWidth carries the expanded
+    // content's need (the rails pack inside it) -- the region must never
+    // reserve only rail chrome (stability pass 1 regression).
     const l = emptyLayout();
     l.groups = groups("a", "b", "c");
     l.docked.right = toRegion(
-      rows([row([leaf("a"), leaf("b")]), row([leaf("c")])]),
+      rows([row([leaf("a", 300), leaf("b", 300)]), row([leaf("c")])]),
     );
     const band = l.docked.right!.rows[0];
     band.columns[0].railed = true;
     band.columns[1].railed = true;
     const plan = planRegion(l.docked.right!);
-    // The width-determining band is all rails, but band 2 (c) is expanded
-    // content: the region must keep its content width, not shrink to rail
-    // chrome (which squished c to ~strip width).
-    expect(plan.hasExpandedContent).toBe(true);
-    expect(plannedReservedWidth(plan, 300, false)).toBe(300 + SPLIT_DIVIDER_PX);
+    // regionWidth (the content need, e.g. established at the 300 default on
+    // injection) rides through untouched: reserved = need + chrome.
+    expect(plannedReservedWidth(plan, 300, false)).toBe(
+      300 + SPLIT_DIVIDER_PX,
+    );
   });
 
   it("an EXPLICITLY collapsed region reserves exactly the rail width (D21)", () => {

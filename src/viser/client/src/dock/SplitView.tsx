@@ -17,7 +17,7 @@
 import { Box, Paper } from "@mantine/core";
 import React from "react";
 import { useDock } from "./DockContext";
-import { dragGesture } from "./gestures";
+import { dragGesture, focusDockControl } from "./gestures";
 import { collapseAnim } from "./DockStyles.css";
 import {
   cascadeResize,
@@ -288,10 +288,19 @@ function RowView({
                         dock.startColumnDrag(event, edge, column.id, {
                           // With a chevron present, a motionless bar click
                           // backs its action (P9's hit-area rule -- same as
-                          // the region handle's bar).
+                          // the region handle's bar), INCLUDING the focus
+                          // handoff to the rail header's same-spot toggle:
+                          // a pointer click routes here (the chevron is
+                          // drag-through, T6), and focus must never fall to
+                          // <body> (spec 4).
                           onClick:
                             columns.length >= 2
-                              ? () => dock.railColumn(edge, column.id, true)
+                              ? () => {
+                                  dock.railColumn(edge, column.id, true);
+                                  focusDockControl(
+                                    `[data-dock-column-rail="${column.id}"] [data-dock-minimize-all]`,
+                                  );
+                                }
                               : undefined,
                         })
                       }

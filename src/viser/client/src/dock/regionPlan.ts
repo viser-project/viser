@@ -2,12 +2,16 @@
 // width: which columns carry the region's pixel widths, and how much fixed
 // "chrome" (inter-column dividers) sits on top of regionWidth.
 //
-// The width model post-D20/D21 is simple: EVERY width-determining column
-// carries pixels -- a minimized cell renders as its 26px bar IN PLACE at its
-// column's width, so minimize never changes region width. The only 36px form
-// is the EXPLICITLY collapsed region (D21, layout.regionCollapsed[edge]),
-// which overrides the drawn width at the DockManager level while the model
-// widths are preserved for restore.
+// The width model post-D20/D21/D40 is simple: `layout.regionWidth[edge]` IS
+// the region's rendered content need (what the region reserves, minus the
+// divider chrome), maintained by width reconciliation on every commit -- a
+// railed column contributes the fixed 36px strip to it while its stored
+// weight keeps the P8 restore width (see widthReconciliation.ts and layout
+// invariant #16). A minimized CELL renders as its 26px bar in place at its
+// column's width, so per-cell minimize never changes region width. The only
+// other 36px form is the EXPLICITLY collapsed region (D21,
+// layout.regionCollapsed[edge]), which overrides the drawn width at the
+// DockManager level while the model widths are preserved for restore.
 
 import { widthColumns } from "./layoutOps";
 import {
@@ -27,58 +31,31 @@ export interface RegionPlan {
   singleColumn: boolean;
   /** Fixed chrome on top of regionWidth: the inter-column dividers. */
   chromePx: number;
-  /** Whether ANY column in ANY band is expanded (non-railed). When the
-   * width-determining band is fully railed, expanded content in a NARROWER
-   * band still needs the region's content width -- without this the region
-   * reserved only rail chrome and squished that band to strip width. */
-  hasExpandedContent: boolean;
 }
 
 export function planRegion(region: DockRegion): RegionPlan {
-  // Width is set by the widest row band's columns (a full-width band spans the
-  // region width; narrower bands ride along).
+  // Resize math runs over the widest row band's columns (a full-width band
+  // spans the region width; narrower bands ride along).
   const columns = widthColumns(region);
   return {
     columns,
     singleColumn: columns.length === 1,
     chromePx: (columns.length - 1) * SPLIT_DIVIDER_PX,
-    hasExpandedContent: region.rows.some((r) =>
-      r.columns.some((c) => c.railed !== true),
-    ),
   };
 }
 
 /** Rendered (reserved) width of the region: the EXPLICIT collapse state (D21)
  * reserves exactly the 36px rail; otherwise regionWidth plus divider chrome.
- * Model widths are untouched by collapse, so expand restores them exactly.
- *
- * Per-COLUMN rails: a railed width-column renders at the fixed strip width
- * while its stored weight is preserved for restore (P8), so the rendered
- * width swaps that column's SHARE of regionWidth out for MINIMIZED_STRIP_PX.
- * The share is proportional over the plan's column weights: with reconciled
- * (pixel) weights it is exact, and it degrades gracefully for unreconciled
- * flex-share weights (test literals, pre-reconcile drafts). */
+ * ONE uniform rule (D40, 2026-07 stability pass): regionWidth is maintained
+ * as the rendered content need BY CONSTRUCTION -- railed columns are counted
+ * at the 36px strip inside it by width reconciliation, so no per-plan railed
+ * accounting happens here. Model column weights are untouched by collapse, so
+ * expand restores them exactly. */
 export function plannedReservedWidth(
   plan: RegionPlan,
   regionWidthPx: number,
   regionCollapsed: boolean,
 ): number {
   if (regionCollapsed) return MINIMIZED_STRIP_PX;
-  const railedCount = plan.columns.filter((c) => c.railed === true).length;
-  if (railedCount === 0) return regionWidthPx + plan.chromePx;
-  // Width-determining band fully railed, but a narrower band holds expanded
-  // content: the region keeps its content width for that band (the pre-D38
-  // "all-strip widthRow" regression, re-expressed for rails).
-  if (railedCount === plan.columns.length && plan.hasExpandedContent)
-    return regionWidthPx + plan.chromePx;
-  const totalW = plan.columns.reduce((s, c) => s + c.weight, 0) || 1;
-  const expandedW = plan.columns.reduce(
-    (s, c) => s + (c.railed === true ? 0 : c.weight),
-    0,
-  );
-  return (
-    (regionWidthPx * expandedW) / totalW +
-    railedCount * MINIMIZED_STRIP_PX +
-    plan.chromePx
-  );
+  return regionWidthPx + plan.chromePx;
 }

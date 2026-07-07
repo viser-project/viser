@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { addPaneToArea, dockToEdge, ensureArea, removePane } from "./layoutOps";
 import { invariantViolations } from "./layoutInvariants";
 import { emptyLayout, DockLayout } from "./types";
-import { leaf, group, floatingWindow, toRegion } from "./testUtils";
+import { leaf, group, floatingWindow, row, rows, toRegion } from "./testUtils";
 
 describe("invariantViolations", () => {
   it("a healthy docked layout has no violations", () => {
@@ -78,5 +78,129 @@ describe("invariantViolations", () => {
     l.groups = { a: group("a"), orphan: group("orphan") };
     l.docked.left = toRegion(leaf("a"));
     expect(invariantViolations(l).some((s) => s.includes("orphan"))).toBe(true);
+  });
+
+  it("#13: flags `railed` on a band's SOLE column (band-scoped rail rule, D28)", () => {
+    // The stranded geometry the 2026-07 stability pass made unrepresentable:
+    // a railed lone-column band inside a MIXED region (dead full-width band
+    // space). Canonicalization drops the flag; a committed layout carrying
+    // it is a bug.
+    const l = emptyLayout();
+    l.groups = { a: group("a"), b: group("b"), c: group("c") };
+    l.docked.left = toRegion(
+      rows([row([leaf("a"), leaf("b")]), row([leaf("c")])]),
+    );
+    l.docked.left!.rows[1].columns[0].railed = true;
+    const v = invariantViolations(l);
+    expect(v.some((s) => s.includes("sole column"))).toBe(true);
+    // A railed column WITH band siblings is legal.
+    const ok = emptyLayout();
+    ok.groups = { a: group("a"), b: group("b") };
+    ok.docked.left = toRegion(rows([row([leaf("a"), leaf("b")])]));
+    ok.docked.left!.rows[0].columns[0].railed = true;
+    expect(invariantViolations(ok)).toEqual([]);
+  });
+
+  it("#14: flags regionCollapsed over an EMPTY edge", () => {
+    // detachInPlace clears the flag at the chokepoint when an edge empties;
+    // a set flag over a null edge would ambush the next region docked there
+    // with a surprise rail.
+    const l = emptyLayout();
+    l.regionCollapsed = { left: true, right: false };
+    expect(
+      invariantViolations(l).some((s) => s.includes("holds no region")),
+    ).toBe(true);
+  });
+
+  it("#15: flags regionCollapsed over a region with a multi-column band (D21 precondition)", () => {
+    const l = emptyLayout();
+    l.groups = { a: group("a"), b: group("b") };
+    l.docked.left = toRegion(rows([row([leaf("a"), leaf("b")])]));
+    l.regionCollapsed = { left: true, right: false };
+    expect(
+      invariantViolations(l).some((s) => s.includes("D21 precondition")),
+    ).toBe(true);
+    // The legal D21 shape -- all single-column bands -- is clean.
+    const ok = emptyLayout();
+    ok.groups = { a: group("a"), b: group("b") };
+    ok.docked.left = toRegion(rows([row([leaf("a")]), row([leaf("b")])]));
+    ok.regionCollapsed = { left: true, right: false };
+    expect(invariantViolations(ok)).toEqual([]);
+  });
+
+  it("#16: flags regionWidth drifting from the width row's rendered need (D40)", () => {
+    // With an EXPANDED column in a multi-column width row, regionWidth must
+    // equal sum(railed ? 36 : weight) -- reconciliation maintains it on
+    // every commit, so a drift means a bypassed/broken width write.
+    const l = emptyLayout();
+    l.groups = { a: group("a"), b: group("b") };
+    l.docked.left = toRegion(rows([row([leaf("a", 150), leaf("b", 150)])]));
+    l.docked.left!.rows[0].columns[0].railed = true; // need = 36 + 150 = 186
+    l.regionWidth = { left: 300, right: 300 };
+    expect(
+      invariantViolations(l).some((s) => s.includes("rendered need")),
+    ).toBe(true);
+    // The maintained value is clean.
+    l.regionWidth = { left: 186, right: 300 };
+    expect(invariantViolations(l)).toEqual([]);
+  });
+
+  it("#16: an all-railed width row must hold exactly its rails when nothing is expanded, and at least them otherwise", () => {
+    // Nothing expanded anywhere: regionWidth is the rails, never a phantom
+    // content width (zones audit W14).
+    const rails = emptyLayout();
+    rails.groups = { a: group("a"), b: group("b") };
+    rails.docked.left = toRegion(rows([row([leaf("a", 150), leaf("b", 150)])]));
+    rails.docked.left!.rows[0].columns[0].railed = true;
+    rails.docked.left!.rows[0].columns[1].railed = true;
+    rails.regionWidth = { left: 300, right: 300 };
+    expect(
+      invariantViolations(rails).some((s) => s.includes("all-railed")),
+    ).toBe(true);
+    rails.regionWidth = { left: 72, right: 300 };
+    expect(invariantViolations(rails)).toEqual([]);
+    // With an expanded band ELSEWHERE, regionWidth carries that content's
+    // need -- any value at or above the rails' pack width is legal (the
+    // e2e-pinned no-squish rule keeps the 300 here)...
+    const mixed = structuredClone(rails);
+    mixed.groups.c = group("c");
+    mixed.docked.left!.rows.push({
+      id: "n-band-c",
+      weight: 1,
+      columns: [
+        { id: "n-col-c", weight: 1, leaves: [{ id: "n-leaf-c", group: "c", weight: 1 }] },
+      ],
+    });
+    mixed.regionWidth = { left: 300, right: 300 };
+    expect(invariantViolations(mixed)).toEqual([]);
+    // ...but a value BELOW the rails' pack width cannot render the rails.
+    mixed.regionWidth = { left: 40, right: 300 };
+    expect(
+      invariantViolations(mixed).some((s) => s.includes("pack width")),
+    ).toBe(true);
+  });
+
+  it("#16: gated off for unreconciled layouts, single width columns, and collapsed regions", () => {
+    // No regionWidth field: never reconciled (flex-share literals) -- no
+    // basis to check against.
+    const literal = emptyLayout();
+    literal.groups = { a: group("a"), b: group("b") };
+    literal.docked.left = toRegion(rows([row([leaf("a"), leaf("b")])]));
+    expect(invariantViolations(literal)).toEqual([]);
+    // Single width column: its px lives in regionWidth itself; the weight
+    // may be a height share.
+    const single = emptyLayout();
+    single.groups = { a: group("a") };
+    single.docked.left = toRegion(rows([row([leaf("a", 2)])]));
+    single.regionWidth = { left: 500, right: 300 };
+    expect(invariantViolations(single)).toEqual([]);
+    // Region-collapsed edge: regionWidth is the preserved RESTORE width
+    // (D21) -- exempt while the rail is drawn.
+    const collapsed = emptyLayout();
+    collapsed.groups = { a: group("a"), b: group("b") };
+    collapsed.docked.left = toRegion(rows([row([leaf("a")]), row([leaf("b")])]));
+    collapsed.regionCollapsed = { left: true, right: false };
+    collapsed.regionWidth = { left: 480, right: 300 };
+    expect(invariantViolations(collapsed)).toEqual([]);
   });
 });

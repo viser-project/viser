@@ -27,7 +27,9 @@ import {
 import { invariantViolations } from "./layoutInvariants";
 import { planRegion, plannedReservedWidth } from "./regionPlan";
 import { regionWidthsOf } from "./types";
+import { reconcileRegionWidths } from "./widthReconciliation";
 import {
+  canonicalViolations,
   dockToEdge,
   dockToRegionEdge,
   dockBandAtIndex,
@@ -38,6 +40,8 @@ import {
   floatColumn,
   isColumnMinimized,
   isMultiLeafColumn,
+  normalizeCanonicalBandsInPlace,
+  structureSignature,
   tearOutPane,
   snapToWindowStack,
   reorderTab,
@@ -221,6 +225,31 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
           rows([row([leaf("a"), railedB]), row([leaf("c")]), row([leaf("d")])]),
         );
         l.docked.right = toRegion(rowS([leaf("e")]));
+        return l;
+      },
+    },
+    {
+      // EXPLICIT region collapse (D21) + a COLLAPSED floating window: the
+      // two container stores the fuzzer previously never started from. Ops
+      // must maintain regionCollapsed's preconditions (a region to collapse,
+      // single-column bands -- invariants #14/#15) and the collapsed
+      // window's identity transfers (docking it rails the landing scope).
+      name: "region-railed stack + collapsed float",
+      make: () => {
+        const l = emptyLayout();
+        l.groups = { a: grp("a", 2), b: grp("b", 1), c: grp("c", 1) };
+        l.docked.left = toRegion(rows([row([leaf("a")]), row([leaf("b")])]));
+        l.regionCollapsed = { left: true, right: false };
+        l.floating = [
+          floatingWindow({
+            id: "wc",
+            x: 80,
+            y: 80,
+            width: 260,
+            stack: ["c"],
+            collapsed: true,
+          }),
+        ];
         return l;
       },
     },
@@ -628,13 +657,28 @@ function runSequence(
 ): { failure: RunFailure | null; descs: string[] } {
   const rng = mulberry32(seed);
   let layout = startMake();
+  // Fixtures are pre-commit shapes: run them through canonicalization once,
+  // as the app's first structural commit would (applyOp's pipeline), then
+  // ESTABLISH the D40 width semantic the way a wholesale injection
+  // (api.replace) does -- a structural reconcile from an empty dock
+  // px-ifies the width-row weights and sets regionWidth to the rendered
+  // content need, so invariant #16 holds before the first op.
+  normalizeCanonicalBandsInPlace(layout);
+  reconcileRegionWidths(
+    { ...layout, docked: { left: null, right: null } },
+    layout,
+  );
   const descs: string[] = [];
   // Panel-conservation baseline: no op should ever create or destroy a panel.
   const startPanels = JSON.stringify(allPanels(layout));
   // Sanity: the starting layout itself must be healthy (structurally AND
   // geometrically -- a multi-band fixture that can't be planned should fail
   // here, before any op runs).
-  const startV = [...invariantViolations(layout), ...geometricViolations(layout)];
+  const startV = [
+    ...invariantViolations(layout),
+    ...geometricViolations(layout),
+    ...canonicalViolations(layout),
+  ];
   if (startV.length > 0)
     return {
       failure: { step: -1, desc: "<start>", violations: startV, mutatedInput: false, threw: null },
@@ -659,9 +703,31 @@ function runSequence(
         descs,
       };
     }
+    const violations: string[] = [];
+    // PRODUCTION PIPELINE (applyOp): canonicalize on STRUCTURAL commits --
+    // the store-migration rules and D12/D13 run after every real op, so the
+    // fuzzer must assert the states the app actually commits, and the
+    // canonicalizer must be a fixpoint (a second run changes nothing).
+    if (
+      next !== before &&
+      structureSignature(next) !== structureSignature(before)
+    ) {
+      normalizeCanonicalBandsInPlace(next);
+      if (normalizeCanonicalBandsInPlace(next))
+        violations.push("normalizeCanonicalBandsInPlace is not idempotent");
+    }
+    // PRODUCTION PIPELINE, width leg: applyOp reconciles region widths on
+    // every commit (the ONLY regionWidth writer) -- the D40 rendered-need
+    // invariant (#16) is maintained here by construction, so the fuzzer
+    // must run it too or every committed width would be stale.
+    if (next !== before) reconcileRegionWidths(before, next);
     // Input immutability: the argument object must be unchanged.
     const mutatedInput = JSON.stringify(before) !== JSON.stringify(beforeSnapshot);
-    const violations = [...invariantViolations(next), ...geometricViolations(next)];
+    violations.push(
+      ...invariantViolations(next),
+      ...geometricViolations(next),
+      ...canonicalViolations(next),
+    );
     // Panel conservation: the multiset of panel ids must be invariant.
     if (JSON.stringify(allPanels(next)) !== startPanels) {
       violations.push(

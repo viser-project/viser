@@ -7,12 +7,15 @@
 // Pure + allocation-light: returns a list of human-readable violation strings
 // (empty == healthy). Never throws; the caller decides what to do with the list.
 
+import { widthRow } from "./layoutOps";
 import {
   DockColumn,
   DockEdge,
   DockLayout,
   DockLeaf,
   GroupId,
+  isRegionCollapsedOn,
+  MINIMIZED_STRIP_PX,
   NodeId,
   PaneId,
 } from "./types";
@@ -67,7 +70,13 @@ function referencedGroupIds(layout: DockLayout): GroupId[] {
  *     (finite/positive, keyed only by groups in the window's stack).
  *  10/11. Unique node ids and floating window ids.
  *  12. Container collapse flags (window `collapsed` / column `railed`, D38)
- *      are booleans when present; groups carry NO collapse flag. */
+ *      are booleans when present; groups carry NO collapse flag.
+ *  13. No `railed` on a band's SOLE column (band-scoped rail rule, D28).
+ *  14. regionCollapsed[edge] implies docked[edge] !== null.
+ *  15. regionCollapsed[edge] implies every band single-column (D21).
+ *  16. regionWidth (when present) is the rendered content need (D40): a
+ *      multi-column width row holding an expanded column pins it to
+ *      sum(railed ? 36 : weight). */
 export function invariantViolations(layout: DockLayout): string[] {
   const v: string[] = [];
   const refs = referencedGroupIds(layout);
@@ -192,11 +201,100 @@ export function invariantViolations(layout: DockLayout): string[] {
       v.push(`group ${gid} carries a group-level collapsed flag (D38)`);
   }
 
-  // (13 retired: areas no longer duplicate their key in an `id` field -- the
-  // mismatch it policed is unrepresentable now.)
+  // 13. Band-scoped rail rule (D28, stability pass 2026-07): no `railed` on
+  // the SOLE column of any band in committed state. Legal committed states
+  // never need it: an all-railed single-column region migrates to the
+  // regionCollapsed store at canonicalization, and every other railed loner
+  // drops its flag there (a 36px rail inside a full-width band would strand
+  // dead space). A violation means an op or a bypass minted the stranded
+  // geometry.
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const region = layout.docked[edge];
+    if (region === null) continue;
+    for (const row of region.rows) {
+      if (row.columns.length === 1 && row.columns[0].railed === true)
+        v.push(
+          `column ${row.columns[0].id} on ${edge} is railed but is its band's sole column (D28)`,
+        );
+    }
+  }
 
-  // (14 retired twice over: uniform-collapse per stack became structural in
-  // D38 -- groups have no collapse flag, so a mixed stack is unrepresentable.)
+  // 14. regionCollapsed implies a region to collapse: detachInPlace clears
+  // the flag at the one chokepoint when an edge empties (and floatRegion /
+  // setRegionCollapsed guard their own paths), so a set flag over a null
+  // edge is always a bug -- it would ambush the NEXT region docked there
+  // with a surprise rail.
+  // 15. regionCollapsed implies every band single-column: the D21 rail form's
+  // precondition (every column-adding op converts the region rail to
+  // per-column rails first).
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    if (!isRegionCollapsedOn(layout, edge)) continue;
+    const region = layout.docked[edge];
+    if (region === null) {
+      v.push(`regionCollapsed.${edge} is set but the edge holds no region`);
+      continue;
+    }
+    for (const row of region.rows) {
+      if (row.columns.length > 1)
+        v.push(
+          `regionCollapsed.${edge} is set but band ${row.id} has ${row.columns.length} columns (D21 precondition)`,
+        );
+    }
+  }
+
+  // 16. Region width matches the rendered-need semantic (D40): whenever a
+  // MULTI-column width row holds an expanded column, regionWidth[edge] IS
+  // the sum over that row of (railed ? 36 : weight) -- width reconciliation
+  // maintains it on every commit, so a drift means an op wrote weights or
+  // regionWidth without going through (or agreeing with) the reconciler.
+  // A fully-railed width row with nothing expanded anywhere must hold
+  // exactly its rails; with expanded content in OTHER bands it carries that
+  // content's need, which is only bounded below by the rails' pack width.
+  // Gated on the field's presence: a layout without `regionWidth` has never
+  // been reconciled (test literals mid-construction), so its weights may
+  // still be flex shares with no px basis to check against. Skipped for a
+  // region-collapsed edge (regionWidth is the preserved restore width there,
+  // D21) and for a single width column (its px lives in regionWidth itself;
+  // the weight may be a height share).
+  const RW_TOL = 1.5;
+  if (layout.regionWidth !== undefined) {
+    for (const edge of ["left", "right"] as DockEdge[]) {
+      const region = layout.docked[edge];
+      if (region === null || isRegionCollapsedOn(layout, edge)) continue;
+      const wr = widthRow(region);
+      if (wr.columns.length < 2) continue;
+      const rw = layout.regionWidth[edge];
+      const railsPx = wr.columns.length * MINIMIZED_STRIP_PX;
+      if (wr.columns.some((c) => c.railed !== true)) {
+        const need = wr.columns.reduce(
+          (s, c) => s + (c.railed === true ? MINIMIZED_STRIP_PX : c.weight),
+          0,
+        );
+        if (Math.abs(rw - need) > RW_TOL)
+          v.push(
+            `regionWidth.${edge} ${rw} != width row rendered need ${need} (D40)`,
+          );
+      } else if (
+        region.rows.every((row) =>
+          row === wr ? true : row.columns.every((c) => c.railed === true),
+        )
+      ) {
+        if (Math.abs(rw - railsPx) > RW_TOL)
+          v.push(
+            `regionWidth.${edge} ${rw} != all-railed width row's ${railsPx} (D40)`,
+          );
+      } else if (rw < railsPx - RW_TOL) {
+        v.push(
+          `regionWidth.${edge} ${rw} below the railed width row's pack width ${railsPx} (D40)`,
+        );
+      }
+    }
+  }
+
+  // (old 13 retired: areas no longer duplicate their key in an `id` field --
+  // the mismatch it policed is unrepresentable now. old 14 retired twice
+  // over: uniform-collapse per stack became structural in D38 -- groups have
+  // no collapse flag, so a mixed stack is unrepresentable.)
 
   return v;
 }

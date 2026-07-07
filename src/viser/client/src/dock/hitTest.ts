@@ -644,6 +644,10 @@ export function hitTest(
     // while its outer/inner thirds still dock a sibling column. The cross-band
     // seam (2a) reuses this same third as the margin it must stay clear of.
     const sideBand = Math.min(REGION_SIDE_PX, w / 3);
+    // D21-railed region: the packed rail owns the pointer's band-level
+    // intent (see below); computed up front because the seam zone keys on
+    // it too.
+    const keepSideBand = isRegionCollapsedOn(layout, edge);
 
     // 2a. Cross-band SEAM -> insert a full-width band BETWEEN two bands. A
     // multi-band region's interior seams are the only way to dock a band between
@@ -655,10 +659,18 @@ export function hitTest(
     // thirds still belong to the left/right "dock a column beside all bands"
     // bands below, so dropping at the far edge -- even at a seam's height -- still
     // docks a side column, exactly as it does away from a seam.
+    //
+    // SUPPRESSED over a D21-railed region: a band inserted into a
+    // region-railed region has no honest landing (insertBandAtIndex would
+    // silently swallow the dropped stack into the rail -- edge case 1
+    // forbids a drop collapsing the dropped stack). The packed rail's own
+    // cell zones and the left/right halves/thirds carry every drop there.
     const inSeamSpan =
       cx - regionLeft >= sideBand && regionRight - cx >= sideBand;
     const extents =
-      tree.rows.length >= 2 && inSeamSpan ? bandExtents(edge) : null;
+      tree.rows.length >= 2 && inSeamSpan && !keepSideBand
+        ? bandExtents(edge)
+        : null;
     if (extents !== null) {
       for (let i = 0; i < extents.length - 1; i++) {
         const gapCenter = (extents[i].bottom + extents[i + 1].top) / 2;
@@ -686,8 +698,8 @@ export function hitTest(
     // is railed (D28) -- renders its cells as SHORT content-tall rail cells,
     // so the per-panel split is only cell-tall and the large empty region
     // area below has no "dock beside" target. So when the region is
-    // collapsed, keep the FULL-HEIGHT left/right bands (and the top/bottom
-    // bands even for a single leaf):
+    // collapsed, keep the FULL-HEIGHT left/right bands (top/bottom are
+    // suppressed there instead -- a band drop would join the rail):
     //  - over the EMPTY area below the rail/bars: the column's left/right
     //    HALVES dock a sibling on that side (no dead center stripe),
     //  - over the cell itself: only the outer/inner thirds dock beside (full
@@ -696,7 +708,7 @@ export function hitTest(
     // Only the EXPLICIT region rail keeps full-height side bands: railed
     // columns render region-tall strips (D38 -- rails hold width, not
     // height), so an all-railed region has no empty area needing them.
-    const keepSideBand = isRegionCollapsedOn(layout, edge);
+    // (`keepSideBand` is computed above, before the seam zone.)
     // Any COLLAPSED docked cell under the pointer keeps its own zones: a
     // 40px side band would fully shadow a 36px rail (its side slivers, tab
     // rows and merge cap), and the rail's outer sliver already docks a
@@ -714,12 +726,15 @@ export function hitTest(
     // drew and docked on the LEFT. The half-pixel nudge keeps the exact
     // midline from falling dead between the two strict `<` checks.
 
-    // Top / bottom: full-width line above/below everything. A lone COLLAPSED
-    // leaf keeps these (keepSideBand): its bar has no per-panel top/bottom
-    // split zones (D4), so the region band is the only "above/below" left.
+    // Top / bottom: full-width line above/below everything. SUPPRESSED over
+    // a D21-railed region (same rule as the seam above): a band docked
+    // above/below a region rail would be swallowed into the rail (edge case
+    // 1) -- drops there fall through to the halves (dock beside, which
+    // converts the rail honestly) or the rail cells' own zones.
     if (
       cy < REGION_EDGE_PX &&
-      (!edgeIsSingleLeaf(tree, "top") || keepSideBand)
+      !keepSideBand &&
+      !edgeIsSingleLeaf(tree, "top")
     ) {
       return {
         result: { kind: "regionEdge", edge, side: "top" },
@@ -728,7 +743,8 @@ export function hitTest(
     }
     if (
       crect.height - cy < REGION_EDGE_PX &&
-      (!edgeIsSingleLeaf(tree, "bottom") || keepSideBand)
+      !keepSideBand &&
+      !edgeIsSingleLeaf(tree, "bottom")
     ) {
       return {
         result: { kind: "regionEdge", edge, side: "bottom" },
@@ -906,16 +922,40 @@ export function hitTest(
     // splits LEFT of the right cell -- the same landing either way, and
     // left/right mirror-symmetric.
     if (owningWindow === null) {
+      // Per side, prefer a cell CONTAINING clientY; when none does (the
+      // pointer sits at a T-junction -- the column gap crossing one side's
+      // horizontal cell seam), fall back to that side's NEAREST cell by
+      // y-distance, bounded by the seam gap (spec 5.5: divider gaps are
+      // never dead in either axis; without the fallback the ~7x7px pocket
+      // where the two gaps cross resolved to null).
       let leftT: GroupTarget | null = null;
+      let leftKey: [number, number] = [Infinity, -Infinity];
       let rightT: GroupTarget | null = null;
+      let rightKey: [number, number] = [Infinity, Infinity];
       for (const t of targets.groups) {
         if (t.ctx.kind !== "docked") continue;
         const tr = t.rect;
-        if (clientY < tr.top || clientY > tr.bottom) continue;
-        if (tr.right <= clientX && (leftT === null || tr.right > leftT.rect.right))
+        const yDist =
+          clientY < tr.top
+            ? tr.top - clientY
+            : clientY > tr.bottom
+              ? clientY - tr.bottom
+              : 0;
+        if (yDist > SEAM_GAP_MAX_PX) continue;
+        if (
+          tr.right <= clientX &&
+          (yDist < leftKey[0] || (yDist === leftKey[0] && tr.right > leftKey[1]))
+        ) {
           leftT = t;
-        if (tr.left >= clientX && (rightT === null || tr.left < rightT.rect.left))
+          leftKey = [yDist, tr.right];
+        }
+        if (
+          tr.left >= clientX &&
+          (yDist < rightKey[0] || (yDist === rightKey[0] && tr.left < rightKey[1]))
+        ) {
           rightT = t;
+          rightKey = [yDist, tr.left];
+        }
       }
       if (
         leftT !== null &&

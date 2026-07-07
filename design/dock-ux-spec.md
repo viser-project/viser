@@ -29,10 +29,7 @@ surfaces, gestures, drops, sizing, minimize/expand, server placement, edge
 cases). §1 alone should predict any interaction; later sections supply the
 numbers and edge cases. §10 is the cross-check protocol, its audit record,
 and the open tensions. §11 is the decision history behind the normative
-text (D1–D38); D-numbers cite it. NOTE: D32–D38 (2026-07-05) are
-adjudicated but not yet enforced in code — §1–§9 state the decided
-behavior; §10's enforcement-pending list records where the code still
-implements the pre-D32 rules.
+text (D1–D40); D-numbers cite it.
 
 How to use it: (1) iterate until the laws and tables read as "yes,
 that's the product we want"; (2) cross-check against the implementation
@@ -91,7 +88,9 @@ Presence rules, derived:
   column of a single-column band in a mixed region has no chevron (a
   36px rail inside a full-width band would strand dead space, D28) — it
   keeps a pill-only, click-inert handle, which under D32 leaves that
-  scope with no docked collapse affordance (open gap, §10).
+  scope with no docked collapse affordance — uncollapsible by
+  adjudication (D39: its rail would be dead-band geometry; T7 records
+  the strain).
 - When scopes COINCIDE, the LARGEST coinciding scope owns the collapse
   control (D32, citing P15): a sole docked panel — panel = stack =
   region — collapses only via the region handle's », to the rail; its
@@ -160,12 +159,17 @@ if we take a '−'-minimized window and dock it, it should become
    (label/spine paths also activate their tab). Expand is never gated
    (P5). D31's `expandStackOf` machinery reduces to a flag clear.
 5. **Store migration, not state change.** When scopes widen or narrow
-   structurally, the flag moves to the canonical store: a railed lone
-   column in a single-visual-column region IS the region rail — the
-   region flag is the canonical store there, and canonicalization
-   migrates the flag (D28's orphan-degradation-to-bars rule dies with
-   the group flag). Where both docked stores are set, region takes
-   render precedence.
+   structurally, the flag moves to the canonical store, and the rule
+   is BAND-scoped, as the illegal geometry is (D39): a railed column
+   left as its band's SOLE column migrates its flag to the REGION
+   store when the region flag draws the identical picture — every
+   band single-column, every column railed: that region IS the region
+   rail (D28's orphan-degradation-to-bars rule dies with the group
+   flag). Anywhere else — expanded content elsewhere in the region, or
+   a mixed band structure — the flag DROPS and the column expands: the
+   only legal state (a rail inside a full-width band is the dead
+   geometry D28 rejected). Where both docked stores are set, region
+   takes render precedence.
 6. **Client-only, instant.** Server placement is position/width/height —
    no collapse axis (D31). Collapse changes only by user gesture (P3),
    never emerges from state, and the model commits instantly; motion is
@@ -332,7 +336,7 @@ would-be per-group flag is gone.
 | **Group** | An ordered set of ≥1 panes (tabs) with one active tab. The PANEL scope; carries no collapse state (D38). |
 | **Visual column** | The STACK scope's docked form (§1.1): the whole region when every band is single-column, else one model column of one band. |
 | **Floating window** | A free box holding a vertical stack of ≥1 groups. The STACK scope's floating form. |
-| **Bar** | The collapsed FLOATING rendering, per cell (D20/D38): one group of a collapsed window drawn as its 26px handle at `win.width`. (Pre-D38 code also renders docked bars from per-group flags.) |
+| **Bar** | The collapsed FLOATING rendering, per cell (D20/D38): one group of a collapsed window drawn as its 26px handle at `win.width`. |
 | **Rail** | The collapsed DOCKED rendering: the scope packed into a 36px vertical strip of spine rows — a whole region (D21) or one column of a multi-column band (D28). Explicit only; never appears emergently. |
 | **Collapse stores** | The ONE state's three container homes (D38): `FloatingWindow.collapsed`, `DockColumn.railed`, `regionCollapsed[edge]`. No group-level flag exists. |
 | **Area** | A nested dockable surface inside a panel body (flat tab group; no splits). |
@@ -385,8 +389,9 @@ P8). When the column's band has SIBLING columns, the right end carries
 the chevron (D28): it rails exactly that column in place; the handle's
 click backs it. A LONE column (single-column band in a mixed region)
 keeps a pill-only handle with no click action (§1.2 presence rule) —
-under D32 that scope has no docked collapse affordance at all (open gap,
-§10). The whole-REGION rail remains the single-visual-column form —
+under D32 that scope has no docked collapse affordance at all:
+uncollapsible (D39). The whole-REGION rail remains the
+single-visual-column form —
 railing N stacked bands per-column would render broken stacked strips —
 so the region chevron exists only at region placement. Dragging a column
 out of a 2-column region leaves a single-column region whose region
@@ -400,8 +405,7 @@ handle, chevron included, reappears automatically.
   cell — it is drag-only: the collapse control is the enclosing scope's
   (the parent handle's chevron docked, the window header's toggle-all
   floating). The `−` is drag-through: dragging it moves the panel; a
-  motionless click minimizes. (Pre-D32 code still renders the `−` on
-  lone-in-visual-column DOCKED cells — enforcement pending, §10.)
+  motionless click minimizes.
 - Tab strip: one tab per pane; wraps; the empty strip area drags the
   group; the active tab is underlined in accent color. Pane scope: a tab
   press tears out / reorders that pane, a click activates it (P12).
@@ -425,14 +429,14 @@ handle, chevron included, reappears automatically.
   panel's BODY surface (light/dark scheme — a bar is the panel,
   sleeping, D19). A collapsed window is ALL bars (one per group of its
   stack, dividers between) under its header; there is no per-cell
-  minimized state (D38), so mixed windows don't exist. (Pre-D38 code
-  renders bars from per-group flags, docked included — enforcement
-  pending, §10.)
+  minimized state (D38), so mixed windows don't exist.
 - Anatomy (P13/D33): the group's tab labels, dimmed — ALL that fit, in
   order; overflow collapses to a `+N` badge naming only the REMAINDER
   on hover (D36, superseding D14's single-title rule) — then slack,
-  then the `+` at the RIGHT end, at the `−`'s exact form and inset. No
-  pill (D18).
+  then, on a SINGLE-GROUP window only, the `+` at the RIGHT end, at
+  the `−`'s exact form and inset. A multi-group window's bars carry no
+  individual `+`: the window header's toggle owns expand, and the bar
+  surface is unmarked backing for it (P9, T4 resolved). No pill (D18).
 - Face (D19): a single-pane group whose pane provides a minimized face
   renders it in place of the default icon+title, inside the same hit
   surface (gestures and keyboard unchanged), at the unmergeable
@@ -443,10 +447,11 @@ handle, chevron included, reappears automatically.
 - Gestures (collapse law 4; pane scope per label): a tab label's click
   expands the window to THAT tab; its drag tears THAT pane out into a
   new window born collapsed (a single-pane group floats wholesale, ids
-  stable). The `+` (drag-through) and any background press's motionless
-  click expand the window — one flag, so every bar's expand affordance
-  reveals the whole window by construction (aria label "Expand
-  panels" on multi-cell windows). Tabs hidden behind the `+N` are one
+  stable). The `+` (single-group windows, drag-through; aria "Expand
+  panel") and any background press's motionless click expand the
+  window — one flag, so every bar's expand affordance reveals the
+  whole window by construction; a multi-group window's "Expand
+  panels" is its header toggle's. Tabs hidden behind the `+N` are one
   expand away.
 
 ### 3.3 The rail (the collapsed docked stack: whole region D21, one column D28)
@@ -465,7 +470,9 @@ handle, chevron included, reappears automatically.
   as one COLLAPSED window (identity transfer, D38); click or `+`
   expands the scope, clearing ONLY the rail flag. Honest labels:
   "Expand panel area" / "Expand column" — never "Expand all panes".
-  Keyboard expand lands focus on the first revealed cell's active tab.
+  Keyboard expand lands focus on the first revealed cell's active tab
+  — or on its header toggle when that panel is unmergeable (a
+  full-width header renders no tab strip; §4's fallback).
 - Per cell: a gray cap — always a quiet pill (D25; the rail's ONE `+` is
   the header's); one spine row per tab (upright icon above rotated
   title), dimmed; hairline dividers between cells. A LONE cell's
@@ -477,9 +484,11 @@ handle, chevron included, reappears automatically.
   that pane (born collapsed, D38); cap/background drag moves the whole
   group.
 - Chevrons: « on the left edge, » on the right, always at the right end
-  of a PARENT HANDLE (§1.2) — never on cell chrome. Click-only (tension
-  T6). Keyboard collapse hands focus to the rail header that replaces
-  the chevron (edge case 14). Chevrons render only while expanded.
+  of a PARENT HANDLE (§1.2) — never on cell chrome. Drag-through like
+  every right-end control (T6 resolved): the drag drags the handle's
+  scope. Collapse hands focus to the rail header that replaces the
+  chevron, pointer and keyboard alike (edge case 14). Chevrons render
+  only while expanded.
 
 ### 3.4 Floating window
 
@@ -493,7 +502,7 @@ handle, chevron included, reappears automatically.
   and carries the `−`, setting the same flag.
 - Cells render as §3.1 without the docked context; a collapsed window
   renders every cell as its bar (§3.2). Mixed windows are
-  unrepresentable (D38; pre-D38 code still renders them — §10).
+  unrepresentable (D38).
 - Side grips resize width; top/bottom/corner grips resize height (pin),
   with a detent that snaps back to auto-height at the content height. A
   fully-minimized window keeps its WIDTH grips (D15 — the bars hold
@@ -539,9 +548,7 @@ Every row below follows from §1 — *a press on a handle drags its scope;
 a motionless handle click is its right-end action (backing); pane-scope
 surfaces (tabs, labels, spine rows) act on their pane; every affordance
 on a collapsed container acts on its ONE flag (D38)* — except where
-marked ⚠ (stated, not derived; see §10 tensions). Rows state the
-ADJUDICATED D32/D36/D38 behavior; where pre-adjudication code differs,
-§10's enforcement-pending list is the record.
+marked ⚠ (stated, not derived; see §10 tensions).
 
 | Grabbed surface | Drag moves | Motionless click |
 |---|---|---|
@@ -554,11 +561,11 @@ ADJUDICATED D32/D36/D38 behavior; where pre-adjudication code differs,
 | Window header (floating multi-group) | whole window | toggle `window.collapsed` (D38) |
 | Bar background (incl. right slack) | that group — its new window born collapsed (D38) | expand the window (clear its flag) |
 | Bar tab label / face (all labels that fit, D36) | that pane — new window born collapsed | expand the window to that tab |
-| Bar `+` (right end) | that group (drag-through; born collapsed) | expand the window ("Expand panels") |
+| Bar `+` (right end; single-group windows only — a multi-group window's expand is its header's, P9/T4) | that group (drag-through; born collapsed) | expand the window ("Expand panel") |
 | Region parent handle — pill / background | whole region (as one stacked window) | collapse region to the rail (backing for its chevron) |
-| Region-collapse chevron | ⚠ — (click-only; NOT drag-through) | collapse region to the rail; keyboard collapse hands focus to the rail header |
+| Region-collapse chevron | whole region (drag-through, T6 resolved) | collapse region to the rail; focus hands off to the rail header (both input paths) |
 | Column parent handle — pill / background | that visual column (as one stacked window, height ratios preserved) | rail that column when the handle hosts a chevron; ⚠ no action on a pill-only handle |
-| Column-collapse chevron (band has sibling columns, D28) | ⚠ — (click-only; NOT drag-through) | rail that column; keyboard collapse hands focus to the column rail's header |
+| Column-collapse chevron (band has sibling columns, D28) | that visual column (drag-through, T6 resolved) | rail that column; focus hands off to the column rail's header (both input paths) |
 | Rail header (region or column scope) | that scope — floats as one COLLAPSED window (identity transfer, D38) | expand the scope (clear its flag) |
 | Rail cell cap / background (quiet pill) | whole group — new window born collapsed | expand scope + group (lone cell only; inert with 2+ cells) |
 | Rail spine row | that pane — new window born collapsed | expand scope to that tab |
@@ -569,17 +576,22 @@ ADJUDICATED D32/D36/D38 behavior; where pre-adjudication code differs,
 | Window edge/bottom grips | window size | — |
 
 Escape during any of the above restores the exact pre-gesture layout,
-including region widths and collapse states. Escape after an
-expand-on-drag restores the minimized state.
+including region widths and collapse states.
 
 Keyboard: every click target above is focusable (visible focus ring),
 with Enter/Space performing its motionless click. Tab strips and rails
 are `tablist`s with arrow-key traversal: Left/Right on strips, Up/Down
 on rails; a bar is a `tablist` of its visible labels (D36). Focus never
 falls to `<body>`: after a keyboard expand it lands on the revealed
-tab; after a keyboard minimize/collapse — whose control unmounts with
-its surface — it hands off to the same-spot control that undoes it (the
-bar's `+`, the rail's header).
+tab — or, when the revealed cell renders no tab strip (an unmergeable
+panel's full-width header), on that header's toggle; after a keyboard
+minimize/collapse — whose control unmounts with its surface — it hands
+off to the same-spot control that undoes it (a bar's `+` or the window
+header's toggle, the rail's header). The handoff runs on the POINTER
+path too: the activated control unmounts under the click either way,
+so pointer collapse hands focus to the same replacement control
+(restored after T6's drag-through rerouted pointer clicks through the
+host's backing, which had silently dropped it).
 
 Touch: all drag surfaces set `touch-action: none`; a browser-cancelled
 pointer aborts like Escape (P2).
@@ -626,7 +638,12 @@ constants in `hitTest.ts`; changing one is a spec change.
    split (single leaf edge-wise) and while a floating window's paper
    rect owns the pointer (§3.5). Over a D21-railed region's EMPTY
    area, the side bands widen to left/right HALVES — no dead center
-   stripe. A seam band-insert takes an equal share of region height
+   stripe. The 8px top/bottom band-inserts and item 4's seams are
+   SUPPRESSED over a D21-collapsed region: a band-insert into a rail
+   has no honest geometry (D39 — the expanded newcomer would be
+   swallowed collapsed), so those pointers fall through to the rail's
+   own cell zones and the drop JOINS the rail. A seam band-insert
+   takes an equal share of region height
    (the MEAN of existing band weights) — a fixed weight could render
    as a 0px sliver on a px-scale region.
 4. **Cross-band seams**: the divider between two bands inserts a new
@@ -634,9 +651,9 @@ constants in `hitTest.ts`; changing one is a spec change.
    rects, and an all-railed band's cells are content-tall — so its
    extent extends to the RENDERED band box, derived from its
    neighbors' edges and the container's (rails hold width, not
-   height); the seam sits at the true divider, never mid-band. The D21
-   packed strip has no band boxes on screen; there the raw rects stay
-   authoritative.
+   height); the seam sits at the true divider, never mid-band. The
+   D21 packed strip has no band boxes at all: its seams are suppressed
+   with item 3's band-inserts — drops join the rail (D39).
 5. **Per-target zones**: the cell-, rail-, and bar-level zones of
    §5.2–5.4.
 6. **Anywhere else**: no drop; release floats the dragged stack at the
@@ -681,12 +698,9 @@ strip's empty area.
 
 - A bar's whole slot is a drop target: drop merges into that group,
   staying minimized. Insertion at a tab position aims at the bar's
-  visible tab labels (D36; pre-D32 code: the single active-tab label,
-  D14); a drop right of the last label appends.
-- Docked bars exist only in pre-D38 code (docked collapse renders as
-  the rail); their zones — thin side slivers, NO top/bottom (D4: the
-  adjacent seams already express insert-above/below, and thin zones in
-  a 26px bar would be unhittable) — die with them (§10).
+  visible tab labels (D36); a drop right of the last label appends.
+- Docked bars do not exist — docked collapse renders as the rail
+  (D38), and the rail's zones are §5.3's.
 - Floating bars are ordinary stack cells (D17): top/bottom snap zones
   of `min(10px, barHeight/3)` — ≈8.67px on the 26px bar — insert into
   the window's stack at that seam. Thirds because a flat 10px is
@@ -729,18 +743,23 @@ sub-question (§10).
 ## 6. Sizing model
 
 - **Region width**: expanded columns of the width-determining band (the
-  widest) carry pixel widths; the region's width is their sum. Docking a
+  widest) carry pixel widths; the region's width is their sum, with
+  every RAILED column counted at its rendered 36px — a railed column's
+  stored weight is ALWAYS its P8 restore width, and no aggregator
+  (region width, reserved-width planning) ever reads it as rendered
+  width (D40). Docking a
   new column *grows* the region by the newcomer's width (D3): existing
   panels never shrink because something arrived (P3 outranks canvas
   preservation; the resizer is the recovery). The newcomer's width IS
   the dragged window's width — every drag-dock path floats first, so
-  the window still carries it — and a column born RAILED from a window
-  contributes the 36px strip, not a phantom panel width. Columns with
-  NO source window (server-built / injected layouts) take the 300px
-  region default even when born railed: there the stored weight
-  doubles as the column's only P8 restore width and regionWidth as the
-  region's content width, so a 36px default would restore it as a
-  sliver. D3 binds every band, not just the width-determining one: a
+  the window still carries it — born railed included: the new column
+  STORES the window's width, so the rail round-trip restores it, and
+  contributes only the rendered 36px strip (D40, superseding the
+  born-railed-36-weight clause). Columns with NO source window
+  (server-built / injected layouts) take the 300px region default as
+  their restore width even when born railed; the 36px rendered
+  accounting keeps an injected all-railed row from reserving phantom
+  300s. D3 binds every band, not just the width-determining one: a
   narrower band gaining a column never halves its survivors — with a
   fully-railed widthRow the region grows by the newcomer and survivors
   keep their pixels; with an expanded widthRow the region width holds
@@ -780,16 +799,17 @@ sub-question (§10).
   expanded cell each side (bars are fixed 26px); width dividers go
   inert only beside a RAILED column (fixed chrome, D28). Floating stack
   dividers carry the same ~12px invisible grab overlay as docked ones
-  (P11) — only while resizable. (Pre-D38 residue: cascadeResize's
-  walk-past-bars serves mixed stacks, which D38 deletes.)
+  (P11) — only while resizable.
 - **Stack grow normalization**: flex-grow factors normalize per site
   over EXPANDED cells only — minimized cells render flexGrow 0 — so
   freed space is never stranded (edge case 16).
 - **Round-trips** (P8): float→dock carries height ratios into the
   column; dock→float restores the remembered window size;
   minimize→expand holds width by construction; rail→expand restores the
-  pre-collapse width at either scope; a railed column dragged out floats
-  at its preserved expanded width; reconnects replay the same sizes.
+  pre-collapse width at either scope — a column born railed from a
+  window expands to that window's width (D40); a railed column dragged
+  out floats at its preserved expanded width; reconnects replay the
+  same sizes.
 - **Windows**: auto-height tracks content up to the container; pinned
   height is user-set via the bottom grip; the content-height detent
   un-pins. A fully-minimized window ignores pinned height.
@@ -805,9 +825,10 @@ op-level residue.
   `FloatingWindow.collapsed`; the chevrons set `DockColumn.railed` /
   `regionCollapsed[edge]`; every expand path clears its container's one
   flag. Ops act on containers; groups carry nothing. Collapsing a
-  missing scope is a no-op; clearing is always legal. (Pre-D38 code:
-  per-group flags, `toggleCollapsed`, `expandStackOf`,
-  `isGroupEffectivelyCollapsed`, stamping — the enforcement gap, §10.)
+  missing scope is a no-op; clearing is always legal — and collapse
+  ops REFUSE geometry with no honest collapsed form: railing the sole
+  column of a single-column band in a mixed region is gated at the op
+  level, not just in chrome (D39).
 - Expand ops clear docked flags at the op level (D21/D28): any op that
   expands a docked panel (a spine-row expand-to-tab, a toggle landing
   expanded) clears the region flag AND the containing column's railed
@@ -825,16 +846,27 @@ op-level residue.
   Where both docked flags exist, region takes render precedence.
 - Structural carry and migration: a D12 band split leaves fragments of
   a railed column railed (same picture re-expressed, P14); a D13 zip
-  keeps the flag only when BOTH halves carried it; a railed lone column
-  in a single-visual-column region migrates its flag to the REGION
-  store at canonicalization (collapse law 5 — the pre-D38
-  degrade-to-bars rule is dead).
+  keeps the flag only when BOTH halves carried it; a railed column
+  left as its band's SOLE column migrates its flag to the REGION store
+  at canonicalization when every band is single-column and every
+  column railed — the region rail is the identical picture (collapse
+  law 5 — the pre-D38 degrade-to-bars rule is dead) — and otherwise
+  DROPS it and expands (D39). That drop is the P3(c) structural
+  necessity, spelled out: a rail inside a full-width band is the dead
+  geometry D28 rejected, so the expansion is forced, not chosen — the
+  one collapse change no gesture asked for. The same rule governs the
+  transfer clause below: a collapsed band-insert into an expanded
+  canonical stack lands EXPANDED (its rail would be a lone-column
+  band). Invariants reject the stranded state at commit (D39).
 - Transfers (collapse law 3): floating a railed scope by its header
   yields a COLLAPSED window; docking a collapsed window rails the
-  landing column or joins/creates the region rail; any container
-  created by dragging out of a collapsed scope (spine row, cap, bar
-  label) is born collapsed. No stamping exists; server `float()` moves
-  geometry and touches no collapse.
+  landing column or joins/creates the region rail — except a
+  band-insert into an expanded canonical stack, which lands expanded
+  (D39, above); any container created by dragging out of a collapsed
+  scope (spine row, cap, bar label) is born collapsed. No stamping
+  exists; server `float()` moves geometry and touches no collapse,
+  and a server docked→docked position move carries the source
+  container's collapse the same way — identity on both paths (§8).
 - A railed scope reserves exactly 36px; it is still a full drop target,
   and a railed region still hosts region-edge docking on its outer
   side.
@@ -846,6 +878,11 @@ op-level residue.
 - Three independent write-only axes per panel: position, width, height.
   There is no collapse axis (D31). A message carries exactly one axis;
   applying one can never disturb another (no yank by construction).
+- Moves are identity for collapse (collapse law 3): a position command
+  on a docked panel that lands docked carries its container's collapse
+  — a railed source lands railed — exactly like the user path, which
+  floats first so identity rides the window. Identity both paths; a
+  placement command never expands a railed panel.
 - Fresh vs stale: each panel has a monotonically increasing layout
   counter per server run. An axis message applies iff the user hasn't
   touched that panel since the message's stamp, or the stamp is provably
@@ -869,7 +906,9 @@ Behaviors that MUST hold (each is or should be pinned by a test):
    beside a collapsed container never collapses the dropped stack, and a
    group joining an expanded container renders expanded — both are
    consequences of container-owned state, not rules (D38).
-2. Escape after expand-on-drag restores the minimized state.
+2. Escape mid-drag restores pre-gesture collapse flags along with the
+   layout — drags never change collapse (P2), so the restore is a pure
+   state return with nothing to re-expand.
 3. Dragging a `−`/`+` button never toggles; a motionless click never
    moves (drag-through arbitration, §1.2).
 4. A viewport resize between press and drag-threshold doesn't teleport
@@ -888,16 +927,15 @@ Behaviors that MUST hold (each is or should be pinned by a test):
     index.
 12. ONLY the container flags produce collapsed renderings (collapse law
     1) — a rail never appears emergently — and expanding any panel from
-    a rail clears the owning flag. Under D38 a docked scope never
-    renders in-place bars (the rail is the docked rendering); pre-D38
-    code renders per-group-minimized regions as bars at full width
-    (enforcement pending, §10).
+    a rail clears the owning flag. A docked scope never renders
+    in-place bars: the rail is the docked rendering (D38).
 13. Region-edge docking beside a railed region stays reachable from the
     outer half of the rail (§5.1 item 3).
-14. Bar/rail keyboard expand moves focus onto the revealed tab strip;
-    keyboard minimize/collapse moves it onto the replacement control (the
-    bar's toggle / the rail's header). Neither direction drops focus to
-    `<body>`.
+14. Bar/rail keyboard expand moves focus onto the revealed tab strip
+    (an unmergeable reveal: its header toggle, §4); keyboard
+    minimize/collapse moves it onto the replacement control (the bar's
+    `+` or window-header toggle / the rail's header). Neither
+    direction — on either input path (§4) — drops focus to `<body>`.
 15. Left/right mirrored layouts resolve mirrored drops everywhere (P7,
     swept).
 16. Expanded content absorbs ALL space freed by collapsed chrome — no
@@ -939,8 +977,7 @@ Prior passes, one line each (full fix lists live in git history):
   deleted.
 - 2026-07-05, later — D32–D38 adjudicated (user pass on the docked main
   panel and stack minimize, culminating in D38's one-state rule);
-  normative text updated, ENFORCEMENT PENDING — the list below is the
-  worklist.
+  normative text updated ahead of enforcement.
 - 2026-07-06 — rail drop zones re-derived from first principles after a
   real-layout report (expanded band over two railed columns): (a) no
   zone left of the leftmost rail — the 40px side band shadowed the
@@ -951,13 +988,43 @@ Prior passes, one line each (full fix lists live in git history):
   default). Fixes, now normative in §5/§6: per-band side resolution,
   band-tall side hints with rail-honest band extents, the full-strip
   rail drop surface, left/right divider-gap recovery, window-width
-  newcomer defaults (36px born-railed from a window). The sweep test
+  newcomer defaults (the born-railed 36px WEIGHT clause of this record
+  was later superseded by D40 — the weight is the window's width, 36px
+  is rendering only). The sweep test
   had laid rails at weight-share width, band-tall, never collapsed —
   geometry rails never have; it now mirrors the renderer, with two new
   invariants: every target reaches at least one zone, and no
   split/merge/insert commits across bands.
+- 2026-07-06, later — chrome enforcement: D32–D38 enforced (completion
+  record below); T4 resolved to the rail's one-signifier rule; T6
+  resolved to drag-through.
+- 2026-07-07 — stability pass 1: three parallel audits (UX/spec
+  conformance with live probes and screenshots; model/state with
+  ops-level execution; zones/geometry with the renderer-true sweep
+  harness). Findings by family: RAIL STRANDS — three reachable paths
+  minted a railed sole-column band in a mixed region (a collapsed
+  source seam-inserted, the last expanded band-sibling removed, an
+  ungated programmatic collapse), a fourth silently expanded a railed
+  survivor, and band-inserts over a region rail swallowed expanded
+  drops → D39, §5.1 suppression, op gates, commit invariants (no
+  railed sole-column band; region flag ⇒ docked edge; region rail ⇒
+  all bands single-column), canonicalization added to the fuzz
+  pipeline. WIDTH — the born-railed 36px weight doubled as the P8
+  restore width (expand → 36px sliver; all-railed width row → a 350px
+  region collapsed to 122px on one click) and injected all-railed rows
+  reserved phantom 300s → D40. GEOMETRY — rail cell drop rects
+  unclipped to the rail's scroll box (cross-band commits, displaced
+  seams, over-tall hints) and a ~7px dead pocket at column÷cell
+  divider T-junctions → scanner clip + recovery fallback, code-side.
+  SERVER — a docked→docked position move dropped collapse while
+  `float()` carried it → identity both paths (§8). FOCUS — keyboard
+  expand onto an unmergeable reveal, and pointer-path collapse after
+  T6's drag-through, both dropped focus to `<body>` → §4's no-tab
+  fallback and pointer handoff restoration. STALENESS — enforcement-
+  pending framing, chevron click-only rows, the unqualified bar-`+`,
+  expand-on-drag references, and record dates swept (this revision).
 
-**Latest full-pass record — 2026-07-05 (scope-model rewrite):** every
+**Full-pass record — 2026-07-05 (scope-model rewrite):** every
 normative claim in §1–§9 (pre-D32 state) was re-traced to
 `src/viser/client/src/dock/*` and `ControlPanel/*`. Verdicts: §1 —
 handle anatomy, presence gating (`isLoneInVisualColumn`, chevrons,
@@ -980,76 +1047,42 @@ the 48px chrome clearance) overlaps the column scrollbar's outer edge.
 The scrollbar's remaining width still scrolls, and narrowing the straddle
 would cost the region-resize grab everywhere for a rare degenerate state.
 
-Code-side observations, report-only:
+### D32–D38 — completion record (adjudicated 2026-07-05; enforced
+2026-07-06; verified in stability pass 1, 2026-07-07)
 
-- The chevrons' focus handoff to the rail header runs on POINTER
-  activation too, not just keyboard — harmless (:focus-visible-only
-  ring) and accepted: the activated control unmounts, so pointer users
-  are also better served by focus landing on the replacement control.
-- Stale code comments: `MinimizedBar.tsx` line 5 says "grip-bar gray
-  surface" (code renders body surface); `VerticalMinimizedColumn.tsx`
-  cites "spec 3.2" for the rail (the rail is §3.3).
+The enforcement worklist that lived here is done; every item was
+re-verified in code and live during pass 1:
 
-### User-adjudicated, enforcement pending (D32–D38, 2026-07-05)
+- **D32**: the `−` renders only on single-group floating windows
+  (`isSoleFloatingGroup`); a docked sole panel shows zero minimize
+  controls. Open (a) — the pill-only lone column — closed by D39:
+  uncollapsible (its rail is illegal geometry). Open (b) confirmed: a
+  1-leaf column of a multi-column band collapses solely via its
+  chevron.
+- **D33**: exact, pixel-verified — the main panel's face bar measured
+  against its expanded header: label x 671.09 = 671.09, toggle x
+  951.16 = 951.16, toggle width 17.75 = 17.75; window rect unchanged
+  across the round-trip.
+- **D34**: all collapse transitions animate (cell flex, rail/region
+  widths, window height), with one honest gap on record: an
+  AUTO-height window's expanded height is CSS `auto`, which cannot
+  interpolate — its collapse snaps (endpoints honest, no JS
+  choreography per P4); pinned-height windows animate both directions
+  against a deterministic collapsed height
+  (`collapsedWindowHeightCss`).
+- **D35**: real tooltips on every `−`/`+`/«/».
+- **D36**: labels in order until they don't fit, `+N` for the
+  remainder only, per-label click/drag, insertion across visible
+  labels, per-label `tablist`.
+- **D37/D38**: `TabGroup.collapsed` DELETED; `FloatingWindow.collapsed`
+  added; transfers are identity; drag-outs born collapsed; hitTest
+  container-derives collapsed-ness; `stampCollapsedInPlace` and
+  `isLoneInVisualColumn` survive only in "this is gone" comments.
 
-Each item is DECIDED (normative in §1–§9) and NOT yet implemented; the
-code's current behavior is the enforcement worklist. Open sub-questions
-are derivation gaps the adjudication left — resolve on paper first.
-
-- **D32 — largest coinciding scope owns collapse.** Code: the `−`
-  renders on every lone-in-visual-column cell (`isLoneInVisualColumn`,
-  `TabGroupFrame.tsx`), including DOCKED sole panels — the double
-  control D32 removes. Enforce: gate the `−`/header-click on
-  "single-group floating window". Open: (a) the pill-only lone column of
-  a mixed region now has NO docked collapse affordance — chevron
-  (accepting the stranded-band-space D28 rejected) or uncollapsible?
-  (b) confirm a 1-leaf column of a multi-column band collapses solely
-  via its chevron.
-- **D33 — exact P13.** Code: face bars keep height and surface but label
-  offsets shift on minimize, and the expanded header's compact toggle
-  (1.2em/10px) differs from the bar's full-size one (`HANDLE_BTN_EM`/
-  12px) — the jump the user flagged. Enforce: identical label
-  padding/offsets and the same toggle form + inset in both states.
-- **D34 — motion on all collapse transitions.** Code: `collapseAnim`
-  eases docked cell flex only; rail collapse is instant; floating height
-  snaps. Enforce: the same presentation-only transition (160ms,
-  reduced-motion, drag-suppressed, `transitionend` re-read) on floating
-  minimize height and rail widths at both scopes.
-  Enforced 2026-07-06 with one honest gap: an AUTO-height window's
-  expanded height is CSS `auto`, which cannot interpolate — its collapse
-  snaps (endpoints honest, no JS choreography per P4). Pinned-height
-  windows animate both directions against a deterministic collapsed
-  height (`collapsedWindowHeightCss`).
-- **D35 — real tooltips.** Code: bare `title` attributes on
-  `HandleIconButton`. Enforce: proper tooltips on every `−`/`+`/«/».
-- **D36 — bars show all labels that fit.** Code: one active-tab label +
-  `+N` for all others; hitTest aims insertion at the single label rect.
-  Enforce: labels in order until they don't fit, `+N` for the remainder;
-  per-label click/drag (pane scope); insertion across visible labels;
-  `tablist` pattern extended to N labels.
-- **D37 — uniform collapse unrepresentable.** Mechanism SUBSUMED by D38:
-  with no group-level flag, uniformity needs no invariant and entry
-  needs no normalization. D37's open sub-questions were answered by D38
-  (a collapsed group docked alone rails its landing scope; the rail ↔
-  collapsed-window round-trip is identity; docked-bar zones die) except
-  one, carried into D38 below.
-- **D38 — collapse is ONE state per container (the centerpiece).**
-  Code today, the three-flags-plus-stamping reality: `TabGroup.
-  collapsed` per group; `toggleCollapsed`/`expandToTab`/`expandStackOf`
-  act on group flags; `stampCollapsedInPlace` stamps drag-outs;
-  `windowAllMinimized` derives window state from N flags; hitTest's
-  collapsed branch reads per-group `isGroupEffectivelyCollapsed`; mixed
-  stacks and docked bars render. Enforce: add `FloatingWindow.
-  collapsed`; DELETE the group flag (P15); `−`/header toggle flip the
-  window flag; transfers as identity (dock collapsed window → railed
-  column / region rail; float railed scope → collapsed window;
-  drag-outs born collapsed — delete stamping); container-derive
-  hitTest's collapsed-ness; store migration at canonicalization
-  (railed lone column → region flag; delete degrade-to-bars); retire
-  cascadeResize's walk-past-bars (no mixed stacks). Open: (a — from
-  D37) inserting an EXPANDED panel into a collapsed window — collapse
-  the newcomer (container rule) or expand the window? Adjudicate before
-  wiring the snap zones.
+Still open (from D37, carried through D38): inserting an EXPANDED
+panel into a collapsed window — collapse the newcomer (container rule)
+or expand the window? Code applies the container rule consistently at
+every join path; adjudicate before wiring the snap zones.
 
 Resolved by the above and removed from the tensions list: T1 (rail vs
 bars are two renderings of one container state — D38 dissolves the
@@ -1090,12 +1123,13 @@ it strains, the code's current behavior, and options.
   fiat), and drag-through would be harmless — the drag would drag the
   scope, the click already equals the backing click. Options: make
   chevrons drag-through; or record the justification.
-  RESOLVED (2026-07-06, chrome enforcement): chevrons are drag-through. D32 made every chevron host's motionless click back the identical collapse, so the press can flow to the host's drag-starter like all other right-end controls. Pointer-click focus handoff moved to the keyboard/synthetic path only.
+  RESOLVED (2026-07-06, chrome enforcement): chevrons are drag-through. D32 made every chevron host's motionless click back the identical collapse, so the press can flow to the host's drag-starter like all other right-end controls. Pointer-click focus handoff initially moved to the keyboard/synthetic path only; stability pass 1 found that dropped pointer focus to `<body>` and restored the handoff on both input paths (§4).
 - **T7 — The region scope loses its handle in multi-column regions.**
   Strains one-handle-per-scope, and D32 raises the stakes: docked
   collapse now lives exclusively on chevrons, so a scope without one
-  (the multi-column region; the lone column, D32 open (a)) is
-  uncollapsible. The derivation (a packed rail can't honestly render a
+  (the multi-column region; the lone column, adjudicated uncollapsible
+  by D39) is uncollapsible. The derivation (a packed rail can't
+  honestly render a
   grid; a handle may not span what its drag would flatten — D27) makes
   this a geometric limit. Options: accept; or give the region scope a
   compound affordance railing every column individually (the §7
@@ -1192,7 +1226,8 @@ play-by-play lives in git history.
 - **D18 (no pills on bars, 2026-07-04):** a bar is a handle in its
   entirety; a pill inside it is a redundant signifier. Pills remain on
   expanded headers, where the handle is a slice of a larger surface.
-- **D19 (pane-provided minimized face, 2026-07-06):** a pane may provide
+- **D19 (pane-provided minimized face, 2026-07-04; amended
+  2026-07-06):** a pane may provide
   a custom face for its bar, rendered at the unmergeable header's own
   height (2.75em) on the panel's body surface: minimizing removes
   content but never moves, shrinks, or recolors the label row. ALL bars
@@ -1215,7 +1250,8 @@ play-by-play lives in git history.
 - **D23 (inline chevron, 2026-07-04; superseded by D26):** moved the
   chevron from a positioned overlay into the top-right cell's chrome
   row (the overlay occluded header content). Surviving clauses —
-  click-only, no chevron while collapsed — carried into D26/D28.
+  click-only (since reversed: T6 resolved to drag-through,
+  2026-07-06), no chevron while collapsed — carried into D26/D28.
 - **D24 (inert dividers, 2026-07-04):** a divider with nothing tradeable
   on one side is INERT — a resize cursor that no-ops lies. Height
   dividers need an expanded cell each side; width dividers go inert only
@@ -1290,27 +1326,29 @@ play-by-play lives in git history.
   sole docked panel collapses via the region handle's » to the RAIL; the
   panel-level `−` and its backing click render only on single-group
   FLOATING windows. Docked collapse is uniformly chevron → rail; the bar
-  becomes a floating form. Resolves former T2. Enforcement pending.
+  becomes a floating form. Resolves former T2. Enforced 2026-07-06;
+  its open lone-column question closed by D39 (uncollapsible).
 - **D33 (exact P13, 2026-07-05):** user-directed, twice: "The spacing of
   the panel also changes when the panel is minimized, which is wrong,"
   and "The `−` and `+` icons for the expanded and minimized main panel
   are laid out differently." Constancy becomes exact: the label row
   keeps identical x/y offsets and padding across minimize/expand, and
   the right-end control keeps the same form at the same inset in both
-  states. Enforcement pending.
+  states. Enforced 2026-07-06, pixel-verified (§10).
 - **D34 (motion covers all collapse transitions, 2026-07-05):** the P4
   transition extends to floating-window minimize and rail
   collapse/expand widths at both scopes. Still presentation-only:
   instant model, reduced-motion, drag suppression. Supersedes "rail
-  collapse stays instant". Enforcement pending.
+  collapse stays instant". Enforced 2026-07-06 (auto-height gap on
+  record, §10).
 - **D35 (real tooltips, 2026-07-05):** every `−`/`+`/«/» control gets a
-  real tooltip, not a bare `title` attribute. Enforcement pending.
+  real tooltip, not a bare `title` attribute. Enforced 2026-07-06.
 - **D36 (bars show all labels that fit, 2026-07-05):** user-directed:
   "+N obfuscates what panels are present." A multi-tab bar renders its
   labels in order, as many as fit; `+N` covers the REMAINDER only.
   Per-label click/drag stays pane-scoped (D9's segment gestures return
-  on the horizontal form). Partially supersedes D14. Enforcement
-  pending.
+  on the horizontal form). Partially supersedes D14. Enforced
+  2026-07-06.
 - **D37 (uniform collapse unrepresentable, 2026-07-05):** user-directed:
   "We should also make minimized panels in docked stacks
   unrepresentable." Uniform collapse graduates from an ops property
@@ -1336,4 +1374,43 @@ play-by-play lives in git history.
   no stamping, no adoption, nothing to normalize. `expandStackOf`
   reduces to a flag clear; orphan degradation becomes store migration
   to the region flag. Server API unaffected (no collapse axis exists).
-  Enforcement pending (§10, one open sub-question).
+  Enforced 2026-07-06 (§10; one open sub-question — an expanded panel
+  inserted into a collapsed window).
+- **D39 (band-scoped rail rule, 2026-07-07):** stability pass 1: three
+  reachable paths (a collapsed source seam-inserted into a mixed
+  region; the last expanded band-sibling removed by detach,
+  merge-away, or server hide; an ungated programmatic collapse)
+  stranded a railed column as its band's SOLE column — the full-width
+  dead-band geometry D28 rejected, uncaught by any invariant — while
+  the identical input in an all-single-column region resolved
+  differently. The rule, band-scoped as the geometry is: a railed
+  column that becomes its band's sole column MIGRATES its flag to the
+  region store when the region rail is the identical picture — the
+  whole region single-column and all-railed (collapse law 5) —
+  otherwise the flag DROPS and the column expands, the only legal
+  state for that geometry. The drop is a P2/P3 exception on
+  record: a structural-necessity collapse change, spelled out here
+  and in §7. The same rule at the transfer clause: a collapsed
+  band-insert into an expanded canonical stack lands EXPANDED (its
+  rail would be a lone-column band); and band-insert zones over a D21
+  region rail are SUPPRESSED — the honest result, an expanded band
+  inside a rail, is unrepresentable — so those drops join the rail
+  (§5.1). Op gates (railing a lone column of a single-column band is
+  refused at the op level), commit invariants (no railed sole-column
+  band; region flag ⇒ docked edge; region rail ⇒ all bands
+  single-column), and a normalized-pipeline fuzz enforce it. Closes
+  D32 open (a): the lone column is uncollapsible.
+- **D40 (a railed weight is ALWAYS the restore width, 2026-07-07;
+  supersedes the 2026-07-06 rail-polish record's born-railed-36-weight
+  clause):** stability pass 1: writing 36 as a born-railed column's
+  weight made 36 double as its only P8 restore width — expanding it
+  produced a 36px "expanded" column (below §6's 96px minimum), and in
+  an all-railed width row one click collapsed a 350px region to a
+  122px sliver. The contract: a railed column's stored weight is
+  ALWAYS its P8 restore width; a column born railed from a window
+  stores the WINDOW's width, so the collapsed round-trip restores it;
+  aggregators (region width, reserved-width planning) account railed
+  columns at the rendered 36px and read weights only from expanded
+  columns. No-source-window columns (server-built / injected) keep
+  the 300px default as restore width; the 36px rendered accounting
+  stops injected all-railed rows from reserving phantom 300s.

@@ -893,3 +893,100 @@ describe("write-only per-axis model: position is always applied, size never re-d
     );
   });
 });
+
+// ===========================================================================
+// Server edge-dock carries collapse (stability pass 2026-07, model audit
+// finding 6): a docked->docked position command never floats in between, so
+// detachAllPreservingStackWeights derives the source container's collapse
+// from the RAILED cell too -- matching the float path (`float()` on a railed
+// panel already yielded a collapsed window). The railed source arrives railed
+// per the landing shape: the region flag on an empty edge, the column flag
+// beside content.
+// ===========================================================================
+
+import { normalizeCanonicalBandsInPlace, setColumnRailed } from "./layoutOps";
+import { invariantViolations } from "./layoutInvariants";
+import { col, leaf, makeLayout, row, columnIdOf } from "./testUtils";
+
+describe("applyPanelPlacement: docked->docked collapse identity (D38)", () => {
+  /** Left edge: [a (railed?) | b], panel ids a:0 / b:0. */
+  const railedSource = (railed: boolean) => {
+    const ca = col([leaf("a")]);
+    let layout = makeLayout({ left: row([ca, leaf("b")]) });
+    if (railed) layout = setColumnRailed(layout, "left", columnIdOf(ca), true);
+    return layout;
+  };
+
+  it("a RAILED source column edge-docked onto an EMPTY edge arrives as the region rail", () => {
+    const out = applyPanelPlacement(
+      railedSource(true),
+      ["a:0"],
+      { position: { kind: "edge", edge: "right" }, width: null, height: null },
+      () => null,
+    );
+    normalizeCanonicalBandsInPlace(out);
+    expect(findGroupLocation(out, findPaneGroup(out, "a:0")!)).toMatchObject({
+      kind: "docked",
+      edge: "right",
+    });
+    expect(isRegionCollapsedOn(out, "right")).toBe(true);
+    expect(invariantViolations(out)).toEqual([]);
+  });
+
+  it("an EXPANDED source column edge-docked arrives expanded (no stamping)", () => {
+    const out = applyPanelPlacement(
+      railedSource(false),
+      ["a:0"],
+      { position: { kind: "edge", edge: "right" }, width: null, height: null },
+      () => null,
+    );
+    normalizeCanonicalBandsInPlace(out);
+    expect(isRegionCollapsedOn(out, "right")).toBe(false);
+    const rows_ = out.docked.right!.rows;
+    expect(rows_.every((rw) => rw.columns.every((c) => c.railed !== true))).toBe(
+      true,
+    );
+    expect(invariantViolations(out)).toEqual([]);
+  });
+
+  it("a RAILED source column edge-docked BESIDE content arrives as a railed column", () => {
+    const ca = col([leaf("a")]);
+    let layout = makeLayout({ left: row([ca, leaf("b")]), right: leaf("c") });
+    layout = setColumnRailed(layout, "left", columnIdOf(ca), true);
+    const out = applyPanelPlacement(
+      layout,
+      ["a:0"],
+      { position: { kind: "edge", edge: "right" }, width: null, height: null },
+      () => null,
+    );
+    normalizeCanonicalBandsInPlace(out);
+    const band = out.docked.right!.rows[0];
+    expect(band.columns).toHaveLength(2);
+    const aCol = band.columns.find((c) =>
+      c.leaves.some((lf) => lf.group === "a"),
+    )!;
+    expect(aCol.railed).toBe(true);
+    expect(isRegionCollapsedOn(out, "right")).toBe(false);
+    expect(invariantViolations(out)).toEqual([]);
+  });
+
+  it("a REGION-RAILED source's panel edge-docked away arrives collapsed too", () => {
+    // The region flag is the other docked collapse store: a panel living
+    // under regionCollapsed carries the same identity.
+    let layout = makeLayout({ left: leaf("a"), right: leaf("c") });
+    layout = setRegionCollapsed(layout, "left", true);
+    const out = applyPanelPlacement(
+      layout,
+      ["a:0"],
+      { position: { kind: "edge", edge: "right" }, width: null, height: null },
+      () => null,
+    );
+    normalizeCanonicalBandsInPlace(out);
+    const band = out.docked.right!.rows[0];
+    const aCol = band.columns.find((c) =>
+      c.leaves.some((lf) => lf.group === "a"),
+    )!;
+    expect(aCol.railed).toBe(true);
+    expect(invariantViolations(out)).toEqual([]);
+  });
+});

@@ -159,6 +159,36 @@ export function focusPaneTab(paneId: string) {
   focusDockControl(`[data-dock-tab="${CSS.escape(paneId)}"]`);
 }
 
+/** Like focusPaneTab, with a fallback chain for UNMERGEABLE panels (edge
+ * case 14): the revealed expanded cell may render NO [data-dock-tab] at all
+ * (its label is a full-width header, not a tab strip), so focusing the tab
+ * would silently fall to <body>. Fall back to the revealed group's header
+ * toggle ([data-dock-minimize], e.g. a sole floating group's compact `-`),
+ * else the group element itself (given a programmatic tabindex -- a docked
+ * unmergeable panel carries no minimize control at all, D32). */
+export function focusPaneTabOrGroup(paneId: string, groupId: string) {
+  requestAnimationFrame(() => {
+    const tab = document.querySelector<HTMLElement>(
+      `[data-dock-tab="${CSS.escape(paneId)}"]`,
+    );
+    if (tab !== null) {
+      tab.focus();
+      return;
+    }
+    const scope = document.querySelector<HTMLElement>(
+      `[data-dock-group="${CSS.escape(groupId)}"]`,
+    );
+    if (scope === null) return;
+    const toggle = scope.querySelector<HTMLElement>("[data-dock-minimize]");
+    if (toggle !== null) {
+      toggle.focus();
+      return;
+    }
+    if (!scope.hasAttribute("tabindex")) scope.tabIndex = -1;
+    scope.focus();
+  });
+}
+
 /** rAF-focus the first element matching `selector` -- same deferral contract
  * as focusPaneTab, for keyboard-driven MINIMIZE/COLLAPSE: the activated
  * control unmounts with its chrome row, so focus hands off to the control

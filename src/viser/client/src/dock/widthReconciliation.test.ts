@@ -10,6 +10,8 @@ import { describe, expect, it } from "vitest";
 import {
   dockToRegionEdge,
   dropOnDockedLeaf,
+  setColumnRailed,
+  setRegionWidth,
   toggleCollapsed,
   widthColumns,
 } from "./layoutOps";
@@ -20,6 +22,7 @@ import {
   emptyLayout,
   MIN_REGION_GRAB_PX,
   regionWidthsOf,
+  SPLIT_DIVIDER_PX,
 } from "./types";
 import { reconcileRegionWidths } from "./widthReconciliation";
 import { planRegion, plannedReservedWidth } from "./regionPlan";
@@ -76,17 +79,21 @@ describe("lone minimized column: preserved width survives a sibling docking", ()
       c.leaves.some((lf) => lf.group === "a"),
     )!;
     expect(aCol.weight).toBe(500); // NOT the 96px grab-min floor
-    // BOTH columns count (D20): a's preserved 500 plus B's default width.
-    expect(regionWidthsOf(m2).right).toBe(500 + DEFAULT_REGION_PX);
+    // a arrives RAILED (the region rail migrates to its column, D38), so it
+    // contributes the rendered 36px strip to regionWidth (D40) while its
+    // weight keeps the 500px restore.
+    expect(regionWidthsOf(m2).right).toBe(
+      MINIMIZED_STRIP_PX + DEFAULT_REGION_PX,
+    );
   });
 
-  it("expanding afterwards changes nothing (width was never dropped)", () => {
+  it("expanding afterwards restores the preserved width (never dropped)", () => {
     const l = loneAt500();
     const m1 = toggleCollapsed(l, "a");
     reconcileRegionWidths(l, m1);
     const m2 = dockToRegionEdge(m1, ["b"], "right", "left");
     reconcileRegionWidths(m1, m2);
-    const m3 = toggleCollapsed(m2, "a"); // expand A
+    const m3 = toggleCollapsed(m2, "a"); // expand A: 36 -> 500 (P8)
     expect(recon(m2, m3).right).toBe(500 + DEFAULT_REGION_PX);
   });
 });
@@ -115,35 +122,45 @@ describe("widthRow identity flip preserves rendered widths", () => {
   });
 });
 
-describe("reconcileRegionWidths with minimized columns (D20: collapse never moves width)", () => {
-  it("collapse toggle leaves the width alone (bar renders in place)", () => {
+describe("reconcileRegionWidths with railed columns (D38/D40: rail moves width by weight-36, restore exact)", () => {
+  // toggleCollapsed on a docked group in a multi-column region rails its
+  // COLUMN (D38): the column renders the fixed 36px strip while its weight
+  // keeps the P8 restore px. regionWidth is the rendered content need
+  // (D40), so each rail flip moves it by exactly (weight - 36) -- and the
+  // expand flip restores the original width bit-for-bit.
+  it("railing a column swaps its px for the 36px strip in regionWidth", () => {
     const prev = threeColumns([300, 300, 300]);
     const next = toggleCollapsed(prev, "b");
-    expect(recon(prev, next).right).toBe(900);
+    expect(recon(prev, next).right).toBe(300 + MINIMIZED_STRIP_PX + 300);
   });
 
-  it("expand toggle leaves the width alone", () => {
+  it("expand toggle restores the full sum (P8 round-trip)", () => {
     const prev0 = threeColumns([300, 300, 300]);
-    const prev = toggleCollapsed(prev0, "b"); // b minimized
-    expect(recon(prev0, prev).right).toBe(900);
+    const prev = toggleCollapsed(prev0, "b"); // b railed
+    expect(recon(prev0, prev).right).toBe(636);
     const next = toggleCollapsed(prev, "b"); // b expands again
     expect(recon(prev, next).right).toBe(900);
   });
 
-  it("two of three minimized: still the full sum", () => {
+  it("two of three railed: strips + the expanded survivor", () => {
     const prev = threeColumns([300, 280, 320]);
     const mid = toggleCollapsed(prev, "a");
-    recon(prev, mid);
+    expect(recon(prev, mid).right).toBe(MINIMIZED_STRIP_PX + 280 + 320);
     const next = toggleCollapsed(mid, "b");
-    expect(recon(mid, next).right).toBe(900);
+    expect(recon(mid, next).right).toBe(2 * MINIMIZED_STRIP_PX + 320);
   });
 
-  it("fully minimized keeps the width too", () => {
+  it("fully railed: exactly the rails (no phantom content width)", () => {
     const prev = threeColumns([300, 300, 300]);
     let next = toggleCollapsed(prev, "a");
     next = toggleCollapsed(next, "b");
     next = toggleCollapsed(next, "c");
-    expect(recon(prev, next).right).toBe(900);
+    expect(recon(prev, next).right).toBe(3 * MINIMIZED_STRIP_PX);
+    // ...and expanding them all restores the original 900 (P8).
+    let back = toggleCollapsed(next, "a");
+    back = toggleCollapsed(back, "b");
+    back = toggleCollapsed(back, "c");
+    expect(recon(next, back).right).toBe(900);
   });
 
   it("pure-internal change (same column set) leaves widths alone", () => {
@@ -152,14 +169,14 @@ describe("reconcileRegionWidths with minimized columns (D20: collapse never move
     expect(recon(prev, next)).toEqual({ left: 0, right: 900 });
   });
 
-  it("structural change carries every column's px (minimized included)", () => {
-    // Start with [a 400, b minimized 250]; undock a -> [b] alone.
+  it("structural change carries every column's px (railed included)", () => {
+    // Start with [a 400, b railed 250]; undock a -> [b] alone.
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b") };
     l.docked.right = toRegion(row([leaf("a", 400), leaf("b", 250)]));
     l.regionWidth = { left: 0, right: 650 };
     const prev = toggleCollapsed(l, "b");
-    expect(recon(l, prev).right).toBe(650);
+    expect(recon(l, prev).right).toBe(400 + MINIMIZED_STRIP_PX);
 
     // Remove a's column entirely (structural: column set changes).
     const next = structuredClone(prev);
@@ -204,10 +221,16 @@ describe("reconcileRegionWidths width clamp (no max ceiling)", () => {
   });
 
   it("preserves a deliberately wide multi-column width (no colsMax cap)", () => {
+    // The deliberate-write path is the setRegionWidth OP (server set_width /
+    // region resizer): it lands the width in the expanded width-row weights
+    // too (D40: regionWidth IS their rendered sum), so reconciliation keeps
+    // the requested width instead of snapping back to the old sum.
     const prev = threeColumns([300, 300, 300]);
-    const next = structuredClone(prev);
-    next.regionWidth = { left: 0, right: 5000 };
+    const next = setRegionWidth(prev, "right", 5000);
     expect(recon(prev, next).right).toBe(5000);
+    // The weights absorbed it proportionally.
+    const weights = widthColumns(next.docked.right!).map((c) => c.weight);
+    expect(weights.reduce((a, b) => a + b, 0)).toBeCloseTo(5000, 6);
   });
 });
 
@@ -359,12 +382,23 @@ describe("railed-column width paths (drop beside a rail)", () => {
       true,
       false,
     ]);
-    expect(regionWidthsOf(next).left).toBe(540);
+    // D40: regionWidth is the width row's RENDERED need -- the rails count
+    // at their 36px strips (restore px stay in the weights), the expanded
+    // newcomer at its window width.
+    expect(regionWidthsOf(next).left).toBe(
+      2 * MINIMIZED_STRIP_PX + WIN_W,
+    );
     // The other band's panel never shrinks (P3): weight untouched.
     expect(next.docked.left!.rows[0].columns[0].weight).toBe(300);
   });
 
-  it("W5: a COLLAPSED window docked beside rails contributes 36px, not a 300px phantom", () => {
+  it("W5: a born-railed column STORES the window width (P8 restore) and RENDERS the 36px strip", () => {
+    // WIDTH CONTRACT (stability pass 2026-07, supersedes the old W5 pin's
+    // "weight = 36" rule): a railed column's WEIGHT is always its P8
+    // restore width -- the dragged window's width -- while every
+    // aggregator accounts it at MINIMIZED_STRIP_PX rendered. The old rule
+    // stored 36 as the weight, so expanding the newcomer rendered a 36px
+    // sliver and collapsed the region (zones audit #2).
     const prev = v1(150, true);
     const next = dropOnDockedLeaf(
       prev,
@@ -376,15 +410,117 @@ describe("railed-column width paths (drop beside a rail)", () => {
     reconcileRegionWidths(prev, next);
     const band1 = next.docked.left!.rows[1];
     expect(band1.columns[2].railed).toBe(true);
-    expect(band1.columns[2].weight).toBe(MINIMIZED_STRIP_PX);
-    expect(regionWidthsOf(next).left).toBe(150 + 150 + MINIMIZED_STRIP_PX);
-    // Rendered growth = the strip + one divider (307 -> 350), not +307.
+    expect(band1.columns[2].weight).toBe(WIN_W); // restore width, not 36.
+    // The width row is fully railed while band 0 stays expanded: regionWidth
+    // carries the expanded content's 300px need and GROWS by the newcomer's
+    // rendered 36px strip (D3/D40) -- never by its restore width, and never
+    // shrinking to rail chrome (the e2e-pinned no-squish rule).
+    expect(regionWidthsOf(next).left).toBe(300 + MINIMIZED_STRIP_PX);
     const reserved = plannedReservedWidth(
       planRegion(next.docked.left!),
       regionWidthsOf(next).left,
       false,
     );
-    expect(reserved).toBe(350);
+    expect(reserved).toBe(300 + MINIMIZED_STRIP_PX + 2 * SPLIT_DIVIDER_PX);
+  });
+
+  it("W13 round-trip: dock a 260px collapsed window railed, expand it, get 260px back (region grows)", () => {
+    // The zones audit's #2 repro: [a 300] / [rail 150 | rail 150], drop a
+    // 260px COLLAPSED window beside the rails, then click expand on the
+    // newcomer. Old contract: expand rendered a 36px sliver and shrank the
+    // whole region to ~122px reserved. D40: the rail arrives at +36
+    // regionWidth (its rendered strip; +43 reserved with the divider), and
+    // expanding pins regionWidth to the width row's rendered need -- the
+    // newcomer renders exactly its 260px restore width, the region larger
+    // than it ever was.
+    const prev = v1(150, true);
+    prev.floating[0].width = 260;
+    const reservedOf = (l: DockLayout) =>
+      plannedReservedWidth(
+        planRegion(l.docked.left!),
+        regionWidthsOf(l).left,
+        false,
+      );
+    const reservedStart = reservedOf(prev); // 300 + 1 divider = 307
+    expect(reservedStart).toBe(300 + SPLIT_DIVIDER_PX);
+    const next = dropOnDockedLeaf(
+      prev,
+      [NEW_G],
+      "left",
+      railCLeafId(prev, 1, 1),
+      "right",
+    );
+    reconcileRegionWidths(prev, next);
+    // After the drop: the width row is all rails, band 0 still expanded --
+    // regionWidth = the carried 300px content need + the newcomer's 36px
+    // rendered strip (D3), never a phantom 260.
+    expect(regionWidthsOf(next).left).toBe(300 + MINIMIZED_STRIP_PX);
+    const reservedDropped = reservedOf(next);
+    expect(reservedDropped).toBe(300 + MINIMIZED_STRIP_PX + 2 * SPLIT_DIVIDER_PX);
+    const newCol = next.docked.left!.rows[1].columns[2];
+    expect(newCol.railed).toBe(true);
+    expect(newCol.weight).toBe(260);
+    // The user expands the newcomer (rail header +): a pure flag clear.
+    const expanded = setColumnRailed(next, "left", newCol.id, false);
+    reconcileRegionWidths(next, expanded);
+    const band1 = expanded.docked.left!.rows[1];
+    // Restore width intact -- the survivors' too.
+    expect(band1.columns.map((c) => c.weight)).toEqual([150, 150, 260]);
+    expect(band1.columns.map((c) => c.railed === true)).toEqual([
+      true,
+      true,
+      false,
+    ]);
+    // regionWidth pinned to the width row's rendered need (invariant #16):
+    // two 36px rails + the 260px restore -- the region grows by
+    // (restore - 36) over the rails' own need, and past its 307px start
+    // (no 122px collapse, no 36px sliver).
+    expect(regionWidthsOf(expanded).left).toBe(2 * MINIMIZED_STRIP_PX + 260);
+    const reservedExpanded = reservedOf(expanded);
+    expect(reservedExpanded).toBe(260 + 2 * MINIMIZED_STRIP_PX + 2 * SPLIT_DIVIDER_PX);
+    expect(reservedExpanded).toBeGreaterThan(reservedStart);
+    // The rendered share of the expanded column is exactly its restore px:
+    // reserved - rails - chrome = 260.
+    expect(
+      reservedExpanded - 2 * MINIMIZED_STRIP_PX - 2 * SPLIT_DIVIDER_PX,
+    ).toBe(260);
+  });
+
+  it("W14: injected all-railed widthRow without source windows keeps DEFAULT restore; the expanded band gets the content-need default", () => {
+    // The injection path (api.apply / server-built layouts): [railB | railC]
+    // over [a], no regionWidth field, prev empty. The rails' weights take
+    // the region DEFAULT as their P8 restore width (no source window to
+    // read). regionWidth is ESTABLISHED as the rendered content need (D40):
+    // the expanded band [a] rides on the 300px region default -- NOT the
+    // 600px sum of the rails' phantom restore widths (zones audit #3), and
+    // NOT the 72px rail chrome that squished the expanded band (stability
+    // pass 1 regression; e2e-pinned).
+    const prev = emptyLayout();
+    const next = emptyLayout();
+    next.groups = { a: group("a"), b: group("b"), c: group("c") };
+    const railB = col([leaf("b")]);
+    const railC = col([leaf("c")]);
+    if (railB.kind === "col") railB.column.railed = true;
+    if (railC.kind === "col") railC.column.railed = true;
+    next.docked.left = toRegion(rows([row([railB, railC]), row([leaf("a")])]));
+    delete next.regionWidth;
+    reconcileRegionWidths(prev, next);
+    const band0 = next.docked.left!.rows[0];
+    // Restore widths: the region default each (a 36px default would expand
+    // to a sliver).
+    expect(band0.columns.map((c) => c.weight)).toEqual([
+      DEFAULT_REGION_PX,
+      DEFAULT_REGION_PX,
+    ]);
+    expect(regionWidthsOf(next).left).toBe(DEFAULT_REGION_PX);
+    // Rendered: the expanded band's 300px + the width row's divider; the
+    // rails pack inside it. 607px phantom gone, no 79px squish either.
+    const reserved = plannedReservedWidth(
+      planRegion(next.docked.left!),
+      regionWidthsOf(next).left,
+      false,
+    );
+    expect(reserved).toBe(DEFAULT_REGION_PX + SPLIT_DIVIDER_PX);
   });
 
   it("W9: a NON-width band gaining a column grows the region by the newcomer; the target is not halved", () => {
@@ -429,7 +565,9 @@ describe("railed-column width paths (drop beside a rail)", () => {
       MIN_REGION_GRAB_PX,
       WIN_W,
     ]);
-    expect(regionWidthsOf(next).left).toBe(MIN_REGION_GRAB_PX * 2 + WIN_W);
+    // Rendered need: the rails count at their 36px strips (their restore
+    // weights only floor at the grab-min), the newcomer at its window width.
+    expect(regionWidthsOf(next).left).toBe(2 * MINIMIZED_STRIP_PX + WIN_W);
   });
 
   it("W12: dropping beside a rail in a NON-width band never halves the rail's P8 restore px", () => {

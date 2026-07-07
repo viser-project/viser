@@ -72,6 +72,7 @@ import {
   normalizeCanonicalBandsInPlace,
   collectLeafGroups,
   floatRegion,
+  removePane,
   minimizeStack,
   expandStack,
   expandStackOf,
@@ -286,6 +287,81 @@ describe("setColumnRailed (per-column rail)", () => {
     expect(normalizeCanonicalBandsInPlace(layout)).toBe(true);
     expect(isRegionCollapsedOn(layout, "left")).toBe(false);
     expect(layout.docked.left!.rows[1].columns[0].railed).toBeUndefined();
+  });
+
+  it("regression (band-scoped rail rule): a collapsed seam-drop into a MIXED region lands EXPANDED", () => {
+    // Model audit finding 2: a collapsed window band-inserted into a region
+    // with a multi-column band used to strand a railed lone-column band --
+    // dead full-width band space, uncaught by normalize. The store-migration
+    // rule is BAND-scoped now: a railed column that is its band's sole
+    // column drops the flag whenever the region isn't all-single-column.
+    const layout = makeLayout({
+      left: rows([row([col([leaf("a")]), col([leaf("b")])]), row([leaf("c")])]),
+      floating: [{ id: "wx", stack: ["x"], collapsed: true }],
+    });
+    const out = dockBandAtIndex(layout, ["x"], "left", 1);
+    expect(normalizeCanonicalBandsInPlace(out)).toBe(true);
+    const xBand = out.docked.left!.rows.find((rw) =>
+      rw.columns.some((c) => c.leaves.some((lf) => lf.group === "x")),
+    )!;
+    expect(xBand.columns).toHaveLength(1);
+    expect(xBand.columns[0].railed).toBeUndefined(); // expanded, not stranded
+    expect(isRegionCollapsedOn(out, "left")).toBe(false);
+    // Fixpoint: a second normalize changes nothing.
+    expect(normalizeCanonicalBandsInPlace(out)).toBe(false);
+  });
+
+  it("regression (band-scoped rail rule): removing a railed column's last band-sibling expands it", () => {
+    // Model audit finding 3: [a|b] / [c railed | d], then the server removes
+    // d (removePane) -- the surviving railed c was stranded alone in its
+    // full-width band with no collapsed geometry. Canonicalization now drops
+    // the flag: c expands.
+    const cc = col([leaf("c")]);
+    const layout = makeLayout({
+      left: rows([
+        row([col([leaf("a")]), col([leaf("b")])]),
+        row([cc, col([leaf("d")])]),
+      ]),
+    });
+    const railed = setColumnRailed(layout, "left", columnIdOf(cc), true);
+    const out = removePane(railed, "d:0");
+    expect(normalizeCanonicalBandsInPlace(out)).toBe(true);
+    const band1 = out.docked.left!.rows[1];
+    expect(band1.columns).toHaveLength(1);
+    expect(band1.columns[0].leaves[0].group).toBe("c");
+    expect(band1.columns[0].railed).toBeUndefined();
+    expect(normalizeCanonicalBandsInPlace(out)).toBe(false);
+  });
+
+  it("gate: setColumnRailed refuses a band's SOLE column in a mixed region (no-op)", () => {
+    // Model audit finding 5: the op-level gate. Chrome already hides the
+    // chevron there (D32: pill-only handle); programmatic callers must not
+    // be able to mint the stranded geometry either.
+    const cc = col([leaf("c")]);
+    const layout = makeLayout({
+      left: rows([row([col([leaf("a")]), col([leaf("b")])]), row([cc])]),
+    });
+    expect(setColumnRailed(layout, "left", columnIdOf(cc), true)).toBe(layout);
+    // In an all-single-column region the direct call still works (normalize
+    // then migrates it to the region store).
+    const single = makeLayout({
+      left: rows([row([col([leaf("a")])]), row([col([leaf("b")])])]),
+    });
+    const bCol = single.docked.left!.rows[1].columns[0];
+    const on = setColumnRailed(single, "left", bCol.id, true);
+    expect(on).not.toBe(single);
+    expect(on.docked.left!.rows[1].columns[0].railed).toBe(true);
+  });
+
+  it("gate: collapseContainerOf (toggle/minimize) no-ops on a band's sole column in a mixed region", () => {
+    const layout = makeLayout({
+      left: rows([
+        row([col([leaf("a")]), col([leaf("b")])]),
+        row([col([leaf("c")])]),
+      ]),
+    });
+    expect(toggleCollapsed(layout, "c")).toBe(layout);
+    expect(minimizeStack(layout, ["c"])).toBe(layout);
   });
 });
 
