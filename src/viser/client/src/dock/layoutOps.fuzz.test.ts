@@ -54,6 +54,7 @@ import {
   setNodeWeights,
   setRegionWidth,
   minimizeStack,
+  setColumnRailed,
   expandStack,
   stackGroupIdsOf,
 } from "./layoutOps";
@@ -317,7 +318,8 @@ type OpName =
   | "setNodeWeights"
   | "setRegionWidth"
   | "minimizeStack"
-  | "expandStack";
+  | "expandStack"
+  | "setColumnRailed";
 
 interface AppliedOp {
   desc: string;
@@ -389,6 +391,7 @@ function chooseOp(rng: Rng, l: DockLayout): AppliedOp | null {
     "setRegionWidth",
     "minimizeStack",
     "expandStack",
+    "setColumnRailed",
   ];
   // Try ops in random order until one is applicable.
   const order = [...ops].sort(() => rng() - 0.5);
@@ -631,6 +634,24 @@ function buildOp(
       return {
         desc: `expandStack([${stack}])`,
         apply: (x) => expandStack(x, stack),
+      };
+    }
+    case "setColumnRailed": {
+      // Directly flip a random docked column's rail flag (the op the gated
+      // toggle path routes through -- exercised here so the sole-column
+      // store-migration branch is fuzzed, not just the toggle wrapper).
+      const edgesWithRegion = edges.filter((e) => l.docked[e] !== null);
+      if (edgesWithRegion.length === 0) return null;
+      const edge = pick(rng, edgesWithRegion);
+      const cols: NodeId[] = [];
+      for (const r of l.docked[edge]!.rows)
+        for (const c of r.columns) cols.push(c.id);
+      if (cols.length === 0) return null;
+      const columnId = pick(rng, cols);
+      const on = rng() < 0.7;
+      return {
+        desc: `setColumnRailed(${edge}, ${columnId}, ${on})`,
+        apply: (x) => setColumnRailed(x, edge, columnId, on),
       };
     }
   }

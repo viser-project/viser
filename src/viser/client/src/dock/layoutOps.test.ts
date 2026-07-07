@@ -205,6 +205,33 @@ describe("setColumnRailed (per-column rail)", () => {
     expect(expanded.docked.left!.rows[0].columns[0].railed).toBeUndefined();
   });
 
+  it("railing the sole column of an all-single-column region sets the REGION store, not the column (F1)", () => {
+    // A rail flip is a flag-only commit: structureSignature ignores railed,
+    // so applyOp skips normalize. setColumnRailed must therefore reach a
+    // LEGAL committed state by construction -- railing the column would
+    // strand a railed sole-column band (invariant #13) that only a later
+    // structural normalize would rescue. The sole column of an
+    // all-single-column region IS the whole visual column, so it routes to
+    // the region flag instead.
+    const layout = makeLayout({ left: rows([leaf("a"), leaf("b")]) });
+    const colId = layout.docked.left!.rows[0].columns[0].id;
+    const out = setColumnRailed(layout, "left", colId, true);
+    expect(isRegionCollapsedOn(out, "left")).toBe(true);
+    for (const r of out.docked.left!.rows)
+      expect(r.columns[0].railed).toBeUndefined();
+    expect(invariantViolations(out)).toEqual([]); // legal WITHOUT normalize.
+  });
+
+  it("railing a band's sole column in a MIXED region is a no-op (F1)", () => {
+    // No legal committed state (a 36px strip in a full-width band strands
+    // dead space); chrome offers no affordance here either (D32).
+    const layout = makeLayout({
+      left: rows([row([leaf("a"), leaf("b")]), leaf("c")]),
+    });
+    const cId = layout.docked.left!.rows[1].columns[0].id; // sole col of band 2
+    expect(setColumnRailed(layout, "left", cId, true)).toBe(layout);
+  });
+
   it("a group in a railed column reads as effectively collapsed", () => {
     const { layout, aColId } = twoColumns();
     const on = setColumnRailed(layout, "left", aColId, true);
@@ -385,15 +412,20 @@ describe("setColumnRailed (per-column rail)", () => {
       left: rows([row([col([leaf("a")]), col([leaf("b")])]), row([cc])]),
     });
     expect(setColumnRailed(layout, "left", columnIdOf(cc), true)).toBe(layout);
-    // In an all-single-column region the direct call still works (normalize
-    // then migrates it to the region store).
+    // In an all-single-column region the direct call routes to the REGION
+    // store (F1): the sole column IS the whole visual column, and a rail
+    // flip is a flag-only commit that skips normalize, so it must reach a
+    // legal state by construction rather than railing a sole-column band.
     const single = makeLayout({
       left: rows([row([col([leaf("a")])]), row([col([leaf("b")])])]),
     });
     const bCol = single.docked.left!.rows[1].columns[0];
     const on = setColumnRailed(single, "left", bCol.id, true);
     expect(on).not.toBe(single);
-    expect(on.docked.left!.rows[1].columns[0].railed).toBe(true);
+    expect(isRegionCollapsedOn(on, "left")).toBe(true);
+    for (const r of on.docked.left!.rows)
+      expect(r.columns[0].railed).toBeUndefined();
+    expect(invariantViolations(on)).toEqual([]);
   });
 
   it("gate: collapseContainerOf (toggle/minimize) no-ops on a band's sole column in a mixed region", () => {

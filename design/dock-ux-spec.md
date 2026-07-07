@@ -1027,6 +1027,17 @@ Prior passes, one line each (full fix lists live in git history):
   fallback and pointer handoff restoration. STALENESS — enforcement-
   pending framing, chevron click-only rows, the unqualified bar-`+`,
   expand-on-drag references, and record dates swept (this revision).
+- 2026-07-07 — stability pass 2: three parallel audits over the
+  container-collapse generation (one credit-interrupted; its finding
+  recovered from scratch tests and hand-verified). Finding: docking a
+  panel beside a region rail built from STACKED bands half-railed it —
+  the beside-dock railed each band's column individually, so every band
+  but the target's became a railed loner the D39 rule then expanded.
+  Fix: `dropOnDockedLeaf` and `dockToEdge` consolidate the rail into
+  ONE railed column beside the expanded newcomer
+  (`consolidateRegionRailToColumnInPlace`); a railed target column
+  never band-splits. §7 conversion rule, D39, edge case 17 corrected
+  from per-column to consolidation; two regression pins.
 
 **Full-pass record — 2026-07-05 (scope-model rewrite):** every
 normative claim in §1–§9 (pre-D32 state) was re-traced to
@@ -1136,8 +1147,7 @@ it strains, the code's current behavior, and options.
   honestly render a
   grid; a handle may not span what its drag would flatten — D27) makes
   this a geometric limit. Options: accept; or give the region scope a
-  compound affordance railing every column individually (the §7
-  conversion's gesture-level analog).
+  compound affordance railing every column.
 - **T8 — The tab-strip override inverts zone priority.** §5.1 resolves
   outermost first except item 2, where a pane-scope insert beats region
   bands. "Specific intent beats broad intent" is a second axiom, not
@@ -1290,7 +1300,8 @@ play-by-play lives in git history.
   dock a new column next to it we should end up with the new column
   still expanded and the original rail still minimized as a rail" — ops
   adding a column beside a region-railed region clear the region flag
-  and rail the pre-existing columns. Everything that knew the region
+  and keep the old rail railed (refined by §7 to ONE consolidated
+  column, 2026-07-07). Everything that knew the region
   flag extends to the column flag (classification, stamping, width
   restore, `:r` signatures, expand paths, D12 carry, D13 both-halves
   zip). Lone columns keep pill-only handles; railed-flanked width

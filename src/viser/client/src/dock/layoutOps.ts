@@ -1900,12 +1900,21 @@ export function setColumnRailed(
 ): DockLayout {
   const found = findColumn(layout.docked[edge], columnId);
   if (found === null || (found.column.railed === true) === on) return layout;
-  if (
-    on &&
-    found.row.columns.length === 1 &&
-    !layout.docked[edge]!.rows.every((rw) => rw.columns.length === 1)
-  )
+  if (on && found.row.columns.length === 1) {
+    const allSingle = layout
+      .docked[edge]!.rows.every((rw) => rw.columns.length === 1);
+    // A band's SOLE column has no legal column-rail of its own (a 36px strip
+    // in a full-width band strands dead space, D28/invariant #13). Two
+    // outcomes, both keeping the model correct BY CONSTRUCTION -- never
+    // relying on a later normalize to rescue an illegal committed state:
+    //  - all-single-column region: the sole column IS the whole visual
+    //    column, whose canonical store is the REGION flag -- set that
+    //    instead (identical rendering, the store collapse law 5 mandates);
+    //  - mixed region (a multi-column band elsewhere): no legal state --
+    //    no-op (chrome offers no affordance here either, D32).
+    if (allSingle) return setRegionCollapsed(layout, edge, true);
     return layout;
+  }
   const draft = clone(layout);
   const column = findColumn(draft.docked[edge], columnId)!.column;
   if (on) column.railed = true;
