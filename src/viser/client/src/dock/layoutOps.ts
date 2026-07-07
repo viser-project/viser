@@ -210,11 +210,6 @@ export function isColumnMinimized(column: DockColumn): boolean {
   return column.railed === true;
 }
 
-/** A row band is "minimized" when every one of its columns is railed. */
-export function isRowMinimized(row: DockRow): boolean {
-  return row.columns.every((c) => isColumnMinimized(c));
-}
-
 /** True when the column with id `nodeId` (in either docked region) renders
  * collapsed -- its own railed flag or its edge's region collapse (D38). Used
  * to skip the shrink-the-leaf split PREVIEW over a minimized target (nothing

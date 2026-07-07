@@ -811,3 +811,51 @@ def test_plain_stack_cells_have_no_minimize_control(
         )
     finally:
         page.close()
+
+
+def test_all_railed_band_keeps_full_height(dock_context, vite_server: int) -> None:
+    """D38: rails reclaim WIDTH, never height. When every column of a band is
+    railed, the band must stay full-height (region-tall rail strips, spine
+    content unscrolled at small tab counts) -- the bars-era band collapse
+    squeezed a band of rails to a ~60px sliver with crammed icons behind a
+    scrollbar (user report)."""
+    page = _open(dock_context, vite_server, 1400, 800)
+    try:
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=columns(
+                    stack("controls", railed=True),
+                    stack("inspector", railed=True),
+                )
+            ),
+        )
+        geom = page.evaluate(
+            """() => {
+                const region = document.querySelector('[data-dock-region]');
+                const rh = region.getBoundingClientRect().height;
+                const rails = [...document.querySelectorAll(
+                    '[data-dock-column-rail]')].map((rail) => {
+                    const root = rail.parentElement;
+                    const r = root.getBoundingClientRect();
+                    const body = root.children[1];
+                    return {
+                        h: r.height,
+                        scrolls: body
+                            ? body.scrollHeight > body.clientHeight + 1
+                            : null,
+                    };
+                });
+                return { rh, rails };
+            }"""
+        )
+        assert len(geom["rails"]) == 2, geom
+        for rail in geom["rails"]:
+            assert abs(rail["h"] - geom["rh"]) <= 2, (
+                f"a railed column must span the region height, got {geom}"
+            )
+            assert rail["scrolls"] is False, (
+                f"rail spine content must not scroll at this tab count: {geom}"
+            )
+    finally:
+        page.close()

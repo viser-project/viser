@@ -22,7 +22,6 @@ import { collapseAnim } from "./DockStyles.css";
 import {
   cascadeResize,
   expandedFlags,
-  isRowMinimized,
   setNodeWeights,
 } from "./layoutOps";
 import { ColumnCollapseChevron, StackHandleBar } from "./handles";
@@ -98,20 +97,12 @@ export const SplitView = React.memo(function SplitView({
   const columnHandles = !region.rows.every((rw) => rw.columns.length === 1);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const rows = region.rows;
-  // Per-band collapsed mask, computed ONCE: the band map and every divider's
-  // resizable check read it. A band is minimized when EVERY column is
-  // railed: it shrinks to the fixed rail grab height (grow 0), so expanded
-  // bands absorb the freed height (edge case 16).
-  const bandMinimized = rows.map((r) => isRowMinimized(r));
-  const { atOrBefore: expandedAtOrBefore, after: expandedAfter } =
-    expandedFlags(bandMinimized);
-  // flex-grow semantics: when grow factors sum to <1, flexbox distributes
-  // only that FRACTION of the free space (the rest strands as dead area).
-  // D12's weight carving produces fractional band weights, so normalize:
-  // expanded bands' grow factors always sum to 1. Minimized bands contribute
-  // 0 (they hold no flexible height).
-  const expandedWeightTotal =
-    rows.reduce((s, r, i) => s + (bandMinimized[i] ? 0 : r.weight), 0) || 1;
+  // Bands NEVER height-collapse (D38): rails reclaim WIDTH, not height --
+  // an all-railed band renders full-height rail strips whose spine content
+  // scrolls internally. (The old bars-era band collapse squeezed a band of
+  // rails to a 60px sliver: crammed icons behind a scrollbar.) Grow
+  // normalization stays: fractional weights must sum to 1 (edge case 16).
+  const bandWeightTotal = rows.reduce((s, r) => s + r.weight, 0) || 1;
 
   // EXPLICITLY collapsed region (D21): the 36px vertical rail, regardless of
   // the per-cell collapse states. Toggled by the region-collapse chevron;
@@ -133,22 +124,16 @@ export const SplitView = React.memo(function SplitView({
       }}
     >
       {rows.map((row, index) => {
-        // An all-railed band holds no flexible height: it sizes to the
-        // fixed rail grab height so sibling bands absorb the freed space
-        // (edge case 16). Bands always render RowView; the railed columns
-        // inside it render their ColumnRails.
-        const minimized = bandMinimized[index];
+        // Bands always render RowView at their weighted height; railed
+        // columns inside render full-height ColumnRails.
         return (
           <React.Fragment key={row.id}>
             <Box
               className={collapseAnim}
               style={{
-                flexGrow: minimized ? 0 : row.weight / expandedWeightTotal,
-                flexShrink: minimized ? 0 : 1,
-                // Numeric when minimized, not "auto": auto is not
-                // animatable (D34), and the value is fixed chrome (an
-                // all-railed band is rail strips at the grab-height floor).
-                flexBasis: minimized ? ALL_RAILED_BAND_MIN_PX : 0,
+                flexGrow: row.weight / bandWeightTotal,
+                flexShrink: 1,
+                flexBasis: 0,
                 minWidth: 0,
                 minHeight: 0,
                 display: "flex",
@@ -158,22 +143,19 @@ export const SplitView = React.memo(function SplitView({
             </Box>
             {index < rows.length - 1 &&
               (() => {
-                // The band divider resizes only when a non-collapsed band sits
-                // on both sides of it (see expandedFlags).
+                // Every band divider resizes: rails are height-flexible
+                // (their spines scroll), so there is always height to trade.
                 return (
                   <SplitDivider
                     dir="column"
-                    resizable={
-                      expandedAtOrBefore[index] && expandedAfter[index]
-                    }
+                    resizable
                     containerRef={containerRef}
                     onResize={(deltaPx, containerPx) =>
                       resizeCells({
                         dock,
                         edge,
                         cells: rows,
-                        collapsed: bandMinimized,
-                        collapsedPx: ALL_RAILED_BAND_MIN_PX,
+                        collapsed: rows.map(() => false),
                         index,
                         deltaPx,
                         containerPx,

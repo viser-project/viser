@@ -5,7 +5,7 @@
 // drop a pointer position maps to, plus the geometry of the visual hint. It is
 // intentionally DOM-free so it can be unit tested with synthetic rects.
 
-import { edgeIsSingleLeaf, isRowMinimized } from "./layoutOps";
+import { edgeIsSingleLeaf } from "./layoutOps";
 import {
   AreaId,
   clamp,
@@ -530,9 +530,10 @@ export function hitTest(
     //  - over the cell itself: only the outer/inner thirds dock beside (full
     //    height), leaving the middle for the cell's own tab-insert / merge
     //    zones.
-    const keepSideBand =
-      isRegionCollapsedOn(layout, edge) ||
-      tree.rows.every((rw) => isRowMinimized(rw));
+    // Only the EXPLICIT region rail keeps full-height side bands: railed
+    // columns render region-tall strips (D38 -- rails hold width, not
+    // height), so an all-railed region has no empty area needing them.
+    const keepSideBand = isRegionCollapsedOn(layout, edge);
     const effSideBand = !keepSideBand
       ? sideBand
       : overCollapsedCell(edge)
