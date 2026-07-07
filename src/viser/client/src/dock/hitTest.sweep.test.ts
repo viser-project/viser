@@ -65,6 +65,10 @@ const RAIL_ROW = 70; // one spine row (icon + rotated title)
 function dockedTargets(
   layout: DockLayout,
   edge: DockEdge,
+  /** Simulated rail-spine scrollTop (px): shifts every rail cell up, as a
+   * scrolled overflowing spine does; the scanner's rail-root clamp then
+   * clips/drops cells exactly like the real DOM path. */
+  railScroll = 0,
 ): GroupTarget[] {
   const region = layout.docked[edge];
   if (region === null) return [];
@@ -101,7 +105,7 @@ function dockedTargets(
         const cw = MINIMIZED_STRIP_PX;
         const railTop = bandTop;
         const railBottom = bandTop + bandH;
-        let cellTop = bandTop + RAIL_HEADER;
+        let cellTop = bandTop + RAIL_HEADER - railScroll;
         column.leaves.forEach((lf, li) => {
           const group = layout.groups[lf.group];
           const nTabs = Math.max(1, group?.paneIds.length ?? 1);
@@ -222,11 +226,11 @@ function floatingTargets(layout: DockLayout): GroupTarget[] {
   return out;
 }
 
-function targetsFor(layout: DockLayout): DropTargets {
+function targetsFor(layout: DockLayout, railScroll = 0): DropTargets {
   return {
     groups: [
-      ...dockedTargets(layout, "left"),
-      ...dockedTargets(layout, "right"),
+      ...dockedTargets(layout, "left", railScroll),
+      ...dockedTargets(layout, "right", railScroll),
       ...floatingTargets(layout),
     ],
   };
@@ -357,8 +361,15 @@ function layouts(): {
    * cross-band-seam `bandInsert` is actually reachable (guards the seam zone
    * from silently going dead). */
   multiBand?: boolean;
+  /** Simulated rail-spine scrollTop for this fixture's railed columns. */
+  railScroll?: number;
 }[] {
-  const out: { name: string; layout: DockLayout; multiBand?: boolean }[] = [];
+  const out: {
+    name: string;
+    layout: DockLayout;
+    multiBand?: boolean;
+    railScroll?: number;
+  }[] = [];
 
   {
     const l = emptyLayout();
@@ -524,6 +535,84 @@ function layouts(): {
     l.docked.left = toRegion(rows([row([leaf("a")]), row([leaf("b")])]));
     l.docked.right = toRegion(rows([row([leaf("c")]), row([leaf("d")])]));
     out.push({ name: "two bands both edges", layout: l, multiBand: true });
+  }
+  {
+    // Stability pass 2: an ALL-RAILED band ABOVE an expanded full-width band
+    // (the V5 mirror -- rails hold width, not height, so band 0 renders two
+    // packed 36px strips with an empty tail; band 1 is a full-width panel).
+    const l = emptyLayout();
+    l.groups = { p: group("p"), q: group("q"), d: group("d") };
+    const rp = colS([leaf("p")]);
+    if (rp.kind === "col") rp.column.railed = true;
+    const rq = colS([leaf("q")]);
+    if (rq.kind === "col") rq.column.railed = true;
+    l.docked.left = toRegion(rows([row([rp, rq]), row([leaf("d")])]));
+    out.push({
+      name: "railed band above expanded (V5 mirror)",
+      layout: l,
+      multiBand: true,
+    });
+  }
+  {
+    // Stability pass 2: THREE bands alternating rail/expanded/rail.
+    const l = emptyLayout();
+    l.groups = {
+      p: group("p"), q: group("q", 2), m: group("m"),
+      s: group("s"), t: group("t"),
+    };
+    const rp = colS([leaf("p")]);
+    if (rp.kind === "col") rp.column.railed = true;
+    const rq = colS([leaf("q")]);
+    if (rq.kind === "col") rq.column.railed = true;
+    const rs = colS([leaf("s")]);
+    if (rs.kind === "col") rs.column.railed = true;
+    const rt = colS([leaf("t")]);
+    if (rt.kind === "col") rt.column.railed = true;
+    l.docked.left = toRegion(
+      rows([row([rp, rq]), row([leaf("m")]), row([rs, rt])]),
+    );
+    out.push({
+      name: "three bands alternating rail/expanded/rail",
+      layout: l,
+      multiBand: true,
+    });
+  }
+  {
+    // Stability pass 2: the V8 overflowing spine, SCROLLED (scrollTop 150).
+    // Cell rects reflect scroll (getBoundingClientRect does); the scanner's
+    // rail-root clamp must keep the clipped cells tiling the strip with no
+    // cross-band bleed.
+    const l = emptyLayout();
+    l.groups = { a: group("a"), b: group("b", 5), d: group("d") };
+    const railedB = colS([leaf("b")]);
+    if (railedB.kind === "col") railedB.column.railed = true;
+    l.docked.left = toRegion(
+      rows([row([leaf("a"), railedB], 1), row([leaf("d")], 3)]),
+    );
+    out.push({
+      name: "rail spine overflowing, scrolled (V8 + scrollTop)",
+      layout: l,
+      multiBand: true,
+      railScroll: 150,
+    });
+  }
+  {
+    // Stability pass 2: multi-CELL rail scrolled so the first cell is
+    // partially (or fully) behind the header run -- the dropped-cell (<8px)
+    // and first-cell-claims-rr.top interactions.
+    const l = emptyLayout();
+    l.groups = { a: group("a"), e: group("e"), f: group("f"), d: group("d") };
+    const railedEF = colS([leaf("e"), leaf("f")]);
+    if (railedEF.kind === "col") railedEF.column.railed = true;
+    l.docked.left = toRegion(
+      rows([row([leaf("a"), railedEF], 1), row([leaf("d")], 2)]),
+    );
+    out.push({
+      name: "two-cell rail scrolled past the first cell",
+      layout: l,
+      multiBand: true,
+      railScroll: 110,
+    });
   }
   {
     // Both edges empty -> only screen-edge zones + (no group) null in middle.

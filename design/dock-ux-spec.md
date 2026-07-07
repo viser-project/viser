@@ -841,8 +841,11 @@ op-level residue.
   set.
 - Conversion is store distribution, not state change: ops adding a
   side-by-side column to a region-railed region clear the region flag
-  and rail every PRE-EXISTING column — old content stays railed, the
-  newcomer lands expanded and visible (P5; D28); zip path included.
+  and keep the WHOLE old rail railed as ONE consolidated column beside
+  the expanded newcomer (P5; D28). A rail built from stacked bands
+  becomes one railed column (its cells stacked, as the packed rail
+  already rendered them) — never split per band, which would strand a
+  railed loner the D39 rule then expands, leaving a half-railed rail.
   Where both docked flags exist, region takes render precedence.
 - Structural carry and migration: a D12 band split leaves fragments of
   a railed column railed (same picture re-expressed, P14); a D13 zip
@@ -942,9 +945,10 @@ Behaviors that MUST hold (each is or should be pinned by a test):
     band/column/stack ever strands dead area from fractional grow sums
     (normalization over expanded cells only, §6; railed columns excluded
     the same way).
-17. Docking a column beside a region-railed region converts the rail
-    (§7): the pre-existing columns rail individually — through the zip
-    path too — and the newcomer lands expanded.
+17. Docking a column beside a region-railed region consolidates the
+    rail (§7): the whole old rail becomes one railed column (stacked
+    bands included) beside the expanded newcomer — never a half-railed
+    split.
 
 ---
 

@@ -757,22 +757,24 @@ export function dockToEdge(
     // Identity transfer (D38): a collapsed window docked BESIDE existing
     // content lands as a railed column.
     if (sourceCollapsed) column.railed = true;
-    // A column joining a region-railed region converts the region rail into
-    // per-column rails first: the old content stays railed, the newcomer
-    // lands expanded (visible, P5).
-    convertRegionRailToColumnRailsInPlace(draft, edge);
+    // A column joining a region-railed region keeps the WHOLE rail railed as
+    // one consolidated column (§7 / D39): a stacked-band rail becomes one
+    // rail column, so band 2's content can't strand as a railed loner the
+    // D39 rule would then expand. No-op for a single-band rail.
+    consolidateRegionRailToColumnInPlace(draft, edge);
+    const live = draft.docked[edge]!;
     // Add the new column at the OUTERMOST position (far left for "left", far
     // right for "right") of the FIRST row band. The common region is a single
     // row, so this is just the row gaining a column; with multiple bands the
     // new column joins the top band (a group lives in exactly one leaf, so it
     // can't span every band).
-    const firstRow = existing.rows[0];
+    const firstRow = live.rows[0];
     const columns: NonEmpty<DockColumn> =
       edge === "left"
         ? [column, ...firstRow.columns]
         : [...firstRow.columns, column];
     draft.docked[edge] = {
-      rows: mapNonEmpty(existing.rows, (row, i) =>
+      rows: mapNonEmpty(live.rows, (row, i) =>
         i === 0 ? { ...row, columns } : row,
       ),
     };
@@ -1063,10 +1065,33 @@ export function dropOnDockedLeaf(
   // column, so the new column spans the whole band beside the target's column
   // instead (and the hint spans the band to match).
   //
-  // A side drop into a region-railed region converts the region rail into
-  // per-column rails first: the old content (the target's column included)
-  // stays railed, the newcomer lands expanded (visible, P5).
-  convertRegionRailToColumnRailsInPlace(draft, edge);
+  // A side drop into a region-railed region keeps the WHOLE rail railed as
+  // ONE column beside the newcomer (§7 / D39): consolidate the rail's leaves
+  // into a single railed column so a stacked-band rail can't fragment into a
+  // half-railed state (the D39 loner rule would otherwise expand every band
+  // but the target's). Then re-resolve the target refs, which the rebuild
+  // invalidated -- the target now lives in the consolidated column.
+  let live2 = live;
+  let targetColumn2 = targetColumn;
+  let targetRow2 = targetRow;
+  let li2 = li;
+  if (isRegionCollapsedOn(draft, edge)) {
+    // Re-find by GROUP, not leaf id: consolidation rebuilds the rail's
+    // leaves with fresh ids, so the target's group is the stable handle.
+    // After consolidation the region is exactly one band with one column.
+    const targetGroup = live.leaf.group;
+    consolidateRegionRailToColumnInPlace(draft, edge);
+    const region2 = draft.docked[edge];
+    const row2 = region2?.rows[0];
+    const col2 = row2?.columns[0];
+    const leaf2 = col2?.leaves.find((l) => l.group === targetGroup);
+    if (region2 === null || row2 === undefined || col2 === undefined || leaf2 === undefined)
+      return layout; // unreachable: group was consolidated in
+    live2 = { leaf: leaf2, column: col2, row: row2 };
+    targetColumn2 = col2;
+    targetRow2 = row2;
+    li2 = col2.leaves.findIndex((l) => l.group === targetGroup);
+  }
   // A RAILED target column's stored weight is its P8 restore width (it
   // renders at the fixed 36px strip regardless), so the 50/50 split must
   // not touch it -- halving here permanently corrupted the width the rail
@@ -1074,47 +1099,50 @@ export function dropOnDockedLeaf(
   // widthRow). The newcomer takes the region default instead; when the
   // band IS width-determining, reconciliation immediately rewrites that to
   // the dragged window's real width.
-  const targetRailed = targetColumn.railed === true;
-  const targetShare = targetRailed ? targetColumn.weight : targetColumn.weight / 2;
-  const newShare = targetRailed ? DEFAULT_REGION_PX : targetColumn.weight / 2;
+  const targetRailed = targetColumn2.railed === true;
+  const targetShare = targetRailed
+    ? targetColumn2.weight
+    : targetColumn2.weight / 2;
+  const newShare = targetRailed ? DEFAULT_REGION_PX : targetColumn2.weight / 2;
   const newColumn = buildColumn(ne, newShare, stackHeights);
   // Identity transfer (D38): a collapsed window dropped as a NEW column
   // lands railed. (top/bottom drops JOIN the target's column instead -- the
   // receiving container's state wins there, so no flag travels.)
   if (sourceCollapsed) newColumn.railed = true;
-  if (targetRow.columns.length === 1 && targetColumn.leaves.length > 1) {
-    const above = targetColumn.leaves.slice(0, li);
-    const below = targetColumn.leaves.slice(li + 1);
+  // A railed target column is ONE visual rail unit: the newcomer lands
+  // beside the whole rail, never splitting the band (that would tear the
+  // rail's stacked cells apart). Only an EXPANDED lone multi-leaf column
+  // band-splits so the newcomer sits beside just the target cell.
+  if (
+    !targetRailed &&
+    targetRow2.columns.length === 1 &&
+    targetColumn2.leaves.length > 1
+  ) {
+    const above = targetColumn2.leaves.slice(0, li2);
+    const below = targetColumn2.leaves.slice(li2 + 1);
     // Carve the original band's weight by the leaves' height shares, so the
     // on-screen heights don't jump at the split.
-    const total = targetColumn.leaves.reduce((s, l) => s + l.weight, 0) || 1;
+    const total = targetColumn2.leaves.reduce((s, l) => s + l.weight, 0) || 1;
     const share = (leaves: DockLeaf[]) =>
-      (targetRow.weight * leaves.reduce((s, l) => s + l.weight, 0)) / total;
-    // Split fragments carry the source column's railed flag (the D12 rule:
-    // a band split of a railed column leaves every fragment railed).
+      (targetRow2.weight * leaves.reduce((s, l) => s + l.weight, 0)) / total;
     const bandOf = (leaves: DockLeaf[]): DockRow | null => {
       const ls = asNonEmpty(leaves);
       return ls === null
         ? null
         : buildRow(
-            {
-              id: freshId("node"),
-              weight: 1,
-              leaves: ls,
-              ...(targetColumn.railed === true ? { railed: true } : {}),
-            },
+            { id: freshId("node"), weight: 1, leaves: ls },
             share(leaves),
           );
     };
     // The target's own column keeps its id (and with it its reconciled width).
     const targetCol: DockColumn = {
-      ...targetColumn,
+      ...targetColumn2,
       weight: targetShare,
-      leaves: [{ ...live.leaf, weight: 1 }],
+      leaves: [{ ...live2.leaf, weight: 1 }],
     };
     const middle: DockRow = {
-      id: targetRow.id,
-      weight: share([live.leaf]),
+      id: targetRow2.id,
+      weight: share([live2.leaf]),
       columns:
         region === "left" ? [newColumn, targetCol] : [targetCol, newColumn],
     };
@@ -1122,26 +1150,27 @@ export function dropOnDockedLeaf(
     const belowBand = bandOf(below);
     // Replace the original band with its 1-3 successors, in place. The result
     // always contains `middle`, so it is non-empty by construction.
-    const ri = liveRegion.rows.findIndex((rw) => rw.id === targetRow.id);
+    const liveRegion2 = draft.docked[edge]!;
+    const ri = liveRegion2.rows.findIndex((rw) => rw.id === targetRow2.id);
     const rows = asNonEmpty([
-      ...liveRegion.rows.slice(0, ri),
+      ...liveRegion2.rows.slice(0, ri),
       ...(aboveBand === null ? [] : [aboveBand]),
       middle,
       ...(belowBand === null ? [] : [belowBand]),
-      ...liveRegion.rows.slice(ri + 1),
+      ...liveRegion2.rows.slice(ri + 1),
     ]);
     if (rows === null) return layout; // unreachable: `middle` is always present
-    liveRegion.rows = rows;
+    liveRegion2.rows = rows;
     return draft;
   }
   // A new column beside the target's column, within the SAME row band. Each
   // takes half of the target column's weight (the new column's leaves keep
   // a floated stack's preserved height shares); a railed target keeps its
   // stored restore width untouched.
-  targetColumn.weight = targetShare;
-  const ci = targetRow.columns.findIndex((c) => c.id === targetColumn.id);
+  targetColumn2.weight = targetShare;
+  const ci = targetRow2.columns.findIndex((c) => c.id === targetColumn2.id);
   const at = region === "left" ? ci : ci + 1;
-  targetRow.columns = withInserted(targetRow.columns, at, newColumn);
+  targetRow2.columns = withInserted(targetRow2.columns, at, newColumn);
   return draft;
 }
 
@@ -1903,6 +1932,37 @@ function convertRegionRailToColumnRailsInPlace(
   draft.regionCollapsed = withRegionCollapsed(draft, edge, false);
   for (const row of region.rows)
     for (const column of row.columns) column.railed = true;
+}
+
+/** Convert a region rail into ONE railed column (D39/§7 beside-dock): every
+ * rail leaf, in visual order (bands top-to-bottom, columns left-to-right,
+ * leaves top-to-bottom -- the same order the packed rail already renders),
+ * becomes a single stacked railed column in a single band. This is what a
+ * beside-dock needs: the whole old rail stays railed as one unit beside the
+ * newcomer, so a stacked-band rail can't fragment into a half-railed state
+ * (the D39 loner rule would otherwise expand every band but the target's).
+ * The rendering is identical to the region rail it replaces; only the store
+ * moves from the region flag to one column flag. No-op unless the edge is
+ * region-collapsed. */
+function consolidateRegionRailToColumnInPlace(
+  draft: DockLayout,
+  edge: DockEdge,
+): void {
+  const region = draft.docked[edge];
+  if (region === null || !isRegionCollapsedOn(draft, edge)) return;
+  const groups = region.rows.flatMap((r) =>
+    r.columns.flatMap((c) => collectLeaves(c).map((lf) => lf.group)),
+  );
+  const ne = asNonEmpty(groups);
+  if (ne === null) return;
+  // Restore width: the region's own reserved content width (the rail
+  // re-expands to what it reserved). regionWidth is the rendered need; the
+  // consolidated column's stored weight is its P8 restore width.
+  const restore = Math.max(regionWidthsOf(draft)[edge], MIN_REGION_GRAB_PX);
+  const column = buildColumn(ne, restore);
+  column.railed = true;
+  draft.regionCollapsed = withRegionCollapsed(draft, edge, false);
+  region.rows = [buildRow(column, 1)];
 }
 
 /** Clear the region-collapse flag for the edge holding `groupId` (if docked),

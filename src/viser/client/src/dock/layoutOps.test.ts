@@ -20,6 +20,7 @@
 //     accepted) -- callers clamp; this is by contract.
 
 import { describe, it, expect } from "vitest";
+import { invariantViolations } from "./layoutInvariants";
 import {
   DockEdge,
   DockLayout,
@@ -243,6 +244,48 @@ describe("setColumnRailed (per-column rail)", () => {
     expect(cols.map((c) => collectLeafGroups(c))).toEqual([["n"], ["a", "b"]]);
     expect(cols[0].railed).toBeUndefined();
     expect(cols[1].railed).toBe(true);
+  });
+
+  it("dropOnDockedLeaf beside a multi-band region rail keeps ALL of it railed", () => {
+    // Regression (stability pass 2): dropping a panel beside a region rail
+    // built from STACKED bands used to leave only the target's band railed
+    // and silently expand the rest (the D39 loner rule fired on the other
+    // band). The whole rail must consolidate into one railed column beside
+    // the expanded newcomer -- no half-railed state.
+    const layout = makeLayout({
+      left: rows([leaf("a"), leaf("b")]),
+      floating: [{ id: "w", stack: ["n"], width: 250, x: 10, y: 10 }],
+    });
+    const railed = setRegionCollapsed(layout, "left", true);
+    const aLeafId = railed.docked.left!.rows[0].columns[0].leaves[0].id;
+    const out = dropOnDockedLeaf(railed, ["n"], "left", aLeafId, "right");
+    normalizeCanonicalBandsInPlace(out);
+    expect(isRegionCollapsedOn(out, "left")).toBe(false);
+    expect(out.docked.left!.rows).toHaveLength(1);
+    const cols = out.docked.left!.rows[0].columns;
+    expect(cols.map((c) => collectLeafGroups(c))).toEqual([["a", "b"], ["n"]]);
+    expect(cols[0].railed).toBe(true); // the whole old rail...
+    expect(cols[1].railed).toBeUndefined(); // ...the newcomer expanded.
+    expect(invariantViolations(out)).toEqual([]);
+  });
+
+  it("dockToEdge (server) beside a multi-band region rail keeps ALL of it railed", () => {
+    const layout = makeLayout({
+      left: rows([leaf("a"), leaf("b")]),
+      floating: [{ id: "w", stack: ["n"], collapsed: true, width: 250, x: 5, y: 5 }],
+    });
+    const railed = setRegionCollapsed(layout, "left", true);
+    const out = dockToEdge(railed, ["n"], "left");
+    normalizeCanonicalBandsInPlace(out);
+    expect(isRegionCollapsedOn(out, "left")).toBe(false);
+    expect(out.docked.left!.rows).toHaveLength(1);
+    const cols = out.docked.left!.rows[0].columns;
+    // Old content consolidated + railed; a collapsed source arrives railed too.
+    const railedGroups = cols
+      .filter((c) => c.railed === true)
+      .flatMap((c) => collectLeafGroups(c));
+    expect(new Set(railedGroups)).toEqual(new Set(["a", "b", "n"]));
+    expect(invariantViolations(out)).toEqual([]);
   });
 
   it("D13 zip keeps railed only when BOTH halves carried it", () => {
