@@ -19,7 +19,7 @@ import {
 } from "./DockStyles.css";
 import { focusDockControl, tabListKeyDown } from "./gestures";
 import { ChromeToggle, GripPill, HandleIconButton } from "./handles";
-import { HEADER_PAD_EM, PaneSpec, TabGroup } from "./types";
+import { GRIP_BAR_EM, HEADER_PAD_EM, PaneSpec, TabGroup } from "./types";
 
 // The active panel's BODY, memoized so it is rebuilt/reconciled only when its
 // OWN inputs change -- not on every unrelated dock op. A tab switch or a
@@ -156,7 +156,7 @@ function GripBar({
         alignItems: "center",
         justifyContent: "center",
         flexShrink: 0,
-        height: "0.9em",
+        height: `${GRIP_BAR_EM}em`,
         // Light gray fill marks the handle (one step lighter than the border
         // gray -- see gripBarBg) and separates it from the tabs.
         cursor: "grab",

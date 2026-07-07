@@ -89,6 +89,10 @@ export const HEADER_PAD_EM = 0.75;
  * handle, rail header). Shared with collapsedWindowHeightCss so a collapsed
  * window's computed height agrees with the rendered chrome. */
 export const STACK_HANDLE_EM = 1;
+// The grip bar's height -- ALSO the rail cell cap's height, so the second
+// chrome row aligns across a railed column and its expanded neighbor (the
+// cap is the grip bar's counterpart in the rail rendering).
+export const GRIP_BAR_EM = 0.9;
 
 /** Does this group's bar carry a pane-provided face (lone pane only)? */
 export function hasMinimizedFace(

@@ -15,7 +15,7 @@ import { focusPaneTab, tabListKeyDown } from "./gestures";
 import { ChromeDivider, GripPill, StackHandleBar } from "./handles";
 import { startCollapsedGroupPress } from "./collapsedPress";
 import { collectLeaves } from "./layoutOps";
-import { DockColumn, DockEdge, DockRegion, NodeId, TabGroup } from "./types";
+import { GRIP_BAR_EM, DockColumn, DockEdge, DockRegion, NodeId, TabGroup } from "./types";
 
 /** The COLLAPSED region as ONE packed rail (spec 3.3 / D21): every leaf
  * across every band, contiguous, so the canvas gets the region's width back
@@ -255,7 +255,7 @@ export function VerticalMinimizedCell({
         style={{
           flexShrink: 0,
           width: "100%",
-          height: "1em",
+          height: `${GRIP_BAR_EM}em`,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
