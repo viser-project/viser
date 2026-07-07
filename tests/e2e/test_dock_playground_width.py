@@ -207,7 +207,7 @@ def test_removal_float_out_preserves_sibling_width(page: Page) -> None:
 # ===========================================================================
 # (2) Docking a new column keeps existing columns' widths; new one = default.
 # ===========================================================================
-def test_dock_new_column_keeps_existing_and_defaults_new(page: Page) -> None:
+def test_dock_new_column_keeps_existing_and_window_width(page: Page) -> None:
     # Arrange: controls docked right alone; inspector floating clear of the
     # region (the dock-b-beside-a gesture is the thing under test).
     a, b = "t-controls", "t-inspector"
@@ -235,8 +235,12 @@ def test_dock_new_column_keeps_existing_and_defaults_new(page: Page) -> None:
     assert abs(a_after - a_alone) <= _DIVIDER_TOL, (
         f"existing column width changed on new dock: {a_alone} -> {a_after}"
     )
-    # New column gets ~the default (~300).
-    assert abs(b_after - 300) <= 25, f"new column not ~default width: {b_after}"
+    # The newcomer keeps the WIDTH ITS WINDOW HAD (260 here) -- the
+    # rail-polish width contract: a dragged window's width is the panel's
+    # chosen width (P8), not a fixed default.
+    assert abs(b_after - 260) <= 25, (
+        f"new column should keep the window's 260px width: {b_after}"
+    )
 
 
 # ===========================================================================
