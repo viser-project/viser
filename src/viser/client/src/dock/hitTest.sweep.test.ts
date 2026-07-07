@@ -153,10 +153,18 @@ function dockedTargets(
           const trow = Math.floor(i / 3);
           return {
             paneId,
-            rect: rect(x + col * tabW, stripTop + trow * STRIP_H, tabW, STRIP_H),
+            rect: rect(
+              x + col * tabW,
+              stripTop + trow * STRIP_H,
+              tabW,
+              STRIP_H,
+            ),
           };
         });
-        const stripRows = Math.max(1, Math.ceil((group?.paneIds.length ?? 1) / 3));
+        const stripRows = Math.max(
+          1,
+          Math.ceil((group?.paneIds.length ?? 1) / 3),
+        );
         out.push({
           groupId: lf.group,
           rect: r,
@@ -191,7 +199,10 @@ function dockedBandRanges(
       for (const column of band.columns)
         for (const lf of column.leaves) {
           ranges.set(`n:${lf.id}`, { top: bandTop, bottom: bandTop + bandH });
-          ranges.set(`g:${lf.group}`, { top: bandTop, bottom: bandTop + bandH });
+          ranges.set(`g:${lf.group}`, {
+            top: bandTop,
+            bottom: bandTop + bandH,
+          });
         }
       bandTop += bandH;
     }
@@ -239,7 +250,11 @@ function targetsFor(layout: DockLayout, railScroll = 0): DropTargets {
 // ---------------------------------------------------------------------------
 // Result validation against the layout + targets.
 // ---------------------------------------------------------------------------
-function nodeExists(layout: DockLayout, edge: DockEdge, nodeId: string): boolean {
+function nodeExists(
+  layout: DockLayout,
+  edge: DockEdge,
+  nodeId: string,
+): boolean {
   const region = layout.docked[edge];
   if (region === null) return false;
   // A drop result's nodeId addresses a leaf (a docked split target) or a
@@ -270,7 +285,9 @@ function validateResult(
       }
       // Suppression contract: must be a multi-cell edge for that side.
       if (edgeIsSingleLeaf(tree, result.side))
-        errs.push(`regionEdge ${result.side} on a single-leaf edge (should be suppressed)`);
+        errs.push(
+          `regionEdge ${result.side} on a single-leaf edge (should be suppressed)`,
+        );
       break;
     }
     case "bandInsert": {
@@ -289,7 +306,9 @@ function validateResult(
     }
     case "split":
       if (!nodeExists(layout, result.edge, result.nodeId))
-        errs.push(`split references missing node ${result.nodeId} on ${result.edge}`);
+        errs.push(
+          `split references missing node ${result.nodeId} on ${result.edge}`,
+        );
       // A split region must be one of the four sides ("center" merges instead and
       // is excluded from the split result's type).
       if (!["top", "bottom", "left", "right"].includes(result.region))
@@ -335,7 +354,12 @@ function validateHint(hint: {
 }): string[] {
   const errs: string[] = [];
   const fin = (n: number) => Number.isFinite(n);
-  if (!fin(hint.left) || !fin(hint.top) || !fin(hint.width) || !fin(hint.height))
+  if (
+    !fin(hint.left) ||
+    !fin(hint.top) ||
+    !fin(hint.width) ||
+    !fin(hint.height)
+  )
     errs.push(`hint has non-finite field ${JSON.stringify(hint)}`);
   if (hint.width < 0 || hint.height < 0)
     errs.push(`hint has negative size ${JSON.stringify(hint)}`);
@@ -424,7 +448,13 @@ function layouts(): {
       c: group("c"),
     };
     l.floating = [
-      floatingWindow({ id: "w1", x: 400, y: 200, width: 300, stack: ["a", "b"] }),
+      floatingWindow({
+        id: "w1",
+        x: 400,
+        y: 200,
+        width: 300,
+        stack: ["a", "b"],
+      }),
       floatingWindow({ id: "w2", x: 750, y: 120, width: 200, stack: ["c"] }),
     ];
     out.push({ name: "floating stacks", layout: l });
@@ -455,7 +485,9 @@ function layouts(): {
       f: group("f"),
     };
     l.docked.left = toRegion(leaf("d"));
-    l.floating = [floatingWindow({ id: "wf", x: 200, y: 250, width: 240, stack: ["f"] })];
+    l.floating = [
+      floatingWindow({ id: "wf", x: 200, y: 250, width: 240, stack: ["f"] }),
+    ];
     out.push({ name: "floating straddling docked region", layout: l });
   }
   {
@@ -475,7 +507,9 @@ function layouts(): {
     // lays out every band, not just the width-determining row.
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b", 2), c: group("c") };
-    l.docked.left = toRegion(rows([row([leaf("a")]), row([leaf("b"), leaf("c")])]));
+    l.docked.left = toRegion(
+      rows([row([leaf("a")]), row([leaf("b"), leaf("c")])]),
+    );
     out.push({ name: "two row bands (left)", layout: l, multiBand: true });
   }
   {
@@ -500,7 +534,11 @@ function layouts(): {
         row([leaf("d"), railedEF]),
       ]),
     );
-    out.push({ name: "three bands w/ collapsed (left)", layout: l, multiBand: true });
+    out.push({
+      name: "three bands w/ collapsed (left)",
+      layout: l,
+      multiBand: true,
+    });
   }
   {
     // V8 (zones audit #1): a railed column whose 5-tab spine OVERFLOWS its
@@ -557,8 +595,11 @@ function layouts(): {
     // Stability pass 2: THREE bands alternating rail/expanded/rail.
     const l = emptyLayout();
     l.groups = {
-      p: group("p"), q: group("q", 2), m: group("m"),
-      s: group("s"), t: group("t"),
+      p: group("p"),
+      q: group("q", 2),
+      m: group("m"),
+      s: group("s"),
+      t: group("t"),
     };
     const rp = colS([leaf("p")]);
     if (rp.kind === "col") rp.column.railed = true;
@@ -615,6 +656,75 @@ function layouts(): {
     });
   }
   {
+    // Stability pass 3: FOUR bands, mixing rails and expanded columns, so the
+    // per-band side resolution, rail-honest band extents, and cross-band
+    // containment all hold when band count exceeds the pass-1/2 fixtures (max 3).
+    // band0: [a|railB]  band1: [c]  band2: [railD|e]  band3: [f|g]
+    const l = emptyLayout();
+    l.groups = {
+      a: group("a"),
+      b: group("b", 2),
+      c: group("c"),
+      d: group("d", 3),
+      e: group("e"),
+      f: group("f"),
+      g: group("g"),
+    };
+    const railB = colS([leaf("b")]);
+    if (railB.kind === "col") railB.column.railed = true;
+    const railD = colS([leaf("d")]);
+    if (railD.kind === "col") railD.column.railed = true;
+    l.docked.left = toRegion(
+      rows([
+        row([leaf("a"), railB]),
+        row([leaf("c")]),
+        row([railD, leaf("e")]),
+        row([leaf("f"), leaf("g")]),
+      ]),
+    );
+    out.push({
+      name: "four bands mixed rail/expanded (left)",
+      layout: l,
+      multiBand: true,
+    });
+  }
+  {
+    // Stability pass 3: FIVE bands on the RIGHT edge (mirror path), rail in the
+    // middle band and at the last band -- the densest reachable multi-band shape
+    // dockBandAtIndex/seam-insert composition produces.
+    const l = emptyLayout();
+    l.groups = {
+      a: group("a"),
+      b: group("b"),
+      c: group("c", 2),
+      d: group("d"),
+      e: group("e"),
+      f: group("f"),
+      g: group("g"),
+      h: group("h"),
+    };
+    const railCD = colS([leaf("c"), leaf("d")]);
+    if (railCD.kind === "col") railCD.column.railed = true;
+    const railG = colS([leaf("g")]);
+    if (railG.kind === "col") railG.column.railed = true;
+    // Last band [railG | h] keeps railG a legal (non-sole) railed column (D39):
+    // a single-column [railG] band would be the unreachable sole-column rail.
+    l.docked.right = toRegion(
+      rows([
+        row([leaf("a")]),
+        row([leaf("b"), railCD]),
+        row([leaf("e")]),
+        row([leaf("f")]),
+        row([railG, leaf("h")]),
+      ]),
+    );
+    out.push({
+      name: "five bands w/ rails (right)",
+      layout: l,
+      multiBand: true,
+    });
+  }
+  {
     // Both edges empty -> only screen-edge zones + (no group) null in middle.
     const l = emptyLayout();
     out.push({ name: "empty layout", layout: l });
@@ -655,7 +765,10 @@ describe("hitTest pointer sweep invariants", () => {
             zoneTally.set("null", (zoneTally.get("null") ?? 0) + 1);
             continue;
           }
-          zoneTally.set(res.result.kind, (zoneTally.get(res.result.kind) ?? 0) + 1);
+          zoneTally.set(
+            res.result.kind,
+            (zoneTally.get(res.result.kind) ?? 0) + 1,
+          );
           const r = res.result;
           targets.groups.forEach((t, i) => {
             if (reachedTargets.has(i)) return;
@@ -713,7 +826,11 @@ describe("hitTest pointer sweep invariants", () => {
       expect(errors, errors.join("\n")).toEqual([]);
       // Sanity: the sweep should actually reach *some* non-null zone for any
       // non-empty layout (guards against the harness silently testing nothing).
-      if (targets.groups.length > 0 || layout.docked.left || layout.docked.right) {
+      if (
+        targets.groups.length > 0 ||
+        layout.docked.left ||
+        layout.docked.right
+      ) {
         const nonNull = [...zoneTally.entries()]
           .filter(([k]) => k !== "null")
           .reduce((s, [, n]) => s + n, 0);
@@ -748,7 +865,12 @@ describe("hitTest randomized-geometry sweep", () => {
       const rng = mulberry32(seed * 101 + 7);
       const cw = 600 + Math.floor(rng() * 800);
       const ch = 400 + Math.floor(rng() * 600);
-      const container: ContainerRect = { left: 0, top: 0, width: cw, height: ch };
+      const container: ContainerRect = {
+        left: 0,
+        top: 0,
+        width: cw,
+        height: ch,
+      };
       const regionW: Record<DockEdge, number> = {
         left: 200 + Math.floor(rng() * 200),
         right: 200 + Math.floor(rng() * 200),
@@ -769,17 +891,28 @@ describe("hitTest randomized-geometry sweep", () => {
           try {
             res = hitTest(layout, regionW, container, targets, x, y);
           } catch (err) {
-            errors.push(`THREW seed=${seed} (${x},${y}) cw=${cw} ch=${ch}: ${err}`);
+            errors.push(
+              `THREW seed=${seed} (${x},${y}) cw=${cw} ch=${ch}: ${err}`,
+            );
             continue;
           }
           if (res === null) continue;
           // The referenced target must exist (group/window/node).
           const r = res.result;
-          if (r.kind === "merge" && layout.groups[r.targetGroupId] === undefined)
+          if (
+            r.kind === "merge" &&
+            layout.groups[r.targetGroupId] === undefined
+          )
             errors.push(`merge->missing group seed=${seed} (${x},${y})`);
-          if (r.kind === "insertTab" && layout.groups[r.targetGroupId] === undefined)
+          if (
+            r.kind === "insertTab" &&
+            layout.groups[r.targetGroupId] === undefined
+          )
             errors.push(`insertTab->missing group seed=${seed} (${x},${y})`);
-          if (r.kind === "snap" && !layout.floating.some((w) => w.id === r.windowId))
+          if (
+            r.kind === "snap" &&
+            !layout.floating.some((w) => w.id === r.windowId)
+          )
             errors.push(`snap->missing window seed=${seed} (${x},${y})`);
           if (
             !Number.isFinite(res.hint.left) ||
@@ -787,7 +920,9 @@ describe("hitTest randomized-geometry sweep", () => {
             res.hint.width < 0 ||
             res.hint.height < 0
           )
-            errors.push(`bad hint seed=${seed} (${x},${y}): ${JSON.stringify(res.hint)}`);
+            errors.push(
+              `bad hint seed=${seed} (${x},${y}): ${JSON.stringify(res.hint)}`,
+            );
           if (errors.length > 8) break;
         }
         if (errors.length > 8) break;
@@ -844,7 +979,7 @@ describe("tabInsertion boundary sweep", () => {
 // ---------------------------------------------------------------------------
 describe("hitTest left/right mirror symmetry", () => {
   const W = CONTAINER.width;
-  const reverseNonEmpty = <T,>(xs: NonEmpty<T>): NonEmpty<T> =>
+  const reverseNonEmpty = <T>(xs: NonEmpty<T>): NonEmpty<T> =>
     [...xs].reverse() as NonEmpty<T>;
   const mirRect = (r: DOMRect): DOMRect =>
     rect(W - r.left - r.width, r.top, r.width, r.height);
@@ -884,7 +1019,9 @@ describe("hitTest left/right mirror symmetry", () => {
       stripRect: t.stripRect === null ? null : mirRect(t.stripRect),
       tabs: t.tabs.map((tab) => ({ ...tab, rect: mirRect(tab.rect) })),
       ctx:
-        t.ctx.kind === "docked" ? { ...t.ctx, edge: flipLR(t.ctx.edge) } : t.ctx,
+        t.ctx.kind === "docked"
+          ? { ...t.ctx, edge: flipLR(t.ctx.edge) }
+          : t.ctx,
     })),
   });
 
@@ -896,7 +1033,11 @@ describe("hitTest left/right mirror symmetry", () => {
       case "edge":
         return { kind: "edge", edge: flipLR(res.edge) };
       case "regionEdge":
-        return { kind: "regionEdge", edge: flipLR(res.edge), side: flipLR(res.side) };
+        return {
+          kind: "regionEdge",
+          edge: flipLR(res.edge),
+          side: flipLR(res.side),
+        };
       case "bandInsert":
         return { kind: "bandInsert", edge: flipLR(res.edge), index: res.index };
       case "split":
@@ -925,7 +1066,12 @@ describe("hitTest left/right mirror symmetry", () => {
       case "bandInsert":
         return { kind: "bandInsert", edge: res.edge, index: res.index };
       case "split":
-        return { kind: "split", edge: res.edge, nodeId: res.nodeId, region: res.region };
+        return {
+          kind: "split",
+          edge: res.edge,
+          nodeId: res.nodeId,
+          region: res.region,
+        };
       case "insertTab":
         return { kind: "insertTab", targetGroupId: res.targetGroupId };
       case "merge":
