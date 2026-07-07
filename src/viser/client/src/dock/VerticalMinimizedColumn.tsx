@@ -133,6 +133,13 @@ export function ColumnRail({
   };
   return (
     <Box
+      // The rail's DROPPABLE surface is the full strip (spec 3.3: rails hold
+      // width, not height -- the strip renders region/band-tall). The cells
+      // inside size to content, so DockManager's target scanner extends the
+      // first/last cell's drop rect to this root's box (data-dock-rail-root)
+      // -- the header run and the empty tail below the spine rows must not
+      // be dead pixels.
+      data-dock-rail-root={column.id}
       style={{
         display: "flex",
         flexDirection: "column",
@@ -337,8 +344,12 @@ export function VerticalMinimizedCell({
       </Box>
     </Box>
   );
-  // The wrapper carries data-dock-leaf/-edge and sizes to CONTENT --
-  // the rect must equal the visible strip or hitTest gets region-tall zones.
+  // The wrapper carries data-dock-leaf/-edge and sizes to CONTENT. For a
+  // COLUMN rail, DockManager's scanner extends the first/last cell's drop
+  // rect to the rail root's full strip (data-dock-rail-root above): the
+  // strip's header run and empty tail tile onto those cells' zones instead
+  // of going dead. (Region-rail cells stay content-sized targets; the
+  // region-wide side bands cover that rail's empty area.)
   return (
     <Box
       data-dock-leaf={nodeId}

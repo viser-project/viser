@@ -537,10 +537,17 @@ export function DockManager({
   // next to the only reader:
   //
   //   data-dock-leaf=<nodeId> + data-dock-edge=<left|right>
-  //     A docked drop target. The LEAF wrapper's rect IS the drop rect (the
-  //     rail sizes the wrapper to the droppable surface; the group element
-  //     inside may be a compact rail cell). Rendered by SplitView's
-  //     DockLeafView and VerticalMinimizedColumn's rail cells (docked).
+  //     A docked drop target. The LEAF wrapper's rect is the drop rect,
+  //     except inside a COLUMN rail (below): rail cell wrappers size to
+  //     CONTENT, so the scanner extends the first/last cell's rect to the
+  //     rail root's full strip. Rendered by SplitView's DockLeafView and
+  //     VerticalMinimizedColumn's rail cells (docked).
+  //   data-dock-rail-root=<columnId>
+  //     A ColumnRail's root: the full 36px strip (band-tall -- rails hold
+  //     width, not height). Its box is the column's true droppable surface;
+  //     the scanner tiles it onto the cells (first cell claims the header
+  //     run, last cell the empty tail below the spine rows), so a rail has
+  //     no dead pixels while interior cells keep their own boxes.
   //   data-dock-group=<groupId>
   //     The group's element: the leaf wrapper itself OR any descendant (both
   //     accepted). Scopes the strip/tab lookup; carries
@@ -692,12 +699,30 @@ export function DockManager({
         ? leaf
         : leaf.querySelector("[data-dock-group]");
       if (nodeId === null || edge === null || groupEl === null) return;
-      // The LEAF wrapper's box is the drop target: both minimized renderers
-      // size the wrapper to the full droppable surface while the group element
-      // inside may be a compact rail cell. The group element still scopes the
-      // strip/tab lookup.
+      // The LEAF wrapper's box is the drop target; the group element inside
+      // (possibly a compact rail cell) scopes the strip/tab lookup.
       const g = readGroup(groupEl, { kind: "docked", nodeId, edge }, leaf);
       if (g === null) return;
+      // COLUMN rail cells size to content, but the rail's droppable surface
+      // is the FULL strip (band-tall): extend the FIRST cell's rect to the
+      // rail root's top (the header run) and the LAST cell's to its bottom
+      // (the empty tail -> that cell's stack-below zone + side slivers), so
+      // the strip tiles with no dead pixels while interior cells keep their
+      // own boxes. hitTest's collapsed branch anchors the stack-below hint
+      // at the spine content's true bottom, not the extended rect's.
+      const railRoot = leaf.closest("[data-dock-rail-root]");
+      if (railRoot !== null) {
+        const rr = railRoot.getBoundingClientRect();
+        const cells = railRoot.querySelectorAll("[data-dock-leaf]");
+        const top = cells[0] === leaf ? Math.min(rr.top, g.rect.top) : g.rect.top;
+        const bottom =
+          cells[cells.length - 1] === leaf
+            ? Math.max(rr.bottom, g.rect.bottom)
+            : g.rect.bottom;
+        if (top !== g.rect.top || bottom !== g.rect.bottom) {
+          g.rect = new DOMRect(g.rect.left, top, g.rect.width, bottom - top);
+        }
+      }
       // Clip to the column's scroll box: with overflowY auto a squeezed,
       // scrolled column reports leaf rects extending into neighboring bands,
       // and hitTest's last-match rule would pick the INVISIBLE scrolled-out

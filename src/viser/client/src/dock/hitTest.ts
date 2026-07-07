@@ -9,8 +9,10 @@ import { edgeIsSingleLeaf } from "./layoutOps";
 import {
   AreaId,
   clamp,
+  DockColumn,
   DockEdge,
   DockLayout,
+  DockRegion,
   DropRegion,
   GroupId,
   isRegionCollapsedOn,
@@ -440,7 +442,7 @@ export function hitTest(
     for (const t of targets.groups)
       if (t.ctx.kind === "docked" && t.ctx.edge === edge)
         rectOfNode.set(t.ctx.nodeId, t.rect);
-    const out: { top: number; bottom: number }[] = [];
+    const raw: { top: number; bottom: number }[] = [];
     for (const band of tree.rows) {
       let top = Infinity;
       let bottom = -Infinity;
@@ -452,9 +454,170 @@ export function hitTest(
           bottom = Math.max(bottom, r.bottom - crect.top);
         }
       if (!Number.isFinite(top) || !Number.isFinite(bottom)) return null;
-      out.push({ top, bottom });
+      raw.push({ top, bottom });
     }
-    return out;
+    // An ALL-RAILED band's cells can be content-tall (packed at the band's
+    // top), so its raw extent may stop far above the band's true bottom --
+    // the cross-band seam and band-tall hints then float mid-band. Rails
+    // hold width, not height: the band's RENDERED box runs between its
+    // neighbors' edges and the container's, so extend the extent there. A
+    // band with an EXPANDED column is reliable as-is (expanded leaves tile
+    // the band). The explicit region rail (D21) packs EVERY band's cells
+    // into one strip -- band boxes don't exist on screen there, so raw
+    // extents stay authoritative for a collapsed region.
+    if (isRegionCollapsedOn(layout, edge)) return raw;
+    const reliable = tree.rows.map((band) =>
+      band.columns.some((c) => c.railed !== true),
+    );
+    return raw.map((ext, i) => {
+      if (reliable[i]) return ext;
+      const top =
+        i === 0
+          ? 0
+          : reliable[i - 1]
+            ? raw[i - 1].bottom + SPLIT_DIVIDER_PX
+            : ext.top;
+      const bottom =
+        i === tree.rows.length - 1
+          ? crect.height
+          : reliable[i + 1]
+            ? raw[i + 1].top - SPLIT_DIVIDER_PX
+            : ext.bottom;
+      return {
+        top: Math.min(top, ext.top),
+        bottom: Math.max(bottom, ext.bottom),
+      };
+    });
+  };
+
+  // A vertical insertion line for a docked left/right split: centered on
+  // `lineX` (the landing seam, client coords), clamped on-screen, with its
+  // vertical extent = the drop's TRUE extent. Beside a cell of a lone
+  // multi-leaf column the band will split, affecting only that cell (the
+  // caller's fallback extent). Beside a column that has band SIBLINGS the
+  // flat model can't nest, so the new column spans the whole band -- draw
+  // the line band-tall to match (a cell-tall line there would promise a
+  // split the drop can't deliver).
+  const dockedSideSplitHint = (
+    edge: DockEdge,
+    nodeId: NodeId,
+    lineX: number,
+    fallback: { top: number; height: number },
+  ): DropHint => {
+    const t = LINE_PX;
+    const left = clamp(lineX - t / 2, crect.left, crect.left + crect.width - t);
+    let { top, height } = fallback;
+    const tree = layout.docked[edge];
+    const band = tree?.rows.find((rw) =>
+      rw.columns.some((c) => c.leaves.some((l) => l.id === nodeId)),
+    );
+    if (tree != null && band !== undefined && band.columns.length > 1) {
+      const ext = bandExtents(edge)?.[tree.rows.indexOf(band)];
+      if (ext != null) {
+        top = ext.top + crect.top;
+        height = ext.bottom - ext.top;
+      }
+    }
+    return rel({ left, top, width: t, height }, "line");
+  };
+
+  // Per-band side resolution for a NON-zippable multi-band region: a side
+  // hit at y over band N means "insert a column at band N's outer edge",
+  // committed as a split on the band's outer leaf (dropOnDockedLeaf inserts
+  // the column into exactly that band -- no cross-band bleed). The claim on
+  // each side:
+  //  - the standard sideBand sliver at the region edge when the outer
+  //    column is EXPANDED (it reaches the edge; its middle stays for its
+  //    own zones), but NOTHING when the outer column is a RAIL abutting the
+  //    edge -- the rail's own 8px sliver already serves "dock beside", and
+  //    a 40px claim would shadow the whole 36px strip;
+  //  - plus any horizontal run the band's content doesn't reach (an
+  //    all-railed band packs its 36px strips and leaves an empty tail):
+  //    the only honest meaning of those pixels is "a new column lands
+  //    here, beside the outermost cell", so the tail maps to the outer
+  //    split rather than going dead.
+  const bandSideHit = (
+    edge: DockEdge,
+    tree: DockRegion,
+    regionLeft: number,
+    regionRight: number,
+    sideBand: number,
+  ): { result: DropResult; hint: DropHint } | null => {
+    const ext = bandExtents(edge);
+    if (ext === null) return null;
+    let bi = ext.findIndex((e) => cy <= e.bottom);
+    if (bi === -1) bi = ext.length - 1;
+    const band = tree.rows[bi];
+    const rectOf = new Map<NodeId, DOMRect>();
+    for (const t of targets.groups)
+      if (t.ctx.kind === "docked" && t.ctx.edge === edge)
+        rectOf.set(t.ctx.nodeId, t.rect);
+    // The band's occupied horizontal extent (container-relative).
+    let contentLeft = Infinity;
+    let contentRight = -Infinity;
+    for (const c of band.columns)
+      for (const lf of c.leaves) {
+        const r = rectOf.get(lf.id);
+        if (r === undefined) continue;
+        contentLeft = Math.min(contentLeft, r.left - crect.left);
+        contentRight = Math.max(contentRight, r.right - crect.left);
+      }
+    if (!Number.isFinite(contentLeft)) return null;
+    const outerCol = (side: "left" | "right"): DockColumn =>
+      side === "left" ? band.columns[0] : band.columns[band.columns.length - 1];
+    const side = ((): "left" | "right" | null => {
+      const leftClaim =
+        contentLeft > regionLeft + 2
+          ? contentLeft
+          : outerCol("left").railed === true
+            ? regionLeft // yield: the rail's own outer sliver docks beside.
+            : regionLeft + sideBand;
+      if (cx < leftClaim) return "left";
+      const rightClaim =
+        contentRight < regionRight - 2
+          ? contentRight
+          : outerCol("right").railed === true
+            ? regionRight
+            : regionRight - sideBand;
+      if (cx > rightClaim) return "right";
+      return null;
+    })();
+    if (side === null) return null;
+    const col = outerCol(side);
+    // The outer column's leaf nearest the pointer's y: a multi-leaf outer
+    // column band-splits beside exactly that cell; otherwise any leaf of
+    // the column addresses the same column insert.
+    let leaf = col.leaves[0];
+    let bestD = Infinity;
+    for (const lf of col.leaves) {
+      const r = rectOf.get(lf.id);
+      if (r === undefined) continue;
+      const d =
+        clientY < r.top
+          ? r.top - clientY
+          : clientY > r.bottom
+            ? clientY - r.bottom
+            : 0;
+      if (d < bestD) {
+        bestD = d;
+        leaf = lf;
+      }
+    }
+    const lr = rectOf.get(leaf.id);
+    const lineX =
+      lr === undefined
+        ? (side === "left" ? regionLeft : regionRight) + crect.left
+        : side === "left"
+          ? lr.left
+          : lr.right;
+    const fallback =
+      lr === undefined
+        ? { top: crect.top + ext[bi].top, height: ext[bi].bottom - ext[bi].top }
+        : { top: lr.top, height: lr.height };
+    return {
+      result: { kind: "split", edge, nodeId: leaf.id, region: side },
+      hint: dockedSideSplitHint(edge, leaf.id, lineX, fallback),
+    };
   };
 
   // 2. Region edges -> dock a full-span band beside everything in the region.
@@ -534,9 +697,15 @@ export function hitTest(
     // columns render region-tall strips (D38 -- rails hold width, not
     // height), so an all-railed region has no empty area needing them.
     const keepSideBand = isRegionCollapsedOn(layout, edge);
+    // Any COLLAPSED docked cell under the pointer keeps its own zones: a
+    // 40px side band would fully shadow a 36px rail (its side slivers, tab
+    // rows and merge cap), and the rail's outer sliver already docks a
+    // column beside it -- so the bands yield rather than shadow. (For the
+    // explicit region rail the band instead narrows to thirds below.)
+    const overRail = overCollapsedCell(edge);
     const effSideBand = !keepSideBand
       ? sideBand
-      : overCollapsedCell(edge)
+      : overRail
         ? sideBand // over the strip: thirds (center falls through to the cell)
         : w / 2 + 0.5; // empty area: halves (see below).
     // Halves -- left half docks left, right half docks right. A full-width
@@ -572,22 +741,36 @@ export function hitTest(
         },
       };
     }
-    // Left / right (inner *and* outer): a line beside the rows the drop will
-    // actually join. When every band is single-column (a canonical stack),
-    // dockToRegionEdge ZIPS the bands into one nested column and the new
-    // panel really lands beside EVERYTHING -- full-height hint. A region
-    // with a multi-column band can't be zipped (rows can't nest), so the
-    // new column joins the first band only and the hint spans just that
-    // band: honest previews either way (P1).
-    const sideHintSpan = (): { top: number; height: number } => {
-      const zippable = tree.rows.every((rw) => rw.columns.length === 1);
-      if (tree.rows.length >= 2 && !zippable) {
-        const ext = bandExtents(edge);
-        if (ext !== null && ext.length > 0)
-          return { top: ext[0].top, height: ext[0].bottom - ext[0].top };
+    // Left / right side bands, in three regimes:
+    //  - COLLAPSED region (D21): the packed rail keeps the full-height
+    //    bands (halves over the empty area, thirds over a cell) -- the
+    //    committed dockToRegionEdge really lands beside the whole rail.
+    //  - Single-band or ZIPPABLE region: the region-wide regionEdge band is
+    //    honest -- "beside everything" is literally what dockToRegionEdge
+    //    does (zipping a canonical stack into one nested column), so the
+    //    full-span result survives here only.
+    //  - MULTI-BAND region with a multi-column band (non-zippable):
+    //    resolved PER BAND (bandSideHit) -- a side hit at y over band N
+    //    inserts a column at band N's outer edge, with a band-tall hint.
+    //    The old region-wide band joined rows[0] regardless of the
+    //    pointer's y (a drop over band 2 committed into band 1) and fully
+    //    shadowed a 36px rail at the region's edge.
+    const zippable = tree.rows.every((rw) => rw.columns.length === 1);
+    if (!keepSideBand && tree.rows.length >= 2 && !zippable) {
+      if (!overRail) {
+        const hit = bandSideHit(edge, tree, regionLeft, regionRight, sideBand);
+        if (hit !== null) return hit;
       }
-      return { top: 0, height: crect.height };
-    };
+      continue; // the rail's / cells' own zones handle the rest (section 3).
+    }
+    if (!keepSideBand && overRail) continue;
+    // A line beside the rows the drop will actually join: the whole region
+    // (a single band spans it; a canonical stack is zipped into one nested
+    // column, so the new panel really lands beside EVERYTHING).
+    const sideHintSpan = (): { top: number; height: number } => ({
+      top: 0,
+      height: crect.height,
+    });
     if (
       cx - regionLeft < effSideBand &&
       (!edgeIsSingleLeaf(tree, "left") || keepSideBand)
@@ -714,6 +897,57 @@ export function hitTest(
         ),
       };
     }
+    // VERTICAL divider dead spot -- the left/right analog of the seam above
+    // (spec 5.5: divider gaps are never dead): the pointer sits in the
+    // ~SPLIT_DIVIDER_PX gap between two SIDE-BY-SIDE docked columns (the
+    // divider has no target; between two RAILED columns the gap is a full
+    // dead stripe without this). Map it to the column insert at that seam:
+    // the gap's left half splits RIGHT of the left cell, the right half
+    // splits LEFT of the right cell -- the same landing either way, and
+    // left/right mirror-symmetric.
+    if (owningWindow === null) {
+      let leftT: GroupTarget | null = null;
+      let rightT: GroupTarget | null = null;
+      for (const t of targets.groups) {
+        if (t.ctx.kind !== "docked") continue;
+        const tr = t.rect;
+        if (clientY < tr.top || clientY > tr.bottom) continue;
+        if (tr.right <= clientX && (leftT === null || tr.right > leftT.rect.right))
+          leftT = t;
+        if (tr.left >= clientX && (rightT === null || tr.left < rightT.rect.left))
+          rightT = t;
+      }
+      if (
+        leftT !== null &&
+        rightT !== null &&
+        leftT.ctx.kind === "docked" &&
+        rightT.ctx.kind === "docked" &&
+        leftT.ctx.edge === rightT.ctx.edge
+      ) {
+        const gap = rightT.rect.left - leftT.rect.right;
+        if (gap >= -1 && gap <= SEAM_GAP_MAX_PX) {
+          const gapCenter = (leftT.rect.right + rightT.rect.left) / 2;
+          const [tgt, region] =
+            clientX <= gapCenter
+              ? ([leftT, "right"] as const)
+              : ([rightT, "left"] as const);
+          if (tgt.ctx.kind === "docked") {
+            return {
+              result: {
+                kind: "split",
+                edge: tgt.ctx.edge,
+                nodeId: tgt.ctx.nodeId,
+                region,
+              },
+              hint: dockedSideSplitHint(tgt.ctx.edge, tgt.ctx.nodeId, gapCenter, {
+                top: tgt.rect.top,
+                height: tgt.rect.height,
+              }),
+            };
+          }
+        }
+      }
+    }
     // Floating-stack divider dead spot: the pointer sits on the divider gap
     // between two stacked cells of a floating window. Same recovery as the
     // docked seam above -- map it to the snap at that index instead of
@@ -812,41 +1046,19 @@ export function hitTest(
       const top = clamp(raw, crect.top, crect.top + crect.height - t);
       return rel({ left: r.left, top, width: r.width, height: t }, "line");
     }
-    const raw = (region === "left" ? r.left : r.right) - t / 2;
-    const left = clamp(raw, crect.left, crect.left + crect.width - t);
-    // Vertical extent = the drop's TRUE extent. Beside a cell of a lone
-    // multi-leaf column the band will split, affecting only that cell (cell
-    // height). Beside a column that has band SIBLINGS the flat model can't
-    // nest, so the new column spans the whole band -- draw the line band-tall
-    // to match (a cell-tall line there would promise a split the drop can't
-    // deliver).
-    let top = r.top;
-    let height = r.height;
+    // Vertical extent = the drop's TRUE extent, resolved by
+    // dockedSideSplitHint: cell-tall for a lone column's band split,
+    // band-tall beside a column with band siblings (any leaf count -- a
+    // 1-leaf railed column's newcomer still spans the whole band).
+    const lineX = region === "left" ? r.left : r.right;
     if (gt.ctx.kind === "docked") {
-      const edge = gt.ctx.edge;
-      const nodeId = gt.ctx.nodeId;
-      const tree = layout.docked[edge];
-      const band = tree?.rows.find((rw) =>
-        rw.columns.some((c) => c.leaves.some((l) => l.id === nodeId)),
-      );
-      const col = band?.columns.find((c) =>
-        c.leaves.some((l) => l.id === nodeId),
-      );
-      if (
-        tree !== null &&
-        band !== undefined &&
-        col !== undefined &&
-        band.columns.length > 1 &&
-        col.leaves.length > 1
-      ) {
-        const ext = bandExtents(edge)?.[tree.rows.indexOf(band)];
-        if (ext !== null && ext !== undefined) {
-          top = ext.top + crect.top;
-          height = ext.bottom - ext.top;
-        }
-      }
+      return dockedSideSplitHint(gt.ctx.edge, gt.ctx.nodeId, lineX, {
+        top: r.top,
+        height: r.height,
+      });
     }
-    return rel({ left, top, width: t, height }, "line");
+    const left = clamp(lineX - t / 2, crect.left, crect.left + crect.width - t);
+    return rel({ left, top: r.top, width: t, height: r.height }, "line");
   };
 
   // An unmergeable group never participates in a merge, from EITHER side: a
@@ -969,7 +1181,35 @@ export function hitTest(
       if (rx < H) return { result: { kind: "split", edge: e, nodeId: n, region: "left" }, hint: splitLine("left") };
       if (rx > 1 - H) return { result: { kind: "split", edge: e, nodeId: n, region: "right" }, hint: splitLine("right") };
       if (inTopEdge) return { result: { kind: "split", edge: e, nodeId: n, region: "top" }, hint: splitLine("top") };
-      if (inBottomEdge) return { result: { kind: "split", edge: e, nodeId: n, region: "bottom" }, hint: splitLine("bottom") };
+      // A rail's droppable rect can extend past its spine content: the
+      // strip's empty TAIL below the rows belongs to the LAST cell (the
+      // scanner sizes it to the rail root), and the only honest drop there
+      // is "stack a new cell below this one". The hint sits at the
+      // content's true bottom edge -- where the new cell actually lands --
+      // not at the strip's far bottom.
+      const lastTab = g.tabs[g.tabs.length - 1];
+      const contentBottom =
+        lastTab === undefined
+          ? r.bottom
+          : Math.min(r.bottom, lastTab.rect.bottom + MINIMIZED_EDGE_BAND_PX);
+      if (inBottomEdge || clientY > contentBottom) {
+        const hint =
+          r.bottom - contentBottom > MINIMIZED_EDGE_BAND_PX
+            ? rel(
+                {
+                  left: r.left,
+                  top: contentBottom - LINE_PX / 2,
+                  width: r.width,
+                  height: LINE_PX,
+                },
+                "line",
+              )
+            : splitLine("bottom"); // content-tall cell: seam-aware line.
+        return {
+          result: { kind: "split", edge: e, nodeId: n, region: "bottom" },
+          hint,
+        };
+      }
       return insertResult() ?? mergeResult();
     }
     // Floating minimized: thin edge bands snap a new cell above/below; rows

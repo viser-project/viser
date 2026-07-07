@@ -420,11 +420,14 @@ describe("outer-edge dock beside a minimized region strip", () => {
     const bot = leaf("g2");
     const tree = colSplit([top, bot]); // two stacked rows -> left/right span both
     const layout = layoutWith({ right: tree });
+    layout.regionCollapsed.right = true; // the rail is the ONE docked store (D38)
     const t1 = collapsedRightTarget("g1", leafIdOf(top), rect(stripLeft, 0, STRIP, 400));
     const t2 = collapsedRightTarget("g2", leafIdOf(bot), rect(stripLeft, 400, STRIP, 400));
     // At the very outer (screen) edge: previously the 40px inner band swallowed
     // the whole 36px strip and this resolved to regionEdge "left" -- there was
-    // no way to dock a new outer column. Now the outer half wins.
+    // no way to dock a new outer column. Now the outer THIRD wins (the D21
+    // region rail keeps its side bands; a per-COLUMN rail instead yields to
+    // the cell's own slivers -- see the railed-column suite).
     const out = run(layout, [t1, t2], CONTAINER.width - 1, 200, STRIP_W)!;
     expect(out.result).toEqual({ kind: "regionEdge", edge: "right", side: "right" });
   });
@@ -434,6 +437,7 @@ describe("outer-edge dock beside a minimized region strip", () => {
     const bot = leaf("g2");
     const tree = colSplit([top, bot]);
     const layout = layoutWith({ right: tree });
+    layout.regionCollapsed.right = true; // the rail is the ONE docked store (D38)
     const t1 = collapsedRightTarget("g1", leafIdOf(top), rect(stripLeft, 0, STRIP, 400));
     const t2 = collapsedRightTarget("g2", leafIdOf(bot), rect(stripLeft, 400, STRIP, 400));
     const out = run(layout, [t1, t2], stripLeft + 1, 200, STRIP_W)!;

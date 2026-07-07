@@ -604,20 +604,39 @@ constants in `hitTest.ts`; changing one is a spec change.
    — specific intent beats broad intent.
 3. **Region edge bands** (occupied edge): 8px top/bottom bands insert a
    full-span band above/below everything; 40px outer/inner side bands
-   dock a full-height column beside everything, each capped to a third
-   of the region width so the middle third stays for per-cell zones. For
-   a canonical stack (all bands single-column) the side drop ZIPS the
-   bands into one nested column, so "beside everything" is literal; a
-   multi-column region can't zip (rows can't nest) — the drop joins the
-   first band and the hint spans only that band (P1). Suppressed where
-   they'd duplicate a per-cell split (single leaf edge-wise) and while a
-   floating window's paper rect owns the pointer (§3.5). Over a railed
-   region's EMPTY area, the side bands widen to left/right HALVES — no
-   dead center stripe. A seam band-insert takes an equal share of region
-   height (the MEAN of existing band weights) — a fixed weight could
-   render as a 0px sliver on a px-scale region.
+   dock a column at that side, each capped to a third of the region
+   width so the middle third stays for per-cell zones. The full-span
+   side result ("beside everything") survives only where it is honest:
+   a single band, a canonical stack (all bands single-column — the drop
+   ZIPS the bands into one nested column), or a D21-collapsed region.
+   A non-zippable multi-band region (rows can't nest) resolves side
+   hits PER BAND instead: a hit at y over band N inserts a column at
+   band N's outer edge — a split on the outer column's nearest-y leaf,
+   hint band-tall (P1) — so a pointer over band N never commits into
+   band M. Except in a D21-collapsed region (whose bands narrow to
+   thirds over a cell, leaving its middle zones reachable), the side
+   bands YIELD entirely to any collapsed docked cell under the
+   pointer: a 40px band would shadow a whole 36px rail whose own
+   sliver already docks a column beside it — including a rail abutting
+   the region edge, where the band cedes its entire claim. And the
+   per-band claim extends INWARD over any run the band's content
+   doesn't reach: an all-railed band packs its strips and leaves an
+   empty tail whose only honest meaning is "split beside the outermost
+   rail", not dead space. Suppressed where they'd duplicate a per-cell
+   split (single leaf edge-wise) and while a floating window's paper
+   rect owns the pointer (§3.5). Over a D21-railed region's EMPTY
+   area, the side bands widen to left/right HALVES — no dead center
+   stripe. A seam band-insert takes an equal share of region height
+   (the MEAN of existing band weights) — a fixed weight could render
+   as a 0px sliver on a px-scale region.
 4. **Cross-band seams**: the divider between two bands inserts a new
-   full-width band at that index.
+   full-width band at that index. Band extents come from rendered cell
+   rects, and an all-railed band's cells are content-tall — so its
+   extent extends to the RENDERED band box, derived from its
+   neighbors' edges and the container's (rails hold width, not
+   height); the seam sits at the true divider, never mid-band. The D21
+   packed strip has no band boxes on screen; there the raw rects stay
+   authoritative.
 5. **Per-target zones**: the cell-, rail-, and bar-level zones of
    §5.2–5.4.
 6. **Anywhere else**: no drop; release floats the dragged stack at the
@@ -648,6 +667,16 @@ constants in `hitTest.ts`; changing one is a spec change.
 - Over a spine row: insert at that tab position.
 - The rest, cap included: merge into that group, staying minimized.
 
+A COLUMN rail's droppable surface is the FULL band-tall strip, not just
+its content-tall cells: the header run above the first cell belongs to
+that cell (top 8px stack-above, then insert at position 0) and the
+empty tail below the spine rows to the last cell (side slivers run full
+height; the middle is stack-below, with the hint at the spine content's
+true bottom — where the new cell actually lands — not the strip's far
+bottom). Interior cells keep their own boxes. Region-rail cells stay
+content-sized: the D21 halves bands (§5.1 item 3) already cover the
+strip's empty area.
+
 ### 5.4 Bar zones (in-place minimized cells)
 
 - A bar's whole slot is a drop target: drop merges into that group,
@@ -677,9 +706,14 @@ constants in `hitTest.ts`; changing one is a spec change.
   change, container scroll, or window resize; a floating window growing
   MID-DRAG also marks the cached rects stale. Hints never lag the
   visible geometry.
-- Divider gaps are never dead spots: a docked seam gap maps to the seam
-  split it sits in the middle of, a floating stack's gap to the snap at
-  that index — the hint never flickers to "no drop" crossing a seam.
+- Divider gaps are never dead spots, in EITHER axis: the horizontal gap
+  between stacked docked cells maps to the seam split it sits in the
+  middle of; the vertical gap between side-by-side columns to the
+  column insert at that seam (left half splits right of the left cell,
+  right half left of the right cell — the same landing, mirror-
+  symmetric, hint at the gap center); a floating stack's gap to the
+  snap at that index — the hint never flickers to "no drop" crossing a
+  seam.
 
 Collapse is the container's (D38), so drops need no adoption or
 normalization rules: a group joining an expanded container renders
@@ -698,11 +732,24 @@ sub-question (§10).
   widest) carry pixel widths; the region's width is their sum. Docking a
   new column *grows* the region by the newcomer's width (D3): existing
   panels never shrink because something arrived (P3 outranks canvas
-  preservation; the resizer is the recovery). A RAILED column renders at
-  the fixed 36px rail width, stored weight preserved (P8); the resizer
-  redistributes over EXPANDED columns only, and the region stops being
-  width-resizable when it is railed or every width-determining column
-  is.
+  preservation; the resizer is the recovery). The newcomer's width IS
+  the dragged window's width — every drag-dock path floats first, so
+  the window still carries it — and a column born RAILED from a window
+  contributes the 36px strip, not a phantom panel width. Columns with
+  NO source window (server-built / injected layouts) take the 300px
+  region default even when born railed: there the stored weight
+  doubles as the column's only P8 restore width and regionWidth as the
+  region's content width, so a 36px default would restore it as a
+  sliver. D3 binds every band, not just the width-determining one: a
+  narrower band gaining a column never halves its survivors — with a
+  fully-railed widthRow the region grows by the newcomer and survivors
+  keep their pixels; with an expanded widthRow the region width holds
+  (the rail band's fixed chrome is the slack). A RAILED column renders
+  at the fixed 36px rail width, stored weight preserved (P8) — that
+  weight is a RESTORE width, never silently rewritten by a drop; the
+  resizer redistributes over EXPANDED columns only, and the region
+  stops being width-resizable when it is railed or every
+  width-determining column is.
 - **Minimums**: expanded columns / regions / windows ≥ 96px grab width
   (`MIN_REGION_GRAB_PX`; the ~220px CONTENT minimum is the body's —
   below it the panel scrolls horizontally); cells ≥ ~50px; windows ≥
@@ -721,6 +768,10 @@ sub-question (§10).
   drop both default the two sides to HALF the target's current weight —
   sibling weights may be on any scale (divider drags write px), so only
   a scale-invariant default keeps the hint's 50/50 promise (P1). A
+  RAILED target column is exempt: its weight is a P8 restore width,
+  not a rendered share — halving it would permanently corrupt the
+  expand width, so it stands and the newcomer takes a width default
+  instead (reconciled to the dragged window's width above). A
   multi-group stack dropped top/bottom divides its half among its leaves
   by the stack's preserved height ratios (P8).
 - **Dividers** (D24): a divider is INERT — no resize cursor, no armed
@@ -890,6 +941,21 @@ Prior passes, one line each (full fix lists live in git history):
   panel and stack minimize, culminating in D38's one-state rule);
   normative text updated, ENFORCEMENT PENDING — the list below is the
   worklist.
+- 2026-07-06 — rail drop zones re-derived from first principles after a
+  real-layout report (expanded band over two railed columns): (a) no
+  zone left of the leftmost rail — the 40px side band shadowed the
+  whole 36px strip; (b) cell-short hints beside rails; (c) side hits
+  over band 2 committing into band 1 — plus width rows W1–W12 (a
+  collapsed drop reserving +307px of phantom width, survivors halved
+  in non-width bands, railed P8 restore widths corrupted by the split
+  default). Fixes, now normative in §5/§6: per-band side resolution,
+  band-tall side hints with rail-honest band extents, the full-strip
+  rail drop surface, left/right divider-gap recovery, window-width
+  newcomer defaults (36px born-railed from a window). The sweep test
+  had laid rails at weight-share width, band-tall, never collapsed —
+  geometry rails never have; it now mirrors the renderer, with two new
+  invariants: every target reaches at least one zone, and no
+  split/merge/insert commits across bands.
 
 **Latest full-pass record — 2026-07-05 (scope-model rewrite):** every
 normative claim in §1–§9 (pre-D32 state) was re-traced to

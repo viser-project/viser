@@ -24,6 +24,7 @@ import {
   DockEdge,
   DockLayout,
   DockRow,
+  MINIMIZED_STRIP_PX,
   regionWidthsOf,
 } from "./types";
 
@@ -43,6 +44,29 @@ function colsMin(cols: DockColumn[]): number {
 // wide as the user likes. Only the grab-min floor is enforced (below + in
 // clampRegionWidth); the render-time MIN_CANVAS_PX guard keeps a canvas sliver
 // visible.
+
+/** Default pixel width for a column newly joining a docked region. D3: the
+ * region grows by the NEWCOMER's width -- which is the dragged floating
+ * window's width whenever the column's groups came from one (every drag-dock
+ * path floats first, so `prev.floating` still holds the window across the
+ * op). A RAILED landing from a window renders as the fixed 36px strip and
+ * contributes exactly that -- a content-width default here reserved a full
+ * panel width for a 36px rail (+300px of dead region on the collapsed-drop
+ * path). Columns with NO source window (injected/server-built layouts) keep
+ * the region default even when born railed: there the weight doubles as the
+ * column's only P8 restore width, and regionWidth as the region's content
+ * width -- a 36px default would float/expand it as a sliver. */
+function newColumnPx(col: DockColumn, prev: DockLayout): number {
+  const groups = new Set(collectLeafGroups(col));
+  for (const win of prev.floating) {
+    if (win.stack.some((g) => groups.has(g))) {
+      return col.railed === true
+        ? MINIMIZED_STRIP_PX
+        : Math.max(win.width, minRegionWidth());
+    }
+  }
+  return Math.max(DEFAULT_REGION_PX, minRegionWidth());
+}
 
 /** Reconcile docked region widths across a layout transition, writing the
  * result into `next.regionWidth` (and, for structural changes, into the
@@ -83,7 +107,40 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
       prevCols.every((c, i) => c.id === nextCols[i].id);
     if (sameSet) {
       // Same columns: a collapse toggle no longer moves width (bars render in
-      // place at their column's width, D20), so only the floor applies.
+      // place at their column's width, D20), so only the floor applies...
+      // EXCEPT that a NON-width band can still gain a column (a drop beside
+      // a cell of a narrower band). When the width-determining band is
+      // fully RAILED, regionWidth is the expanded-content width every other
+      // band renders at -- so the newcomer must GROW the region by its own
+      // width (D3) while the band's surviving columns keep their pixels
+      // (the op's scale-invariant 50/50 halving is corrected here, where
+      // the newcomer's real width is known). With an EXPANDED widthRow,
+      // regionWidth is that band's px sum and must not drift: the gaining
+      // band redistributes internally (a railed neighbor is fixed chrome,
+      // so there is slack to give).
+      if (
+        prevTree !== null &&
+        nextCols.every((c) => c.railed === true)
+      ) {
+        const wr = widthRow(nextTree);
+        const prevBandById = new Map(prevTree.rows.map((r) => [r.id, r]));
+        for (const band of nextTree.rows) {
+          if (band === wr) continue; // the width band itself is `sameSet`.
+          const prevBand = prevBandById.get(band.id);
+          if (prevBand === undefined) continue;
+          const prevColById = new Map(prevBand.columns.map((c) => [c.id, c]));
+          if (!band.columns.some((c) => !prevColById.has(c.id))) continue;
+          for (const c of band.columns) {
+            const p = prevColById.get(c.id);
+            if (p !== undefined) {
+              c.weight = p.weight; // un-halve: survivors keep their px.
+            } else {
+              c.weight = newColumnPx(c, prev);
+              nextRW[edge] += c.weight; // D3: the region grows by the newcomer.
+            }
+          }
+        }
+      }
       clampRegionWidth(nextRW, edge, nextPlan);
       return;
     }
@@ -140,9 +197,10 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
       if (prevCols.length === 0 && nextCols.length === 1) {
         return Math.max(nextRW[edge], minRegionWidth());
       }
-      // New column joining existing content: a sensible default, clamped to
-      // its panes' min.
-      return Math.max(DEFAULT_REGION_PX, minRegionWidth());
+      // New column joining existing content: the newcomer's own width when
+      // it came from a floating window (D3), 36px when it lands railed,
+      // else the region default.
+      return newColumnPx(c, prev);
     });
     // Set the columns' weights to their pixel widths so each renders at
     // `intended` px within the summed region width. ONLY when there are

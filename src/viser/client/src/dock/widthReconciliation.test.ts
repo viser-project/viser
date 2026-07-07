@@ -22,7 +22,18 @@ import {
   regionWidthsOf,
 } from "./types";
 import { reconcileRegionWidths } from "./widthReconciliation";
-import { leaf, row, rows, group, toRegion } from "./testUtils";
+import { planRegion, plannedReservedWidth } from "./regionPlan";
+import { MINIMIZED_STRIP_PX } from "./types";
+import {
+  col,
+  floatingWindow,
+  group,
+  leaf,
+  row,
+  rows,
+  toRegion,
+  TreeSpec,
+} from "./testUtils";
 
 /** Reconcile and return next's resulting widths (the new single source). */
 function recon(prev: DockLayout, next: DockLayout): Record<DockEdge, number> {
@@ -273,5 +284,180 @@ describe("reconcileRegionWidths across multi-band (widthRow) changes", () => {
     const w = recon(prev, next).right;
     expect(Number.isFinite(w)).toBe(true);
     expect(w).toBeGreaterThanOrEqual(MIN_REGION_GRAB_PX);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Railed-column width paths (2026-07 rail drop-zone/width fixes): pins for
+// the measured W1/W2, W5, W9, W11, W12 rows -- real ops + reconcile, in the
+// same order applyOp runs them. The recurring layout is the user's: band 0 a
+// full-width expanded panel (300px), band 1 two RAILED columns whose stored
+// weights are P8 restore pixels (150 each), plus a 240px floating window
+// being dragged in.
+// ---------------------------------------------------------------------------
+describe("railed-column width paths (drop beside a rail)", () => {
+  const NEW_G = "n";
+  const WIN_W = 240;
+
+  function railCol(g: string, weight?: number): TreeSpec {
+    const c = col([leaf(g)]);
+    if (c.kind === "col") {
+      c.column.railed = true;
+      if (weight !== undefined) c.column.weight = weight;
+    }
+    return c;
+  }
+
+  function withDraggedWindow(l: DockLayout, collapsed = false): DockLayout {
+    l.groups[NEW_G] = group(NEW_G);
+    l.floating = [
+      floatingWindow({
+        id: "wnew",
+        stack: [NEW_G],
+        x: 500,
+        y: 300,
+        width: WIN_W,
+        collapsed,
+      }),
+    ];
+    return l;
+  }
+
+  /** The user's layout: [a expanded] over [rail b | rail c]. */
+  function v1(railWeight = 150, collapsedWindow = false): DockLayout {
+    const l = emptyLayout();
+    l.groups = { a: group("a"), b: group("b"), c: group("c") };
+    l.docked.left = toRegion(
+      rows([
+        row([leaf("a", 300)]),
+        row([railCol("b", railWeight), railCol("c", railWeight)]),
+      ]),
+    );
+    l.regionWidth = { left: 300, right: 300 };
+    return withDraggedWindow(l, collapsedWindow);
+  }
+
+  const railCLeafId = (l: DockLayout, band: number, colIdx: number): string =>
+    l.docked.left!.rows[band].columns[colIdx].leaves[0].id;
+
+  it("W1/W2: an expanded 240px window docked beside a rail takes ITS width; the rails' restore px are untouched", () => {
+    const prev = v1();
+    const next = dropOnDockedLeaf(
+      prev,
+      [NEW_G],
+      "left",
+      railCLeafId(prev, 1, 1),
+      "right",
+    );
+    reconcileRegionWidths(prev, next);
+    const band1 = next.docked.left!.rows[1];
+    // Newcomer = the dragged window's width (D3), NOT DEFAULT_REGION_PX;
+    // the rails keep their P8 restore pixels.
+    expect(band1.columns.map((c) => c.weight)).toEqual([150, 150, WIN_W]);
+    expect(band1.columns.map((c) => c.railed === true)).toEqual([
+      true,
+      true,
+      false,
+    ]);
+    expect(regionWidthsOf(next).left).toBe(540);
+    // The other band's panel never shrinks (P3): weight untouched.
+    expect(next.docked.left!.rows[0].columns[0].weight).toBe(300);
+  });
+
+  it("W5: a COLLAPSED window docked beside rails contributes 36px, not a 300px phantom", () => {
+    const prev = v1(150, true);
+    const next = dropOnDockedLeaf(
+      prev,
+      [NEW_G],
+      "left",
+      railCLeafId(prev, 1, 1),
+      "right",
+    );
+    reconcileRegionWidths(prev, next);
+    const band1 = next.docked.left!.rows[1];
+    expect(band1.columns[2].railed).toBe(true);
+    expect(band1.columns[2].weight).toBe(MINIMIZED_STRIP_PX);
+    expect(regionWidthsOf(next).left).toBe(150 + 150 + MINIMIZED_STRIP_PX);
+    // Rendered growth = the strip + one divider (307 -> 350), not +307.
+    const reserved = plannedReservedWidth(
+      planRegion(next.docked.left!),
+      regionWidthsOf(next).left,
+      false,
+    );
+    expect(reserved).toBe(350);
+  });
+
+  it("W9: a NON-width band gaining a column grows the region by the newcomer; the target is not halved", () => {
+    // V5: rails band ABOVE (the widthRow), expanded panel a below.
+    const prev = emptyLayout();
+    prev.groups = { a: group("a"), b: group("b"), c: group("c") };
+    prev.docked.left = toRegion(
+      rows([
+        row([railCol("b", 150), railCol("c", 150)]),
+        row([leaf("a", 300)]),
+      ]),
+    );
+    prev.regionWidth = { left: 300, right: 300 };
+    withDraggedWindow(prev);
+    const aLeaf = prev.docked.left!.rows[1].columns[0].leaves[0].id;
+    const next = dropOnDockedLeaf(prev, [NEW_G], "left", aLeaf, "right");
+    reconcileRegionWidths(prev, next);
+    const band1 = next.docked.left!.rows[1];
+    // Panel a keeps its 300px (the op's 50/50 halving is corrected); the
+    // newcomer takes its window width and the region GROWS by it (D3).
+    expect(band1.columns.map((c) => c.weight)).toEqual([300, WIN_W]);
+    expect(regionWidthsOf(next).left).toBe(540);
+    // The rails' P8 restore px are untouched.
+    expect(next.docked.left!.rows[0].columns.map((c) => c.weight)).toEqual([
+      150, 150,
+    ]);
+  });
+
+  it("W11: born-railed rails (weight 1): the newcomer still takes the window width; rails floor at the grab-min", () => {
+    const prev = v1(1);
+    const next = dropOnDockedLeaf(
+      prev,
+      [NEW_G],
+      "left",
+      railCLeafId(prev, 1, 1),
+      "right",
+    );
+    reconcileRegionWidths(prev, next);
+    const band1 = next.docked.left!.rows[1];
+    expect(band1.columns.map((c) => c.weight)).toEqual([
+      MIN_REGION_GRAB_PX,
+      MIN_REGION_GRAB_PX,
+      WIN_W,
+    ]);
+    expect(regionWidthsOf(next).left).toBe(MIN_REGION_GRAB_PX * 2 + WIN_W);
+  });
+
+  it("W12: dropping beside a rail in a NON-width band never halves the rail's P8 restore px", () => {
+    // widthRow = band 0 ([a|b] expanded, px weights); band 1 = lone RAIL c
+    // whose stored weight (150) is its restore width.
+    const prev = emptyLayout();
+    prev.groups = { a: group("a"), b: group("b"), c: group("c") };
+    prev.docked.left = toRegion(
+      rows([row([leaf("a", 150), leaf("b", 150)]), row([railCol("c", 150)])]),
+    );
+    prev.regionWidth = { left: 300, right: 300 };
+    withDraggedWindow(prev);
+    const next = dropOnDockedLeaf(
+      prev,
+      [NEW_G],
+      "left",
+      railCLeafId(prev, 1, 0),
+      "right",
+    );
+    reconcileRegionWidths(prev, next);
+    const band1 = next.docked.left!.rows[1];
+    expect(band1.columns[0].railed).toBe(true);
+    expect(band1.columns[0].weight).toBe(150); // was corrupted to 75.
+    // The width band is untouched: the rail band had fixed-chrome slack, so
+    // neither the region nor the expanded width columns move.
+    expect(regionWidthsOf(next).left).toBe(300);
+    expect(next.docked.left!.rows[0].columns.map((c) => c.weight)).toEqual([
+      150, 150,
+    ]);
   });
 });

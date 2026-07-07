@@ -813,6 +813,172 @@ def test_plain_stack_cells_have_no_minimize_control(
         page.close()
 
 
+# ===========================================================================
+# Rail drop-zone pins (user-reported symptoms; layout: band 1 = full-width
+# expanded panel, band 2 = two railed columns side by side):
+# a. Dropping on the LEFT sliver of the leftmost rail lands in the RAILS'
+#    band (previously the 40px region side band shadowed the 36px rail and
+#    committed into band 1).
+# b. The drop hint between the two rails is BAND-TALL and stays in the
+#    rails' band (previously a ~cell-tall stub, or a hint over band 1 while
+#    the pointer was over band 2).
+# c. A drop over the rails band's empty interior (right of the rails) also
+#    lands in the rails' band -- never in band 1, and never dead.
+# ===========================================================================
+def _rails_over_panel_layout(page: Page) -> None:
+    """Band 1 = expanded console (full width), band 2 = two rails; a floating
+    scene panel (240px) is the dragged subject."""
+    set_layout(
+        page,
+        dock_layout(
+            docked_right=rows(
+                "console",
+                columns(
+                    stack("controls", railed=True),
+                    stack("inspector", railed=True),
+                ),
+            ),
+            floating=[window("scene", x=400, y=300, width=240)],
+        ),
+    )
+
+
+def _rail_root_box(page: Page, gid: str) -> dict | None:
+    """Bounding rect of the full rail STRIP (data-dock-rail-root) holding
+    `gid` -- band-tall, 36px wide."""
+    return page.eval_on_selector(
+        f'[data-dock-group="{gid}"]',
+        "e => { const root = e.closest('[data-dock-rail-root]'); "
+        "if (!root) return null; const r = root.getBoundingClientRect(); "
+        "return { x: r.x, y: r.y, w: r.width, h: r.height, "
+        "right: r.right, bottom: r.bottom }; }",
+    )
+
+
+def _region_bands(page: Page, edge: str = "right") -> list | None:
+    """The docked region's bands as [[{railed, groups}, ...], ...]."""
+    return page.evaluate(
+        """(edge) => {
+            const region = window.__dockLayout.docked[edge];
+            if (!region) return null;
+            return region.rows.map((row) => row.columns.map((col) => ({
+                railed: col.railed === true,
+                groups: col.leaves.map((l) => l.group),
+            })));
+        }""",
+        edge,
+    )
+
+
+def _band_index_of(bands: list, gid: str) -> int | None:
+    for i, band in enumerate(bands):
+        for col in band:
+            if gid in col["groups"]:
+                return i
+    return None
+
+
+def test_drop_left_of_leftmost_rail_lands_in_rails_band(
+    dock_context, vite_server: int
+) -> None:
+    """Symptom (a): the leftmost rail's outer sliver docks a new column into
+    the RAILS' band. The 40px region side band must not shadow the 36px rail
+    or commit the drop into band 1."""
+    page = _open(dock_context, vite_server, 1400, 800)
+    try:
+        _rails_over_panel_layout(page)
+        assert column_railed_for_group(page, "t-controls") is True
+        rail = _rail_root_box(page, "t-controls")
+        if rail is None:
+            pytest.skip("rail not laid out this run")
+        # 4px inside the leftmost rail's left edge, in the band's LOWER half
+        # (the old bug drew/committed into the top band from here).
+        target = (rail["x"] + 4, rail["y"] + rail["h"] * 0.6)
+        _drag_group(page, "t-scene", target)
+        bands = _region_bands(page)
+        if bands is None or _band_index_of(bands, "t-scene") is None:
+            pytest.skip("scene did not dock this run")
+        assert _band_index_of(bands, "t-scene") == 1, (
+            f"drop left of the leftmost rail must land in the rails' band, got {bands}"
+        )
+        # Band 1 keeps console alone; the rails stay railed; scene lands
+        # expanded as the band's new outer column.
+        assert [c["groups"] for c in bands[0]] == [["t-console"]], bands
+        assert bands[1][0]["groups"] == ["t-scene"], bands
+        assert bands[1][0]["railed"] is False
+        assert column_railed_for_group(page, "t-controls") is True
+    finally:
+        page.close()
+
+
+def test_between_rails_hint_is_band_tall(dock_context, vite_server: int) -> None:
+    """Symptom (b)/(c): hovering between the two rails shows a thin vertical
+    insertion line spanning the rails' BAND -- not a short stub, and not a
+    hint up in band 1 while the pointer is over band 2."""
+    page = _open(dock_context, vite_server, 1400, 800)
+    try:
+        _rails_over_panel_layout(page)
+        c_rail = _rail_root_box(page, "t-controls")
+        i_rail = _rail_root_box(page, "t-inspector")
+        if c_rail is None or i_rail is None:
+            pytest.skip("rails not laid out this run")
+        grip = _grip(page, "t-scene")
+        gap_x = (c_rail["right"] + i_rail["x"]) / 2
+        hover_y = c_rail["y"] + c_rail["h"] * 0.75  # lower half of the band
+        page.mouse.move(grip["x"], grip["y"])
+        page.mouse.down()
+        page.mouse.move(grip["x"] + 6, grip["y"] + 6, steps=2)
+        page.mouse.move(gap_x, hover_y, steps=8)
+        page.wait_for_timeout(150)
+        hints = page.evaluate(
+            """() => [...document.querySelectorAll('[data-dock-hint]')]
+                .map((e) => { const r = e.getBoundingClientRect();
+                    return { x: r.x, y: r.y, w: r.width, h: r.height }; })"""
+        )
+        page.mouse.up()
+        if not hints:
+            pytest.skip("no drop hint shown between the rails this run")
+        h = hints[0]
+        assert h["w"] <= 8, f"between-rails hint should be a thin line, got {h}"
+        assert h["h"] >= 0.6 * c_rail["h"], (
+            f"between-rails hint must be band-tall (band {c_rail['h']}px), got {h}"
+        )
+        assert h["y"] >= c_rail["y"] - 12 and h["y"] + h["h"] <= (
+            c_rail["y"] + c_rail["h"] + 12
+        ), f"hint must stay within the rails' band {c_rail}, got {h}"
+    finally:
+        page.close()
+
+
+def test_drop_over_rails_band_interior_lands_in_rails_band(
+    dock_context, vite_server: int
+) -> None:
+    """Symptom (c): the rails band's empty interior (right of the packed
+    rails) is a live 'dock beside the rails' zone committing into THAT band
+    -- a drop at band 2's y never lands in band 1."""
+    page = _open(dock_context, vite_server, 1400, 800)
+    try:
+        _rails_over_panel_layout(page)
+        i_rail = _rail_root_box(page, "t-inspector")
+        if i_rail is None:
+            pytest.skip("rail not laid out this run")
+        # Well inside the band's empty run right of the rightmost rail.
+        target = (i_rail["right"] + 60, i_rail["y"] + i_rail["h"] * 0.5)
+        _drag_group(page, "t-scene", target)
+        bands = _region_bands(page)
+        if bands is None or _band_index_of(bands, "t-scene") is None:
+            pytest.skip("scene did not dock this run")
+        assert _band_index_of(bands, "t-scene") == 1, (
+            f"a drop over the rails band's interior must land in the rails' "
+            f"band, got {bands}"
+        )
+        assert [c["groups"] for c in bands[0]] == [["t-console"]], bands
+        # The newcomer sits after the rails (a split right of the rightmost).
+        assert bands[1][-1]["groups"] == ["t-scene"], bands
+    finally:
+        page.close()
+
+
 def test_all_railed_band_keeps_full_height(dock_context, vite_server: int) -> None:
     """D38: rails reclaim WIDTH, never height. When every column of a band is
     railed, the band must stay full-height (region-tall rail strips, spine

@@ -138,14 +138,39 @@ describe("multi-band intent: A over [B|C]", () => {
     if (res?.result.kind === "regionEdge") expect(res.result.side).toBe("bottom");
   });
 
-  it("the left edge docks a column beside ALL bands (regionEdge left)", () => {
+  it("the left edge resolves PER BAND: a column insert into the pointed band", () => {
+    // A non-zippable multi-band region (band 2 is multi-column) can't host a
+    // literal "beside everything" column, and the old region-wide band
+    // joined rows[0] regardless of the pointer's y -- a drop over band 2
+    // committed into band 1 (cross-band bleed). The side band now resolves
+    // per band: a hit at y over band N splits the band's OUTER leaf.
     const l = make();
     const { targets } = layoutTargets(l, "left");
-    // Mid-height, hard against the left screen edge but past the screen-edge
-    // zone gate (region occupies the left, so edgeReadsEmpty is false).
-    const res = run(l, targets, 2, 400);
-    expect(res?.result.kind).toBe("regionEdge");
-    if (res?.result.kind === "regionEdge") expect(res.result.side).toBe("left");
+    const nodeOf = (gid: string): string => {
+      const t = targets.find((tg) => tg.groupId === gid)!;
+      return t.ctx.kind === "docked" ? (t.ctx.nodeId as string) : "";
+    };
+    // Over band A (y=200): a new column at band A's left edge.
+    const overA = run(l, targets, 2, 200);
+    expect(overA?.result).toEqual({
+      kind: "split",
+      edge: "left",
+      nodeId: nodeOf("a"),
+      region: "left",
+    });
+    // Over band B|C (y=600): a new column at THAT band's left edge -- never
+    // band A. The hint spans band 2, not the whole region.
+    const overB = run(l, targets, 2, 600);
+    expect(overB?.result).toEqual({
+      kind: "split",
+      edge: "left",
+      nodeId: nodeOf("b"),
+      region: "left",
+    });
+    const hint = overB?.hint as { top: number; height: number };
+    expect(hint.top).toBeGreaterThanOrEqual(396);
+    expect(hint.top + hint.height).toBeLessThanOrEqual(804);
+    expect(hint.height).toBeGreaterThan(300);
   });
 });
 

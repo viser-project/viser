@@ -24,6 +24,7 @@ import { edgeIsSingleLeaf, isGroupEffectivelyCollapsed } from "./layoutOps";
 import {
   DockEdge,
   DockLayout,
+  MINIMIZED_STRIP_PX,
   NonEmpty,
   emptyLayout,
   mapNonEmpty,
@@ -45,11 +46,22 @@ const CONTAINER: ContainerRect = { left: 0, top: 0, width: 1000, height: 800 };
 const REGION_W: Record<DockEdge, number> = { left: 300, right: 300 };
 const STRIP_OFFSET = 12; // handle bar above the strip
 const STRIP_H = 28;
+// Rail geometry, mirroring ColumnRail/VerticalMinimizedCell: a railed column
+// renders as a fixed MINIMIZED_STRIP_PX strip (packed at its slot -- it holds
+// no flexible width), its cells CONTENT-TALL (header, then cap + spine rows),
+// with the first/last cell's drop rect extended to the full strip per the
+// scanner's data-dock-rail-root rule.
+const RAIL_HEADER = 16; // narrow StackHandleBar atop the rail
+const RAIL_CAP = 13; // gray cap (0.9em)
+const RAIL_PAD = 16; // spine-list margins
+const RAIL_ROW = 70; // one spine row (icon + rotated title)
 
 /** Build docked group targets from a tree, laying their frames out within the
  * region band [regionLeft, regionLeft+regionW] x [0, height]. We approximate
  * the real layout: a row splits width, a column splits height. Tabs are placed
- * along the strip; a group with >tabsPerRow panes wraps to a second row. */
+ * along the strip; a group with >tabsPerRow panes wraps to a second row.
+ * RAILED columns render like the real ColumnRail: fixed 36px wide, collapsed
+ * targets with content-tall interior cells and full-strip first/last rects. */
 function dockedTargets(
   layout: DockLayout,
   edge: DockEdge,
@@ -69,11 +81,53 @@ function dockedTargets(
   let bandTop = 0;
   for (const band of region.rows) {
     const bandH = (band.weight / rowWeightTotal) * CONTAINER.height;
+    const railedCount = band.columns.filter((c) => c.railed === true).length;
+    const expandedW = regionW - railedCount * MINIMIZED_STRIP_PX;
     const colWeightTotal =
-      band.columns.reduce((s, c) => s + c.weight, 0) || band.columns.length;
+      band.columns.reduce(
+        (s, c) => s + (c.railed === true ? 0 : c.weight),
+        0,
+      ) || 1;
     let colLeft = regionLeft;
     for (const column of band.columns) {
-      const cw = (column.weight / colWeightTotal) * regionW;
+      if (column.railed === true) {
+        // ColumnRail: header, then content-tall cells; drop rects of the
+        // first/last cell extend to the strip box (fix: rails' droppable
+        // surface is the full strip -- no dead header run or empty tail).
+        const cw = MINIMIZED_STRIP_PX;
+        let cellTop = bandTop + RAIL_HEADER;
+        column.leaves.forEach((lf, li) => {
+          const group = layout.groups[lf.group];
+          const nTabs = Math.max(1, group?.paneIds.length ?? 1);
+          const cellH = RAIL_CAP + RAIL_PAD + nTabs * RAIL_ROW;
+          const tabs = (group?.paneIds ?? []).map((paneId, i) => ({
+            paneId,
+            rect: rect(
+              colLeft,
+              cellTop + RAIL_CAP + 8 + i * RAIL_ROW,
+              cw,
+              RAIL_ROW,
+            ),
+          }));
+          const top = li === 0 ? bandTop : cellTop;
+          const bottom =
+            li === column.leaves.length - 1
+              ? Math.max(bandTop + bandH, cellTop + cellH)
+              : cellTop + cellH;
+          out.push({
+            groupId: lf.group,
+            rect: rect(colLeft, top, cw, bottom - top),
+            stripRect: null,
+            tabs,
+            ctx: { kind: "docked", nodeId: lf.id, edge },
+            collapsed: true,
+          });
+          cellTop += cellH + 1; // hairline ChromeDivider
+        });
+        colLeft += cw;
+        continue;
+      }
+      const cw = (column.weight / colWeightTotal) * expandedW;
       const ch = bandH / column.leaves.length;
       column.leaves.forEach((lf, li) => {
         const x = colLeft;
@@ -105,6 +159,33 @@ function dockedTargets(
     bandTop += bandH;
   }
   return out;
+}
+
+/** Band index + vertical range for every docked leaf (by node id) and group
+ * (by group id), from the same layout math as dockedTargets. Backs the
+ * cross-band invariant: a result committing into a band must have been
+ * produced by a pointer over THAT band. */
+function dockedBandRanges(
+  layout: DockLayout,
+): Map<string, { top: number; bottom: number }> {
+  const ranges = new Map<string, { top: number; bottom: number }>();
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const region = layout.docked[edge];
+    if (region === null) continue;
+    const rowWeightTotal =
+      region.rows.reduce((s, r) => s + r.weight, 0) || region.rows.length;
+    let bandTop = 0;
+    for (const band of region.rows) {
+      const bandH = (band.weight / rowWeightTotal) * CONTAINER.height;
+      for (const column of band.columns)
+        for (const lf of column.leaves) {
+          ranges.set(`n:${lf.id}`, { top: bandTop, bottom: bandTop + bandH });
+          ranges.set(`g:${lf.group}`, { top: bandTop, bottom: bandTop + bandH });
+        }
+      bandTop += bandH;
+    }
+  }
+  return ranges;
 }
 
 /** Floating-window targets: stack groups vertically inside each window's box. */
@@ -436,6 +517,14 @@ describe("hitTest pointer sweep invariants", () => {
       const targets = targetsFor(layout);
       const errors: string[] = [];
       const zoneTally = new Map<string, number>();
+      // Invariant scaffolding: (1) every target must offer at least one
+      // reachable zone somewhere on the grid (a fully-shadowed rail was the
+      // "no drop zone left of the leftmost rail" bug); (2) a result that
+      // commits into a docked band must come from a pointer over THAT band
+      // (the region side bands used to join rows[0] from any y).
+      const reachedTargets = new Set<number>();
+      const bandRanges = dockedBandRanges(layout);
+      const BAND_TOL = 12; // divider-seam recovery snaps across small gaps.
 
       for (let y = 0; y <= CONTAINER.height; y += STEP) {
         for (let x = 0; x <= CONTAINER.width; x += STEP) {
@@ -451,6 +540,38 @@ describe("hitTest pointer sweep invariants", () => {
             continue;
           }
           zoneTally.set(res.result.kind, (zoneTally.get(res.result.kind) ?? 0) + 1);
+          const r = res.result;
+          targets.groups.forEach((t, i) => {
+            if (reachedTargets.has(i)) return;
+            const hit =
+              (r.kind === "split" &&
+                t.ctx.kind === "docked" &&
+                t.ctx.nodeId === r.nodeId) ||
+              ((r.kind === "merge" || r.kind === "insertTab") &&
+                t.groupId === r.targetGroupId) ||
+              (r.kind === "snap" &&
+                t.ctx.kind === "floating" &&
+                t.ctx.windowId === r.windowId);
+            if (hit) reachedTargets.add(i);
+          });
+          // Cross-band containment for band-committing results. regionEdge/
+          // bandInsert/edge span bands by design and are excluded.
+          const bandKey =
+            r.kind === "split"
+              ? `n:${r.nodeId}`
+              : r.kind === "merge" || r.kind === "insertTab"
+                ? `g:${r.targetGroupId}`
+                : null;
+          const range = bandKey === null ? undefined : bandRanges.get(bandKey);
+          if (
+            range !== undefined &&
+            (y < range.top - BAND_TOL || y > range.bottom + BAND_TOL)
+          ) {
+            const e = `cross-band commit: ${r.kind} into band [${range.top},${range.bottom}] from pointer y=${y}`;
+            const key = e.replace(/[-\d.]+/g, "#");
+            if (!errors.some((x2) => x2.startsWith(key)))
+              errors.push(`${key}  e.g. at (${x},${y}): ${e}`);
+          }
           const rErrs = validateResult(layout, targets, res.result);
           const hErrs = validateHint(res.hint);
           for (const e of [...rErrs, ...hErrs]) {
@@ -464,6 +585,15 @@ describe("hitTest pointer sweep invariants", () => {
         }
       }
 
+      // Every target keeps at least one reachable zone (nothing is fully
+      // shadowed by region bands or neighbors).
+      targets.groups.forEach((t, i) => {
+        if (!reachedTargets.has(i)) {
+          errors.push(
+            `target ${t.groupId} (${t.ctx.kind}) has NO reachable zone anywhere`,
+          );
+        }
+      });
       expect(errors, errors.join("\n")).toEqual([]);
       // Sanity: the sweep should actually reach *some* non-null zone for any
       // non-empty layout (guards against the harness silently testing nothing).

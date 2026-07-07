@@ -9,6 +9,7 @@
 import {
   AreaId,
   clamp,
+  DEFAULT_REGION_PX,
   DockColumn,
   DockEdge,
   DockLayout,
@@ -1058,8 +1059,17 @@ export function dropOnDockedLeaf(
   // per-column rails first: the old content (the target's column included)
   // stays railed, the newcomer lands expanded (visible, P5).
   convertRegionRailToColumnRailsInPlace(draft, edge);
-  const half = targetColumn.weight / 2;
-  const newColumn = buildColumn(ne, half, stackHeights);
+  // A RAILED target column's stored weight is its P8 restore width (it
+  // renders at the fixed 36px strip regardless), so the 50/50 split must
+  // not touch it -- halving here permanently corrupted the width the rail
+  // re-expands to (it survived reconciliation whenever the band wasn't the
+  // widthRow). The newcomer takes the region default instead; when the
+  // band IS width-determining, reconciliation immediately rewrites that to
+  // the dragged window's real width.
+  const targetRailed = targetColumn.railed === true;
+  const targetShare = targetRailed ? targetColumn.weight : targetColumn.weight / 2;
+  const newShare = targetRailed ? DEFAULT_REGION_PX : targetColumn.weight / 2;
+  const newColumn = buildColumn(ne, newShare, stackHeights);
   // Identity transfer (D38): a collapsed window dropped as a NEW column
   // lands railed. (top/bottom drops JOIN the target's column instead -- the
   // receiving container's state wins there, so no flag travels.)
@@ -1091,7 +1101,7 @@ export function dropOnDockedLeaf(
     // The target's own column keeps its id (and with it its reconciled width).
     const targetCol: DockColumn = {
       ...targetColumn,
-      weight: half,
+      weight: targetShare,
       leaves: [{ ...live.leaf, weight: 1 }],
     };
     const middle: DockRow = {
@@ -1117,9 +1127,10 @@ export function dropOnDockedLeaf(
     return draft;
   }
   // A new column beside the target's column, within the SAME row band. Each
-  // takes `half` of the target column's weight (the new column's leaves keep
-  // a floated stack's preserved height shares).
-  targetColumn.weight = half;
+  // takes half of the target column's weight (the new column's leaves keep
+  // a floated stack's preserved height shares); a railed target keeps its
+  // stored restore width untouched.
+  targetColumn.weight = targetShare;
   const ci = targetRow.columns.findIndex((c) => c.id === targetColumn.id);
   const at = region === "left" ? ci : ci + 1;
   targetRow.columns = withInserted(targetRow.columns, at, newColumn);
