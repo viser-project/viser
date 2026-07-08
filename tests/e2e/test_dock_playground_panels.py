@@ -979,21 +979,33 @@ def test_drop_over_rails_band_interior_lands_in_rails_band(
         page.close()
 
 
-def test_all_railed_band_keeps_full_height(dock_context, vite_server: int) -> None:
-    """D38: rails reclaim WIDTH, never height. When every column of a band is
-    railed, the band must stay full-height (region-tall rail strips, spine
-    content unscrolled at small tab counts) -- the bars-era band collapse
-    squeezed a band of rails to a ~60px sliver with crammed icons behind a
-    scrollbar (user report)."""
+def test_all_railed_band_content_sizes(dock_context, vite_server: int) -> None:
+    """D41: an ALL-RAILED band sizes to its CONTENT height, not a weighted
+    share -- so no dead gray sits below its spine icons and an EXPANDED
+    sibling band reclaims the freed height. The two rails stay SEPARATE
+    (nothing merges): two column-rails, each its own spine. And content-sizing
+    must never squeeze -- at a small tab count the spine does NOT scroll.
+
+    (Supersedes the 2026-07-06 full-height rule, which parked an all-railed
+    band at a full weighted share and left a big gray tail below the icons --
+    the user's screenshot. The full-height rule existed so a MANY-tab rail
+    wouldn't be squeezed into a sliver; the huge case is covered by
+    ``test_all_railed_band_caps_and_scrolls_when_huge``.)"""
     page = _open(dock_context, vite_server, 1400, 800)
     try:
+        # A top band of two rails (controls / inspector) over an expanded
+        # console band -- the user's shape. The all-rails band must shrink to
+        # its spine height; the expanded band must reclaim the rest.
         set_layout(
             page,
             dock_layout(
-                docked_right=columns(
-                    stack("controls", railed=True),
-                    stack("inspector", railed=True),
-                )
+                docked_right=rows(
+                    columns(
+                        stack("controls", railed=True),
+                        stack("inspector", railed=True),
+                    ),
+                    "console",
+                ),
             ),
         )
         geom = page.evaluate(
@@ -1012,16 +1024,92 @@ def test_all_railed_band_keeps_full_height(dock_context, vite_server: int) -> No
                             : null,
                     };
                 });
-                return { rh, rails };
+                // The expanded console cell's rendered height.
+                const exp = document.querySelector(
+                    '[data-dock-group="t-console"]');
+                const th = exp ? exp.getBoundingClientRect().height : null;
+                return { rh, rails, th };
             }"""
         )
+        # Rails stay SEPARATE -- two column-rails, nothing merged.
         assert len(geom["rails"]) == 2, geom
         for rail in geom["rails"]:
-            assert abs(rail["h"] - geom["rh"]) <= 2, (
-                f"a railed column must span the region height, got {geom}"
+            # Content-sized: the spine band is far shorter than the region
+            # (no full-height weighted share -> no dead gray below the icons).
+            assert rail["h"] < geom["rh"] * 0.6, (
+                f"an all-railed band must content-size, not fill the region: {geom}"
             )
+            # Never squeezed below content: a few-tab spine does not scroll.
             assert rail["scrolls"] is False, (
-                f"rail spine content must not scroll at this tab count: {geom}"
+                f"content-sizing must not squeeze the spine into a scrollbar: {geom}"
             )
+        # The expanded Tools band reclaims the height the rail band freed:
+        # it takes the bulk of the region, not a mere half.
+        assert geom["th"] is not None and geom["th"] > geom["rh"] * 0.6, (
+            f"the expanded sibling band must reclaim the freed height: {geom}"
+        )
+    finally:
+        page.close()
+
+
+def test_all_railed_band_caps_and_scrolls_when_huge(
+    dock_context, vite_server: int
+) -> None:
+    """D41 cap: a genuinely huge all-railed band (many tabs, taller than the
+    region) is CAPPED at the region height and its spine scrolls via the rail
+    Paper's overflowY:auto -- it never overflows into the next band. This is
+    the degenerate case the 2026-07-06 full-height rule protected; the cap
+    preserves that protection while the common few-tab case content-sizes."""
+    page = _open(dock_context, vite_server, 1400, 220)
+    try:
+        # A TALL all-rails band: two railed columns (D39 needs 2+ so neither is
+        # a lone-column band), one with MANY tabs (one spine row each), over an
+        # expanded band, in a SHORT region so the tallest spine cannot fit and
+        # must scroll.
+        many = group(["controls", "inspector", "console", "layers", "props", "history"])
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=rows(
+                    columns(
+                        stack(many, railed=True),
+                        stack("scene", railed=True),
+                    ),
+                    "monitor",
+                ),
+            ),
+        )
+        geom = page.evaluate(
+            """() => {
+                const region = document.querySelector('[data-dock-region]');
+                const rh = region.getBoundingClientRect().height;
+                // The band box is the rail root's parent (the band wrapper).
+                const roots = [...document.querySelectorAll(
+                    '[data-dock-rail-root]')];
+                const rails = roots.map((root) => {
+                    const r = root.getBoundingClientRect();
+                    const body = root.children[1];
+                    return {
+                        h: r.height,
+                        scrolls: body
+                            ? body.scrollHeight > body.clientHeight + 1
+                            : null,
+                    };
+                });
+                const bandH = Math.max(...rails.map((x) => x.h), 0);
+                const anyScroll = rails.some((x) => x.scrolls === true);
+                return { rh, h: bandH, scrolls: anyScroll, n: roots.length };
+            }"""
+        )
+        # Capped at the region's own height (never taller, so it cannot
+        # overflow into the next band).
+        assert geom["h"] is not None and geom["h"] <= geom["rh"] + 2, (
+            f"a huge all-railed band must cap at the region height: {geom}"
+        )
+        # The huge spine scrolls internally (acceptable for the degenerate
+        # case).
+        assert geom["scrolls"] is True, (
+            f"a huge spine must scroll rather than overflow: {geom}"
+        )
     finally:
         page.close()

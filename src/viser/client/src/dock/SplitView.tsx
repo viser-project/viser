@@ -55,9 +55,19 @@ const COLUMN_HANDLE_PX = 16;
 
 // Height floor for a band whose every column is RAILED: rail spines scroll
 // at any height, so the band needs only a usable grab height, not a per-leaf
-// sum. Doubles as the all-railed band's numeric flex-basis (auto would not
-// animate the D34 collapse transition).
+// sum. Also the all-railed band's divider min-cell floor.
 const ALL_RAILED_BAND_MIN_PX = 60;
+
+/** A band is ALL-RAILED when every one of its columns is railed (D41). Such a
+ * band sizes to its CONTENT height (its tallest rail spine), not a weighted
+ * share -- so it leaves no dead gray below the spine icons and the EXPANDED
+ * bands reclaim the freed height. A band with even ONE expanded column is NOT
+ * all-railed: it keeps its weighted share (the expanded column fills it,
+ * rails beside it are the healthy case). An empty band (no columns) is not
+ * all-railed -- it has no rail content to size to. */
+function isAllRailed(row: DockRow): boolean {
+  return row.columns.length > 0 && row.columns.every((c) => c.railed === true);
+}
 
 /** A band's minimum rendered height: the tallest EXPANDED column's stack of
  * cells at their render floors (MIN_CELL_HEIGHT_PX each, plus dividers),
@@ -97,12 +107,20 @@ export const SplitView = React.memo(function SplitView({
   const columnHandles = !region.rows.every((rw) => rw.columns.length === 1);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const rows = region.rows;
-  // Bands NEVER height-collapse (D38): rails reclaim WIDTH, not height --
-  // an all-railed band renders full-height rail strips whose spine content
-  // scrolls internally. (The old bars-era band collapse squeezed a band of
-  // rails to a 60px sliver: crammed icons behind a scrollbar.) Grow
-  // normalization stays: fractional weights must sum to 1 (edge case 16).
-  const bandWeightTotal = rows.reduce((s, r) => s + r.weight, 0) || 1;
+  // D41: an ALL-RAILED band sizes to its CONTENT height (flexGrow 0 +
+  // flexBasis auto) instead of a weighted share, so the dead gray below its
+  // spine icons collapses. It is CAPPED at the region height (maxHeight
+  // 100%) -- a genuinely huge rail scrolls via the rail Paper's own
+  // overflowY:auto -- so content-sizing can NEVER squeeze a spine below its
+  // content (flexShrink 0 + basis auto grows to fit; the cap only bites the
+  // degenerate huge case). Grow normalization then runs over EXPANDED bands
+  // only: their weights sum to 1 so the height an all-railed band DIDN'T
+  // take is reclaimed by them, never stranded as dead area (edge case 16).
+  // (A band with a mix of railed + expanded columns is NOT all-railed -- it
+  // keeps its weighted share, the expanded column fills it.)
+  const allRailedMask = rows.map((r) => isAllRailed(r));
+  const expandedBandWeightTotal =
+    rows.reduce((s, r, i) => s + (allRailedMask[i] ? 0 : r.weight), 0) || 1;
 
   // EXPLICITLY collapsed region (D21): the 36px vertical rail, regardless of
   // the per-cell collapse states. Toggled by the region-collapse chevron;
@@ -124,16 +142,22 @@ export const SplitView = React.memo(function SplitView({
       }}
     >
       {rows.map((row, index) => {
-        // Bands always render RowView at their weighted height; railed
-        // columns inside render full-height ColumnRails.
+        // An all-railed band content-sizes (D41); every other band takes its
+        // normalized weighted share of the EXPANDED-band height.
+        const allRailed = allRailedMask[index];
         return (
           <React.Fragment key={row.id}>
             <Box
               className={collapseAnim}
               style={{
-                flexGrow: row.weight / bandWeightTotal,
-                flexShrink: 1,
-                flexBasis: 0,
+                // D41: an all-railed band does not grow (0 share) and sizes
+                // to content (basis auto, no shrink); it is capped at the
+                // region height so a huge rail scrolls rather than overflows.
+                // An expanded/mixed band grows by its normalized weight.
+                flexGrow: allRailed ? 0 : row.weight / expandedBandWeightTotal,
+                flexShrink: allRailed ? 0 : 1,
+                flexBasis: allRailed ? "auto" : 0,
+                maxHeight: allRailed ? "100%" : undefined,
                 minWidth: 0,
                 minHeight: 0,
                 display: "flex",
@@ -143,12 +167,19 @@ export const SplitView = React.memo(function SplitView({
             </Box>
             {index < rows.length - 1 &&
               (() => {
-                // Every band divider resizes: rails are height-flexible
-                // (their spines scroll), so there is always height to trade.
+                // D41/D24: a band divider is INERT beside an ALL-RAILED band.
+                // That band's height is fixed by its content (flexGrow 0), so
+                // there is nothing to trade on that side -- dragging would
+                // only grow the band back into dead gray or squeeze its spine
+                // (a cursor that no-ops lies). Mirrors "a width divider goes
+                // inert beside a railed column". A divider between two
+                // expanded/mixed bands still resizes.
+                const dividerResizable =
+                  !allRailedMask[index] && !allRailedMask[index + 1];
                 return (
                   <SplitDivider
                     dir="column"
-                    resizable
+                    resizable={dividerResizable}
                     containerRef={containerRef}
                     onResize={(deltaPx, containerPx) =>
                       resizeCells({

@@ -776,13 +776,19 @@ sub-question (§10).
   clamp; they never squeeze a cell below its header. The cell minimum is
   also a RENDER floor on expanded docked leaves (mirroring the floating
   stack's, P7) — without it repeated same-target splits clip the
-  smallest cell's chrome. Railed columns don't raise their band's height
-  floor (a rail's spine scrolls internally); an all-railed band's
-  divider MIN is the ~60px grab floor — but bands never
-  height-COLLAPSE: rails hold width, not height, so an all-railed band
-  renders full-height rail strips like any band (the bars-era band
-  collapse squeezed rails into a sliver behind a scrollbar — fixed
-  2026-07-06, pinned by the full-height rail e2e test).
+  smallest cell's chrome. A band with any EXPANDED column takes its
+  weighted height share; an ALL-RAILED band (every column railed) sizes
+  to its CONTENT instead (D41): `flex-grow:0`, `flex-basis:auto`,
+  `flex-shrink:0`, so it fits its tallest spine with no dead gray tail,
+  and the expanded bands (the only ones in the grow total) reclaim the
+  freed height. It never squeezes below content — the sole bound is
+  `max-height:100%`, which bites only in the degenerate MANY-tab case,
+  where the rail's spine scrolls internally (the earlier full-height
+  rule existed to avoid that squeeze; content-sizing avoids it too,
+  without the dead gray). Rails stay SEPARATE — an all-rails band is
+  side-by-side rail columns, never merged. A band divider is inert when
+  either side is all-railed (its height is content-fixed — nothing to
+  trade, D24).
 - **Split defaults**: a top/bottom leaf drop and a left/right column
   drop both default the two sides to HALF the target's current weight —
   sibling weights may be on any scale (divider drags write px), so only
@@ -1429,3 +1435,21 @@ play-by-play lives in git history.
   columns. No-source-window columns (server-built / injected) keep
   the 300px default as restore width; the 36px rendered accounting
   stops injected all-railed rows from reserving phantom 300s.
+- **D41 (an all-rails band content-sizes; rails never merge,
+  2026-07-08; supersedes the 2026-07-06 full-height rule):**
+  user-reported: a band whose columns are all railed (e.g. Stats/Notes
+  + Log railed over an expanded Tools band) drew as full-height strips
+  with a big dead-gray tail below the spine icons and orphaned `+`
+  headers. An intermediate fix that CONSOLIDATED the per-column rails
+  into one region rail was rejected by the user — "multiple rails
+  collapsing into the same rail is weird and wrong": it erased the
+  side-by-side structure they built. The adjudicated rule: rails stay
+  SEPARATE, and an all-rails band sizes to its CONTENT height
+  (`flex-grow:0`/`flex-basis:auto`/`flex-shrink:0`, capped at the
+  region height) so the dead gray collapses and the expanded bands
+  reclaim the freed height (see §6). Purely presentational — no model
+  change, no store migration. The degenerate many-tab case scrolls the
+  rail spine internally (the concern the full-height rule addressed;
+  content-sizing addresses it too, without the dead gray). Band
+  dividers beside an all-rails band are inert (content-fixed height,
+  nothing to trade).
