@@ -1113,3 +1113,287 @@ def test_all_railed_band_caps_and_scrolls_when_huge(
         )
     finally:
         page.close()
+
+
+# ===========================================================================
+# Fix A: an ALL-RAILS region (2+ rail bands, NO expanded band) fills the
+# the region height UNIFORMLY (weighted shares), NOT content-sized. Sizing
+# an all-rails band only pays off when an expanded band exists to donate the
+# freed height to; with no expanded band, content-sizing would leave the
+# the lower area of the region empty and the bands ragged. (Two rail bands
+# SAME multi-column partition D13-zip into one; unequal partitions -- a 2-col
+# band over a 3-col band -- stay two separate bands.)
+# ===========================================================================
+def test_all_rails_region_fills_height_uniformly(
+    dock_context, vite_server: int
+) -> None:
+    page = _open(dock_context, vite_server, 1400, 800)
+    try:
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=rows(
+                    columns(
+                        stack("controls", railed=True),
+                        stack("inspector", railed=True),
+                    ),
+                    columns(
+                        stack("console", railed=True),
+                        stack("scene", railed=True),
+                        stack("monitor", railed=True),
+                    ),
+                ),
+            ),
+        )
+        # Confirm the region is genuinely all-rails and stayed TWO bands (not
+        # zipped): a 2-col band over a 3-col band.
+        bands = _region_bands(page)
+        assert bands is not None and len(bands) == 2, (
+            f"expected two unequal-partition rail bands, got {bands}"
+        )
+        for band in bands:
+            assert all(col["railed"] for col in band), (
+                f"every column must be railed (all-rails region), got {bands}"
+            )
+        geom = page.evaluate(
+            """() => {
+                const region = document.querySelector('[data-dock-region]');
+                const rh = region.getBoundingClientRect().height;
+                // The region's flex column of band wrappers: sum the band
+                // heights (skip the divider fragments).
+                const inner = region.firstElementChild;
+                const bandBoxes = [...inner.children]
+                    .filter((el) => el.getAttribute('data-dock-divider') === null)
+                    .map((el) => el.getBoundingClientRect().height);
+                return { rh, bandBoxes, sum: bandBoxes.reduce((s, h) => s + h, 0) };
+            }"""
+        )
+        # The bands together fill essentially the whole region (uniform fill),
+        # not a short content-sized stack that strands the lower area.
+        assert geom["sum"] >= geom["rh"] * 0.9, (
+            f"an all-rails region must FILL the height (weighted shares), not "
+            f"content-size and leave the lower area empty: {geom}"
+        )
+        # Each band is a substantial share -- neither collapsed to a short
+        # content strip. With equal band weights each is ~half the region.
+        for h in geom["bandBoxes"]:
+            assert h >= geom["rh"] * 0.3, (
+                f"each all-rails band should take a weighted share of the "
+                f"region, not content-size to a short strip: {geom}"
+            )
+    finally:
+        page.close()
+
+
+# ===========================================================================
+# Fix A / D41-win intact: a rail band OVER an expanded band still
+# content-sizes the rail band (short strip) and the expanded band reclaims the
+# freed height. (Duplicates the guarantee of test_all_railed_band_content_sizes
+# with an explicit "the D41 win survives Fix A" framing: content-sizing is
+# scoped to when an expanded band exists to donate to.)
+# ===========================================================================
+def test_rail_band_over_expanded_still_content_sizes(
+    dock_context, vite_server: int
+) -> None:
+    page = _open(dock_context, vite_server, 1400, 800)
+    try:
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=rows(
+                    columns(
+                        stack("controls", railed=True),
+                        stack("inspector", railed=True),
+                    ),
+                    "console",
+                ),
+            ),
+        )
+        geom = page.evaluate(
+            """() => {
+                const region = document.querySelector('[data-dock-region]');
+                const rh = region.getBoundingClientRect().height;
+                const railBand = document.querySelector('[data-dock-rail-root]')
+                    ?.closest('[data-dock-column]')?.parentElement;
+                const railH = railBand
+                    ? railBand.getBoundingClientRect().height
+                    : null;
+                const exp = document.querySelector('[data-dock-group="t-console"]');
+                const expH = exp ? exp.getBoundingClientRect().height : null;
+                return { rh, railH, expH };
+            }"""
+        )
+        # The rail band content-sizes to a short strip (well under half the
+        # the region), and the expanded console band reclaims the bulk (D41 win).
+        assert geom["railH"] is not None and geom["railH"] < geom["rh"] * 0.6, (
+            f"the rail band over an expanded band must content-size: {geom}"
+        )
+        assert geom["expH"] is not None and geom["expH"] > geom["rh"] * 0.6, (
+            f"the expanded band must reclaim the freed height (D41 win): {geom}"
+        )
+    finally:
+        page.close()
+
+
+# ===========================================================================
+# Fix B: a multi-column rail band with UNEQUAL cell counts
+# ([1-cell | 2-cell | 1-cell]) keeps FULL-HEIGHT columns, but the vertical
+# divider rule between two rail columns must NOT extend past the shorter
+# neighbor's content bottom into its empty tail (P10: borders divide, never
+# enclose). Assert the row-divider rule's rendered height is capped near the
+# shorter adjacent rail column's spine content, not the full band height.
+# ===========================================================================
+def test_rail_band_divider_rule_does_not_overshoot_short_column(
+    dock_context, vite_server: int
+) -> None:
+    page = _open(dock_context, vite_server, 1400, 800)
+    try:
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=rows(
+                    columns(
+                        stack("controls", railed=True),
+                        stack("inspector", "console", railed=True),
+                        stack("scene", railed=True),
+                    ),
+                    "monitor",
+                ),
+            ),
+        )
+        geom = page.evaluate(
+            """() => {
+                const rowDividers = [...document.querySelectorAll(
+                    '[data-dock-divider="row"]')].map((d) => {
+                    const rule = d.querySelector('[data-dock-divider-rule]');
+                    return rule
+                        ? Math.round(rule.getBoundingClientRect().height)
+                        : null;
+                });
+                // Per rail column: box height (stretched full-band) vs its
+                // spine CONTENT bottom. The rail Paper stretches full-band
+                // (flexGrow), so its scrollHeight equals the box height when
+                // the short content fits; the honest content bottom is the
+                // LAST spine cell's bottom.
+                const roots = [...document.querySelectorAll(
+                    '[data-dock-rail-root]')].map((root) => {
+                    const r = root.getBoundingClientRect();
+                    const cells = root.querySelectorAll('[data-dock-leaf]');
+                    const last = cells[cells.length - 1];
+                    const contentH = last
+                        ? Math.round(
+                            last.getBoundingClientRect().bottom - r.top)
+                        : null;
+                    return {
+                        boxH: Math.round(r.height),
+                        contentH,
+                        n: root.querySelectorAll('[data-dock-tab]').length,
+                    };
+                });
+                return { rowDividers, roots };
+            }"""
+        )
+        roots = geom["roots"]
+        if len(roots) < 3 or any(r["contentH"] is None for r in roots):
+            pytest.skip("rail band not laid out with 3 columns this run")
+        # The columns are full-height (cross-axis stretch is correct): every
+        # rail box is the same band height, taller than the short columns'
+        # content.
+        box_hs = {r["boxH"] for r in roots}
+        assert len(box_hs) == 1, (
+            f"rail columns must all stretch to full band height: {geom}"
+        )
+        band_h = next(iter(box_hs))
+        short_content = min(r["contentH"] for r in roots)
+        # The short columns' content is genuinely shorter than the band (there
+        # IS an empty tail) -- otherwise the test proves nothing.
+        assert short_content < band_h - 20, (
+            f"expected a short column with an empty tail below its spine: {geom}"
+        )
+        # No row-divider rule runs the full band height into that tail: every
+        # rule is capped near the shorter neighbor's content (P10). Allow a
+        # small slop over the tallest content (the 2-cell column).
+        tall_content = max(r["contentH"] for r in roots)
+        rules = [h for h in geom["rowDividers"] if h is not None]
+        assert rules, f"expected row-divider rules, got {geom}"
+        for h in rules:
+            assert h <= tall_content + 24, (
+                f"a rail-to-rail divider rule ({h}px) overshoots past content "
+                f"(tallest spine {tall_content}px, band {band_h}px) into the "
+                f"empty tail -- P10 violation: {geom}"
+            )
+        # And at least one rule is capped SHORT of the band (the one beside a
+        # 1-cell column), proving the cap actually bit.
+        assert min(rules) < band_h - 20, (
+            f"at least one divider rule must stop at the short column's "
+            f"content, not run the full band: {geom}"
+        )
+    finally:
+        page.close()
+
+
+# ===========================================================================
+# Fix C: an INERT band divider (beside a content-sized all-rails band, where
+# resizable=false) must look DISTINCT from a live resize handle between two
+# expanded bands -- so users don't expect a resize where none exists. Assert
+# the inert column-divider has cursor:default AND a dimmer rule than the live
+# one, which shows a resize cursor.
+# ===========================================================================
+def test_inert_band_divider_is_visually_distinct_from_resizable(
+    dock_context, vite_server: int
+) -> None:
+    page = _open(dock_context, vite_server, 1400, 800)
+    try:
+        # A rail band (content-sized) over TWO expanded bands: the rail/console
+        # seam is INERT (nothing to trade beside a content-fixed band); the
+        # console/monitor seam is a LIVE resize handle.
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=rows(
+                    columns(
+                        stack("controls", railed=True),
+                        stack("inspector", railed=True),
+                    ),
+                    "console",
+                    "monitor",
+                ),
+            ),
+        )
+        dividers = page.evaluate(
+            """() => [...document.querySelectorAll(
+                '[data-dock-divider="column"]')].map((d) => {
+                const rule = d.querySelector('[data-dock-divider-rule]');
+                return {
+                    resizable: d.getAttribute('data-dock-divider-resizable'),
+                    cursor: getComputedStyle(d).cursor,
+                    opacity: parseFloat(getComputedStyle(rule).opacity),
+                };
+            })"""
+        )
+        inert = [d for d in dividers if d["resizable"] == "false"]
+        live = [d for d in dividers if d["resizable"] == "true"]
+        if not inert or not live:
+            pytest.skip(
+                f"expected both an inert and a live band divider, got {dividers}"
+            )
+        for d in inert:
+            # Inert: no resize cursor.
+            assert d["cursor"] == "default", (
+                f"an inert band divider must not show a resize cursor: {d}"
+            )
+        for d in live:
+            assert d["cursor"] == "ns-resize", (
+                f"a live band divider must show the resize cursor: {d}"
+            )
+        # The inert rule is DIMMER than the live one (thinner-looking): "no
+        # resize here" is honest, not an identical 1px line.
+        max_inert_opacity = max(d["opacity"] for d in inert)
+        min_live_opacity = min(d["opacity"] for d in live)
+        assert max_inert_opacity < min_live_opacity, (
+            f"the inert divider rule must be dimmer than the live one so it "
+            f"reads as non-resizable (inert {max_inert_opacity} vs live "
+            f"{min_live_opacity}): {dividers}"
+        )
+    finally:
+        page.close()

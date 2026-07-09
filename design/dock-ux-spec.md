@@ -776,19 +776,24 @@ sub-question (§10).
   clamp; they never squeeze a cell below its header. The cell minimum is
   also a RENDER floor on expanded docked leaves (mirroring the floating
   stack's, P7) — without it repeated same-target splits clip the
-  smallest cell's chrome. A band with any EXPANDED column takes its
-  weighted height share; an ALL-RAILED band (every column railed) sizes
-  to its CONTENT instead (D41): `flex-grow:0`, `flex-basis:auto`,
-  `flex-shrink:0`, so it fits its tallest spine with no dead gray tail,
-  and the expanded bands (the only ones in the grow total) reclaim the
-  freed height. It never squeezes below content — the sole bound is
-  `max-height:100%`, which bites only in the degenerate MANY-tab case,
-  where the rail's spine scrolls internally (the earlier full-height
-  rule existed to avoid that squeeze; content-sizing avoids it too,
-  without the dead gray). Rails stay SEPARATE — an all-rails band is
-  side-by-side rail columns, never merged. A band divider is inert when
-  either side is all-railed (its height is content-fixed — nothing to
-  trade, D24).
+  smallest cell's chrome. Band heights (D41): an ALL-RAILED band
+  (every column railed) content-sizes ONLY when the region also has an
+  EXPANDED band to donate the freed height to — `flex-grow:0`,
+  `flex-basis:auto`, `flex-shrink:0`, fitting its tallest spine with no
+  dead gray tail while the expanded bands (the only ones in the grow
+  total) reclaim the height. When the region is ALL rail bands (nothing
+  to donate to), every band instead takes its weighted share so they
+  FILL the region uniformly — content-sizing them would only leave the
+  region's lower area empty. Content-sizing never squeezes below
+  content (`max-height:100%` bites only in the degenerate MANY-tab
+  case, where the spine scrolls internally). Rails stay SEPARATE — an
+  all-rails band is side-by-side rail columns, never merged; each
+  column fills the band height, and its inter-column divider rule is
+  capped at the SHORTER neighbor's content so the border never
+  overshoots into an empty tail (P10: borders divide, never enclose).
+  A band divider beside a content-sized all-rails band is inert
+  (content-fixed height, nothing to trade, D24) and renders dimmer than
+  a live resize handle so the two read distinctly.
 - **Split defaults**: a top/bottom leaf drop and a left/right column
   drop both default the two sides to HALF the target's current weight —
   sibling weights may be on any scale (divider drags write px), so only
@@ -1452,4 +1457,12 @@ play-by-play lives in git history.
   rail spine internally (the concern the full-height rule addressed;
   content-sizing addresses it too, without the dead gray). Band
   dividers beside an all-rails band are inert (content-fixed height,
-  nothing to trade).
+  nothing to trade). Follow-up (2026-07-08), after multi-band /
+  multi-column reports: (A) content-size an all-rails band ONLY when
+  the region has an expanded band — an ALL-rail-bands region fills
+  uniformly by weighted shares instead (see §6); (B) a rail column's
+  inter-column divider rule is capped at the shorter neighbor's content
+  so borders don't overshoot the empty tail below a short spine (P10);
+  (C) inert band dividers render dimmer than live resize handles so
+  they read distinctly. The first D41 e2e pins under-covered these
+  shapes; the follow-up adds multi-band and multi-column-ragged pins.
