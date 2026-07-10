@@ -477,7 +477,14 @@ def test_drop_beside_region_rail_distributes_store(dock_context, vite_server) ->
     gid = _group_id_for_panel(page, "controls")
     page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")
     page.wait_for_timeout(200)
-    assert page.evaluate("() => window.__dockLayout.regionCollapsed.right === true")
+    assert page.evaluate("""() => {
+            const region = window.__dockLayout.docked.right;
+            return (
+                region !== null &&
+                region.rows.every((r) => r.columns.length === 1) &&
+                region.rows.every((r) => r.columns.every((c) => c.railed === true))
+            );
+        }""")
     # Drop inspector over the collapsed region's EMPTY area below the rail
     # cells: its left/right halves dock a sibling on that side (hitTest
     # keeps the full-height side bands over a collapsed region) -> a new
@@ -495,13 +502,10 @@ def test_drop_beside_region_rail_distributes_store(dock_context, vite_server) ->
     tree = _layout(page)["docked"]["right"]
     if tree is None or "inspector" not in str(tree):
         pytest.skip("dock-beside didn't land this run")
-    # The store migrated DOWN: region flag cleared, old content railed,
-    # newcomer expanded and visible.
-    assert page.evaluate("() => window.__dockLayout.regionCollapsed.right !== true"), (
-        "the region flag must clear when a side-by-side column joins"
-    )
+    # D44: the rails are per-column flags already -- the old content stays
+    # railed, the newcomer lands expanded and visible.
     assert column_railed_for_group(page, gid) is True, (
-        "the pre-existing content must stay railed (store migration DOWN)"
+        "the pre-existing content must stay railed beside the newcomer"
     )
     igid = _group_id_for_panel(page, "inspector")
     assert column_railed_for_group(page, igid) is False, (
@@ -570,7 +574,14 @@ def test_escape_during_rail_cell_drag_restores_rail(dock_context, vite_server) -
     set_layout(page, dock_layout(docked_right=stack("inspector", "controls")))
     page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")
     page.wait_for_timeout(200)
-    assert page.evaluate("() => window.__dockLayout.regionCollapsed.right === true")
+    assert page.evaluate("""() => {
+            const region = window.__dockLayout.docked.right;
+            return (
+                region !== null &&
+                region.rows.every((r) => r.columns.length === 1) &&
+                region.rows.every((r) => r.columns.every((c) => c.railed === true))
+            );
+        }""")
     cell = page.eval_on_selector(
         '[data-dock-group="t-controls"][data-dock-collapsed]',
         "e => { const r = e.getBoundingClientRect(); "
@@ -588,9 +599,14 @@ def test_escape_during_rail_cell_drag_restores_rail(dock_context, vite_server) -
     assert _floating_window_for_panel(page, "controls") is None, (
         "Escape must undo the drag's up-front float"
     )
-    assert page.evaluate("() => window.__dockLayout.regionCollapsed.right === true"), (
-        "Escape must restore the pre-drag railed region"
-    )
+    assert page.evaluate("""() => {
+            const region = window.__dockLayout.docked.right;
+            return (
+                region !== null &&
+                region.rows.every((r) => r.columns.length === 1) &&
+                region.rows.every((r) => r.columns.every((c) => c.railed === true))
+            );
+        }"""), "Escape must restore the pre-drag railed region"
     assert page.query_selector("[data-dock-region-rail]") is not None
     page.close()
 

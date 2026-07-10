@@ -557,14 +557,14 @@ def test_left_region_chevron_clickable_despite_resizer(
         page.close()
 
 
-def test_railed_lone_band_among_expanded_bands_is_unrepresentable(
+def test_railed_lone_band_among_expanded_bands_stays_railed(
     dock_context, vite_server: int
 ) -> None:
-    """Collapse law 5 / D38 store migration: a RAILED lone column among
-    EXPANDED single-column bands has no legal geometry (docked bars are gone,
-    D32, and the region isn't all collapsed), so canonicalization DROPS the
-    flag and the cell renders expanded. (Pre-D38 this arrangement rendered
-    an in-place bar; that form no longer exists.)"""
+    """D42 (supersedes the old unrepresentability rule): a RAILED lone column
+    among EXPANDED single-column bands is legal committed geometry -- the
+    band renders the 36px rail strip with the rest of the band as plain band
+    body. No flag drop, no forced expand, and still no in-place docked bar
+    (D32/D38)."""
     page = _open(dock_context, vite_server, 1280, 900)
     try:
         # Three stacked single-column bands on the right; the MIDDLE band
@@ -577,18 +577,13 @@ def test_railed_lone_band_among_expanded_bands_is_unrepresentable(
                 )
             ),
         )
-        # The flag was dropped at canonicalization: no rail strip, no bar,
-        # and the cell renders expanded like its siblings.
-        assert column_railed_for_group(page, "t-inspector") is False
-        assert page.locator("[data-dock-column-rail]").count() == 0
+        # The flag SURVIVES: one column rail strip, no bar form.
+        assert column_railed_for_group(page, "t-inspector") is True
+        assert page.locator("[data-dock-column-rail]").count() == 1
         assert page.locator('[data-dock-edge="right"] [data-dock-bar]').count() == 0
-        assert (
-            page.locator('[data-dock-group="t-inspector"][data-dock-collapsed]').count()
-            == 0
-        )
-        box = page.locator('[data-dock-group="t-inspector"]').first.bounding_box()
-        assert box is not None and box["height"] > 60, (
-            f"the cell must render expanded (flag dropped), got {box}"
+        strip = page.locator("[data-dock-rail-root]").first.bounding_box()
+        assert strip is not None and strip["width"] <= 40, (
+            f"the lone rail renders as the 36px strip: {strip}"
         )
     finally:
         page.close()
@@ -849,11 +844,10 @@ def test_railed_sibling_columns_independent_gestures(
         assert out["inspectorDocked"], (
             "inspector should stay docked (only one cell torn out)"
         )
-        # Once controls' column leaves, inspector is a lone railed column
-        # among expanded bands -- unrepresentable geometry, so
-        # canonicalization DROPS the flag and the cell expands (collapse
-        # law 5).
-        assert column_railed_for_group(page, "t-inspector") is False
+        # Once controls' column leaves, inspector is a lone railed column in
+        # its band -- legal geometry since D42, so it simply STAYS railed
+        # (no migration, no forced expand).
+        assert column_railed_for_group(page, "t-inspector") is True
     finally:
         page.close()
 
@@ -862,10 +856,10 @@ def test_explicit_collapse_gives_packed_rail_spine_row_expands(
     dock_context, vite_server: int
 ) -> None:
     """The explicit chevron collapses a multi-band region to ONE packed rail
-    (one narrow spine cell per leaf, D21/D38); expanding from a rail spine
-    row clears the region's one flag AND lands on that tab -- everything
-    comes back expanded (no per-cell residue: group-level collapse is
-    unrepresentable, D38)."""
+    (one narrow spine cell per leaf, D21/D44: derived from every column
+    railed); expanding from a rail spine row is GRANULAR (D44,
+    user-adjudicated): it expands JUST that panel's band and lands on that
+    tab -- the other bands stay railed as column rails."""
     page = _open(dock_context, vite_server, 1280, 900)
     try:
         set_layout(
@@ -892,7 +886,8 @@ def test_explicit_collapse_gives_packed_rail_spine_row_expands(
             assert lf["w"] < 60, f"rail cell should be narrow, got {lf}"
 
         # Expand one panel from the rail via its spine ROW (keyboard Enter):
-        # clears regionCollapsed and activates that tab (D21/D38).
+        # GRANULAR (D44) -- clears just that column's flag and activates the
+        # tab; the sibling bands keep their rails.
         page.eval_on_selector(
             '[data-dock-group="t-controls"] [data-dock-tab]', "e => e.focus()"
         )
@@ -900,8 +895,13 @@ def test_explicit_collapse_gives_packed_rail_spine_row_expands(
         page.wait_for_timeout(400)
         assert not region_collapsed(page, "right")
         assert page.locator("[data-dock-region-rail]").count() == 0, (
-            "expanding from the rail must un-collapse the region"
+            "expanding from the rail must un-pack the region"
         )
+        assert column_railed_for_group(page, "t-controls") is False
+        assert column_railed_for_group(page, "t-inspector") is True, (
+            "granular expand (D44): sibling bands stay railed"
+        )
+        assert column_railed_for_group(page, "t-console") is True
         w = page.evaluate(
             """() => Math.round(document
                 .querySelector('[data-dock-group="t-controls"]')

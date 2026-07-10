@@ -262,8 +262,13 @@ def test_handle_tap_toggles_minimize(page: Page) -> None:
         == 0
     ), "a docked grip tap must not collapse (drag-only surface, D32)"
     assert page.evaluate(
-        "() => Object.values(window.__dockLayout.regionCollapsed)"
-        ".every((v) => v !== true)"
+        """() => ["left", "right"].every((e) => {
+            const region = window.__dockLayout.docked[e];
+            return (
+                region === null ||
+                region.rows.some((r) => r.columns.some((c) => c.railed !== true))
+            );
+        })"""
     )
 
     # Floating single-group window: tap collapses; tap on the bar expands.

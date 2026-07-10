@@ -7,7 +7,8 @@
 import { describe, expect, it } from "vitest";
 import {
   setColumnRailed,
-  setRegionCollapsed,
+  railRegion,
+  expandRegionRail,
   toggleCollapsed,
 } from "./layoutOps";
 import { planRegion, plannedReservedWidth } from "./regionPlan";
@@ -153,14 +154,14 @@ describe("reconcile: collapse states never move region width (D20)", () => {
     l.groups = groups("a");
     l.docked.right = toRegion(leaf("a", 320));
     l.regionWidth = { left: 0, right: 320 };
-    const collapsed = setRegionCollapsed(l, "right", true);
+    const collapsed = railRegion(l, "right");
     reconcileRegionWidths(l, collapsed);
     expect(collapsed.regionWidth!.right).toBe(320);
     const plan = planRegion(collapsed.docked.right!);
     // Drawn: the rail. Model: preserved.
     expect(plannedReservedWidth(plan, 320, true)).toBe(MINIMIZED_STRIP_PX);
     // Expanding restores exactly.
-    const restored = setRegionCollapsed(collapsed, "right", false);
+    const restored = expandRegionRail(collapsed, "right");
     reconcileRegionWidths(collapsed, restored);
     expect(restored.regionWidth!.right).toBe(320);
   });

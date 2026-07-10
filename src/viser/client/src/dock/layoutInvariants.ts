@@ -14,7 +14,7 @@ import {
   DockLayout,
   DockLeaf,
   GroupId,
-  isRegionCollapsedOn,
+
   MINIMIZED_STRIP_PX,
   NodeId,
   PaneId,
@@ -206,28 +206,17 @@ export function invariantViolations(layout: DockLayout): string[] {
   // rest of the band as plain body, and the lone column's handle carries
   // the rail chevron. (Numbering kept stable; 14+ unchanged.)
 
-  // 14. regionCollapsed implies a region to collapse: detachInPlace clears
-  // the flag at the one chokepoint when an edge empties (and floatRegion /
-  // setRegionCollapsed guard their own paths), so a set flag over a null
-  // edge is always a bug -- it would ambush the NEXT region docked there
-  // with a surprise rail.
-  // 15. regionCollapsed implies every band single-column: the D21 rail form's
-  // precondition (every column-adding op converts the region rail to
-  // per-column rails first).
-  for (const edge of ["left", "right"] as DockEdge[]) {
-    if (!isRegionCollapsedOn(layout, edge)) continue;
-    const region = layout.docked[edge];
-    if (region === null) {
-      v.push(`regionCollapsed.${edge} is set but the edge holds no region`);
-      continue;
-    }
-    for (const row of region.rows) {
-      if (row.columns.length > 1)
-        v.push(
-          `regionCollapsed.${edge} is set but band ${row.id} has ${row.columns.length} columns (D21 precondition)`,
-        );
-    }
-  }
+  // 14/15. RETIRED (D44): regionCollapsed is no longer a store -- the
+  // packed region rail is DERIVED (isRegionPackedOn: every band
+  // single-column, every column railed), so a stale flag over an empty
+  // edge or a multi-column packed region is unrepresentable. A LEGACY
+  // field surviving un-migrated in a committed layout IS a bug: injection
+  // and restore chokepoints run migrateRegionCollapsedInPlace.
+  if (layout.regionCollapsed !== undefined)
+    v.push(
+      "layout carries the legacy regionCollapsed store (D44: run " +
+        "migrateRegionCollapsedInPlace at the injection/restore chokepoint)",
+    );
 
   // 16. Region width matches the rendered-need semantic (D40): whenever a
   // MULTI-column width row holds an expanded column, regionWidth[edge] IS
@@ -247,7 +236,7 @@ export function invariantViolations(layout: DockLayout): string[] {
   if (layout.regionWidth !== undefined) {
     for (const edge of ["left", "right"] as DockEdge[]) {
       const region = layout.docked[edge];
-      if (region === null || isRegionCollapsedOn(layout, edge)) continue;
+      if (region === null) continue;
       const wr = widthRow(region);
       if (wr.columns.length < 2) continue;
       const rw = layout.regionWidth[edge];

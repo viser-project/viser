@@ -15,7 +15,7 @@ import {
   DockRegion,
   DropRegion,
   GroupId,
-  isRegionCollapsedOn,
+  isRegionPackedOn,
   NodeId,
   PaneId,
   SPLIT_DIVIDER_PX,
@@ -465,7 +465,7 @@ export function hitTest(
     // the band). The explicit region rail (D21) packs EVERY band's cells
     // into one strip -- band boxes don't exist on screen there, so raw
     // extents stay authoritative for a collapsed region.
-    if (isRegionCollapsedOn(layout, edge)) return raw;
+    if (isRegionPackedOn(layout, edge)) return raw;
     const reliable = tree.rows.map((band) =>
       band.columns.some((c) => c.railed !== true),
     );
@@ -647,7 +647,7 @@ export function hitTest(
     // D21-railed region: the packed rail owns the pointer's band-level
     // intent (see below); computed up front because the seam zone keys on
     // it too.
-    const keepSideBand = isRegionCollapsedOn(layout, edge);
+    const keepSideBand = isRegionPackedOn(layout, edge);
 
     // 2a. Cross-band SEAM -> insert a full-width band BETWEEN two bands. A
     // multi-band region's interior seams are the only way to dock a band between

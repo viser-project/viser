@@ -55,7 +55,7 @@ import {
   DockLayout,
   FloatingWindow,
   GroupId,
-  isRegionCollapsedOn,
+  isRegionPackedOn,
   MIN_CANVAS_PX,
   MIN_REGION_GRAB_PX,
   MINIMIZED_STRIP_PX,
@@ -189,7 +189,15 @@ export function DockManager({
 }) {
   const onRegionResizeFrameRef = React.useRef(onRegionResizeFrame);
   onRegionResizeFrameRef.current = onRegionResizeFrame;
-  const [layout, setLayout] = React.useState(initialLayout);
+  const [layout, setLayout] = React.useState(() => {
+    // MIGRATION chokepoint (D44): a restored/persisted layout may still
+    // carry the legacy regionCollapsed store -- convert it into per-column
+    // railed flags (the rail is derived now) before first commit.
+    if (initialLayout.regionCollapsed === undefined) return initialLayout;
+    const migrated = structuredClone(initialLayout);
+    ops.migrateRegionCollapsedInPlace(migrated);
+    return migrated;
+  });
   const layoutRef = React.useRef(layout);
   layoutRef.current = layout;
   // Structure signature of the CURRENT committed layout (layoutRef.current),
@@ -417,6 +425,12 @@ export function DockManager({
        * doesn't pay the scan. */
       replace: (layout: DockLayout) =>
         runProgrammatic(() => {
+          // MIGRATION chokepoint (D44): injected layouts (restore, test
+          // probes) may carry the legacy regionCollapsed store.
+          if (layout.regionCollapsed !== undefined) {
+            layout = structuredClone(layout);
+            ops.migrateRegionCollapsedInPlace(layout);
+          }
           bumpFreshIdFloor(ops.allLayoutIds(layout));
           applyOp(layout);
         }),
@@ -1892,7 +1906,11 @@ export function DockManager({
   );
   const collapseRegion = React.useCallback(
     (edge: DockEdge, on: boolean) => {
-      applyOp(ops.setRegionCollapsed(layoutRef.current, edge, on));
+      applyOp(
+        on
+          ? ops.railRegion(layoutRef.current, edge)
+          : ops.expandRegionRail(layoutRef.current, edge),
+      );
     },
     [applyOp],
   );
@@ -1963,7 +1981,7 @@ export function DockManager({
             ? plannedReservedWidth(
                 plans.left,
                 regionWidth.left,
-                isRegionCollapsedOn(layout, "left"),
+                isRegionPackedOn(layout, "left"),
               )
             : 0,
         right:
@@ -1971,7 +1989,7 @@ export function DockManager({
             ? plannedReservedWidth(
                 plans.right,
                 regionWidth.right,
-                isRegionCollapsedOn(layout, "right"),
+                isRegionPackedOn(layout, "right"),
               )
             : 0,
       },
@@ -2036,7 +2054,7 @@ export function DockManager({
         reservedWidth: 0,
         resizable: false,
       };
-    const collapsed = isRegionCollapsedOn(layout, edge);
+    const collapsed = isRegionPackedOn(layout, edge);
     return {
       tree,
       // The rail is fixed-width chrome: nothing to resize while collapsed
@@ -2298,7 +2316,7 @@ export function DockManager({
                 handle instead (SplitView), and no region-level collapse is
                 offered because the rail is a single packed strip that would
                 flatten columns the same way. */}
-                    {!isRegionCollapsedOn(layoutRef.current, edge) &&
+                    {!isRegionPackedOn(layoutRef.current, edge) &&
                       tree.rows.every((rw) => rw.columns.length === 1) && (
                         <StackHandleBar
                           attrs={{ "data-dock-region-handle": edge }}

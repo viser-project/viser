@@ -240,7 +240,8 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
         const l = emptyLayout();
         l.groups = { a: grp("a", 2), b: grp("b", 1), c: grp("c", 1) };
         l.docked.left = toRegion(rows([row([leaf("a")]), row([leaf("b")])]));
-        l.regionCollapsed = { left: true, right: false };
+        // Packed rail (D44): derived from per-column railed flags.
+        for (const rw of l.docked.left!.rows) rw.columns[0].railed = true;
         l.floating = [
           floatingWindow({
             id: "wc",

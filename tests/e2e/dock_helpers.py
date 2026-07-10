@@ -261,7 +261,8 @@ def collapsed(page: Page, gid: str) -> bool:
                         for (const lf of column.leaves)
                             if (lf.group === gid)
                                 return (
-                                    l.regionCollapsed[edge] === true ||
+                                    (region.rows.every((r) => r.columns.length === 1) &&
+                                     region.rows.every((r) => r.columns.every((c) => c.railed === true))) ||
                                     column.railed === true
                                 );
             }
@@ -273,7 +274,17 @@ def collapsed(page: Page, gid: str) -> bool:
 
 def region_collapsed(page: Page, edge: str) -> bool:
     """The docked region's D38 collapse store for `edge` (the packed rail)."""
-    return page.evaluate("(e) => window.__dockLayout.regionCollapsed[e] === true", edge)
+    return page.evaluate(
+        """(e) => {
+            const region = window.__dockLayout.docked[e];
+            return (
+                region !== null &&
+                region.rows.every((r) => r.columns.length === 1) &&
+                region.rows.every((r) => r.columns.every((c) => c.railed === true))
+            );
+        }""",
+        edge,
+    )
 
 
 def column_railed_for_group(page: Page, gid: str) -> bool | None:
@@ -533,7 +544,6 @@ def dock_layout(
         },
         # Explicit region collapse (D21) starts off; tests that want the rail
         # click the [data-dock-region-collapse] chevron (the real gesture).
-        "regionCollapsed": {"left": False, "right": False},
         "floating": [spec["window"] for spec in floating],
         "areas": {
             "area-scene": {"group": area_scene["id"]},

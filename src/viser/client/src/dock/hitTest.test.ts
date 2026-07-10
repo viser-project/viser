@@ -36,8 +36,7 @@ import {
   floatingWindow,
   toRegion,
   leafIdOf,
-  leafIdsOf,
-} from "./testUtils";
+  leafIdsOf, packRegionInPlace } from "./testUtils";
 
 const CONTAINER: ContainerRect = { left: 0, top: 0, width: 1000, height: 800 };
 
@@ -283,7 +282,7 @@ describe("screen-edge dock next to an occupied region", () => {
       ],
     };
     // D38: docked collapse is the REGION's flag (the rail), not group state.
-    if (collapsed) l.regionCollapsed.right = true;
+    if (collapsed) packRegionInPlace(l, "right");
     return l;
   }
 
@@ -420,7 +419,7 @@ describe("outer-edge dock beside a minimized region strip", () => {
     const bot = leaf("g2");
     const tree = colSplit([top, bot]); // two stacked rows -> left/right span both
     const layout = layoutWith({ right: tree });
-    layout.regionCollapsed.right = true; // the rail is the ONE docked store (D38)
+    packRegionInPlace(layout, "right"); // the rail is the ONE docked store (D38)
     const t1 = collapsedRightTarget("g1", leafIdOf(top), rect(stripLeft, 0, STRIP, 400));
     const t2 = collapsedRightTarget("g2", leafIdOf(bot), rect(stripLeft, 400, STRIP, 400));
     // At the very outer (screen) edge: previously the 40px inner band swallowed
@@ -437,7 +436,7 @@ describe("outer-edge dock beside a minimized region strip", () => {
     const bot = leaf("g2");
     const tree = colSplit([top, bot]);
     const layout = layoutWith({ right: tree });
-    layout.regionCollapsed.right = true; // the rail is the ONE docked store (D38)
+    packRegionInPlace(layout, "right"); // the rail is the ONE docked store (D38)
     const t1 = collapsedRightTarget("g1", leafIdOf(top), rect(stripLeft, 0, STRIP, 400));
     const t2 = collapsedRightTarget("g2", leafIdOf(bot), rect(stripLeft, 400, STRIP, 400));
     const out = run(layout, [t1, t2], stripLeft + 1, 200, STRIP_W)!;
@@ -461,7 +460,7 @@ describe("outer-edge dock beside a minimized region strip", () => {
     // "dock a column beside" zone (regionEdge) -- not a dead None.
     const node = leaf("g");
     const layout = layoutWith({ right: node });
-    layout.regionCollapsed.right = true; // the rail is the ONE docked store (D38)
+    packRegionInPlace(layout, "right"); // the rail is the ONE docked store (D38)
     // Content-tall strip at the top of the region; empty below.
     const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft, 0, STRIP, 120));
     const out = run(layout, [tgt], stripLeft + STRIP / 2, 500, STRIP_W);
@@ -482,7 +481,7 @@ describe("outer-edge dock beside a minimized region strip", () => {
     // expanded.
     const node = leaf("g");
     const layout = layoutWith({ right: node });
-    layout.regionCollapsed.right = true; // the rail is the ONE docked store (D38)
+    packRegionInPlace(layout, "right"); // the rail is the ONE docked store (D38)
     const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft, 0, STRIP, 120));
     // Drop at the region's bottom edge, far below the content-tall cell.
     const out = run(layout, [tgt], stripLeft + STRIP / 2, CONTAINER.height - 4, STRIP_W);
@@ -504,7 +503,7 @@ describe("outer-edge dock beside a minimized region strip", () => {
     const bot = leaf("g2");
     const tree = colSplit([top, bot]);
     const layout = layoutWith({ right: tree });
-    layout.regionCollapsed.right = true;
+    packRegionInPlace(layout, "right");
     // Packed rail: two content-tall cells, a hairline apart (the packed
     // strip renders no band boxes on screen).
     const t1 = collapsedRightTarget("g1", leafIdOf(top), rect(stripLeft, 0, STRIP, 120));
@@ -529,7 +528,7 @@ describe("outer-edge dock beside a minimized region strip", () => {
   it("single minimized strip: over the strip's own rows still inserts a tab (cell wins)", () => {
     const node = leaf("g");
     const layout = layoutWith({ right: node });
-    layout.regionCollapsed.right = true;
+    packRegionInPlace(layout, "right");
     const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft, 0, STRIP, 120));
     tgt.tabs = [{ paneId: "p", rect: rect(stripLeft, 40, STRIP, 30) }];
     // Over a row (inside the strip cell) -> the cell's tab-insert wins, not the
@@ -951,7 +950,7 @@ describe("collapsed-target vertical zones (content-sized strip)", () => {
       ],
     };
     // D38: the strip is the region rail -- the container store, not a group flag.
-    l.regionCollapsed.right = true;
+    packRegionInPlace(l, "right");
     return l;
   };
 

@@ -464,7 +464,15 @@ def test_drop_into_rail_at_tab_position(dock_context, vite_server: int) -> None:
             f"console should insert before inspector, got {ids}"
         )
         assert page.evaluate(
-            "() => window.__dockLayout.regionCollapsed.right === true"
+            """() => {
+                const region = window.__dockLayout.docked.right;
+                return (
+                    region !== null &&
+                    region.rows.every((r) => r.columns.length === 1) &&
+                    region.rows.every((r) =>
+                        r.columns.every((c) => c.railed === true))
+                );
+            }"""
         ), "the region must stay collapsed after a tab-position drop"
     finally:
         page.close()

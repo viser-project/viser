@@ -110,12 +110,14 @@ The handles by scope and state:
 
 Collapse is ONE state, at STACK scope, stored per CONTAINER (D38):
 
-1. **One state, container-stored (P15).** The model stores exactly three
-   collapse flags, one per stack-scope container: `FloatingWindow.
-   collapsed`, `DockColumn.railed`, `regionCollapsed[edge]`. There is NO
-   group-level flag, so a partially collapsed stack is unrepresentable
-   by construction. Groups don't collapse; the thing that holds them
-   does.
+1. **One state, container-stored (P15).** The model stores exactly TWO
+   collapse flags, one per container kind: `FloatingWindow.collapsed`
+   and `DockColumn.railed` (D44 deleted the regionCollapsed store: the
+   packed region rail is a DERIVED rendering -- every band
+   single-column, every column railed -- not a third state). There is
+   NO group-level flag, so a partially collapsed stack is
+   unrepresentable by construction. Groups don't collapse; the thing
+   that holds them does.
 2. **Two renderings of the one state.** A collapsed FLOATING container
    renders as its window of stacked bars at full `win.width` (face bar
    for a lone main-panel window) — width kept, since width has no one to
@@ -137,16 +139,17 @@ Collapse is ONE state, at STACK scope, stored per CONTAINER (D38):
    header, a lone cap, a spine row — clears that container's single flag
    (label/spine paths also activate their tab). Expand is never gated
    (P5).
-5. **The stores never trade flags silently (D42).** A railed column left
-   as its band's sole column simply STAYS railed — its band renders the
-   36px strip with plain band body beside it, a legal state, so
-   structural changes never migrate a column flag to the region store or
-   drop it. The region rail (`regionCollapsed`) is a DIFFERENT picture
-   (one packed strip, one header) entered explicitly via the region
-   chevron only (D21). The one downward distribution remains: a column
-   docking beside a region rail clears the region flag and keeps the old
-   rail railed as ONE consolidated column (§7). Where both docked stores
-   are set, region takes render precedence.
+5. **No store migration exists (D42/D44).** A railed column left as its
+   band's sole column simply STAYS railed — its band renders the 36px
+   strip with plain band body beside it, a legal state. The packed
+   region rail is not a second store to trade flags with: it is the
+   DERIVED rendering of "every band single-column, every column railed"
+   (isRegionPackedOn). The region chevron rails every column
+   (railRegion); the packed header's `+` expands every column
+   (expandRegionRail); a spine-row expand clears just ITS column's flag
+   — granular by adjudication — and drops beside railed content simply
+   land where they land (band structure is never rebuilt to preserve a
+   packed look).
 6. **Client-only, instant.** Server placement is position/width/height —
    no collapse axis (D31). Collapse changes only by user gesture (P3),
    never emerges from state, and the model commits instantly; motion is
@@ -303,7 +306,7 @@ collapse is its collapse instance. §10 catalogs the mechanisms.
 | **Floating window** | A free box holding a vertical stack of ≥1 groups. The STACK scope's floating form. |
 | **Bar** | The collapsed FLOATING rendering, per cell (D20/D38): one group of a collapsed window drawn as its 26px handle at `win.width`. |
 | **Rail** | The collapsed DOCKED rendering: the scope packed into a 36px vertical strip of spine rows — a whole region (D21) or one column of ANY band, a band's sole column included (D28/D42; the rest of a sole rail's band is plain band body). Explicit only; never appears emergently. |
-| **Collapse stores** | The ONE state's three container homes (D38): `FloatingWindow.collapsed`, `DockColumn.railed`, `regionCollapsed[edge]`. No group-level flag exists. |
+| **Collapse stores** | The ONE state's two container homes (D38/D44): `FloatingWindow.collapsed`, `DockColumn.railed`. The packed region rail is DERIVED (`isRegionPackedOn`), not stored. No group-level flag exists. |
 | **Area** | A nested dockable surface inside a panel body (flat tab group; no splits). |
 | **Main panel** | The control panel: an ordinary group in the MODEL (docks, stacks, floats, minimizes like any other) that opts into `unmergeable` and a titleNode header (the connection-status row; minimized face per D19). |
 | **Unmergeable panel** | A panel that may never become a tab of another group (and vice versa). It renders a full-width header instead of a tab strip; drops on it offer splits/snaps only, never merge/insert. |
@@ -407,15 +410,18 @@ region handle, chevron included, reappears automatically.
 
 ### 3.3 The rail (the collapsed docked stack: whole region D21, one column D28)
 
-- One form, two scopes; explicit entry only (the chevrons — never
-  emergent, collapse law 6). REGION scope (`regionCollapsed[edge]`,
-  single-visual-column regions only): the whole region as ONE packed
-  36px rail holding every leaf across every band, contiguous. COLUMN
-  scope (`DockColumn.railed`, columns of multi-column bands): THAT
-  column as the same rail IN PLACE, band siblings unaffected. Either way
-  structure stays in the MODEL and returns intact on expand — the rail
-  is a view. Expanded width is remembered (P8): `regionWidth` for the
-  region, the width weight for a column.
+- One form, two scopes. REGION scope (DERIVED, D44: every band
+  single-column and every column railed — `isRegionPackedOn`): the
+  whole region as ONE packed 36px rail holding every leaf across every
+  band, contiguous. Entered via the region chevron (rail every column)
+  or by railing the columns one at a time. COLUMN scope
+  (`DockColumn.railed`): THAT column as the same rail IN PLACE, band
+  siblings unaffected. Either way structure stays in the MODEL and
+  returns intact on expand — the rail is a view. Expanded width is
+  remembered (P8): `regionWidth` for the region, the width weight for
+  a column. Expanding from the packed rail: the header's `+` expands
+  EVERYTHING; a spine-row click expands just that panel's band
+  (granular, user-adjudicated).
 - Rail header: the collapsed stack handle (§1.2). Drag floats the scope
   as one COLLAPSED window (identity transfer, D38); click or `+` expands
   the scope, clearing ONLY the rail flag. Honest labels: "Expand panel
@@ -514,7 +520,7 @@ marked ⚠ (stated, not derived; see §11).
 | Region-collapse chevron | whole region (drag-through) | collapse region to the rail; focus hands off to the rail header (both input paths) |
 | Column parent handle — pill / background | that visual column (as one stacked window, height ratios preserved) | rail that column when the handle hosts a chevron; ⚠ no action on a pill-only handle |
 | Column-collapse chevron (every column handle, D28/D42) | that visual column (drag-through) | rail that column; if it was the band's LAST expanded column, the nearest railed sibling expands (tie → left) so the band keeps one expanded column (D43); focus hands off to the column rail's header (both input paths) |
-| Rail header (region or column scope) | that scope — floats as one COLLAPSED window (identity transfer, D38) | expand the scope (clear its flag) |
+| Rail header (region or column scope) | that scope — floats as one COLLAPSED window (identity transfer, D38) | expand the scope (a column rail clears its column's flag; the packed rail's `+` expands EVERY column, D44) |
 | Rail cell cap / background (quiet pill) | whole group — new window born collapsed | expand scope + group (lone cell only; inert with 2+ cells) |
 | Rail spine row | that pane — new window born collapsed | expand scope to that tab |
 | Region resize divider | region width (expanded columns only; railed columns ride as fixed chrome, §6) | — |
@@ -793,10 +799,11 @@ window is an open question (§11).
 The collapse law (§1.3) states the semantics; this section is the
 op-level residue.
 
-- Stores and ops (D38): the `−` / window-header toggle flips
-  `FloatingWindow.collapsed`; the chevrons set `DockColumn.railed` /
-  `regionCollapsed[edge]`; every expand path clears its container's one
-  flag. Ops act on containers; groups carry nothing. Collapsing a
+- Stores and ops (D38/D44): the `−` / window-header toggle flips
+  `FloatingWindow.collapsed`; the column chevron sets
+  `DockColumn.railed`; the region chevron rails EVERY column
+  (railRegion — the packed rail is derived, not stored); every expand
+  path clears column flags. Ops act on containers; groups carry nothing. Collapsing a
   missing scope is a no-op; clearing is always legal. Any column may
   rail, a band's sole column included (D42) — setColumnRailed sets
   exactly the flag it is named for; scope ROUTING (a single-visual-
@@ -973,10 +980,12 @@ at every consumer.
   defines "valid layout" for the app AND the fuzzer. `applyOp` asserts
   it on every commit in dev (console.error, never throw) and
   time-throttled in production. Hard invariants include: no duplicate or
-  orphaned panes/groups; `regionCollapsed` ⇒ a docked edge exists;
-  region rail ⇒ all bands single-column; `regionWidth` ≈ Σ over the
-  width row of (railed ? 36 : weight). (The former "no railed
-  sole-column band" invariant is retired — D42 made that state legal.)
+  orphaned panes/groups; no un-migrated legacy `regionCollapsed` field
+  (D44: injection/restore chokepoints run
+  `migrateRegionCollapsedInPlace`); `regionWidth` ≈ Σ over the width
+  row of (railed ? 36 : weight). (Retired: "no railed sole-column
+  band" — D42 made it legal; "regionCollapsed ⇒ docked edge / all
+  bands single-column" — D44 deleted the store.)
   `canonicalViolations` is the parallel SOFT set (transient-tolerant;
   normalization owes convergence, not instantaneous truth); an EXPANDED
   lone multi-leaf column is its D12 half — a RAILED one is exempt
@@ -1039,15 +1048,12 @@ Unadjudicated; do not resolve in code without recording the decision in
   its drag would flatten — D27) makes this a geometric limit. Options:
   accept; or give the region scope a compound affordance railing every
   column.
-- **Region/column rail unification.** With railed sole-column bands
-  legal (D42), "every column railed" is expressible per-column, and
-  `regionCollapsed[edge]` may be reducible to a DERIVED rendering of
-  it — deleting a collapse store (P15, the D38 move), invariants
-  #14/#15, and the beside-dock consolidation special case. Two UX
-  deltas to adjudicate first: (a) expand granularity from the packed
-  rail (whole region springs back vs per-band); (b) header budget — a
-  stack of rail bands must read as ONE strip with one header + one `+`
-  (P9/D25), not per-band chrome.
+- **Shared header for PARTIAL rail-band runs (D44b, adjudicated,
+  pending).** The packed region rail already draws one header; a
+  contiguous run of rail bands amid expanded bands still renders
+  per-band headers today. The user chose ONE shared header + one `+`
+  per contiguous run (P9/D25); the renderer work (a RailRun grouping in
+  SplitView) is the remaining D44 piece.
 - **T8 — The tab-strip override inverts zone priority.** §5.1 resolves
   outermost first except item 2, where a pane-scope insert beats region
   bands. "Specific intent beats broad intent" is a second axiom, not
@@ -1109,8 +1115,10 @@ has surviving behavior of its own.
   main panel's face is its connection-status row.
 - **D20** — bars render IN PLACE at their column's width (floating
   stacks); the segmented band bar is deleted.
-- **D21** — region collapse is EXPLICIT (`regionCollapsed[edge]`, the
-  region chevron); the rail never appears emergently.
+- **D21** — the packed region rail: one 36px strip for a fully railed
+  single-column-band region, with one header. Since D44 it is DERIVED
+  (`isRegionPackedOn`), not stored; the region chevron rails every
+  column to produce it.
 - **D22** — retired (nested-column stack handle deleted; superseded by
   D27's per-column handles).
 - **D23** — retired into D26/D28 (chevron placement); its click-only
@@ -1150,9 +1158,10 @@ has surviving behavior of its own.
   remainder only; per-label click/drag; per-label `tablist`.
 - **D37** — subsumed by D38 (uniform collapse became structural).
 - **D38** — collapse is ONE state per container
-  (`FloatingWindow.collapsed` / `DockColumn.railed` /
-  `regionCollapsed[edge]`); `TabGroup.collapsed` deleted; bars and rail
-  are two renderings; transfers between worlds are identity.
+  (`FloatingWindow.collapsed` / `DockColumn.railed`; the third store,
+  `regionCollapsed`, was later deleted by D44); `TabGroup.collapsed`
+  deleted; bars and rail are two renderings; transfers between worlds
+  are identity.
 - **D39** — largely retired by D42 (its migrate-or-expand rule and op
   gates died with the legality change). Surviving: band-inserts and
   seams over a REGION rail are suppressed — those drops join the rail
@@ -1180,4 +1189,18 @@ has surviving behavior of its own.
   expands its nearest railed sibling (tie → left) — the rail gesture
   always leaves the band one expanded column. Adjudicated P3 exception;
   drops/identity untouched (all-rails bands remain reachable by drop
-  and keep D41's height rules).
+  and keep D41's height rules). The region chevron (railRegion)
+  bypasses it: rail-all is the explicit ask.
+- **D44** — region/column rail unification (user-adjudicated, all three
+  recommended options): `regionCollapsed` is DELETED as a store; the
+  packed region rail is DERIVED (`isRegionPackedOn`: every band
+  single-column, every column railed). The region chevron = rail every
+  column; the packed header's `+` = expand every column; a spine-row
+  expand is GRANULAR (just that band). No store migration, no
+  beside-dock consolidation, no stale-flag hazards; invariants #14/#15
+  retired, replaced by "no un-migrated legacy field"
+  (`migrateRegionCollapsedInPlace` runs at injection/restore
+  chokepoints). Band-insert/seam suppression over a packed region kept
+  for now (drops join the rail); un-suppressing is a future zone-design
+  question. Remaining piece: D44b shared headers for partial rail-band
+  runs (§11).

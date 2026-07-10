@@ -9,9 +9,10 @@
 // weight keeps the P8 restore width (see widthReconciliation.ts and layout
 // invariant #16). A minimized CELL renders as its 26px bar in place at its
 // column's width, so per-cell minimize never changes region width. The only
-// other 36px form is the EXPLICITLY collapsed region (D21,
-// layout.regionCollapsed[edge]), which overrides the drawn width at the
-// DockManager level while the model widths are preserved for restore.
+// other 36px form is the PACKED region rail (D21/D44: derived -- every
+// band single-column, every column railed), which overrides the drawn
+// width at the DockManager level while the model widths are preserved for
+// restore.
 
 import { widthColumns } from "./layoutOps";
 import {
@@ -54,8 +55,8 @@ export function planRegion(region: DockRegion): RegionPlan {
 export function plannedReservedWidth(
   plan: RegionPlan,
   regionWidthPx: number,
-  regionCollapsed: boolean,
+  regionPacked: boolean,
 ): number {
-  if (regionCollapsed) return MINIMIZED_STRIP_PX;
+  if (regionPacked) return MINIMIZED_STRIP_PX;
   return regionWidthPx + plan.chromePx;
 }

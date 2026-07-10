@@ -18,14 +18,14 @@ import {
   resizeWindow,
   resizeWindowHeight,
   resolveRequestedFloatPosition,
-  setRegionCollapsed,
+  railRegion,
   tearOutPane,
   widthColumns,
 } from "./layoutOps";
 import {
   emptyLayout,
   DockLayout,
-  isRegionCollapsedOn,
+  isRegionPackedOn,
   pinnedPxOf,
   regionWidthsOf,
 } from "./types";
@@ -284,14 +284,14 @@ describe("applyPanelPlacement", () => {
       at({ kind: "edge", edge: "right" }),
       () => null,
     );
-    layout = setRegionCollapsed(layout, "right", true);
+    layout = railRegion(layout, "right");
     layout = applyPanelPlacement(
       layout,
       ["p"],
       { ...at({ kind: "edge", edge: "right" }), width: 300 },
       () => null,
     );
-    expect(isRegionCollapsedOn(layout, "right")).toBe(true);
+    expect(isRegionPackedOn(layout, "right")).toBe(true);
   });
 
   it("repositions an already-placed panel (float -> dock right)", () => {
@@ -929,7 +929,7 @@ describe("applyPanelPlacement: docked->docked collapse identity (D38)", () => {
       kind: "docked",
       edge: "right",
     });
-    expect(isRegionCollapsedOn(out, "right")).toBe(true);
+    expect(isRegionPackedOn(out, "right")).toBe(true);
     expect(invariantViolations(out)).toEqual([]);
   });
 
@@ -941,7 +941,7 @@ describe("applyPanelPlacement: docked->docked collapse identity (D38)", () => {
       () => null,
     );
     normalizeCanonicalBandsInPlace(out);
-    expect(isRegionCollapsedOn(out, "right")).toBe(false);
+    expect(isRegionPackedOn(out, "right")).toBe(false);
     const rows_ = out.docked.right!.rows;
     expect(rows_.every((rw) => rw.columns.every((c) => c.railed !== true))).toBe(
       true,
@@ -966,7 +966,7 @@ describe("applyPanelPlacement: docked->docked collapse identity (D38)", () => {
       c.leaves.some((lf) => lf.group === "a"),
     )!;
     expect(aCol.railed).toBe(true);
-    expect(isRegionCollapsedOn(out, "right")).toBe(false);
+    expect(isRegionPackedOn(out, "right")).toBe(false);
     expect(invariantViolations(out)).toEqual([]);
   });
 
@@ -974,7 +974,7 @@ describe("applyPanelPlacement: docked->docked collapse identity (D38)", () => {
     // The region flag is the other docked collapse store: a panel living
     // under regionCollapsed carries the same identity.
     let layout = makeLayout({ left: leaf("a"), right: leaf("c") });
-    layout = setRegionCollapsed(layout, "left", true);
+    layout = railRegion(layout, "left");
     const out = applyPanelPlacement(
       layout,
       ["a:0"],

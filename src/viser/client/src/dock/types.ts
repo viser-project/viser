@@ -390,15 +390,15 @@ export interface DockLayout {
   groups: Record<GroupId, TabGroup>;
   /** Docked region pinned to each edge, or null when that edge is empty. */
   docked: Record<DockEdge, DockRegion | null>;
-  /** EXPLICIT per-edge region collapse (D21): true renders the edge's whole
-   * region as the 36px vertical rail, regardless of per-cell collapse states.
-   * Toggled only by the region-collapse chevron / rail header (and cleared by
-   * expanding a panel from the rail or floating the region) -- never flips
-   * emergently from cell minimize states. NEVER set while the edge is empty:
-   * detachInPlace clears it at the one chokepoint when an edge empties (and
-   * floatRegion clears its own path), so a stale flag can't ambush the next
-   * region docked there with a surprise rail (invariant #14). */
-  regionCollapsed: Record<DockEdge, boolean>;
+  /** LEGACY (D44): the pre-unification per-edge region-collapse store. The
+   * region rail is now a DERIVED rendering -- a region whose every band is
+   * single-column and every column railed packs into the 36px strip
+   * (isRegionPackedOn) -- so this field is never written anymore. It
+   * survives in the type only so persisted snapshots and old test literals
+   * still parse; `migrateRegionCollapsedInPlace` (layoutOps) converts a set
+   * flag into per-column railed flags at the injection/restore chokepoints
+   * and deletes it. */
+  regionCollapsed?: Record<DockEdge, boolean>;
   /** Docked region widths in px per edge: the width-determining columns'
    * summed pixels (dividers render on top -- see regionPlan; collapse states
    * never move width, D20).
@@ -435,20 +435,33 @@ export type GroupLocation =
 export const emptyLayout = (): DockLayout => ({
   groups: {},
   docked: { left: null, right: null },
-  regionCollapsed: { left: false, right: false },
   floating: [],
   areas: {},
 });
 
-/** An edge's explicit region-collapse flag (D21), tolerant of layouts that
- * predate the field (persisted snapshots, test-probe injections): a missing
- * record reads as expanded. The ONE place the fallback lives. */
-export const isRegionCollapsedOn = (
+/** Whether every column of `region` is railed (D44). With a multi-column
+ * band this renders side-by-side strips; see isRegionPackedOn for the
+ * single packed strip. False for null (an empty edge has nothing railed). */
+export const isRegionFullyRailed = (region: DockRegion | null): boolean =>
+  region !== null &&
+  region.rows.every((rw) => rw.columns.every((c) => c.railed === true));
+
+/** The DERIVED region-rail predicate (D44, replacing the regionCollapsed
+ * store): an edge renders as ONE packed 36px strip iff its region exists,
+ * every band is single-column, and every column is railed -- the state the
+ * region chevron (rail-all) produces and per-column chevrons can compose.
+ * The rail is a VIEW over the same model; no second store exists. */
+export const isRegionPackedOn = (
   layout: DockLayout,
   edge: DockEdge,
-): boolean =>
-  (layout.regionCollapsed as Record<DockEdge, boolean> | undefined)?.[edge] ===
-  true;
+): boolean => {
+  const region = layout.docked[edge];
+  return (
+    region !== null &&
+    region.rows.every((rw) => rw.columns.length === 1) &&
+    isRegionFullyRailed(region)
+  );
+};
 
 /** The layout's region widths with defaults filled in (the one place the
  * missing-field fallback lives). */

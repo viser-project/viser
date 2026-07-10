@@ -16,7 +16,7 @@ import { htmlIconWrapper } from "../components/ComponentStyles.css";
 import { DockMetricsContext, useDock } from "../dock/DockContext";
 import { DockManager } from "../dock/DockManager";
 import * as ops from "../dock/layoutOps";
-import { isRegionCollapsedOn,
+import { isRegionPackedOn,
   DockLayout,
   PaneRegistry,
   emptyLayout,
@@ -63,11 +63,10 @@ function groupPlacementSignatures(
     const region = layout.docked[edge];
     if (region === null) continue;
     const w = Math.round(regionWidthsOf(layout)[edge]);
-    // The region's D21 rail flag is part of every resident's signature: a
-    // user's chevron collapse must mark those panels touched, or a stale
-    // single-axis server replay (position/width) could silently rearrange a
-    // region the user just collapsed (P6).
-    const rail = isRegionCollapsedOn(layout, edge) ? "R" : "-";
+    // The PACKED region-rail state joins every resident's signature (D44:
+    // derived from the column flags, but kept as its own term so the packed
+    // form's replay hazard stays covered even if per-column terms change).
+    const rail = isRegionPackedOn(layout, edge) ? "R" : "-";
     for (const row of region.rows)
       for (const column of row.columns) {
         // The containing column's railed state joins the signature like the

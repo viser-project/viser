@@ -9,7 +9,8 @@
 //                draggable horizontal dividers between stacked leaves.
 //
 // Docked collapse is the RAIL, at exactly two scopes (D38/D32): the whole
-// region (layout.regionCollapsed[edge] swaps the region for
+// region (isRegionPackedOn -- every band single-column, every column
+// railed, D44 -- swaps the region for
 // RegionMinimizedRail) or one column of a multi-column band (column.railed
 // swaps that column for ColumnRail). Leaves are always expanded here --
 // per-leaf collapse is unrepresentable, and bars are a floating-only form.
@@ -33,7 +34,7 @@ import {
   DockLeaf,
   DockRegion,
   DockRow,
-  isRegionCollapsedOn,
+  isRegionPackedOn,
   MIN_REGION_GRAB_PX,
   MINIMIZED_STRIP_PX,
   SPLIT_DIVIDER_PX,
@@ -310,7 +311,7 @@ export const SplitView = React.memo(function SplitView({
   // EXPLICITLY collapsed region (D21): the 36px vertical rail, regardless of
   // the per-cell collapse states. Toggled by the region-collapse chevron;
   // expanding a panel from the rail clears the flag (see layoutOps).
-  if (isRegionCollapsedOn(dock.layout, edge)) {
+  if (isRegionPackedOn(dock.layout, edge)) {
     return <RegionMinimizedRail region={region} edge={edge} />;
   }
 

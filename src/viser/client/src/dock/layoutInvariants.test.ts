@@ -6,7 +6,8 @@
 // orphan group.
 
 import { describe, expect, it } from "vitest";
-import { addPaneToArea, dockToEdge, ensureArea, removePane } from "./layoutOps";
+import {
+  migrateRegionCollapsedInPlace, addPaneToArea, dockToEdge, ensureArea, removePane } from "./layoutOps";
 import { invariantViolations } from "./layoutInvariants";
 import { emptyLayout, DockLayout } from "./types";
 import { leaf, group, floatingWindow, row, rows, toRegion } from "./testUtils";
@@ -99,31 +100,22 @@ describe("invariantViolations", () => {
     expect(invariantViolations(ok)).toEqual([]);
   });
 
-  it("#14: flags regionCollapsed over an EMPTY edge", () => {
-    // detachInPlace clears the flag at the chokepoint when an edge empties;
-    // a set flag over a null edge would ambush the next region docked there
-    // with a surprise rail.
+  it("#14/#15 retired (D44): an un-migrated legacy regionCollapsed field is flagged", () => {
+    // The packed rail is DERIVED now; a committed layout still carrying the
+    // legacy store means an injection/restore path skipped
+    // migrateRegionCollapsedInPlace.
     const l = emptyLayout();
+    l.groups = { a: group("a") };
+    l.docked.left = toRegion(leaf("a"));
     l.regionCollapsed = { left: true, right: false };
     expect(
-      invariantViolations(l).some((s) => s.includes("holds no region")),
+      invariantViolations(l).some((s) => s.includes("legacy regionCollapsed")),
     ).toBe(true);
-  });
-
-  it("#15: flags regionCollapsed over a region with a multi-column band (D21 precondition)", () => {
-    const l = emptyLayout();
-    l.groups = { a: group("a"), b: group("b") };
-    l.docked.left = toRegion(rows([row([leaf("a"), leaf("b")])]));
-    l.regionCollapsed = { left: true, right: false };
-    expect(
-      invariantViolations(l).some((s) => s.includes("D21 precondition")),
-    ).toBe(true);
-    // The legal D21 shape -- all single-column bands -- is clean.
-    const ok = emptyLayout();
-    ok.groups = { a: group("a"), b: group("b") };
-    ok.docked.left = toRegion(rows([row([leaf("a")]), row([leaf("b")])]));
-    ok.regionCollapsed = { left: true, right: false };
-    expect(invariantViolations(ok)).toEqual([]);
+    // Migration converts the flag into railed columns and drops the field.
+    migrateRegionCollapsedInPlace(l);
+    expect(l.regionCollapsed).toBeUndefined();
+    expect(l.docked.left!.rows[0].columns[0].railed).toBe(true);
+    expect(invariantViolations(l)).toEqual([]);
   });
 
   it("#16: flags regionWidth drifting from the width row's rendered need (D40)", () => {
@@ -192,12 +184,14 @@ describe("invariantViolations", () => {
     single.docked.left = toRegion(rows([row([leaf("a", 2)])]));
     single.regionWidth = { left: 500, right: 300 };
     expect(invariantViolations(single)).toEqual([]);
-    // Region-collapsed edge: regionWidth is the preserved RESTORE width
-    // (D21) -- exempt while the rail is drawn.
+    // Packed edge (D44: all bands single-column, all railed): the width
+    // row is a single column, so #16's multi-column check is naturally
+    // gated off; regionWidth carries whatever reconciliation maintains.
     const collapsed = emptyLayout();
     collapsed.groups = { a: group("a"), b: group("b") };
     collapsed.docked.left = toRegion(rows([row([leaf("a")]), row([leaf("b")])]));
-    collapsed.regionCollapsed = { left: true, right: false };
+    for (const rw of collapsed.docked.left!.rows)
+      rw.columns[0].railed = true;
     collapsed.regionWidth = { left: 480, right: 300 };
     expect(invariantViolations(collapsed)).toEqual([]);
   });

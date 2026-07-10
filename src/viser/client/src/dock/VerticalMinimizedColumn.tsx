@@ -3,7 +3,7 @@
 // instead of "the header kept in place" it is the header ROTATED: gray cap
 // on top (the header's leading edge), one spine row per tab (upright icon
 // over rotated title, wayfinding-styled), hairline dividers between cells.
-// Two scopes, one form: the whole region (D21: regionCollapsed[edge]) as
+// Two scopes, one form: the whole region (D21/D44: the derived PACKED form) as
 // ONE packed rail, or a single column of a multi-column band (D28:
 // column.railed) in place. The bar (MinimizedBar) is the FLOATING analog.
 
