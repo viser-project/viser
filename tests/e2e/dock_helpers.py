@@ -27,8 +27,17 @@ def open_playground(dock_context, port: int, w: int = 1280, h: int = 800) -> Pag
     pg = dock_context.new_page()
     pg.set_viewport_size({"width": w, "height": h})
     pg.goto(f"http://localhost:{port}{PLAYGROUND_PATH}")
-    pg.wait_for_selector("[data-dock-group]")
-    pg.wait_for_selector('[data-dock-area="area-scene"]')
+    # Timer-polled readiness instead of wait_for_selector: selector waits poll
+    # on rAF internally (no polling override exists), and throttled/stalled
+    # rAF in headless Chromium turns them into multi-second stalls. Explicit
+    # polling here keeps the helper fast even outside the pytest conftest
+    # (which patches wait_for_function's default for the suite).
+    pg.wait_for_function(
+        """() =>
+            document.querySelector('[data-dock-group]') !== null &&
+            document.querySelector('[data-dock-area="area-scene"]') !== null""",
+        polling=50,
+    )
     return pg
 
 
@@ -538,7 +547,12 @@ def set_layout(page: Page, layout: dict) -> None:
     and wait until window.__dockLayout reflects it. Compared by group-id set
     (not deep equality: applyOp's reconciliation rewrites column weights to
     pixel widths), then given a beat for the 200ms flex transitions."""
-    page.wait_for_function("() => typeof window.__dockSetLayout === 'function'")
+    # Explicit timer polling (not just the conftest default): this helper also
+    # runs standalone in probe scripts, where rAF-throttled default polling
+    # would stall it (see conftest._timer_polling_for_page_waits).
+    page.wait_for_function(
+        "() => typeof window.__dockSetLayout === 'function'", polling=50
+    )
     page.evaluate("(l) => window.__dockSetLayout(l)", layout)
     page.wait_for_function(
         """(ids) => {
@@ -548,5 +562,10 @@ def set_layout(page: Page, layout: dict) -> None:
             return got.length === ids.length && ids.every((g) => got.includes(g));
         }""",
         arg=sorted(layout["groups"].keys()),
+        polling=50,
     )
-    page.wait_for_timeout(300)
+    # Small beat for React to commit derived layout state. The 200ms flex
+    # transitions this padded for are instant under the suite's
+    # reduced_motion contexts, so a full animation-length wait is waste at
+    # every call site.
+    page.wait_for_timeout(100)

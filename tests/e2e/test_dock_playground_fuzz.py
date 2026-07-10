@@ -103,7 +103,10 @@ def test_random_drags_never_throw_or_strand_windows(
     errors = collect_errors(page)
     try:
         page.goto(f"http://localhost:{vite_server}{PLAYGROUND_PATH}")
-        page.wait_for_selector("[data-dock-group]")
+        page.wait_for_function(
+            "() => document.querySelector('[data-dock-group]') !== null",
+            polling=50,
+        )
         rng = random.Random(seed)
 
         for _ in range(18):
@@ -173,7 +176,10 @@ def test_random_drags_multiband_seed_conserve_and_no_errors(
     errors = collect_errors(page)
     try:
         page.goto(f"http://localhost:{vite_server}{PLAYGROUND_PATH}")
-        page.wait_for_selector("[data-dock-group]")
+        page.wait_for_function(
+            "() => document.querySelector('[data-dock-group]') !== null",
+            polling=50,
+        )
         # Right edge: a [controls(railed) | inspector] band over a plain
         # [console] band; a floating `scene` to drag around. (scene is a
         # non-area, mergeable pane -- the area panes layers/props/history
