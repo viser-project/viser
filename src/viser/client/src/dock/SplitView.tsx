@@ -58,13 +58,22 @@ const COLUMN_HANDLE_PX = 16;
 // sum. Also the all-railed band's divider min-cell floor.
 const ALL_RAILED_BAND_MIN_PX = 60;
 
+// Grow factors at the band level are SCALED by this so that after flexbox
+// freezes a content-capped rail band at its fit-content max, the remaining
+// bands' grow factors still sum to >= 1 -- a grow sum below 1 makes flexbox
+// hand out only that FRACTION of the free space and strands the rest as dead
+// area (edge case 16). Ratios are what matter to flexbox, so the scale is
+// otherwise invisible.
+const BAND_GROW_SCALE = 1000;
+
 /** A band is ALL-RAILED when every one of its columns is railed (D41). Such a
- * band sizes to its CONTENT height (its tallest rail spine), not a weighted
- * share -- so it leaves no dead gray below the spine icons and the EXPANDED
- * bands reclaim the freed height. A band with even ONE expanded column is NOT
- * all-railed: it keeps its weighted share (the expanded column fills it,
- * rails beside it are the healthy case). An empty band (no columns) is not
- * all-railed -- it has no rail content to size to. */
+ * band is height-CAPPED at its content (its tallest rail spine) when an
+ * expanded band exists to reclaim the difference -- so it can render BELOW
+ * its weighted share, but never taller than its spine (no dead gray). A band
+ * with even ONE expanded column is NOT all-railed: it takes its full weighted
+ * share (the expanded column fills it, rails beside it are the healthy case).
+ * An empty band (no columns) is not all-railed -- it has no rail content to
+ * cap to. */
 function isAllRailed(row: DockRow): boolean {
   return row.columns.length > 0 && row.columns.every((c) => c.railed === true);
 }
@@ -107,32 +116,43 @@ export const SplitView = React.memo(function SplitView({
   const columnHandles = !region.rows.every((rw) => rw.columns.length === 1);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const rows = region.rows;
-  // D41: an ALL-RAILED band sizes to its CONTENT height (flexGrow 0 +
-  // flexBasis auto) instead of a weighted share, so the dead gray below its
-  // spine icons collapses. It is CAPPED at the region height (maxHeight
-  // 100%) -- a genuinely huge rail scrolls via the rail Paper's own
-  // overflowY:auto -- so content-sizing can NEVER squeeze a spine below its
-  // content (flexShrink 0 + basis auto grows to fit; the cap only bites the
-  // degenerate huge case). Grow normalization then runs over EXPANDED bands
-  // only: their weights sum to 1 so the height an all-railed band DIDN'T
-  // take is reclaimed by them, never stranded as dead area (edge case 16).
-  // (A band with a mix of railed + expanded columns is NOT all-railed -- it
-  // keeps its weighted share, the expanded column fills it.)
+  // D41 (revised): every band -- rail or expanded -- takes its WEIGHTED share
+  // of the region, and an all-railed band is additionally CAPPED at its
+  // content height (maxHeight fit-content: its tallest rail spine). The cap,
+  // not a mode switch, is what makes dead gray below the spine icons
+  // unrepresentable: flexbox freezes the capped band at its content and
+  // redistributes the height it couldn't take to the uncapped (expanded)
+  // bands. Because the band still sizes by weight UNDER the cap, the divider
+  // beside it stays LIVE: dragging up shrinks the band below its content (the
+  // spine scrolls, same as any squeezed column), dragging down stops at the
+  // cap like any floor/ceiling.
   const allRailedMask = rows.map((r) => isAllRailed(r));
-  // Content-sizing an all-railed band only pays off when there is an EXPANDED
-  // band to DONATE the freed height to (D41's win: kill the dead gray beside
-  // expanded content). When EVERY band is all-railed there is nowhere to
-  // donate: each band would content-size to its tallest spine and the region's
-  // lower area sits empty while the bands come out ragged. In that case fall
-  // back to the pre-D41 WEIGHTED shares so the bands fill the region uniformly.
+  // The content cap only pays off when there is an EXPANDED band to DONATE
+  // the freed height to (D41's win: kill the dead gray beside expanded
+  // content). When EVERY band is all-railed there is nowhere to donate:
+  // capping would strand the region's lower area empty while the bands come
+  // out ragged, so no band is capped and weighted shares fill the region
+  // uniformly (Fix A).
   const regionHasExpandedBand = allRailedMask.some((m) => !m);
-  // When at least one expanded band exists, all-railed bands content-size and
-  // the grow total is over the EXPANDED bands only (they reclaim the freed
-  // height). When the region is ALL rail bands, no band content-sizes -- every
-  // band takes weight/total, so the total is over ALL bands.
-  const bandWeightTotal = regionHasExpandedBand
-    ? rows.reduce((s, r, i) => s + (allRailedMask[i] ? 0 : r.weight), 0) || 1
-    : rows.reduce((s, r) => s + r.weight, 0) || 1;
+  const bandWeightTotal = rows.reduce((s, r) => s + r.weight, 0) || 1;
+  // A band divider drag computes new weights from the bands' RENDERED px at
+  // drag start, not their stored weights: a capped rail band renders at its
+  // content, which can sit far below its weighted share, and a drag computed
+  // from stored weights would burn through that invisible surplus before the
+  // divider visibly moved. Snapshotted once per gesture (SplitDivider's
+  // onDragStart); flushes recompute from the snapshot + total delta, so the
+  // gesture stays idempotent.
+  const bandPxAtDragStart = React.useRef<number[] | null>(null);
+  const measureBandPx = () => {
+    const container = containerRef.current;
+    if (container === null) return;
+    bandPxAtDragStart.current = rows.map((row) => {
+      const el = container.querySelector<HTMLElement>(
+        `[data-dock-band="${row.id}"]`,
+      );
+      return el?.getBoundingClientRect().height ?? 0;
+    });
+  };
 
   // EXPLICITLY collapsed region (D21): the 36px vertical rail, regardless of
   // the per-cell collapse states. Toggled by the region-collapse chevron;
@@ -154,28 +174,27 @@ export const SplitView = React.memo(function SplitView({
       }}
     >
       {rows.map((row, index) => {
-        // An all-railed band content-sizes (D41) -- but ONLY when the region
-        // has an expanded band to donate the freed height to. In an ALL-rails
-        // region there is nowhere to donate, so even all-railed bands take a
-        // weighted share and fill the region uniformly (Fix A). Every
-        // non-all-railed band always takes its weighted share.
-        const allRailed = allRailedMask[index];
-        const contentSized = allRailed && regionHasExpandedBand;
+        // An all-railed band is height-capped at its content (D41) -- but
+        // ONLY when the region has an expanded band to reclaim the freed
+        // height. In an ALL-rails region there is nowhere to donate, so no
+        // band is capped and weighted shares fill the region uniformly (Fix
+        // A).
+        const contentCapped = allRailedMask[index] && regionHasExpandedBand;
         return (
           <React.Fragment key={row.id}>
             <Box
+              data-dock-band={row.id}
               className={collapseAnim}
               style={{
-                // D41: a CONTENT-SIZED band (all-railed + an expanded sibling
-                // to donate to) does not grow (0 share) and sizes to content
-                // (basis auto, no shrink); it is capped at the region height so
-                // a huge rail scrolls rather than overflows. Every other band
-                // -- expanded/mixed, OR all-railed in an all-rails region (Fix
-                // A) -- grows by its normalized weight.
-                flexGrow: contentSized ? 0 : row.weight / bandWeightTotal,
-                flexShrink: contentSized ? 0 : 1,
-                flexBasis: contentSized ? "auto" : 0,
-                maxHeight: contentSized ? "100%" : undefined,
+                // Every band sizes by its weighted share (scaled -- see
+                // BAND_GROW_SCALE); a rail band additionally caps at its
+                // intrinsic content height so it can never render dead gray
+                // below its spine, and flexbox hands the height it couldn't
+                // take to the uncapped bands.
+                flexGrow: (row.weight / bandWeightTotal) * BAND_GROW_SCALE,
+                flexShrink: 1,
+                flexBasis: 0,
+                maxHeight: contentCapped ? "fit-content" : undefined,
                 minWidth: 0,
                 minHeight: 0,
                 display: "flex",
@@ -183,55 +202,52 @@ export const SplitView = React.memo(function SplitView({
             >
               <RowView row={row} edge={edge} columnHandles={columnHandles} />
             </Box>
-            {index < rows.length - 1 &&
-              (() => {
-                // D41/D24: a band divider is INERT beside a CONTENT-SIZED
-                // band. That band's height is fixed by its content (flexGrow
-                // 0), so there is nothing to trade on that side -- dragging
-                // would only grow the band back into dead gray or squeeze its
-                // spine (a cursor that no-ops lies). Mirrors "a width divider
-                // goes inert beside a railed column". In an ALL-rails region no
-                // band content-sizes (Fix A: they take weighted shares), so
-                // their dividers DO resize like any weighted pair.
-                const contentSizedAt = (i: number) =>
-                  allRailedMask[i] && regionHasExpandedBand;
-                const dividerResizable =
-                  !contentSizedAt(index) && !contentSizedAt(index + 1);
-                return (
-                  <SplitDivider
-                    dir="column"
-                    resizable={dividerResizable}
-                    containerRef={containerRef}
-                    onResize={(deltaPx, containerPx) =>
-                      resizeCells({
-                        dock,
-                        edge,
-                        cells: rows,
-                        collapsed: rows.map(() => false),
-                        index,
-                        deltaPx,
-                        containerPx,
-                        // Per-band floor: a band must fit its tallest
-                        // expanded column's cells (50px each + dividers),
-                        // or the leaves' own render floors overflow into
-                        // the band below.
-                        minCell: rows.map((band) =>
-                          bandMinPx(band, columnHandles),
-                        ),
-                      })
-                    }
-                    onCancel={() =>
-                      dock.api.apply((l) =>
-                        setNodeWeights(
-                          l,
-                          edge,
-                          Object.fromEntries(rows.map((r) => [r.id, r.weight])),
-                        ),
-                      )
-                    }
-                  />
-                );
-              })()}
+            {index < rows.length - 1 && (
+              // Band dividers are ALWAYS live (D41 revised): a rail band
+              // sizes by weight under its content cap, so there is always
+              // height to trade -- dragging into a rail band squeezes it
+              // below its content (the spine scrolls), dragging away from it
+              // stops at its cap, like any floor.
+              <SplitDivider
+                dir="column"
+                resizable
+                containerRef={containerRef}
+                onDragStart={measureBandPx}
+                onResize={(deltaPx, containerPx) =>
+                  resizeCells({
+                    dock,
+                    edge,
+                    // Rendered px stand in for the stored weights (see
+                    // bandPxAtDragStart above) so the drag tracks what is on
+                    // screen, not a capped band's invisible surplus share.
+                    cells: rows.map((r, i) => ({
+                      id: r.id,
+                      weight: bandPxAtDragStart.current?.[i] ?? r.weight,
+                    })),
+                    collapsed: rows.map(() => false),
+                    index,
+                    deltaPx,
+                    containerPx,
+                    // Per-band floor: a band must fit its tallest
+                    // expanded column's cells (50px each + dividers),
+                    // or the leaves' own render floors overflow into
+                    // the band below.
+                    minCell: rows.map((band) =>
+                      bandMinPx(band, columnHandles),
+                    ),
+                  })
+                }
+                onCancel={() =>
+                  dock.api.apply((l) =>
+                    setNodeWeights(
+                      l,
+                      edge,
+                      Object.fromEntries(rows.map((r) => [r.id, r.weight])),
+                    ),
+                  )
+                }
+              />
+            )}
           </React.Fragment>
         );
       })}
@@ -266,65 +282,6 @@ function RowView({
   // strand the freed space as dead area (edge case 16).
   const colWeightTotal =
     columns.reduce((s, c, i) => s + (columnRailed[i] ? 0 : c.weight), 0) || 1;
-
-  // Fix B: in a multi-column RAIL band, columns with unequal cell counts
-  // content-size to different spine heights while every column BOX stretches
-  // full-band-height (cross-axis stretch is correct). Left unchecked, the
-  // vertical divider rule runs the full band height and visibly OVERSHOOTS
-  // past the shorter neighbor's spine into its empty tail -- a border that
-  // encloses the tail rather than divides content (violates P10). We measure
-  // each railed column's spine CONTENT bottom and cap a rail-to-rail
-  // divider's rule to the SHORTER neighbor's content, so the rule stops with
-  // content and the empty tails read as plain column body.
-  const [railContentPx, setRailContentPx] = React.useState<
-    (number | null)[]
-  >(() => columns.map(() => null));
-  React.useLayoutEffect(() => {
-    const container = containerRef.current;
-    if (container === null) return;
-    const measure = () => {
-      const rootTopOf = (el: HTMLElement) =>
-        el.getBoundingClientRect().top;
-      const next = columns.map((column) => {
-        if (column.railed !== true) return null;
-        const root = container.querySelector<HTMLElement>(
-          `[data-dock-rail-root="${column.id}"]`,
-        );
-        if (root === null) return null;
-        // The spine content extent is measured relative to the RAIL ROOT's
-        // own top (not the row container's) -- the divider rule that consumes
-        // it is anchored at the band top, which is the rail root's top. The
-        // rail Paper (children[1]) stretches full-band via flexGrow, so its
-        // scrollHeight equals its box height when the short content fits; the
-        // honest content bottom is the LAST spine cell's bottom (a
-        // data-dock-leaf), plus the header bar above it.
-        const rootTop = rootTopOf(root);
-        const header = root.children[0] as HTMLElement | undefined;
-        const headerPx = header?.getBoundingClientRect().height ?? 0;
-        const cells = root.querySelectorAll<HTMLElement>("[data-dock-leaf]");
-        const last = cells[cells.length - 1];
-        const contentBottom =
-          last === undefined
-            ? headerPx
-            : last.getBoundingClientRect().bottom - rootTop;
-        return Math.max(headerPx, contentBottom);
-      });
-      setRailContentPx((prev) =>
-        prev.length === next.length &&
-        prev.every((v, i) => v === next[i])
-          ? prev
-          : next,
-      );
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(container);
-    container
-      .querySelectorAll("[data-dock-rail-root]")
-      .forEach((el) => ro.observe(el));
-    return () => ro.disconnect();
-    // Re-measure when the column set / rail state / cell counts change.
-  }, [columns]);
 
   return (
     <Box
@@ -434,59 +391,43 @@ function RowView({
                 </>
               )}
             </Box>
-            {index < columns.length - 1 &&
-              (() => {
-                // Fix B: cap the rule length to the SHORTER of two adjacent
-                // RAIL columns' content bottoms so it never overshoots past
-                // the short spine into its empty tail (P10). Only applies
-                // between two railed columns; an expanded neighbor's divider
-                // still runs full-height (its content fills the band).
-                const bothRailed =
-                  columnRailed[index] && columnRailed[index + 1];
-                const leftPx = railContentPx[index];
-                const rightPx = railContentPx[index + 1];
-                const ruleExtentPx =
-                  bothRailed && leftPx !== null && rightPx !== null
-                    ? Math.min(leftPx, rightPx)
-                    : undefined;
-                return (
-                  <SplitDivider
-                    dir="row"
-                    // A railed column is fixed-width chrome: the divider
-                    // resizes only when an expanded column sits on both sides
-                    // of it (D24: only RAILED columns go inert).
-                    resizable={
-                      expandedAtOrBefore[index] && expandedAfter[index]
-                    }
-                    ruleExtentPx={ruleExtentPx}
-                    containerRef={containerRef}
-                    onResize={(deltaPx, containerPx) =>
-                      resizeCells({
-                        dock,
-                        edge,
-                        cells: columns,
-                        collapsed: columnRailed,
-                        collapsedPx: MINIMIZED_STRIP_PX,
-                        index,
-                        deltaPx,
-                        containerPx,
-                        minCell: MIN_REGION_GRAB_PX,
-                      })
-                    }
-                    onCancel={() =>
-                      dock.api.apply((l) =>
-                        setNodeWeights(
-                          l,
-                          edge,
-                          Object.fromEntries(
-                            columns.map((c) => [c.id, c.weight]),
-                          ),
-                        ),
-                      )
-                    }
-                  />
-                );
-              })()}
+            {index < columns.length - 1 && (
+              <SplitDivider
+                dir="row"
+                // A railed column is fixed-width chrome: the divider
+                // resizes only when an expanded column sits on both sides
+                // of it (D24: only RAILED columns go inert). Its RULE always
+                // runs the full band height either way -- a rail column's
+                // body is full-band (empty tail included), so the boundary
+                // between two columns is full-band too.
+                resizable={expandedAtOrBefore[index] && expandedAfter[index]}
+                containerRef={containerRef}
+                onResize={(deltaPx, containerPx) =>
+                  resizeCells({
+                    dock,
+                    edge,
+                    cells: columns,
+                    collapsed: columnRailed,
+                    collapsedPx: MINIMIZED_STRIP_PX,
+                    index,
+                    deltaPx,
+                    containerPx,
+                    minCell: MIN_REGION_GRAB_PX,
+                  })
+                }
+                onCancel={() =>
+                  dock.api.apply((l) =>
+                    setNodeWeights(
+                      l,
+                      edge,
+                      Object.fromEntries(
+                        columns.map((c) => [c.id, c.weight]),
+                      ),
+                    ),
+                  )
+                }
+              />
+            )}
           </React.Fragment>
         );
       })}
@@ -680,8 +621,8 @@ function DockLeafFrame({ groupId }: { groupId: string }) {
 function SplitDivider({
   dir,
   resizable,
-  ruleExtentPx,
   containerRef,
+  onDragStart,
   onResize,
   onCancel,
 }: {
@@ -689,12 +630,10 @@ function SplitDivider({
   /** False when both sides of the divider are minimized strips: nothing can
    * resize, so it shows no resize cursor and ignores drags. */
   resizable: boolean;
-  /** Fix B: cap the drawn rule's length (from the top) to this many px instead
-   * of the full container extent -- used between two RAIL columns so the rule
-   * stops at the shorter spine's content bottom and never overshoots into an
-   * empty tail (P10). Undefined = full-length rule (the common case). */
-  ruleExtentPx?: number;
   containerRef: React.RefObject<HTMLDivElement>;
+  /** Called once at gesture start (before any onResize flush), so the parent
+   * can snapshot rendered geometry the resize math needs (band px). */
+  onDragStart?: () => void;
   onResize: (deltaPx: number, containerPx: number) => void;
   /** Revert whatever per-frame onResize calls applied (Escape mid-drag). */
   onCancel: () => void;
@@ -715,6 +654,7 @@ function SplitDivider({
     const rect = container.getBoundingClientRect();
     const containerPx = isRow ? rect.width : rect.height;
     const start = isRow ? event.clientX : event.clientY;
+    onDragStart?.();
 
     // Per-frame weight writes must land instantly: suppress the
     // minimize/expand transition (collapseAnim) under this container for
@@ -755,9 +695,7 @@ function SplitDivider({
         [isRow ? "width" : "height"]: SPLIT_DIVIDER_PX,
         cursor: !resizable ? "default" : isRow ? "ew-resize" : "ns-resize",
         display: "flex",
-        // A capped rule (Fix B) hugs the top so it stops at content; an
-        // uncapped rule centers in the seam (its length is 100% either way).
-        alignItems: ruleExtentPx !== undefined ? "flex-start" : "center",
+        alignItems: "center",
         justifyContent: "center",
         touchAction: "none",
         zIndex: 2,
@@ -776,20 +714,16 @@ function SplitDivider({
           }}
         />
       )}
-      {/* Fix C: an INERT divider (beside a content-fixed all-rails band --
-      resizable=false) must read as "no resize here", not as a live handle.
-      A resizable rule is the full-length 1px seam at 0.5 opacity; an inert
-      one is drawn dimmer (0.18) so the surface-contrast boundary does the
-      dividing (P10: borders divide, never enclose) and users don't expect a
-      handle where none exists. */}
+      {/* Fix C: an INERT divider (rail-to-rail, resizable=false) must read as
+      "no resize here", not as a live handle. Both rules run the FULL seam
+      length -- the boundary between two cells spans their whole shared edge,
+      empty tails included -- but the inert one is drawn dimmer so users don't
+      expect a handle where none exists. */}
       <Box
         data-dock-divider-rule=""
         style={{
           [isRow ? "width" : "height"]: "1px",
-          // Fix B: a capped rule spans only the shorter neighbor's content
-          // (px); otherwise it runs the full seam length.
-          [isRow ? "height" : "width"]:
-            ruleExtentPx !== undefined ? `${ruleExtentPx}px` : "100%",
+          [isRow ? "height" : "width"]: "100%",
           backgroundColor: "var(--mantine-color-default-border)",
           opacity: resizable ? 0.5 : 0.18,
         }}

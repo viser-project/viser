@@ -571,6 +571,7 @@ marked ⚠ (stated, not derived; see §10 tensions).
 | Rail spine row | that pane — new window born collapsed | expand scope to that tab |
 | Region resize divider | region width (expanded columns only; railed columns ride as fixed chrome, §6) | — |
 | Column (width) divider inside a band | neighboring columns' widths (inert only when a RAILED column flanks it — bars never make it inert; they hold their column's width, D20/D24) | — |
+| Band (height) divider between bands | neighboring bands' heights — always live (D41 revised): a rail band trades under its content cap, shrinking scrolls its spine | — |
 | Height divider (expanded stack) | neighboring cells' heights | — |
 | Height divider (collapsed window — bars each side) | — (INERT, D24: nothing tradeable) | — |
 | Window edge/bottom grips | window size | — |
@@ -776,24 +777,32 @@ sub-question (§10).
   clamp; they never squeeze a cell below its header. The cell minimum is
   also a RENDER floor on expanded docked leaves (mirroring the floating
   stack's, P7) — without it repeated same-target splits clip the
-  smallest cell's chrome. Band heights (D41): an ALL-RAILED band
-  (every column railed) content-sizes ONLY when the region also has an
-  EXPANDED band to donate the freed height to — `flex-grow:0`,
-  `flex-basis:auto`, `flex-shrink:0`, fitting its tallest spine with no
-  dead gray tail while the expanded bands (the only ones in the grow
-  total) reclaim the height. When the region is ALL rail bands (nothing
-  to donate to), every band instead takes its weighted share so they
-  FILL the region uniformly — content-sizing them would only leave the
-  region's lower area empty. Content-sizing never squeezes below
-  content (`max-height:100%` bites only in the degenerate MANY-tab
-  case, where the spine scrolls internally). Rails stay SEPARATE — an
-  all-rails band is side-by-side rail columns, never merged; each
-  column fills the band height, and its inter-column divider rule is
-  capped at the SHORTER neighbor's content so the border never
-  overshoots into an empty tail (P10: borders divide, never enclose).
-  A band divider beside a content-sized all-rails band is inert
-  (content-fixed height, nothing to trade, D24) and renders dimmer than
-  a live resize handle so the two read distinctly.
+  smallest cell's chrome. An all-railed band floors at a 60px grab
+  height (`ALL_RAILED_BAND_MIN_PX`) — its spine scrolls at any height,
+  so its live seam (D41 revised) clamps there rather than at a
+  per-leaf sum. Band heights (D41, revised): EVERY band —
+  rail or expanded — sizes by its weighted share (`flex-basis:0` +
+  scaled `flex-grow`), and an ALL-RAILED band is additionally CAPPED at
+  its content (`max-height:fit-content`, its tallest spine) whenever
+  the region also has an EXPANDED band to reclaim the difference. The
+  cap — not a mode switch — is what makes dead gray below the spine
+  icons unrepresentable: flexbox freezes the capped band at its content
+  and redistributes the height it couldn't take to the uncapped bands.
+  Because the band still sizes by weight UNDER the cap, its divider
+  stays LIVE: rendered height = min(weighted share, content). When the
+  region is ALL rail bands (nothing to donate to), no band is capped
+  and weighted shares FILL the region uniformly — capping them would
+  only leave the region's lower area empty. A huge MANY-tab rail can
+  never overflow either way (a grow share can't exceed the container;
+  the spine scrolls internally). Grow factors are scaled (×1000) so a
+  frozen capped band can't drop the live grow sum below 1, which would
+  strand free space (edge case 16). Rails stay SEPARATE — an all-rails
+  band is side-by-side rail columns, never merged; each column fills
+  the band height, and every divider rule (rail-to-rail included) runs
+  the FULL band height: a rail column's body is the whole band, empty
+  tail included, so the boundary between two columns spans their whole
+  shared edge. An inert rail-to-rail divider renders dimmer than a
+  live resize handle so the two read distinctly.
 - **Split defaults**: a top/bottom leaf drop and a left/right column
   drop both default the two sides to HALF the target's current weight —
   sibling weights may be on any scale (divider drags write px), so only
@@ -808,12 +817,24 @@ sub-question (§10).
   gesture, no height-pin side effect — unless something tradeable sits
   on EACH side (a cursor that no-ops lies). Height dividers need an
   expanded cell each side (bars are fixed 26px); width dividers go
-  inert only beside a RAILED column (fixed chrome, D28). Floating stack
-  dividers carry the same ~12px invisible grab overlay as docked ones
-  (P11) — only while resizable.
+  inert only beside a RAILED column (fixed chrome, D28). BAND dividers
+  are always live (D41 revised): a rail band sizes by weight under its
+  content cap, so there is always height to trade — dragging into it
+  squeezes it below its content (the spine scrolls), dragging away
+  stops at the cap like any floor. A band divider drag computes new
+  weights from the bands' RENDERED px snapshotted at gesture start, not
+  their stored weights — a capped band renders at its content, far
+  below its share, and a stored-weight drag would burn through that
+  invisible surplus before the divider moved. Floating stack dividers
+  carry the same ~12px invisible grab overlay as docked ones (P11) —
+  only while resizable.
 - **Stack grow normalization**: flex-grow factors normalize per site
   over EXPANDED cells only — minimized cells render flexGrow 0 — so
-  freed space is never stranded (edge case 16).
+  freed space is never stranded (edge case 16). The BAND level is the
+  one exception (D41 revised): every band, rail bands included,
+  carries its scaled weighted grow — there the cap, plus the ×1000
+  scale keeping the unfrozen grow sum ≥ 1, is what protects edge case
+  16, not exclusion from the total.
 - **Round-trips** (P8): float→dock carries height ratios into the
   column; dock→float restores the remembered window size;
   minimize→expand holds width by construction; rail→expand restores the
@@ -1049,6 +1070,19 @@ Prior passes, one line each (full fix lists live in git history):
   (`consolidateRegionRailToColumnInPlace`); a railed target column
   never band-splits. §7 conversion rule, D39, edge case 17 corrected
   from per-column to consolidation; two regression pins.
+- 2026-07-08 — D41 adjudicated from a real-layout report (all-rails
+  band drawing a dead-gray tail): rails stay separate (a consolidation
+  draft was rejected — "multiple rails collapsing into the same rail
+  is weird and wrong"); all-rails bands content-sized, then the same
+  day a multi-band/multi-column follow-up scoped content-sizing to
+  regions with an expanded band and distinguished inert seams.
+- 2026-07-09 — D41 revised after a second user report on the same
+  shape (missing seam handle; short rail-to-rail rule): content-sizing
+  became a fit-content CAP over weighted sizing, band dividers are
+  always live (px-snapshot drags), and divider-rule caps were removed
+  — every rule runs the full band height. §6, Dividers/D24, D41
+  updated; pins reworked (`test_rail_band_divider_is_live_shrinks_and
+  _caps`, `test_rail_band_divider_rule_runs_full_band_height`).
 
 **Full-pass record — 2026-07-05 (scope-model rewrite):** every
 normative claim in §1–§9 (pre-D32 state) was re-traced to
@@ -1281,7 +1315,9 @@ play-by-play lives in git history.
   on one side is INERT — a resize cursor that no-ops lies. Height
   dividers need an expanded cell each side; width dividers go inert only
   beside RAILED columns. cascadeResize walks past bars; grab overlays
-  only while resizable.
+  only while resizable. (Band-height dividers stay live beside a rail
+  band — a content-capped band is still tradeable, D41 revision — so
+  the principle holds: inert means literally nothing to trade.)
 - **D25 (one `+` per rail, 2026-07-04):** the rail cap stopped flipping
   between `+` (lone) and pill (stacked): ALWAYS a quiet pill; the rail's
   one expand signifier is the header's ("three `+`s in a 36px rail read
@@ -1440,8 +1476,9 @@ play-by-play lives in git history.
   columns. No-source-window columns (server-built / injected) keep
   the 300px default as restore width; the 36px rendered accounting
   stops injected all-railed rows from reserving phantom 300s.
-- **D41 (an all-rails band content-sizes; rails never merge,
-  2026-07-08; supersedes the 2026-07-06 full-height rule):**
+- **D41 (an all-rails band is capped at its content; rails never
+  merge, 2026-07-08, revised 2026-07-09; supersedes the 2026-07-06
+  full-height rule):**
   user-reported: a band whose columns are all railed (e.g. Stats/Notes
   + Log railed over an expanded Tools band) drew as full-height strips
   with a big dead-gray tail below the spine icons and orphaned `+`
@@ -1455,14 +1492,28 @@ play-by-play lives in git history.
   reclaim the freed height (see §6). Purely presentational — no model
   change, no store migration. The degenerate many-tab case scrolls the
   rail spine internally (the concern the full-height rule addressed;
-  content-sizing addresses it too, without the dead gray). Band
-  dividers beside an all-rails band are inert (content-fixed height,
-  nothing to trade). Follow-up (2026-07-08), after multi-band /
-  multi-column reports: (A) content-size an all-rails band ONLY when
-  the region has an expanded band — an ALL-rail-bands region fills
-  uniformly by weighted shares instead (see §6); (B) a rail column's
-  inter-column divider rule is capped at the shorter neighbor's content
-  so borders don't overshoot the empty tail below a short spine (P10);
-  (C) inert band dividers render dimmer than live resize handles so
-  they read distinctly. The first D41 e2e pins under-covered these
-  shapes; the follow-up adds multi-band and multi-column-ragged pins.
+  content-sizing addresses it too, without the dead gray). Follow-up
+  (2026-07-08), after multi-band / multi-column reports: (A)
+  content-size an all-rails band ONLY when the region has an expanded
+  band — an ALL-rail-bands region fills uniformly by weighted shares
+  instead (see §6); (B) a rail column's inter-column divider rule was
+  capped at the shorter neighbor's content; (C) inert band dividers
+  render dimmer than live resize handles so they read distinctly. The
+  first D41 e2e pins under-covered these shapes; the follow-up adds
+  multi-band and multi-column-ragged pins. Revision (2026-07-09),
+  after a second user report on the same shape: (1) "there should be a
+  resize handle between the top half and the bottom half" — the
+  content-sized band's INERT seam took the user's control away when the
+  spine was tall, so content-sizing became a content CAP over normal
+  weighted sizing (`flex-basis:0` + grow + `max-height:fit-content`):
+  rendered height = min(share, content), the seam is a live handle
+  again (shrink → spine scrolls; grow → stops at the cap), and dead
+  gray stays unrepresentable — by the cap, not by freezing the band
+  (see §6, Dividers). Drags snapshot rendered px at gesture start so a
+  capped band's invisible surplus share can't add hysteresis. (2) "the
+  vertical line between the two rails should be full height" — the
+  follow-up's (B) was a MISREAD of the earlier report (it shortened the
+  rule; the user wanted it extended): rule caps are gone, every divider
+  rule runs the full band height. P10 reread: the full-height rule
+  DIVIDES two full-band column bodies (tails included); it encloses
+  nothing.
