@@ -575,6 +575,30 @@ function layouts(): {
     out.push({ name: "two bands both edges", layout: l, multiBand: true });
   }
   {
+    // D42: a band whose SOLE column is railed, between a two-rail band and
+    // an expanded band (the user's "two rails top, one rail bottom"
+    // picture). The lone rail renders its 36px strip with the REST of the
+    // band as plain band body -- that empty width run must stay honest drop
+    // surface (the per-band side claim extends inward over it), and no
+    // zone may commit across bands.
+    const l = emptyLayout();
+    l.groups = { p: group("p"), q: group("q"), s: group("s"), d: group("d") };
+    const rp = colS([leaf("p")]);
+    if (rp.kind === "col") rp.column.railed = true;
+    const rq = colS([leaf("q")]);
+    if (rq.kind === "col") rq.column.railed = true;
+    const rs = colS([leaf("s")]);
+    if (rs.kind === "col") rs.column.railed = true;
+    l.docked.left = toRegion(
+      rows([row([rp, rq]), row([rs]), row([leaf("d")])]),
+    );
+    out.push({
+      name: "sole railed band in mixed region (D42)",
+      layout: l,
+      multiBand: true,
+    });
+  }
+  {
     // Stability pass 2: an ALL-RAILED band ABOVE an expanded full-width band
     // (the V5 mirror -- rails hold width, not height, so band 0 renders two
     // packed 36px strips with an empty tail; band 1 is a full-width panel).

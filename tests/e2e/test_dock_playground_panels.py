@@ -1427,6 +1427,103 @@ def test_rail_band_divider_is_live_free_and_detents(
 
 
 # ===========================================================================
+# D42: a band's LONE column carries the rail chevron and rails IN PLACE --
+# the user's "two rails in the top half, one rail in the bottom half"
+# picture. The lone rail keeps its own band (rails never merge); its strip
+# is 36px with the rest of the band as plain band body; expanding from its
+# rail header restores it.
+# ===========================================================================
+def test_lone_column_rails_in_place_via_chevron(dock_context, vite_server: int) -> None:
+    page = _open(dock_context, vite_server, 1400, 800)
+    try:
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=rows(
+                    columns(
+                        stack("controls", "inspector", railed=True),
+                        stack("console", railed=True),
+                    ),
+                    "monitor",
+                ),
+            ),
+        )
+        # The lone monitor column's handle carries a chevron (D42).
+        has_chevron = page.evaluate(
+            """() => {
+                const g = document.querySelector('[data-dock-group="t-monitor"]');
+                const col = g && g.closest('[data-dock-column]');
+                return col
+                    ? col.querySelector('[data-dock-column-collapse]') !== null
+                    : null;
+            }"""
+        )
+        assert has_chevron is True, (
+            "a band's lone column must carry the rail chevron (D42)"
+        )
+
+        click_column_chevron(page, "t-monitor")
+        page.wait_for_timeout(300)
+        assert column_railed_for_group(page, "t-monitor") is True
+        geom = page.evaluate(
+            """() => {
+                const bands = [...document.querySelectorAll('[data-dock-band]')];
+                const rails = [...document.querySelectorAll(
+                    '[data-dock-column-rail]')];
+                const g = document.querySelector('[data-dock-group="t-monitor"]');
+                const strip = g && g.closest('[data-dock-column]');
+                return {
+                    bands: bands.length,
+                    rails: rails.length,
+                    stripW: strip
+                        ? Math.round(strip.getBoundingClientRect().width)
+                        : null,
+                    bandW: bands[1]
+                        ? Math.round(bands[1].getBoundingClientRect().width)
+                        : null,
+                };
+            }"""
+        )
+        # Two bands still -- the lone rail keeps its OWN band (never merges
+        # into the top rails' band); its strip is the 36px rail width while
+        # its band spans the region (the rest is plain band body). With
+        # EVERY column now railed the region itself packs to rail widths
+        # (D40 accounting: the widest band is the two-rail band, ~73px), so
+        # the lone rail's band is that width -- strip plus body, canvas
+        # reclaiming everything else.
+        assert geom["bands"] == 2, f"the lone rail must keep its band: {geom}"
+        assert geom["rails"] == 3, (
+            f"three separate column rails (two top, one bottom): {geom}"
+        )
+        assert geom["stripW"] is not None and geom["stripW"] <= 40, (
+            f"the lone rail renders as the 36px strip: {geom}"
+        )
+        assert geom["bandW"] is not None and geom["bandW"] > geom["stripW"] + 20, (
+            f"the band spans the region around the strip (plain band body "
+            f"beside the rail): {geom}"
+        )
+
+        # Expanding from the lone rail's header restores the column.
+        page.eval_on_selector(
+            '[data-dock-column-rail="'
+            + page.evaluate(
+                """() => document.querySelector('[data-dock-group="t-monitor"]')
+                    .closest('[data-dock-column]')
+                    .querySelector('[data-dock-rail-root]')
+                    .getAttribute('data-dock-rail-root')"""
+            )
+            + '"] [data-dock-minimize-all]',
+            "e => e.click()",
+        )
+        page.wait_for_timeout(300)
+        assert column_railed_for_group(page, "t-monitor") is False, (
+            "the rail header's + must expand the lone column in place"
+        )
+    finally:
+        page.close()
+
+
+# ===========================================================================
 # Snap-to-content default (D41 revision 2): railing the LAST expanded column
 # of a band via its chevron lands the band at its spine content height --
 # "no dead gray" is the default even though heights are free. Chevron clicks

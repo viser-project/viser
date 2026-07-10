@@ -927,8 +927,8 @@ function insertBandAtIndex(
   leafWeights?: Record<GroupId, number>,
   /** D38 identity transfer: the dragged groups came from a COLLAPSED window,
    * so the landing scope collapses -- the region flag when the band IS the
-   * new region, else the new band's column rails (canonicalization then
-   * resolves the store for the final geometry). */
+   * new region, else the new band's column rails IN PLACE (a railed
+   * sole-column band is legal geometry, D42). */
   sourceCollapsed = false,
 ): DockLayout {
   const existing = draft.docked[edge];
@@ -1836,11 +1836,9 @@ function collapseContainerOf(
   }
   const found = findGroupInRegion(region, groupId);
   if (found === null) return layout;
-  // Mixed region: the column store. setColumnRailed's band-scoped gate makes
-  // this a no-op for a band's SOLE column (railing it would strand its
-  // band's full width as dead space, D28) -- the lone column of a
-  // single-column band in a mixed region has no docked collapse (its
-  // handle is pill-only in chrome too, D32).
+  // Mixed region: the column store. A band's SOLE column rails like any
+  // other (D42): the lone rail is legal geometry -- its 36px strip plus
+  // plain band body -- and its handle carries the chevron in chrome too.
   return setColumnRailed(layout, loc.edge, found.column.id, true);
 }
 
@@ -1885,13 +1883,12 @@ export function setRegionCollapsed(
  * already matches. Per-cell collapse states are untouched (the rail is a
  * view over them).
  *
- * Band-scoped rail gate (D28, stability pass 2026-07): railing a band's
- * SOLE column is refused (no-op) unless the region is all-single-column --
- * there the caller should target the REGION store instead
- * (collapseContainerOf does). In a MIXED region a lone railed column would
- * strand its band's remaining full width as dead space; canonicalization
- * makes that state unrepresentable, and this gate keeps programmatic
- * callers from minting it at the op level. */
+ * Any column may rail, a band's SOLE column included (D42): the lone rail
+ * renders its 36px strip with the rest of the band as plain band body --
+ * legal committed geometry, so the op needs no gate. Scope ROUTING (a
+ * single-visual-column region collapses via the REGION store, D32) is the
+ * caller's job: collapseContainerOf picks the store; this op sets exactly
+ * the flag it is named for. */
 export function setColumnRailed(
   layout: DockLayout,
   edge: DockEdge,
@@ -1900,25 +1897,16 @@ export function setColumnRailed(
 ): DockLayout {
   const found = findColumn(layout.docked[edge], columnId);
   if (found === null || (found.column.railed === true) === on) return layout;
-  if (on && found.row.columns.length === 1) {
-    const allSingle = layout
-      .docked[edge]!.rows.every((rw) => rw.columns.length === 1);
-    // A band's SOLE column has no legal column-rail of its own (a 36px strip
-    // in a full-width band strands dead space, D28/invariant #13). Two
-    // outcomes, both keeping the model correct BY CONSTRUCTION -- never
-    // relying on a later normalize to rescue an illegal committed state:
-    //  - all-single-column region: the sole column IS the whole visual
-    //    column, whose canonical store is the REGION flag -- set that
-    //    instead (identical rendering, the store collapse law 5 mandates);
-    //  - mixed region (a multi-column band elsewhere): no legal state --
-    //    no-op (chrome offers no affordance here either, D32).
-    if (allSingle) return setRegionCollapsed(layout, edge, true);
-    return layout;
-  }
   const draft = clone(layout);
   const column = findColumn(draft.docked[edge], columnId)!.column;
-  if (on) column.railed = true;
-  else delete column.railed;
+  if (on) {
+    column.railed = true;
+  } else {
+    delete column.railed;
+    // Expanding a lone multi-leaf column re-enters D12 territory: split it
+    // into bands here, by construction (rail flips skip normalize).
+    splitLoneMultiLeafColumnInPlace(draft.docked[edge]!, columnId);
+  }
   return draft;
 }
 
@@ -1990,11 +1978,51 @@ function clearRegionCollapsedForGroupInPlace(
   return true;
 }
 
+/** D12 split for ONE band, in place: if `columnId` is the SOLE column of its
+ * band and holds multiple leaves, split the band into consecutive
+ * single-leaf bands (band weights carved by leaf height shares, so nothing
+ * moves on screen; the first fragment keeps the band/column ids). The
+ * expand-side companion of the D42 rail exemption: a RAILED lone multi-leaf
+ * column is legal as one packed strip, but clearing its flag must reach
+ * D12-canonical form BY CONSTRUCTION -- rail flips are flag-only commits
+ * that skip normalize, so no later pass would rescue the expanded form. */
+function splitLoneMultiLeafColumnInPlace(
+  region: DockRegion,
+  columnId: NodeId,
+): void {
+  const idx = region.rows.findIndex(
+    (rw) => rw.columns.length === 1 && rw.columns[0].id === columnId,
+  );
+  if (idx < 0) return;
+  const band = region.rows[idx];
+  const only = band.columns[0];
+  if (only.leaves.length <= 1 || only.railed === true) return;
+  const total = only.leaves.reduce((s, l) => s + l.weight, 0) || 1;
+  const fragments: DockRow[] = only.leaves.map((lf, i) => ({
+    id: i === 0 ? band.id : freshId("node"),
+    weight: (band.weight * lf.weight) / total,
+    columns: [
+      {
+        id: i === 0 ? only.id : freshId("node"),
+        weight: only.weight,
+        leaves: [{ ...lf, weight: 1 }],
+      },
+    ],
+  }));
+  const next = asNonEmpty([
+    ...region.rows.slice(0, idx),
+    ...fragments,
+    ...region.rows.slice(idx + 1),
+  ]);
+  if (next !== null) region.rows = next;
+}
+
 /** Clear the railed flag of the docked COLUMN holding `groupId` (if any), in
  * place -- the per-column mirror of clearRegionCollapsedForGroupInPlace:
  * expanding a panel from a column rail must reveal it (P5/P6), so every
- * expand path routes through this via expandGroupInPlace. Returns whether a
- * flag was actually cleared. */
+ * expand path routes through this via expandGroupInPlace. A lone multi-leaf
+ * column splits into bands as it expands (D12 by construction, above).
+ * Returns whether a flag was actually cleared. */
 function clearColumnRailedForGroupInPlace(
   draft: DockLayout,
   groupId: GroupId,
@@ -2004,6 +2032,7 @@ function clearColumnRailedForGroupInPlace(
     if (found === null) continue;
     if (found.column.railed !== true) return false;
     delete found.column.railed;
+    splitLoneMultiLeafColumnInPlace(draft.docked[edge]!, found.column.id);
     return true;
   }
   return false;
@@ -2182,11 +2211,16 @@ export function normalizeCanonicalBandsInPlace(layout: DockLayout): boolean {
     let dirty = true;
     while (dirty) {
       dirty = false;
-      // D12: split lone multi-leaf columns into bands.
+      // D12: split lone multi-leaf columns into bands. A RAILED lone column
+      // is EXEMPT (D42): it renders as one packed 36px strip -- one visual
+      // unit -- and splitting it into per-leaf rail bands would CHANGE the
+      // picture (a stack of separate strips with per-band chrome), the
+      // exact opposite of P14's one-picture-one-structure goal. D12's rule
+      // is about expanded full-width stacking, which the rail is not.
       const split: DockRow[] = [];
       for (const band of rows) {
         const only = band.columns.length === 1 ? band.columns[0] : null;
-        if (only !== null && only.leaves.length > 1) {
+        if (only !== null && only.leaves.length > 1 && only.railed !== true) {
           const total = only.leaves.reduce((s, l) => s + l.weight, 0) || 1;
           only.leaves.forEach((lf, i) => {
             split.push({
@@ -2225,48 +2259,36 @@ export function normalizeCanonicalBandsInPlace(layout: DockLayout): boolean {
     const ne = asNonEmpty(rows);
     if (ne !== null) region.rows = ne;
 
-    // Store migration at canonicalization (D38, collapse law 5), run on the
-    // FINAL band form (a D12 split's fragments arrive railed, P14, and
-    // resolve here). The rule is BAND-scoped: a railed column that is its
-    // band's SOLE column has no legal committed geometry of its own (a 36px
-    // rail inside a full-width band strands dead space, D28), so:
-    //  - every band single-column and every column railed -> the railed run
-    //    IS the whole visual column, whose canonical store is the REGION
-    //    flag: migrate (set regionCollapsed, drop the column flags);
-    //  - otherwise -- expanded single-column siblings, OR a MIXED region
-    //    with a multi-column band elsewhere -- the flag DROPS and the
-    //    column expands: the only legal state for that geometry. The
-    //    "stranded railed loner in a mixed region" is thereby
-    //    unrepresentable in committed state (invariant #13).
-    const singleColumn = region.rows.every((rw) => rw.columns.length === 1);
-    const railedLoners = region.rows
-      .filter((rw) => rw.columns.length === 1)
-      .map((rw) => rw.columns[0])
-      .filter((c) => c.railed === true);
-    if (railedLoners.length > 0) {
-      if (singleColumn && railedLoners.length === region.rows.length) {
-        layout.regionCollapsed = withRegionCollapsed(layout, edge, true);
-      }
-      for (const c of railedLoners) delete c.railed;
-      changed = true;
-    }
+    // No railed-loner migration here (D42): a railed column that is its
+    // band's SOLE column is a LEGAL committed state -- the band renders the
+    // 36px strip and plain band body beside it -- so canonicalization
+    // leaves it alone. The region rail (regionCollapsed) is a DIFFERENT
+    // picture (one packed strip, one header) and is entered explicitly via
+    // the region chevron only (D21); flags never migrate between the two
+    // stores at canonicalization.
   }
   return changed;
 }
 
 /** Canonical-form violations, for the dev assert + fuzz harness. Only the
- * D12 half is an INVARIANT: no committed layout may hold a lone multi-leaf
- * column (nothing but a structural op can create one, and structural
- * commits normalize). The D13 half is deliberately NOT asserted -- a user
- * resize may align two bands into a zip-able pair, which is legal at rest
- * and merges at the next structural commit. */
+ * D12 half is an INVARIANT: no committed layout may hold an EXPANDED lone
+ * multi-leaf column (nothing but a structural op can create one, and
+ * structural commits normalize). A RAILED lone multi-leaf column is exempt
+ * (D42): it renders as one packed strip and is its own canonical form. The
+ * D13 half is deliberately NOT asserted -- a user resize may align two
+ * bands into a zip-able pair, which is legal at rest and merges at the
+ * next structural commit. */
 export function canonicalViolations(layout: DockLayout): string[] {
   const out: string[] = [];
   for (const edge of ["left", "right"] as DockEdge[]) {
     const region = layout.docked[edge];
     if (region === null) continue;
     for (const band of region.rows) {
-      if (band.columns.length === 1 && band.columns[0].leaves.length > 1)
+      if (
+        band.columns.length === 1 &&
+        band.columns[0].leaves.length > 1 &&
+        band.columns[0].railed !== true
+      )
         out.push(
           `band ${band.id} on ${edge} is a lone multi-leaf column (D12)`,
         );

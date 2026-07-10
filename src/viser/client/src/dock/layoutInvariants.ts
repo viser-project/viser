@@ -201,23 +201,10 @@ export function invariantViolations(layout: DockLayout): string[] {
       v.push(`group ${gid} carries a group-level collapsed flag (D38)`);
   }
 
-  // 13. Band-scoped rail rule (D28, stability pass 2026-07): no `railed` on
-  // the SOLE column of any band in committed state. Legal committed states
-  // never need it: an all-railed single-column region migrates to the
-  // regionCollapsed store at canonicalization, and every other railed loner
-  // drops its flag there (a 36px rail inside a full-width band would strand
-  // dead space). A violation means an op or a bypass minted the stranded
-  // geometry.
-  for (const edge of ["left", "right"] as DockEdge[]) {
-    const region = layout.docked[edge];
-    if (region === null) continue;
-    for (const row of region.rows) {
-      if (row.columns.length === 1 && row.columns[0].railed === true)
-        v.push(
-          `column ${row.columns[0].id} on ${edge} is railed but is its band's sole column (D28)`,
-        );
-    }
-  }
+  // 13. RETIRED (D42): a railed column that is its band's SOLE column is
+  // legal committed geometry -- the band renders the 36px strip with the
+  // rest of the band as plain body, and the lone column's handle carries
+  // the rail chevron. (Numbering kept stable; 14+ unchanged.)
 
   // 14. regionCollapsed implies a region to collapse: detachInPlace clears
   // the flag at the one chokepoint when an edge empties (and floatRegion /

@@ -513,44 +513,38 @@ function RowView({
                   {/* Per-column parent handle (D27): this visual column's
                   own drag handle -- floating it preserves the column as a
                   stacked window instead of flattening the whole region. The
-                  column-collapse chevron sits at its right end when the
-                  band has sibling columns: it rails exactly this column. A
-                  lone column of a single-column band in a MIXED region
-                  keeps a pill-only handle -- railing it would strand dead
-                  space across its full-width band. */}
+                  column-collapse chevron sits at its right end and rails
+                  exactly this column -- a band's LONE column included
+                  (D42): its rail renders the 36px strip with the rest of
+                  the band as plain band body. */}
                   {columnHandles && (
                     <StackHandleBar
                       attrs={{ "data-dock-column-handle": column.id }}
                       onPointerDown={(event) =>
                         dock.startColumnDrag(event, edge, column.id, {
-                          // With a chevron present, a motionless bar click
-                          // backs its action (P9's hit-area rule -- same as
-                          // the region handle's bar), INCLUDING the focus
+                          // A motionless bar click backs the chevron's
+                          // action (P9's hit-area rule -- same as the
+                          // region handle's bar), INCLUDING the focus
                           // handoff to the rail header's same-spot toggle:
                           // a pointer click routes here (the chevron is
                           // drag-through, T6), and focus must never fall to
                           // <body> (spec 4).
-                          onClick:
-                            columns.length >= 2
-                              ? () => {
-                                  dock.railColumn(edge, column.id, true);
-                                  focusDockControl(
-                                    `[data-dock-column-rail="${column.id}"] [data-dock-minimize-all]`,
-                                  );
-                                }
-                              : undefined,
+                          onClick: () => {
+                            dock.railColumn(edge, column.id, true);
+                            focusDockControl(
+                              `[data-dock-column-rail="${column.id}"] [data-dock-minimize-all]`,
+                            );
+                          },
                         })
                       }
                       endControl={
-                        columns.length >= 2 ? (
-                          <ColumnCollapseChevron
-                            edge={edge}
-                            columnId={column.id}
-                            onActivate={() =>
-                              dock.railColumn(edge, column.id, true)
-                            }
-                          />
-                        ) : undefined
+                        <ColumnCollapseChevron
+                          edge={edge}
+                          columnId={column.id}
+                          onActivate={() =>
+                            dock.railColumn(edge, column.id, true)
+                          }
+                        />
                       }
                     />
                   )}

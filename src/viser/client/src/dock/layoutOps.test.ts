@@ -70,6 +70,7 @@ import {
   setColumnRailed,
   isGroupEffectivelyCollapsed,
   isRailedDockedCell,
+  canonicalViolations,
   normalizeCanonicalBandsInPlace,
   collectLeafGroups,
   floatRegion,
@@ -205,31 +206,30 @@ describe("setColumnRailed (per-column rail)", () => {
     expect(expanded.docked.left!.rows[0].columns[0].railed).toBeUndefined();
   });
 
-  it("railing the sole column of an all-single-column region sets the REGION store, not the column (F1)", () => {
-    // A rail flip is a flag-only commit: structureSignature ignores railed,
-    // so applyOp skips normalize. setColumnRailed must therefore reach a
-    // LEGAL committed state by construction -- railing the column would
-    // strand a railed sole-column band (invariant #13) that only a later
-    // structural normalize would rescue. The sole column of an
-    // all-single-column region IS the whole visual column, so it routes to
-    // the region flag instead.
+  it("railing the sole column of an all-single-column region sets the COLUMN flag (D42)", () => {
+    // setColumnRailed sets exactly the flag it is named for; scope ROUTING
+    // (a single-visual-column region collapses via the REGION store, D32)
+    // is collapseContainerOf's job, not the op's. A railed sole-column
+    // band is legal committed geometry, so no gate and no redirection.
     const layout = makeLayout({ left: rows([leaf("a"), leaf("b")]) });
     const colId = layout.docked.left!.rows[0].columns[0].id;
     const out = setColumnRailed(layout, "left", colId, true);
-    expect(isRegionCollapsedOn(out, "left")).toBe(true);
-    for (const r of out.docked.left!.rows)
-      expect(r.columns[0].railed).toBeUndefined();
+    expect(isRegionCollapsedOn(out, "left")).toBe(false);
+    expect(out.docked.left!.rows[0].columns[0].railed).toBe(true);
+    expect(out.docked.left!.rows[1].columns[0].railed).toBeUndefined();
     expect(invariantViolations(out)).toEqual([]); // legal WITHOUT normalize.
   });
 
-  it("railing a band's sole column in a MIXED region is a no-op (F1)", () => {
-    // No legal committed state (a 36px strip in a full-width band strands
-    // dead space); chrome offers no affordance here either (D32).
+  it("railing a band's sole column in a MIXED region rails it in place (D42)", () => {
+    // The lone rail is legal geometry: the 36px strip plus plain band body.
+    // Its handle carries the chevron in chrome too.
     const layout = makeLayout({
       left: rows([row([leaf("a"), leaf("b")]), leaf("c")]),
     });
     const cId = layout.docked.left!.rows[1].columns[0].id; // sole col of band 2
-    expect(setColumnRailed(layout, "left", cId, true)).toBe(layout);
+    const out = setColumnRailed(layout, "left", cId, true);
+    expect(out.docked.left!.rows[1].columns[0].railed).toBe(true);
+    expect(invariantViolations(out)).toEqual([]);
   });
 
   it("a group in a railed column reads as effectively collapsed", () => {
@@ -330,62 +330,60 @@ describe("setColumnRailed (per-column rail)", () => {
     expect(cols[1].railed).toBeUndefined();
   });
 
-  it("a railed lone multi-leaf column promotes to the REGION rail (D12 + orphan rule)", () => {
-    // The column IS the region's whole visual column: carrying the flag onto
-    // D12's split fragments would leave illegal lone-railed bands, so the
-    // composed contract is the whole-region rail with column flags cleared.
+  it("a railed lone multi-leaf column is EXEMPT from the D12 split (D42)", () => {
+    // The railed column renders as ONE packed strip -- one visual unit --
+    // so splitting it into per-leaf rail bands would change the picture
+    // (separate strips with per-band chrome). It is its own canonical
+    // form; normalize leaves it alone and reports no violation.
     const layout = makeLayout({ left: col([leaf("a"), leaf("b")]) });
     layout.docked.left!.rows[0].columns[0].railed = true;
-    expect(normalizeCanonicalBandsInPlace(layout)).toBe(true);
-    expect(isRegionCollapsedOn(layout, "left")).toBe(true);
-    expect(layout.docked.left!.rows).toHaveLength(2);
-    for (const band of layout.docked.left!.rows)
-      expect(band.columns[0].railed).toBeUndefined();
+    expect(normalizeCanonicalBandsInPlace(layout)).toBe(false);
+    expect(isRegionCollapsedOn(layout, "left")).toBe(false);
+    expect(layout.docked.left!.rows).toHaveLength(1);
+    expect(layout.docked.left!.rows[0].columns[0].railed).toBe(true);
+    expect(canonicalViolations(layout)).toEqual([]);
+    expect(invariantViolations(layout)).toEqual([]);
   });
 
-  it("store migration: a lone railed column among expanded bands EXPANDS (D38)", () => {
+  it("a lone railed column among expanded bands STAYS railed (D42)", () => {
     // Two single-column bands; the second's column railed (the shape left
-    // behind when a railed column's expanded band-siblings depart). That
-    // geometry has no legal collapsed form: it can't be the region store
-    // (the region isn't all collapsed) and docked bars are gone (D32/D38),
-    // so the flag DROPS -- the column expands (the pre-D38 degrade-to-bars
-    // rule is dead).
+    // behind when a railed column's expanded band-siblings depart). Legal
+    // committed geometry now: no migration, no forced expand.
     const layout = makeLayout({
       left: rows([row([leaf("a")]), row([leaf("b")])]),
     });
     layout.docked.left!.rows[1].columns[0].railed = true;
-    expect(normalizeCanonicalBandsInPlace(layout)).toBe(true);
+    expect(normalizeCanonicalBandsInPlace(layout)).toBe(false);
     expect(isRegionCollapsedOn(layout, "left")).toBe(false);
-    expect(layout.docked.left!.rows[1].columns[0].railed).toBeUndefined();
+    expect(layout.docked.left!.rows[1].columns[0].railed).toBe(true);
+    expect(invariantViolations(layout)).toEqual([]);
   });
 
-  it("regression (band-scoped rail rule): a collapsed seam-drop into a MIXED region lands EXPANDED", () => {
-    // Model audit finding 2: a collapsed window band-inserted into a region
-    // with a multi-column band used to strand a railed lone-column band --
-    // dead full-width band space, uncaught by normalize. The store-migration
-    // rule is BAND-scoped now: a railed column that is its band's sole
-    // column drops the flag whenever the region isn't all-single-column.
+  it("a collapsed seam-drop into a MIXED region lands RAILED (identity, D42)", () => {
+    // Pure D38 identity: the dragged groups came from a collapsed window,
+    // so the landing band's column rails in place -- the old forced-expand
+    // exception (when railed sole-column bands were illegal) is gone.
     const layout = makeLayout({
       left: rows([row([col([leaf("a")]), col([leaf("b")])]), row([leaf("c")])]),
       floating: [{ id: "wx", stack: ["x"], collapsed: true }],
     });
     const out = dockBandAtIndex(layout, ["x"], "left", 1);
-    expect(normalizeCanonicalBandsInPlace(out)).toBe(true);
+    normalizeCanonicalBandsInPlace(out);
     const xBand = out.docked.left!.rows.find((rw) =>
       rw.columns.some((c) => c.leaves.some((lf) => lf.group === "x")),
     )!;
     expect(xBand.columns).toHaveLength(1);
-    expect(xBand.columns[0].railed).toBeUndefined(); // expanded, not stranded
+    expect(xBand.columns[0].railed).toBe(true); // identity preserved
     expect(isRegionCollapsedOn(out, "left")).toBe(false);
+    expect(invariantViolations(out)).toEqual([]);
     // Fixpoint: a second normalize changes nothing.
     expect(normalizeCanonicalBandsInPlace(out)).toBe(false);
   });
 
-  it("regression (band-scoped rail rule): removing a railed column's last band-sibling expands it", () => {
-    // Model audit finding 3: [a|b] / [c railed | d], then the server removes
-    // d (removePane) -- the surviving railed c was stranded alone in its
-    // full-width band with no collapsed geometry. Canonicalization now drops
-    // the flag: c expands.
+  it("removing a railed column's last band-sibling keeps it railed (D42)", () => {
+    // [a|b] / [c railed | d], then the server removes d (removePane): the
+    // surviving railed c keeps its flag -- its band renders the 36px strip
+    // with plain band body beside it.
     const cc = col([leaf("c")]);
     const layout = makeLayout({
       left: rows([
@@ -395,48 +393,27 @@ describe("setColumnRailed (per-column rail)", () => {
     });
     const railed = setColumnRailed(layout, "left", columnIdOf(cc), true);
     const out = removePane(railed, "d:0");
-    expect(normalizeCanonicalBandsInPlace(out)).toBe(true);
+    normalizeCanonicalBandsInPlace(out);
     const band1 = out.docked.left!.rows[1];
     expect(band1.columns).toHaveLength(1);
     expect(band1.columns[0].leaves[0].group).toBe("c");
-    expect(band1.columns[0].railed).toBeUndefined();
+    expect(band1.columns[0].railed).toBe(true);
+    expect(invariantViolations(out)).toEqual([]);
     expect(normalizeCanonicalBandsInPlace(out)).toBe(false);
   });
 
-  it("gate: setColumnRailed refuses a band's SOLE column in a mixed region (no-op)", () => {
-    // Model audit finding 5: the op-level gate. Chrome already hides the
-    // chevron there (D32: pill-only handle); programmatic callers must not
-    // be able to mint the stranded geometry either.
-    const cc = col([leaf("c")]);
-    const layout = makeLayout({
-      left: rows([row([col([leaf("a")]), col([leaf("b")])]), row([cc])]),
-    });
-    expect(setColumnRailed(layout, "left", columnIdOf(cc), true)).toBe(layout);
-    // In an all-single-column region the direct call routes to the REGION
-    // store (F1): the sole column IS the whole visual column, and a rail
-    // flip is a flag-only commit that skips normalize, so it must reach a
-    // legal state by construction rather than railing a sole-column band.
-    const single = makeLayout({
-      left: rows([row([col([leaf("a")])]), row([col([leaf("b")])])]),
-    });
-    const bCol = single.docked.left!.rows[1].columns[0];
-    const on = setColumnRailed(single, "left", bCol.id, true);
-    expect(on).not.toBe(single);
-    expect(isRegionCollapsedOn(on, "left")).toBe(true);
-    for (const r of on.docked.left!.rows)
-      expect(r.columns[0].railed).toBeUndefined();
-    expect(invariantViolations(on)).toEqual([]);
-  });
-
-  it("gate: collapseContainerOf (toggle/minimize) no-ops on a band's sole column in a mixed region", () => {
+  it("collapseContainerOf (toggle/minimize) rails a band's sole column in a mixed region (D42)", () => {
     const layout = makeLayout({
       left: rows([
         row([col([leaf("a")]), col([leaf("b")])]),
         row([col([leaf("c")])]),
       ]),
     });
-    expect(toggleCollapsed(layout, "c")).toBe(layout);
-    expect(minimizeStack(layout, ["c"])).toBe(layout);
+    const toggled = toggleCollapsed(layout, "c");
+    expect(toggled).not.toBe(layout);
+    expect(toggled.docked.left!.rows[1].columns[0].railed).toBe(true);
+    expect(isRegionCollapsedOn(toggled, "left")).toBe(false);
+    expect(invariantViolations(toggled)).toEqual([]);
   });
 });
 

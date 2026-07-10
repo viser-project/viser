@@ -80,20 +80,18 @@ describe("invariantViolations", () => {
     expect(invariantViolations(l).some((s) => s.includes("orphan"))).toBe(true);
   });
 
-  it("#13: flags `railed` on a band's SOLE column (band-scoped rail rule, D28)", () => {
-    // The stranded geometry the 2026-07 stability pass made unrepresentable:
-    // a railed lone-column band inside a MIXED region (dead full-width band
-    // space). Canonicalization drops the flag; a committed layout carrying
-    // it is a bug.
+  it("#13 retired (D42): `railed` on a band's SOLE column is LEGAL", () => {
+    // The lone rail renders its 36px strip with the rest of the band as
+    // plain band body -- a legal committed state (the chevron on a lone
+    // column's handle produces it), so the old invariant is gone.
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b"), c: group("c") };
     l.docked.left = toRegion(
       rows([row([leaf("a"), leaf("b")]), row([leaf("c")])]),
     );
     l.docked.left!.rows[1].columns[0].railed = true;
-    const v = invariantViolations(l);
-    expect(v.some((s) => s.includes("sole column"))).toBe(true);
-    // A railed column WITH band siblings is legal.
+    expect(invariantViolations(l)).toEqual([]);
+    // A railed column WITH band siblings stays legal too.
     const ok = emptyLayout();
     ok.groups = { a: group("a"), b: group("b") };
     ok.docked.left = toRegion(rows([row([leaf("a"), leaf("b")])]));
