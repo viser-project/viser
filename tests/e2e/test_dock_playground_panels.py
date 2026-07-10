@@ -980,13 +980,13 @@ def test_drop_over_rails_band_interior_lands_in_rails_band(
 
 
 def test_all_railed_band_content_sizes(dock_context, vite_server: int) -> None:
-    """D41 (revised): an ALL-RAILED band is height-CAPPED at its CONTENT
-    (maxHeight fit-content), so when its weighted share exceeds its spine
-    height the cap bites: no dead gray sits below its spine icons and an
-    EXPANDED sibling band reclaims the freed height. The two rails stay
-    SEPARATE (nothing merges): two column-rails, each its own spine. And the
-    default seed must not squeeze -- at a small tab count the spine does NOT
-    scroll.
+    """D41 (revision 2): an ALL-RAILED band SNAPS to its CONTENT height when
+    it becomes all-railed (weight committed as the measured spine height), so
+    by default no dead gray sits below its spine icons and an EXPANDED
+    sibling band reclaims the freed height -- heights stay free to drag
+    afterwards. The two rails stay SEPARATE (nothing merges): two
+    column-rails, each its own spine. And the default must not squeeze -- at
+    a small tab count the spine does NOT scroll.
 
     (Supersedes the 2026-07-06 full-height rule, which parked an all-railed
     band at a full weighted share and left a big gray tail below the icons --
@@ -1063,7 +1063,7 @@ def test_all_railed_band_caps_and_scrolls_when_huge(
     scrolls via the rail Paper's overflowY:auto, so it never overflows into
     the next band. This is the degenerate case the 2026-07-06 full-height
     rule protected; the share sizing preserves that protection while the
-    common few-tab case caps at content."""
+    common few-tab case snaps to content."""
     page = _open(dock_context, vite_server, 1400, 220)
     try:
         # A TALL all-rails band: two railed columns (D39 needs 2+ so neither is
@@ -1190,11 +1190,12 @@ def test_all_rails_region_fills_height_uniformly(
 
 
 # ===========================================================================
-# Fix A / D41-win intact: a rail band OVER an expanded band still
-# content-sizes the rail band (short strip) and the expanded band reclaims the
-# freed height. (Duplicates the guarantee of test_all_railed_band_content_sizes
-# with an explicit "the D41 win survives Fix A" framing: content-sizing is
-# scoped to when an expanded band exists to donate to.)
+# Fix A / D41-win intact: a rail band OVER an expanded band still lands at
+# its content height by default (the snap) and the expanded band reclaims
+# the freed height. (Duplicates the guarantee of
+# test_all_railed_band_content_sizes with an explicit "the D41 win survives
+# Fix A" framing: the snap is scoped to when an expanded band exists to
+# donate to.)
 # ===========================================================================
 def test_rail_band_over_expanded_still_content_sizes(
     dock_context, vite_server: int
@@ -1327,14 +1328,16 @@ def test_rail_band_divider_rule_runs_full_band_height(
 
 
 # ===========================================================================
-# The band divider beside a content-capped rail band is LIVE (D41 revised):
+# The band divider beside a rail band is LIVE and FREE (D41 revision 2):
 # dragging it toward the rail band squeezes the band below its content (the
-# spine scrolls) and the expanded band grows; dragging it away from the rail
-# band stops at the content cap -- the band can never grow dead gray below
-# its spine. Layout mirrors the user's report (2026-07-09): a 2-cell rail
-# beside a 1-cell rail, over an expanded band.
+# spine scrolls) and the expanded band grows; dragging it away grows the
+# band freely PAST its content (bands have no maximum height -- dead gray by
+# explicit user drag is the user's call); and a drag landing near the
+# content height DETENTS onto it exactly. The band STARTS at its content
+# height (the snap-to-content default). Layout mirrors the user's report
+# (2026-07-09): a 2-cell rail beside a 1-cell rail, over an expanded band.
 # ===========================================================================
-def test_rail_band_divider_is_live_shrinks_and_caps(
+def test_rail_band_divider_is_live_free_and_detents(
     dock_context, vite_server: int
 ) -> None:
     page = _open(dock_context, vite_server, 1400, 800)
@@ -1397,20 +1400,84 @@ def test_rail_band_divider_is_live_shrinks_and_caps(
             f"the expanded band must reclaim the height ({g0['expH']} -> {g1['expH']})"
         )
 
-        # Drag DOWN well past the content cap: the band grows back only to
-        # its content height (~the original capped height), never into dead
-        # gray below the spine.
+        # Drag DOWN well past the content height: the band grows FREELY past
+        # its spine (no maximum height) -- the dead gray below the spine is
+        # the user's explicit choice here.
         _drag(page, (g1["dx"], g1["dy"]), (g1["dx"], g1["dy"] + 300))
         g2 = _band_geom()
         assert g2 is not None
-        assert g2["bandH"] > g1["bandH"] + 50, (
-            f"dragging back down must grow the rail band again "
-            f"({g1['bandH']} -> {g2['bandH']})"
+        assert g2["bandH"] > g0["bandH"] + 100, (
+            f"dragging well past the spine must grow the band freely past "
+            f"its content ({g0['bandH']}px content, got {g2['bandH']}px)"
         )
-        assert g2["bandH"] <= g0["bandH"] + 8, (
-            f"the rail band must stop at its content cap "
-            f"({g0['bandH']}px), not grow dead gray past it "
-            f"({g2['bandH']}px)"
+
+        # Drag back UP to ~5px short of the content height: the seam DETENTS
+        # onto the content exactly ("exactly no dead gray" is trivial to
+        # land on). g0.bandH IS the content height (the snap default).
+        target_delta = (g2["bandH"] - g0["bandH"]) - 5
+        _drag(page, (g2["dx"], g2["dy"]), (g2["dx"], g2["dy"] - target_delta))
+        g3 = _band_geom()
+        assert g3 is not None
+        assert abs(g3["bandH"] - g0["bandH"]) <= 2, (
+            f"a drag landing within the detent must snap the band onto its "
+            f"content height ({g0['bandH']}px), got {g3['bandH']}px"
+        )
+    finally:
+        page.close()
+
+
+# ===========================================================================
+# Snap-to-content default (D41 revision 2): railing the LAST expanded column
+# of a band via its chevron lands the band at its spine content height --
+# "no dead gray" is the default even though heights are free. Chevron clicks
+# are synthetic (element.click), so this exercises the real gesture path.
+# ===========================================================================
+def test_band_railed_via_chevrons_snaps_to_content(
+    dock_context, vite_server: int
+) -> None:
+    page = _open(dock_context, vite_server, 1400, 800)
+    try:
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=rows(
+                    columns("controls", "inspector"),
+                    "monitor",
+                ),
+            ),
+        )
+        click_column_chevron(page, "t-controls")
+        click_column_chevron(page, "t-inspector")
+        page.wait_for_timeout(400)  # collapse ease + snap commit
+        geom = page.evaluate(
+            """() => {
+                const band = document.querySelector('[data-dock-band]');
+                if (!band) return null;
+                const roots = [...band.querySelectorAll('[data-dock-rail-root]')];
+                if (roots.length !== 2) return { roots: roots.length };
+                const content = Math.max(...roots.map((root) => {
+                    const r = root.getBoundingClientRect();
+                    const cells = root.querySelectorAll('[data-dock-leaf]');
+                    const last = cells[cells.length - 1];
+                    return last
+                        ? last.getBoundingClientRect().bottom - r.top
+                        : 0;
+                }));
+                return {
+                    roots: roots.length,
+                    bandH: band.getBoundingClientRect().height,
+                    contentH: content,
+                };
+            }"""
+        )
+        assert geom is not None and geom["roots"] == 2, (
+            f"expected both columns railed via chevrons: {geom}"
+        )
+        # The band snapped to its tallest spine's content: no dead gray tail
+        # below the icons (small slop for chrome padding).
+        assert abs(geom["bandH"] - geom["contentH"]) <= 6, (
+            f"a band railed via chevrons must snap to its content height "
+            f"(band {geom['bandH']}px vs content {geom['contentH']}px)"
         )
     finally:
         page.close()
@@ -1422,9 +1489,9 @@ def test_rail_band_divider_is_live_shrinks_and_caps(
 # resize handle between two expanded columns -- so users don't expect a
 # resize where none exists. Assert the inert row-divider has cursor:default
 # AND a dimmer rule than the live one, which shows a resize cursor. (Band
-# dividers no longer have an inert form: a rail band sizes by weight under
-# its content cap, so its seam is always live -- see
-# test_rail_band_divider_is_live_shrinks_and_caps.)
+# dividers no longer have an inert form: a rail band's height is a plain
+# weighted share, so its seam is always live -- see
+# test_rail_band_divider_is_live_free_and_detents.)
 # ===========================================================================
 def test_inert_rail_divider_is_visually_distinct_from_resizable(
     dock_context, vite_server: int

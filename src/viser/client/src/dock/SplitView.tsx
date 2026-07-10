@@ -58,24 +58,50 @@ const COLUMN_HANDLE_PX = 16;
 // sum. Also the all-railed band's divider min-cell floor.
 const ALL_RAILED_BAND_MIN_PX = 60;
 
-// Grow factors at the band level are SCALED by this so that after flexbox
-// freezes a content-capped rail band at its fit-content max, the remaining
-// bands' grow factors still sum to >= 1 -- a grow sum below 1 makes flexbox
-// hand out only that FRACTION of the free space and strands the rest as dead
-// area (edge case 16). Ratios are what matter to flexbox, so the scale is
-// otherwise invisible.
-const BAND_GROW_SCALE = 1000;
+// How close (px) a band-seam drag must land to a rail band's content height
+// to SNAP onto it -- the "exactly no dead gray" detent, mirroring the
+// floating window's content-height detent (spec 6, Windows).
+const BAND_CONTENT_DETENT_PX = 8;
 
 /** A band is ALL-RAILED when every one of its columns is railed (D41). Such a
- * band is height-CAPPED at its content (its tallest rail spine) when an
- * expanded band exists to reclaim the difference -- so it can render BELOW
- * its weighted share, but never taller than its spine (no dead gray). A band
- * with even ONE expanded column is NOT all-railed: it takes its full weighted
- * share (the expanded column fills it, rails beside it are the healthy case).
- * An empty band (no columns) is not all-railed -- it has no rail content to
- * cap to. */
+ * band SNAPS to its content height (its tallest rail spine) when it becomes
+ * all-railed, and its seam carries a detent at that height -- but its height
+ * is otherwise a plain weighted share the user may drag anywhere (bands have
+ * no maximum height). A band with even ONE expanded column is NOT
+ * all-railed: it takes its weighted share with no snap (the expanded column
+ * fills it, rails beside it are the healthy case). An empty band (no
+ * columns) is not all-railed -- it has no rail content to snap to. */
 function isAllRailed(row: DockRow): boolean {
   return row.columns.length > 0 && row.columns.every((c) => c.railed === true);
+}
+
+/** Measured content height (px) of an all-railed band: the tallest rail
+ * column's spine extent -- header bar plus the last spine cell's bottom. If
+ * a squeezed spine is SCROLLING, the honest content is the scroll extent
+ * (the last cell's rect sits scrolled out of place). Null when no rail root
+ * is measurable (mid-transition). */
+function measureRailBandContentPx(bandEl: HTMLElement): number | null {
+  let max: number | null = null;
+  bandEl
+    .querySelectorAll<HTMLElement>("[data-dock-rail-root]")
+    .forEach((root) => {
+      const rootTop = root.getBoundingClientRect().top;
+      const header = root.children[0] as HTMLElement | undefined;
+      const headerPx = header?.getBoundingClientRect().height ?? 0;
+      const paper = root.children[1] as HTMLElement | undefined;
+      const cells = root.querySelectorAll<HTMLElement>("[data-dock-leaf]");
+      const last = cells[cells.length - 1];
+      let px: number;
+      if (paper !== undefined && paper.scrollHeight > paper.clientHeight + 1) {
+        px = headerPx + paper.scrollHeight;
+      } else if (last !== undefined) {
+        px = Math.max(headerPx, last.getBoundingClientRect().bottom - rootTop);
+      } else {
+        px = headerPx;
+      }
+      max = max === null ? px : Math.max(max, px);
+    });
+  return max;
 }
 
 /** A band's minimum rendered height: the tallest EXPANDED column's stack of
@@ -116,25 +142,146 @@ export const SplitView = React.memo(function SplitView({
   const columnHandles = !region.rows.every((rw) => rw.columns.length === 1);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const rows = region.rows;
-  // D41 (revised): every band -- rail or expanded -- takes its WEIGHTED share
-  // of the region, and an all-railed band is additionally CAPPED at its
-  // content height (maxHeight fit-content: its tallest rail spine). The cap,
-  // not a mode switch, is what makes dead gray below the spine icons
-  // unrepresentable: flexbox freezes the capped band at its content and
-  // redistributes the height it couldn't take to the uncapped (expanded)
-  // bands. Because the band still sizes by weight UNDER the cap, the divider
-  // beside it stays LIVE: dragging up shrinks the band below its content (the
-  // spine scrolls, same as any squeezed column), dragging down stops at the
-  // cap like any floor/ceiling.
+  // D41 (revised twice): every band -- rail or expanded -- takes its
+  // WEIGHTED share of the region, with NO maximum height (panels don't have
+  // maximum heights). "No dead gray below the spine" is a DEFAULT, not a
+  // wall: when a band BECOMES all-railed its weight snaps to its content
+  // height (the layout effect below), and the seam drag carries a detent at
+  // that height -- but the user may drag it anywhere, dead gray included;
+  // that's their call, same as any oversized panel.
   const allRailedMask = rows.map((r) => isAllRailed(r));
-  // The content cap only pays off when there is an EXPANDED band to DONATE
+  // The content snap only pays off when there is an EXPANDED band to DONATE
   // the freed height to (D41's win: kill the dead gray beside expanded
   // content). When EVERY band is all-railed there is nowhere to donate:
-  // capping would strand the region's lower area empty while the bands come
-  // out ragged, so no band is capped and weighted shares fill the region
-  // uniformly (Fix A).
+  // snapping would strand the region's lower area empty while the bands come
+  // out ragged, so weighted shares fill the region uniformly (Fix A).
   const regionHasExpandedBand = allRailedMask.some((m) => !m);
   const bandWeightTotal = rows.reduce((s, r) => s + r.weight, 0) || 1;
+  // SNAP-TO-CONTENT: when a band's rail structure changes -- it became
+  // all-railed, or an all-railed band's cell count changed -- commit its
+  // weight as its measured content height, so railing a band lands it at
+  // "exactly no dead gray" by default. Mirrors the floating window's
+  // auto/pinned height: a band PARKED at its snap default keeps TRACKING
+  // its content (webfonts landing after the first measure, label renames --
+  // anything that moves the spine's true height), while a band the user
+  // has dragged away from the default is PINNED and never re-snapped.
+  // Structural changes are keyed on a signature so user drags (weight-only
+  // changes) never count as one; content drift is watched by a
+  // ResizeObserver on the rail roots. Runs before paint (useLayoutEffect),
+  // so a stale share is never painted.
+  const snapKeysRef = React.useRef<Map<string, string>>(new Map());
+  const lastSnapPxRef = React.useRef<Map<string, number>>(new Map());
+  React.useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (container === null) return;
+    const snapPass = () => {
+      const prevKeys = snapKeysRef.current;
+      const nextKeys = new Map<string, string>();
+      const lastSnap = lastSnapPxRef.current;
+      const snapped: Record<string, number> = {};
+      rows.forEach((row, i) => {
+        // regionHasExpandedBand is part of the signature: when an expanded
+        // band arrives in an all-rails region, the rail bands snap then
+        // (the freed height finally has somewhere to go).
+        const key = `${allRailedMask[i]}:${regionHasExpandedBand}:${row.columns
+          .map((c) => c.leaves.length)
+          .join(",")}`;
+        nextKeys.set(row.id, key);
+        if (!allRailedMask[i] || !regionHasExpandedBand) {
+          lastSnap.delete(row.id);
+          return;
+        }
+        const el = container.querySelector<HTMLElement>(
+          `[data-dock-band="${row.id}"]`,
+        );
+        const contentPx = el === null ? null : measureRailBandContentPx(el);
+        if (el === null || contentPx === null) return;
+        if (prevKeys.get(row.id) !== key) {
+          snapped[row.id] = contentPx; // structural change: snap
+          return;
+        }
+        // Content drift while parked at the default: the last snap is
+        // still what's rendered (within rounding), but the spine's true
+        // content moved -- keep tracking it. A user-resized band's
+        // rendered height sits away from its last snap, so it's pinned.
+        const prevSnap = lastSnap.get(row.id);
+        const rendered = el.getBoundingClientRect().height;
+        if (
+          prevSnap !== undefined &&
+          Math.abs(rendered - prevSnap) <= 2 &&
+          Math.abs(contentPx - prevSnap) > 1
+        ) {
+          snapped[row.id] = contentPx;
+        }
+      });
+      snapKeysRef.current = nextKeys;
+      if (Object.keys(snapped).length === 0) return;
+      // Weights render as RATIOS, so the committed px must sum to the real
+      // band area (container minus seams) or every band rescales and the
+      // snapped band misses its content height. The unsnapped bands ABSORB
+      // the height the snap frees: they split the remainder in proportion
+      // to their currently rendered px.
+      const areaPx =
+        container.getBoundingClientRect().height -
+        SPLIT_DIVIDER_PX * (rows.length - 1);
+      const snappedTotal = Object.values(snapped).reduce((s, v) => s + v, 0);
+      const otherRendered: Record<string, number> = {};
+      rows.forEach((row) => {
+        if (snapped[row.id] !== undefined) return;
+        const el = container.querySelector<HTMLElement>(
+          `[data-dock-band="${row.id}"]`,
+        );
+        otherRendered[row.id] =
+          el?.getBoundingClientRect().height ?? row.weight;
+      });
+      const otherTotal = Object.values(otherRendered).reduce(
+        (s, v) => s + v,
+        0,
+      );
+      const remainder = areaPx - snappedTotal;
+      // Degenerate: spine content alone exceeds the region (huge rail).
+      // Skip the rescale -- raw px keep the ratios sane and the spine
+      // scrolls.
+      const scale =
+        remainder > 0 && otherTotal > 0 ? remainder / otherTotal : 1;
+      const byId: Record<string, number> = {};
+      rows.forEach((row) => {
+        byId[row.id] =
+          snapped[row.id] !== undefined
+            ? snapped[row.id]
+            : otherRendered[row.id] * scale;
+      });
+      Object.entries(snapped).forEach(([id, px]) =>
+        lastSnapPxRef.current.set(id, px),
+      );
+      dock.api.apply((l) => setNodeWeights(l, edge, byId));
+    };
+    let cancelled = false;
+    snapPass();
+    // Webfonts landing after the first measure is the dominant content
+    // drift (vertical labels grow a few px, the spine outgrows its snap):
+    // fonts.ready is a frame-independent signal for it, so the re-snap
+    // fires even when the compositor is throttled and observer callbacks
+    // (frame-paced) lag.
+    if (document.fonts !== undefined && document.fonts.status !== "loaded") {
+      document.fonts.ready.then(() => {
+        if (!cancelled) snapPass();
+      });
+    }
+    // Any other spine-cell resize between renders (label renames) re-runs
+    // the pass. The CELLS are observed, not the rail roots: a root is
+    // stretched to the band, so content growth inside a fixed band never
+    // resizes it. The at-default guard above keeps this from ever fighting
+    // a user's explicit size.
+    const ro = new ResizeObserver(() => snapPass());
+    container
+      .querySelectorAll("[data-dock-rail-root] [data-dock-leaf]")
+      .forEach((el) => ro.observe(el));
+    return () => {
+      cancelled = true;
+      ro.disconnect();
+    };
+  });
   // A band divider drag computes new weights from the bands' RENDERED px at
   // drag start, not their stored weights: a capped rail band renders at its
   // content, which can sit far below its weighted share, and a drag computed
@@ -143,15 +290,21 @@ export const SplitView = React.memo(function SplitView({
   // onDragStart); flushes recompute from the snapshot + total delta, so the
   // gesture stays idempotent.
   const bandPxAtDragStart = React.useRef<number[] | null>(null);
+  // Per-band content height at drag start (all-railed bands only): the
+  // seam detent's target (BAND_CONTENT_DETENT_PX).
+  const bandContentPxAtDragStart = React.useRef<(number | null)[]>([]);
   const measureBandPx = () => {
     const container = containerRef.current;
     if (container === null) return;
-    bandPxAtDragStart.current = rows.map((row) => {
-      const el = container.querySelector<HTMLElement>(
-        `[data-dock-band="${row.id}"]`,
-      );
-      return el?.getBoundingClientRect().height ?? 0;
-    });
+    const els = rows.map((row) =>
+      container.querySelector<HTMLElement>(`[data-dock-band="${row.id}"]`),
+    );
+    bandPxAtDragStart.current = els.map(
+      (el) => el?.getBoundingClientRect().height ?? 0,
+    );
+    bandContentPxAtDragStart.current = els.map((el, i) =>
+      el !== null && allRailedMask[i] ? measureRailBandContentPx(el) : null,
+    );
   };
 
   // EXPLICITLY collapsed region (D21): the 36px vertical rail, regardless of
@@ -174,27 +327,19 @@ export const SplitView = React.memo(function SplitView({
       }}
     >
       {rows.map((row, index) => {
-        // An all-railed band is height-capped at its content (D41) -- but
-        // ONLY when the region has an expanded band to reclaim the freed
-        // height. In an ALL-rails region there is nowhere to donate, so no
-        // band is capped and weighted shares fill the region uniformly (Fix
-        // A).
-        const contentCapped = allRailedMask[index] && regionHasExpandedBand;
         return (
           <React.Fragment key={row.id}>
             <Box
               data-dock-band={row.id}
               className={collapseAnim}
               style={{
-                // Every band sizes by its weighted share (scaled -- see
-                // BAND_GROW_SCALE); a rail band additionally caps at its
-                // intrinsic content height so it can never render dead gray
-                // below its spine, and flexbox hands the height it couldn't
-                // take to the uncapped bands.
-                flexGrow: (row.weight / bandWeightTotal) * BAND_GROW_SCALE,
+                // Every band sizes by its weighted share -- no maximum. An
+                // all-railed band's "no dead gray" height is the snap
+                // default + the seam detent (see the layout effect above),
+                // never a cap.
+                flexGrow: row.weight / bandWeightTotal,
                 flexShrink: 1,
                 flexBasis: 0,
-                maxHeight: contentCapped ? "fit-content" : undefined,
                 minWidth: 0,
                 minHeight: 0,
                 display: "flex",
@@ -203,30 +348,54 @@ export const SplitView = React.memo(function SplitView({
               <RowView row={row} edge={edge} columnHandles={columnHandles} />
             </Box>
             {index < rows.length - 1 && (
-              // Band dividers are ALWAYS live (D41 revised): a rail band
-              // sizes by weight under its content cap, so there is always
-              // height to trade -- dragging into a rail band squeezes it
-              // below its content (the spine scrolls), dragging away from it
-              // stops at its cap, like any floor.
+              // Band dividers are ALWAYS live (D41 revised): a rail band's
+              // height is a plain weighted share, so there is always height
+              // to trade -- dragging into it squeezes it (the spine
+              // scrolls), dragging away grows it freely, with a DETENT at
+              // its content height so "exactly no dead gray" is trivial to
+              // land on.
               <SplitDivider
                 dir="column"
                 resizable
                 containerRef={containerRef}
                 onDragStart={measureBandPx}
-                onResize={(deltaPx, containerPx) =>
+                onResize={(deltaPx, containerPx) => {
+                  // Content detent: if this delta would land an adjacent
+                  // all-railed band within BAND_CONTENT_DETENT_PX of its
+                  // spine content, snap the delta so it lands exactly
+                  // there. The band ABOVE the seam grows by +delta; the
+                  // band BELOW shrinks by it.
+                  const startPx = bandPxAtDragStart.current;
+                  const contentPx = bandContentPxAtDragStart.current;
+                  let d = deltaPx;
+                  if (startPx !== null) {
+                    const above = contentPx[index];
+                    if (above !== null && above !== undefined) {
+                      const target = above - startPx[index];
+                      if (Math.abs(d - target) <= BAND_CONTENT_DETENT_PX)
+                        d = target;
+                    }
+                    const below = contentPx[index + 1];
+                    if (below !== null && below !== undefined) {
+                      const target = startPx[index + 1] - below;
+                      if (Math.abs(d - target) <= BAND_CONTENT_DETENT_PX)
+                        d = target;
+                    }
+                  }
                   resizeCells({
                     dock,
                     edge,
                     // Rendered px stand in for the stored weights (see
-                    // bandPxAtDragStart above) so the drag tracks what is on
-                    // screen, not a capped band's invisible surplus share.
+                    // bandPxAtDragStart above) so the drag tracks what is
+                    // on screen even when stored weights are on another
+                    // scale.
                     cells: rows.map((r, i) => ({
                       id: r.id,
                       weight: bandPxAtDragStart.current?.[i] ?? r.weight,
                     })),
                     collapsed: rows.map(() => false),
                     index,
-                    deltaPx,
+                    deltaPx: d,
                     containerPx,
                     // Per-band floor: a band must fit its tallest
                     // expanded column's cells (50px each + dividers),
@@ -235,8 +404,8 @@ export const SplitView = React.memo(function SplitView({
                     minCell: rows.map((band) =>
                       bandMinPx(band, columnHandles),
                     ),
-                  })
-                }
+                  });
+                }}
                 onCancel={() =>
                   dock.api.apply((l) =>
                     setNodeWeights(
