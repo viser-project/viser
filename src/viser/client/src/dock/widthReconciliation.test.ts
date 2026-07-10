@@ -151,10 +151,12 @@ describe("reconcileRegionWidths with railed columns (D38/D40: rail moves width b
   });
 
   it("fully railed: exactly the rails (no phantom content width)", () => {
+    // Built DIRECTLY: the chevron gesture would accordion on the last
+    // expanded column (D43), but the all-railed state stays legal (drops
+    // build it) and its WIDTH accounting is what's under test.
     const prev = threeColumns([300, 300, 300]);
-    let next = toggleCollapsed(prev, "a");
-    next = toggleCollapsed(next, "b");
-    next = toggleCollapsed(next, "c");
+    const next = structuredClone(prev);
+    for (const c of next.docked.right!.rows[0].columns) c.railed = true;
     expect(recon(prev, next).right).toBe(3 * MINIMIZED_STRIP_PX);
     // ...and expanding them all restores the original 900 (P8).
     let back = toggleCollapsed(next, "a");

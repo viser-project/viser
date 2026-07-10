@@ -1888,7 +1888,16 @@ export function setRegionCollapsed(
  * legal committed geometry, so the op needs no gate. Scope ROUTING (a
  * single-visual-column region collapses via the REGION store, D32) is the
  * caller's job: collapseContainerOf picks the store; this op sets exactly
- * the flag it is named for. */
+ * the flag it is named for.
+ *
+ * ACCORDION (D43, user-directed): railing the LAST expanded column of a
+ * MULTI-column band expands its nearest railed sibling (tie -> the left
+ * one), so the chevron gesture always leaves the band with one expanded
+ * column -- collapsing "Stats" beside a railed "Tools" hands the band to
+ * Tools instead of stranding a wide band of nothing but strips. The
+ * adjudicated P3 exception: the one expand no gesture aimed at directly.
+ * Drops are untouched (identity transfers can still build all-rails
+ * bands); sole-column bands have no sibling to hand off to (D42). */
 export function setColumnRailed(
   layout: DockLayout,
   edge: DockEdge,
@@ -1898,9 +1907,28 @@ export function setColumnRailed(
   const found = findColumn(layout.docked[edge], columnId);
   if (found === null || (found.column.railed === true) === on) return layout;
   const draft = clone(layout);
-  const column = findColumn(draft.docked[edge], columnId)!.column;
+  const draftFound = findColumn(draft.docked[edge], columnId)!;
+  const column = draftFound.column;
   if (on) {
     column.railed = true;
+    const band = draftFound.row;
+    if (
+      band.columns.length >= 2 &&
+      band.columns.every((c) => c.railed === true)
+    ) {
+      const at = band.columns.findIndex((c) => c.id === columnId);
+      let best = -1;
+      band.columns.forEach((c, i) => {
+        if (i === at) return;
+        if (
+          best === -1 ||
+          Math.abs(i - at) < Math.abs(best - at) ||
+          (Math.abs(i - at) === Math.abs(best - at) && i < best)
+        )
+          best = i;
+      });
+      if (best !== -1) delete band.columns[best].railed;
+    }
   } else {
     delete column.railed;
     // Expanding a lone multi-leaf column re-enters D12 territory: split it

@@ -415,6 +415,48 @@ describe("setColumnRailed (per-column rail)", () => {
     expect(isRegionCollapsedOn(toggled, "left")).toBe(false);
     expect(invariantViolations(toggled)).toEqual([]);
   });
+
+  it("accordion: railing the band's LAST expanded column expands the railed sibling (D43)", () => {
+    // [a railed | b expanded]: railing b swaps -- a expands, b rails. The
+    // chevron gesture always leaves a multi-column band with one expanded
+    // column (drops can still build all-rails bands; identity untouched).
+    const ca = col([leaf("a")]);
+    const cb = col([leaf("b")]);
+    const layout = makeLayout({ left: row([ca, cb]) });
+    const step1 = setColumnRailed(layout, "left", columnIdOf(ca), true);
+    const step2 = setColumnRailed(step1, "left", columnIdOf(cb), true);
+    const cols = step2.docked.left!.rows[0].columns;
+    expect(cols[0].railed).toBeUndefined(); // a expanded by the accordion
+    expect(cols[1].railed).toBe(true); // b railed by the gesture
+    expect(invariantViolations(step2)).toEqual([]);
+  });
+
+  it("accordion: no swap while another column is still expanded (D43)", () => {
+    const ca = col([leaf("a")]);
+    const cb = col([leaf("b")]);
+    const layout = makeLayout({ left: row([ca, cb]) });
+    const out = setColumnRailed(layout, "left", columnIdOf(ca), true);
+    const cols = out.docked.left!.rows[0].columns;
+    expect(cols[0].railed).toBe(true);
+    expect(cols[1].railed).toBeUndefined(); // b was already expanded: no-op
+  });
+
+  it("accordion: nearest railed sibling expands; tie goes left (D43)", () => {
+    // [a railed | b expanded | c railed]: railing b leaves a and c railed
+    // at equal distance -- the LEFT one (a) expands.
+    const ca = col([leaf("a")]);
+    const cb = col([leaf("b")]);
+    const cc = col([leaf("c")]);
+    const layout = makeLayout({ left: row([ca, cb, cc]) });
+    const s1 = setColumnRailed(layout, "left", columnIdOf(ca), true);
+    const s2 = setColumnRailed(s1, "left", columnIdOf(cc), true);
+    const s3 = setColumnRailed(s2, "left", columnIdOf(cb), true);
+    const cols = s3.docked.left!.rows[0].columns;
+    expect(cols[0].railed).toBeUndefined(); // a expanded (tie -> left)
+    expect(cols[1].railed).toBe(true);
+    expect(cols[2].railed).toBe(true);
+    expect(invariantViolations(s3)).toEqual([]);
+  });
 });
 
 

@@ -1524,57 +1524,67 @@ def test_lone_column_rails_in_place_via_chevron(dock_context, vite_server: int) 
 
 
 # ===========================================================================
-# Snap-to-content default (D41 revision 2): railing the LAST expanded column
-# of a band via its chevron lands the band at its spine content height --
-# "no dead gray" is the default even though heights are free. Chevron clicks
-# are synthetic (element.click), so this exercises the real gesture path.
+# D43 accordion: railing a band's LAST expanded column via its chevron
+# expands the nearest railed sibling -- the chevron gesture always leaves a
+# multi-column band with one expanded column. The user's report: a railed
+# Tools beside an expanded Stats, over an expanded band -- "if we collapse
+# Stats we should expand Tools" (otherwise the band strands a wide run of
+# nothing but strips). Chevron clicks are synthetic (element.click).
 # ===========================================================================
-def test_band_railed_via_chevrons_snaps_to_content(
+def test_railing_last_expanded_column_expands_railed_sibling(
     dock_context, vite_server: int
 ) -> None:
     page = _open(dock_context, vite_server, 1400, 800)
     try:
+        # [controls(railed) | inspector] over an expanded band -- the user's
+        # screenshot shape (Tools rail | Stats, over Notes/Log). The lower
+        # band is single-column so the equal-partition D13 zip can't merge
+        # the bands at injection (the real layout's partitions differ by
+        # width; the helpers only speak weight 1).
         set_layout(
             page,
             dock_layout(
                 docked_right=rows(
-                    columns("controls", "inspector"),
+                    columns(stack("controls", railed=True), "inspector"),
                     "monitor",
                 ),
             ),
         )
-        click_column_chevron(page, "t-controls")
+        assert column_railed_for_group(page, "t-controls") is True
+        assert column_railed_for_group(page, "t-inspector") is False
+
+        # Rail inspector (the band's last expanded column): the accordion
+        # swaps -- controls expands, inspector rails.
         click_column_chevron(page, "t-inspector")
-        page.wait_for_timeout(400)  # collapse ease + snap commit
+        page.wait_for_timeout(300)
+        assert column_railed_for_group(page, "t-inspector") is True, (
+            "the chevron must rail its own column"
+        )
+        assert column_railed_for_group(page, "t-controls") is False, (
+            "railing the band's last expanded column must expand the railed "
+            "sibling (D43 accordion)"
+        )
+        # The band keeps real content: exactly one rail strip, one expanded
+        # cell, and the lower band untouched.
         geom = page.evaluate(
             """() => {
-                const band = document.querySelector('[data-dock-band]');
-                if (!band) return null;
-                const roots = [...band.querySelectorAll('[data-dock-rail-root]')];
-                if (roots.length !== 2) return { roots: roots.length };
-                const content = Math.max(...roots.map((root) => {
-                    const r = root.getBoundingClientRect();
-                    const cells = root.querySelectorAll('[data-dock-leaf]');
-                    const last = cells[cells.length - 1];
-                    return last
-                        ? last.getBoundingClientRect().bottom - r.top
-                        : 0;
-                }));
+                const bands = [...document.querySelectorAll('[data-dock-band]')];
                 return {
-                    roots: roots.length,
-                    bandH: band.getBoundingClientRect().height,
-                    contentH: content,
+                    bands: bands.length,
+                    railsInBand0: bands[0]
+                        ? bands[0].querySelectorAll('[data-dock-rail-root]').length
+                        : null,
+                    controlsExpanded: document.querySelector(
+                        '[data-dock-group="t-controls"] [data-dock-tab]') !== null,
                 };
             }"""
         )
-        assert geom is not None and geom["roots"] == 2, (
-            f"expected both columns railed via chevrons: {geom}"
+        assert geom["bands"] == 2, geom
+        assert geom["railsInBand0"] == 1, (
+            f"exactly one rail strip after the swap: {geom}"
         )
-        # The band snapped to its tallest spine's content: no dead gray tail
-        # below the icons (small slop for chrome padding).
-        assert abs(geom["bandH"] - geom["contentH"]) <= 6, (
-            f"a band railed via chevrons must snap to its content height "
-            f"(band {geom['bandH']}px vs content {geom['contentH']}px)"
+        assert geom["controlsExpanded"] is True, (
+            f"controls must render expanded after the swap: {geom}"
         )
     finally:
         page.close()

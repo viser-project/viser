@@ -90,7 +90,12 @@ describe("planRegion", () => {
     const cols = l.docked.right!.rows[0].columns;
     const cur = setColumnRailed(l, "right", cols[0].id, true);
     reconcileRegionWidths(l, cur);
-    const next = setColumnRailed(cur, "right", cur.docked.right!.rows[0].columns[1].id, true);
+    // Build the all-railed state DIRECTLY: the chevron op would accordion
+    // (D43: railing the last expanded column expands the sibling), but the
+    // state stays legal (drops build it) and its WIDTH accounting is what's
+    // under test.
+    const next = structuredClone(cur);
+    next.docked.right!.rows[0].columns[1].railed = true;
     reconcileRegionWidths(cur, next);
     expect(next.regionWidth!.right).toBe(2 * MINIMIZED_STRIP_PX);
     const plan = planRegion(next.docked.right!);

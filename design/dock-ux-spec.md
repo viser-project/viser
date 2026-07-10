@@ -513,7 +513,7 @@ marked ⚠ (stated, not derived; see §11).
 | Region parent handle — pill / background | whole region (as one stacked window) | collapse region to the rail (backing for its chevron) |
 | Region-collapse chevron | whole region (drag-through) | collapse region to the rail; focus hands off to the rail header (both input paths) |
 | Column parent handle — pill / background | that visual column (as one stacked window, height ratios preserved) | rail that column when the handle hosts a chevron; ⚠ no action on a pill-only handle |
-| Column-collapse chevron (band has sibling columns, D28) | that visual column (drag-through) | rail that column; focus hands off to the column rail's header (both input paths) |
+| Column-collapse chevron (every column handle, D28/D42) | that visual column (drag-through) | rail that column; if it was the band's LAST expanded column, the nearest railed sibling expands (tie → left) so the band keeps one expanded column (D43); focus hands off to the column rail's header (both input paths) |
 | Rail header (region or column scope) | that scope — floats as one COLLAPSED window (identity transfer, D38) | expand the scope (clear its flag) |
 | Rail cell cap / background (quiet pill) | whole group — new window born collapsed | expand scope + group (lone cell only; inert with 2+ cells) |
 | Rail spine row | that pane — new window born collapsed | expand scope to that tab |
@@ -802,6 +802,15 @@ op-level residue.
   exactly the flag it is named for; scope ROUTING (a single-visual-
   column region collapses via the region store, D32) is
   collapseContainerOf's job.
+- ACCORDION (D43, user-directed): railing the LAST expanded column of a
+  multi-column band expands its nearest railed sibling (tie → left), so
+  the rail gesture always leaves the band with one expanded column —
+  collapsing "Stats" beside a railed "Tools" hands the band to Tools
+  instead of stranding a wide band of nothing but strips. This is the
+  adjudicated P3 exception: the one expand no gesture aimed at
+  directly. Drops are untouched — identity transfers can still build
+  all-rails bands (D41's snap/height rules govern those); a sole-column
+  band has no sibling to hand off to (D42).
 - Expand ops clear docked flags at the op level (D21/D28): any op that
   expands a docked panel (a spine-row expand-to-tab, a toggle landing
   expanded) clears the region flag AND the containing column's railed
@@ -1166,3 +1175,9 @@ has surviving behavior of its own.
   lone multi-leaf column is exempt from the D12 split (one packed strip
   is its own canonical form) and splits into bands when EXPANDED, at
   the op, by construction.
+- **D43** — accordion (user: "if we collapse Stats we should expand
+  Tools"): railing the LAST expanded column of a multi-column band
+  expands its nearest railed sibling (tie → left) — the rail gesture
+  always leaves the band one expanded column. Adjudicated P3 exception;
+  drops/identity untouched (all-rails bands remain reachable by drop
+  and keep D41's height rules).
