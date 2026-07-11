@@ -1325,6 +1325,41 @@ def test_mobile_panels_render_as_accordion_sections(
     expect(viser_page.get_by_text("stats body text")).to_be_visible(timeout=5_000)
     collapse = viser_page.get_by_role("button", name="Collapse panel Stats")
     expect(collapse).to_be_visible()
+    # IDENTITY RENDERS ONCE (P9): a single-tab panel's expanded section
+    # shows the header row and the content -- no tab strip repeating the
+    # same label below the header.
+    assert (
+        viser_page.locator("[role='tablist']")
+        .filter(has=viser_page.get_by_role("tab", name="Stats"))
+        .count()
+        == 0
+    ), "single-tab section must not render a tab strip under its header"
     # Tap again re-collapses.
     collapse.click()
     expect(viser_page.get_by_text("stats body text")).not_to_be_visible()
+
+    # Multi-tab panel: the REAL tab strip takes over the header row when
+    # expanded -- one identity row, not a header plus a duplicate strip.
+    multi = viser_server.gui.add_panel()
+    with multi.add_tab("Alpha"):
+        viser_server.gui.add_markdown("alpha body")
+    with multi.add_tab("Beta"):
+        viser_server.gui.add_markdown("beta body")
+    mheader = viser_page.get_by_role("button", name="Expand panel Alpha")
+    expect(mheader).to_be_visible(timeout=5_000)
+    mheader.click()
+    expect(viser_page.get_by_text("alpha body")).to_be_visible(timeout=5_000)
+    # The strip is the header now: real tabs present, and the collapsed-form
+    # label row ("Alpha · Beta") is gone.
+    expect(viser_page.get_by_role("tab", name="Alpha")).to_be_visible()
+    assert viser_page.get_by_text("Alpha · Beta").count() == 0, (
+        "expanded multi-tab section must not keep the label row above the "
+        "strip (identity renders once, P9)"
+    )
+    # Tab switching works from the header strip.
+    viser_page.get_by_role("tab", name="Beta").click()
+    expect(viser_page.get_by_text("beta body")).to_be_visible(timeout=5_000)
+    # The chevron collapses the section back to the label row.
+    viser_page.get_by_role("button", name="Collapse panel Alpha").click()
+    expect(viser_page.get_by_text("beta body")).not_to_be_visible()
+    expect(viser_page.get_by_text("Alpha · Beta")).to_be_visible()

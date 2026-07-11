@@ -218,6 +218,19 @@ function LayoutInjector() {
       __dockSetLayout?: (layout: DockLayout) => void;
     };
     probe.__dockSetLayout = (layout) => api.replace(layout);
+    // One-shot seeding for screenshot tooling: `#layout=<base64 JSON>` in the
+    // URL applies a layout at mount, so a single `chrome --screenshot` of a
+    // playground URL can capture any configuration without a live CDP
+    // session (this host's continuous frame scheduling is unreliable;
+    // deterministic one-shot mode is not).
+    const hash = window.location.hash;
+    if (hash.startsWith("#layout=")) {
+      try {
+        api.replace(JSON.parse(atob(hash.slice("#layout=".length))));
+      } catch (e) {
+        console.error("Bad #layout= hash:", e);
+      }
+    }
     return () => {
       delete probe.__dockSetLayout;
     };

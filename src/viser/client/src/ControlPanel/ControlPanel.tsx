@@ -6,7 +6,8 @@ import { ViewerContext } from "../ViewerContext";
 
 import QRCode from "react-qr-code";
 import ServerControls from "./ServerControls";
-import { PlainTabGroup } from "../components/TabGroup";
+import { useStableTabSelection } from "../components/TabGroup";
+import { GuiComponentContext } from "./GuiComponentContext";
 import { GuiDockContext } from "./GuiDockContext";
 import { DockContext } from "../dock/DockContext";
 import { shallowObjectKeysEqual } from "../utils/shallowObjectKeysEqual";
@@ -21,6 +22,7 @@ import {
   Loader,
   Modal,
   Stack,
+  Tabs,
   Text,
   TextInput,
   Tooltip,
@@ -64,86 +66,161 @@ function useShowGenerated(): boolean {
 }
 
 /** One standalone panel as a collapsible SECTION of the mobile bottom sheet
- * (D45): a constant header row -- the panel's tab labels and first icon on
- * the left, a rotating chevron at the right end, the whole row a tap target
- * (P9's backing rule) -- with the panel's tabs/content below when expanded.
- * The header is the panel's minimized-BAR anatomy (P13: identity left,
- * control right; labels dimmed while collapsed; body removed, chrome kept),
- * so a sheet of collapsed panels reads as the dock's bars, rotated into the
- * sheet. Panels start COLLAPSED: on a small screen the sheet is wayfinding
- * chrome, and one tap opens the panel you came for -- appending every
- * panel's full content made the sheet a wall of scroll. */
+ * (D45): ONE identity row, two states (P13: the bar is the header with the
+ * body removed; P9: identity never renders twice). Collapsed: dimmed tab
+ * labels + first icon, chevron at the right end, the whole row a tap target.
+ * Expanded, single-tab panel: the header stays as-is and the tab's content
+ * renders below WITHOUT a tab strip (the header is the identity). Expanded,
+ * multi-tab panel: the REAL tab strip takes over the header row (tabs
+ * activate on tap; the chevron at the right end is the collapse control).
+ * Panels start COLLAPSED: on a small screen the sheet is wayfinding chrome,
+ * and one tap opens the panel you came for. */
 function MobilePanelSection({ panel }: { panel: GuiPanelMessage }) {
+  const { GuiContainer } = React.useContext(GuiComponentContext)!;
   const [expanded, setExpanded] = React.useState(false);
   const labels = panel.props._tab_labels;
-  const icon = panel.props._tab_icons_html.find((h) => h !== null) ?? null;
-  return (
-    <Box>
-      <Box
-        onClick={() => setExpanded((e) => !e)}
-        role="button"
-        aria-expanded={expanded}
-        aria-label={`${expanded ? "Collapse" : "Expand"} panel ${
-          labels[0] ?? ""
-        }`}
-        tabIndex={0}
-        onKeyDown={(ev) => {
-          if (ev.key === "Enter" || ev.key === " ") {
-            ev.preventDefault();
-            setExpanded((e) => !e);
-          }
-        }}
+  const icons = panel.props._tab_icons_html;
+  const ids = panel.props._tab_container_ids;
+  const [activeTab, setActiveTab] = useStableTabSelection(ids);
+  const multiTab = ids.length > 1;
+  const stripInHeader = expanded && multiTab;
+
+  const chevron = (
+    <Box
+      onClick={
+        // While the strip owns the header, tab taps must not toggle the
+        // section -- the chevron alone collapses (its own click target).
+        stripInHeader
+          ? (ev) => {
+              ev.stopPropagation();
+              setExpanded(false);
+            }
+          : undefined
+      }
+      role={stripInHeader ? "button" : undefined}
+      aria-label={stripInHeader ? `Collapse panel ${labels[0] ?? ""}` : undefined}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        alignSelf: "center",
+        padding: stripInHeader ? "0.5em" : 0,
+        cursor: "pointer",
+        flexShrink: 0,
+      }}
+    >
+      <IconChevronRight
+        size="1em"
+        aria-hidden
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "0.5em",
-          minHeight: "2em",
-          padding: "0 0.75em",
-          cursor: "pointer",
-          borderTop: "1px solid var(--mantine-color-default-border)",
+          opacity: 0.55,
+          transform: expanded ? "rotate(90deg)" : "none",
+          transition: "transform 160ms",
         }}
-      >
-        {icon !== null && (
-          <Box
-            style={{
-              display: "flex",
-              alignItems: "center",
-              opacity: expanded ? 1 : 0.55,
-              // Tab icons arrive as sanitized SVG html (same source the tab
-              // strip renders).
-              width: "1em",
-              height: "1em",
-            }}
-            dangerouslySetInnerHTML={{ __html: icon }}
-          />
-        )}
-        <Text
-          size="sm"
+      />
+    </Box>
+  );
+
+  return (
+    <Tabs
+      radius="xs"
+      value={activeTab}
+      onChange={setActiveTab}
+      style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}
+    >
+      {stripInHeader ? (
+        <Box style={{ display: "flex", alignItems: "stretch" }}>
+          <Tabs.List style={{ flexGrow: 1 }}>
+            {labels.map((label, index) => (
+              <Tabs.Tab
+                value={ids[index]}
+                key={ids[index]}
+                styles={{
+                  tabSection: { marginRight: "0.5em" },
+                  tab: { padding: "0.75em" },
+                }}
+                leftSection={
+                  icons[index] === null ? undefined : (
+                    <Box
+                      style={{ width: "1em", height: "1em", display: "flex" }}
+                      dangerouslySetInnerHTML={{ __html: icons[index]! }}
+                    />
+                  )
+                }
+              >
+                {label}
+              </Tabs.Tab>
+            ))}
+          </Tabs.List>
+          {chevron}
+        </Box>
+      ) : (
+        <Box
+          onClick={() => setExpanded((e) => !e)}
+          role="button"
+          aria-expanded={expanded}
+          aria-label={`${expanded ? "Collapse" : "Expand"} panel ${
+            labels[0] ?? ""
+          }`}
+          tabIndex={0}
+          onKeyDown={(ev) => {
+            if (ev.key === "Enter" || ev.key === " ") {
+              ev.preventDefault();
+              setExpanded((e) => !e);
+            }
+          }}
           style={{
-            flexGrow: 1,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            opacity: expanded ? 1 : 0.55,
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5em",
+            minHeight: "2em",
+            padding: "0 0.75em",
+            cursor: "pointer",
           }}
         >
-          {labels.join(" · ")}
-        </Text>
-        <IconChevronRight
-          size="1em"
-          aria-hidden
-          style={{
-            opacity: 0.55,
-            flexShrink: 0,
-            transform: expanded ? "rotate(90deg)" : "none",
-            transition: "transform 160ms",
-          }}
-        />
-      </Box>
+          {icons.find((h) => h !== null) != null && (
+            <Box
+              style={{
+                display: "flex",
+                alignItems: "center",
+                opacity: expanded ? 1 : 0.55,
+                // Tab icons arrive as sanitized SVG html (same source the
+                // tab strip renders).
+                width: "1em",
+                height: "1em",
+              }}
+              dangerouslySetInnerHTML={{
+                __html: icons.find((h) => h !== null)!,
+              }}
+            />
+          )}
+          <Text
+            size="sm"
+            style={{
+              flexGrow: 1,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              opacity: expanded ? 1 : 0.55,
+            }}
+          >
+            {labels.join(" · ")}
+          </Text>
+          {chevron}
+        </Box>
+      )}
       <Collapse in={expanded}>
-        <PlainTabGroup {...panel.props} />
+        {multiTab ? (
+          ids.map((containerUuid) => (
+            <Tabs.Panel value={containerUuid} key={containerUuid}>
+              <GuiContainer containerUuid={containerUuid} />
+            </Tabs.Panel>
+          ))
+        ) : ids.length === 1 ? (
+          // Single tab: the header IS the identity -- no tab strip (P9).
+          <GuiContainer containerUuid={ids[0]} />
+        ) : null}
       </Collapse>
-    </Box>
+    </Tabs>
   );
 }
 

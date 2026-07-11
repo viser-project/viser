@@ -487,10 +487,13 @@ Below the mobile breakpoint (Mantine `xs`, ~576px width) the dock
 surface does not mount at all: no regions, rails, floating windows, or
 drag/dock. The control panel renders as the bottom sheet, and
 standalone panels render inside it as an ACCORDION of bar-like
-sections (D45): each panel is a constant header row — tab labels and
-first icon left, rotating chevron right, the whole row a tap target
-(P9 backing; P13 anatomy: labels dimmed while collapsed, chrome kept,
-body removed) — expanding in place to the panel's plain tabs. Sections
+sections (D45): ONE identity row per panel, two states (P9: identity
+never renders twice; P13: the bar is the header with the body
+removed). Collapsed: dimmed tab labels + first icon, rotating chevron
+right, the whole row a tap target. Expanded, single-tab panel: the
+header stays and the content renders below WITHOUT a tab strip.
+Expanded, multi-tab panel: the REAL tab strip takes over the header
+row (tabs activate on tap; the chevron alone collapses). Sections
 start COLLAPSED (the sheet is wayfinding chrome on a small screen);
 several may be open at once. `visible` is honored (hidden panels render
 no section); sections sort by server-side `order`. Placement axes

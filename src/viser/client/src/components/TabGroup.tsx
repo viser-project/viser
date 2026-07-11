@@ -74,6 +74,25 @@ export interface PlainTabGroupProps {
   visible: boolean;
 }
 
+/** Controlled tab selection over a mutable container-id list. Tabs are
+ * identified by stable container UUID rather than array index (tabs can be
+ * added/removed at runtime; index-based values would shift the selection ->
+ * content mapping). Removing a non-active tab keeps the active one selected;
+ * removing the active tab falls back to the first remaining -- the selection
+ * always points at a tab that still exists. Shared by PlainTabGroup and the
+ * mobile panel sections (ControlPanel). */
+export function useStableTabSelection(
+  ids: string[],
+): [string | null, (v: string | null) => void] {
+  const [active, setActive] = React.useState<string | null>(ids[0] ?? null);
+  React.useEffect(() => {
+    if (active === null || !ids.includes(active)) {
+      setActive(ids[0] ?? null);
+    }
+  }, [ids, active]);
+  return [active, setActive];
+}
+
 export function PlainTabGroup({
   _tab_labels: tab_labels,
   _tab_icons_html: tab_icons_html,
@@ -81,24 +100,7 @@ export function PlainTabGroup({
   visible,
 }: PlainTabGroupProps) {
   const { GuiContainer } = React.useContext(GuiComponentContext)!;
-
-  // Identify each tab by its stable container UUID rather than its array index.
-  // Tabs can be added/removed at runtime; index-based values would shift the
-  // selection -> content mapping, leaving the active tab unselected (or showing
-  // the wrong content) after a sibling tab is removed.
-  //
-  // We track the selection ourselves (controlled) so that removing a *non*
-  // active tab keeps the active tab selected, and removing the active tab
-  // falls back to the first remaining tab -- the selection always points at a
-  // tab that still exists.
-  const [activeTab, setActiveTab] = React.useState<string | null>(
-    tab_container_ids[0] ?? null,
-  );
-  React.useEffect(() => {
-    if (activeTab === null || !tab_container_ids.includes(activeTab)) {
-      setActiveTab(tab_container_ids[0] ?? null);
-    }
-  }, [tab_container_ids, activeTab]);
+  const [activeTab, setActiveTab] = useStableTabSelection(tab_container_ids);
 
   if (!visible) return null;
   return (
