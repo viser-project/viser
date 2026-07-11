@@ -1266,3 +1266,43 @@ def test_example_11_panels_collapsed_chrome(
         assert box is not None and box["height"] > 60, (
             f"{label} should render expanded with real height, got {box}"
         )
+
+
+def test_mobile_panels_render_as_accordion_sections(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """D45: below the mobile breakpoint the dock surface unmounts and
+    standalone panels render as COLLAPSED accordion sections in the bottom
+    sheet -- one bar-like header row each (tab labels, chevron), content
+    revealed on tap. A hidden panel renders no section at all."""
+    viser_page.set_viewport_size({"width": 390, "height": 720})
+    viser_page.wait_for_timeout(300)
+
+    stats = viser_server.gui.add_panel()
+    with stats.add_tab("Stats"):
+        viser_server.gui.add_markdown("stats body text")
+    hidden = viser_server.gui.add_panel()
+    with hidden.add_tab("Hidden"):
+        viser_server.gui.add_markdown("should not render")
+    hidden.visible = False
+
+    # The section header (accordion row) is visible; the panel BODY is not
+    # (sections start collapsed).
+    header = viser_page.get_by_role("button", name="Expand panel Stats")
+    expect(header).to_be_visible(timeout=5_000)
+    expect(viser_page.get_by_text("stats body text")).not_to_be_visible()
+    # The hidden panel contributes nothing.
+    expect(viser_page.get_by_role("button", name="Expand panel Hidden")).to_have_count(
+        0
+    )
+    # No dock surface on mobile: placement chrome is absent entirely.
+    expect(viser_page.locator("[data-floating-window]")).to_have_count(0)
+
+    # Tap expands in place; the body appears and the toggle flips.
+    header.click()
+    expect(viser_page.get_by_text("stats body text")).to_be_visible(timeout=5_000)
+    collapse = viser_page.get_by_role("button", name="Collapse panel Stats")
+    expect(collapse).to_be_visible()
+    # Tap again re-collapses.
+    collapse.click()
+    expect(viser_page.get_by_text("stats body text")).not_to_be_visible()

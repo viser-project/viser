@@ -481,7 +481,23 @@ region handle, chevron included, reappears automatically.
   fan out and each client's gate arbitrates against its own user's
   touches (P6). Clients never sync layouts with each other.
 
-### 3.6 Nested area
+### 3.6 Mobile (no dock surface)
+
+Below the mobile breakpoint (Mantine `xs`, ~576px width) the dock
+surface does not mount at all: no regions, rails, floating windows, or
+drag/dock. The control panel renders as the bottom sheet, and
+standalone panels render inside it as an ACCORDION of bar-like
+sections (D45): each panel is a constant header row — tab labels and
+first icon left, rotating chevron right, the whole row a tap target
+(P9 backing; P13 anatomy: labels dimmed while collapsed, chrome kept,
+body removed) — expanding in place to the panel's plain tabs. Sections
+start COLLAPSED (the sheet is wayfinding chrome on a small screen);
+several may be open at once. `visible` is honored (hidden panels render
+no section); sections sort by server-side `order`. Placement axes
+(position/width/height) do not apply off the dock surface; they replay
+when the viewport widens and the dock remounts.
+
+### 3.7 Nested area
 
 - A flat tab strip + body inside a host panel. Drops:
   insert-at-tab-position over its tab strip, merge elsewhere. Never
@@ -1191,6 +1207,13 @@ has surviving behavior of its own.
   drops/identity untouched (all-rails bands remain reachable by drop
   and keep D41's height rules). The region chevron (railRegion)
   bypasses it: rail-all is the explicit ask.
+- **D45** — mobile panels are an accordion of bars (user: appending
+  every panel's full content into the bottom sheet "seems like bad
+  UX"): below the `xs` breakpoint each standalone panel renders as a
+  collapsed bar-like section in the sheet, expanding in place on tap;
+  `visible`/`order` honored; placement axes inert off the dock surface.
+  Chosen over a tabbed sheet (one panel at a time; nested tab strips
+  read poorly) and a full-height pager (hides the canvas relationship).
 - **D44** — region/column rail unification (user-adjudicated, all three
   recommended options): `regionCollapsed` is DELETED as a store; the
   packed region rail is DERIVED (`isRegionPackedOn`: every band

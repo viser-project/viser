@@ -35,6 +35,7 @@ import {
   IconShare,
   IconCopy,
   IconCheck,
+  IconChevronRight,
   IconPlugConnectedX,
   IconQrcode,
   IconQrcodeOff,
@@ -44,6 +45,7 @@ import { spotlight } from "@mantine/spotlight";
 import { isMac } from "../utils/platform";
 import React from "react";
 import BottomPanel from "./BottomPanel";
+import type { GuiPanelMessage } from "../WebsocketMessages";
 
 // Must match constant in Python.
 const ROOT_CONTAINER_ID = "root";
@@ -61,11 +63,96 @@ function useShowGenerated(): boolean {
   );
 }
 
-/** Standalone panels rendered INLINE, for chromes with no dock surface (the
- * mobile bottom sheet). On the desktop dock surface, panels are placed as their
- * own dock groups by StandalonePanelSync instead; here they would otherwise be
- * invisible (they are not part of the root GUI tree). Each renders as plain
- * tabs, the same fallback inline tab groups use off the dock surface. */
+/** One standalone panel as a collapsible SECTION of the mobile bottom sheet
+ * (D45): a constant header row -- the panel's tab labels and first icon on
+ * the left, a rotating chevron at the right end, the whole row a tap target
+ * (P9's backing rule) -- with the panel's tabs/content below when expanded.
+ * The header is the panel's minimized-BAR anatomy (P13: identity left,
+ * control right; labels dimmed while collapsed; body removed, chrome kept),
+ * so a sheet of collapsed panels reads as the dock's bars, rotated into the
+ * sheet. Panels start COLLAPSED: on a small screen the sheet is wayfinding
+ * chrome, and one tap opens the panel you came for -- appending every
+ * panel's full content made the sheet a wall of scroll. */
+function MobilePanelSection({ panel }: { panel: GuiPanelMessage }) {
+  const [expanded, setExpanded] = React.useState(false);
+  const labels = panel.props._tab_labels;
+  const icon = panel.props._tab_icons_html.find((h) => h !== null) ?? null;
+  return (
+    <Box>
+      <Box
+        onClick={() => setExpanded((e) => !e)}
+        role="button"
+        aria-expanded={expanded}
+        aria-label={`${expanded ? "Collapse" : "Expand"} panel ${
+          labels[0] ?? ""
+        }`}
+        tabIndex={0}
+        onKeyDown={(ev) => {
+          if (ev.key === "Enter" || ev.key === " ") {
+            ev.preventDefault();
+            setExpanded((e) => !e);
+          }
+        }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "0.5em",
+          minHeight: "2em",
+          padding: "0 0.75em",
+          cursor: "pointer",
+          borderTop: "1px solid var(--mantine-color-default-border)",
+        }}
+      >
+        {icon !== null && (
+          <Box
+            style={{
+              display: "flex",
+              alignItems: "center",
+              opacity: expanded ? 1 : 0.55,
+              // Tab icons arrive as sanitized SVG html (same source the tab
+              // strip renders).
+              width: "1em",
+              height: "1em",
+            }}
+            dangerouslySetInnerHTML={{ __html: icon }}
+          />
+        )}
+        <Text
+          size="sm"
+          style={{
+            flexGrow: 1,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            opacity: expanded ? 1 : 0.55,
+          }}
+        >
+          {labels.join(" · ")}
+        </Text>
+        <IconChevronRight
+          size="1em"
+          aria-hidden
+          style={{
+            opacity: 0.55,
+            flexShrink: 0,
+            transform: expanded ? "rotate(90deg)" : "none",
+            transition: "transform 160ms",
+          }}
+        />
+      </Box>
+      <Collapse in={expanded}>
+        <PlainTabGroup {...panel.props} />
+      </Collapse>
+    </Box>
+  );
+}
+
+/** Standalone panels rendered as an ACCORDION of bar-like sections, for
+ * chromes with no dock surface (the mobile bottom sheet, D45). On the desktop
+ * dock surface, panels are placed as their own dock groups by
+ * StandalonePanelSync instead; here they would otherwise be invisible (they
+ * are not part of the root GUI tree). Hidden panels are skipped (visible is
+ * honored on this path too); sections sort by the server-side order. */
 function PanelsFallback() {
   const viewer = React.useContext(ViewerContext)!;
   const panels = viewer.useGui((state) => state.panels, shallowObjectKeysEqual);
@@ -74,11 +161,14 @@ function PanelsFallback() {
   const dockCtx = React.useContext(DockContext);
   const guiDockCtx = React.useContext(GuiDockContext);
   if (dockCtx !== null && guiDockCtx !== null) return null;
-  if (Object.keys(panels).length === 0) return null;
+  const shown = Object.values(panels)
+    .filter((p) => p.props.visible)
+    .sort((a, b) => a.props.order - b.props.order);
+  if (shown.length === 0) return null;
   return (
     <GuiComponentContextProvider>
-      {Object.values(panels).map((panel) => (
-        <PlainTabGroup key={panel.uuid} {...panel.props} />
+      {shown.map((panel) => (
+        <MobilePanelSection key={panel.uuid} panel={panel} />
       ))}
     </GuiComponentContextProvider>
   );
