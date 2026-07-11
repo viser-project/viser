@@ -899,12 +899,12 @@ describe("write-only per-axis model: position is always applied, size never re-d
 // finding 6): a docked->docked position command never floats in between, so
 // detachAllPreservingStackWeights derives the source container's collapse
 // from the RAILED cell too -- matching the float path (`float()` on a railed
-// panel already yielded a collapsed window). The railed source arrives railed
-// per the landing shape: the region flag on an empty edge, the column flag
-// beside content.
+// panel already yielded a collapsed window). The railed source arrives as a
+// RAILED COLUMN (the one docked collapse store, D46) -- on an empty edge
+// that lone railed column IS the packed region.
 // ===========================================================================
 
-import { normalizeCanonicalBandsInPlace, setColumnRailed } from "./layoutOps";
+import { setColumnRailed } from "./layoutOps";
 import { invariantViolations } from "./layoutInvariants";
 import { col, leaf, makeLayout, row, columnIdOf } from "./testUtils";
 
@@ -917,14 +917,13 @@ describe("applyPanelPlacement: docked->docked collapse identity (D38)", () => {
     return layout;
   };
 
-  it("a RAILED source column edge-docked onto an EMPTY edge arrives as the region rail", () => {
+  it("a RAILED source column edge-docked onto an EMPTY edge arrives packed", () => {
     const out = applyPanelPlacement(
       railedSource(true),
       ["a:0"],
       { position: { kind: "edge", edge: "right" }, width: null, height: null },
       () => null,
     );
-    normalizeCanonicalBandsInPlace(out);
     expect(findGroupLocation(out, findPaneGroup(out, "a:0")!)).toMatchObject({
       kind: "docked",
       edge: "right",
@@ -940,12 +939,10 @@ describe("applyPanelPlacement: docked->docked collapse identity (D38)", () => {
       { position: { kind: "edge", edge: "right" }, width: null, height: null },
       () => null,
     );
-    normalizeCanonicalBandsInPlace(out);
     expect(isRegionPackedOn(out, "right")).toBe(false);
-    const rows_ = out.docked.right!.rows;
-    expect(rows_.every((rw) => rw.columns.every((c) => c.railed !== true))).toBe(
-      true,
-    );
+    expect(
+      out.docked.right!.columns.every((c) => c.railed !== true),
+    ).toBe(true);
     expect(invariantViolations(out)).toEqual([]);
   });
 
@@ -959,20 +956,17 @@ describe("applyPanelPlacement: docked->docked collapse identity (D38)", () => {
       { position: { kind: "edge", edge: "right" }, width: null, height: null },
       () => null,
     );
-    normalizeCanonicalBandsInPlace(out);
-    const band = out.docked.right!.rows[0];
-    expect(band.columns).toHaveLength(2);
-    const aCol = band.columns.find((c) =>
-      c.leaves.some((lf) => lf.group === "a"),
-    )!;
+    const cols = out.docked.right!.columns;
+    expect(cols).toHaveLength(2);
+    const aCol = cols.find((c) => c.leaves.some((lf) => lf.group === "a"))!;
     expect(aCol.railed).toBe(true);
     expect(isRegionPackedOn(out, "right")).toBe(false);
     expect(invariantViolations(out)).toEqual([]);
   });
 
-  it("a REGION-RAILED source's panel edge-docked away arrives collapsed too", () => {
-    // The region flag is the other docked collapse store: a panel living
-    // under regionCollapsed carries the same identity.
+  it("a PACKED-region source's panel edge-docked away arrives collapsed too", () => {
+    // The packed region is derived from the same per-column flags: a panel
+    // living in a fully railed region carries the same identity.
     let layout = makeLayout({ left: leaf("a"), right: leaf("c") });
     layout = railRegion(layout, "left");
     const out = applyPanelPlacement(
@@ -981,9 +975,7 @@ describe("applyPanelPlacement: docked->docked collapse identity (D38)", () => {
       { position: { kind: "edge", edge: "right" }, width: null, height: null },
       () => null,
     );
-    normalizeCanonicalBandsInPlace(out);
-    const band = out.docked.right!.rows[0];
-    const aCol = band.columns.find((c) =>
+    const aCol = out.docked.right!.columns.find((c) =>
       c.leaves.some((lf) => lf.group === "a"),
     )!;
     expect(aCol.railed).toBe(true);

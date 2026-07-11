@@ -67,15 +67,14 @@ function groupPlacementSignatures(
     // derived from the column flags, but kept as its own term so the packed
     // form's replay hazard stays covered even if per-column terms change).
     const rail = isRegionPackedOn(layout, edge) ? "R" : "-";
-    for (const row of region.rows)
-      for (const column of row.columns) {
-        // The containing column's railed state joins the signature like the
-        // region's `:R` term: a user's column-rail toggle must mark that
-        // column's residents touched, for the same P6 replay hazard.
-        const colRail = column.railed === true ? "r" : "-";
-        for (const { id, group } of ops.collectLeaves(column))
-          sigs.set(group, `d:${edge}:${id}:${w}:${rail}:${colRail}`);
-      }
+    for (const column of region.columns) {
+      // The containing column's railed state joins the signature like the
+      // region's `:R` term: a user's column-rail toggle must mark that
+      // column's residents touched, for the same P6 replay hazard.
+      const colRail = column.railed === true ? "r" : "-";
+      for (const { id, group } of ops.collectLeaves(column))
+        sigs.set(group, `d:${edge}:${id}:${w}:${rail}:${colRail}`);
+    }
   }
   // Floating: signature = the window (id + position/size) the group sits in,
   // plus the WINDOW's collapse flag (D38 -- collapse is container state).

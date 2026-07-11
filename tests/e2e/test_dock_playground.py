@@ -266,7 +266,7 @@ def test_handle_tap_toggles_minimize(page: Page) -> None:
             const region = window.__dockLayout.docked[e];
             return (
                 region === null ||
-                region.rows.some((r) => r.columns.some((c) => c.railed !== true))
+                region.columns.some((c) => c.railed !== true)
             );
         })"""
     )

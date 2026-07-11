@@ -331,7 +331,7 @@ def test_docked_collapse_via_chevron_keeps_handle(viser_page: Page) -> None:
     expect(chevron).to_have_count(1)
     chevron.click()
     viser_page.wait_for_timeout(400)
-    expect(viser_page.locator("[data-dock-region-rail]")).to_have_count(1)
+    expect(viser_page.locator("[data-dock-rail-root]")).to_have_count(1)
     handle = viser_page.get_by_test_id("floating-panel-handle")
     expect(handle).to_be_visible()
     strip = handle.bounding_box()

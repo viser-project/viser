@@ -9,9 +9,10 @@
 //   - minRegionWidth: a single column's grab-min (the divider-summing across
 //     side-by-side columns lives in widthReconciliation, not here).
 //   - setNodeWeights: id-based weight setting for a column's or leaf's weight.
-//   - dockToRegionEdge / dropOnDockedLeaf top/bottom: now band a column's leaf
-//     STACK (insert a leaf), at 50/50 height so the new band doesn't collapse
-//     (the LEAD 2 height fix, naturally expressed in the flat model).
+//   - dropOnDockedLeaf top/bottom: insert a leaf into the target's STACK at
+//     50/50 height so the new cell doesn't collapse (the LEAD 2 height fix,
+//     naturally expressed in the flat model; D46: dockToRegionEdge is
+//     left/right only -- vertical arrangement is leaf stacking).
 
 import { describe, it, expect } from "vitest";
 import {
@@ -174,31 +175,17 @@ describe("setNodeWeights", () => {
 });
 
 // ===========================================================================
-// dockToRegionEdge top/bottom: add a full-width ROW BAND at 50/50 height (no
-// weight leak). In the 4-level model this is a new row band spanning the region,
-// not a leaf inserted into the first column.
+// dockToRegionEdge (D46: left/right only): a full-height column beside
+// everything; the dragged column's weight defaults to 1.
 // ===========================================================================
-describe("dockToRegionEdge top/bottom: equal vertical split (no weight leak)", () => {
-  it("docking C above a single-column region adds a top band, 50/50", () => {
-    // Existing region is one band [a]; docking C above prepends a new band [c]
-    // at row weight 1 (50/50 with the [a] band), so C does not collapse.
+describe("dockToRegionEdge side dock", () => {
+  it("docking C beside a single-column region adds a sibling column", () => {
     const l = layoutWith(leaf("a", 297), "a");
     l.groups["c"] = group("c");
-
-    const out = dockToRegionEdge(l, ["c"], "left", "top");
-    const rows = out.docked.left!.rows;
-    expect(rows).toHaveLength(2);
-    expect(rows.map((r) => r.columns[0].leaves[0].group)).toEqual(["c", "a"]); // C on top
-    expect(rows.map((r) => r.weight)).toEqual([1, 1]); // 50/50 height
-  });
-
-  it("bottom side puts the dragged band last, still 50/50", () => {
-    const l = layoutWith(leaf("a", 250), "a");
-    l.groups["c"] = group("c");
-    const out = dockToRegionEdge(l, ["c"], "left", "bottom");
-    const rows = out.docked.left!.rows;
-    expect(rows.map((r) => r.columns[0].leaves[0].group)).toEqual(["a", "c"]); // dragged last
-    expect(rows.map((r) => r.weight)).toEqual([1, 1]);
+    const out = dockToRegionEdge(l, ["c"], "left", "left");
+    const cols = out.docked.left!.columns;
+    expect(cols).toHaveLength(2);
+    expect(cols.map((c) => c.leaves[0].group)).toEqual(["c", "a"]); // C first
   });
 });
 
@@ -210,15 +197,9 @@ describe("dropOnDockedLeaf top/bottom: 50/50 split, width preserved", () => {
   function regionLayout(): { l: DockLayout; targetId: string } {
     // Right region [A(width 297) | B(width 297)] -- drop C above A.
     const region: DockRegion = {
-      rows: [
-        {
-          id: "Ra",
-          weight: 1,
-          columns: [
-            { id: "Ca", weight: 297, leaves: [{ id: "La", group: "a", weight: 1 }] },
-            { id: "Cb", weight: 297, leaves: [{ id: "Lb", group: "b", weight: 1 }] },
-          ],
-        },
+      columns: [
+        { id: "Ca", weight: 297, leaves: [{ id: "La", group: "a", weight: 1 }] },
+        { id: "Cb", weight: 297, leaves: [{ id: "Lb", group: "b", weight: 1 }] },
       ],
     };
     const l: DockLayout = {

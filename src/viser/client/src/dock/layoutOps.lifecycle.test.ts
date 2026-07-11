@@ -121,12 +121,8 @@ describe("removePane", () => {
     const l = emptyLayout();
     l.groups["g1"] = { id: "g1", paneIds: ["p1"], activeId: "p1" };
     l.docked.left = {
-      rows: [
-        {
-          id: "r110",
-          weight: 1,
-          columns: [{ id: "C1", weight: 1, leaves: [{ id: "L1", group: "g1", weight: 1 }] }],
-        },
+      columns: [
+        { id: "C1", weight: 1, leaves: [{ id: "L1", group: "g1", weight: 1 }] },
       ],
     };
     const out = removePane(l, "p1");
@@ -213,11 +209,7 @@ describe("floatColumn", () => {
     l.groups["b"] = group("b");
     l.groups["x"] = group("x");
     l.docked.left = {
-      rows: [
-        {
-          id: "r111",
-          weight: 1,
-          columns: [
+      columns: [
         { id: "Cx", weight: 1, leaves: [{ id: "Lx", group: "x", weight: 1 }] },
         {
           id: "COL",
@@ -226,8 +218,6 @@ describe("floatColumn", () => {
             { id: "La", group: "a", weight: 2 },
             { id: "Lb", group: "b", weight: 1 },
           ],
-        },
-      ],
         },
       ],
     };
@@ -259,7 +249,7 @@ describe("floatColumn", () => {
   it("floating the LAST column empties the region", () => {
     const l = colLayout();
     // Drop the sibling column so COL is the whole region.
-    l.docked.left = { rows: [{ id: "r1", weight: 1, columns: [widthColumns(l.docked.left!)[1]] }] };
+    l.docked.left = { columns: [widthColumns(l.docked.left!)[1]] };
     const { layout: out, windowId } = floatColumn(l, "left", "COL", 0, 0, 300);
     expect(windowId).not.toBeNull();
     expect(out.docked.left).toBeNull();
@@ -269,7 +259,7 @@ describe("floatColumn", () => {
 
   it("floats a RAILED column as a COLLAPSED window (identity transfer, D38)", () => {
     const l = colLayout();
-    l.docked.left!.rows[0].columns.find((c) => c.id === "COL")!.railed = true;
+    l.docked.left!.columns.find((c) => c.id === "COL")!.railed = true;
     const { layout: out } = floatColumn(l, "left", "COL", 0, 0, 300);
     expect(out.floating[0].collapsed).toBe(true);
     // An expanded column floats expanded.

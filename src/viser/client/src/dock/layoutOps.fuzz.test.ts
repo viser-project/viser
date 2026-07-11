@@ -17,7 +17,6 @@ import {
   DockLayout,
   DockLeaf,
   DockRegion,
-  DockRow,
   DropRegion,
   GroupId,
   NodeId,
@@ -29,10 +28,8 @@ import { planRegion, plannedReservedWidth } from "./regionPlan";
 import { regionWidthsOf } from "./types";
 import { reconcileRegionWidths } from "./widthReconciliation";
 import {
-  canonicalViolations,
   dockToEdge,
   dockToRegionEdge,
-  dockBandAtIndex,
   dropOnDockedLeaf,
   insertTabsInto,
   mergeGroupsInto,
@@ -40,8 +37,6 @@ import {
   floatColumn,
   isColumnMinimized,
   isMultiLeafColumn,
-  normalizeCanonicalBandsInPlace,
-  structureSignature,
   tearOutPane,
   snapToWindowStack,
   reorderTab,
@@ -62,9 +57,7 @@ import {
   mulberry32,
   nid,
   leaf,
-  row,
   row as rowS,
-  rows,
   col as colS,
   group as grp,
   floatingWindow,
@@ -82,7 +75,7 @@ const int = (rng: Rng, lo: number, hi: number) =>
 // ---------------------------------------------------------------------------
 function leaves(region: DockRegion | null): DockLeaf[] {
   if (region === null) return [];
-  return region.rows.flatMap((r) => r.columns).flatMap((c) => c.leaves);
+  return region.columns.flatMap((c) => c.leaves);
 }
 
 // THE INVARIANTS live in production (layoutInvariants.ts) so applyOp asserts the
@@ -117,21 +110,19 @@ function geometricViolations(layout: DockLayout): string[] {
       v.push(`${edge}: bad chromePx ${plan.chromePx}`);
     if (plan.singleColumn !== (plan.columns.length === 1))
       v.push(`${edge}: singleColumn disagrees with columns length`);
-    // Derived widths must be finite and sane, in both collapse states (D21).
-    for (const regionCollapsed of [false, true]) {
-      const reserved = plannedReservedWidth(plan, widths[edge], regionCollapsed);
+    // Derived widths must be finite and sane in both packed states.
+    for (const regionPacked of [false, true]) {
+      const reserved = plannedReservedWidth(plan, widths[edge], regionPacked);
       if (!finite(reserved) || reserved < 0)
         v.push(`${edge}: bad reserved width ${reserved}`);
     }
-    // Per-band coherence: isColumnMinimized must be total over every band
-    // (a partial classification is exactly the class of bug the structural
-    // invariants miss).
-    for (const band of region.rows) {
-      const stripCount = band.columns.filter((c) =>
+    // Column coherence: isColumnMinimized must be total over the columns.
+    {
+      const stripCount = region.columns.filter((c) =>
         isColumnMinimized(c),
       ).length;
-      if (stripCount < 0 || stripCount > band.columns.length)
-        v.push(`${edge}: band ${band.id} bad strip count ${stripCount}`);
+      if (stripCount < 0 || stripCount > region.columns.length)
+        v.push(`${edge}: bad strip count ${stripCount}`);
     }
   }
   return v;
@@ -198,9 +189,10 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
       make: () => {
         const l = emptyLayout();
         l.groups = { a: grp("a", 1), b: grp("b", 2), c: grp("c", 1), d: grp("d", 1) };
-        // Band 1: one full-width column (a). Band 2: b beside a (c,d) stack.
+        // D46 shape: three side-by-side columns -- [a,b stack? no --
+        // (a) alone, (b), (c,d) stack] exercising multi-column + multi-leaf.
         l.docked.left = toRegion(
-          rows([row([leaf("a")]), row([leaf("b"), colS([leaf("c"), leaf("d")])])]),
+          rowS([colS([leaf("a"), leaf("b")]), leaf("c"), colS([leaf("d")])]),
         );
         return l;
       },
@@ -223,7 +215,7 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
         const railedB = colS([leaf("b")]);
         if (railedB.kind === "col") railedB.column.railed = true;
         l.docked.left = toRegion(
-          rows([row([leaf("a"), railedB]), row([leaf("c")]), row([leaf("d")])]),
+          rowS([leaf("a"), railedB, colS([leaf("c"), leaf("d")])]),
         );
         l.docked.right = toRegion(rowS([leaf("e")]));
         return l;
@@ -239,9 +231,9 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
       make: () => {
         const l = emptyLayout();
         l.groups = { a: grp("a", 2), b: grp("b", 1), c: grp("c", 1) };
-        l.docked.left = toRegion(rows([row([leaf("a")]), row([leaf("b")])]));
-        // Packed rail (D44): derived from per-column railed flags.
-        for (const rw of l.docked.left!.rows) rw.columns[0].railed = true;
+        l.docked.left = toRegion(rowS([leaf("a"), leaf("b")]));
+        // Packed rail (D44/D46): every column railed.
+        for (const c of l.docked.left!.columns) c.railed = true;
         l.floating = [
           floatingWindow({
             id: "wc",
@@ -301,7 +293,6 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
 type OpName =
   | "dockToEdge"
   | "dockToRegionEdge"
-  | "dockBandAtIndex"
   | "dropOnDockedLeaf"
   | "insertTabsInto"
   | "mergeGroupsInto"
@@ -357,7 +348,7 @@ function allPureColumnTargets(
   for (const edge of ["left", "right"] as DockEdge[]) {
     const region = l.docked[edge];
     if (region === null) continue;
-    for (const c of region.rows.flatMap((r) => r.columns))
+    for (const c of region.columns)
       if (isMultiLeafColumn(c)) out.push({ edge, nodeId: c.id });
   }
   return out;
@@ -373,7 +364,6 @@ function chooseOp(rng: Rng, l: DockLayout): AppliedOp | null {
   const ops: OpName[] = [
     "dockToEdge",
     "dockToRegionEdge",
-    "dockBandAtIndex",
     "dropOnDockedLeaf",
     "insertTabsInto",
     "mergeGroupsInto",
@@ -414,7 +404,7 @@ function buildOp(
     sides: readonly ("top" | "bottom" | "left" | "right")[];
   },
 ): AppliedOp | null {
-  const { groups, edges, regions, sides } = ctx;
+  const { groups, edges, regions } = ctx;
   const g = () => pick(rng, groups);
   switch (op) {
     case "dockToEdge": {
@@ -425,7 +415,7 @@ function buildOp(
     case "dockToRegionEdge": {
       const gs = pickGroups(rng, groups);
       const edge = pick(rng, edges);
-      const side = pick(rng, sides);
+      const side = pick(rng, ["left", "right"] as const);
       const useW = rng() < 0.5;
       const weights = useW
         ? { existing: int(rng, 1, 5), dragged: int(rng, 1, 5) }
@@ -433,21 +423,6 @@ function buildOp(
       return {
         desc: `dockToRegionEdge([${gs}], ${edge}, ${side}, ${JSON.stringify(weights)})`,
         apply: (x) => dockToRegionEdge(x, gs, edge, side, weights),
-      };
-    }
-    case "dockBandAtIndex": {
-      const gs = pickGroups(rng, groups);
-      const edge = pick(rng, edges);
-      const region = l.docked[edge];
-      const maxIdx = region === null ? 0 : region.rows.length;
-      const index = int(rng, 0, maxIdx + 1); // include an out-of-range value
-      const weights =
-        rng() < 0.5
-          ? { existing: int(rng, 1, 5), dragged: int(rng, 1, 5) }
-          : undefined;
-      return {
-        desc: `dockBandAtIndex([${gs}], ${edge}, ${index}, ${JSON.stringify(weights)})`,
-        apply: (x) => dockBandAtIndex(x, gs, edge, index, weights),
       };
     }
     case "dropOnDockedLeaf": {
@@ -597,12 +572,9 @@ function buildOp(
       const edge = pick(rng, edgesWithRegion);
       const region = l.docked[edge]!;
       const ids: NodeId[] = [];
-      for (const r of region.rows) {
-        ids.push(r.id);
-        for (const c of r.columns) {
-          ids.push(c.id);
-          for (const lf of c.leaves) ids.push(lf.id);
-        }
+      for (const c of region.columns) {
+        ids.push(c.id);
+        for (const lf of c.leaves) ids.push(lf.id);
       }
       const weightsById: Record<NodeId, number> = {};
       for (const id of ids) if (rng() < 0.6) weightsById[id] = int(rng, 1, 6);
@@ -645,8 +617,7 @@ function buildOp(
       if (edgesWithRegion.length === 0) return null;
       const edge = pick(rng, edgesWithRegion);
       const cols: NodeId[] = [];
-      for (const r of l.docked[edge]!.rows)
-        for (const c of r.columns) cols.push(c.id);
+      for (const c of l.docked[edge]!.columns) cols.push(c.id);
       if (cols.length === 0) return null;
       const columnId = pick(rng, cols);
       const on = rng() < 0.7;
@@ -679,13 +650,12 @@ function runSequence(
 ): { failure: RunFailure | null; descs: string[] } {
   const rng = mulberry32(seed);
   let layout = startMake();
-  // Fixtures are pre-commit shapes: run them through canonicalization once,
-  // as the app's first structural commit would (applyOp's pipeline), then
   // ESTABLISH the D40 width semantic the way a wholesale injection
   // (api.replace) does -- a structural reconcile from an empty dock
-  // px-ifies the width-row weights and sets regionWidth to the rendered
-  // content need, so invariant #16 holds before the first op.
-  normalizeCanonicalBandsInPlace(layout);
+  // px-ifies the column weights and sets regionWidth to the rendered
+  // content need, so invariant #16 holds before the first op. (No
+  // canonicalization exists under D46 -- one structure per picture holds
+  // by types.)
   reconcileRegionWidths(
     { ...layout, docked: { left: null, right: null } },
     layout,
@@ -699,7 +669,6 @@ function runSequence(
   const startV = [
     ...invariantViolations(layout),
     ...geometricViolations(layout),
-    ...canonicalViolations(layout),
   ];
   if (startV.length > 0)
     return {
@@ -726,18 +695,6 @@ function runSequence(
       };
     }
     const violations: string[] = [];
-    // PRODUCTION PIPELINE (applyOp): canonicalize on STRUCTURAL commits --
-    // the store-migration rules and D12/D13 run after every real op, so the
-    // fuzzer must assert the states the app actually commits, and the
-    // canonicalizer must be a fixpoint (a second run changes nothing).
-    if (
-      next !== before &&
-      structureSignature(next) !== structureSignature(before)
-    ) {
-      normalizeCanonicalBandsInPlace(next);
-      if (normalizeCanonicalBandsInPlace(next))
-        violations.push("normalizeCanonicalBandsInPlace is not idempotent");
-    }
     // PRODUCTION PIPELINE, width leg: applyOp reconciles region widths on
     // every commit (the ONLY regionWidth writer) -- the D40 rendered-need
     // invariant (#16) is maintained here by construction, so the fuzzer
@@ -748,7 +705,6 @@ function runSequence(
     violations.push(
       ...invariantViolations(next),
       ...geometricViolations(next),
-      ...canonicalViolations(next),
     );
     // Panel conservation: the multiset of panel ids must be invariant.
     if (JSON.stringify(allPanels(next)) !== startPanels) {
@@ -808,20 +764,8 @@ function randomStart(seed: number): DockLayout {
   };
   const buildTree = (gs: GroupId[]): DockRegion | null => {
     if (gs.length === 0) return null;
-    // Split the groups into 1-3 contiguous bands.
-    const bandCount = int(rng, 1, Math.min(3, gs.length));
-    const bands: DockRow[] = [];
-    let i = 0;
-    for (let b = 0; b < bandCount; b++) {
-      const remainingBands = bandCount - b;
-      // Leave at least one group for each remaining band.
-      const maxTake = gs.length - i - (remainingBands - 1);
-      const take = b === bandCount - 1 ? gs.length - i : int(rng, 1, maxTake);
-      const slice = gs.slice(i, i + take);
-      i += take;
-      bands.push({ id: nid(), weight: int(rng, 1, 4), columns: buildColumns(slice) });
-    }
-    return { rows: bands as NonEmpty<DockRow> };
+    // D46: a region is one columns list -- partition the groups directly.
+    return { columns: buildColumns(gs) };
   };
 
   l.docked.left = buildTree(buckets[0]);

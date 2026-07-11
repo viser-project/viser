@@ -179,7 +179,7 @@ def test_docked_scene_collapses_to_rail_via_chevron(
         # Collapse via the region chevron -> the 36px rail.
         page.eval_on_selector('[data-dock-region-collapse="left"]', "e => e.click()")
         page.wait_for_timeout(350)
-        assert page.locator("[data-dock-region-rail]").count() == 1
+        assert page.locator("[data-dock-rail-root]").count() == 1
         mini = _gbox(page, scene_gid)
         assert mini["w"] < 60, (
             f"collapsed Scene should render as the ~36px rail cell, got {mini['w']}"
@@ -187,7 +187,7 @@ def test_docked_scene_collapses_to_rail_via_chevron(
 
         # Restore via the rail header's +.
         page.eval_on_selector(
-            "[data-dock-region-rail] [data-dock-minimize-all]", "e => e.click()"
+            "[data-dock-rail-root] [data-dock-minimize-all]", "e => e.click()"
         )
         page.wait_for_timeout(350)
         restored = _box(page, f'[data-dock-leaf]:has([data-dock-group="{scene_gid}"])')
@@ -468,9 +468,7 @@ def test_drop_into_rail_at_tab_position(dock_context, vite_server: int) -> None:
                 const region = window.__dockLayout.docked.right;
                 return (
                     region !== null &&
-                    region.rows.every((r) => r.columns.length === 1) &&
-                    region.rows.every((r) =>
-                        r.columns.every((c) => c.railed === true))
+                    region.columns.every((c) => c.railed === true)
                 );
             }"""
         ), "the region must stay collapsed after a tab-position drop"
@@ -798,10 +796,10 @@ def test_no_docked_cell_has_minimize_column_chevron_rails_stack(
 def test_plain_stack_cells_have_no_minimize_control(
     dock_context, vite_server: int
 ) -> None:
-    """D30 visual-column scope: a PLAIN docked stack (two bands, one leaf
-    each -- the canonical D12 shape) is ONE visual column, so neither cell
-    carries the cell-level minus even though each sits alone in its MODEL
-    column. The collapse control is the region handle's chevron."""
+    """D30 visual-column scope: a PLAIN docked stack (one column, two
+    leaves -- the D46 stack shape) is ONE visual column, so neither cell
+    carries the cell-level minus. The collapse control is the region
+    handle's chevron (single-column region)."""
     page = _open(dock_context, vite_server, 1400, 800)
     try:
         set_layout(
@@ -822,29 +820,24 @@ def test_plain_stack_cells_have_no_minimize_control(
 
 
 # ===========================================================================
-# Rail drop-zone pins (user-reported symptoms; layout: band 1 = full-width
-# expanded panel, band 2 = two railed columns side by side):
-# a. Dropping on the LEFT sliver of the leftmost rail lands in the RAILS'
-#    band (previously the 40px region side band shadowed the 36px rail and
-#    committed into band 1).
-# b. The drop hint between the two rails is BAND-TALL and stays in the
-#    rails' band (previously a ~cell-tall stub, or a hint over band 1 while
-#    the pointer was over band 2).
-# c. A drop over the rails band's empty interior (right of the rails) also
-#    lands in the rails' band -- never in band 1, and never dead.
+# Rail drop-zone pins (user-reported symptoms, restated for D46: rails are
+# full-height sibling COLUMNS beside expanded columns):
+# a. Dropping on the outer sliver of the outermost rail docks a new
+#    full-height column beside it (the 40px region side band must yield to
+#    the 36px rail rather than shadow it).
+# b. The drop hint between two rails is REGION-TALL (columns are full
+#    height), not a short stub.
 # ===========================================================================
-def _rails_over_panel_layout(page: Page) -> None:
-    """Band 1 = expanded console (full width), band 2 = two rails; a floating
-    scene panel (240px) is the dragged subject."""
+def _rails_beside_panel_layout(page: Page) -> None:
+    """Right region = [controls rail | inspector rail | expanded console];
+    a floating scene panel (240px) is the dragged subject."""
     set_layout(
         page,
         dock_layout(
-            docked_right=rows(
+            docked_right=columns(
+                stack("controls", railed=True),
+                stack("inspector", railed=True),
                 "console",
-                columns(
-                    stack("controls", railed=True),
-                    stack("inspector", railed=True),
-                ),
             ),
             floating=[window("scene", x=400, y=300, width=240)],
         ),
@@ -853,7 +846,7 @@ def _rails_over_panel_layout(page: Page) -> None:
 
 def _rail_root_box(page: Page, gid: str) -> dict | None:
     """Bounding rect of the full rail STRIP (data-dock-rail-root) holding
-    `gid` -- band-tall, 36px wide."""
+    `gid` -- region-tall, 36px wide."""
     return page.eval_on_selector(
         f'[data-dock-group="{gid}"]',
         "e => { const root = e.closest('[data-dock-rail-root]'); "
@@ -863,76 +856,80 @@ def _rail_root_box(page: Page, gid: str) -> dict | None:
     )
 
 
-def _region_bands(page: Page, edge: str = "right") -> list | None:
-    """The docked region's bands as [[{railed, groups}, ...], ...]."""
+def _region_cols(page: Page, edge: str = "right") -> list | None:
+    """The docked region's columns as [{railed, groups}, ...] (D46)."""
     return page.evaluate(
         """(edge) => {
             const region = window.__dockLayout.docked[edge];
             if (!region) return null;
-            return region.rows.map((row) => row.columns.map((col) => ({
+            return region.columns.map((col) => ({
                 railed: col.railed === true,
                 groups: col.leaves.map((l) => l.group),
-            })));
+            }));
         }""",
         edge,
     )
 
 
-def _band_index_of(bands: list, gid: str) -> int | None:
-    for i, band in enumerate(bands):
-        for col in band:
-            if gid in col["groups"]:
-                return i
+def _col_index_of(cols: list, gid: str) -> int | None:
+    for i, col in enumerate(cols):
+        if gid in col["groups"]:
+            return i
     return None
 
 
-def test_drop_left_of_leftmost_rail_lands_in_rails_band(
+def test_drop_left_of_leftmost_rail_docks_column_beside_it(
     dock_context, vite_server: int
 ) -> None:
-    """Symptom (a): the leftmost rail's outer sliver docks a new column into
-    the RAILS' band. The 40px region side band must not shadow the 36px rail
-    or commit the drop into band 1."""
+    """Symptom (a): the leftmost rail's outer sliver docks a new full-height
+    column beside it. The 40px region side band must not shadow the 36px
+    rail (the side bands yield over collapsed cells)."""
     page = _open(dock_context, vite_server, 1400, 800)
     try:
-        _rails_over_panel_layout(page)
+        _rails_beside_panel_layout(page)
         assert column_railed_for_group(page, "t-controls") is True
         rail = _rail_root_box(page, "t-controls")
         if rail is None:
             pytest.skip("rail not laid out this run")
-        # 4px inside the leftmost rail's left edge, in the band's LOWER half
-        # (the old bug drew/committed into the top band from here).
+        # 4px inside the leftmost rail's left edge, in the region's LOWER
+        # half.
         target = (rail["x"] + 4, rail["y"] + rail["h"] * 0.6)
         _drag_group(page, "t-scene", target)
-        bands = _region_bands(page)
-        if bands is None or _band_index_of(bands, "t-scene") is None:
+        cols = _region_cols(page)
+        if cols is None or _col_index_of(cols, "t-scene") is None:
             pytest.skip("scene did not dock this run")
-        assert _band_index_of(bands, "t-scene") == 1, (
-            f"drop left of the leftmost rail must land in the rails' band, got {bands}"
+        assert _col_index_of(cols, "t-scene") == 0, (
+            f"drop left of the leftmost rail must land as the new outermost "
+            f"column, got {cols}"
         )
-        # Band 1 keeps console alone; the rails stay railed; scene lands
-        # expanded as the band's new outer column.
-        assert [c["groups"] for c in bands[0]] == [["t-console"]], bands
-        assert bands[1][0]["groups"] == ["t-scene"], bands
-        assert bands[1][0]["railed"] is False
+        # Scene lands expanded; the rails stay railed; console untouched.
+        assert cols[0]["railed"] is False
         assert column_railed_for_group(page, "t-controls") is True
+        assert column_railed_for_group(page, "t-inspector") is True
+        assert [c["groups"] for c in cols] == [
+            ["t-scene"],
+            ["t-controls"],
+            ["t-inspector"],
+            ["t-console"],
+        ], cols
     finally:
         page.close()
 
 
-def test_between_rails_hint_is_band_tall(dock_context, vite_server: int) -> None:
-    """Symptom (b)/(c): hovering between the two rails shows a thin vertical
-    insertion line spanning the rails' BAND -- not a short stub, and not a
-    hint up in band 1 while the pointer is over band 2."""
+def test_between_rails_hint_is_region_tall(dock_context, vite_server: int) -> None:
+    """Symptom (b): hovering between the two rails shows a thin vertical
+    insertion line spanning the full region height (D46: a side drop inserts
+    a full-height column) -- not a short stub."""
     page = _open(dock_context, vite_server, 1400, 800)
     try:
-        _rails_over_panel_layout(page)
+        _rails_beside_panel_layout(page)
         c_rail = _rail_root_box(page, "t-controls")
         i_rail = _rail_root_box(page, "t-inspector")
         if c_rail is None or i_rail is None:
             pytest.skip("rails not laid out this run")
         grip = _grip(page, "t-scene")
         gap_x = (c_rail["right"] + i_rail["x"]) / 2
-        hover_y = c_rail["y"] + c_rail["h"] * 0.75  # lower half of the band
+        hover_y = c_rail["y"] + c_rail["h"] * 0.75  # lower half of the region
         page.mouse.move(grip["x"], grip["y"])
         page.mouse.down()
         page.mouse.move(grip["x"] + 6, grip["y"] + 6, steps=2)
@@ -949,144 +946,32 @@ def test_between_rails_hint_is_band_tall(dock_context, vite_server: int) -> None
         h = hints[0]
         assert h["w"] <= 8, f"between-rails hint should be a thin line, got {h}"
         assert h["h"] >= 0.6 * c_rail["h"], (
-            f"between-rails hint must be band-tall (band {c_rail['h']}px), got {h}"
+            f"between-rails hint must be region-tall (region {c_rail['h']}px), got {h}"
         )
         assert h["y"] >= c_rail["y"] - 12 and h["y"] + h["h"] <= (
             c_rail["y"] + c_rail["h"] + 12
-        ), f"hint must stay within the rails' band {c_rail}, got {h}"
+        ), f"hint must stay within the region {c_rail}, got {h}"
     finally:
         page.close()
 
 
-def test_drop_over_rails_band_interior_lands_in_rails_band(
-    dock_context, vite_server: int
-) -> None:
-    """Symptom (c): the rails band's empty interior (right of the packed
-    rails) is a live 'dock beside the rails' zone committing into THAT band
-    -- a drop at band 2's y never lands in band 1."""
-    page = _open(dock_context, vite_server, 1400, 800)
-    try:
-        _rails_over_panel_layout(page)
-        i_rail = _rail_root_box(page, "t-inspector")
-        if i_rail is None:
-            pytest.skip("rail not laid out this run")
-        # Well inside the band's empty run right of the rightmost rail.
-        target = (i_rail["right"] + 60, i_rail["y"] + i_rail["h"] * 0.5)
-        _drag_group(page, "t-scene", target)
-        bands = _region_bands(page)
-        if bands is None or _band_index_of(bands, "t-scene") is None:
-            pytest.skip("scene did not dock this run")
-        assert _band_index_of(bands, "t-scene") == 1, (
-            f"a drop over the rails band's interior must land in the rails' "
-            f"band, got {bands}"
-        )
-        assert [c["groups"] for c in bands[0]] == [["t-console"]], bands
-        # The newcomer sits after the rails (a split right of the rightmost).
-        assert bands[1][-1]["groups"] == ["t-scene"], bands
-    finally:
-        page.close()
-
-
-def test_all_railed_band_content_sizes(dock_context, vite_server: int) -> None:
-    """D41 (revision 2): an ALL-RAILED band SNAPS to its CONTENT height when
-    it becomes all-railed (weight committed as the measured spine height), so
-    by default no dead gray sits below its spine icons and an EXPANDED
-    sibling band reclaims the freed height -- heights stay free to drag
-    afterwards. The two rails stay SEPARATE (nothing merges): two
-    column-rails, each its own spine. And the default must not squeeze -- at
-    a small tab count the spine does NOT scroll.
-
-    (Supersedes the 2026-07-06 full-height rule, which parked an all-railed
-    band at a full weighted share and left a big gray tail below the icons --
-    the user's screenshot. The full-height rule existed so a MANY-tab rail
-    wouldn't be squeezed into a sliver; the huge case is covered by
-    ``test_all_railed_band_caps_and_scrolls_when_huge``.)"""
-    page = _open(dock_context, vite_server, 1400, 800)
-    try:
-        # A top band of two rails (controls / inspector) over an expanded
-        # console band -- the user's shape. The all-rails band must shrink to
-        # its spine height; the expanded band must reclaim the rest.
-        set_layout(
-            page,
-            dock_layout(
-                docked_right=rows(
-                    columns(
-                        stack("controls", railed=True),
-                        stack("inspector", railed=True),
-                    ),
-                    "console",
-                ),
-            ),
-        )
-        geom = page.evaluate(
-            """() => {
-                const region = document.querySelector('[data-dock-region]');
-                const rh = region.getBoundingClientRect().height;
-                const rails = [...document.querySelectorAll(
-                    '[data-dock-column-rail]')].map((rail) => {
-                    const root = rail.parentElement;
-                    const r = root.getBoundingClientRect();
-                    const body = root.children[1];
-                    return {
-                        h: r.height,
-                        scrolls: body
-                            ? body.scrollHeight > body.clientHeight + 1
-                            : null,
-                    };
-                });
-                // The expanded console cell's rendered height.
-                const exp = document.querySelector(
-                    '[data-dock-group="t-console"]');
-                const th = exp ? exp.getBoundingClientRect().height : null;
-                return { rh, rails, th };
-            }"""
-        )
-        # Rails stay SEPARATE -- two column-rails, nothing merged.
-        assert len(geom["rails"]) == 2, geom
-        for rail in geom["rails"]:
-            # Content-sized: the spine band is far shorter than the region
-            # (no full-height weighted share -> no dead gray below the icons).
-            assert rail["h"] < geom["rh"] * 0.6, (
-                f"an all-railed band must content-size, not fill the region: {geom}"
-            )
-            # Never squeezed below content: a few-tab spine does not scroll.
-            assert rail["scrolls"] is False, (
-                f"content-sizing must not squeeze the spine into a scrollbar: {geom}"
-            )
-        # The expanded Tools band reclaims the height the rail band freed:
-        # it takes the bulk of the region, not a mere half.
-        assert geom["th"] is not None and geom["th"] > geom["rh"] * 0.6, (
-            f"the expanded sibling band must reclaim the freed height: {geom}"
-        )
-    finally:
-        page.close()
-
-
-def test_all_railed_band_caps_and_scrolls_when_huge(
-    dock_context, vite_server: int
-) -> None:
-    """D41: a genuinely huge all-railed band (many tabs, taller than the
-    region) never exceeds the region height -- it sizes by its weighted share
-    (basis 0 + grow, which can never overflow the container) and its spine
-    scrolls via the rail Paper's overflowY:auto, so it never overflows into
-    the next band. This is the degenerate case the 2026-07-06 full-height
-    rule protected; the share sizing preserves that protection while the
-    common few-tab case snaps to content."""
+def test_huge_rail_spine_caps_and_scrolls(dock_context, vite_server: int) -> None:
+    """A genuinely huge rail spine (many tabs, taller than the region) never
+    exceeds the region height (D46: rail strips are region-tall by
+    construction) -- its spine scrolls via the rail Paper's overflowY:auto
+    rather than overflowing."""
     page = _open(dock_context, vite_server, 1400, 220)
     try:
-        # A TALL all-rails band: two railed columns (D39 needs 2+ so neither is
-        # a lone-column band), one with MANY tabs (one spine row each), over an
-        # expanded band, in a SHORT region so the tallest spine cannot fit and
+        # A railed column with MANY tabs (one spine row each) beside an
+        # expanded column, in a SHORT region so the spine cannot fit and
         # must scroll.
         many = group(["controls", "inspector", "console", "layers", "props", "history"])
         set_layout(
             page,
             dock_layout(
-                docked_right=rows(
-                    columns(
-                        stack(many, railed=True),
-                        stack("scene", railed=True),
-                    ),
+                docked_right=columns(
+                    stack(many, railed=True),
+                    stack("scene", railed=True),
                     "monitor",
                 ),
             ),
@@ -1095,7 +980,6 @@ def test_all_railed_band_caps_and_scrolls_when_huge(
             """() => {
                 const region = document.querySelector('[data-dock-region]');
                 const rh = region.getBoundingClientRect().height;
-                // The band box is the rail root's parent (the band wrapper).
                 const roots = [...document.querySelectorAll(
                     '[data-dock-rail-root]')];
                 const rails = roots.map((root) => {
@@ -1108,15 +992,15 @@ def test_all_railed_band_caps_and_scrolls_when_huge(
                             : null,
                     };
                 });
-                const bandH = Math.max(...rails.map((x) => x.h), 0);
+                const maxH = Math.max(...rails.map((x) => x.h), 0);
                 const anyScroll = rails.some((x) => x.scrolls === true);
-                return { rh, h: bandH, scrolls: anyScroll, n: roots.length };
+                return { rh, h: maxH, scrolls: anyScroll, n: roots.length };
             }"""
         )
         # Capped at the region's own height (never taller, so it cannot
-        # overflow into the next band).
+        # overflow the region).
         assert geom["h"] is not None and geom["h"] <= geom["rh"] + 2, (
-            f"a huge all-railed band must cap at the region height: {geom}"
+            f"a huge rail spine must cap at the region height: {geom}"
         )
         # The huge spine scrolls internally (acceptable for the degenerate
         # case).
@@ -1128,84 +1012,60 @@ def test_all_railed_band_caps_and_scrolls_when_huge(
 
 
 # ===========================================================================
-# Fix A: an ALL-RAILS region (2+ rail bands, NO expanded band) fills the
-# the region height UNIFORMLY (weighted shares), NOT content-sized. Sizing
-# an all-rails band only pays off when an expanded band exists to donate the
-# freed height to; with no expanded band, content-sizing would leave the
-# the lower area of the region empty and the bands ragged. (Two rail bands
-# SAME multi-column partition D13-zip into one; unequal partitions -- a 2-col
-# band over a 3-col band -- stay two separate bands.)
+# A packed region (every column railed) fills the region height: each rail
+# strip is REGION-TALL by construction under D46 (columns are full height),
+# so no dead area is stranded below the strips.
 # ===========================================================================
-def test_all_rails_region_fills_height_uniformly(
-    dock_context, vite_server: int
-) -> None:
+def test_packed_region_strips_are_region_tall(dock_context, vite_server: int) -> None:
     page = _open(dock_context, vite_server, 1400, 800)
     try:
         set_layout(
             page,
             dock_layout(
-                docked_right=rows(
-                    columns(
-                        stack("controls", railed=True),
-                        stack("inspector", railed=True),
-                    ),
-                    columns(
-                        stack("console", railed=True),
-                        stack("scene", railed=True),
-                        stack("monitor", railed=True),
-                    ),
+                docked_right=columns(
+                    stack("controls", railed=True),
+                    stack("inspector", railed=True),
+                    stack("console", railed=True),
+                    stack("scene", railed=True),
+                    stack("monitor", railed=True),
                 ),
             ),
         )
-        # Confirm the region is genuinely all-rails and stayed TWO bands (not
-        # zipped): a 2-col band over a 3-col band.
-        bands = _region_bands(page)
-        assert bands is not None and len(bands) == 2, (
-            f"expected two unequal-partition rail bands, got {bands}"
+        cols = _region_cols(page)
+        assert cols is not None and len(cols) == 5, (
+            f"expected five railed columns, got {cols}"
         )
-        for band in bands:
-            assert all(col["railed"] for col in band), (
-                f"every column must be railed (all-rails region), got {bands}"
-            )
+        assert all(col["railed"] for col in cols), (
+            f"every column must be railed (packed region), got {cols}"
+        )
         geom = page.evaluate(
             """() => {
                 const region = document.querySelector('[data-dock-region]');
                 const rh = region.getBoundingClientRect().height;
-                // The region's flex column of band wrappers: sum the band
-                // heights (skip the divider fragments).
-                const inner = region.firstElementChild;
-                const bandBoxes = [...inner.children]
-                    .filter((el) => el.getAttribute('data-dock-divider') === null)
-                    .map((el) => el.getBoundingClientRect().height);
-                return { rh, bandBoxes, sum: bandBoxes.reduce((s, h) => s + h, 0) };
+                const roots = [...document.querySelectorAll(
+                    '[data-dock-rail-root]')].map(
+                    (el) => el.getBoundingClientRect().height);
+                return { rh, roots };
             }"""
         )
-        # The bands together fill essentially the whole region (uniform fill),
-        # not a short content-sized stack that strands the lower area.
-        assert geom["sum"] >= geom["rh"] * 0.9, (
-            f"an all-rails region must FILL the height (weighted shares), not "
-            f"content-size and leave the lower area empty: {geom}"
-        )
-        # Each band is a substantial share -- neither collapsed to a short
-        # content strip. With equal band weights each is ~half the region.
-        for h in geom["bandBoxes"]:
-            assert h >= geom["rh"] * 0.3, (
-                f"each all-rails band should take a weighted share of the "
-                f"region, not content-size to a short strip: {geom}"
+        assert len(geom["roots"]) == 5, geom
+        for h in geom["roots"]:
+            assert h >= geom["rh"] * 0.9, (
+                f"a packed region's rail strips must be region-tall: {geom}"
             )
     finally:
         page.close()
 
 
 # ===========================================================================
-# Fix A / D41-win intact: a rail band OVER an expanded band still lands at
-# its content height by default (the snap) and the expanded band reclaims
-# the freed height. (Duplicates the guarantee of
-# test_all_railed_band_content_sizes with an explicit "the D41 win survives
-# Fix A" framing: the snap is scoped to when an expanded band exists to
-# donate to.)
+# Rail columns with UNEQUAL cell counts ([1-cell | 2-cell | 1-cell]) are
+# FULL-HEIGHT, and the vertical divider rule between two rail columns runs
+# the FULL region height -- a rail column's body is region-tall (empty tail
+# below the spine included), so the boundary between two columns must span
+# their whole shared edge. A rule that stops at the shorter spine's content
+# reads as the rails "not extending full height" (user report, 2026-07-09).
 # ===========================================================================
-def test_rail_band_over_expanded_still_content_sizes(
+def test_rail_divider_rule_runs_full_region_height(
     dock_context, vite_server: int
 ) -> None:
     page = _open(dock_context, vite_server, 1400, 800)
@@ -1213,64 +1073,10 @@ def test_rail_band_over_expanded_still_content_sizes(
         set_layout(
             page,
             dock_layout(
-                docked_right=rows(
-                    columns(
-                        stack("controls", railed=True),
-                        stack("inspector", railed=True),
-                    ),
-                    "console",
-                ),
-            ),
-        )
-        geom = page.evaluate(
-            """() => {
-                const region = document.querySelector('[data-dock-region]');
-                const rh = region.getBoundingClientRect().height;
-                const railBand = document.querySelector('[data-dock-rail-root]')
-                    ?.closest('[data-dock-column]')?.parentElement;
-                const railH = railBand
-                    ? railBand.getBoundingClientRect().height
-                    : null;
-                const exp = document.querySelector('[data-dock-group="t-console"]');
-                const expH = exp ? exp.getBoundingClientRect().height : null;
-                return { rh, railH, expH };
-            }"""
-        )
-        # The rail band content-sizes to a short strip (well under half the
-        # the region), and the expanded console band reclaims the bulk (D41 win).
-        assert geom["railH"] is not None and geom["railH"] < geom["rh"] * 0.6, (
-            f"the rail band over an expanded band must content-size: {geom}"
-        )
-        assert geom["expH"] is not None and geom["expH"] > geom["rh"] * 0.6, (
-            f"the expanded band must reclaim the freed height (D41 win): {geom}"
-        )
-    finally:
-        page.close()
-
-
-# ===========================================================================
-# A multi-column rail band with UNEQUAL cell counts ([1-cell | 2-cell |
-# 1-cell]) keeps FULL-HEIGHT columns, and the vertical divider rule between
-# two rail columns runs the FULL band height -- a rail column's body is the
-# full band (empty tail below the spine included), so the boundary between
-# two columns must span their whole shared edge. A rule that stops at the
-# shorter spine's content reads as the rails "not extending full height"
-# (user report, 2026-07-09).
-# ===========================================================================
-def test_rail_band_divider_rule_runs_full_band_height(
-    dock_context, vite_server: int
-) -> None:
-    page = _open(dock_context, vite_server, 1400, 800)
-    try:
-        set_layout(
-            page,
-            dock_layout(
-                docked_right=rows(
-                    columns(
-                        stack("controls", railed=True),
-                        stack("inspector", "console", railed=True),
-                        stack("scene", railed=True),
-                    ),
+                docked_right=columns(
+                    stack("controls", railed=True),
+                    stack("inspector", "console", railed=True),
+                    stack("scene", railed=True),
                     "monitor",
                 ),
             ),
@@ -1336,16 +1142,13 @@ def test_rail_band_divider_rule_runs_full_band_height(
 
 
 # ===========================================================================
-# The band divider beside a rail band is LIVE and FREE (D41 revision 2):
-# dragging it toward the rail band squeezes the band below its content (the
-# spine scrolls) and the expanded band grows; dragging it away grows the
-# band freely PAST its content (bands have no maximum height -- dead gray by
-# explicit user drag is the user's call); and a drag landing near the
-# content height DETENTS onto it exactly. The band STARTS at its content
-# height (the snap-to-content default). Layout mirrors the user's report
-# (2026-07-09): a 2-cell rail beside a 1-cell rail, over an expanded band.
+# A LONE-LEAF column beside railed siblings carries the rail chevron and
+# rails IN PLACE (D46: every column owns its chevron in a multi-column
+# arrangement). Railing the last expanded column packs the region -- rails
+# never merge (one strip per column); expanding from its rail header
+# restores it.
 # ===========================================================================
-def test_rail_band_divider_is_live_free_and_detents(
+def test_lone_leaf_column_rails_in_place_via_chevron(
     dock_context, vite_server: int
 ) -> None:
     page = _open(dock_context, vite_server, 1400, 800)
@@ -1353,110 +1156,14 @@ def test_rail_band_divider_is_live_free_and_detents(
         set_layout(
             page,
             dock_layout(
-                docked_right=rows(
-                    columns(
-                        stack("controls", "inspector", railed=True),
-                        stack("console", railed=True),
-                    ),
+                docked_right=columns(
+                    stack("controls", "inspector", railed=True),
+                    stack("console", railed=True),
                     "monitor",
                 ),
             ),
         )
-
-        def _band_geom():
-            return page.evaluate(
-                """() => {
-                    const band = document.querySelector('[data-dock-band]');
-                    const divider = document.querySelector(
-                        '[data-dock-divider="column"]');
-                    const exp = document.querySelector(
-                        '[data-dock-group="t-monitor"]');
-                    if (!band || !divider || !exp) return null;
-                    const db = divider.getBoundingClientRect();
-                    return {
-                        bandH: band.getBoundingClientRect().height,
-                        expH: exp.getBoundingClientRect().height,
-                        resizable: divider.getAttribute(
-                            'data-dock-divider-resizable'),
-                        cursor: getComputedStyle(divider).cursor,
-                        dx: db.x + db.width / 2,
-                        dy: db.y + db.height / 2,
-                    };
-                }"""
-            )
-
-        g0 = _band_geom()
-        assert g0 is not None, "expected a rail band over an expanded band"
-        # The divider beside the content-capped rail band is a REAL handle.
-        assert g0["resizable"] == "true", (
-            f"the band divider beside a rail band must be live: {g0}"
-        )
-        assert g0["cursor"] == "ns-resize", (
-            f"a live band divider must show the resize cursor: {g0}"
-        )
-
-        # Drag UP 80px: the rail band shrinks below its content (spine
-        # scrolls) and the expanded band grows by about the same amount.
-        _drag(page, (g0["dx"], g0["dy"]), (g0["dx"], g0["dy"] - 80))
-        g1 = _band_geom()
-        assert g1 is not None
-        assert g1["bandH"] < g0["bandH"] - 50, (
-            f"dragging the divider up must shrink the rail band "
-            f"({g0['bandH']} -> {g1['bandH']})"
-        )
-        assert g1["expH"] > g0["expH"] + 50, (
-            f"the expanded band must reclaim the height ({g0['expH']} -> {g1['expH']})"
-        )
-
-        # Drag DOWN well past the content height: the band grows FREELY past
-        # its spine (no maximum height) -- the dead gray below the spine is
-        # the user's explicit choice here.
-        _drag(page, (g1["dx"], g1["dy"]), (g1["dx"], g1["dy"] + 300))
-        g2 = _band_geom()
-        assert g2 is not None
-        assert g2["bandH"] > g0["bandH"] + 100, (
-            f"dragging well past the spine must grow the band freely past "
-            f"its content ({g0['bandH']}px content, got {g2['bandH']}px)"
-        )
-
-        # Drag back UP to ~5px short of the content height: the seam DETENTS
-        # onto the content exactly ("exactly no dead gray" is trivial to
-        # land on). g0.bandH IS the content height (the snap default).
-        target_delta = (g2["bandH"] - g0["bandH"]) - 5
-        _drag(page, (g2["dx"], g2["dy"]), (g2["dx"], g2["dy"] - target_delta))
-        g3 = _band_geom()
-        assert g3 is not None
-        assert abs(g3["bandH"] - g0["bandH"]) <= 2, (
-            f"a drag landing within the detent must snap the band onto its "
-            f"content height ({g0['bandH']}px), got {g3['bandH']}px"
-        )
-    finally:
-        page.close()
-
-
-# ===========================================================================
-# D42: a band's LONE column carries the rail chevron and rails IN PLACE --
-# the user's "two rails in the top half, one rail in the bottom half"
-# picture. The lone rail keeps its own band (rails never merge); its strip
-# is 36px with the rest of the band as plain band body; expanding from its
-# rail header restores it.
-# ===========================================================================
-def test_lone_column_rails_in_place_via_chevron(dock_context, vite_server: int) -> None:
-    page = _open(dock_context, vite_server, 1400, 800)
-    try:
-        set_layout(
-            page,
-            dock_layout(
-                docked_right=rows(
-                    columns(
-                        stack("controls", "inspector", railed=True),
-                        stack("console", railed=True),
-                    ),
-                    "monitor",
-                ),
-            ),
-        )
-        # The lone monitor column's handle carries a chevron (D42).
+        # The lone monitor column's handle carries a chevron.
         has_chevron = page.evaluate(
             """() => {
                 const g = document.querySelector('[data-dock-group="t-monitor"]');
@@ -1467,7 +1174,7 @@ def test_lone_column_rails_in_place_via_chevron(dock_context, vite_server: int) 
             }"""
         )
         assert has_chevron is True, (
-            "a band's lone column must carry the rail chevron (D42)"
+            "a multi-column region's lone-leaf column must carry the chevron"
         )
 
         click_column_chevron(page, "t-monitor")
@@ -1475,40 +1182,25 @@ def test_lone_column_rails_in_place_via_chevron(dock_context, vite_server: int) 
         assert column_railed_for_group(page, "t-monitor") is True
         geom = page.evaluate(
             """() => {
-                const bands = [...document.querySelectorAll('[data-dock-band]')];
                 const rails = [...document.querySelectorAll(
                     '[data-dock-column-rail]')];
                 const g = document.querySelector('[data-dock-group="t-monitor"]');
                 const strip = g && g.closest('[data-dock-column]');
                 return {
-                    bands: bands.length,
                     rails: rails.length,
                     stripW: strip
                         ? Math.round(strip.getBoundingClientRect().width)
                         : null,
-                    bandW: bands[1]
-                        ? Math.round(bands[1].getBoundingClientRect().width)
-                        : null,
                 };
             }"""
         )
-        # Two bands still -- the lone rail keeps its OWN band (never merges
-        # into the top rails' band); its strip is the 36px rail width while
-        # its band spans the region (the rest is plain band body). With
-        # EVERY column now railed the region itself packs to rail widths
-        # (D40 accounting: the widest band is the two-rail band, ~73px), so
-        # the lone rail's band is that width -- strip plus body, canvas
-        # reclaiming everything else.
-        assert geom["bands"] == 2, f"the lone rail must keep its band: {geom}"
+        # Every column now railed -> the region packs into three SEPARATE
+        # 36px strips (rails never merge); the canvas reclaims the rest.
         assert geom["rails"] == 3, (
-            f"three separate column rails (two top, one bottom): {geom}"
+            f"three separate column rails (one per column): {geom}"
         )
         assert geom["stripW"] is not None and geom["stripW"] <= 40, (
-            f"the lone rail renders as the 36px strip: {geom}"
-        )
-        assert geom["bandW"] is not None and geom["bandW"] > geom["stripW"] + 20, (
-            f"the band spans the region around the strip (plain band body "
-            f"beside the rail): {geom}"
+            f"the railed monitor column renders as the 36px strip: {geom}"
         )
 
         # Expanding from the lone rail's header restores the column.
@@ -1532,67 +1224,47 @@ def test_lone_column_rails_in_place_via_chevron(dock_context, vite_server: int) 
 
 
 # ===========================================================================
-# D43 accordion: railing a band's LAST expanded column via its chevron
-# expands the nearest railed sibling -- the chevron gesture always leaves a
-# multi-column band with one expanded column. The user's report: a railed
-# Tools beside an expanded Stats, over an expanded band -- "if we collapse
-# Stats we should expand Tools" (otherwise the band strands a wide run of
-# nothing but strips). Chevron clicks are synthetic (element.click).
+# NO accordion (D46, supersedes D43): railing the region's LAST expanded
+# column does NOT auto-expand a railed sibling -- the region simply packs
+# (every column railed, N side-by-side strips). Chevron clicks are
+# synthetic (element.click).
 # ===========================================================================
-def test_railing_last_expanded_column_expands_railed_sibling(
+def test_railing_last_expanded_column_packs_region_no_accordion(
     dock_context, vite_server: int
 ) -> None:
     page = _open(dock_context, vite_server, 1400, 800)
     try:
-        # [controls(railed) | inspector] over an expanded band -- the user's
-        # screenshot shape (Tools rail | Stats, over Notes/Log). The lower
-        # band is single-column so the equal-partition D13 zip can't merge
-        # the bands at injection (the real layout's partitions differ by
-        # width; the helpers only speak weight 1).
+        # [controls(railed) | inspector] side by side.
         set_layout(
             page,
             dock_layout(
-                docked_right=rows(
-                    columns(stack("controls", railed=True), "inspector"),
-                    "monitor",
-                ),
+                docked_right=columns(stack("controls", railed=True), "inspector"),
             ),
         )
         assert column_railed_for_group(page, "t-controls") is True
         assert column_railed_for_group(page, "t-inspector") is False
 
-        # Rail inspector (the band's last expanded column): the accordion
-        # swaps -- controls expands, inspector rails.
+        # Rail inspector (the last expanded column): NO accordion -- controls
+        # stays railed and the region packs.
         click_column_chevron(page, "t-inspector")
         page.wait_for_timeout(300)
         assert column_railed_for_group(page, "t-inspector") is True, (
             "the chevron must rail its own column"
         )
-        assert column_railed_for_group(page, "t-controls") is False, (
-            "railing the band's last expanded column must expand the railed "
-            "sibling (D43 accordion)"
+        assert column_railed_for_group(page, "t-controls") is True, (
+            "railing the last expanded column must NOT auto-expand a sibling "
+            "(no accordion under D46)"
         )
-        # The band keeps real content: exactly one rail strip, one expanded
-        # cell, and the lower band untouched.
         geom = page.evaluate(
-            """() => {
-                const bands = [...document.querySelectorAll('[data-dock-band]')];
-                return {
-                    bands: bands.length,
-                    railsInBand0: bands[0]
-                        ? bands[0].querySelectorAll('[data-dock-rail-root]').length
-                        : null,
-                    controlsExpanded: document.querySelector(
-                        '[data-dock-group="t-controls"] [data-dock-tab]') !== null,
-                };
-            }"""
+            """() => ({
+                rails: document.querySelectorAll('[data-dock-rail-root]').length,
+                packed: window.__dockLayout.docked.right.columns.every(
+                    (c) => c.railed === true),
+            })"""
         )
-        assert geom["bands"] == 2, geom
-        assert geom["railsInBand0"] == 1, (
-            f"exactly one rail strip after the swap: {geom}"
-        )
-        assert geom["controlsExpanded"] is True, (
-            f"controls must render expanded after the swap: {geom}"
+        assert geom["packed"] is True, f"the region must pack: {geom}"
+        assert geom["rails"] == 2, (
+            f"two separate strips after packing (rails never merge): {geom}"
         )
     finally:
         page.close()

@@ -27,15 +27,12 @@ import {
   MINIMIZED_STRIP_PX,
   NonEmpty,
   emptyLayout,
-  mapNonEmpty,
 } from "./types";
 import {
   rect,
   mulberry32,
   leaf,
-  row,
   row as rowS,
-  rows,
   col as colS,
   group,
   floatingWindow,
@@ -75,16 +72,13 @@ function dockedTargets(
   const regionLeft = edge === "left" ? 0 : CONTAINER.width - REGION_W[edge];
   const regionW = REGION_W[edge];
   const out: GroupTarget[] = [];
-  // The 4-level model: the region is a VERTICAL stack of full-width row bands
-  // (split by row weight), each band a row of columns (split width), each
-  // column a stack of leaves (split height). This mirrors SplitView's real
-  // geometry, so the sweep exercises true multi-band layouts -- not just the
-  // single width-determining row the old harness laid out.
-  const rowWeightTotal =
-    region.rows.reduce((s, r) => s + r.weight, 0) || region.rows.length;
-  let bandTop = 0;
-  for (const band of region.rows) {
-    const bandH = (band.weight / rowWeightTotal) * CONTAINER.height;
+  // The 3-level model (D46): the region is a horizontal row of columns
+  // (split width), each column a full-height stack of leaves (split
+  // height). This mirrors SplitView's real geometry.
+  const bandTop = 0;
+  const bandH = CONTAINER.height;
+  {
+    const band = region;
     const railedCount = band.columns.filter((c) => c.railed === true).length;
     const expandedW = regionW - railedCount * MINIMIZED_STRIP_PX;
     const colWeightTotal =
@@ -175,39 +169,8 @@ function dockedTargets(
       });
       colLeft += cw;
     }
-    bandTop += bandH;
   }
   return out;
-}
-
-/** Band index + vertical range for every docked leaf (by node id) and group
- * (by group id), from the same layout math as dockedTargets. Backs the
- * cross-band invariant: a result committing into a band must have been
- * produced by a pointer over THAT band. */
-function dockedBandRanges(
-  layout: DockLayout,
-): Map<string, { top: number; bottom: number }> {
-  const ranges = new Map<string, { top: number; bottom: number }>();
-  for (const edge of ["left", "right"] as DockEdge[]) {
-    const region = layout.docked[edge];
-    if (region === null) continue;
-    const rowWeightTotal =
-      region.rows.reduce((s, r) => s + r.weight, 0) || region.rows.length;
-    let bandTop = 0;
-    for (const band of region.rows) {
-      const bandH = (band.weight / rowWeightTotal) * CONTAINER.height;
-      for (const column of band.columns)
-        for (const lf of column.leaves) {
-          ranges.set(`n:${lf.id}`, { top: bandTop, bottom: bandTop + bandH });
-          ranges.set(`g:${lf.group}`, {
-            top: bandTop,
-            bottom: bandTop + bandH,
-          });
-        }
-      bandTop += bandH;
-    }
-  }
-  return ranges;
 }
 
 /** Floating-window targets: stack groups vertically inside each window's box. */
@@ -258,11 +221,9 @@ function nodeExists(
   const region = layout.docked[edge];
   if (region === null) return false;
   // A drop result's nodeId addresses a leaf (a docked split target) or a
-  // column -- in ANY band, not just the width-determining row.
-  return region.rows.some((band) =>
-    band.columns.some(
-      (c) => c.id === nodeId || c.leaves.some((l) => l.id === nodeId),
-    ),
+  // column.
+  return region.columns.some(
+    (c) => c.id === nodeId || c.leaves.some((l) => l.id === nodeId),
   );
 }
 
@@ -287,20 +248,6 @@ function validateResult(
       if (edgeIsSingleLeaf(tree, result.side))
         errs.push(
           `regionEdge ${result.side} on a single-leaf edge (should be suppressed)`,
-        );
-      break;
-    }
-    case "bandInsert": {
-      const tree = layout.docked[result.edge];
-      if (tree === null) {
-        errs.push(`bandInsert on empty edge ${result.edge}`);
-        break;
-      }
-      // An interior seam: index must be strictly between two existing bands
-      // (the outer 0 / rows.length cases are emitted as regionEdge top/bottom).
-      if (result.index < 1 || result.index > tree.rows.length - 1)
-        errs.push(
-          `bandInsert index ${result.index} not an interior seam of ${tree.rows.length} bands on ${result.edge}`,
         );
       break;
     }
@@ -381,17 +328,12 @@ function validateHint(hint: {
 function layouts(): {
   name: string;
   layout: DockLayout;
-  /** True for fixtures with 2+ row bands on an edge: the sweep then asserts a
-   * cross-band-seam `bandInsert` is actually reachable (guards the seam zone
-   * from silently going dead). */
-  multiBand?: boolean;
   /** Simulated rail-spine scrollTop for this fixture's railed columns. */
   railScroll?: number;
 }[] {
   const out: {
     name: string;
     layout: DockLayout;
-    multiBand?: boolean;
     railScroll?: number;
   }[] = [];
 
@@ -502,67 +444,46 @@ function layouts(): {
     out.push({ name: "both edges docked leaves", layout: l });
   }
   {
-    // TWO stacked row bands: a full-width band (a) above a side-by-side band
-    // (b | c). The 4-level multi-band shape -- the reason the sweep harness now
-    // lays out every band, not just the width-determining row.
+    // Three side-by-side columns, one stacking two leaves (D46: the shape
+    // multi-band fixtures collapse into).
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b", 2), c: group("c") };
     l.docked.left = toRegion(
-      rows([row([leaf("a")]), row([leaf("b"), leaf("c")])]),
+      rowS([leaf("a"), colS([leaf("b"), leaf("c")])]),
     );
-    out.push({ name: "two row bands (left)", layout: l, multiBand: true });
+    out.push({ name: "column of two beside a leaf (left)", layout: l });
   }
   {
-    // THREE bands: a wide band on top, a single full-width band, and a
-    // side-by-side band -- with a RAILED column (D38's docked collapsed
-    // form) so a collapsed strip participates in the sweep.
+    // A RAILED multi-leaf column (D38's docked collapsed form) between
+    // expanded columns, so a collapsed strip participates in the sweep.
     const l = emptyLayout();
     l.groups = {
       a: group("a"),
       b: group("b"),
       c: group("c", 2),
-      d: group("d"),
       e: group("e"),
       f: group("f"),
     };
     const railedEF = colS([leaf("e"), leaf("f")]);
     if (railedEF.kind === "col") railedEF.column.railed = true;
     l.docked.left = toRegion(
-      rows([
-        row([leaf("a"), leaf("b")]),
-        row([leaf("c")]),
-        row([leaf("d"), railedEF]),
-      ]),
+      rowS([leaf("a"), colS([leaf("b"), leaf("c")]), railedEF]),
     );
-    out.push({
-      name: "three bands w/ collapsed (left)",
-      layout: l,
-      multiBand: true,
-    });
+    out.push({ name: "railed stack between expanded columns", layout: l });
   }
   {
-    // V8 (zones audit #1): a railed column whose 5-tab spine OVERFLOWS its
-    // short band, with an expanded band below. The scanner clamps rail cell
-    // rects to the rail root (band) box, so the overflowing spine never
-    // bleeds targets into band 1 -- previously the last cell's Math.max
-    // extension put ~100-200px of rail target over the lower band's panel
-    // (cross-band commits, displaced seam, over-tall side hints).
+    // V8 (zones audit #1): a railed column whose 5-tab spine OVERFLOWS the
+    // container. The scanner clamps rail cell rects to the rail root, so
+    // the overflowing spine never bleeds targets outside the strip.
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b", 5), d: group("d") };
     const railedB = colS([leaf("b")]);
     if (railedB.kind === "col") railedB.column.railed = true;
-    l.docked.left = toRegion(
-      rows([row([leaf("a"), railedB], 1), row([leaf("d")], 3)]),
-    );
-    out.push({
-      name: "rail spine overflowing its band (V8)",
-      layout: l,
-      multiBand: true,
-    });
+    l.docked.left = toRegion(rowS([leaf("a"), railedB, leaf("d")]));
+    out.push({ name: "rail spine overflowing (V8)", layout: l });
   }
   {
-    // Multi-band on BOTH edges -- the densest geometry, where left and right
-    // region bands and per-band columns all coexist.
+    // Multi-column on BOTH edges -- the densest geometry.
     const l = emptyLayout();
     l.groups = {
       a: group("a"),
@@ -570,160 +491,74 @@ function layouts(): {
       c: group("c"),
       d: group("d"),
     };
-    l.docked.left = toRegion(rows([row([leaf("a")]), row([leaf("b")])]));
-    l.docked.right = toRegion(rows([row([leaf("c")]), row([leaf("d")])]));
-    out.push({ name: "two bands both edges", layout: l, multiBand: true });
+    l.docked.left = toRegion(rowS([leaf("a"), leaf("b")]));
+    l.docked.right = toRegion(rowS([leaf("c"), leaf("d")]));
+    out.push({ name: "two columns both edges", layout: l });
   }
   {
-    // D42: a band whose SOLE column is railed, between a two-rail band and
-    // an expanded band (the user's "two rails top, one rail bottom"
-    // picture). The lone rail renders its 36px strip with the REST of the
-    // band as plain band body -- that empty width run must stay honest drop
-    // surface (the per-band side claim extends inward over it), and no
-    // zone may commit across bands.
-    const l = emptyLayout();
-    l.groups = { p: group("p"), q: group("q"), s: group("s"), d: group("d") };
-    const rp = colS([leaf("p")]);
-    if (rp.kind === "col") rp.column.railed = true;
-    const rq = colS([leaf("q")]);
-    if (rq.kind === "col") rq.column.railed = true;
-    const rs = colS([leaf("s")]);
-    if (rs.kind === "col") rs.column.railed = true;
-    l.docked.left = toRegion(
-      rows([row([rp, rq]), row([rs]), row([leaf("d")])]),
-    );
-    out.push({
-      name: "sole railed band in mixed region (D42)",
-      layout: l,
-      multiBand: true,
-    });
-  }
-  {
-    // Stability pass 2: an ALL-RAILED band ABOVE an expanded full-width band
-    // (the V5 mirror -- rails hold width, not height, so band 0 renders two
-    // packed 36px strips with an empty tail; band 1 is a full-width panel).
+    // Two rails beside an expanded column (the healthy rail case) -- the
+    // strips pack at the region edge; their zones and the expanded
+    // column's must tile with no dead pixels.
     const l = emptyLayout();
     l.groups = { p: group("p"), q: group("q"), d: group("d") };
     const rp = colS([leaf("p")]);
     if (rp.kind === "col") rp.column.railed = true;
     const rq = colS([leaf("q")]);
     if (rq.kind === "col") rq.column.railed = true;
-    l.docked.left = toRegion(rows([row([rp, rq]), row([leaf("d")])]));
-    out.push({
-      name: "railed band above expanded (V5 mirror)",
-      layout: l,
-      multiBand: true,
-    });
+    l.docked.left = toRegion(rowS([rp, rq, leaf("d")]));
+    out.push({ name: "two rails beside expanded", layout: l });
   }
   {
-    // Stability pass 2: THREE bands alternating rail/expanded/rail.
+    // FULLY RAILED region (the packed form, D44/D46): every column a strip.
     const l = emptyLayout();
-    l.groups = {
-      p: group("p"),
-      q: group("q", 2),
-      m: group("m"),
-      s: group("s"),
-      t: group("t"),
-    };
+    l.groups = { p: group("p"), q: group("q", 2), s: group("s") };
     const rp = colS([leaf("p")]);
     if (rp.kind === "col") rp.column.railed = true;
     const rq = colS([leaf("q")]);
     if (rq.kind === "col") rq.column.railed = true;
     const rs = colS([leaf("s")]);
     if (rs.kind === "col") rs.column.railed = true;
-    const rt = colS([leaf("t")]);
-    if (rt.kind === "col") rt.column.railed = true;
-    l.docked.left = toRegion(
-      rows([row([rp, rq]), row([leaf("m")]), row([rs, rt])]),
-    );
-    out.push({
-      name: "three bands alternating rail/expanded/rail",
-      layout: l,
-      multiBand: true,
-    });
+    l.docked.left = toRegion(rowS([rp, rq, rs]));
+    out.push({ name: "fully railed region (packed)", layout: l });
   }
   {
-    // Stability pass 2: the V8 overflowing spine, SCROLLED (scrollTop 150).
-    // Cell rects reflect scroll (getBoundingClientRect does); the scanner's
-    // rail-root clamp must keep the clipped cells tiling the strip with no
-    // cross-band bleed.
+    // The V8 overflowing spine, SCROLLED (scrollTop 150): cell rects
+    // reflect scroll; the scanner's rail-root clamp must keep clipped
+    // cells tiling the strip.
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b", 5), d: group("d") };
     const railedB = colS([leaf("b")]);
     if (railedB.kind === "col") railedB.column.railed = true;
-    l.docked.left = toRegion(
-      rows([row([leaf("a"), railedB], 1), row([leaf("d")], 3)]),
-    );
+    l.docked.left = toRegion(rowS([leaf("a"), railedB, leaf("d")]));
     out.push({
       name: "rail spine overflowing, scrolled (V8 + scrollTop)",
       layout: l,
-      multiBand: true,
       railScroll: 150,
     });
   }
   {
-    // Stability pass 2: multi-CELL rail scrolled so the first cell is
-    // partially (or fully) behind the header run -- the dropped-cell (<8px)
-    // and first-cell-claims-rr.top interactions.
+    // Multi-CELL rail scrolled past its first cell -- the dropped-cell
+    // (<8px) and first-cell-claims-top interactions.
     const l = emptyLayout();
     l.groups = { a: group("a"), e: group("e"), f: group("f"), d: group("d") };
     const railedEF = colS([leaf("e"), leaf("f")]);
     if (railedEF.kind === "col") railedEF.column.railed = true;
-    l.docked.left = toRegion(
-      rows([row([leaf("a"), railedEF], 1), row([leaf("d")], 2)]),
-    );
+    l.docked.left = toRegion(rowS([leaf("a"), railedEF, leaf("d")]));
     out.push({
       name: "two-cell rail scrolled past the first cell",
       layout: l,
-      multiBand: true,
       railScroll: 110,
     });
   }
   {
-    // Stability pass 3: FOUR bands, mixing rails and expanded columns, so the
-    // per-band side resolution, rail-honest band extents, and cross-band
-    // containment all hold when band count exceeds the pass-1/2 fixtures (max 3).
-    // band0: [a|railB]  band1: [c]  band2: [railD|e]  band3: [f|g]
-    const l = emptyLayout();
-    l.groups = {
-      a: group("a"),
-      b: group("b", 2),
-      c: group("c"),
-      d: group("d", 3),
-      e: group("e"),
-      f: group("f"),
-      g: group("g"),
-    };
-    const railB = colS([leaf("b")]);
-    if (railB.kind === "col") railB.column.railed = true;
-    const railD = colS([leaf("d")]);
-    if (railD.kind === "col") railD.column.railed = true;
-    l.docked.left = toRegion(
-      rows([
-        row([leaf("a"), railB]),
-        row([leaf("c")]),
-        row([railD, leaf("e")]),
-        row([leaf("f"), leaf("g")]),
-      ]),
-    );
-    out.push({
-      name: "four bands mixed rail/expanded (left)",
-      layout: l,
-      multiBand: true,
-    });
-  }
-  {
-    // Stability pass 3: FIVE bands on the RIGHT edge (mirror path), rail in the
-    // middle band and at the last band -- the densest reachable multi-band shape
-    // dockBandAtIndex/seam-insert composition produces.
+    // FIVE columns on the RIGHT edge (mirror path), rails interleaved --
+    // the densest reachable columns-only shape.
     const l = emptyLayout();
     l.groups = {
       a: group("a"),
       b: group("b"),
       c: group("c", 2),
       d: group("d"),
-      e: group("e"),
-      f: group("f"),
       g: group("g"),
       h: group("h"),
     };
@@ -731,22 +566,10 @@ function layouts(): {
     if (railCD.kind === "col") railCD.column.railed = true;
     const railG = colS([leaf("g")]);
     if (railG.kind === "col") railG.column.railed = true;
-    // Last band [railG | h] keeps railG a legal (non-sole) railed column (D39):
-    // a single-column [railG] band would be the unreachable sole-column rail.
     l.docked.right = toRegion(
-      rows([
-        row([leaf("a")]),
-        row([leaf("b"), railCD]),
-        row([leaf("e")]),
-        row([leaf("f")]),
-        row([railG, leaf("h")]),
-      ]),
+      rowS([leaf("a"), railCD, leaf("b"), railG, leaf("h")]),
     );
-    out.push({
-      name: "five bands w/ rails (right)",
-      layout: l,
-      multiBand: true,
-    });
+    out.push({ name: "five columns w/ rails (right)", layout: l });
   }
   {
     // Both edges empty -> only screen-edge zones + (no group) null in middle.
@@ -762,19 +585,17 @@ function layouts(): {
 describe("hitTest pointer sweep invariants", () => {
   const STEP = 8; // px grid resolution
 
-  for (const { name, layout, multiBand } of layouts()) {
+  for (const { name, layout } of layouts()) {
     it(`never produces an invalid result/hint (${name})`, () => {
       const targets = targetsFor(layout);
       const errors: string[] = [];
       const zoneTally = new Map<string, number>();
-      // Invariant scaffolding: (1) every target must offer at least one
+      // Invariant scaffolding: every target must offer at least one
       // reachable zone somewhere on the grid (a fully-shadowed rail was the
-      // "no drop zone left of the leftmost rail" bug); (2) a result that
-      // commits into a docked band must come from a pointer over THAT band
-      // (the region side bands used to join rows[0] from any y).
+      // "no drop zone left of the leftmost rail" bug). (The old cross-band
+      // containment invariant is moot under D46: there are no bands to
+      // cross -- columns span the full region height.)
       const reachedTargets = new Set<number>();
-      const bandRanges = dockedBandRanges(layout);
-      const BAND_TOL = 12; // divider-seam recovery snaps across small gaps.
 
       for (let y = 0; y <= CONTAINER.height; y += STEP) {
         for (let x = 0; x <= CONTAINER.width; x += STEP) {
@@ -807,24 +628,6 @@ describe("hitTest pointer sweep invariants", () => {
                 t.ctx.windowId === r.windowId);
             if (hit) reachedTargets.add(i);
           });
-          // Cross-band containment for band-committing results. regionEdge/
-          // bandInsert/edge span bands by design and are excluded.
-          const bandKey =
-            r.kind === "split"
-              ? `n:${r.nodeId}`
-              : r.kind === "merge" || r.kind === "insertTab"
-                ? `g:${r.targetGroupId}`
-                : null;
-          const range = bandKey === null ? undefined : bandRanges.get(bandKey);
-          if (
-            range !== undefined &&
-            (y < range.top - BAND_TOL || y > range.bottom + BAND_TOL)
-          ) {
-            const e = `cross-band commit: ${r.kind} into band [${range.top},${range.bottom}] from pointer y=${y}`;
-            const key = e.replace(/[-\d.]+/g, "#");
-            if (!errors.some((x2) => x2.startsWith(key)))
-              errors.push(`${key}  e.g. at (${x},${y}): ${e}`);
-          }
           const rErrs = validateResult(layout, targets, res.result);
           const hErrs = validateHint(res.hint);
           for (const e of [...rErrs, ...hErrs]) {
@@ -859,15 +662,6 @@ describe("hitTest pointer sweep invariants", () => {
           .filter(([k]) => k !== "null")
           .reduce((s, [, n]) => s + n, 0);
         expect(nonNull).toBeGreaterThan(0);
-      }
-      // A multi-band fixture MUST reach the cross-band-seam bandInsert zone --
-      // otherwise the seam has silently gone dead and the only sign would be a
-      // missing affordance, not a failure. Guard it explicitly.
-      if (multiBand) {
-        expect(
-          zoneTally.get("bandInsert") ?? 0,
-          `${name}: expected the cross-band seam (bandInsert) to be reachable`,
-        ).toBeGreaterThan(0);
       }
     });
   }
@@ -1019,13 +813,7 @@ describe("hitTest left/right mirror symmetry", () => {
   ): DockLayout["docked"]["left"] =>
     r === null
       ? null
-      : {
-          ...r,
-          rows: mapNonEmpty(r.rows, (band) => ({
-            ...band,
-            columns: reverseNonEmpty(band.columns),
-          })),
-        };
+      : { ...r, columns: reverseNonEmpty(r.columns) };
   const mirrorLayout = (l: DockLayout): DockLayout => ({
     ...l,
     docked: {
@@ -1062,8 +850,6 @@ describe("hitTest left/right mirror symmetry", () => {
           edge: flipLR(res.edge),
           side: flipLR(res.side),
         };
-      case "bandInsert":
-        return { kind: "bandInsert", edge: flipLR(res.edge), index: res.index };
       case "split":
         return {
           kind: "split",
@@ -1087,8 +873,6 @@ describe("hitTest left/right mirror symmetry", () => {
         return { kind: "edge", edge: res.edge };
       case "regionEdge":
         return { kind: "regionEdge", edge: res.edge, side: res.side };
-      case "bandInsert":
-        return { kind: "bandInsert", edge: res.edge, index: res.index };
       case "split":
         return {
           kind: "split",

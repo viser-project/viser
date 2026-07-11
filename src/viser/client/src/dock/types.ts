@@ -71,12 +71,9 @@ export const MINIMIZED_BAR_PX = 26;
 // connection-status bar) renders at the unmergeable titleNode header's own
 // height: minimizing removes the content but never moves or shrinks the
 // label row (D19, restored). The RENDERED height is FACE_BAR_EM in the
-// bar's own font context so it tracks the header exactly; FACE_BAR_PX is
-// the px estimate (2.75em at Mantine's ~14.8px body font) used only where
-// layout math needs a number (band floors).
+// bar's own font context so it tracks the header exactly.
 export const FACE_BAR_HEIGHT_EM = 2.75;
 export const FACE_BAR_EM = `${FACE_BAR_HEIGHT_EM}em`;
-export const FACE_BAR_PX = 41;
 
 /** Horizontal padding (em) of the unmergeable titleNode header -- and, by
  * D33's EXACT constancy, of its face bar: the label row keeps identical x
@@ -114,15 +111,6 @@ export function minimizedBarBasis(
   panes: Record<string, PaneSpec>,
 ): number | string {
   return hasMinimizedFace(group, panes) ? FACE_BAR_EM : MINIMIZED_BAR_PX;
-}
-
-/** Bar height as a NUMBER for layout math (band floors); px estimate for
- * face bars. Keep in sync with minimizedBarBasis. */
-export function minimizedBarPx(
-  group: TabGroup | undefined,
-  panes: Record<string, PaneSpec>,
-): number {
-  return hasMinimizedFace(group, panes) ? FACE_BAR_PX : MINIMIZED_BAR_PX;
 }
 
 /** A collapsed floating window's rendered height as a CSS calc() (D34): the
@@ -268,23 +256,20 @@ export const withInserted = <T>(
 ): NonEmpty<T> =>
   [...xs.slice(0, index), ...items, ...xs.slice(index)] as NonEmpty<T>;
 
-/** The docked layout has a FIXED four-level shape, enforced by these types
- * rather than by runtime normalization:
+/** The docked layout has a FIXED three-level shape (D46: columns only),
+ * enforced by these types rather than by runtime normalization:
  *
- *   DockRegion  =  a COLUMN of rows      (full-width bands, top to bottom)
- *     DockRow     =  a ROW of columns    (side by side, vertical dividers)
- *       DockColumn  =  a STACK of leaves (top to bottom, horizontal dividers)
- *         DockLeaf    =  one tab group
+ *   DockRegion  =  a ROW of columns      (side by side, vertical dividers)
+ *     DockColumn  =  a STACK of leaves   (top to bottom, horizontal dividers)
+ *       DockLeaf    =  one tab group
  *
- * A single docked panel is `Region[Row[Column[Leaf]]]` -- counts of one, not a
+ * A single docked panel is `Region[Column[Leaf]]` -- counts of one, not a
  * special shape. There is NO arbitrary nesting and NO `dir` field: the LEVEL is
  * the axis. Each dock gesture is a single-level insert:
- *   - dock ABOVE/BELOW the whole region  -> add a Row band (spans every column)
- *   - dock BESIDE within a band          -> add a Column to that Row
+ *   - dock BESIDE the region or a column -> add a Column to the Region
  *   - dock ABOVE/BELOW a panel           -> add a Leaf to that Column
- * This makes the bad shapes (a leaf directly in a row, `row>col>row...` nesting)
- * unrepresentable, so the renderer and ops never defend against them, while the
- * standard "band above everything" affordance stays expressible. */
+ * This makes the bad shapes (`[A]` over `[B][C]`, arbitrary nesting)
+ * unrepresentable, so the renderer and ops never defend against them. */
 export interface DockLeaf {
   id: NodeId;
   group: GroupId;
@@ -296,30 +281,25 @@ export interface DockColumn {
   id: NodeId;
   /** Stacked top to bottom; always at least one. */
   leaves: NonEmpty<DockLeaf>;
-  /** Flex weight relative to sibling columns within the row (horizontal). */
+  /** Flex weight relative to sibling columns within the region
+   * (horizontal). */
   weight: number;
-  /** Per-COLUMN rail: when true, this column renders as a 36px spine strip in
-   * place (its leaves as rail cells) while its width weight is preserved for
-   * restore (P8). Only meaningful for columns in multi-column bands -- the
-   * whole-region rail (regionCollapsed, D21) remains the single-column-region
-   * form. Set by the column-collapse chevron and by ops that dock a new
-   * column beside a region-railed region (the old content stays railed, the
-   * newcomer lands expanded); cleared by every expand path. */
+  /** Per-COLUMN rail (D28): when true, this column renders as a 36px spine
+   * strip in place (its leaves as rail cells) while its width weight is
+   * preserved for restore (P8/D40). The ONE docked collapse store (D44/D46);
+   * the packed region reading is derived (isRegionPackedOn). Set by the
+   * column-collapse chevron and by identity transfers (a collapsed window
+   * docks as a railed column); cleared by every expand path. */
   railed?: boolean;
 }
 
-export interface DockRow {
-  id: NodeId;
-  /** Columns side by side; always at least one. */
-  columns: NonEmpty<DockColumn>;
-  /** Flex weight relative to sibling rows within the region (vertical). */
-  weight: number;
-}
-
 export interface DockRegion {
-  /** Full-width row bands stacked top to bottom; always at least one (an empty
-   * region is `null`). The common side-by-side case is a region with one row. */
-  rows: NonEmpty<DockRow>;
+  /** Columns side by side, left to right; always at least one (an empty
+   * region is `null`). Each column is an independent vertical stack of
+   * leaves -- the ONLY vertical arrangement (D46: full-width bands are
+   * unrepresentable; a region is columns-of-stacks, so a railed column's
+   * freed width always has siblings or the canvas to reflow to). */
+  columns: NonEmpty<DockColumn>;
 }
 
 /** A floating window's vertical sizing. `auto` tracks content (capped per
@@ -355,8 +335,8 @@ export interface FloatingWindow {
   stack: GroupId[];
   /** The window's ONE collapse flag (D38): while true, the whole window is
    * minimized and renders as its stack of 26px bars at full `width` (a face
-   * bar for a lone main-panel window). One of the three container collapse
-   * stores (with DockColumn.railed and DockLayout.regionCollapsed) -- the
+   * bar for a lone main-panel window). One of the two container collapse
+   * stores (with DockColumn.railed, D38/D44) -- the
    * `-` / window-header toggle flips it; every bar's expand affordance
    * clears it. Transfers are identity: docking a collapsed window rails the
    * landing scope, floating a railed scope sets this flag. */
@@ -391,8 +371,8 @@ export interface DockLayout {
   /** Docked region pinned to each edge, or null when that edge is empty. */
   docked: Record<DockEdge, DockRegion | null>;
   /** LEGACY (D44): the pre-unification per-edge region-collapse store. The
-   * region rail is now a DERIVED rendering -- a region whose every band is
-   * single-column and every column railed packs into the 36px strip
+   * region rail is now a DERIVED reading -- a region whose every column is
+   * railed is packed
    * (isRegionPackedOn) -- so this field is never written anymore. It
    * survives in the type only so persisted snapshots and old test literals
    * still parse; `migrateRegionCollapsedInPlace` (layoutOps) converts a set
@@ -439,29 +419,21 @@ export const emptyLayout = (): DockLayout => ({
   areas: {},
 });
 
-/** Whether every column of `region` is railed (D44). With a multi-column
- * band this renders side-by-side strips; see isRegionPackedOn for the
- * single packed strip. False for null (an empty edge has nothing railed). */
+/** Whether every column of `region` is railed (D44/D46): the fully-packed
+ * form -- side-by-side 36px strips, width reclaimed by the canvas. False
+ * for null (an empty edge has nothing railed). */
 export const isRegionFullyRailed = (region: DockRegion | null): boolean =>
-  region !== null &&
-  region.rows.every((rw) => rw.columns.every((c) => c.railed === true));
+  region !== null && region.columns.every((c) => c.railed === true);
 
-/** The DERIVED region-rail predicate (D44, replacing the regionCollapsed
- * store): an edge renders as ONE packed 36px strip iff its region exists,
- * every band is single-column, and every column is railed -- the state the
- * region chevron (rail-all) produces and per-column chevrons can compose.
- * The rail is a VIEW over the same model; no second store exists. */
+/** The DERIVED region-rail predicate (D44/D46): the edge is fully packed
+ * iff its region exists and every column is railed -- the state the region
+ * chevron (rail-all) produces and per-column chevrons can compose. Under
+ * the columns-only model (D46) this is exactly isRegionFullyRailed; the
+ * name survives because chrome and tests key on the "packed" concept. */
 export const isRegionPackedOn = (
   layout: DockLayout,
   edge: DockEdge,
-): boolean => {
-  const region = layout.docked[edge];
-  return (
-    region !== null &&
-    region.rows.every((rw) => rw.columns.length === 1) &&
-    isRegionFullyRailed(region)
-  );
-};
+): boolean => isRegionFullyRailed(layout.docked[edge]);
 
 /** The layout's region widths with defaults filled in (the one place the
  * missing-field fallback lives). */
