@@ -159,16 +159,16 @@ def test_random_drags_conserve_panels(
         page.close()
 
 
-# Multi-band seed: start from a region with stacked bands (one multi-column
-# with a RAILED column, one plain) so the random storm exercises the 4-level
-# band paths -- band inserts at cross-band seams, rail cells, and dropping
-# onto/around bands -- which the playground default (no docked bands) never
-# reaches.
+# Multi-column seed: start from a region with sibling columns (one RAILED,
+# one a 2-leaf stack) so the random storm exercises the D46 column paths --
+# column inserts at side bands, in-column seam inserts, rail cells, and
+# dropping onto/around rails -- which the playground default (no docked
+# columns) never reaches.
 @pytest.mark.parametrize("seed", [1, 2, 5])
-def test_random_drags_multiband_seed_conserve_and_no_errors(
+def test_random_drags_multicolumn_seed_conserve_and_no_errors(
     dock_context, vite_server: int, seed: int
 ) -> None:
-    from .dock_helpers import columns, dock_layout, rows, set_layout, stack, window
+    from .dock_helpers import columns, dock_layout, set_layout, stack, window
 
     vw, vh = 1280, 900
     page = dock_context.new_page()
@@ -180,17 +180,17 @@ def test_random_drags_multiband_seed_conserve_and_no_errors(
             "() => document.querySelector('[data-dock-group]') !== null",
             polling=50,
         )
-        # Right edge: a [controls(railed) | inspector] band over a plain
-        # [console] band; a floating `scene` to drag around. (scene is a
-        # non-area, mergeable pane -- the area panes layers/props/history
-        # can't be reused here without putting a pane in two groups.) The
-        # railed column keeps a rail surface in the storm (D28/D38).
+        # Right edge: [controls(railed) | inspector+console stack]; a
+        # floating `scene` to drag around. (scene is a non-area, mergeable
+        # pane -- the area panes layers/props/history can't be reused here
+        # without putting a pane in two groups.) The railed column keeps a
+        # rail surface in the storm (D28/D38).
         set_layout(
             page,
             dock_layout(
-                docked_right=rows(
-                    columns(stack("controls", railed=True), "inspector"),
-                    "console",
+                docked_right=columns(
+                    stack("controls", railed=True),
+                    stack("inspector", "console"),
                 ),
                 floating=[window("scene", x=200, y=200)],
             ),

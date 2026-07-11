@@ -223,7 +223,9 @@ export function RegionCollapseChevron({
         // focus to the rail header's toggle (the same-spot undo control)
         // instead of <body> -- spec 4 / edge case 14.
         focusDockControl(
-          `[data-dock-region-rail="${edge}"] [data-dock-minimize-all]`,
+          // D46: a packed region renders per-column rails; the FIRST
+          // column rail's toggle is the same-spot undo control.
+          `[data-dock-region="${edge}"] [data-dock-minimize-all]`,
         );
       }}
       placement={{
@@ -242,7 +244,7 @@ export function RegionCollapseChevron({
 }
 
 /** Column-collapse chevron: the per-COLUMN sibling of RegionCollapseChevron,
- * rendered at the right end of a column parent handle whose band has sibling
+ * rendered at the right end of a column parent handle whose region has sibling
  * columns (D27). It rails exactly what its handle owns -- that one column --
  * and, like the region chevron, is drag-through (T6 resolved): a press flows
  * to the host bar (drag = float the column; motionless click = rail it, via

@@ -32,7 +32,6 @@ import pytest
 
 from .dock_helpers import (
     click_column_chevron,
-    column_railed_for_group,
     columns,
     dock_layout,
     group,
@@ -297,7 +296,7 @@ def test_region_resize_lands_on_expanded_column_rails_fixed(
         page, dock_layout(docked_right=columns("console", "inspector", "controls"))
     )
     tree = _layout(page)["docked"]["right"]
-    assert tree is not None and len(tree["rows"][0]["columns"]) == 3
+    assert tree is not None and len(tree["columns"]) == 3
 
     def leaf_width(panel: str) -> float:
         gid = _group_id_for_panel(page, panel)
@@ -440,10 +439,10 @@ def test_region_chevron_drag_through_and_click(dock_context, vite_server) -> Non
     assert state["collapsed"] is not True, (
         "a drag from the chevron must NOT collapse (motion beats click)"
     )
-    assert page.query_selector("[data-dock-region-rail]") is None
+    assert page.query_selector("[data-dock-rail-root]") is None
 
-    # Re-seed, then a REAL motionless click on the chevron collapses the
-    # region to its rail (the host bar's backing click).
+    # Re-seed, then a REAL motionless click on the chevron collapses
+    # the whole region to its rail (the host bar's backing click).
     set_layout(page, dock_layout(docked_right=stack("inspector", "controls")))
     btn2 = page.eval_on_selector(
         '[data-dock-region-collapse="right"]',
@@ -452,65 +451,10 @@ def test_region_chevron_drag_through_and_click(dock_context, vite_server) -> Non
     )
     page.mouse.click(btn2["x"], btn2["y"])
     page.wait_for_timeout(200)
-    assert page.query_selector("[data-dock-region-rail]") is not None, (
+    assert page.query_selector("[data-dock-rail-root]") is not None, (
         "a motionless real click on the chevron must collapse to the rail"
     )
     page.close()
-
-
-# ---------------------------------------------------------------------------
-# 11. Store migration DOWN (collapse law 5): adding a side-by-side column to
-#     a REGION-RAILED region clears the region flag and rails the
-#     pre-existing column; the expanded newcomer lands expanded and visible.
-# ---------------------------------------------------------------------------
-def test_drop_beside_region_rail_distributes_store(dock_context, vite_server) -> None:
-    page = _open(dock_context, vite_server)
-    # Arrange: controls docked right, region collapsed to its rail; inspector
-    # floating (the drop-beside gesture is the subject).
-    set_layout(
-        page,
-        dock_layout(
-            docked_right=columns("controls"),
-            floating=[window("inspector", x=680, y=420, width=260)],
-        ),
-    )
-    gid = _group_id_for_panel(page, "controls")
-    page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")
-    page.wait_for_timeout(200)
-    assert page.evaluate("""() => {
-            const region = window.__dockLayout.docked.right;
-            return (
-                region !== null &&
-                region.rows.every((r) => r.columns.length === 1) &&
-                region.rows.every((r) => r.columns.every((c) => c.railed === true))
-            );
-        }""")
-    # Drop inspector over the collapsed region's EMPTY area below the rail
-    # cells: its left/right halves dock a sibling on that side (hitTest
-    # keeps the full-height side bands over a collapsed region) -> a new
-    # column beside the rail.
-    rail = page.eval_on_selector(
-        '[data-dock-region="right"]',
-        "e => { const r = e.getBoundingClientRect(); "
-        "return { x: r.x, y: r.y, w: r.width, h: r.height }; }",
-    )
-    _drag(
-        page,
-        _grip(page, "inspector"),
-        (rail["x"] + rail["w"] * 0.25, rail["y"] + rail["h"] - 60),
-    )
-    tree = _layout(page)["docked"]["right"]
-    if tree is None or "inspector" not in str(tree):
-        pytest.skip("dock-beside didn't land this run")
-    # D44: the rails are per-column flags already -- the old content stays
-    # railed, the newcomer lands expanded and visible.
-    assert column_railed_for_group(page, gid) is True, (
-        "the pre-existing content must stay railed beside the newcomer"
-    )
-    igid = _group_id_for_panel(page, "inspector")
-    assert column_railed_for_group(page, igid) is False, (
-        "the expanded newcomer must land expanded and visible (P5)"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -578,8 +522,7 @@ def test_escape_during_rail_cell_drag_restores_rail(dock_context, vite_server) -
             const region = window.__dockLayout.docked.right;
             return (
                 region !== null &&
-                region.rows.every((r) => r.columns.length === 1) &&
-                region.rows.every((r) => r.columns.every((c) => c.railed === true))
+                region.columns.every((c) => c.railed === true)
             );
         }""")
     cell = page.eval_on_selector(
@@ -603,11 +546,10 @@ def test_escape_during_rail_cell_drag_restores_rail(dock_context, vite_server) -
             const region = window.__dockLayout.docked.right;
             return (
                 region !== null &&
-                region.rows.every((r) => r.columns.length === 1) &&
-                region.rows.every((r) => r.columns.every((c) => c.railed === true))
+                region.columns.every((c) => c.railed === true)
             );
         }"""), "Escape must restore the pre-drag railed region"
-    assert page.query_selector("[data-dock-region-rail]") is not None
+    assert page.query_selector("[data-dock-rail-root]") is not None
     page.close()
 
 

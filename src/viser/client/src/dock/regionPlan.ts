@@ -10,9 +10,8 @@
 // invariant #16). A minimized CELL renders as its 26px bar in place at its
 // column's width, so per-cell minimize never changes region width. The only
 // other 36px form is the PACKED region rail (D21/D44: derived -- every
-// band single-column, every column railed), which overrides the drawn
-// width at the DockManager level while the model widths are preserved for
-// restore.
+// column railed), which overrides the drawn width at the DockManager level
+// while the model widths are preserved for restore.
 
 import { widthColumns } from "./layoutOps";
 import {
@@ -23,8 +22,8 @@ import {
 } from "./types";
 
 export interface RegionPlan {
-  /** The width-determining columns (the widest row band's), in render order.
-   * ALL of them carry pixel widths (see module note). */
+  /** The width-determining columns -- ALL of the region's (D46), in render
+   * order. ALL of them carry pixel widths (see module note). */
   columns: DockColumn[];
   /** True when the region has a single column. Its WEIGHT is a horizontal share
    * that's irrelevant when alone, so its pixels live in regionWidth state, not
@@ -35,8 +34,8 @@ export interface RegionPlan {
 }
 
 export function planRegion(region: DockRegion): RegionPlan {
-  // Resize math runs over the widest row band's columns (a full-width band
-  // spans the region width; narrower bands ride along).
+  // Resize math runs over ALL the region's columns (D46: one horizontal
+  // partition).
   const columns = widthColumns(region);
   return {
     columns,
@@ -45,18 +44,20 @@ export function planRegion(region: DockRegion): RegionPlan {
   };
 }
 
-/** Rendered (reserved) width of the region: the EXPLICIT collapse state (D21)
- * reserves exactly the 36px rail; otherwise regionWidth plus divider chrome.
- * ONE uniform rule (D40, 2026-07 stability pass): regionWidth is maintained
- * as the rendered content need BY CONSTRUCTION -- railed columns are counted
- * at the 36px strip inside it by width reconciliation, so no per-plan railed
- * accounting happens here. Model column weights are untouched by collapse, so
- * expand restores them exactly. */
+/** Rendered (reserved) width of the region: regionWidth plus divider
+ * chrome (D40: regionWidth is the rendered content need BY CONSTRUCTION --
+ * railed columns are counted at the 36px strip inside it by width
+ * reconciliation; a fully railed MULTI-column region reconciles to 36 x
+ * its column count, so N packed strips reserve their true width). The one
+ * exception is a packed SINGLE-column region: there regionWidth keeps the
+ * P8 restore width (the lone column's weight may be a height, so
+ * regionWidth is the only width memory) while the rail renders 36px --
+ * reserve the strip, not the restore width. */
 export function plannedReservedWidth(
   plan: RegionPlan,
   regionWidthPx: number,
   regionPacked: boolean,
 ): number {
-  if (regionPacked) return MINIMIZED_STRIP_PX;
+  if (regionPacked && plan.singleColumn) return MINIMIZED_STRIP_PX;
   return regionWidthPx + plan.chromePx;
 }

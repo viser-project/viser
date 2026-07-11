@@ -32,7 +32,7 @@ globalStyle(`:where([data-mantine-color-scheme="dark"]) ${gripBarBg}`, {
 });
 
 /** Minimize/expand motion (P4 as amended): PURE presentation. The model
- * commits instantly; this class only eases the cell/band wrappers' flex
+ * commits instantly; this class only eases the cell/column wrappers' flex
  * properties between their committed values. Three off-switches keep it
  * honest: prefers-reduced-motion (instant), an ancestor's
  * [data-dock-resizing] (divider drags write weights per frame -- easing

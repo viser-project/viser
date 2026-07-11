@@ -1,14 +1,17 @@
 """E2E coverage for the per-panel drop-zone behavior in hitTest.
 
-The drop zones over a docked panel are: a thin outer top/bottom region edge
-(span all columns), the grip bar above the tabs (split above THIS panel), the tab
-strip (insert tabs), and the content area -- which is left/right/below splits plus
-center MERGE (no "above" band in the content area). This exercises:
+The drop zones over a docked panel (D46 columns-only model) are: a thin outer
+left/right region-edge band (dock a new full-height column beside everything),
+the grip bar above the tabs (split above THIS panel, within its column), the
+tab strip (insert tabs), and the content area -- left/right splits (a new
+FULL-HEIGHT sibling column) plus a below split and center MERGE (no "above"
+band in the content area). Top/bottom region-edge spans and cross-band seams
+are gone (bands are unrepresentable). This exercises:
 
 1. The GRIP BAR (above the tabs) of a single panel splits ABOVE just that panel
-   (not the region-wide "span all" band) -- so with two side-by-side panels,
-   dropping on the left panel's grip bar stacks the new panel above ONLY the left
-   one, while the right panel is untouched.
+   (within its own column) -- so with two side-by-side columns, dropping on the
+   left panel's grip bar stacks the new panel above ONLY the left one, while
+   the right column is untouched.
 
 2. "right of A" and "left of B" resolve to the SAME between-columns insertion:
    a new column on the A|B seam. (The previous half-panel ghosts made these read
@@ -23,7 +26,6 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import Page  # noqa: E402
 
-from .dock_helpers import columns as _columns
 from .dock_helpers import dock_layout as _dock_layout
 from .dock_helpers import drag_group as _drag_group
 from .dock_helpers import floating_group_ids as _floating_ids
@@ -35,7 +37,6 @@ from .dock_helpers import leaf_box as _leaf_box
 from .dock_helpers import move_floating_window as _move_window
 from .dock_helpers import open_playground as _open
 from .dock_helpers import right_cols as _right_cols
-from .dock_helpers import rows as _rows
 from .dock_helpers import set_layout as _set_layout
 from .dock_helpers import setup_side_by_side as _setup_side_by_side
 from .dock_helpers import stack as _stack
@@ -70,10 +71,9 @@ def test_grip_bar_splits_above_only_that_panel(dock_context, vite_server: int) -
         right_x_before = right["x"]
 
         # Drop c on the LEFT panel's GRIP BAR (above its tabs). This is the
-        # per-panel "above THIS one" zone -- it must split above only the left
-        # panel, not span all columns. Target just above the strip top (not the
-        # grip's geometric center, which on a short grip bar falls inside the
-        # thin 8px region-top span band and would read as a span-all drop).
+        # per-panel "above THIS one" zone -- it must stack above only the left
+        # panel, within its own column (D46: there is no region-wide span-all
+        # band anymore). Target just above the strip top.
         _drag_group(page, c, _grip_above_strip(page, left["g"]))
 
         after = _right_cols(page)
@@ -100,7 +100,7 @@ def test_grip_bar_splits_above_only_that_panel(dock_context, vite_server: int) -
         # i.e. this was NOT a region-wide span-all drop.
         assert abs(right_after["h"] - right_h_before) <= 6, (
             f"right panel height changed ({right_h_before} -> {right_after['h']}): "
-            "the drop incorrectly spanned all columns"
+            "the drop leaked outside the left column"
         )
         assert abs(right_after["x"] - right_x_before) <= 6
         # And the right column is a single leaf (only one group at its x).
@@ -172,11 +172,18 @@ def _hover_drag(page: Page, gid: str, path: list[tuple[float, float]]):
     for px, py in path:
         page.mouse.move(px, py, steps=8)
     page.mouse.move(*path[-1])
+    # Let the hint's imperative style write land before the caller reads it
+    # (the write is pointer-move driven; headless frame pacing can lag it).
+    page.wait_for_timeout(150)
 
 
-def test_region_span_preview_is_a_thin_line(dock_context, vite_server: int) -> None:
-    """A region-edge "span all" preview is a thin LINE (not a filled half-region
-    ghost), matching the per-panel split-line affordance."""
+def test_region_side_preview_is_a_region_tall_line(
+    dock_context, vite_server: int
+) -> None:
+    """A region-edge SIDE-band preview (dock a new full-height column beside
+    everything, D46: the only region-edge zones left) is a thin vertical LINE
+    spanning the whole region height -- not a filled half-region ghost --
+    matching the per-panel split-line affordance."""
     page = _open(dock_context, vite_server, 1500, 800)
     try:
         ids = _floating_ids(page)
@@ -190,20 +197,23 @@ def test_region_span_preview_is_a_thin_line(dock_context, vite_server: int) -> N
         _move_window(page, "w-m", 40, 40)
         cols = _right_cols(page)
         region_left = min(z["x"] for z in cols)
-        region_right = max(z["x"] + z["w"] for z in cols)
-        region_cx = (region_left + region_right) / 2
+        region_top = min(z["y"] for z in cols)
+        region_bottom = max(z["y"] + z["h"] for z in cols)
 
-        # Hover c over the thin region-top span band (cy ~ 4, centered).
-        _hover_drag(page, c, [(region_cx, 4)])
+        # Hover c over the region's LEFT side band (a few px inside its
+        # inner boundary, vertically centered).
+        _hover_drag(page, c, [(region_left + 6, (region_top + region_bottom) / 2)])
         hints = _drop_hints(page)
         page.mouse.up()
         page.wait_for_timeout(120)
 
-        assert hints, "expected a drop hint while hovering the region-top band"
-        # The span preview is a thin horizontal line: small height, wide width.
+        assert hints, "expected a drop hint while hovering the region side band"
+        # The side preview is a thin vertical line spanning the region height.
         h = hints[0]
-        assert h["h"] <= 8, f"region-span hint is not thin (height {h['h']}px)"
-        assert h["w"] > 100, f"region-span hint should span the region width ({h['w']})"
+        assert h["w"] <= 8, f"region-side hint is not thin (width {h['w']}px)"
+        assert h["h"] > 100, (
+            f"region-side hint should span the region height, got {h['h']}px"
+        )
     finally:
         page.close()
 
@@ -287,14 +297,19 @@ def test_drag_tab_back_uses_live_strip_geometry(dock_context, vite_server: int) 
                 steps=1,
             )
         page.mouse.move(tgt_x, tgt_y)
+        # Settle before reading: the hint's style write is pointer-move driven
+        # and lags under headless frame pacing; reading a hidden hint's STALE
+        # left (from an earlier zone on the drag path) is the failure mode.
+        page.wait_for_timeout(150)
 
-        # Capture the live insertion-line hint position.
+        # Capture the live insertion-line hint position (the persistent
+        # [data-dock-hint] element; visible only while a zone resolves).
         hint = page.evaluate(
             """() => {
-                const d = [...document.querySelectorAll('div')]
-                    .find(e => e.style && e.style.zIndex === '1000');
-                return d ? { left: parseFloat(d.style.left),
-                            width: parseFloat(d.style.width) } : null;
+                const d = document.querySelector('[data-dock-hint]');
+                return d && d.style.display !== 'none'
+                    ? { left: parseFloat(d.style.left),
+                        width: parseFloat(d.style.width) } : null;
             }"""
         )
         page.mouse.up()
@@ -317,90 +332,11 @@ def test_drag_tab_back_uses_live_strip_geometry(dock_context, vite_server: int) 
 
 
 # ===========================================================================
-# (c) Cross-band SEAM: dropping a panel in the gap between two row bands inserts
-#     a new FULL-WIDTH band there (not a per-column split into one band). The
-#     bug: the seam below a multi-column band stacked a half-width leaf under one
-#     column. Driven from a deterministic injected layout for stability.
+# Docking on the SIDE band of one cell of a stacked column inserts a new
+# FULL-HEIGHT sibling column (D46: side drops are column inserts; the old
+# per-cell band split is unrepresentable).
 # ===========================================================================
-def test_cross_band_seam_inserts_a_band(dock_context, vite_server: int) -> None:
-    page = _open(dock_context, vite_server, 1400, 900)
-    try:
-        # Right edge: a TWO-COLUMN band [controls | inspector] over a single
-        # band [console], plus a floating panel `layers` to drag into the seam.
-        # (Uses the playground's REGISTERED, mergeable pane ids -- unknown panes
-        # are stripped by registry reconciliation, and an unmergeable panel like
-        # `monitor` has a full-width header instead of a draggable grip.)
-        _set_layout(
-            page,
-            _dock_layout(
-                docked_right=_rows(_columns("controls", "inspector"), "console"),
-                floating=[_window("layers", x=300, y=300)],
-            ),
-        )
-
-        before = _layout(page)
-        if before is None or before["docked"]["right"] is None:
-            pytest.skip("right region not set this run")
-        assert len(before["docked"]["right"]["rows"]) == 2, (
-            "fixture should start with exactly two bands"
-        )
-
-        # The seam is the boundary between the top band (controls/inspector) and
-        # the mid band: midway between the top band's bottom and the mid band's
-        # top, at the region's horizontal center (the middle span, clear of the
-        # side bands).
-        top = _leaf_box(page, "t-controls")
-        mid = _leaf_box(page, "t-console")
-        seam_y = (top["bottom"] + mid["y"]) / 2
-        seam_x = mid["x"] + mid["w"] / 2
-
-        _drag_group(page, "t-layers", (seam_x, seam_y))
-        page.wait_for_timeout(200)
-
-        after = _layout(page)
-        right = after["docked"]["right"]
-        if right is None or len(right["rows"]) != 3:
-            pytest.skip(
-                "seam drop did not land a third band this run "
-                f"(rows={None if right is None else len(right['rows'])})"
-            )
-
-        # The NEW band (the one holding monitor) must be a single full-width
-        # column -- exactly one column with one leaf -- and sit at index 1
-        # (between the original two bands).
-        def band_groups(band: dict) -> list[str]:
-            return [leaf["group"] for col in band["columns"] for leaf in col["leaves"]]
-
-        new_band_idx = next(
-            (i for i, b in enumerate(right["rows"]) if "t-layers" in band_groups(b)),
-            None,
-        )
-        assert new_band_idx is not None, "the dropped panel must be in some band"
-        new_band = right["rows"][new_band_idx]
-        assert len(new_band["columns"]) == 1, (
-            "the inserted band must be a single FULL-WIDTH column, not a split"
-        )
-        assert len(new_band["columns"][0]["leaves"]) == 1
-        # It landed BETWEEN the two original bands (index 1), so the top band
-        # (controls/inspector) is above it and the mid band below it.
-        assert new_band_idx == 1, (
-            f"the band should land between the two originals (index 1), "
-            f"got index {new_band_idx}"
-        )
-        top_band_groups = band_groups(right["rows"][0])
-        assert "t-controls" in top_band_groups and "t-inspector" in top_band_groups, (
-            "the original multi-column band must stay intact above the new band"
-        )
-    finally:
-        page.close()
-
-
-# ===========================================================================
-# Docking beside ONE CELL of a lone stacked column splits the band: the
-# dropped panel lands beside just that cell (what the cell-height insertion
-# line promises), with the other cell keeping its own full-width band.
-# ===========================================================================
-def test_side_drop_on_one_cell_of_stack_splits_band(
+def test_side_drop_on_stack_cell_inserts_full_height_column(
     dock_context, vite_server: int
 ) -> None:
     page = _open(dock_context, vite_server)
@@ -420,25 +356,26 @@ def test_side_drop_on_one_cell_of_stack_splits_band(
         lay = _layout(page)
         right = lay["docked"]["right"]
         assert right is not None
-        bands = [
-            [[leaf["group"] for leaf in col["leaves"]] for col in row["columns"]]
-            for row in right["rows"]
-        ]
-        assert bands == [[["t-console"], ["t-controls"]], [["t-inspector"]]], (
-            f"side drop on the top cell should band-split, got {bands}"
+        cols = [[leaf["group"] for leaf in col["leaves"]] for col in right["columns"]]
+        assert cols == [["t-console"], ["t-controls", "t-inspector"]], (
+            f"side drop must insert a full-height sibling column, got {cols}"
+        )
+        # Full height: the new column's leaf spans the whole stack column.
+        new_box = _leaf_box(page, "t-console")
+        stack_top = _leaf_box(page, "t-controls")
+        stack_bottom = _leaf_box(page, "t-inspector")
+        assert new_box["h"] >= (stack_bottom["bottom"] - stack_top["y"]) - 12, (
+            f"the inserted column should be region-tall, got {new_box['h']}px"
         )
     finally:
         page.close()
 
 
 # ===========================================================================
-# Region-side dock beside a canonical stack ZIPS the bands (spec 5.1): the
-# dropped panel really lands beside BOTH stacked panels, full height -- not
-# beside just the top one.
+# A seam leaf-insert takes an equal share of the column height -- never a
+# ~0px sliver, even when leaf weights are px-scale after a stack resize.
 # ===========================================================================
-def test_region_side_drop_lands_beside_whole_stack(
-    dock_context, vite_server: int
-) -> None:
+def test_seam_leaf_insert_has_real_height(dock_context, vite_server: int) -> None:
     page = _open(dock_context, vite_server)
     try:
         _set_layout(
@@ -448,39 +385,7 @@ def test_region_side_drop_lands_beside_whole_stack(
                 floating=[_window("console", x=250, y=400, width=240)],
             ),
         )
-        # Outer side band of the right region: a few px inside the screen edge.
-        cell = _leaf_box(page, "t-controls")
-        target = (cell["x"] + cell["w"] - 4, cell["y"] + cell["h"] / 2)
-        _drag_group(page, "t-console", target)
-        lay = _layout(page)
-        right = lay["docked"]["right"]
-        assert right is not None
-        bands = [
-            [[leaf["group"] for leaf in col["leaves"]] for col in row["columns"]]
-            for row in right["rows"]
-        ]
-        assert bands == [[["t-controls", "t-inspector"], ["t-console"]]], (
-            f"side drop should zip the stack and land beside BOTH, got {bands}"
-        )
-    finally:
-        page.close()
-
-
-# ===========================================================================
-# A seam band-insert takes an equal share of the region height (spec 5.1) --
-# never a ~0px sliver, even when band weights are px-scale after a resize.
-# ===========================================================================
-def test_seam_band_insert_has_real_height(dock_context, vite_server: int) -> None:
-    page = _open(dock_context, vite_server)
-    try:
-        _set_layout(
-            page,
-            _dock_layout(
-                docked_right=_stack("controls", "inspector"),
-                floating=[_window("console", x=250, y=400, width=240)],
-            ),
-        )
-        # Resize the band divider so band weights go px-scale.
+        # Resize the in-column stack divider so leaf weights go px-scale.
         top = _leaf_box(page, "t-controls")
         seam_y = top["y"] + top["h"]
         cx = top["x"] + top["w"] / 2
@@ -489,14 +394,14 @@ def test_seam_band_insert_has_real_height(dock_context, vite_server: int) -> Non
         page.mouse.move(cx, seam_y + 80, steps=8)
         page.mouse.up()
         page.wait_for_timeout(200)
-        # Drop console on the (new) seam between the bands.
+        # Drop console on the (new) seam between the stacked cells.
         top2 = _leaf_box(page, "t-controls")
         _drag_group(
             page, "t-console", (top2["x"] + top2["w"] / 2, top2["y"] + top2["h"] + 3)
         )
         box = _leaf_box(page, "t-console")
         assert box is not None and box["h"] > 60, (
-            f"seam-inserted band should have a real height, got {box}"
+            f"seam-inserted leaf should have a real height, got {box}"
         )
     finally:
         page.close()

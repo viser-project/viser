@@ -33,8 +33,8 @@ DockManager.tsx applyOp reconciliation): docking a panel ABOVE a docked panel
 collapsed the ORIGINAL panel to ~3px, because the reconciliation wrote a
 width-px value into a vertical child's height weight. These drive real pointer
 drags and assert the *rendered* heights/widths via getBoundingClientRect, so a
-regression fails loudly. (Grip-bar drop = per-panel "above this one"; thin
-region-top band = span-all-columns above.)
+regression fails loudly. (Grip-bar drop = per-panel "above this one", a leaf
+insert within that column; D46 has no region-top span band.)
 
 ACCEPTABLE exceptions (asserted as such, not bugs):
 * A single floating panel docked to an EMPTY edge adopts the region width (a sole
@@ -63,7 +63,6 @@ from .dock_helpers import (
     columns,
     dock_layout,
     open_playground,
-    rows,
     set_layout,
     stack,
     window,
@@ -208,8 +207,8 @@ def test_removal_float_out_preserves_sibling_width(page: Page) -> None:
 # (2) Docking a new column keeps existing columns' widths; new one = default.
 # ===========================================================================
 def test_dock_new_column_keeps_existing_and_window_width(page: Page) -> None:
-    # Arrange: controls docked right alone; inspector floating clear of the
-    # region (the dock-b-beside-a gesture is the thing under test).
+    # Arrange: controls docked right alone; inspector floating clear of
+    # the docked region (the dock-b-beside-a gesture is the thing under test).
     a, b = "t-controls", "t-inspector"
     set_layout(
         page,
@@ -485,17 +484,18 @@ def test_dock_above_single_panel_splits_height_evenly(
 
 
 # ===========================================================================
-# Dock a panel ABOVE two side-by-side columns (thin region-top span band) ->
-# full-width top panel gets substantial height; the two columns keep their
-# side-by-side widths (region width preserved, not collapsed to one column).
+# Dock a panel ABOVE one of two side-by-side columns (grip-bar drop) -> the
+# new leaf stacks within THAT column with substantial height; the sibling
+# column keeps its width and full height (D46: there is no span-all band;
+# vertical intent is always scoped to one column).
 # ===========================================================================
-def test_dock_above_two_columns_spans_and_preserves_widths(
+def test_dock_above_one_of_two_columns_preserves_sibling(
     dock_context, vite_server: int
 ) -> None:
     page = open_playground(dock_context, vite_server, 1500, 800)
     try:
         # Arrange: two side-by-side right columns + a floating console; the
-        # dock-ABOVE-the-region drop is the gesture under test.
+        # dock-ABOVE-controls drop is the gesture under test.
         c = "t-console"
         set_layout(
             page,
@@ -506,55 +506,39 @@ def test_dock_above_two_columns_spans_and_preserves_widths(
         )
         cols = _right_cols(page)
         assert len(cols) == 2
+        controls = next(leaf for leaf in cols if leaf["g"] == "t-controls")
+        inspector = next(leaf for leaf in cols if leaf["g"] == "t-inspector")
+        insp_w_before, insp_h_before = inspector["w"], inspector["h"]
 
-        region_left = min(leaf["x"] for leaf in cols)
-        region_right = max(leaf["x"] + leaf["w"] for leaf in cols)
-        region_width_before = region_right - region_left
-        col_widths_before = sorted(leaf["w"] for leaf in cols)
-        region_cx = (region_left + region_right) / 2
-
-        # Dock `c` ABOVE BOTH via the thin region-top span band: horizontally
-        # centered over the region, within ~4px of the very top.
-        _drag_group(page, c, (region_cx, 4), steps=14)
+        # Dock `c` ABOVE controls via controls' grip bar.
+        _drag_group(page, c, _grip(page, "t-controls"), steps=14)
 
         after = _right_cols(page)
         if len(after) != 3:
-            pytest.skip("did not produce a top band + two columns this run")
+            pytest.skip("did not produce a stacked column this run")
 
-        # The new top band spans both columns: find the widest leaf (full width)
-        # -- it must get a substantial height (roughly half), not a sliver.
-        top = max(after, key=lambda leaf: leaf["w"])
-        bottom_cols = [leaf for leaf in after if leaf is not top]
+        top = next((leaf for leaf in after if leaf["g"] == c), None)
+        assert top is not None, f"console did not dock: {after}"
+        # The new leaf gets substantial height (not the ~3px regression).
         assert top["h"] > 100, (
-            f"the full-width top band got too little height ({top['h']}px); "
+            f"the new stacked leaf got too little height ({top['h']}px); "
             "dock-above height regressed"
         )
-        assert top["w"] >= region_width_before * 0.9, (
-            f"the top band did not span the region width "
-            f"({top['w']} vs region {region_width_before})"
+        # It stacks within controls' column: same x, above controls.
+        ctrl_after = next(leaf for leaf in after if leaf["g"] == "t-controls")
+        assert abs(top["x"] - controls["x"]) <= 6, (
+            f"the new leaf must join controls' column: {after}"
         )
-        # It sits above the two columns.
-        assert top["y"] <= min(leaf["y"] for leaf in bottom_cols), (
-            "the span band is not above the two columns"
-        )
+        assert top["y"] < ctrl_after["y"], "console must land ABOVE controls"
 
-        # The two original columns keep their side-by-side widths: region width
-        # preserved (not shrunk to one column), and two distinct columns remain.
-        bottom_left = min(leaf["x"] for leaf in bottom_cols)
-        bottom_right = max(leaf["x"] + leaf["w"] for leaf in bottom_cols)
-        assert abs((bottom_right - bottom_left) - region_width_before) <= 12, (
-            f"region width changed: was {region_width_before}, now "
-            f"{bottom_right - bottom_left}"
+        # The sibling inspector column is untouched: full height, same width.
+        insp_after = next(leaf for leaf in after if leaf["g"] == "t-inspector")
+        assert abs(insp_after["w"] - insp_w_before) <= 12, (
+            f"sibling column width changed: {insp_w_before} -> {insp_after['w']}"
         )
-        col_widths_after = sorted(leaf["w"] for leaf in bottom_cols)
-        for w_before, w_after in zip(col_widths_before, col_widths_after):
-            assert abs(w_before - w_after) <= 12, (
-                f"a column width changed: {col_widths_before} -> {col_widths_after}"
-            )
-        # Still two distinct side-by-side columns (different x positions).
-        xs = sorted(leaf["x"] for leaf in bottom_cols)
-        assert xs[1] - xs[0] >= 100, (
-            f"the two columns collapsed onto one another: {bottom_cols}"
+        assert abs(insp_after["h"] - insp_h_before) <= 12, (
+            f"sibling column height changed (the drop leaked out of controls' "
+            f"column): {insp_h_before} -> {insp_after['h']}"
         )
     finally:
         page.close()
@@ -627,20 +611,18 @@ def test_narrow_region_scrolls_body_with_bottom_scrollbar(page: Page) -> None:
 
 
 # ===========================================================================
-# All-RAILED widthRow with an expanded sibling band: the region must keep a
-# WORKING resizer. Regression for the "expanded region with no resize handle"
-# hole (rails are fixed-width chrome; the expanded band still needs a live
+# RAILED columns beside an expanded column: the region must keep a WORKING
+# resizer. Regression for the "expanded region with no resize handle" hole
+# (rails are fixed-width chrome; the expanded column still needs a live
 # resizer).
 # ===========================================================================
-def test_region_resizer_works_when_widthrow_all_railed(page: Page) -> None:
+def test_region_resizer_works_with_railed_columns(page: Page) -> None:
     set_layout(
         page,
         dock_layout(
-            docked_right=rows(
-                columns(
-                    stack("controls", railed=True),
-                    stack("inspector", railed=True),
-                ),
+            docked_right=columns(
+                stack("controls", railed=True),
+                stack("inspector", railed=True),
                 "console",
             )
         ),
@@ -648,8 +630,8 @@ def test_region_resizer_works_when_widthrow_all_railed(page: Page) -> None:
     page.wait_for_timeout(300)
     handle = page.query_selector('[data-dock-region-resize="right"]')
     assert handle is not None, (
-        "region with an expanded band must render a resizer even when the "
-        "width-determining band is all rails"
+        "region with an expanded column must render a resizer even when "
+        "sibling columns are railed"
     )
     before = page.evaluate("() => window.__dockLayout.regionWidth.right")
     hb = handle.bounding_box()

@@ -8,7 +8,6 @@ import {
   DockLayout,
   DockLeaf,
   DockRegion,
-  DockRow,
   FloatingWindow,
   GroupId,
   NodeId,
@@ -21,7 +20,7 @@ import {
 
 /** All columns of a region, flattened across its row bands. */
 function regionColumns(region: DockRegion): DockColumn[] {
-  return region.rows.flatMap((r) => r.columns);
+  return [...region.columns];
 }
 
 // ---------------------------------------------------------------------------
@@ -39,14 +38,13 @@ export function nid(): string {
   return `n${nodeSeq}`;
 }
 
-/** A builder spec: a tree of leaves/columns/rows/regions that toRegion()
- * flattens into the fixed 4-level DockRegion shape (Region = column of rows;
- * Row = row of columns; Column = stack of leaves). */
+/** A builder spec: a tree of leaves/columns/regions that toRegion()
+ * flattens into the fixed 3-level DockRegion shape (D46: Region =
+ * side-by-side columns; Column = stack of leaves). */
 export type TreeSpec =
   | { kind: "leaf"; leaf: DockLeaf }
   | { kind: "col"; column: DockColumn }
-  | { kind: "row"; row: DockRow }
-  | { kind: "region"; rows: NonEmpty<DockRow> };
+  | { kind: "region"; columns: NonEmpty<DockColumn> };
 
 export function leaf(group: GroupId, weight = 1): TreeSpec {
   return { kind: "leaf", leaf: { id: nid(), group, weight } };
@@ -66,22 +64,33 @@ export function col(children: TreeSpec[], weight = 1): TreeSpec {
   };
 }
 
-/** A row band = side-by-side columns. Each child becomes a column: a leaf()
- * child is a one-leaf column, a col() child is its column. */
+/** Side-by-side columns = a region arrangement (D46: the region's ONLY
+ * horizontal partition). Each child becomes a column: a leaf() child is a
+ * one-leaf column, a col() child is its column. `weight` is accepted for
+ * legacy call sites but has no region-level meaning anymore. */
 export function row(children: TreeSpec[], weight = 1): TreeSpec {
+  void weight;
   const columns = children.map((c) => specToColumn(c));
-  return {
-    kind: "row",
-    row: { id: nid(), weight, columns: columns as NonEmpty<DockColumn> },
-  };
+  return { kind: "region", columns: columns as NonEmpty<DockColumn> };
 }
 
-/** A region = vertically stacked row bands (the 4th level). Each child becomes a
- * row band: a row() child is its row, anything else is wrapped in a one-column
- * row. */
+/** LEGACY vertical-stack builder: under D46 a vertical stack IS one
+ * multi-leaf column, so `rows([...])` concatenates its children's leaves
+ * into a single column. Children must be leaf()/col() -- the old band
+ * shapes (row() children) are unrepresentable and throw, so surviving call
+ * sites are plain stacks only. */
 export function rows(children: TreeSpec[]): TreeSpec {
-  const bands = children.map((c) => specToRow(c));
-  return { kind: "region", rows: bands as NonEmpty<DockRow> };
+  const leaves = children.flatMap((c) => {
+    if (c.kind === "leaf") return [c.leaf];
+    if (c.kind === "col") return [...c.column.leaves];
+    throw new Error(
+      "rows() children must be leaf()/col() under D46 (bands are gone)",
+    );
+  });
+  return {
+    kind: "col",
+    column: { id: nid(), weight: 1, leaves: leaves as NonEmpty<DockLeaf> },
+  };
 }
 
 /** Coerce a spec into a single column (a leaf becomes a one-leaf column). */
@@ -89,23 +98,15 @@ function specToColumn(spec: TreeSpec): DockColumn {
   if (spec.kind === "leaf")
     return { id: nid(), weight: spec.leaf.weight, leaves: [spec.leaf] };
   if (spec.kind === "col") return spec.column;
-  throw new Error("a column cannot contain a row/region (deeper than the model)");
+  throw new Error("a column cannot contain a region (deeper than the model)");
 }
 
-/** Coerce a spec into a single row band (a leaf/col becomes a one-column row). */
-function specToRow(spec: TreeSpec): DockRow {
-  if (spec.kind === "row") return spec.row;
-  if (spec.kind === "region")
-    throw new Error("a row cannot nest a region (deeper than the model)");
-  return { id: nid(), weight: 1, columns: [specToColumn(spec)] };
-}
-
-/** Coerce a spec into a DockRegion: a leaf/col/row is a single-band region; a
+/** Coerce a spec into a DockRegion: a leaf/col is a single-column region; a
  * region spec is itself. */
 export function toRegion(spec: TreeSpec | null): DockRegion | null {
   if (spec === null) return null;
-  if (spec.kind === "region") return { rows: spec.rows };
-  return { rows: [specToRow(spec)] };
+  if (spec.kind === "region") return { columns: spec.columns };
+  return { columns: [specToColumn(spec)] };
 }
 
 /** A leaf spec's leaf id (the node id a docked drop target / split addresses). */
@@ -268,38 +269,25 @@ function columnShape(c: DockColumn, withWeights: boolean): Shape {
     : { dir: "column", children: c.leaves.map((l) => leafShape(l, false)) };
 }
 
-/** A row band rendered to the legacy shape: a one-column row reads as that
- * column; a multi-column row reads as a {dir:"row",children}. */
-function rowShape(r: DockRow, withWeights: boolean): Shape {
-  if (r.columns.length === 1) {
-    const base = columnShape(r.columns[0], withWeights);
-    return withWeights ? { ...base, weight: r.weight } : base;
-  }
-  return withWeights
-    ? {
-        dir: "row",
-        weight: r.weight,
-        children: r.columns.map((c) => columnShape(c, true)),
-      }
-    : { dir: "row", children: r.columns.map((c) => columnShape(c, false)) };
-}
-
 export function shapeOf(
   region: DockRegion | null,
   withWeights = false,
 ): Shape | null {
   if (region === null) return null;
-  // A single row band reads as that band (so the common side-by-side region
-  // renders exactly like the pre-4-level shape). Multiple bands stack as an
-  // outer {dir:"column"} of rows.
-  if (region.rows.length === 1) return rowShape(region.rows[0], withWeights);
+  // A single column reads as that column; multiple columns read as a
+  // {dir:"row"} of columns (D46).
+  if (region.columns.length === 1)
+    return columnShape(region.columns[0], withWeights);
   return withWeights
     ? {
-        dir: "column",
+        dir: "row",
         weight: 1,
-        children: region.rows.map((r) => rowShape(r, true)),
+        children: region.columns.map((c) => columnShape(c, true)),
       }
-    : { dir: "column", children: region.rows.map((r) => rowShape(r, false)) };
+    : {
+        dir: "row",
+        children: region.columns.map((c) => columnShape(c, false)),
+      };
 }
 
 /** Collect groups in region order (rows top-to-bottom, columns left-to-right,
@@ -369,6 +357,5 @@ export function packRegionInPlace(
 ): void {
   const region = layout.docked[edge];
   if (region === null) return;
-  for (const row of region.rows)
-    for (const column of row.columns) column.railed = true;
+  for (const column of region.columns) column.railed = true;
 }

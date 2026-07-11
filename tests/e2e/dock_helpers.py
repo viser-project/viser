@@ -45,10 +45,15 @@ def drag(
     page: Page,
     start: tuple[float, float],
     end: tuple[float, float],
-    steps: int = 12,
+    steps: int = 4,
     settle_ms: int = 120,
 ) -> None:
-    """Pointer drag with a small initial nudge (crosses the drag threshold)."""
+    """Pointer drag with a small initial nudge (crosses the drag threshold).
+
+    ``steps`` defaults LOW (4): each mouse.move is a serialized protocol
+    round-trip, and hit-testing only needs the threshold cross, a mid-flight
+    update, and the exact final position. Pass a larger value explicitly for
+    tests that assert on hint transitions mid-path."""
     page.mouse.move(*start)
     page.mouse.down()
     page.mouse.move(start[0] + 6, start[1] + 6, steps=2)
@@ -117,7 +122,7 @@ def group_grip_center(page: Page, gid: str) -> tuple[float, float]:
     return box["x"], box["y"]
 
 
-def drag_group(page: Page, gid: str, end: tuple[float, float], steps: int = 12) -> None:
+def drag_group(page: Page, gid: str, end: tuple[float, float], steps: int = 4) -> None:
     """Drag the group `gid` by its grip handle to `end`."""
     drag(page, group_grip_center(page, gid), end, steps=steps)
 
@@ -168,12 +173,11 @@ def move_floating_window(page: Page, win_id: str, x: float, y: float) -> None:
 
 
 def grip_above_strip_point(page: Page, gid: str) -> tuple[float, float]:
-    """A point in the group's grip bar's per-panel 'above THIS one' split zone --
-    below the thin 8px region-top span band but above the tab strip. Unlike
-    `group_grip_center`, this avoids the span band that a short grip bar's
-    geometric center can fall into (which resolves to a region-wide span-all
-    drop). Targets the MIDPOINT of the valid band [region-top + 8, strip.top) so
-    it stays robust across font sizes rather than hugging either edge."""
+    """A point in the group's grip bar's per-panel 'above THIS one' split zone,
+    above the tab strip (D46: inserts a leaf above this panel WITHIN its
+    column; the old region-top span band is gone). Keeps a small top margin
+    and targets the MIDPOINT of [grip.top + 8, strip.top) so it stays robust
+    across font sizes rather than hugging either edge."""
     box = page.eval_on_selector(
         f'[data-dock-group="{gid}"]',
         "e => { const grip = e.querySelector('[data-dock-griphandle]'); "
@@ -244,10 +248,10 @@ def grip_center(page: Page, panel_id: str) -> tuple[float, float]:
 
 
 def collapsed(page: Page, gid: str) -> bool:
-    """Whether the group's CONTAINER reads as collapsed (D38): its floating
-    window's ``collapsed`` flag, or -- when docked -- its edge's
-    ``regionCollapsed`` / its containing column's ``railed`` flag. Groups
-    carry no collapse state of their own."""
+    """Whether the group's CONTAINER reads as collapsed: its floating window's
+    ``collapsed`` flag, or -- when docked -- its containing column's ``railed``
+    flag (D46: the ONLY docked collapse store; a packed region is simply every
+    column railed). Groups carry no collapse state of their own."""
     return page.evaluate(
         """(gid) => {
             const l = window.__dockLayout;
@@ -256,15 +260,9 @@ def collapsed(page: Page, gid: str) -> bool:
             for (const edge of ["left", "right"]) {
                 const region = l.docked[edge];
                 if (region === null) continue;
-                for (const row of region.rows)
-                    for (const column of row.columns)
-                        for (const lf of column.leaves)
-                            if (lf.group === gid)
-                                return (
-                                    (region.rows.every((r) => r.columns.length === 1) &&
-                                     region.rows.every((r) => r.columns.every((c) => c.railed === true))) ||
-                                    column.railed === true
-                                );
+                for (const column of region.columns)
+                    for (const lf of column.leaves)
+                        if (lf.group === gid) return column.railed === true;
             }
             return false;
         }""",
@@ -273,14 +271,14 @@ def collapsed(page: Page, gid: str) -> bool:
 
 
 def region_collapsed(page: Page, edge: str) -> bool:
-    """The docked region's D38 collapse store for `edge` (the packed rail)."""
+    """Whether `edge`'s region is fully PACKED (D46: every column railed --
+    the derived region-rail form; there is no separate region flag)."""
     return page.evaluate(
         """(e) => {
             const region = window.__dockLayout.docked[e];
             return (
                 region !== null &&
-                region.rows.every((r) => r.columns.length === 1) &&
-                region.rows.every((r) => r.columns.every((c) => c.railed === true))
+                region.columns.every((c) => c.railed === true)
             );
         }""",
         edge,
@@ -289,16 +287,16 @@ def region_collapsed(page: Page, edge: str) -> bool:
 
 def column_railed_for_group(page: Page, gid: str) -> bool | None:
     """The `railed` flag of the docked COLUMN holding `gid` (None if the group
-    is not docked). One of the three D38 collapse stores."""
+    is not docked). One of the two collapse stores (D46: floating
+    ``collapsed`` + per-column ``railed``)."""
     return page.evaluate(
         """(gid) => {
             for (const edge of ["left", "right"]) {
                 const region = window.__dockLayout.docked[edge];
                 if (region === null) continue;
-                for (const row of region.rows)
-                    for (const col of row.columns)
-                        for (const lf of col.leaves)
-                            if (lf.group === gid) return col.railed === true;
+                for (const col of region.columns)
+                    for (const lf of col.leaves)
+                        if (lf.group === gid) return col.railed === true;
             }
             return null;
         }""",
@@ -413,12 +411,19 @@ def stack(*cells, railed: bool = False) -> dict:
     return _column(*cells, railed=railed)
 
 
-def _row(*cells, weight: float = 1) -> dict:
-    """A DockRow spec: side-by-side columns (a full-width band). Each cell is a
-    panel/group (1-leaf column) or a stack() spec (multi-leaf column)."""
+def columns(*cells) -> dict:
+    """Docked-region spec: side-by-side COLUMNS, left to right (D46: the
+    region's only horizontal partition -- there is no band level). Each cell
+    is a panel/group (a 1-leaf column) or a stack() spec (a multi-leaf
+    column)."""
     cols: list[dict] = []
     groups: list[dict] = []
     for cell in cells:
+        if isinstance(cell, dict) and "region" in cell:
+            raise ValueError(
+                "columns() cells must be panels/groups/stack() specs -- a "
+                "columns() region cannot nest (bands are gone under D46)"
+            )
         if isinstance(cell, dict) and "column" in cell:  # a stack() spec
             cols.append(cell["column"])
             groups.extend(cell["groups"])
@@ -426,65 +431,41 @@ def _row(*cells, weight: float = 1) -> dict:
             spec = _column(cell)
             cols.append(spec["column"])
             groups.extend(spec["groups"])
-    row = {"id": f"t-r-{next(_split_counter)}", "weight": weight, "columns": cols}
-    return {"row": row, "groups": groups}
-
-
-def columns(*cells) -> dict:
-    """Docked-region spec: side-by-side columns in ONE full-width row band.
-    Produces the 4-level Region = column-of-rows shape with a single row."""
-    spec = _row(*cells)
-    return {"region": {"rows": [spec["row"]]}, "groups": spec["groups"]}
+    return {"region": {"columns": cols}, "groups": groups}
 
 
 def rows(*bands) -> dict:
-    """Docked-region spec: vertically stacked full-width ROW BANDS (top to
-    bottom). Each band is a columns()/stack() spec or a panel. Produces a
-    multi-band region."""
-    out_rows: list[dict] = []
-    groups: list[dict] = []
+    """LEGACY vertical-stack spec: under D46 a vertical stack IS one
+    multi-leaf column, so ``rows(a, b, c)`` builds the SAME single column as
+    ``stack(a, b, c)`` (children's leaves concatenated top to bottom). A
+    columns() child is unrepresentable -- the old ``[A] over [B][C]`` band
+    shapes are gone -- and raises."""
+    cells: list = []
     for band in bands:
-        # columns()/stack()/already-a-row specs coerce to a row band WITHOUT
-        # eagerly calling _row (which only accepts panel/stack cells, not
-        # a region/row dict). A bare panel or stack() falls through to _row.
-        if isinstance(band, dict) and "row" in band:
-            out_rows.append(band["row"])
-            groups.extend(band["groups"])
-        elif isinstance(band, dict) and "region" in band:  # from columns()
-            out_rows.extend(band["region"]["rows"])
-            groups.extend(band["groups"])
-        elif isinstance(band, dict) and "column" in band:  # from stack()
-            out_rows.append(
-                {
-                    "id": f"t-r-{next(_split_counter)}",
-                    "weight": 1,
-                    "columns": [band["column"]],
-                }
+        if isinstance(band, dict) and ("region" in band or "row" in band):
+            raise ValueError(
+                "rows() children must be panels/groups/stack() specs under "
+                "D46 (bands are gone: a region is columns-of-stacks, so a "
+                "columns() spec cannot be stacked)"
             )
-            groups.extend(band["groups"])
-        else:  # a bare panel id / group spec -> a one-column band
-            spec = _row(band)
-            out_rows.append(spec["row"])
-            groups.extend(spec["groups"])
-    return {"region": {"rows": out_rows}, "groups": groups}
+        if isinstance(band, dict) and "column" in band:  # from stack()
+            # Flatten the stack's leaves into the one shared column: keep the
+            # groups paired with their leaves by re-listing the cells.
+            cells.extend(band["groups"])
+        else:  # a bare panel id / group spec
+            cells.append(band)
+    return _column(*cells)
 
 
 def _as_region(spec: dict | None) -> dict | None:
-    """Normalize a docked spec (from columns()/stack()/rows()) to a DockRegion."""
+    """Normalize a docked spec (from columns()/stack()/rows()) to a DockRegion
+    (D46: ``{columns: [...]}``)."""
     if spec is None:
         return None
-    if "region" in spec:  # from columns() / rows()
+    if "region" in spec:  # from columns()
         return spec["region"]
-    # from stack() -> a single one-column row band.
-    return {
-        "rows": [
-            {
-                "id": f"t-r-{next(_split_counter)}",
-                "weight": 1,
-                "columns": [spec["column"]],
-            }
-        ]
-    }
+    # from stack()/rows() -> a single-column region.
+    return {"columns": [spec["column"]]}
 
 
 def window(

@@ -1,13 +1,16 @@
-"""E2E coverage for dock handle gestures under the D32-D38 collapse contract:
-the rail (the ONE docked collapsed rendering -- region scope via the chevron,
-column scope via column.railed), floating TOP resize grips, and the stack
-handle's window toggle.
+"""E2E coverage for dock handle gestures under the D46 collapse contract:
+the per-column rail (the ONE docked collapsed rendering -- column.railed is
+the only docked collapse store; a packed region is simply every column
+railed, rendered as side-by-side 36px strips), floating TOP resize grips,
+and the stack handle's window toggle.
 
-Collapse chrome (D32/D38): docked cells never render a `-` or an in-place
-bar; the region/column chevrons are the only docked collapse affordances and
-render the 36px rail. A collapsed FLOATING window renders one bar per group.
-Transfers are identity: docking a collapsed window rails the landing scope;
-floating a railed scope yields a collapsed window.
+Collapse chrome (D32/D46): docked cells never render a `-` or an in-place
+bar; the region chevron (single-column regions) and per-column chevrons are
+the only docked collapse affordances and rail whole COLUMNS. A collapsed
+FLOATING window renders one bar per group. Transfers are identity: docking a
+collapsed window rails the landing column; floating a railed column yields a
+collapsed window. Expanding a rail is granular (only that column; NO
+accordion -- siblings keep their state).
 
 Floating-window grips and stack handle:
 1. Dragging the TOP edge grip resizes height with the BOTTOM edge held fixed
@@ -95,23 +98,22 @@ def _resize_grip(page: Page, window_id: str, edge: str) -> tuple[float, float]:
 # ---------------------------------------------------------------------------
 # Column handle: dragging it floats the whole stack as one window.
 # ---------------------------------------------------------------------------
-def test_stack_canonicalizes_to_independent_bands(
-    dock_context, vite_server: int
-) -> None:
-    """Spec D12: an injected 2-group vertical stack canonicalizes into two
-    BANDS -- there is no column-level parent handle; each panel keeps its own
+def test_stack_stays_one_multi_leaf_column(dock_context, vite_server: int) -> None:
+    """D46: an injected 2-group vertical stack IS one multi-leaf column (no
+    band level exists) -- a single-column region carries the region-level
+    parent handle, so there is no per-column handle; each panel keeps its own
     grip, and dragging one panel's grip floats ONLY that panel. The stack is
-    ONE visual column (D30): its cells carry NO cell-level minimize; the
-    region handle's chevron is the stack's collapse control."""
+    ONE visual column: its cells carry NO cell-level minimize; the region
+    handle's chevron is the stack's collapse control."""
     page = _open(dock_context, vite_server)
     try:
         set_layout(page, dock_layout(docked_right=stack("inspector", "controls")))
-        bands = page.evaluate(
-            """() => window.__dockLayout.docked.right.rows.map(
-                (r) => r.columns.map((c) => c.leaves.map((l) => l.group)))"""
+        cols = page.evaluate(
+            """() => window.__dockLayout.docked.right.columns.map(
+                (c) => c.leaves.map((l) => l.group))"""
         )
-        assert bands == [[["t-inspector"]], [["t-controls"]]], (
-            f"stack should canonicalize to bands, got {bands}"
+        assert cols == [["t-inspector", "t-controls"]], (
+            f"stack should stay one multi-leaf column, got {cols}"
         )
         assert page.locator("[data-dock-column-handle]").count() == 0
         # A plain stack is ONE visual column (D30): its cells render NO
@@ -144,20 +146,21 @@ def test_stack_canonicalizes_to_independent_bands(
 def test_minimized_column_parent_handle_tears_out_whole_stack(
     dock_context, vite_server: int
 ) -> None:
-    """An EXPLICITLY collapsed region (D21) renders the packed rail with a
-    parent handle on top (spec 3.3); DRAGGING that handle tears the WHOLE
-    region out as one floating window (it must not just toggle) -- and the
-    transfer is identity (D38): the window is born COLLAPSED."""
+    """An EXPLICITLY collapsed single-column region renders the column rail
+    with its own narrow header as the parent handle (D46: the packed region
+    IS its railed columns); DRAGGING that header tears the WHOLE column out
+    as one floating window (it must not just toggle) -- and the transfer is
+    identity (D38): the window is born COLLAPSED."""
     page = _open(dock_context, vite_server)
     try:
-        # Arrange: two groups docked right (canonical bands), then collapse
-        # the region via the explicit chevron (the only docked collapse
-        # affordance, D32).
+        # Arrange: two groups stacked in one column docked right, then
+        # collapse the region via the explicit chevron (a single-column
+        # region's only collapse affordance, D32).
         set_layout(page, dock_layout(docked_right=stack("inspector", "controls")))
-        assert page.locator("[data-dock-region-rail]").count() == 0
+        assert page.locator("[data-dock-rail-root]").count() == 0
         page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")
         page.wait_for_timeout(200)
-        handle = page.locator("[data-dock-region-rail]")
+        handle = page.locator("[data-dock-column-rail]")
         assert handle.count() == 1
         box = handle.first.bounding_box()
         assert box is not None
@@ -198,16 +201,15 @@ def test_undock_minimized_column_keeps_expanded_width(
     rect)."""
     page = _open(dock_context, vite_server)
     try:
-        # Two stacked panels docked right (canonical bands) at ~300px.
+        # Two panels stacked in one column docked right at ~300px.
         set_layout(page, dock_layout(docked_right=stack("controls", "inspector")))
         region_w = page.evaluate("() => window.__dockLayout.regionWidth.right")
         assert region_w and region_w > 150
 
-        # Collapse the region explicitly (D21), then undock via the rail's
-        # handle.
+        # Collapse the region explicitly, then undock via the rail's header.
         page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")
         page.wait_for_timeout(200)
-        handle = page.locator("[data-dock-region-rail]").first
+        handle = page.locator("[data-dock-column-rail]").first
         box = handle.bounding_box()
         assert box is not None
         _drag(
@@ -439,14 +441,14 @@ def test_split_preview_does_not_wipe_region_background(
 
         # A few region collapse/expand cycles (chevron -> rail header +, the
         # docked collapse gesture since D32) must not expose a transparent
-        # region.
+        # region surface.
         for _ in range(2):
             page.eval_on_selector(
                 '[data-dock-region-collapse="right"]', "e => e.click()"
             )
             page.wait_for_timeout(120)
             page.eval_on_selector(
-                "[data-dock-region-rail] [data-dock-minimize-all]", "e => e.click()"
+                "[data-dock-rail-root] [data-dock-minimize-all]", "e => e.click()"
             )
             page.wait_for_timeout(120)
         bg2 = region_bg()
@@ -552,27 +554,26 @@ def test_left_region_chevron_clickable_despite_resizer(
             "real-clicking the left region's chevron did not collapse it -- the "
             "region resizer likely intercepted the click"
         )
-        assert page.locator("[data-dock-region-rail]").count() == 1
+        assert page.locator("[data-dock-rail-root]").count() == 1
     finally:
         page.close()
 
 
-def test_railed_lone_band_among_expanded_bands_stays_railed(
+def test_railed_column_among_expanded_siblings_stays_railed(
     dock_context, vite_server: int
 ) -> None:
-    """D42 (supersedes the old unrepresentability rule): a RAILED lone column
-    among EXPANDED single-column bands is legal committed geometry -- the
-    band renders the 36px rail strip with the rest of the band as plain band
-    body. No flag drop, no forced expand, and still no in-place docked bar
-    (D32/D38)."""
+    """A RAILED column among EXPANDED sibling columns is legal committed
+    geometry (D46): the column renders the 36px rail strip in place while
+    its siblings keep their widths. No flag drop, no forced expand (NO
+    accordion), and still no in-place docked bar (D32/D38)."""
     page = _open(dock_context, vite_server, 1280, 900)
     try:
-        # Three stacked single-column bands on the right; the MIDDLE band
+        # Three side-by-side columns on the right; the MIDDLE column
         # (inspector) seeded railed.
         set_layout(
             page,
             dock_layout(
-                docked_right=rows(
+                docked_right=columns(
                     "controls", stack("inspector", railed=True), "console"
                 )
             ),
@@ -609,7 +610,7 @@ def test_lone_docked_panel_collapses_only_via_chevron(
         page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")
         page.wait_for_timeout(300)
         assert region_collapsed(page, "right")
-        assert page.locator("[data-dock-region-rail]").count() == 1
+        assert page.locator("[data-dock-rail-root]").count() == 1
         rail = page.locator('[data-dock-region="right"]').bounding_box()
         assert rail is not None and rail["width"] < 60, (
             f"collapsed region should draw the ~36px rail, got {rail}"
@@ -618,11 +619,11 @@ def test_lone_docked_panel_collapses_only_via_chevron(
         # The rail header's toggle clears the region's ONE flag: the panel
         # comes back fully expanded (there is no per-cell state to keep).
         page.eval_on_selector(
-            "[data-dock-region-rail] [data-dock-minimize-all]", "e => e.click()"
+            "[data-dock-rail-root] [data-dock-minimize-all]", "e => e.click()"
         )
         page.wait_for_timeout(300)
         assert not region_collapsed(page, "right")
-        assert page.locator("[data-dock-region-rail]").count() == 0
+        assert page.locator("[data-dock-rail-root]").count() == 0
         w = page.evaluate(
             """() => document
                 .querySelector('[data-dock-group="t-controls"]')
@@ -670,10 +671,11 @@ def test_rail_cell_is_a_drop_target(dock_context, vite_server: int) -> None:
         page.close()
 
 
-def test_band_to_band_vertical_resize(dock_context, vite_server: int) -> None:
-    """Dragging the horizontal divider BETWEEN two row bands redistributes their
-    heights (conserving the total) -- the band-level analog of column/leaf
-    resize."""
+def test_stack_vertical_resize(dock_context, vite_server: int) -> None:
+    """Dragging the horizontal divider BETWEEN two stacked leaves of one
+    column redistributes their heights (conserving the total) -- the
+    within-column analog of column width resize (D46: the only vertical
+    resize left; band-height resize is gone with bands)."""
     page = _open(dock_context, vite_server, 1280, 900)
     try:
         set_layout(page, dock_layout(docked_right=rows("controls", "inspector")))
@@ -693,8 +695,8 @@ def test_band_to_band_vertical_resize(dock_context, vite_server: int) -> None:
             )
 
         before = heights()
-        # Grab the divider just below the top band's bottom edge; drag UP 100px to
-        # shrink the top band and grow the bottom one.
+        # Grab the divider just below the top cell's bottom edge; drag UP 100px
+        # to shrink the top cell and grow the bottom one.
         anchor = page.evaluate(
             """() => {
                 const g = document.querySelector('[data-dock-group="t-controls"]');
@@ -709,10 +711,10 @@ def test_band_to_band_vertical_resize(dock_context, vite_server: int) -> None:
         )
         after = heights()
         assert after["t-controls"] < before["t-controls"] - 40, (
-            f"top band should shrink: {before} -> {after}"
+            f"top cell should shrink: {before} -> {after}"
         )
         assert after["t-inspector"] > before["t-inspector"] + 40, (
-            f"bottom band should grow: {before} -> {after}"
+            f"bottom cell should grow: {before} -> {after}"
         )
         # Total height conserved (allow slack for the divider + sub-pixel).
         assert (
@@ -721,32 +723,27 @@ def test_band_to_band_vertical_resize(dock_context, vite_server: int) -> None:
                 - (before["t-controls"] + before["t-inspector"])
             )
             <= 16
-        ), f"band heights should conserve total: {before} -> {after}"
+        ), f"stack heights should conserve total: {before} -> {after}"
     finally:
         page.close()
 
 
-def test_expanded_band_not_squished_by_railed_wider_band(
+def test_expanded_column_not_squished_by_railed_siblings(
     dock_context, vite_server: int
 ) -> None:
-    """Regression: the region width is driven by the widest band (most columns).
-    When THAT band is fully RAILED (every column collapsed to its 36px strip)
-    but a narrower band is expanded, the expanded band must still get the
-    region's content width -- it was squished to strip width because the
-    all-collapsed widthRow reported hasExpanded=false and reserved only
-    chrome."""
+    """An expanded column beside RAILED siblings must still get the region's
+    content width (D46: railed columns hold a fixed 36px basis; the freed
+    width reflows to expanded siblings) -- not be squished toward strip
+    width."""
     page = _open(dock_context, vite_server, 1280, 900)
     try:
-        # Right: a 2-column band [controls|inspector], BOTH columns railed,
-        # over an expanded single-column [console] band.
+        # Right: two railed columns beside an expanded [console] column.
         set_layout(
             page,
             dock_layout(
-                docked_right=rows(
-                    columns(
-                        stack("controls", railed=True),
-                        stack("inspector", railed=True),
-                    ),
+                docked_right=columns(
+                    stack("controls", railed=True),
+                    stack("inspector", railed=True),
                     "console",
                 )
             ),
@@ -761,7 +758,7 @@ def test_expanded_band_not_squished_by_railed_wider_band(
         )
         # Full content width, not a ~79px strip.
         assert w > 200, (
-            f"expanded console band was squished to {w}px by the minimized wider band"
+            f"expanded console column was squished to {w}px by its railed siblings"
         )
     finally:
         page.close()
@@ -782,11 +779,9 @@ def test_railed_sibling_columns_independent_gestures(
             set_layout(
                 page,
                 dock_layout(
-                    docked_right=rows(
-                        columns(
-                            stack("controls", railed=True),
-                            stack("inspector", railed=True),
-                        ),
+                    docked_right=columns(
+                        stack("controls", railed=True),
+                        stack("inspector", railed=True),
                         "console",
                     )
                 ),
@@ -812,9 +807,8 @@ def test_railed_sibling_columns_independent_gestures(
         # Tear-out: drag the controls rail cell to canvas -> floats ONLY
         # controls, as a collapsed window (identity transfer, D38).
         seed()
-        # Press near the cell's TOP: an all-railed band floors at the grab
-        # height, so the cell's geometric center can fall under the band
-        # divider below it.
+        # Press near the cell's TOP so the press lands squarely inside the
+        # spine cell.
         cell = page.evaluate(
             """() => {
                 const c = document.querySelector(
@@ -844,36 +838,40 @@ def test_railed_sibling_columns_independent_gestures(
         assert out["inspectorDocked"], (
             "inspector should stay docked (only one cell torn out)"
         )
-        # Once controls' column leaves, inspector is a lone railed column in
-        # its band -- legal geometry since D42, so it simply STAYS railed
-        # (no migration, no forced expand).
+        # Once controls' column leaves, inspector stays a railed column
+        # beside console -- legal committed geometry (D46), so it simply
+        # STAYS railed (no migration, no forced expand, no accordion).
         assert column_railed_for_group(page, "t-inspector") is True
     finally:
         page.close()
 
 
-def test_explicit_collapse_gives_packed_rail_spine_row_expands(
+def test_all_columns_railed_pack_region_spine_row_expands_granularly(
     dock_context, vite_server: int
 ) -> None:
-    """The explicit chevron collapses a multi-band region to ONE packed rail
-    (one narrow spine cell per leaf, D21/D44: derived from every column
-    railed); expanding from a rail spine row is GRANULAR (D44,
-    user-adjudicated): it expands JUST that panel's band and lands on that
-    tab -- the other bands stay railed as column rails."""
+    """Railing EVERY column packs the region (D46: the packed rail is
+    derived -- N side-by-side 36px strips; rails never merge); expanding
+    from a rail spine row is GRANULAR: it expands JUST that panel's column
+    and lands on that tab -- the other columns stay railed (no
+    accordion)."""
     page = _open(dock_context, vite_server, 1280, 900)
     try:
         set_layout(
             page,
-            dock_layout(docked_right=rows("controls", "inspector", "console")),
+            dock_layout(docked_right=columns("controls", "inspector", "console")),
         )
         page.wait_for_timeout(300)
-        assert page.locator("[data-dock-region-rail]").count() == 0
+        assert page.locator("[data-dock-rail-root]").count() == 0
 
-        # EXPLICIT collapse -> the 36px rail with one spine cell per leaf.
-        page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")
+        # A multi-column region offers no region-level chevron (D27): rail
+        # each column via its own chevron -> the packed form.
+        for gid in ("t-controls", "t-inspector", "t-console"):
+            click_column_chevron(page, gid)
         page.wait_for_timeout(300)
         assert region_collapsed(page, "right")
-        assert page.locator("[data-dock-region-rail]").count() == 1
+        assert page.locator("[data-dock-rail-root]").count() == 3, (
+            "a packed region renders one 36px strip per column (rails never merge)"
+        )
         rail_leaves = page.eval_on_selector_all(
             '[data-dock-leaf][data-dock-edge="right"]',
             """els => els.map(l => {
@@ -886,20 +884,20 @@ def test_explicit_collapse_gives_packed_rail_spine_row_expands(
             assert lf["w"] < 60, f"rail cell should be narrow, got {lf}"
 
         # Expand one panel from the rail via its spine ROW (keyboard Enter):
-        # GRANULAR (D44) -- clears just that column's flag and activates the
-        # tab; the sibling bands keep their rails.
+        # GRANULAR -- clears just that column's flag and activates the tab;
+        # the sibling columns keep their rails.
         page.eval_on_selector(
             '[data-dock-group="t-controls"] [data-dock-tab]', "e => e.focus()"
         )
         page.keyboard.press("Enter")
         page.wait_for_timeout(400)
         assert not region_collapsed(page, "right")
-        assert page.locator("[data-dock-region-rail]").count() == 0, (
-            "expanding from the rail must un-pack the region"
+        assert page.locator("[data-dock-rail-root]").count() == 2, (
+            "only the expanded column's rail should disappear"
         )
         assert column_railed_for_group(page, "t-controls") is False
         assert column_railed_for_group(page, "t-inspector") is True, (
-            "granular expand (D44): sibling bands stay railed"
+            "granular expand: sibling columns stay railed"
         )
         assert column_railed_for_group(page, "t-console") is True
         w = page.evaluate(
@@ -907,7 +905,7 @@ def test_explicit_collapse_gives_packed_rail_spine_row_expands(
                 .querySelector('[data-dock-group="t-controls"]')
                 .closest('[data-dock-leaf]').getBoundingClientRect().width)"""
         )
-        assert w > 200, f"expanded band should be full width, got {w}"
+        assert w > 200, f"expanded column should be full width, got {w}"
     finally:
         page.close()
 
@@ -957,7 +955,8 @@ def test_docking_collapsed_window_rails_landing_scope(
     """Transfer pin, float->dock: docking a COLLAPSED window is identity, not
     conversion (D38). Beside existing content the landing column arrives
     RAILED (the 36px strip; the neighbor stays expanded); onto an EMPTY edge
-    the region flag is the canonical store, so the region rail renders."""
+    it lands as a lone railed column -- the region's packed form is derived
+    from every column being railed (D46)."""
     page = _open(dock_context, vite_server, 1280, 800)
     try:
         # (a) Beside existing content -> a railed column.
@@ -992,7 +991,7 @@ def test_docking_collapsed_window_rails_landing_scope(
         assert column_railed_for_group(page, "t-controls") is False
         assert page.locator("[data-dock-column-rail]").count() == 1
 
-        # (b) Onto an EMPTY edge -> the region flag (region rail).
+        # (b) Onto an EMPTY edge -> a lone railed column (the packed form).
         set_layout(
             page,
             dock_layout(
@@ -1013,10 +1012,10 @@ def test_docking_collapsed_window_rails_landing_scope(
         if page.evaluate("() => window.__dockLayout.docked.right === null"):
             pytest.skip("collapsed window did not dock to the empty edge this run")
         assert region_collapsed(page, "right"), (
-            "docking a collapsed window onto an empty edge must set the region "
-            "flag (D38 identity transfer)"
+            "docking a collapsed window onto an empty edge must land a railed "
+            "column (D38 identity transfer; packed form is derived)"
         )
-        assert page.locator("[data-dock-region-rail]").count() == 1
+        assert page.locator("[data-dock-rail-root]").count() == 1
     finally:
         page.close()
 

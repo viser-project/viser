@@ -81,23 +81,15 @@ describe("invariantViolations", () => {
     expect(invariantViolations(l).some((s) => s.includes("orphan"))).toBe(true);
   });
 
-  it("#13 retired (D42): `railed` on a band's SOLE column is LEGAL", () => {
-    // The lone rail renders its 36px strip with the rest of the band as
-    // plain band body -- a legal committed state (the chevron on a lone
-    // column's handle produces it), so the old invariant is gone.
+  it("#13 retired (D42/D46): a railed column beside expanded siblings is LEGAL", () => {
+    // The lone rail renders its 36px strip beside the expanded column --
+    // legal committed geometry (the column chevron produces it), so there
+    // is no structural check against it.
     const l = emptyLayout();
-    l.groups = { a: group("a"), b: group("b"), c: group("c") };
-    l.docked.left = toRegion(
-      rows([row([leaf("a"), leaf("b")]), row([leaf("c")])]),
-    );
-    l.docked.left!.rows[1].columns[0].railed = true;
+    l.groups = { a: group("a"), b: group("b") };
+    l.docked.left = toRegion(row([leaf("a"), leaf("b")]));
+    l.docked.left!.columns[0].railed = true;
     expect(invariantViolations(l)).toEqual([]);
-    // A railed column WITH band siblings stays legal too.
-    const ok = emptyLayout();
-    ok.groups = { a: group("a"), b: group("b") };
-    ok.docked.left = toRegion(rows([row([leaf("a"), leaf("b")])]));
-    ok.docked.left!.rows[0].columns[0].railed = true;
-    expect(invariantViolations(ok)).toEqual([]);
   });
 
   it("#14/#15 retired (D44): an un-migrated legacy regionCollapsed field is flagged", () => {
@@ -114,18 +106,18 @@ describe("invariantViolations", () => {
     // Migration converts the flag into railed columns and drops the field.
     migrateRegionCollapsedInPlace(l);
     expect(l.regionCollapsed).toBeUndefined();
-    expect(l.docked.left!.rows[0].columns[0].railed).toBe(true);
+    expect(l.docked.left!.columns[0].railed).toBe(true);
     expect(invariantViolations(l)).toEqual([]);
   });
 
-  it("#16: flags regionWidth drifting from the width row's rendered need (D40)", () => {
-    // With an EXPANDED column in a multi-column width row, regionWidth must
+  it("#16: flags regionWidth drifting from the columns' rendered need (D40/D46)", () => {
+    // With an EXPANDED column in a multi-column region, regionWidth must
     // equal sum(railed ? 36 : weight) -- reconciliation maintains it on
     // every commit, so a drift means a bypassed/broken width write.
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b") };
-    l.docked.left = toRegion(rows([row([leaf("a", 150), leaf("b", 150)])]));
-    l.docked.left!.rows[0].columns[0].railed = true; // need = 36 + 150 = 186
+    l.docked.left = toRegion(row([leaf("a", 150), leaf("b", 150)]));
+    l.docked.left!.columns[0].railed = true; // need = 36 + 150 = 186
     l.regionWidth = { left: 300, right: 300 };
     expect(
       invariantViolations(l).some((s) => s.includes("rendered need")),
@@ -135,63 +127,44 @@ describe("invariantViolations", () => {
     expect(invariantViolations(l)).toEqual([]);
   });
 
-  it("#16: an all-railed width row must hold exactly its rails when nothing is expanded, and at least them otherwise", () => {
-    // Nothing expanded anywhere: regionWidth is the rails, never a phantom
-    // content width (zones audit W14).
+  it("#16: a fully railed multi-column region holds exactly its rails", () => {
+    // Every column railed: the rails ARE the content (D46 -- there are no
+    // other bands whose expanded content could carry the width), so
+    // regionWidth is 36 x columns, never a phantom content width.
     const rails = emptyLayout();
     rails.groups = { a: group("a"), b: group("b") };
-    rails.docked.left = toRegion(rows([row([leaf("a", 150), leaf("b", 150)])]));
-    rails.docked.left!.rows[0].columns[0].railed = true;
-    rails.docked.left!.rows[0].columns[1].railed = true;
+    rails.docked.left = toRegion(row([leaf("a", 150), leaf("b", 150)]));
+    rails.docked.left!.columns[0].railed = true;
+    rails.docked.left!.columns[1].railed = true;
     rails.regionWidth = { left: 300, right: 300 };
     expect(
-      invariantViolations(rails).some((s) => s.includes("all-railed")),
+      invariantViolations(rails).some((s) => s.includes("pack width")),
     ).toBe(true);
     rails.regionWidth = { left: 72, right: 300 };
     expect(invariantViolations(rails)).toEqual([]);
-    // With an expanded band ELSEWHERE, regionWidth carries that content's
-    // need -- any value at or above the rails' pack width is legal (the
-    // e2e-pinned no-squish rule keeps the 300 here)...
-    const mixed = structuredClone(rails);
-    mixed.groups.c = group("c");
-    mixed.docked.left!.rows.push({
-      id: "n-band-c",
-      weight: 1,
-      columns: [
-        { id: "n-col-c", weight: 1, leaves: [{ id: "n-leaf-c", group: "c", weight: 1 }] },
-      ],
-    });
-    mixed.regionWidth = { left: 300, right: 300 };
-    expect(invariantViolations(mixed)).toEqual([]);
-    // ...but a value BELOW the rails' pack width cannot render the rails.
-    mixed.regionWidth = { left: 40, right: 300 };
-    expect(
-      invariantViolations(mixed).some((s) => s.includes("pack width")),
-    ).toBe(true);
   });
 
-  it("#16: gated off for unreconciled layouts, single width columns, and collapsed regions", () => {
+  it("#16: gated off for unreconciled layouts and single-column regions", () => {
     // No regionWidth field: never reconciled (flex-share literals) -- no
     // basis to check against.
     const literal = emptyLayout();
     literal.groups = { a: group("a"), b: group("b") };
-    literal.docked.left = toRegion(rows([row([leaf("a"), leaf("b")])]));
+    literal.docked.left = toRegion(row([leaf("a"), leaf("b")]));
     expect(invariantViolations(literal)).toEqual([]);
-    // Single width column: its px lives in regionWidth itself; the weight
-    // may be a height share.
+    // Single column: its px lives in regionWidth itself; the weight may be
+    // a height share.
     const single = emptyLayout();
     single.groups = { a: group("a") };
-    single.docked.left = toRegion(rows([row([leaf("a", 2)])]));
+    single.docked.left = toRegion(leaf("a", 2));
     single.regionWidth = { left: 500, right: 300 };
     expect(invariantViolations(single)).toEqual([]);
-    // Packed edge (D44: all bands single-column, all railed): the width
-    // row is a single column, so #16's multi-column check is naturally
-    // gated off; regionWidth carries whatever reconciliation maintains.
+    // A packed single-column STACK (the sole column railed) is also a
+    // single width column -- gated off; regionWidth carries the restore
+    // width reconciliation maintains.
     const collapsed = emptyLayout();
     collapsed.groups = { a: group("a"), b: group("b") };
-    collapsed.docked.left = toRegion(rows([row([leaf("a")]), row([leaf("b")])]));
-    for (const rw of collapsed.docked.left!.rows)
-      rw.columns[0].railed = true;
+    collapsed.docked.left = toRegion(rows([leaf("a"), leaf("b")]));
+    collapsed.docked.left!.columns[0].railed = true;
     collapsed.regionWidth = { left: 480, right: 300 };
     expect(invariantViolations(collapsed)).toEqual([]);
   });

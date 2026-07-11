@@ -271,14 +271,8 @@ describe("screen-edge dock next to an occupied region", () => {
     const l = emptyLayout();
     l.groups = { m: group("m") };
     l.docked.right = {
-      rows: [
-        {
-          id: "r101",
-          weight: 1,
-          columns: [
+      columns: [
         { id: "Cm", weight: 1, leaves: [{ id: "Lm", group: "m", weight: 1 }] },
-      ],
-        },
       ],
     };
     // D38: docked collapse is the REGION's flag (the rail), not group state.
@@ -302,48 +296,32 @@ describe("screen-edge dock next to an occupied region", () => {
 });
 
 // ===========================================================================
-// Region edges (top/bottom full-width, left/right inner+outer; suppressed for
-// a single full-span leaf)
+// Region edges (D46: left/right side bands ONLY -- a side dock lands a
+// full-height column beside everything; top/bottom band zones are deleted
+// with the bands themselves. Suppressed for a single full-span leaf.)
 // ===========================================================================
 describe("region edge zones", () => {
-  // A multi-cell region so the edges are NOT single leaves: a row [a|b] makes
-  // top/bottom span both columns; a column [a/b] makes left/right span rows.
-  it("top band of a multi-column region -> regionEdge top (thin full-width line)", () => {
+  it("top/bottom edges are NOT regionEdge zones (D46: band drops deleted)", () => {
+    // A pointer at the region's top/bottom edge with no target under it
+    // resolves to NOTHING (per-cell above/below zones own vertical intent).
     const tree = rowSplit([leaf("a"), leaf("b")]);
     const layout = layoutWith({ left: tree });
-    const out = run(layout, [], 100, REGION_EDGE_PX - 5)!;
-    expect(out.result).toEqual({ kind: "regionEdge", edge: "left", side: "top" });
-    // Region-edge spans now preview as a thin LINE (consistent with per-panel
-    // split lines), spanning the full region width at the top edge.
-    expect(out.hint.variant).toBe("line");
-    expect(out.hint.top).toBe(0);
-    expect(out.hint.width).toBe(REGION_W.left);
-    expect(out.hint.height).toBeLessThan(8); // thin
+    expect(run(layout, [], 100, REGION_EDGE_PX - 5)).toBeNull();
+    expect(run(layout, [], 100, CONTAINER.height - (REGION_EDGE_PX - 5))).toBeNull();
   });
 
-  it("bottom band of a multi-column region -> regionEdge bottom (thin line at bottom)", () => {
-    const tree = rowSplit([leaf("a"), leaf("b")]);
-    const layout = layoutWith({ left: tree });
-    const out = run(layout, [], 100, CONTAINER.height - (REGION_EDGE_PX - 5))!;
-    expect(out.result).toEqual({ kind: "regionEdge", edge: "left", side: "bottom" });
-    expect(out.hint.variant).toBe("line");
-    expect(out.hint.height).toBeLessThan(8);
-    // Line sits at the bottom edge of the region.
-    expect(out.hint.top + out.hint.height).toBeCloseTo(CONTAINER.height, 0);
-  });
-
-  it("left band of a multi-row region -> regionEdge left (thin full-height line)", () => {
+  it("left band of a stacked-column region -> regionEdge left (REGION-TALL line)", () => {
     const tree = colSplit([leaf("a"), leaf("b")]);
     const layout = layoutWith({ left: tree });
-    // Avoid the top band; pick a y in the vertical middle.
     const out = run(layout, [], REGION_SIDE_PX - 5, 400)!;
     expect(out.result).toEqual({ kind: "regionEdge", edge: "left", side: "left" });
     expect(out.hint.variant).toBe("line");
+    // The hint is region-tall (D46: the landing column is full height).
     expect(out.hint.height).toBe(CONTAINER.height);
     expect(out.hint.width).toBeLessThan(8); // thin
   });
 
-  it("right band (inner) of a multi-row left region -> regionEdge right", () => {
+  it("right band (inner) of a stacked-column left region -> regionEdge right", () => {
     const tree = colSplit([leaf("a"), leaf("b")]);
     const layout = layoutWith({ left: tree });
     const regionRight = REGION_W.left; // left region spans [0..300]
@@ -363,9 +341,9 @@ describe("region edge zones", () => {
     expect(out.hint.left).toBeGreaterThanOrEqual(regionLeft);
   });
 
-  it("suppressed for top/bottom when the edge is a single full-span leaf", () => {
-    // A bare leaf: every edge is a single leaf, so region-edge zones are
-    // suppressed and the pointer falls through to the per-panel group logic.
+  it("a single full-span leaf falls through to the per-panel group logic", () => {
+    // A bare leaf: every side is a single leaf, so region-edge zones are
+    // suppressed and the pointer resolves against the panel's own zones.
     const node = leaf("a");
     const layout = layoutWith({ left: node });
     const tgt = dockedTarget("a", leafIdOf(node), "left", rect(0, 0, 300, 800));
@@ -373,16 +351,16 @@ describe("region edge zones", () => {
     expect(out.result.kind).not.toBe("regionEdge");
   });
 
-  it("top band over a multi-leaf column is an active region-edge band", () => {
-    // A column [a/b]: top/bottom now add a full-width ROW BAND spanning the
-    // column (the 4-level affordance), so the top band is a real region-edge
-    // target -- NOT suppressed as redundant the way a lone single leaf is.
+  it("the top edge over a multi-leaf column resolves to the cell's ABOVE zone", () => {
+    // A column [a/b]: vertical intent belongs to the cells (leaf stacking,
+    // D46) -- the old full-width top band is gone, so the pointer falls
+    // through to the topmost cell's above-strip zone.
     const tree = colSplit([leaf("a"), leaf("b")]);
     const layout = layoutWith({ left: tree });
     const tgt = dockedTarget("a", leafIdsOf(tree)[0], "left", rect(0, 0, 300, 400));
-    // Pointer in the top band, middle horizontally (past the side bands).
+    // Pointer at the top edge, middle horizontally (past the side bands).
     const out = run(layout, [tgt], 150, REGION_EDGE_PX - 5)!;
-    expect(out.result.kind).toBe("regionEdge");
+    expect(out.result).toMatchObject({ kind: "split", region: "top" });
   });
 });
 
@@ -414,24 +392,23 @@ describe("outer-edge dock beside a minimized region strip", () => {
     };
   }
 
-  it("multi-panel minimized strip: outer half -> regionEdge right (new outer column)", () => {
+  it("multi-panel minimized strip: outer sliver -> split right (new outer column)", () => {
     const top = leaf("g1");
     const bot = leaf("g2");
-    const tree = colSplit([top, bot]); // two stacked rows -> left/right span both
+    const tree = colSplit([top, bot]); // one packed stack of two rail cells
     const layout = layoutWith({ right: tree });
     packRegionInPlace(layout, "right"); // the rail is the ONE docked store (D38)
     const t1 = collapsedRightTarget("g1", leafIdOf(top), rect(stripLeft, 0, STRIP, 400));
     const t2 = collapsedRightTarget("g2", leafIdOf(bot), rect(stripLeft, 400, STRIP, 400));
-    // At the very outer (screen) edge: previously the 40px inner band swallowed
-    // the whole 36px strip and this resolved to regionEdge "left" -- there was
-    // no way to dock a new outer column. Now the outer THIRD wins (the D21
-    // region rail keeps its side bands; a per-COLUMN rail instead yields to
-    // the cell's own slivers -- see the railed-column suite).
+    // Over a collapsed cell the region side bands ALWAYS yield to the cell's
+    // own zones (a 40px band would shadow the whole 36px strip); dock-beside
+    // is served by the rail's 8px outer sliver, whose side SPLIT lands a
+    // full-height column beside the target's column (D46).
     const out = run(layout, [t1, t2], CONTAINER.width - 1, 200, STRIP_W)!;
-    expect(out.result).toEqual({ kind: "regionEdge", edge: "right", side: "right" });
+    expect(out.result).toMatchObject({ kind: "split", edge: "right", region: "right" });
   });
 
-  it("multi-panel minimized strip: inner half still -> regionEdge left", () => {
+  it("multi-panel minimized strip: inner sliver -> split left (column toward the canvas)", () => {
     const top = leaf("g1");
     const bot = leaf("g2");
     const tree = colSplit([top, bot]);
@@ -440,7 +417,7 @@ describe("outer-edge dock beside a minimized region strip", () => {
     const t1 = collapsedRightTarget("g1", leafIdOf(top), rect(stripLeft, 0, STRIP, 400));
     const t2 = collapsedRightTarget("g2", leafIdOf(bot), rect(stripLeft, 400, STRIP, 400));
     const out = run(layout, [t1, t2], stripLeft + 1, 200, STRIP_W)!;
-    expect(out.result).toEqual({ kind: "regionEdge", edge: "right", side: "left" });
+    expect(out.result).toMatchObject({ kind: "split", edge: "right", region: "left" });
   });
 
   it("single-leaf minimized strip: outer edge -> split right (new outer column)", () => {
@@ -454,50 +431,44 @@ describe("outer-edge dock beside a minimized region strip", () => {
     expect(out.result).toMatchObject({ kind: "split", region: "right" });
   });
 
-  it("single minimized strip: the EMPTY area below it docks a full-height column beside", () => {
+  it("single minimized strip: the EMPTY area below it (side thirds) docks a full-height column beside", () => {
     // The strip cell is content-tall (~120px) but the region is 800px tall, so
-    // there's a large empty area below. A drop there must offer a full-height
-    // "dock a column beside" zone (regionEdge) -- not a dead None.
+    // there's a large empty area below. A drop in the strip's outer/inner
+    // thirds there must offer a full-height "dock a column beside" zone
+    // (regionEdge; the packed region keeps its side bands hot).
     const node = leaf("g");
     const layout = layoutWith({ right: node });
     packRegionInPlace(layout, "right"); // the rail is the ONE docked store (D38)
     // Content-tall strip at the top of the region; empty below.
     const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft, 0, STRIP, 120));
-    const out = run(layout, [tgt], stripLeft + STRIP / 2, 500, STRIP_W);
+    const out = run(layout, [tgt], stripLeft + 2, 500, STRIP_W);
     expect(out).not.toBeNull();
     expect(out!.result).toMatchObject({ kind: "regionEdge", edge: "right" });
     // Full-height hint line (spans the container), not a strip-tall sliver.
     expect(out!.hint.height).toBeGreaterThan(400);
   });
 
-  it("lone railed cell: the region's bottom edge resolves to a SIDE dock, never a band below the rail", () => {
-    // Stability pass 2026-07 (model audit finding 1): regionEdge top/bottom
-    // over a D21-railed region are SUPPRESSED -- a band docked above/below
-    // the rail would be silently swallowed INTO the rail (insertBandAtIndex
-    // keeps the region flag, collapsing the dropped stack; edge case 1
-    // forbids a drop collapsing the dropped stack). The bottom area still
-    // isn't dead: the D21 halves resolve it to "dock a column beside"
-    // (left/right), which converts the rail honestly and lands the newcomer
-    // expanded.
+  it("lone railed cell: the region's bottom corner resolves to a SIDE dock (no band zones)", () => {
+    // D46: there are no top/bottom band zones at all -- a full-width band
+    // below the rail is unrepresentable. The bottom area's side thirds
+    // still resolve to "dock a column beside" (left/right), landing the
+    // newcomer as an expanded full-height column.
     const node = leaf("g");
     const layout = layoutWith({ right: node });
     packRegionInPlace(layout, "right"); // the rail is the ONE docked store (D38)
     const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft, 0, STRIP, 120));
-    // Drop at the region's bottom edge, far below the content-tall cell.
-    const out = run(layout, [tgt], stripLeft + STRIP / 2, CONTAINER.height - 4, STRIP_W);
+    // Drop near the region's bottom outer corner, far below the cell.
+    const out = run(layout, [tgt], CONTAINER.width - 2, CONTAINER.height - 4, STRIP_W);
     expect(out).not.toBeNull();
     expect(out!.result.kind).toBe("regionEdge");
     const side = (out!.result as { side: string }).side;
     expect(side === "left" || side === "right").toBe(true);
   });
 
-  it("D21-railed multi-band region: no bandInsert / top / bottom anywhere -- drops join the rail", () => {
-    // Model audit finding 1 (seam variant): a 2-band region-railed region's
-    // interior seam used to resolve bandInsert -- committed via
-    // insertBandAtIndex WITHOUT converting the region rail, so the dropped
-    // expanded stack rendered inside the rail. The seam and the regionEdge
-    // top/bottom zones are suppressed over a railed region; drops at the
-    // packed rail's cell boundaries hit the cells' own zones instead, and
+  it("packed railed stack: no bandInsert / top / bottom anywhere -- drops join the rail", () => {
+    // D46: band inserts are unrepresentable and the top/bottom regionEdge
+    // zones are deleted. Drops at the packed rail's cell boundaries hit the
+    // cells' own zones (stack above/below = split, merge, insertTab), and
     // only the honest left/right side docks remain at region scope.
     const top = leaf("g1");
     const bot = leaf("g2");
@@ -710,7 +681,9 @@ describe("docked group per-panel zones", () => {
     expect(out.result).toEqual({ kind: "split", edge: "left", nodeId: leafIdOf(node), region: "left" });
     expect(out.hint.variant).toBe("line");
     expect(out.hint.width).toBeLessThan(8); // thin vertical line
-    expect(out.hint.height).toBeCloseTo(frame.height);
+    // REGION-TALL (D46): a docked side drop lands a full-height column, so
+    // the line spans the container, not just the target cell.
+    expect(out.hint.height).toBeCloseTo(CONTAINER.height);
     // The line is centered on the panel's left edge.
     expect(out.hint.left + out.hint.width / 2).toBeCloseTo(frame.left, 0);
   });
@@ -939,14 +912,8 @@ describe("collapsed-target vertical zones (content-sized strip)", () => {
     const l = emptyLayout();
     l.groups = { s: group("s") };
     l.docked.right = {
-      rows: [
-        {
-          id: "r102",
-          weight: 1,
-          columns: [
+      columns: [
         { id: "Cs", weight: 1, leaves: [{ id: "Ls", group: "s", weight: 1 }] },
-      ],
-        },
       ],
     };
     // D38: the strip is the region rail -- the container store, not a group flag.
@@ -1178,8 +1145,9 @@ describe("zone priority", () => {
     const tree = rowSplit([leaf("a"), leaf("b")]);
     const layout = layoutWith({ left: tree });
     const tgt = dockedTarget("a", leafIdsOf(tree)[0], "left", rect(0, 0, 150, 800));
-    // Top band of the multi-column region; also over group a's frame.
-    const out = run(layout, [tgt], 50, REGION_EDGE_PX - 5)!;
+    // Left side band of the multi-column region; also over group a's frame
+    // (D46: the side bands are the only region-edge zones).
+    const out = run(layout, [tgt], 20, 400)!;
     expect(out.result.kind).toBe("regionEdge");
   });
 
@@ -1312,14 +1280,8 @@ describe("BUG #4 (fixed): overlapping drop targets resolve to the one on TOP", (
       f: group("f"),
     };
     l.docked.left = {
-      rows: [
-        {
-          id: "r103",
-          weight: 1,
-          columns: [
+      columns: [
         { id: "Cd", weight: 1, leaves: [{ id: "Ld", group: "d", weight: 1 }] },
-      ],
-        },
       ],
     };
     l.floating = [floatingWindow({ id: "wf", x: 100, y: 300, width: 180, stack: ["f"] })];
@@ -1375,14 +1337,8 @@ describe("owning-window mask: a window's header sliver never hits the docked tar
       f: group("f"),
     };
     l.docked.left = {
-      rows: [
-        {
-          id: "r106",
-          weight: 1,
-          columns: [
-            { id: "Cd", weight: 1, leaves: [{ id: "Ld", group: "d", weight: 1 }] },
-          ],
-        },
+      columns: [
+        { id: "Cd", weight: 1, leaves: [{ id: "Ld", group: "d", weight: 1 }] },
       ],
     };
     l.floating = [
@@ -1544,14 +1500,8 @@ describe("draggingUnmergeable suppresses merge/insertTab from the SOURCE side", 
   it("docked split is still offered; only the center merge is suppressed", () => {
     const l = floatingLayoutAB();
     l.docked.left = {
-      rows: [
-        {
-          id: "r104",
-          weight: 1,
-          columns: [
+      columns: [
         { id: "Ca", weight: 1, leaves: [{ id: "La", group: "a", weight: 1 }] },
-      ],
-        },
       ],
     };
     const targets: DropTargets = {
@@ -1599,14 +1549,8 @@ describe("unmergeable header acts as the dock-above / snap-above zone", () => {
     const l = emptyLayout();
     l.groups = { ctrl: { id: "ctrl", paneIds: ["c.0"], activeId: "c.0" } };
     l.docked.right = {
-      rows: [
-        {
-          id: "r105",
-          weight: 1,
-          columns: [
+      columns: [
         { id: "Cc", weight: 1, leaves: [{ id: "Lc", group: "ctrl", weight: 1 }] },
-      ],
-        },
       ],
     };
     return l;

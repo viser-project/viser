@@ -152,12 +152,12 @@ def test_minimize_click_on_background_overlapping_window(page: Page) -> None:
 # Height correctness.
 # ===========================================================================
 def test_vertical_stack_rail_roundtrip(page: Page) -> None:
-    """Spec D12/D32/D38: a docked stack is canonical BANDS forming ONE visual
-    column -- its cells carry NO cell-level minimize control and there is no
-    column-level parent handle; the region chevron is the stack's ONE
-    collapse control. The chevron renders the packed rail; the rail header's
-    + clears the region's one flag and everything comes back expanded (a
-    partially collapsed stack is unrepresentable, D38)."""
+    """D46/D32/D38: a docked stack is ONE multi-leaf column -- its cells
+    carry NO cell-level minimize control and a single-column region has no
+    per-column parent handle; the region chevron is the stack's ONE collapse
+    control. The chevron rails the column (the packed rail); the rail
+    header's + clears the column's one flag and everything comes back
+    expanded (a partially collapsed stack is unrepresentable, D38)."""
     a, b = "t-controls", "t-inspector"
     set_layout(page, dock_layout(docked_right=stack("controls", "inspector")))
     docked_right = page.eval_on_selector_all(
@@ -182,7 +182,7 @@ def test_vertical_stack_rail_roundtrip(page: Page) -> None:
     # Chevron -> the packed rail: both cells render as narrow rail cells.
     page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")
     page.wait_for_timeout(200)
-    assert page.query_selector("[data-dock-region-rail]") is not None
+    assert page.query_selector("[data-dock-rail-root]") is not None
     assert _is_collapsed(page, a) and _is_collapsed(page, b), (
         "both cells render as rail cells while the region is collapsed"
     )
@@ -190,7 +190,7 @@ def test_vertical_stack_rail_roundtrip(page: Page) -> None:
     # Rail header's + -> the ONE flag clears; the whole stack expands (no
     # collapsed sibling can be left behind: nothing stores one, D38).
     page.eval_on_selector(
-        "[data-dock-region-rail] [data-dock-minimize-all]", "e => e.click()"
+        "[data-dock-rail-root] [data-dock-minimize-all]", "e => e.click()"
     )
     page.wait_for_timeout(200)
     assert not _is_collapsed(page, a) and not _is_collapsed(page, b), (

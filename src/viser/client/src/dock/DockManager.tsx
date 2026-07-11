@@ -193,8 +193,15 @@ export function DockManager({
     // MIGRATION chokepoint (D44): a restored/persisted layout may still
     // carry the legacy regionCollapsed store -- convert it into per-column
     // railed flags (the rail is derived now) before first commit.
-    if (initialLayout.regionCollapsed === undefined) return initialLayout;
+    const legacyRows = (["left", "right"] as const).some(
+      (e) =>
+        initialLayout.docked[e] !== null &&
+        (initialLayout.docked[e] as { rows?: unknown }).rows !== undefined,
+    );
+    if (initialLayout.regionCollapsed === undefined && !legacyRows)
+      return initialLayout;
     const migrated = structuredClone(initialLayout);
+    ops.migrateRowsToColumnsInPlace(migrated);
     ops.migrateRegionCollapsedInPlace(migrated);
     return migrated;
   });
@@ -323,13 +330,9 @@ export function DockManager({
       if (check) lastProdCheckMs.current = now;
     }
     if (check) {
-      const violations = [
-        ...invariantViolations(next),
-        // Canonical band form (P14): applyOp normalizes structural commits,
-        // so a violating commit means an op or a bypass produced a
-        // non-canonical shape.
-        ...ops.canonicalViolations(next),
-      ];
+      // P14 holds by TYPES under D46 (one structure per picture) -- the
+      // old canonicalViolations soft set is gone with the band layer.
+      const violations = invariantViolations(next);
       if (violations.length > 0) {
         const msg =
           "[dock] layout invariant violation:\n" + violations.join("\n");
@@ -349,19 +352,11 @@ export function DockManager({
   const applyOp = React.useCallback(
     (next: DockLayout) => {
       if (next === layoutRef.current) return; // no-op op: nothing to commit.
-      // Canonical band form (P14/D12/D13) on STRUCTURAL commits only: a pure
-      // weight change (a resize mid-gesture) must never restructure the
-      // layout under the user's pointer. The current layout's signature is
-      // cached (structureSigRef), so only the incoming layout is hashed here.
+      // Structure signature cache (still used to gate width reconciliation
+      // paths and Escape-restore invalidation); canonicalization itself is
+      // GONE (D46: one structure per picture holds by types).
       const nextSig = ops.structureSignature(next);
-      const curSig =
-        structureSigRef.current ?? ops.structureSignature(layoutRef.current);
-      if (nextSig !== curSig) {
-        ops.normalizeCanonicalBandsInPlace(next);
-        // Canonicalization can restructure, so re-derive the committed
-        // layout's signature rather than storing the pre-normalize one.
-        structureSigRef.current = ops.structureSignature(next);
-      } else {
+      {
         structureSigRef.current = nextSig;
       }
       reconcileRegionWidths(layoutRef.current, next);
@@ -427,8 +422,14 @@ export function DockManager({
         runProgrammatic(() => {
           // MIGRATION chokepoint (D44): injected layouts (restore, test
           // probes) may carry the legacy regionCollapsed store.
-          if (layout.regionCollapsed !== undefined) {
+          const legacyRows = (["left", "right"] as const).some(
+            (e) =>
+              layout.docked[e] !== null &&
+              (layout.docked[e] as { rows?: unknown }).rows !== undefined,
+          );
+          if (layout.regionCollapsed !== undefined || legacyRows) {
             layout = structuredClone(layout);
+            ops.migrateRowsToColumnsInPlace(layout);
             ops.migrateRegionCollapsedInPlace(layout);
           }
           bumpFreshIdFloor(ops.allLayoutIds(layout));
@@ -558,7 +559,7 @@ export function DockManager({
   //     rail root's full strip. Rendered by SplitView's DockLeafView and
   //     VerticalMinimizedColumn's rail cells (docked).
   //   data-dock-rail-root=<columnId>
-  //     A ColumnRail's root: the full 36px strip (band-tall -- rails hold
+  //     A ColumnRail's root: the full 36px strip (region-tall -- rails hold
   //     width, not height). Its box is the column's true droppable surface;
   //     the scanner tiles it onto the cells (first cell claims the header
   //     run, last cell the empty tail below the spine rows), so a rail has
@@ -719,7 +720,7 @@ export function DockManager({
       const g = readGroup(groupEl, { kind: "docked", nodeId, edge }, leaf);
       if (g === null) return;
       // COLUMN rail cells size to content, but the rail's droppable surface
-      // is the FULL strip (band-tall): extend the FIRST cell's rect to the
+      // is the FULL strip (region-tall): extend the FIRST cell's rect to the
       // rail root's top (the header run) and the LAST cell's to its bottom
       // (the empty tail -> that cell's stack-below zone + side slivers), so
       // the strip tiles with no dead pixels while interior cells keep their
@@ -728,10 +729,9 @@ export function DockManager({
       //
       // AND clamp every cell to the rail ROOT box (stability pass 2026-07):
       // the rail's spine Paper scrolls (overflowY auto), so an overflowing
-      // spine's cell rects would otherwise bleed PAST the band into the
-      // next band's y-range -- displacing the cross-band seam and
-      // committing drops into the wrong band. Cells fully below the root
-      // box are dropped as targets entirely.
+      // spine's cell rects would otherwise bleed PAST the strip's box,
+      // leaving phantom drop targets where nothing renders. Cells fully
+      // below the root box are dropped as targets entirely.
       const railRoot = leaf.closest("[data-dock-rail-root]");
       if (railRoot !== null) {
         const rr = railRoot.getBoundingClientRect();
@@ -748,7 +748,7 @@ export function DockManager({
         }
       }
       // Clip to the column's scroll box: with overflowY auto a squeezed,
-      // scrolled column reports leaf rects extending into neighboring bands,
+      // scrolled column reports leaf rects extending past its visible box,
       // and hitTest's last-match rule would pick the INVISIBLE scrolled-out
       // leaf over the visible one under the pointer (P1).
       const scrollEl = leaf.closest("[data-dock-scroll]");
@@ -939,7 +939,7 @@ export function DockManager({
     // color/background transitions end on every hover and would otherwise
     // spuriously invalidate the cache.
     const onTransitionEnd = (e: TransitionEvent) => {
-      // The D34 transitions' eased properties: cell/band/column flex
+      // The D34 transitions' eased properties: cell/column flex
       // (collapseAnim), the region container's width (regionWidthAnim),
       // and a floating window's collapse height (windowCollapseAnim).
       if (
@@ -1095,8 +1095,6 @@ export function DockManager({
           applyOp(ops.dockToEdge(base, stack, result.edge));
         } else if (result.kind === "regionEdge") {
           applyOp(ops.dockToRegionEdge(base, stack, result.edge, result.side));
-        } else if (result.kind === "bandInsert") {
-          applyOp(ops.dockBandAtIndex(base, stack, result.edge, result.index));
         } else if (result.kind === "split") {
           applyOp(
             ops.dropOnDockedLeaf(
@@ -1480,14 +1478,16 @@ export function DockManager({
           );
           const wasRailed = column?.railed === true;
           // A RAILED column measures strip-narrow; float it at its preserved
-          // expanded width instead (same policy as dockedFloatWidth: trust
-          // the weight only when the reconciler wrote pixels into it).
-          const floatWidth =
-            wasRailed &&
-            column !== null &&
-            column.weight >= ops.minRegionWidth()
-              ? column.weight
-              : rect.width;
+          // expanded width instead -- dockedFloatWidth's policy exactly: the
+          // column weight when the reconciler wrote px into it (multi-column
+          // regions), else regionWidth (a LONE column's weight may be a
+          // height; regionWidth is its only width memory, P8).
+          const floatWidth = dockedFloatWidth(
+            edge,
+            wasRailed,
+            rect.width,
+            column?.leaves[0]?.group,
+          );
           const res = ops.floatColumn(
             layoutRef.current,
             edge,
@@ -2041,10 +2041,11 @@ export function DockManager({
     [applyOp],
   );
 
-  // Each docked region renders its FULL tree; a minimized cell is its 26px
-  // bar in place (D20), so region width never depends on collapse states.
-  // The one exception is the EXPLICIT region collapse (D21): the whole
-  // region draws as the 36px rail while its model widths are preserved.
+  // Each docked region renders its FULL tree; railed columns render as
+  // fixed 36px strips counted inside regionWidth by reconciliation (D40/
+  // D46), so a packed MULTI-column region reserves its true 36 x N. The
+  // one exception is a packed single-column region, whose regionWidth is
+  // the P8 restore width (see plannedReservedWidth).
   const regionFor = (edge: DockEdge) => {
     const tree = layout.docked[edge];
     const plan = plans[edge];
@@ -2054,28 +2055,21 @@ export function DockManager({
         reservedWidth: 0,
         resizable: false,
       };
-    const collapsed = isRegionPackedOn(layout, edge);
+    const packed = isRegionPackedOn(layout, edge);
     return {
       tree,
-      // The rail is fixed-width chrome: nothing to resize while collapsed
-      // or when EVERY column in the region is railed (pure rails reserve a
-      // fixed ~36px each -- a resize cursor there would lie, D24). Any
-      // expanded column anywhere keeps the region width-resizable: with an
-      // all-railed width row the drag writes regionWidth (the rendered
-      // content need the expanded bands ride on, D40) directly, without
-      // touching the rails' P8 restore weights -- e2e pin: the resizer must
-      // keep working when the width row is fully railed beside an expanded
-      // band.
-      resizable:
-        !collapsed &&
-        tree.rows.some((row) => row.columns.some((c) => c.railed !== true)),
+      // The rail is fixed-width chrome: nothing to resize when EVERY column
+      // in the region is railed (pure rails reserve a fixed ~36px each -- a
+      // resize cursor there would lie, D24). Any expanded column keeps the
+      // region width-resizable.
+      resizable: tree.columns.some((c) => c.railed !== true),
       // MODEL-based reserved width. The resizer's drag baseline reads THIS,
       // never the post-scaling rendered width below -- otherwise grabbing the
       // handle under the MIN_CANVAS_PX render-scale guard (or pressing
       // Escape, which re-commits the start width) would bake the
       // temporarily-scaled width into the model and break "widths restore
       // when the viewport grows".
-      reservedWidth: plannedReservedWidth(plan, regionWidth[edge], collapsed),
+      reservedWidth: plannedReservedWidth(plan, regionWidth[edge], packed),
     };
   };
   // Keyed by edge (not positional array indices, whose left/right meaning was
@@ -2317,7 +2311,7 @@ export function DockManager({
                 offered because the rail is a single packed strip that would
                 flatten columns the same way. */}
                     {!isRegionPackedOn(layoutRef.current, edge) &&
-                      tree.rows.every((rw) => rw.columns.length === 1) && (
+                      tree.columns.length === 1 && (
                         <StackHandleBar
                           attrs={{ "data-dock-region-handle": edge }}
                           onPointerDown={(event) =>
@@ -2331,7 +2325,7 @@ export function DockManager({
                                 // onActivate -- mirror its handoff to the
                                 // rail header's same-spot + toggle.
                                 focusDockControl(
-                                  `[data-dock-region-rail="${edge}"] [data-dock-minimize-all]`,
+                                  `[data-dock-region="${edge}"] [data-dock-minimize-all]`,
                                 );
                               },
                             })
@@ -2409,15 +2403,6 @@ export function DockManager({
                           const railedStripPx =
                             railedCols.length * MINIMIZED_STRIP_PX;
                           const fixedPx = plan.chromePx + railedStripPx;
-                          // Every width-row column railed: no weights to
-                          // trade, but with expanded content in OTHER bands
-                          // the region is still width-resizable (regionFor's
-                          // `resizable`) -- the drag then writes the model
-                          // regionWidth (the rendered content need the
-                          // expanded bands ride on, D40) directly, floored
-                          // at the rails' pack width; the rails' P8 restore
-                          // weights are never touched.
-                          const allRailedWidthRow = cols.length === 0;
                           const startRegion = regionWidthsOf(layoutRef.current)[
                             edge
                           ];
@@ -2440,45 +2425,38 @@ export function DockManager({
                             // strips); subtract it to get the expanded columns'
                             // share.
                             let next = layoutRef.current;
-                            let total: number;
-                            let newReservedPx: number;
-                            if (allRailedWidthRow) {
-                              total = Math.max(
-                                reservedPx - plan.chromePx,
-                                railedStripPx,
-                              );
-                              newReservedPx = total + plan.chromePx;
-                            } else {
-                              const widths = ops.resizeRegionColumns(
-                                init,
-                                mins,
-                                maxs,
-                                reservedPx - fixedPx,
-                              );
-                              const expandedTotal = widths.reduce(
-                                (a, b) => a + b,
-                                0,
-                              );
-                              // Model regionWidth = the width row's rendered
-                              // need (D40): the expanded columns' px plus the
-                              // fixed 36px strips. The railed columns'
-                              // preserved pixel WEIGHTS ride along untouched
-                              // so expanding them restores their widths.
-                              total = expandedTotal + railedStripPx;
-                              newReservedPx = expandedTotal + fixedPx;
-                              // Only rewrite weights for genuinely side-by-side
-                              // columns; a single surfaced column may be a vertical
-                              // child whose weight is a HEIGHT (see applyOp). The
-                              // total goes through the setRegionWidth op so the
-                              // model stays the single source of truth for the
-                              // width.
-                              if (!plan.singleColumn) {
-                                const byId: Record<string, number> = {};
-                                ids.forEach((id, i) => {
-                                  byId[id] = widths[i];
-                                });
-                                next = ops.setNodeWeights(next, edge, byId);
-                              }
+                            const widths = ops.resizeRegionColumns(
+                              init,
+                              mins,
+                              maxs,
+                              reservedPx - fixedPx,
+                            );
+                            const expandedTotal = widths.reduce(
+                              (a, b) => a + b,
+                              0,
+                            );
+                            // Model regionWidth = the region's rendered
+                            // need (D40): the expanded columns' px plus the
+                            // fixed 36px strips. The railed columns'
+                            // preserved pixel WEIGHTS ride along untouched
+                            // so expanding them restores their widths.
+                            // (The resizer never exists with EVERY column
+                            // railed: it renders only while `resizable`,
+                            // and rail flips can't happen mid-gesture.)
+                            const total = expandedTotal + railedStripPx;
+                            const newReservedPx = expandedTotal + fixedPx;
+                            // Only rewrite weights for genuinely side-by-side
+                            // columns; a single surfaced column may be a vertical
+                            // child whose weight is a HEIGHT (see applyOp). The
+                            // total goes through the setRegionWidth op so the
+                            // model stays the single source of truth for the
+                            // width.
+                            if (!plan.singleColumn) {
+                              const byId: Record<string, number> = {};
+                              ids.forEach((id, i) => {
+                                byId[id] = widths[i];
+                              });
+                              next = ops.setNodeWeights(next, edge, byId);
                             }
                             // Push floats out of the way of THIS region's edge as it
                             // sweeps inward, using the before/after seam of this very

@@ -8,6 +8,7 @@ import QRCode from "react-qr-code";
 import ServerControls from "./ServerControls";
 import { useStableTabSelection } from "../components/TabGroup";
 import { GuiComponentContext } from "./GuiComponentContext";
+import { htmlIconWrapper } from "../components/ComponentStyles.css";
 import { GuiDockContext } from "./GuiDockContext";
 import { DockContext } from "../dock/DockContext";
 import { shallowObjectKeysEqual } from "../utils/shallowObjectKeysEqual";
@@ -141,7 +142,9 @@ function MobilePanelSection({ panel }: { panel: GuiPanelMessage }) {
                 leftSection={
                   icons[index] === null ? undefined : (
                     <Box
-                      style={{ width: "1em", height: "1em", display: "flex" }}
+                      // Shared icon wrapper: centers the sanitized svg in its
+                      // 1em box (a raw svg sits on the text baseline).
+                      className={htmlIconWrapper}
                       dangerouslySetInnerHTML={{ __html: icons[index]! }}
                     />
                   )
@@ -179,15 +182,11 @@ function MobilePanelSection({ panel }: { panel: GuiPanelMessage }) {
         >
           {icons.find((h) => h !== null) != null && (
             <Box
-              style={{
-                display: "flex",
-                alignItems: "center",
-                opacity: expanded ? 1 : 0.55,
-                // Tab icons arrive as sanitized SVG html (same source the
-                // tab strip renders).
-                width: "1em",
-                height: "1em",
-              }}
+              // Tab icons arrive as sanitized SVG html (same source the tab
+              // strip renders); the shared wrapper centers the svg in its
+              // 1em box (a raw svg sits on the text baseline).
+              className={htmlIconWrapper}
+              style={{ opacity: expanded ? 1 : 0.55, flexShrink: 0 }}
               dangerouslySetInnerHTML={{
                 __html: icons.find((h) => h !== null)!,
               }}

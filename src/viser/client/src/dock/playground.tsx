@@ -170,18 +170,12 @@ const initialLayout: DockLayout = {
   },
   docked: {
     left: {
-      rows: [
+      columns: [
         {
-          id: "n-docked-row",
+          id: "n-docked",
           weight: 1,
-          columns: [
-            {
-              id: "n-docked",
-              weight: 1,
-              leaves: [
-                { id: "n-docked-leaf", group: dockedGroup.id, weight: 1 },
-              ],
-            },
+          leaves: [
+            { id: "n-docked-leaf", group: dockedGroup.id, weight: 1 },
           ],
         },
       ],

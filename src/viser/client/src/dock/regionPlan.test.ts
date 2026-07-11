@@ -17,7 +17,6 @@ import { reconcileRegionWidths } from "./widthReconciliation";
 import {
   leaf,
   row,
-  rows,
   col,
   groupsRecord as groups,
   toRegion,
@@ -47,13 +46,13 @@ describe("planRegion", () => {
     const next = setColumnRailed(
       l,
       "left",
-      l.docked.left!.rows[0].columns[0].id,
+      l.docked.left!.columns[0].id,
       true,
     );
     reconcileRegionWidths(l, next);
     expect(next.regionWidth!.left).toBe(150 + MINIMIZED_STRIP_PX);
     // The railed column's WEIGHT is untouched (P8 restore width).
-    expect(next.docked.left!.rows[0].columns[0].weight).toBe(150);
+    expect(next.docked.left!.columns[0].weight).toBe(150);
     const plan = planRegion(next.docked.left!);
     expect(plannedReservedWidth(plan, next.regionWidth!.left, false)).toBe(
       150 + MINIMIZED_STRIP_PX + SPLIT_DIVIDER_PX,
@@ -74,29 +73,19 @@ describe("planRegion", () => {
     expect(plan.chromePx).toBe(0);
   });
 
-  it("width-determining row is the WIDEST band", () => {
-    const plan = planOf(rows([row([leaf("a"), leaf("b")]), row([leaf("c")])]));
-    expect(plan.columns).toHaveLength(2);
-    expect(plan.chromePx).toBe(SPLIT_DIVIDER_PX);
-  });
-
-  it("an ALL-RAILED width band with NOTHING expanded reserves rails + chrome", () => {
-    // Pure rails: railing every width-row column of a single-band region
-    // walks regionWidth down to exactly the rails (D40) -- an all-railed
-    // region never reserves a phantom content width (zones audit W14).
+  it("an ALL-RAILED region with NOTHING expanded reserves rails + chrome", () => {
+    // Pure rails: railing every column walks regionWidth down to exactly
+    // the rails (D40/D46) -- an all-railed region never reserves a phantom
+    // content width (zones audit W14). Built with the chevron op directly:
+    // setColumnRailed is a bare flag flip (no D43 accordion anymore).
     const l = emptyLayout();
     l.groups = groups("a", "b");
     l.docked.right = toRegion(row([leaf("a", 150), leaf("b", 150)]));
     l.regionWidth = { left: 300, right: 300 };
-    const cols = l.docked.right!.rows[0].columns;
+    const cols = l.docked.right!.columns;
     const cur = setColumnRailed(l, "right", cols[0].id, true);
     reconcileRegionWidths(l, cur);
-    // Build the all-railed state DIRECTLY: the chevron op would accordion
-    // (D43: railing the last expanded column expands the sibling), but the
-    // state stays legal (drops build it) and its WIDTH accounting is what's
-    // under test.
-    const next = structuredClone(cur);
-    next.docked.right!.rows[0].columns[1].railed = true;
+    const next = setColumnRailed(cur, "right", cols[1].id, true);
     reconcileRegionWidths(cur, next);
     expect(next.regionWidth!.right).toBe(2 * MINIMIZED_STRIP_PX);
     const plan = planRegion(next.docked.right!);
@@ -105,40 +94,25 @@ describe("planRegion", () => {
     );
   });
 
-  it("an ALL-RAILED width band does NOT squish an expanded band elsewhere (D40)", () => {
-    // The e2e-pinned honest behavior: with the width-determining band fully
-    // railed but a narrower band expanded, regionWidth carries the expanded
-    // content's need (the rails pack inside it) -- the region must never
-    // reserve only rail chrome (stability pass 1 regression).
-    const l = emptyLayout();
-    l.groups = groups("a", "b", "c");
-    l.docked.right = toRegion(
-      rows([row([leaf("a", 300), leaf("b", 300)]), row([leaf("c")])]),
-    );
-    const band = l.docked.right!.rows[0];
-    band.columns[0].railed = true;
-    band.columns[1].railed = true;
-    const plan = planRegion(l.docked.right!);
-    // regionWidth (the content need, e.g. established at the 300 default on
-    // injection) rides through untouched: reserved = need + chrome.
-    expect(plannedReservedWidth(plan, 300, false)).toBe(
-      300 + SPLIT_DIVIDER_PX,
-    );
-  });
-
-  it("an EXPLICITLY collapsed region reserves exactly the rail width (D21)", () => {
+  it("a packed MULTI-column region reserves its true strip run (D46)", () => {
+    // Reconciliation pins a fully railed 2-column region's regionWidth to
+    // 2 x 36; reserved = that plus divider chrome. (The flat-36 D21 form
+    // survives only for packed SINGLE-column regions, whose regionWidth is
+    // the P8 restore width.)
     const plan = planOf(row([leaf("a"), leaf("b")]));
-    expect(plannedReservedWidth(plan, 300, true)).toBe(MINIMIZED_STRIP_PX);
+    expect(plannedReservedWidth(plan, 2 * MINIMIZED_STRIP_PX, true)).toBe(
+      2 * MINIMIZED_STRIP_PX + SPLIT_DIVIDER_PX,
+    );
   });
 });
 
 describe("reconcile: collapse states never move region width (D20)", () => {
-  it("minimizing a lone panel (region store, D38) keeps the preserved width", () => {
+  it("minimizing a lone panel (rails its column, D46) keeps the preserved width", () => {
     const l = emptyLayout();
     l.groups = groups("a");
     l.docked.right = toRegion(leaf("a", 320));
     l.regionWidth = { left: 0, right: 320 };
-    // A sole docked panel's toggle targets the REGION store (D32/D38).
+    // A sole docked panel's toggle rails its COLUMN (the packed region).
     const next = toggleCollapsed(l, "a");
     reconcileRegionWidths(l, next);
     expect(next.regionWidth!.right).toBe(320);

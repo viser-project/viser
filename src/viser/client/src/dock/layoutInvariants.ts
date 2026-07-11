@@ -7,7 +7,7 @@
 // Pure + allocation-light: returns a list of human-readable violation strings
 // (empty == healthy). Never throws; the caller decides what to do with the list.
 
-import { widthRow } from "./layoutOps";
+
 import {
   DockColumn,
   DockEdge,
@@ -28,14 +28,13 @@ import {
 // weights, and the reference/orphan/duplication checks that span the whole
 // layout.
 
-/** Every (docked) column across both edges (flattened over row bands), in
- * order. */
+/** Every (docked) column across both edges, in order. */
 function columnsOf(layout: DockLayout): DockColumn[] {
   const out: DockColumn[] = [];
   for (const edge of ["left", "right"] as DockEdge[]) {
     const region = layout.docked[edge];
     if (region !== null)
-      for (const row of region.rows) out.push(...row.columns);
+      out.push(...region.columns);
   }
   return out;
 }
@@ -71,12 +70,13 @@ function referencedGroupIds(layout: DockLayout): GroupId[] {
  *  10/11. Unique node ids and floating window ids.
  *  12. Container collapse flags (window `collapsed` / column `railed`, D38)
  *      are booleans when present; groups carry NO collapse flag.
- *  13. No `railed` on a band's SOLE column (band-scoped rail rule, D28).
- *  14. regionCollapsed[edge] implies docked[edge] !== null.
- *  15. regionCollapsed[edge] implies every band single-column (D21).
- *  16. regionWidth (when present) is the rendered content need (D40): a
- *      multi-column width row holding an expanded column pins it to
- *      sum(railed ? 36 : weight). */
+ *  13-15. RETIRED: 13 by D42 (a railed sole column is legal geometry --
+ *      and unrepresentable as a "band" state at all since D46); 14/15 by
+ *      D44 (the regionCollapsed store is deleted; an un-migrated legacy
+ *      field is flagged instead).
+ *  16. regionWidth (when present) is the rendered content need (D40/D46): a
+ *      multi-column region with an expanded column pins it to
+ *      sum(railed ? 36 : weight); fully railed pins to 36 x columns. */
 export function invariantViolations(layout: DockLayout): string[] {
   const v: string[] = [];
   const refs = referencedGroupIds(layout);
@@ -131,14 +131,11 @@ export function invariantViolations(layout: DockLayout): string[] {
   for (const edge of ["left", "right"] as DockEdge[]) {
     const region = layout.docked[edge];
     if (region === null) continue;
-    if (region.rows.length === 0) v.push(`region on ${edge} has no rows`);
-    for (const row of region.rows) {
-      if (row.columns.length === 0)
-        v.push(`row ${row.id} on ${edge} has no columns`);
-      for (const c of row.columns)
-        if (c.leaves.length === 0)
-          v.push(`column ${c.id} on ${edge} has no leaves`);
-    }
+    if (region.columns.length === 0)
+      v.push(`region on ${edge} has no columns`);
+    for (const c of region.columns)
+      if (c.leaves.length === 0)
+        v.push(`column ${c.id} on ${edge} has no leaves`);
   }
 
   // 8. Finite positive weights (columns and leaves).
@@ -201,14 +198,14 @@ export function invariantViolations(layout: DockLayout): string[] {
       v.push(`group ${gid} carries a group-level collapsed flag (D38)`);
   }
 
-  // 13. RETIRED (D42): a railed column that is its band's SOLE column is
-  // legal committed geometry -- the band renders the 36px strip with the
-  // rest of the band as plain body, and the lone column's handle carries
-  // the rail chevron. (Numbering kept stable; 14+ unchanged.)
+  // 13. RETIRED (D42, moot under D46): any column may rail -- a lone railed
+  // column is legal committed geometry, and the "sole column of a band"
+  // shape it legalized no longer exists. (Numbering kept stable; 14+
+  // unchanged.)
 
   // 14/15. RETIRED (D44): regionCollapsed is no longer a store -- the
-  // packed region rail is DERIVED (isRegionPackedOn: every band
-  // single-column, every column railed), so a stale flag over an empty
+  // packed region rail is DERIVED (isRegionPackedOn: every column
+  // railed), so a stale flag over an empty
   // edge or a multi-column packed region is unrepresentable. A LEGACY
   // field surviving un-migrated in a committed layout IS a bug: injection
   // and restore chokepoints run migrateRegionCollapsedInPlace.
@@ -219,49 +216,38 @@ export function invariantViolations(layout: DockLayout): string[] {
     );
 
   // 16. Region width matches the rendered-need semantic (D40): whenever a
-  // MULTI-column width row holds an expanded column, regionWidth[edge] IS
-  // the sum over that row of (railed ? 36 : weight) -- width reconciliation
+  // MULTI-column region holds an expanded column, regionWidth[edge] IS the
+  // sum over its columns of (railed ? 36 : weight) -- width reconciliation
   // maintains it on every commit, so a drift means an op wrote weights or
   // regionWidth without going through (or agreeing with) the reconciler.
-  // A fully-railed width row with nothing expanded anywhere must hold
-  // exactly its rails; with expanded content in OTHER bands it carries that
-  // content's need, which is only bounded below by the rails' pack width.
+  // A fully railed region must hold exactly its rails' pack width.
   // Gated on the field's presence: a layout without `regionWidth` has never
   // been reconciled (test literals mid-construction), so its weights may
   // still be flex shares with no px basis to check against. Skipped for a
-  // region-collapsed edge (regionWidth is the preserved restore width there,
-  // D21) and for a single width column (its px lives in regionWidth itself;
-  // the weight may be a height share).
+  // single column (its px lives in regionWidth itself; the weight may be a
+  // height share).
   const RW_TOL = 1.5;
   if (layout.regionWidth !== undefined) {
     for (const edge of ["left", "right"] as DockEdge[]) {
       const region = layout.docked[edge];
       if (region === null) continue;
-      const wr = widthRow(region);
-      if (wr.columns.length < 2) continue;
+      const cols = region.columns;
+      if (cols.length < 2) continue;
       const rw = layout.regionWidth[edge];
-      const railsPx = wr.columns.length * MINIMIZED_STRIP_PX;
-      if (wr.columns.some((c) => c.railed !== true)) {
-        const need = wr.columns.reduce(
+      const railsPx = cols.length * MINIMIZED_STRIP_PX;
+      if (cols.some((c) => c.railed !== true)) {
+        const need = cols.reduce(
           (s, c) => s + (c.railed === true ? MINIMIZED_STRIP_PX : c.weight),
           0,
         );
         if (Math.abs(rw - need) > RW_TOL)
           v.push(
-            `regionWidth.${edge} ${rw} != width row rendered need ${need} (D40)`,
+            `regionWidth.${edge} ${rw} != rendered need ${need} (D40)`,
           );
-      } else if (
-        region.rows.every((row) =>
-          row === wr ? true : row.columns.every((c) => c.railed === true),
-        )
-      ) {
-        if (Math.abs(rw - railsPx) > RW_TOL)
-          v.push(
-            `regionWidth.${edge} ${rw} != all-railed width row's ${railsPx} (D40)`,
-          );
-      } else if (rw < railsPx - RW_TOL) {
+      } else if (Math.abs(rw - railsPx) > RW_TOL) {
+        // Fully railed: the rails ARE the content (D46).
         v.push(
-          `regionWidth.${edge} ${rw} below the railed width row's pack width ${railsPx} (D40)`,
+          `regionWidth.${edge} ${rw} != all-railed pack width ${railsPx} (D40)`,
         );
       }
     }

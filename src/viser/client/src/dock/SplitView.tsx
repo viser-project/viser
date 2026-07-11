@@ -1,19 +1,17 @@
-// Renderer for a docked region. The model is a FIXED four-level shape, so the
-// renderer is too -- no recursion, no `topLevel` flag, no minimized-strip
-// dispatch tangle:
+// Renderer for a docked region. The model is a FIXED three-level shape
+// (D46: Region = Column[] = Leaf[]), so the renderer is too -- no recursion,
+// no band layer:
 //
-//   SplitView    maps region.rows     -> a vertical flex column of bands;
-//   RowView      maps row.columns     -> a horizontal flex row of columns,
-//                with draggable vertical dividers between side-by-side columns;
-//   ColumnView   maps column.leaves   -> a vertical flex stack of leaves, with
-//                draggable horizontal dividers between stacked leaves.
+//   SplitView     maps region.columns -> a horizontal flex row of columns,
+//                 with draggable vertical dividers between them;
+//   ColumnView    maps column.leaves  -> a vertical flex stack of leaves,
+//                 with draggable horizontal dividers between stacked leaves.
 //
-// Docked collapse is the RAIL, at exactly two scopes (D38/D32): the whole
-// region (isRegionPackedOn -- every band single-column, every column
-// railed, D44 -- swaps the region for
-// RegionMinimizedRail) or one column of a multi-column band (column.railed
-// swaps that column for ColumnRail). Leaves are always expanded here --
-// per-leaf collapse is unrepresentable, and bars are a floating-only form.
+// Docked collapse is the RAIL, per column (D28/D46): a railed column swaps
+// for ColumnRail; a fully railed region is simply every column railed --
+// the packed reading is derived (isRegionPackedOn, D44), not a separate
+// rendering. Leaves are always expanded here -- per-leaf collapse is
+// unrepresentable, and bars are a floating-only form.
 
 import { Box, Paper } from "@mantine/core";
 import React from "react";
@@ -27,14 +25,12 @@ import {
 } from "./layoutOps";
 import { ColumnCollapseChevron, StackHandleBar } from "./handles";
 import { TabGroupFrame } from "./TabGroupFrame";
-import { ColumnRail, RegionMinimizedRail } from "./VerticalMinimizedColumn";
+import { ColumnRail } from "./VerticalMinimizedColumn";
 import {
   DockColumn,
   DockEdge,
   DockLeaf,
   DockRegion,
-  DockRow,
-  isRegionPackedOn,
   MIN_REGION_GRAB_PX,
   MINIMIZED_STRIP_PX,
   SPLIT_DIVIDER_PX,
@@ -48,86 +44,13 @@ const MIN_CELL_HEIGHT_PX = 50;
 // zone to this so it's comfortable to hit without thickening the seam.
 const DIVIDER_GRAB_PX = 12;
 
-// A per-column parent handle's rendered height (StackHandleBar, 1em at the
-// root font) -- part of every column's content height in a multi-column
-// region (D27), so band floors must count it or a band's box comes up short
-// and the next band's chrome paints over (and steals presses from) it.
-const COLUMN_HANDLE_PX = 16;
-
-// Height floor for a band whose every column is RAILED: rail spines scroll
-// at any height, so the band needs only a usable grab height, not a per-leaf
-// sum. Also the all-railed band's divider min-cell floor.
-const ALL_RAILED_BAND_MIN_PX = 60;
-
-// How close (px) a band-seam drag must land to a rail band's content height
-// to SNAP onto it -- the "exactly no dead gray" detent, mirroring the
-// floating window's content-height detent (spec 6, Windows).
-const BAND_CONTENT_DETENT_PX = 8;
-
-/** A band is ALL-RAILED when every one of its columns is railed (D41). Such a
- * band SNAPS to its content height (its tallest rail spine) when it becomes
- * all-railed, and its seam carries a detent at that height -- but its height
- * is otherwise a plain weighted share the user may drag anywhere (bands have
- * no maximum height). A band with even ONE expanded column is NOT
- * all-railed: it takes its weighted share with no snap (the expanded column
- * fills it, rails beside it are the healthy case). An empty band (no
- * columns) is not all-railed -- it has no rail content to snap to. */
-function isAllRailed(row: DockRow): boolean {
-  return row.columns.length > 0 && row.columns.every((c) => c.railed === true);
-}
-
-/** Measured content height (px) of an all-railed band: the tallest rail
- * column's spine extent -- header bar plus the last spine cell's bottom. If
- * a squeezed spine is SCROLLING, the honest content is the scroll extent
- * (the last cell's rect sits scrolled out of place). Null when no rail root
- * is measurable (mid-transition). */
-function measureRailBandContentPx(bandEl: HTMLElement): number | null {
-  let max: number | null = null;
-  bandEl
-    .querySelectorAll<HTMLElement>("[data-dock-rail-root]")
-    .forEach((root) => {
-      const rootTop = root.getBoundingClientRect().top;
-      const header = root.children[0] as HTMLElement | undefined;
-      const headerPx = header?.getBoundingClientRect().height ?? 0;
-      const paper = root.children[1] as HTMLElement | undefined;
-      const cells = root.querySelectorAll<HTMLElement>("[data-dock-leaf]");
-      const last = cells[cells.length - 1];
-      let px: number;
-      if (paper !== undefined && paper.scrollHeight > paper.clientHeight + 1) {
-        px = headerPx + paper.scrollHeight;
-      } else if (last !== undefined) {
-        px = Math.max(headerPx, last.getBoundingClientRect().bottom - rootTop);
-      } else {
-        px = headerPx;
-      }
-      max = max === null ? px : Math.max(max, px);
-    });
-  return max;
-}
-
-/** A band's minimum rendered height: the tallest EXPANDED column's stack of
- * cells at their render floors (MIN_CELL_HEIGHT_PX each, plus dividers),
- * used as the band divider's per-band min-cell floor. RAILED columns don't
- * raise the floor -- their spine strips scroll/fit at any height -- so an
- * all-railed band floors at the fixed grab height. */
-function bandMinPx(row: DockRow, withColumnHandle: boolean): number {
-  const floors = row.columns
-    .filter((col) => col.railed !== true)
-    .map((col) =>
-      col.leaves.reduce(
-        (px, _lf, i) =>
-          px + MIN_CELL_HEIGHT_PX + (i > 0 ? SPLIT_DIVIDER_PX : 0),
-        withColumnHandle ? COLUMN_HANDLE_PX : 0,
-      ),
-    );
-  return floors.length > 0 ? Math.max(...floors) : ALL_RAILED_BAND_MIN_PX;
-}
-
-/** Render a docked region: a VERTICAL stack of full-width row bands, with
- * horizontal dividers between them. Each band is a RowView (a horizontal row of
- * columns). The common single-band region is just one RowView filling the
- * height. Memoized -- with a stable dock context, region-width / container-
- * height re-renders of the manager skip the whole docked region. */
+/** Render a docked region (D46: columns only): a horizontal flex row of
+ * columns with draggable vertical dividers between them. Each column is a
+ * vertical stack of leaves (ColumnView) or, railed, a 36px spine strip
+ * (ColumnRail). A fully railed region is just every column rendering its
+ * strip -- the packed rail needs no special case (rails stay separate).
+ * Memoized -- with a stable dock context, container re-renders of the
+ * manager skip the whole docked region. */
 export const SplitView = React.memo(function SplitView({
   region,
   edge,
@@ -135,312 +58,29 @@ export const SplitView = React.memo(function SplitView({
   region: DockRegion;
   edge: DockEdge;
 }) {
-  const dock = useDock();
-  // D27: a region where every band has ONE column is a single visual
-  // column -- the region-level parent handle covers it honestly. Any
-  // multi-column band means independent visual columns: each carries its
-  // own handle (rendered by RowView), and the region handle is suppressed.
-  const columnHandles = !region.rows.every((rw) => rw.columns.length === 1);
-  const containerRef = React.useRef<HTMLDivElement>(null);
-  const rows = region.rows;
-  // D41 (revised twice): every band -- rail or expanded -- takes its
-  // WEIGHTED share of the region, with NO maximum height (panels don't have
-  // maximum heights). "No dead gray below the spine" is a DEFAULT, not a
-  // wall: when a band BECOMES all-railed its weight snaps to its content
-  // height (the layout effect below), and the seam drag carries a detent at
-  // that height -- but the user may drag it anywhere, dead gray included;
-  // that's their call, same as any oversized panel.
-  const allRailedMask = rows.map((r) => isAllRailed(r));
-  // The content snap only pays off when there is an EXPANDED band to DONATE
-  // the freed height to (D41's win: kill the dead gray beside expanded
-  // content). When EVERY band is all-railed there is nowhere to donate:
-  // snapping would strand the region's lower area empty while the bands come
-  // out ragged, so weighted shares fill the region uniformly (Fix A).
-  const regionHasExpandedBand = allRailedMask.some((m) => !m);
-  const bandWeightTotal = rows.reduce((s, r) => s + r.weight, 0) || 1;
-  // SNAP-TO-CONTENT: when a band's rail structure changes -- it became
-  // all-railed, or an all-railed band's cell count changed -- commit its
-  // weight as its measured content height, so railing a band lands it at
-  // "exactly no dead gray" by default. Mirrors the floating window's
-  // auto/pinned height: a band PARKED at its snap default keeps TRACKING
-  // its content (webfonts landing after the first measure, label renames --
-  // anything that moves the spine's true height), while a band the user
-  // has dragged away from the default is PINNED and never re-snapped.
-  // Structural changes are keyed on a signature so user drags (weight-only
-  // changes) never count as one; content drift is watched by a
-  // ResizeObserver on the rail roots. Runs before paint (useLayoutEffect),
-  // so a stale share is never painted.
-  const snapKeysRef = React.useRef<Map<string, string>>(new Map());
-  const lastSnapPxRef = React.useRef<Map<string, number>>(new Map());
-  React.useLayoutEffect(() => {
-    const container = containerRef.current;
-    if (container === null) return;
-    const snapPass = () => {
-      const prevKeys = snapKeysRef.current;
-      const nextKeys = new Map<string, string>();
-      const lastSnap = lastSnapPxRef.current;
-      const snapped: Record<string, number> = {};
-      rows.forEach((row, i) => {
-        // regionHasExpandedBand is part of the signature: when an expanded
-        // band arrives in an all-rails region, the rail bands snap then
-        // (the freed height finally has somewhere to go).
-        const key = `${allRailedMask[i]}:${regionHasExpandedBand}:${row.columns
-          .map((c) => c.leaves.length)
-          .join(",")}`;
-        nextKeys.set(row.id, key);
-        if (!allRailedMask[i] || !regionHasExpandedBand) {
-          lastSnap.delete(row.id);
-          return;
-        }
-        const el = container.querySelector<HTMLElement>(
-          `[data-dock-band="${row.id}"]`,
-        );
-        const contentPx = el === null ? null : measureRailBandContentPx(el);
-        if (el === null || contentPx === null) return;
-        if (prevKeys.get(row.id) !== key) {
-          snapped[row.id] = contentPx; // structural change: snap
-          return;
-        }
-        // Content drift while parked at the default: the last snap is
-        // still what's rendered (within rounding), but the spine's true
-        // content moved -- keep tracking it. A user-resized band's
-        // rendered height sits away from its last snap, so it's pinned.
-        const prevSnap = lastSnap.get(row.id);
-        const rendered = el.getBoundingClientRect().height;
-        if (
-          prevSnap !== undefined &&
-          Math.abs(rendered - prevSnap) <= 2 &&
-          Math.abs(contentPx - prevSnap) > 1
-        ) {
-          snapped[row.id] = contentPx;
-        }
-      });
-      snapKeysRef.current = nextKeys;
-      if (Object.keys(snapped).length === 0) return;
-      // Weights render as RATIOS, so the committed px must sum to the real
-      // band area (container minus seams) or every band rescales and the
-      // snapped band misses its content height. The unsnapped bands ABSORB
-      // the height the snap frees: they split the remainder in proportion
-      // to their currently rendered px.
-      const areaPx =
-        container.getBoundingClientRect().height -
-        SPLIT_DIVIDER_PX * (rows.length - 1);
-      const snappedTotal = Object.values(snapped).reduce((s, v) => s + v, 0);
-      const otherRendered: Record<string, number> = {};
-      rows.forEach((row) => {
-        if (snapped[row.id] !== undefined) return;
-        const el = container.querySelector<HTMLElement>(
-          `[data-dock-band="${row.id}"]`,
-        );
-        otherRendered[row.id] =
-          el?.getBoundingClientRect().height ?? row.weight;
-      });
-      const otherTotal = Object.values(otherRendered).reduce(
-        (s, v) => s + v,
-        0,
-      );
-      const remainder = areaPx - snappedTotal;
-      // Degenerate: spine content alone exceeds the region (huge rail).
-      // Skip the rescale -- raw px keep the ratios sane and the spine
-      // scrolls.
-      const scale =
-        remainder > 0 && otherTotal > 0 ? remainder / otherTotal : 1;
-      const byId: Record<string, number> = {};
-      rows.forEach((row) => {
-        byId[row.id] =
-          snapped[row.id] !== undefined
-            ? snapped[row.id]
-            : otherRendered[row.id] * scale;
-      });
-      Object.entries(snapped).forEach(([id, px]) =>
-        lastSnapPxRef.current.set(id, px),
-      );
-      dock.api.apply((l) => setNodeWeights(l, edge, byId));
-    };
-    let cancelled = false;
-    snapPass();
-    // Webfonts landing after the first measure is the dominant content
-    // drift (vertical labels grow a few px, the spine outgrows its snap):
-    // fonts.ready is a frame-independent signal for it, so the re-snap
-    // fires even when the compositor is throttled and observer callbacks
-    // (frame-paced) lag.
-    if (document.fonts !== undefined && document.fonts.status !== "loaded") {
-      document.fonts.ready.then(() => {
-        if (!cancelled) snapPass();
-      });
-    }
-    // Any other spine-cell resize between renders (label renames) re-runs
-    // the pass. The CELLS are observed, not the rail roots: a root is
-    // stretched to the band, so content growth inside a fixed band never
-    // resizes it. The at-default guard above keeps this from ever fighting
-    // a user's explicit size.
-    const ro = new ResizeObserver(() => snapPass());
-    container
-      .querySelectorAll("[data-dock-rail-root] [data-dock-leaf]")
-      .forEach((el) => ro.observe(el));
-    return () => {
-      cancelled = true;
-      ro.disconnect();
-    };
-  });
-  // A band divider drag computes new weights from the bands' RENDERED px at
-  // drag start, not their stored weights: a capped rail band renders at its
-  // content, which can sit far below its weighted share, and a drag computed
-  // from stored weights would burn through that invisible surplus before the
-  // divider visibly moved. Snapshotted once per gesture (SplitDivider's
-  // onDragStart); flushes recompute from the snapshot + total delta, so the
-  // gesture stays idempotent.
-  const bandPxAtDragStart = React.useRef<number[] | null>(null);
-  // Per-band content height at drag start (all-railed bands only): the
-  // seam detent's target (BAND_CONTENT_DETENT_PX).
-  const bandContentPxAtDragStart = React.useRef<(number | null)[]>([]);
-  const measureBandPx = () => {
-    const container = containerRef.current;
-    if (container === null) return;
-    const els = rows.map((row) =>
-      container.querySelector<HTMLElement>(`[data-dock-band="${row.id}"]`),
-    );
-    bandPxAtDragStart.current = els.map(
-      (el) => el?.getBoundingClientRect().height ?? 0,
-    );
-    bandContentPxAtDragStart.current = els.map((el, i) =>
-      el !== null && allRailedMask[i] ? measureRailBandContentPx(el) : null,
-    );
-  };
-
-  // EXPLICITLY collapsed region (D21): the 36px vertical rail, regardless of
-  // the per-cell collapse states. Toggled by the region-collapse chevron;
-  // expanding a panel from the rail clears the flag (see layoutOps).
-  if (isRegionPackedOn(dock.layout, edge)) {
-    return <RegionMinimizedRail region={region} edge={edge} />;
-  }
-
+  // D27: a single-column region is one visual column -- the region-level
+  // parent handle covers it honestly (rendered by DockManager). Any second
+  // column means independent visual columns: each carries its own handle
+  // here, and the region handle is suppressed.
+  const columnHandles = region.columns.length > 1;
   return (
-    <Box
-      ref={containerRef}
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        width: "100%",
-        height: "100%",
-        minWidth: 0,
-        minHeight: 0,
-      }}
-    >
-      {rows.map((row, index) => {
-        return (
-          <React.Fragment key={row.id}>
-            <Box
-              data-dock-band={row.id}
-              className={collapseAnim}
-              style={{
-                // Every band sizes by its weighted share -- no maximum. An
-                // all-railed band's "no dead gray" height is the snap
-                // default + the seam detent (see the layout effect above),
-                // never a cap.
-                flexGrow: row.weight / bandWeightTotal,
-                flexShrink: 1,
-                flexBasis: 0,
-                minWidth: 0,
-                minHeight: 0,
-                display: "flex",
-              }}
-            >
-              <RowView row={row} edge={edge} columnHandles={columnHandles} />
-            </Box>
-            {index < rows.length - 1 && (
-              // Band dividers are ALWAYS live (D41 revised): a rail band's
-              // height is a plain weighted share, so there is always height
-              // to trade -- dragging into it squeezes it (the spine
-              // scrolls), dragging away grows it freely, with a DETENT at
-              // its content height so "exactly no dead gray" is trivial to
-              // land on.
-              <SplitDivider
-                dir="column"
-                resizable
-                containerRef={containerRef}
-                onDragStart={measureBandPx}
-                onResize={(deltaPx, containerPx) => {
-                  // Content detent: if this delta would land an adjacent
-                  // all-railed band within BAND_CONTENT_DETENT_PX of its
-                  // spine content, snap the delta so it lands exactly
-                  // there. The band ABOVE the seam grows by +delta; the
-                  // band BELOW shrinks by it.
-                  const startPx = bandPxAtDragStart.current;
-                  const contentPx = bandContentPxAtDragStart.current;
-                  let d = deltaPx;
-                  if (startPx !== null) {
-                    const above = contentPx[index];
-                    if (above !== null && above !== undefined) {
-                      const target = above - startPx[index];
-                      if (Math.abs(d - target) <= BAND_CONTENT_DETENT_PX)
-                        d = target;
-                    }
-                    const below = contentPx[index + 1];
-                    if (below !== null && below !== undefined) {
-                      const target = startPx[index + 1] - below;
-                      if (Math.abs(d - target) <= BAND_CONTENT_DETENT_PX)
-                        d = target;
-                    }
-                  }
-                  resizeCells({
-                    dock,
-                    edge,
-                    // Rendered px stand in for the stored weights (see
-                    // bandPxAtDragStart above) so the drag tracks what is
-                    // on screen even when stored weights are on another
-                    // scale.
-                    cells: rows.map((r, i) => ({
-                      id: r.id,
-                      weight: bandPxAtDragStart.current?.[i] ?? r.weight,
-                    })),
-                    collapsed: rows.map(() => false),
-                    index,
-                    deltaPx: d,
-                    containerPx,
-                    // Per-band floor: a band must fit its tallest
-                    // expanded column's cells (50px each + dividers),
-                    // or the leaves' own render floors overflow into
-                    // the band below.
-                    minCell: rows.map((band) =>
-                      bandMinPx(band, columnHandles),
-                    ),
-                  });
-                }}
-                onCancel={() =>
-                  dock.api.apply((l) =>
-                    setNodeWeights(
-                      l,
-                      edge,
-                      Object.fromEntries(rows.map((r) => [r.id, r.weight])),
-                    ),
-                  )
-                }
-              />
-            )}
-          </React.Fragment>
-        );
-      })}
-    </Box>
+    <RegionColumns region={region} edge={edge} columnHandles={columnHandles} />
   );
 });
 
-/** Render one row band: a HORIZONTAL row of columns with vertical dividers
- * between them. (This was the region renderer in the 3-level model; it now
- * renders a single band, with the region stacking bands above it.) */
-function RowView({
-  row,
+function RegionColumns({
+  region,
   edge,
   columnHandles = false,
 }: {
-  row: DockRow;
+  region: DockRegion;
   edge: DockEdge;
   /** Render a parent handle above each column (multi-column regions, D27). */
   columnHandles?: boolean;
 }) {
   const dock = useDock();
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const columns = row.columns;
+  const columns = region.columns;
   // Per-column rail mask: a RAILED column renders as a fixed 36px spine
   // strip (its width weight preserved for restore, P8) -- the one exception
   // to "columns always hold their width".
@@ -515,9 +155,8 @@ function RowView({
                   own drag handle -- floating it preserves the column as a
                   stacked window instead of flattening the whole region. The
                   column-collapse chevron sits at its right end and rails
-                  exactly this column -- a band's LONE column included
-                  (D42): its rail renders the 36px strip with the rest of
-                  the band as plain band body. */}
+                  exactly this column, siblings untouched (D46: no
+                  accordion). */}
                   {columnHandles && (
                     <StackHandleBar
                       attrs={{ "data-dock-column-handle": column.id }}
@@ -561,9 +200,9 @@ function RowView({
                 // A railed column is fixed-width chrome: the divider
                 // resizes only when an expanded column sits on both sides
                 // of it (D24: only RAILED columns go inert). Its RULE always
-                // runs the full band height either way -- a rail column's
-                // body is full-band (empty tail included), so the boundary
-                // between two columns is full-band too.
+                // runs the full region height either way -- a rail column's
+                // body is full-height (empty tail included), so the boundary
+                // between two columns is too.
                 resizable={expandedAtOrBefore[index] && expandedAfter[index]}
                 containerRef={containerRef}
                 onResize={(deltaPx, containerPx) =>
@@ -694,7 +333,7 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
   );
 }
 
-/** Shared cascade-resize commit for both levels (columns in a region row,
+/** Shared cascade-resize commit for both levels (columns in a region,
  * leaves in a column stack). The math is axis-agnostic (cascadeResize works on
  * `number[]` weights), so the only per-axis input is the cell list, the
  * collapsed mask, the fixed chrome px a collapsed cell renders at, and the
@@ -707,13 +346,13 @@ function resizeCells(opts: {
   edge: DockEdge;
   cells: readonly { id: string; weight: number }[];
   collapsed: boolean[];
-  /** Rendered px of ONE collapsed cell (36px rail strip / all-railed band
-   * floor). Only read where the mask has collapsed cells. */
+  /** Rendered px of ONE collapsed cell (the 36px rail strip). Only read
+   * where the mask has collapsed cells. */
   collapsedPx?: number;
   index: number;
   deltaPx: number;
   containerPx: number;
-  minCell: number | number[];
+  minCell: number;
 }): void {
   const { dock, edge, cells, collapsed, index, deltaPx, containerPx, minCell } =
     opts;
@@ -786,7 +425,6 @@ function SplitDivider({
   dir,
   resizable,
   containerRef,
-  onDragStart,
   onResize,
   onCancel,
 }: {
@@ -795,9 +433,6 @@ function SplitDivider({
    * resize, so it shows no resize cursor and ignores drags. */
   resizable: boolean;
   containerRef: React.RefObject<HTMLDivElement>;
-  /** Called once at gesture start (before any onResize flush), so the parent
-   * can snapshot rendered geometry the resize math needs (band px). */
-  onDragStart?: () => void;
   onResize: (deltaPx: number, containerPx: number) => void;
   /** Revert whatever per-frame onResize calls applied (Escape mid-drag). */
   onCancel: () => void;
@@ -818,7 +453,6 @@ function SplitDivider({
     const rect = container.getBoundingClientRect();
     const containerPx = isRow ? rect.width : rect.height;
     const start = isRow ? event.clientX : event.clientY;
-    onDragStart?.();
 
     // Per-frame weight writes must land instantly: suppress the
     // minimize/expand transition (collapseAnim) under this container for

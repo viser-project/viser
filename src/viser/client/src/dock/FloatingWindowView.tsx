@@ -85,7 +85,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
   // The pinned px height, or undefined when the window auto-sizes to content.
   // flex-grow sums < 1 distribute only that FRACTION of free space;
   // stackWeights from floatRegion carving are fractional, so
-  // normalize (see SplitView's band note).
+  // normalize (see SplitView's grow-normalization note).
   const stackWeightTotal =
     win.stack.reduce((s2, g) => s2 + (win.stackWeights?.[g] ?? 1), 0) || 1;
   const pinnedPx = pinnedPxOf(win.height);

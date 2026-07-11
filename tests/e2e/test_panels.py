@@ -284,9 +284,7 @@ def test_lone_docked_panel_collapses_via_chevron(
     expect(leaf.locator("[data-dock-bar]")).to_have_count(0)
     # The region chevron collapses to the rail; the label shows on the spine.
     viser_page.locator("[data-dock-region-collapse='right']").click()
-    expect(viser_page.locator("[data-dock-region-rail]")).to_have_count(
-        1, timeout=5_000
-    )
+    expect(viser_page.locator("[data-dock-rail-root]")).to_have_count(1, timeout=5_000)
     expect(
         viser_page.locator(
             "[data-dock-leaf][data-dock-edge='right'] [data-dock-group]"
@@ -931,9 +929,7 @@ def test_multitab_bar_shows_all_labels_and_rail_rows_expand_to_tab(
     # Click the Beta row -> the region un-collapses, the panel expands, AND
     # Beta's body shows.
     rail_rows.filter(has_text="Beta").first.click()
-    expect(viser_page.locator("[data-dock-region-rail]")).to_have_count(
-        0, timeout=5_000
-    )
+    expect(viser_page.locator("[data-dock-rail-root]")).to_have_count(0, timeout=5_000)
     expect(viser_page.get_by_text("beta body")).to_be_visible(timeout=5_000)
 
 
@@ -1078,7 +1074,7 @@ def test_unminimize_after_sibling_resize_keeps_panel_onscreen(
     # the rail header out: the region floats as ONE stacked window of
     # minimized bars (every cell stamped collapsed, spec 7).
     viser_page.locator("[data-dock-region-collapse='right']").click()
-    rail_header = viser_page.locator("[data-dock-region-rail]")
+    rail_header = viser_page.locator("[data-dock-column-rail]")
     expect(rail_header).to_have_count(1, timeout=5_000)
     hb = rail_header.bounding_box()
     assert hb is not None
@@ -1195,9 +1191,10 @@ def test_example_11_panels_collapsed_chrome(
        expanded, still with no cell toggles.
     2. The explicit region-collapse chevron gives the 36px rail with exactly
        ONE expand control (the parent handle -- cells show pills, P9).
-    3. Expanding stats from its rail spine row clears the region's one flag
-       and reveals BOTH panels expanded with real heights (no per-cell
-       collapse residue exists, D38)."""
+    3. Expanding stats from its rail spine row clears the COLUMN's one flag
+       (D46: the stack is one column; a partially collapsed stack is
+       unrepresentable) and reveals BOTH panels expanded with real heights
+       (no per-cell collapse residue exists, D38)."""
     viser_page.set_viewport_size(_VIEWPORT)
     viser_page.wait_for_timeout(300)
 
@@ -1224,19 +1221,19 @@ def test_example_11_panels_collapsed_chrome(
         viser_page.locator("[data-dock-edge='right'] [data-dock-minimize]").count() == 0
     ), "docked cells must not carry a `-` (D32)"
     assert viser_page.locator("[data-dock-edge='right'] [data-dock-bar]").count() == 0
-    assert viser_page.locator("[data-dock-region-rail]").count() == 0
+    assert viser_page.locator("[data-dock-rail-root]").count() == 0
 
     # EXPLICIT collapse via the chevron -> the rail, with exactly ONE expand
     # control: the parent handle (cells show pills, P9).
     viser_page.eval_on_selector("[data-dock-region-collapse='right']", "e => e.click()")
-    rail = viser_page.locator("[data-dock-region-rail]")
+    rail = viser_page.locator("[data-dock-rail-root]")
     expect(rail).to_have_count(1, timeout=5_000)
     n_all = viser_page.locator(
         "[data-dock-edge='right'] [data-dock-minimize], "
-        "[data-dock-region-rail] [data-dock-minimize]"
+        "[data-dock-rail-root] [data-dock-minimize]"
     ).count()
     n_parent = viser_page.locator(
-        "[data-dock-region-rail] [data-dock-minimize-all]"
+        "[data-dock-rail-root] [data-dock-minimize-all]"
     ).count()
     assert n_all == 0 and n_parent == 1, (
         f"rail must show exactly one expand control (got {n_all} cell +s, "
@@ -1244,8 +1241,9 @@ def test_example_11_panels_collapsed_chrome(
     )
 
     # Expand stats via its spine row (keyboard; rows are gesture surfaces):
-    # GRANULAR (D44, user-adjudicated) -- reveals JUST stats' band; log
-    # stays railed as a column rail beside/below it.
+    # the stacked panels share ONE column (D46), so clearing the column's
+    # flag reveals the WHOLE stack expanded -- a partially collapsed stack
+    # is unrepresentable.
     row = viser_page.locator(
         "[data-dock-leaf][data-dock-edge='right'] [data-dock-tab]"
     ).first
@@ -1253,32 +1251,17 @@ def test_example_11_panels_collapsed_chrome(
     viser_page.keyboard.press("Enter")
     viser_page.wait_for_timeout(400)
     expect(_tab(viser_page, "Stats")).to_be_visible()
-    assert viser_page.locator("[data-dock-region-rail]").count() == 0
-
-    stats_box = (
-        viser_page.locator("[data-dock-leaf][data-dock-edge='right']")
-        .filter(has=_tab(viser_page, "Stats"))
-        .first.bounding_box()
+    assert viser_page.locator("[data-dock-rail-root]").count() == 0
+    assert viser_page.locator("[data-dock-column-rail]").count() == 0, (
+        "expanding the column's rail must expand the WHOLE stack (D46: one "
+        "column, one flag)"
     )
-    assert stats_box is not None and stats_box["height"] > 60, (
-        f"Stats should render expanded with real height, got {stats_box}"
-    )
-    assert viser_page.locator("[data-dock-column-rail]").count() == 1, (
-        "granular expand (D44): log stays railed as a column rail"
-    )
-
-    # The remaining rail's header + expands it; now everything is expanded
-    # with no per-cell residue (D38).
-    viser_page.eval_on_selector(
-        "[data-dock-column-rail] [data-dock-minimize-all]", "e => e.click()"
-    )
-    viser_page.wait_for_timeout(400)
     assert (
         viser_page.locator(
             "[data-dock-edge='right'] [data-dock-group][data-dock-collapsed]"
         ).count()
         == 0
-    ), "no collapsed cell may remain once every scope expands (D38)"
+    ), "no collapsed cell may remain once the column expands (D38)"
     for label in ("Stats", "Log"):
         box = (
             viser_page.locator("[data-dock-leaf][data-dock-edge='right']")
