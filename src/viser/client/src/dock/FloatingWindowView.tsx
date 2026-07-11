@@ -107,6 +107,53 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       )
     : undefined;
 
+  // D34 for AUTO-height windows: CSS cannot interpolate height to `auto`,
+  // so a collapse/expand of an unpinned window snapped. FLIP it instead:
+  // record the previous rendered height each render, and when `collapsed`
+  // flips, replay old px -> new px through the class's own 160ms height
+  // transition, clearing the inline px on transitionend (auto resumes at
+  // the identical measured value). Presentation only (P4): the model
+  // committed first; reduced motion and an active grip drag (the paper's
+  // own [data-dock-resizing]) skip it; interruptions retarget from the
+  // live mid-ease height.
+  const prevPaperH = React.useRef<number | null>(null);
+  React.useLayoutEffect(() => {
+    const el = paperRef.current;
+    if (el === null) return;
+    const from = prevPaperH.current;
+    const skip =
+      el.hasAttribute("data-dock-resizing") ||
+      (typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    if (from === null || skip) return;
+    const inlineBefore = el.style.height;
+    el.style.transition = "none";
+    el.style.height = "";
+    const to = el.offsetHeight;
+    if (Math.abs(from - to) < 0.5) {
+      el.style.transition = "";
+      el.style.height = inlineBefore;
+      return;
+    }
+    el.style.height = `${from}px`;
+    void el.offsetWidth;
+    el.style.transition = "";
+    el.style.height = `${to}px`;
+    el.addEventListener(
+      "transitionend",
+      (ev) => {
+        if (ev.propertyName === "height") el.style.height = "";
+      },
+      { once: true },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collapsed]);
+  React.useLayoutEffect(() => {
+    // Live height (mid-transition included) so an interrupted toggle
+    // continues from where the window visually is.
+    prevPaperH.current = paperRef.current?.getBoundingClientRect().height ?? null;
+  });
+
   // Cancel an in-flight grip gesture if this window unmounts mid-resize (e.g.
   // another client docks it away), so its listeners can't fire afterwards. One
   // ref serves all grips: only one resize gesture may be active per window (a
@@ -456,8 +503,19 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
 
         <Box
           ref={stackRef}
-          style={
-            fixedHeight
+          style={{
+            // Collapsed multi-group window: rule off the window header from
+            // the first bar -- every other bar boundary draws a divider, and
+            // an unmarked header/bar seam reads as one surface (user
+            // report: "there should be a horizontal line above the
+            // Stats/Notes row").
+            ...(collapsed && multi
+              ? {
+                  borderTop:
+                    "1px solid var(--mantine-color-default-border)",
+                }
+              : {}),
+            ...(fixedHeight
               ? {
                   flexGrow: 1,
                   minHeight: 0,
@@ -469,8 +527,8 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                   // headers and overlap each other.
                   overflowY: "auto",
                 }
-              : {}
-          }
+              : {}),
+          }}
         >
           {win.stack.map((groupId, index) => {
             const group = dock.groups[groupId];
@@ -512,6 +570,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                   // total to divide.
                   <FloatingStackDivider
                     stackRef={stackRef}
+                    paperRef={paperRef}
                     dividerIndex={index - 1}
                     stack={win.stack}
                     // D38: an expanded window is all expanded cells (every
@@ -520,10 +579,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                     weightOf={(g) => win.stackWeights?.[g] ?? 1}
                     onSetWeights={(weights) => onSetStackWeights(win.id, weights)}
                     isFixed={fixedHeight}
-                    pinHeight={() => {
-                      const p = paperRef.current;
-                      if (p) onResizeHeight(win.id, p.offsetHeight);
-                    }}
+                    setWindowHeight={(px) => onResizeHeight(win.id, px)}
                   />
                 )}
                 {fixedHeight ? (
@@ -568,27 +624,32 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
  * docked column splits, writing per-group weights (by id). */
 function FloatingStackDivider({
   stackRef,
+  paperRef,
   dividerIndex,
   stack,
   resizable,
   weightOf,
   onSetWeights,
   isFixed,
-  pinHeight,
+  setWindowHeight,
 }: {
   stackRef: React.RefObject<HTMLDivElement>;
+  paperRef: React.RefObject<HTMLDivElement>;
   dividerIndex: number;
   stack: GroupId[];
   /** False while the window is collapsed (all bars, D38): nothing to trade,
-   * so no resize cursor, no armed gesture, and no pinHeight() side
-   * effect. */
+   * so no resize cursor, no armed gesture, and no pin side effect. */
   resizable: boolean;
   weightOf: (g: GroupId) => number;
   onSetWeights: (weights: Record<GroupId, number>) => void;
   /** Whether the window already has a fixed height (so weights apply directly).
-   * If false, the first drag pins the current rendered height. */
+   * If false, the drag pins the current rendered height -- seeded with the
+   * cells' RENDERED px (same rule as docked divider drags), so entering
+   * pinned mode reproduces the exact on-screen layout and a motionless
+   * click cannot move anything. */
   isFixed: boolean;
-  pinHeight: () => void;
+  /** Pin (px) or restore auto (undefined) -- the window height writer. */
+  setWindowHeight: (px: number | undefined) => void;
 }) {
   // Cancel the in-flight gesture if the divider unmounts mid-drag (the stack
   // can be restructured by another client), so the window listeners can't fire
@@ -604,19 +665,52 @@ function FloatingStackDivider({
     if (container === null) return;
     const containerPx = container.getBoundingClientRect().height;
     // Suppress the minimize/expand transition under this stack for the
-    // drag's duration (per-frame weight writes must land instantly).
+    // drag's duration (per-frame weight writes must land instantly). The
+    // paper carries it too, so the window-height ease (windowCollapseAnim
+    // + the auto-height FLIP) stays out of per-frame height writes.
     container.setAttribute("data-dock-resizing", "");
-    // Auto-height window: pin the current height so there's a total to divide
-    // (re-renders to fixed-height with weighted cells). Capturing happens after,
-    // on the persistent grip element.
-    if (!isFixed) pinHeight();
-    const start = event.clientY;
-    let latest = start;
-    // Drag-start weights so a cancel (Escape) can put them back.
+    paperRef.current?.setAttribute("data-dock-resizing", "");
+    const paperStartH = paperRef.current?.offsetHeight ?? containerPx;
+    const wasFixed = isFixed;
+    // Snapshot the cells' RENDERED heights BEFORE any mode change: these
+    // seed the pinned-mode weights, so flipping an auto window to fixed
+    // reproduces the exact on-screen layout (the old path seeded stored
+    // flex shares -- often 1:1 -- and the stack visibly JUMPED on a plain
+    // pointerdown; P2: a motionless click never moves).
+    const renderedPx: Record<string, number> = {};
+    stack.forEach((g) => {
+      const cellEl = container.querySelector<HTMLElement>(
+        `[data-dock-group="${CSS.escape(g)}"]`,
+      );
+      renderedPx[g] = cellEl?.offsetHeight ?? containerPx / stack.length;
+    });
+    // Drag-start weights so a cancel (or motionless click) restores them.
     const startWeights: Record<string, number> = {};
     stack.forEach((g) => {
       startWeights[g] = weightOf(g);
     });
+    if (!wasFixed) {
+      setWindowHeight(paperStartH);
+      onSetWeights(renderedPx);
+    }
+    const start = event.clientY;
+    let latest = start;
+    // Push-through budget (user-adjudicated): dragging DOWN past the point
+    // where every cell below the divider sits at its minimum keeps going by
+    // GROWING the window -- the excess lands on the cell above the divider.
+    // Budget from the drag-start snapshot so it's stable across frames.
+    const startPx = wasFixed
+      ? stack.map((g) => startWeights[g])
+      : stack.map((g) => renderedPx[g]);
+    const belowCapacity = startPx
+      .slice(dividerIndex + 1)
+      .reduce((s, px) => s + Math.max(0, px - MIN_STACK_CELL_PX), 0);
+    const maxPaperH = () => {
+      const parent = paperRef.current?.parentElement;
+      if (!parent || paperRef.current === null) return Infinity;
+      const y = paperRef.current.offsetTop;
+      return Math.max(paperStartH, parent.clientHeight - y);
+    };
     activeDrag.current = dragGesture({
       grip: event.currentTarget,
       pointerId: event.pointerId,
@@ -628,28 +722,49 @@ function FloatingStackDivider({
         // all bars and none of its seams are resizable), so the mask is
         // uniformly false.
         const collapsed = stack.map(() => false);
+        const totalDelta = latest - start;
+        // Split the downward delta into the zero-sum part (traded with the
+        // cells below) and the push-through part (window growth).
+        const extra =
+          totalDelta > 0
+            ? Math.min(
+                Math.max(0, totalDelta - belowCapacity),
+                maxPaperH() - paperStartH,
+              )
+            : 0;
         const next = cascadeResize({
-          weights: stack.map((g) => weightOf(g)),
+          weights: startPx.slice(),
           collapsed,
           containerPx,
           dividerIndex,
-          deltaPx: latest - start,
+          deltaPx: totalDelta - extra,
           minCell: MIN_STACK_CELL_PX,
           maxCell: Infinity,
         });
         if (next === null) return;
+        if (extra > 0) next[dividerIndex] += extra;
         const wmap: Record<string, number> = {};
         stack.forEach((g, i) => {
           if (!collapsed[i]) wmap[g] = next[i];
         });
         onSetWeights(wmap);
+        setWindowHeight(paperStartH + extra);
       },
       onEnd: (cancelled) => {
         activeDrag.current = null;
         // The captured element, not stackRef.current: the ref can re-point
         // to a new node mid-drag, stranding the attribute on the old one.
         container.removeAttribute("data-dock-resizing");
-        if (cancelled) onSetWeights(startWeights);
+        paperRef.current?.removeAttribute("data-dock-resizing");
+        const moved = Math.abs(latest - start) > 3;
+        if (cancelled || !moved) {
+          // Escape OR a motionless click: full restore -- weights AND the
+          // height mode (an auto window a click briefly pinned reverts to
+          // auto; P2: layout, sizes, and modes return to pre-gesture
+          // values).
+          onSetWeights(startWeights);
+          setWindowHeight(wasFixed ? paperStartH : undefined);
+        }
       },
     });
   };

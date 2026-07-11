@@ -94,6 +94,57 @@ function RegionColumns({
 }) {
   const dock = useDock();
   const containerRef = React.useRef<HTMLDivElement>(null);
+  // FLIP slide (D34 rev 2): columns render at their COMMITTED positions
+  // instantly (the drawer pane is fixed-width, so there is no mid-ease
+  // reflow) -- but a column whose SCREEN position changed (e.g. everything
+  // inner of a newly railed outer sibling) would otherwise jump while the
+  // container edge eases. Measure each column's previous screen x, start it
+  // at a translateX of the difference, and transition the transform to 0 on
+  // the same 160ms curve as the container's width ease -- every column
+  // GLIDES from old slot to new; unmoved columns get delta 0 and stay
+  // perfectly still. Presentation only (P4): the model committed before
+  // this runs, reduced-motion and active divider drags skip it, and
+  // nothing waits on the transition.
+  const prevColumnX = React.useRef<Map<string, number>>(new Map());
+  React.useLayoutEffect(() => {
+    const root = containerRef.current;
+    if (root === null) return;
+    const els = Array.from(
+      root.querySelectorAll<HTMLElement>(":scope > [data-dock-column]"),
+    );
+    const skip =
+      root.closest("[data-dock-resizing]") !== null ||
+      (typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    const next = new Map<string, number>();
+    for (const el of els) {
+      const id = el.getAttribute("data-dock-column");
+      if (id === null) continue;
+      // Interruption-friendly "first" position: the live rect includes any
+      // in-flight transform, so a retargeted slide continues smoothly.
+      const liveX = el.getBoundingClientRect().left;
+      el.style.transition = "";
+      el.style.transform = "";
+      const naturalX = el.getBoundingClientRect().left;
+      next.set(id, naturalX);
+      const prev = prevColumnX.current.get(id) ?? liveX;
+      const delta = prev - naturalX;
+      if (skip || Math.abs(delta) < 0.5) continue;
+      el.style.transform = `translateX(${delta}px)`;
+      // Force the start position before arming the transition.
+      void el.offsetWidth;
+      el.style.transition = "transform 160ms ease";
+      el.style.transform = "";
+      el.addEventListener(
+        "transitionend",
+        () => {
+          el.style.transition = "";
+        },
+        { once: true },
+      );
+    }
+    prevColumnX.current = next;
+  });
   const columns = region.columns;
   // Per-column rail mask: a RAILED column renders as a fixed 36px spine
   // strip (its width weight preserved for restore, P8) -- the one exception

@@ -34,7 +34,7 @@ import {
 import * as ops from "./layoutOps";
 import { RegionResizer } from "./RegionResizer";
 import { RegionCollapseChevron, StackHandleBar } from "./handles";
-import { regionWidthAnim } from "./DockStyles.css";
+import { canvasInsetAnim, regionWidthAnim } from "./DockStyles.css";
 import { plannedReservedWidth, planRegion } from "./regionPlan";
 import { reconcileRegionWidths } from "./widthReconciliation";
 import { invariantViolations } from "./layoutInvariants";
@@ -2054,6 +2054,7 @@ export function DockManager({
     left: regions.left.reservedWidth,
     right: regions.right.reservedWidth,
   };
+  let squeezeActive = false;
   if (containerWidth > 0) {
     const available = containerWidth - MIN_CANVAS_PX;
     const total = renderedWidth.left + renderedWidth.right;
@@ -2061,6 +2062,13 @@ export function DockManager({
       const scale = Math.max(0, available) / total;
       renderedWidth.left = Math.floor(renderedWidth.left * scale);
       renderedWidth.right = Math.floor(renderedWidth.right * scale);
+      // While the guard is actively scaling, drawn widths track
+      // containerWidth per resize event -- easing a per-frame-tracking
+      // value is the same regime as a drag (the anim classes' own rule),
+      // and with the drawer's pinned pane a lagging container shows
+      // blank/clipped strips. Drop the width/inset eases for the
+      // duration; they return with the first unsqueezed render.
+      squeezeActive = true;
     }
   }
   const leftInset = renderedWidth.left;
@@ -2198,8 +2206,12 @@ export function DockManager({
             overflow: "hidden",
           }}
         >
-          {/* Center content, inset by docked regions. */}
+          {/* Center content, inset by docked regions. The inset ease
+          (canvasInsetAnim) tracks the region containers' width ease, so a
+          rail collapse/expand slides the canvas edge instead of snapping
+          it; drags stay per-frame instant via [data-dock-resizing]. */}
           <Box
+            className={squeezeActive ? undefined : canvasInsetAnim}
             style={{
               position: "absolute",
               top: 0,
@@ -2223,7 +2235,7 @@ export function DockManager({
             same D34 width ease as the region box so the shadow tracks it. */}
                 {tree !== null && (
                   <Box
-                    className={regionWidthAnim}
+                    className={squeezeActive ? undefined : regionWidthAnim}
                     style={{
                       position: "absolute",
                       top: 0,
@@ -2242,7 +2254,7 @@ export function DockManager({
                     // D34: rail collapse/expand eases the region container's
                     // width between committed values (presentation only; the
                     // canvas insets and drop math read the committed model).
-                    className={regionWidthAnim}
+                    className={squeezeActive ? undefined : regionWidthAnim}
                     style={{
                       position: "absolute",
                       top: 0,

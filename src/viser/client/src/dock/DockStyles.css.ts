@@ -73,6 +73,27 @@ export const regionWidthAnim = style({
   },
 });
 
+/** D34 sibling of regionWidthAnim for the CANVAS wrapper: rail collapse /
+ * expand changes the canvas insets in one commit, and this eases the
+ * wrapper's left/right between the committed values so the canvas tracks
+ * the region edge's own ease instead of jumping (user-adjudicated). Same
+ * off-switches: reduced motion, and the dock root's [data-dock-resizing]
+ * (region-resize drags write insets per frame; easing would lag the
+ * cursor). */
+export const canvasInsetAnim = style({
+  transition: "left 160ms ease, right 160ms ease",
+  "@media": {
+    "(prefers-reduced-motion: reduce)": {
+      transition: "none",
+    },
+  },
+  selectors: {
+    "[data-dock-resizing] &": {
+      transition: "none",
+    },
+  },
+});
+
 /** D34 sibling of collapseAnim for a FLOATING window's collapse: eases the
  * window's HEIGHT between committed values. Both endpoints are numeric for a
  * PINNED window (px pinned height <-> the collapsed bars' calc() sum), so

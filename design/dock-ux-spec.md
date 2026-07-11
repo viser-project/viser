@@ -189,11 +189,21 @@ a scope it didn't aim at.)
 **P4 — Deterministic core; motion is pure presentation. (A)** The MODEL
 commits instantly: no timers, no settle states, no logic gated on an
 animation finishing. Every collapse transition MAY animate (D34) — but
-only as presentation: one CSS transition (`collapseAnim`, 160ms) between
-committed values, honoring prefers-reduced-motion (instant) and
-suppressed under an active divider drag (`[data-dock-resizing]`). Drag
-hit-testing re-reads geometry on `transitionend`, filtered to the eased
-properties, so cached rects never lag the visible surface.
+only as presentation, on one 160ms ease family, honoring
+prefers-reduced-motion (instant) and suppressed under an active divider
+drag (`[data-dock-resizing]`) and while the canvas guard is actively
+scaling (squeeze-tracking values must not lag the resize). The docked
+form is the DRAWER + GLIDE model: content renders at its COMMITTED
+geometry immediately (columns lay out in a pane fixed at the drawn
+width — nothing reflows mid-ease, no scrollbar flicker); the region
+container's width and the canvas insets ease between committed values;
+and each column FLIP-glides from its previous screen position to its
+new one on the same curve, so a column whose position didn't change
+stays perfectly still. Floating collapse eases the window height, with
+measured-px FLIP endpoints for auto-height windows (CSS cannot
+interpolate to `auto`). Drag hit-testing re-reads geometry on
+`transitionend`, filtered to the eased properties, so cached rects
+never lag the visible surface.
 
 **P5 — No dead ends. (A)** Every reachable state offers a visible way
 out: a collapsed scope can always be expanded (one click) and moved (one
@@ -449,8 +459,11 @@ chevron included, reappears automatically.
   (coinciding scopes merge, §1.2): the grip bar moves the window and
   carries the `−`, setting the same flag.
 - Cells render as §3.1 without the docked context; a collapsed window
-  renders every cell as its bar (§3.2). Mixed windows are
-  unrepresentable (D38).
+  renders every cell as its bar (§3.2), with a hairline between the
+  window header and the first bar (every other bar boundary draws a
+  divider; an unmarked header/bar seam reads as one surface). Mixed
+  windows are unrepresentable (D38). Collapse/expand eases the window
+  height in both height modes (P4: auto endpoints are measured px).
 - Side grips resize width; top/bottom/corner grips resize height (pin),
   with a detent that snaps back to auto-height at the content height. A
   fully-minimized window keeps its WIDTH grips (D15 — the bars hold
@@ -539,7 +552,8 @@ marked ⚠ (stated, not derived; see §11).
 | Rail spine row | that pane — new window born collapsed | expand the column to that tab |
 | Region resize divider | region width (expanded columns only; railed columns ride as fixed chrome, §6) | — |
 | Column (width) divider between sibling columns | neighboring columns' widths (inert when a RAILED column flanks it — fixed 36px chrome, D24/D28) | — |
-| Height divider (expanded stack) | neighboring cells' heights | — |
+| Height divider (expanded docked stack) | neighboring cells' heights | — |
+| Height divider (expanded floating stack) | neighboring cells' heights; an AUTO-height window pins first, seeded with the cells' RENDERED px (entering pinned mode reproduces the exact on-screen layout); dragging DOWN past the below cells' minimum PUSHES the window bottom down (the excess grows the cell above the divider) | — (a motionless press restores everything, auto height included — P2) |
 | Height divider (collapsed window — bars each side) | — (INERT, D24: nothing tradeable) | — |
 | Window edge/bottom grips | window size | — |
 
@@ -731,8 +745,13 @@ window is an open question (§11).
   that window's width (D40); a railed column dragged out floats at its
   preserved expanded width; reconnects replay the same sizes.
 - **Windows**: auto-height tracks content up to the container; pinned
-  height is user-set via the bottom grip; the content-height detent
-  un-pins. A fully-minimized window ignores pinned height.
+  height is user-set via the bottom grip OR by a stack-divider drag
+  (which pins at the current rendered layout — seeding weights with the
+  cells' rendered px, the same snapshot rule as docked divider drags);
+  the content-height detent un-pins. A stack-divider drag past the
+  below cells' minimum grows the window (push-through), clamped to the
+  dock container's bottom. A fully-minimized window ignores pinned
+  height.
 
 ---
 
@@ -884,6 +903,10 @@ Behaviors that MUST hold (each is or should be pinned by a test):
 16. Expanded content absorbs ALL space freed by collapsed chrome — no
     column or stack ever strands dead area from fractional grow sums
     (normalization over expanded cells only, §6).
+17. A motionless press on a floating stack divider changes NOTHING: no
+    visible movement (the pin seeds rendered px) and no surviving mode
+    change (an auto window a press briefly pinned reverts on release) —
+    P2's "a motionless click never moves", for dividers.
 
 Accepted trade: on a LEFT region squeezed into the scrolling state, the
 RegionResizer's 5px over-the-panel strip (below the 48px chrome
@@ -1058,8 +1081,12 @@ has surviving behavior of its own.
   form+inset are identical across the minimize round-trip.
 - **D34** — every collapse transition may animate; presentation-only
   (instant model, reduced-motion honored, suppressed during divider
-  drags). Auto-height window collapse snaps (CSS `auto` can't
-  interpolate) — accepted.
+  drags and active canvas-guard squeezes). Rev 2 (user-adjudicated):
+  the docked drawer + FLIP-glide model — content at committed geometry
+  instantly, the region container width + canvas insets ease, columns
+  glide between screen positions; floating collapse eases height with
+  measured-px FLIP endpoints for auto windows (the old "auto snaps"
+  gap is closed).
 - **D35** — real tooltips on every `−`/`+`/«/».
 - **D36** — bars show all labels that fit, in order; `+N` names the
   remainder only; per-label click/drag; per-label `tablist`.
