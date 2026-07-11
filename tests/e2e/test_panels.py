@@ -810,6 +810,11 @@ def test_standalone_panel_visible_on_mobile(browser: Browser) -> None:
         try:
             wait_for_connection(page, server.get_port())
             page.wait_for_timeout(1_000)
+            # D45: the panel renders as a COLLAPSED accordion section; its
+            # content appears after tapping the section header.
+            header = page.get_by_role("button", name="Expand panel MobileTab")
+            expect(header).to_be_visible(timeout=5_000)
+            header.click()
             expect(page.get_by_role("button", name="MobileButton")).to_be_visible(
                 timeout=5_000
             )
@@ -1239,7 +1244,8 @@ def test_example_11_panels_collapsed_chrome(
     )
 
     # Expand stats via its spine row (keyboard; rows are gesture surfaces):
-    # clears the region's ONE flag and lands on stats (D21/D38).
+    # GRANULAR (D44, user-adjudicated) -- reveals JUST stats' band; log
+    # stays railed as a column rail beside/below it.
     row = viser_page.locator(
         "[data-dock-leaf][data-dock-edge='right'] [data-dock-tab]"
     ).first
@@ -1249,14 +1255,30 @@ def test_example_11_panels_collapsed_chrome(
     expect(_tab(viser_page, "Stats")).to_be_visible()
     assert viser_page.locator("[data-dock-region-rail]").count() == 0
 
-    # BOTH panels come back expanded with real heights: a partially
-    # collapsed stack is unrepresentable (D38).
+    stats_box = (
+        viser_page.locator("[data-dock-leaf][data-dock-edge='right']")
+        .filter(has=_tab(viser_page, "Stats"))
+        .first.bounding_box()
+    )
+    assert stats_box is not None and stats_box["height"] > 60, (
+        f"Stats should render expanded with real height, got {stats_box}"
+    )
+    assert viser_page.locator("[data-dock-column-rail]").count() == 1, (
+        "granular expand (D44): log stays railed as a column rail"
+    )
+
+    # The remaining rail's header + expands it; now everything is expanded
+    # with no per-cell residue (D38).
+    viser_page.eval_on_selector(
+        "[data-dock-column-rail] [data-dock-minimize-all]", "e => e.click()"
+    )
+    viser_page.wait_for_timeout(400)
     assert (
         viser_page.locator(
             "[data-dock-edge='right'] [data-dock-group][data-dock-collapsed]"
         ).count()
         == 0
-    ), "no collapsed cell may remain after the region expands (D38)"
+    ), "no collapsed cell may remain once every scope expands (D38)"
     for label in ("Stats", "Log"):
         box = (
             viser_page.locator("[data-dock-leaf][data-dock-edge='right']")
