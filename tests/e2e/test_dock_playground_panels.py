@@ -1664,3 +1664,53 @@ def test_inert_rail_divider_is_visually_distinct_from_resizable(
         )
     finally:
         page.close()
+
+
+# ===========================================================================
+# P12: a floating window's resize grips bias INSIDE the border (5px edges,
+# 11px corners), which used to cover the top sliver of the header's right-end
+# `-` -- hovering showed a resize cursor and a press armed a resize instead
+# of the click. Chrome controls paint above the grips: every probed pixel of
+# the minimize button must hit the BUTTON, not a [data-dock-resize] overlay.
+# ===========================================================================
+def test_minimize_button_wins_over_resize_grips(dock_context, vite_server: int) -> None:
+    page = _open(dock_context, vite_server, 1200, 800)
+    try:
+        set_layout(
+            page,
+            dock_layout(floating=[window("controls", x=300, y=120, width=300)]),
+        )
+        probes = page.evaluate(
+            """() => {
+                const btn = document.querySelector('[data-dock-minimize]');
+                if (!btn) return null;
+                const r = btn.getBoundingClientRect();
+                const pts = [
+                    [r.left + 2, r.top + 2],
+                    [r.right - 2, r.top + 2],
+                    [r.left + r.width / 2, r.top + 1],
+                    [r.right - 1, r.top + r.height / 2],
+                ];
+                return pts.map(([x, y]) => {
+                    const el = document.elementFromPoint(x, y);
+                    return {
+                        hitButton: el !== null && (el === btn || btn.contains(el)),
+                        hitGrip:
+                            el !== null &&
+                            el.closest('[data-dock-resize]') !== null,
+                        cursor: el ? getComputedStyle(el).cursor : null,
+                    };
+                });
+            }"""
+        )
+        assert probes is not None, "expected a floating minimize button"
+        for pt in probes:
+            assert pt["hitButton"] and not pt["hitGrip"], (
+                f"every pixel of the minimize button must belong to the "
+                f"button, not a resize grip (P12): {probes}"
+            )
+            assert "resize" not in (pt["cursor"] or ""), (
+                f"no resize cursor over the minimize button: {probes}"
+            )
+    finally:
+        page.close()

@@ -102,6 +102,15 @@ export function HandleIconButton({
         alignItems: "center",
         justifyContent: "center",
         cursor: "pointer",
+        // The smallest interactive unit owns the pointer (P12): a floating
+        // window's resize grips overlay the window border with an INSIDE
+        // bias (edges 5px, corners 11px, z 12/13), which reaches the top
+        // sliver of a header's right-end control -- the `-` at the
+        // top-right corner showed a resize cursor and armed a resize
+        // instead of the click. Chrome controls paint above the grips, so
+        // the grip keeps only the pixels the button doesn't claim.
+        position: "relative",
+        zIndex: 14,
         color: hover
           ? "var(--mantine-primary-color-filled)"
           : "var(--mantine-color-dimmed)",
