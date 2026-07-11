@@ -39,7 +39,7 @@ from .dock_helpers import (
     columns,
     dock_layout,
     group,
-    rows,
+    region_collapsed,
     set_layout,
     stack,
     window,
@@ -463,15 +463,9 @@ def test_drop_into_rail_at_tab_position(dock_context, vite_server: int) -> None:
         assert ids == ["controls", "console", "inspector"], (
             f"console should insert before inspector, got {ids}"
         )
-        assert page.evaluate(
-            """() => {
-                const region = window.__dockLayout.docked.right;
-                return (
-                    region !== null &&
-                    region.columns.every((c) => c.railed === true)
-                );
-            }"""
-        ), "the region must stay collapsed after a tab-position drop"
+        assert region_collapsed(page, "right"), (
+            "the region must stay collapsed after a tab-position drop"
+        )
     finally:
         page.close()
 
@@ -804,7 +798,7 @@ def test_plain_stack_cells_have_no_minimize_control(
     try:
         set_layout(
             page,
-            dock_layout(docked_right=rows("controls", "inspector")),
+            dock_layout(docked_right=stack("controls", "inspector")),
         )
         for gid in ("t-controls", "t-inspector"):
             assert _has_grip(page, gid), f"{gid} should keep its grip bar"

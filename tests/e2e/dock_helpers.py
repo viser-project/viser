@@ -184,8 +184,9 @@ def grip_above_strip_point(page: Page, gid: str) -> tuple[float, float]:
         "const strip = e.querySelector('[data-dock-strip]'); "
         "const g = grip.getBoundingClientRect(); "
         "const s = strip.getBoundingClientRect(); "
-        # grip.top is the region's top edge (the grip sits flush there); the
-        # span band is its first 8px (REGION_EDGE_PX in hitTest.ts).
+        # The whole grip bar is the split-above zone under D46 (the old 8px
+        # region-span band is gone); aim at its lower half anyway so the
+        # probe stays well inside the bar across border-rounding.
         "const lo = g.top + 8, hi = s.top; "
         "return { x: g.x + g.width/2, y: (lo + hi) / 2 }; }",
     )
@@ -247,27 +248,36 @@ def grip_center(page: Page, panel_id: str) -> tuple[float, float]:
     return group_grip_center(page, group_id_for_panel(page, panel_id))
 
 
+_COLUMN_RAILED_JS = """(gid) => {
+    for (const edge of ["left", "right"]) {
+        const region = window.__dockLayout.docked[edge];
+        if (region === null) continue;
+        for (const col of region.columns)
+            for (const lf of col.leaves)
+                if (lf.group === gid) return col.railed === true;
+    }
+    return null;
+}"""
+
+
 def collapsed(page: Page, gid: str) -> bool:
     """Whether the group's CONTAINER reads as collapsed: its floating window's
     ``collapsed`` flag, or -- when docked -- its containing column's ``railed``
     flag (D46: the ONLY docked collapse store; a packed region is simply every
     column railed). Groups carry no collapse state of their own."""
-    return page.evaluate(
+    floating = page.evaluate(
         """(gid) => {
-            const l = window.__dockLayout;
-            const win = l.floating.find((w) => w.stack.includes(gid));
-            if (win !== undefined) return win.collapsed === true;
-            for (const edge of ["left", "right"]) {
-                const region = l.docked[edge];
-                if (region === null) continue;
-                for (const column of region.columns)
-                    for (const lf of column.leaves)
-                        if (lf.group === gid) return column.railed === true;
-            }
-            return false;
+            const win = window.__dockLayout.floating.find(
+                (w) => w.stack.includes(gid));
+            return win === undefined ? null : win.collapsed === true;
         }""",
         gid,
     )
+    if floating is not None:
+        return floating
+    # Docked: the containing column's railed flag -- the SAME traversal as
+    # column_railed_for_group (one JS snippet, one thing to update).
+    return page.evaluate(_COLUMN_RAILED_JS, gid) is True
 
 
 def region_collapsed(page: Page, edge: str) -> bool:
@@ -289,19 +299,7 @@ def column_railed_for_group(page: Page, gid: str) -> bool | None:
     """The `railed` flag of the docked COLUMN holding `gid` (None if the group
     is not docked). One of the two collapse stores (D46: floating
     ``collapsed`` + per-column ``railed``)."""
-    return page.evaluate(
-        """(gid) => {
-            for (const edge of ["left", "right"]) {
-                const region = window.__dockLayout.docked[edge];
-                if (region === null) continue;
-                for (const col of region.columns)
-                    for (const lf of col.leaves)
-                        if (lf.group === gid) return col.railed === true;
-            }
-            return null;
-        }""",
-        gid,
-    )
+    return page.evaluate(_COLUMN_RAILED_JS, gid)
 
 
 def click_column_chevron(page: Page, gid: str) -> None:
@@ -434,37 +432,14 @@ def columns(*cells) -> dict:
     return {"region": {"columns": cols}, "groups": groups}
 
 
-def rows(*bands) -> dict:
-    """LEGACY vertical-stack spec: under D46 a vertical stack IS one
-    multi-leaf column, so ``rows(a, b, c)`` builds the SAME single column as
-    ``stack(a, b, c)`` (children's leaves concatenated top to bottom). A
-    columns() child is unrepresentable -- the old ``[A] over [B][C]`` band
-    shapes are gone -- and raises."""
-    cells: list = []
-    for band in bands:
-        if isinstance(band, dict) and ("region" in band or "row" in band):
-            raise ValueError(
-                "rows() children must be panels/groups/stack() specs under "
-                "D46 (bands are gone: a region is columns-of-stacks, so a "
-                "columns() spec cannot be stacked)"
-            )
-        if isinstance(band, dict) and "column" in band:  # from stack()
-            # Flatten the stack's leaves into the one shared column: keep the
-            # groups paired with their leaves by re-listing the cells.
-            cells.extend(band["groups"])
-        else:  # a bare panel id / group spec
-            cells.append(band)
-    return _column(*cells)
-
-
 def _as_region(spec: dict | None) -> dict | None:
-    """Normalize a docked spec (from columns()/stack()/rows()) to a DockRegion
+    """Normalize a docked spec (from columns()/stack()) to a DockRegion
     (D46: ``{columns: [...]}``)."""
     if spec is None:
         return None
     if "region" in spec:  # from columns()
         return spec["region"]
-    # from stack()/rows() -> a single-column region.
+    # from stack() -> a single-column region.
     return {"columns": [spec["column"]]}
 
 

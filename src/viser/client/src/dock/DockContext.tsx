@@ -102,7 +102,7 @@ export interface DockContextValue {
   /** Collapse/expand a docked EDGE to/from its rail (D21) -- the chevron and
    * rail-header gesture. A USER commit (not runProgrammatic), so ownership
    * arbitration learns the user set/cleared the flag (P6). */
-  collapseRegion: (edge: DockEdge, on: boolean) => void;
+  collapseRegion: (edge: DockEdge) => void;
   /** Collapse/expand a docked COLUMN to/from its per-column rail -- the
    * column-collapse chevron and column-rail-header gesture. A USER commit
    * like collapseRegion, for the same P6 reason. */

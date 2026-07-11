@@ -224,8 +224,9 @@ export function invariantViolations(layout: DockLayout): string[] {
   // Gated on the field's presence: a layout without `regionWidth` has never
   // been reconciled (test literals mid-construction), so its weights may
   // still be flex shares with no px basis to check against. Skipped for a
-  // single column (its px lives in regionWidth itself; the weight may be a
-  // height share).
+  // single column: its width memory is regionWidth itself and its weight
+  // stays an unreconciled flex share (the height-weight shape died with
+  // D46; the planned always-px migration retires this gate).
   const RW_TOL = 1.5;
   if (layout.regionWidth !== undefined) {
     for (const edge of ["left", "right"] as DockEdge[]) {

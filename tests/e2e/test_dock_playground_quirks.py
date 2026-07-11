@@ -35,6 +35,7 @@ from .dock_helpers import (
     columns,
     dock_layout,
     group,
+    region_collapsed,
     set_layout,
     stack,
     window,
@@ -518,13 +519,7 @@ def test_escape_during_rail_cell_drag_restores_rail(dock_context, vite_server) -
     set_layout(page, dock_layout(docked_right=stack("inspector", "controls")))
     page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")
     page.wait_for_timeout(200)
-    assert page.evaluate("""() => {
-            const region = window.__dockLayout.docked.right;
-            return (
-                region !== null &&
-                region.columns.every((c) => c.railed === true)
-            );
-        }""")
+    assert region_collapsed(page, "right")
     cell = page.eval_on_selector(
         '[data-dock-group="t-controls"][data-dock-collapsed]',
         "e => { const r = e.getBoundingClientRect(); "
@@ -542,13 +537,9 @@ def test_escape_during_rail_cell_drag_restores_rail(dock_context, vite_server) -
     assert _floating_window_for_panel(page, "controls") is None, (
         "Escape must undo the drag's up-front float"
     )
-    assert page.evaluate("""() => {
-            const region = window.__dockLayout.docked.right;
-            return (
-                region !== null &&
-                region.columns.every((c) => c.railed === true)
-            );
-        }"""), "Escape must restore the pre-drag railed region"
+    assert region_collapsed(page, "right"), (
+        "Escape must restore the pre-drag railed region"
+    )
     assert page.query_selector("[data-dock-rail-root]") is not None
     page.close()
 

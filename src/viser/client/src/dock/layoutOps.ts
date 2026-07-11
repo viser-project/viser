@@ -104,11 +104,6 @@ export function* allLayoutIds(layout: DockLayout): Iterable<string> {
 // region, null an emptied region.
 // ---------------------------------------------------------------------------
 
-/** Every column in a region, left to right. */
-export function allColumns(region: DockRegion): DockColumn[] {
-  return [...region.columns];
-}
-
 /** Locate the leaf holding `groupId` within a region. Null when the region is
  * empty or doesn't hold the group. */
 function findGroupInRegion(
@@ -116,7 +111,7 @@ function findGroupInRegion(
   groupId: GroupId,
 ): { column: DockColumn; leaf: DockLeaf } | null {
   if (region === null) return null;
-  for (const column of allColumns(region)) {
+  for (const column of region.columns) {
     for (const leaf of column.leaves) {
       if (leaf.group === groupId) return { column, leaf };
     }
@@ -243,28 +238,13 @@ export function widthColumns(region: DockRegion): NonEmpty<DockColumn> {
 /** Whether a region's given edge is a single leaf -- so a "dock beside/above
  * everything" drop there would be identical to a per-panel split of that one
  * panel, and the region-edge zone is suppressed as redundant. Distinct only when
- * the edge spans multiple cells: for every side that means the region has 2+
- * columns, OR its sole column stacks 2+ leaves. */
-export function edgeIsSingleLeaf(
-  region: DockRegion,
-  side: "top" | "bottom" | "left" | "right",
-): boolean {
-  const vertical = side === "top" || side === "bottom";
-  if (vertical) {
-    // Top/bottom stack into a column; redundant only when the region is a
-    // single column holding a single leaf.
-    return (
-      region.columns.length === 1 && region.columns[0].leaves.length === 1
-    );
-  }
-  // Left/right dock a column beside everything; redundant only when the
-  // outermost column is a single leaf and it is the only column.
-  if (region.columns.length !== 1) return false;
-  const column =
-    side === "left"
-      ? region.columns[0]
-      : region.columns[region.columns.length - 1];
-  return column.leaves.length === 1;
+ * the edge spans multiple cells -- i.e. unless the region is exactly ONE
+ * column holding ONE leaf (D46: with columns full-height, every side
+ * reduces to that same condition, so the old per-side parameter is gone). */
+export function edgeIsSingleLeaf(region: DockRegion): boolean {
+  return (
+    region.columns.length === 1 && region.columns[0].leaves.length === 1
+  );
 }
 
 /** Minimum width a single docked column may be resized to in the layout model:
@@ -1536,6 +1516,27 @@ export function expandRegionRail(
   return draft;
 }
 
+/** The ONE entry point for legacy persisted layouts (both injection/restore
+ * chokepoints call this): detects pre-D46 band shapes and the pre-D44
+ * regionCollapsed flag, and -- only when something is legacy -- clones and
+ * runs the two migrations in their required order (rows first: the flag
+ * applies to the migrated columns). Returns the input untouched when the
+ * layout is current-format, so modern layouts pay two property checks. */
+export function migrateLegacyLayout(layout: DockLayout): DockLayout {
+  const legacy =
+    layout.regionCollapsed !== undefined ||
+    (["left", "right"] as DockEdge[]).some(
+      (e) =>
+        layout.docked[e] !== null &&
+        (layout.docked[e] as { rows?: unknown }).rows !== undefined,
+    );
+  if (!legacy) return layout;
+  const migrated = structuredClone(layout);
+  migrateRowsToColumnsInPlace(migrated);
+  migrateRegionCollapsedInPlace(migrated);
+  return migrated;
+}
+
 /** MIGRATION (D46): regions persisted before the columns-only model carry
  * the legacy `{rows: [...]}` band shape. Convert each region in place:
  * every band's columns concatenate left-to-right in band order --
@@ -1785,9 +1786,9 @@ export function setNodeWeights(
  * region resizer's (proportional from current widths, clamped per column):
  * railed columns keep their P8 restore weights untouched (they render the
  * fixed 36px strip), and the committed width is what the weights actually
- * absorbed. A single width column's px lives in regionWidth alone (its
- * weight may be a height share), and a fully-railed width row carries the
- * width as the region's content need -- both unchanged here. */
+ * absorbed. A single column's px lives in regionWidth alone (its weight is
+ * an unreconciled flex share), and a fully-railed region carries the width
+ * as the region's content need -- both unchanged here. */
 export function setRegionWidth(
   layout: DockLayout,
   edge: DockEdge,
@@ -1800,9 +1801,13 @@ export function setRegionWidth(
   if (region !== null) {
     const cols = widthColumns(region);
     const expanded = cols.filter((c) => c.railed !== true);
-    if (cols.length > 1 && expanded.length > 0) {
-      const railedPx =
-        (cols.length - expanded.length) * MINIMIZED_STRIP_PX;
+    const railedPx = (cols.length - expanded.length) * MINIMIZED_STRIP_PX;
+    const expandedSum = expanded.reduce((s, c) => s + c.weight, 0);
+    // Weights already at the target (the region-resize drag distributes
+    // per frame BEFORE committing through here): skip the redundant
+    // redistribution pass -- it would be an identity rewrite.
+    const alreadyDistributed = Math.abs(expandedSum - (px - railedPx)) < 0.5;
+    if (cols.length > 1 && expanded.length > 0 && !alreadyDistributed) {
       const widths = resizeRegionColumns(
         expanded.map((c) => c.weight),
         expanded.map(() => minRegionWidth()),
@@ -1814,6 +1819,8 @@ export function setRegionWidth(
       });
       px = railedPx + widths.reduce((a, b) => a + b, 0);
     }
+    if (cols.length > 1 && expanded.length > 0 && alreadyDistributed)
+      px = railedPx + expandedSum;
   }
   draft.regionWidth = { ...regionWidthsOf(layout), [edge]: px };
   return draft;

@@ -50,8 +50,8 @@ export function planRegion(region: DockRegion): RegionPlan {
  * reconciliation; a fully railed MULTI-column region reconciles to 36 x
  * its column count, so N packed strips reserve their true width). The one
  * exception is a packed SINGLE-column region: there regionWidth keeps the
- * P8 restore width (the lone column's weight may be a height, so
- * regionWidth is the only width memory) while the rail renders 36px --
+ * P8 restore width (a lone column's weight is an unreconciled flex share,
+ * so regionWidth is its only width memory) while the rail renders 36px --
  * reserve the strip, not the restore width. */
 export function plannedReservedWidth(
   plan: RegionPlan,

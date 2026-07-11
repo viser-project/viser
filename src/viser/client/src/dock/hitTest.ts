@@ -420,13 +420,7 @@ export function hitTest(
   // drop inserts a FULL-HEIGHT column (D46), so the line is region-tall --
   // a cell-tall line would promise a narrower landing than the drop
   // delivers (P1).
-  const dockedSideSplitHint = (
-    edge: DockEdge,
-    nodeId: NodeId,
-    lineX: number,
-  ): DropHint => {
-    void edge;
-    void nodeId;
+  const dockedSideSplitHint = (lineX: number): DropHint => {
     const t = LINE_PX;
     const left = clamp(lineX - t / 2, crect.left, crect.left + crect.width - t);
     return rel(
@@ -459,54 +453,48 @@ export function hitTest(
     // With the third-cap the strip's middle falls through to those cell zones
     // while its outer/inner thirds still dock a sibling column.
     const sideBand = Math.min(REGION_SIDE_PX, w / 3);
-    // Packed region (every column railed): the side bands stay hot over
-    // the strips' outer thirds so "dock beside the rails" keeps a claim.
+    // keepSideBand's one job: a PACKED region (every column railed)
+    // bypasses the single-leaf suppression below -- its strips pack at
+    // the edge and "dock beside the rails" needs a region-level claim.
     const keepSideBand = isRegionPackedOn(layout, edge);
 
     // Side bands only (D46): columns are the region's sole horizontal
     // partition, so there are no cross-band seams and no top/bottom
     // full-width band drops -- vertical intent is the cells' own
-    // above/below zones. A single-leaf region normally suppresses these
-    // region-wide side bands (its own per-panel split is identical); a
-    // PACKED region (every column railed, isRegionPackedOn) keeps them:
-    // its strips pack at the edge and "dock beside the rails" needs a
-    // claim. Any COLLAPSED docked cell under the pointer keeps its own
-    // zones: a 40px side band would fully shadow a 36px rail (its side
-    // slivers, tab rows and merge cap), and the rail's outer sliver
-    // already docks a column beside it -- so the bands yield rather than
-    // shadow.
-    // The yield is UNCONDITIONAL (packed regions included): a fully railed
-    // region's strips pack at the edge, and a 40px side band would shadow
-    // the outermost 36px strip's every zone (sweep invariant: every target
-    // reachable). Dock-beside stays served by the rail's own 8px sliver.
-    const overRail = overCollapsedCell(edge);
-    const effSideBand = sideBand;
-    if (overRail) continue;
-    // A line beside what the drop will actually join: the whole region
-    // (a new column lands beside everything, full height).
-    const sideHintSpan = (): { top: number; height: number } => ({
-      top: 0,
-      height: crect.height,
-    });
+    // above/below zones. The bands yield to any COLLAPSED docked cell
+    // under the pointer: a 40px side band would fully shadow a 36px rail
+    // (its side slivers, tab rows and merge cap), and the rail's outer
+    // sliver already docks a column beside it (sweep invariant: every
+    // target reachable).
+    if (overCollapsedCell(edge)) continue;
+    // Hints are a line spanning the whole region: a new column lands
+    // beside everything, full height (P1).
     if (
-      cx - regionLeft < effSideBand &&
-      (!edgeIsSingleLeaf(tree, "left") || keepSideBand)
+      cx - regionLeft < sideBand &&
+      (!edgeIsSingleLeaf(tree) || keepSideBand)
     ) {
       return {
         result: { kind: "regionEdge", edge, side: "left" },
-        hint: { left: regionLeft, width: t, ...sideHintSpan(), variant: "line" },
+        hint: {
+          left: regionLeft,
+          width: t,
+          top: 0,
+          height: crect.height,
+          variant: "line",
+        },
       };
     }
     if (
-      regionRight - cx < effSideBand &&
-      (!edgeIsSingleLeaf(tree, "right") || keepSideBand)
+      regionRight - cx < sideBand &&
+      (!edgeIsSingleLeaf(tree) || keepSideBand)
     ) {
       return {
         result: { kind: "regionEdge", edge, side: "right" },
         hint: {
           left: regionRight - t,
           width: t,
-          ...sideHintSpan(),
+          top: 0,
+          height: crect.height,
           variant: "line",
         },
       };
@@ -680,7 +668,7 @@ export function hitTest(
                 nodeId: tgt.ctx.nodeId,
                 region,
               },
-              hint: dockedSideSplitHint(tgt.ctx.edge, tgt.ctx.nodeId, gapCenter),
+              hint: dockedSideSplitHint(gapCenter),
             };
           }
         }
@@ -787,7 +775,7 @@ export function hitTest(
     // full-height column (D46), so the line is region-tall.
     const lineX = region === "left" ? r.left : r.right;
     if (gt.ctx.kind === "docked") {
-      return dockedSideSplitHint(gt.ctx.edge, gt.ctx.nodeId, lineX);
+      return dockedSideSplitHint(lineX);
     }
     const left = clamp(lineX - t / 2, crect.left, crect.left + crect.width - t);
     return rel({ left, top: r.top, width: t, height: r.height }, "line");

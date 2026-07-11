@@ -38,7 +38,6 @@ from .dock_helpers import (
     dock_layout,
     group_grip_center,
     region_collapsed,
-    rows,
     set_layout,
     stack,
     window,
@@ -599,7 +598,7 @@ def test_lone_docked_panel_collapses_only_via_chevron(
     to the full panel (one flag, D38)."""
     page = _open(dock_context, vite_server, 1280, 900)
     try:
-        set_layout(page, dock_layout(docked_right=rows("controls")))
+        set_layout(page, dock_layout(docked_right=stack("controls")))
         # No `-` and no bar surface anywhere in the docked region (D32).
         assert (
             page.locator('[data-dock-edge="right"] [data-dock-minimize]').count() == 0
@@ -645,7 +644,7 @@ def test_rail_cell_is_a_drop_target(dock_context, vite_server: int) -> None:
         set_layout(
             page,
             dock_layout(
-                docked_right=rows("controls", "inspector"),
+                docked_right=stack("controls", "inspector"),
                 floating=[window("console", x=300, y=300)],
             ),
         )
@@ -678,7 +677,7 @@ def test_stack_vertical_resize(dock_context, vite_server: int) -> None:
     resize left; band-height resize is gone with bands)."""
     page = _open(dock_context, vite_server, 1280, 900)
     try:
-        set_layout(page, dock_layout(docked_right=rows("controls", "inspector")))
+        set_layout(page, dock_layout(docked_right=stack("controls", "inspector")))
 
         def heights() -> dict:
             return page.evaluate(
@@ -919,7 +918,7 @@ def test_rail_cell_fills_its_drop_target_leaf(dock_context, vite_server: int) ->
     try:
         set_layout(
             page,
-            dock_layout(docked_right=rows("controls", "inspector", "console")),
+            dock_layout(docked_right=stack("controls", "inspector", "console")),
         )
         page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")
         page.wait_for_timeout(300)

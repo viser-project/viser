@@ -10,7 +10,7 @@ import {
   migrateRegionCollapsedInPlace, addPaneToArea, dockToEdge, ensureArea, removePane } from "./layoutOps";
 import { invariantViolations } from "./layoutInvariants";
 import { emptyLayout, DockLayout } from "./types";
-import { leaf, group, floatingWindow, row, rows, toRegion } from "./testUtils";
+import { leaf, group, floatingWindow, row, col, toRegion } from "./testUtils";
 
 describe("invariantViolations", () => {
   it("a healthy docked layout has no violations", () => {
@@ -163,7 +163,7 @@ describe("invariantViolations", () => {
     // width reconciliation maintains.
     const collapsed = emptyLayout();
     collapsed.groups = { a: group("a"), b: group("b") };
-    collapsed.docked.left = toRegion(rows([leaf("a"), leaf("b")]));
+    collapsed.docked.left = toRegion(col([leaf("a"), leaf("b")]));
     collapsed.docked.left!.columns[0].railed = true;
     collapsed.regionWidth = { left: 480, right: 300 };
     expect(invariantViolations(collapsed)).toEqual([]);

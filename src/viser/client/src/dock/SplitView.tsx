@@ -54,9 +54,16 @@ const DIVIDER_GRAB_PX = 12;
 export const SplitView = React.memo(function SplitView({
   region,
   edge,
+  drawnWidthPx,
 }: {
   region: DockRegion;
   edge: DockEdge;
+  /** The region's committed rendered width (post canvas-guard scaling).
+   * The columns lay out inside a box FIXED at this width while only the
+   * region container's width eases (the drawer model): content never
+   * reflows mid-transition, and no column moves when a sibling rails --
+   * the one moving edge is the region's inner boundary. */
+  drawnWidthPx: number;
 }) {
   // D27: a single-column region is one visual column -- the region-level
   // parent handle covers it honestly (rendered by DockManager). Any second
@@ -64,7 +71,12 @@ export const SplitView = React.memo(function SplitView({
   // here, and the region handle is suppressed.
   const columnHandles = region.columns.length > 1;
   return (
-    <RegionColumns region={region} edge={edge} columnHandles={columnHandles} />
+    <RegionColumns
+      region={region}
+      edge={edge}
+      columnHandles={columnHandles}
+      drawnWidthPx={drawnWidthPx}
+    />
   );
 });
 
@@ -72,11 +84,13 @@ function RegionColumns({
   region,
   edge,
   columnHandles = false,
+  drawnWidthPx,
 }: {
   region: DockRegion;
   edge: DockEdge;
   /** Render a parent handle above each column (multi-column regions, D27). */
   columnHandles?: boolean;
+  drawnWidthPx: number;
 }) {
   const dock = useDock();
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -99,7 +113,14 @@ function RegionColumns({
       style={{
         display: "flex",
         flexDirection: "row",
-        width: "100%",
+        // Drawer model (D34 rev): the columns lay out at the COMMITTED
+        // region width immediately -- only the region container's width
+        // eases, revealing/concealing this box from the inner side. Fixing
+        // the width here (not 100%) is what keeps content from reflowing
+        // and siblings from wobbling during the ease: flex resolves once,
+        // to the final geometry.
+        width: drawnWidthPx,
+        flexShrink: 0,
         height: "100%",
         minWidth: 0,
         minHeight: 0,
@@ -111,11 +132,10 @@ function RegionColumns({
           <React.Fragment key={column.id}>
             <Box
               data-dock-column={column.id}
-              // D34: railing/expanding a column eases the wrapper's flex
-              // width (basis 0 <-> the fixed 36px strip) -- same
-              // presentation-only transition as cell collapse, suppressed
-              // under an active divider drag.
-              className={collapseAnim}
+              // Deliberately NOT animated (D34 rev): the wrapper renders at
+              // its committed flex width instantly. The region container's
+              // width ease is the ONE transition on this axis -- a second
+              // ease here would race it and wobble sibling columns.
               style={{
                 flexGrow: railed ? 0 : column.weight / colWeightTotal,
                 flexShrink: railed ? 0 : 1,

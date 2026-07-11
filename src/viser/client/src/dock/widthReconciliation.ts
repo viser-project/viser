@@ -20,8 +20,11 @@
 //     columns (never a phantom panel width). (D46 deleted the old
 //     expanded-content-in-other-bands carve-out -- other bands no longer
 //     exist.)
-//   - A SINGLE column's px lives in regionWidth directly (its weight may be
-//     a height share) -- unchanged from the pre-D40 model.
+//   - A SINGLE column's px lives in regionWidth directly. (Historically its
+//     weight could be a HEIGHT; that shape is unrepresentable under D46 --
+//     the weight is now just an unreconciled flex share. regionWidth stays
+//     the lone column's width memory until the planned always-px weights
+//     migration retires this whole carve-out.)
 //
 // The width lives IN the layout (DockLayout.regionWidth), so it has one
 // source of truth: clones carry it through every op, snapshots restore it,
@@ -206,13 +209,11 @@ export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void 
       return newColumnPx(c, prev);
     });
     // Set the columns' weights to their pixel widths so each renders at
-    // `intended` px within the summed region width. ONLY when there are
-    // genuinely multiple side-by-side columns -- their weights are then widths
-    // (children of a row), safe to rewrite. A single surfaced column is either
-    // the root leaf (its weight is irrelevant -- it fills the region) or a
-    // lone vertical child of a column root; rewriting that would clobber a
-    // HEIGHT weight and collapse the stack. In both single-column cases we
-    // only need regionWidth.
+    // `intended` px within the summed region width. ONLY for genuinely
+    // side-by-side columns; a lone column's weight is an unreconciled flex
+    // share (it fills the region regardless), so only regionWidth is
+    // written. (D46 made the old height-weight hazard unrepresentable;
+    // the planned always-px migration retires this gate.)
     if (nextCols.length > 1) {
       nextCols.forEach((c, i) => {
         c.weight = intended[i];

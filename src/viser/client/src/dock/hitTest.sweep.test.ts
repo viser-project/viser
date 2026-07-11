@@ -245,7 +245,7 @@ function validateResult(
         break;
       }
       // Suppression contract: must be a multi-cell edge for that side.
-      if (edgeIsSingleLeaf(tree, result.side))
+      if (edgeIsSingleLeaf(tree))
         errs.push(
           `regionEdge ${result.side} on a single-leaf edge (should be suppressed)`,
         );

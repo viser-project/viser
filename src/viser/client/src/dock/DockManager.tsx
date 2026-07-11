@@ -193,27 +193,10 @@ export function DockManager({
     // MIGRATION chokepoint (D44): a restored/persisted layout may still
     // carry the legacy regionCollapsed store -- convert it into per-column
     // railed flags (the rail is derived now) before first commit.
-    const legacyRows = (["left", "right"] as const).some(
-      (e) =>
-        initialLayout.docked[e] !== null &&
-        (initialLayout.docked[e] as { rows?: unknown }).rows !== undefined,
-    );
-    if (initialLayout.regionCollapsed === undefined && !legacyRows)
-      return initialLayout;
-    const migrated = structuredClone(initialLayout);
-    ops.migrateRowsToColumnsInPlace(migrated);
-    ops.migrateRegionCollapsedInPlace(migrated);
-    return migrated;
+    return ops.migrateLegacyLayout(initialLayout);
   });
   const layoutRef = React.useRef(layout);
   layoutRef.current = layout;
-  // Structure signature of the CURRENT committed layout (layoutRef.current),
-  // cached so applyOp hashes only the INCOMING layout per commit instead of
-  // both sides. `null` means "recompute lazily" -- the initial value, and what
-  // the one commit path that bypasses applyOp with a possibly-different
-  // structure (the drag Escape-restore) resets it to. patchFloatPositions is
-  // position-only by construction, so it never invalidates the cache.
-  const structureSigRef = React.useRef<string | null>(null);
   // Seed the fresh-id counter past any ids the initial layout brought with it
   // (a restored/persisted layout): the counter restarts at 0 each session, so
   // without this a new `node-3` would collide with a restored `node-3`
@@ -352,13 +335,6 @@ export function DockManager({
   const applyOp = React.useCallback(
     (next: DockLayout) => {
       if (next === layoutRef.current) return; // no-op op: nothing to commit.
-      // Structure signature cache (still used to gate width reconciliation
-      // paths and Escape-restore invalidation); canonicalization itself is
-      // GONE (D46: one structure per picture holds by types).
-      const nextSig = ops.structureSignature(next);
-      {
-        structureSigRef.current = nextSig;
-      }
       reconcileRegionWidths(layoutRef.current, next);
       commit(next);
     },
@@ -422,16 +398,7 @@ export function DockManager({
         runProgrammatic(() => {
           // MIGRATION chokepoint (D44): injected layouts (restore, test
           // probes) may carry the legacy regionCollapsed store.
-          const legacyRows = (["left", "right"] as const).some(
-            (e) =>
-              layout.docked[e] !== null &&
-              (layout.docked[e] as { rows?: unknown }).rows !== undefined,
-          );
-          if (layout.regionCollapsed !== undefined || legacyRows) {
-            layout = structuredClone(layout);
-            ops.migrateRowsToColumnsInPlace(layout);
-            ops.migrateRegionCollapsedInPlace(layout);
-          }
+          layout = ops.migrateLegacyLayout(layout);
           bumpFreshIdFloor(ops.allLayoutIds(layout));
           applyOp(layout);
         }),
@@ -1066,11 +1033,8 @@ export function DockManager({
           // commit (NOT applyOp): the snapshot already carries valid widths, so
           // "put the pre-drag layout back" restores geometry by construction --
           // the reconciler's content-matching would treat restored columns as
-          // new and reset them to defaults. Bypassing applyOp also bypasses
-          // the structure-signature cache, so invalidate it (recomputed
-          // lazily on the next applyOp).
+          // new and reset them to defaults.
           if (restoreOnCancel !== undefined) {
-            structureSigRef.current = null;
             commit(restoreOnCancel);
           }
           return;
@@ -1904,13 +1868,12 @@ export function DockManager({
       ),
     [applyOp],
   );
+  // Rail every column (the packed reading is derived, D44/D46). The
+  // expand direction has no region-scope affordance -- packed strips
+  // expand granularly via their own headers.
   const collapseRegion = React.useCallback(
-    (edge: DockEdge, on: boolean) => {
-      applyOp(
-        on
-          ? ops.railRegion(layoutRef.current, edge)
-          : ops.expandRegionRail(layoutRef.current, edge),
-      );
+    (edge: DockEdge) => {
+      applyOp(ops.railRegion(layoutRef.current, edge));
     },
     [applyOp],
   );
@@ -2290,6 +2253,12 @@ export function DockManager({
                       flexDirection: "column",
                       backgroundColor: "var(--mantine-color-body)",
                       zIndex: 5,
+                      // Drawer model: the columns inside lay out at the
+                      // committed width immediately (SplitView pins its
+                      // root); this container's width ease reveals or
+                      // conceals them from the inner side. Clip the
+                      // overhang mid-ease.
+                      overflow: "hidden",
                     }}
                   >
                     {/* Region PARENT handle (D26): the whole docked stack's
@@ -2317,7 +2286,7 @@ export function DockManager({
                           onPointerDown={(event) =>
                             startRegionDrag(event, edge, {
                               onClick: () => {
-                                collapseRegion(edge, true);
+                                collapseRegion(edge);
                                 // POINTER-path focus handoff (spec 4: focus
                                 // never falls to <body>): since T6 made the
                                 // chevron drag-through, a real click routes
@@ -2333,13 +2302,29 @@ export function DockManager({
                           endControl={
                             <RegionCollapseChevron
                               edge={edge}
-                              onActivate={() => collapseRegion(edge, true)}
+                              onActivate={() => collapseRegion(edge)}
                             />
                           }
                         />
                       )}
-                    <Box style={{ flexGrow: 1, minHeight: 0, display: "flex" }}>
-                      <SplitView region={tree} edge={edge} />
+                    <Box
+                      style={{
+                        flexGrow: 1,
+                        minHeight: 0,
+                        display: "flex",
+                        // Anchor the fixed-width pane to the OUTER screen
+                        // edge: during the container's width ease every
+                        // column keeps its screen position, and the only
+                        // motion is the inner boundary sliding over the
+                        // canvas (the user-adjudicated drawer look).
+                        justifyContent: edge === "right" ? "flex-end" : "flex-start",
+                      }}
+                    >
+                      <SplitView
+                        region={tree}
+                        edge={edge}
+                        drawnWidthPx={renderedWidth[edge]}
+                      />
                     </Box>
                     {resizable && (
                       <RegionResizer
@@ -2407,8 +2392,9 @@ export function DockManager({
                             edge
                           ];
                           // Weights are pixels for side-by-side columns (the
-                          // reconciler wrote them); a single surfaced column's px
-                          // is the regionWidth itself (its weight may be a height).
+                          // reconciler wrote them); a single column's px is the
+                          // regionWidth itself (its weight is an unreconciled
+                          // flex share).
                           const init = plan.singleColumn
                             ? [startRegion]
                             : cols.map((c) => c.weight);
@@ -2446,8 +2432,8 @@ export function DockManager({
                             const total = expandedTotal + railedStripPx;
                             const newReservedPx = expandedTotal + fixedPx;
                             // Only rewrite weights for genuinely side-by-side
-                            // columns; a single surfaced column may be a vertical
-                            // child whose weight is a HEIGHT (see applyOp). The
+                            // columns; a lone column's weight is an
+                            // unreconciled flex share and stays untouched. The
                             // total goes through the setRegionWidth op so the
                             // model stays the single source of truth for the
                             // width.

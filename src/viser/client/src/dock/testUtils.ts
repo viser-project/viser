@@ -18,11 +18,6 @@ import {
   windowHeight,
 } from "./types";
 
-/** All columns of a region, flattened across its row bands. */
-function regionColumns(region: DockRegion): DockColumn[] {
-  return [...region.columns];
-}
-
 // ---------------------------------------------------------------------------
 // Tree builders. The docked model is a fixed 3-level shape (Region = row of
 // columns; Column = stack of leaves; Leaf = one group), so the builders mirror
@@ -66,31 +61,10 @@ export function col(children: TreeSpec[], weight = 1): TreeSpec {
 
 /** Side-by-side columns = a region arrangement (D46: the region's ONLY
  * horizontal partition). Each child becomes a column: a leaf() child is a
- * one-leaf column, a col() child is its column. `weight` is accepted for
- * legacy call sites but has no region-level meaning anymore. */
-export function row(children: TreeSpec[], weight = 1): TreeSpec {
-  void weight;
+ * one-leaf column, a col() child is its column. */
+export function row(children: TreeSpec[]): TreeSpec {
   const columns = children.map((c) => specToColumn(c));
   return { kind: "region", columns: columns as NonEmpty<DockColumn> };
-}
-
-/** LEGACY vertical-stack builder: under D46 a vertical stack IS one
- * multi-leaf column, so `rows([...])` concatenates its children's leaves
- * into a single column. Children must be leaf()/col() -- the old band
- * shapes (row() children) are unrepresentable and throw, so surviving call
- * sites are plain stacks only. */
-export function rows(children: TreeSpec[]): TreeSpec {
-  const leaves = children.flatMap((c) => {
-    if (c.kind === "leaf") return [c.leaf];
-    if (c.kind === "col") return [...c.column.leaves];
-    throw new Error(
-      "rows() children must be leaf()/col() under D46 (bands are gone)",
-    );
-  });
-  return {
-    kind: "col",
-    column: { id: nid(), weight: 1, leaves: leaves as NonEmpty<DockLeaf> },
-  };
 }
 
 /** Coerce a spec into a single column (a leaf becomes a one-leaf column). */
@@ -124,7 +98,7 @@ export function columnIdOf(spec: TreeSpec): NodeId {
 /** The leaf ids of a spec, in order (a row's columns' leaves flattened). */
 export function leafIdsOf(spec: TreeSpec): NodeId[] {
   const region = toRegion(spec)!;
-  return regionColumns(region).flatMap((c) => c.leaves.map((l) => l.id));
+  return region.columns.flatMap((c) => c.leaves.map((l) => l.id));
 }
 
 // ---------------------------------------------------------------------------
@@ -229,7 +203,7 @@ export function makeLayout(opts: {
   };
   const walk = (region: DockRegion | null) => {
     if (region === null) return;
-    for (const column of regionColumns(region))
+    for (const column of region.columns)
       for (const l of column.leaves) ensure(l.group);
   };
   walk(layout.docked.left);
@@ -290,11 +264,11 @@ export function shapeOf(
       };
 }
 
-/** Collect groups in region order (rows top-to-bottom, columns left-to-right,
+/** Collect groups in region order (columns left-to-right,
  * leaves top-to-bottom). */
 export function groupsInTree(region: DockRegion | null): GroupId[] {
   if (region === null) return [];
-  return regionColumns(region).flatMap((c) => c.leaves.map((l) => l.group));
+  return region.columns.flatMap((c) => c.leaves.map((l) => l.group));
 }
 
 /** Count where a group is referenced across docked regions + floating stacks. */
@@ -302,7 +276,7 @@ export function refCount(l: DockLayout, gid: GroupId): number {
   let n = 0;
   for (const region of [l.docked.left, l.docked.right]) {
     if (region === null) continue;
-    for (const column of regionColumns(region))
+    for (const column of region.columns)
       for (const leaf of column.leaves) if (leaf.group === gid) n++;
   }
   for (const w of l.floating) n += w.stack.filter((g) => g === gid).length;

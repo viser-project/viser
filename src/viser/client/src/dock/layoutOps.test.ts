@@ -34,7 +34,6 @@ import {
 import {
   leaf,
   row,
-  rows,
   col,
   columnIdOf,
   makeLayout,
@@ -108,7 +107,7 @@ describe("railRegion / expandRegionRail (D21/D44)", () => {
   });
 
   it("a single-column stack rails to the PACKED form (derived)", () => {
-    const layout = makeLayout({ left: rows([leaf("a"), leaf("b")]) });
+    const layout = makeLayout({ left: col([leaf("a"), leaf("b")]) });
     const collapsed = railRegion(layout, "left");
     expect(isRegionPackedOn(collapsed, "left")).toBe(true);
     expect(collapsed.docked.left!.columns[0].railed).toBe(true);
@@ -227,7 +226,7 @@ describe("setColumnRailed (per-column rail)", () => {
     // (isRegionPackedOn: every column railed), so railing the lone column
     // of a single-column region IS the packed form -- no routing, no
     // region store.
-    const layout = makeLayout({ left: rows([leaf("a"), leaf("b")]) });
+    const layout = makeLayout({ left: col([leaf("a"), leaf("b")]) });
     const colId = layout.docked.left!.columns[0].id;
     const out = setColumnRailed(layout, "left", colId, true);
     expect(isRegionPackedOn(out, "left")).toBe(true);
@@ -265,7 +264,7 @@ describe("setColumnRailed (per-column rail)", () => {
     // A railed stack is ONE multi-leaf column (D46: nothing to zip); the
     // newcomer lands as an expanded sibling column beside it.
     const layout = makeLayout({
-      left: rows([leaf("a"), leaf("b")]),
+      left: col([leaf("a"), leaf("b")]),
       floating: [{ id: "w", stack: ["n"] }],
     });
     const railed = railRegion(layout, "left");
@@ -283,7 +282,7 @@ describe("setColumnRailed (per-column rail)", () => {
     // railed target keeps its flag AND its stored restore width (the 50/50
     // weight split must not corrupt a rail's P8 width).
     const layout = makeLayout({
-      left: rows([leaf("a"), leaf("b")]),
+      left: col([leaf("a"), leaf("b")]),
       floating: [{ id: "w", stack: ["n"], width: 250, x: 10, y: 10 }],
     });
     const railed = railRegion(layout, "left");
@@ -299,7 +298,7 @@ describe("setColumnRailed (per-column rail)", () => {
 
   it("dockToEdge (server) beside a packed rail: everything stays railed (D46)", () => {
     const layout = makeLayout({
-      left: rows([leaf("a"), leaf("b")]),
+      left: col([leaf("a"), leaf("b")]),
       floating: [{ id: "w", stack: ["n"], collapsed: true, width: 250, x: 5, y: 5 }],
     });
     const railed = railRegion(layout, "left");
@@ -436,52 +435,25 @@ describe("findGroupLocation", () => {
 });
 
 // ===========================================================================
-// edgeIsSingleLeaf  (4 sides x leaf / row / column)
+// edgeIsSingleLeaf  (D46: side-independent -- one column, one leaf)
 // ===========================================================================
 
 describe("edgeIsSingleLeaf", () => {
-  /** Build a region from a spec for the helper, which takes a DockRegion now. */
   const reg = (spec: ReturnType<typeof leaf>) => toRegion(spec)!;
 
-  it("a lone leaf (single-column, single-leaf region) is single on all sides", () => {
-    const region = reg(leaf("a"));
-    for (const s of ["top", "bottom", "left", "right"] as const)
-      expect(edgeIsSingleLeaf(region, s)).toBe(true);
+  it("a lone leaf (single-column, single-leaf region) is single", () => {
+    expect(edgeIsSingleLeaf(reg(leaf("a")))).toBe(true);
   });
 
-  describe("a region of side-by-side columns", () => {
-    // [a | b]: a side dock lands a full-height column beside EVERYTHING
-    // (D46), so with 2+ columns no side is "identical to a per-panel
-    // split" -- every side is a distinct target.
-    const region = reg(row([leaf("a"), leaf("b")]));
-    it("top/bottom span multiple columns -> not single", () => {
-      expect(edgeIsSingleLeaf(region, "top")).toBe(false);
-      expect(edgeIsSingleLeaf(region, "bottom")).toBe(false);
-    });
-    it("left/right of a multi-column region -> not single", () => {
-      expect(edgeIsSingleLeaf(region, "left")).toBe(false);
-      expect(edgeIsSingleLeaf(region, "right")).toBe(false);
-    });
-    it("still not single when an edge column stacks 2+ leaves", () => {
-      const n = reg(row([col([leaf("a"), leaf("b")]), leaf("c")]));
-      expect(edgeIsSingleLeaf(n, "left")).toBe(false);
-      expect(edgeIsSingleLeaf(n, "right")).toBe(false);
-    });
+  it("side-by-side columns are not single", () => {
+    expect(edgeIsSingleLeaf(reg(row([leaf("a"), leaf("b")])))).toBe(false);
+    expect(
+      edgeIsSingleLeaf(reg(row([col([leaf("a"), leaf("b")]), leaf("c")]))),
+    ).toBe(false);
   });
 
-  describe("a single column of stacked leaves", () => {
-    // [a / b]: one column of 2 stacked leaves. left/right span both leaves ->
-    // not single. top/bottom stack INTO the column (a leaf insert), distinct
-    // from a per-panel split of one of the two leaves -> not single either.
-    const region = reg(col([leaf("a"), leaf("b")]));
-    it("left/right span multiple stacked leaves -> not single", () => {
-      expect(edgeIsSingleLeaf(region, "left")).toBe(false);
-      expect(edgeIsSingleLeaf(region, "right")).toBe(false);
-    });
-    it("top/bottom of a multi-leaf column -> not single", () => {
-      expect(edgeIsSingleLeaf(region, "top")).toBe(false);
-      expect(edgeIsSingleLeaf(region, "bottom")).toBe(false);
-    });
+  it("a single column of stacked leaves is not single", () => {
+    expect(edgeIsSingleLeaf(reg(col([leaf("a"), leaf("b")])))).toBe(false);
   });
 });
 
@@ -1536,7 +1508,7 @@ describe("toggleCollapsed (D38: one flag per container)", () => {
   it("docked single-column stack: rails the COLUMN, which IS the packed region (D46)", () => {
     // toggleCollapsed ALWAYS rails the containing column; for a
     // single-column region that fully packs the edge (derived).
-    const layout = makeLayout({ right: rows([leaf("a"), leaf("b")]) });
+    const layout = makeLayout({ right: col([leaf("a"), leaf("b")]) });
     const once = toggleCollapsed(layout, "a");
     expect(once.docked.right!.columns[0].railed).toBe(true);
     expect(isRegionPackedOn(once, "right")).toBe(true);
@@ -1582,7 +1554,7 @@ describe("minimizeStack / expandStack (D38)", () => {
   });
 
   it("docked: rails the containing column (sole column -> packed region)", () => {
-    const plain = makeLayout({ right: rows([leaf("a"), leaf("b")]) });
+    const plain = makeLayout({ right: col([leaf("a"), leaf("b")]) });
     const min = minimizeStack(plain, ["a", "b"]);
     expect(min.docked.right!.columns[0].railed).toBe(true);
     expect(isRegionPackedOn(min, "right")).toBe(true);
@@ -1623,7 +1595,7 @@ describe("expandStackOf (D38)", () => {
   it("docked plain stack: clears the containing COLUMN's flag (whole stack)", () => {
     // A plain stack IS one multi-leaf column (D46), so the stack scope's
     // store is that column's railed flag.
-    let layout = makeLayout({ right: rows([leaf("a"), leaf("b")]) });
+    let layout = makeLayout({ right: col([leaf("a"), leaf("b")]) });
     layout = minimizeStack(layout, ["a", "b"]);
     const out = expandStackOf(layout, "a");
     expect(isRegionPackedOn(out, "right")).toBe(false);
