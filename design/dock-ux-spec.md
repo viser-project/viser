@@ -201,7 +201,8 @@ and each column FLIP-glides from its previous screen position to its
 new one on the same curve, so a column whose position didn't change
 stays perfectly still. Floating collapse eases the window height, with
 measured-px FLIP endpoints for auto-height windows (CSS cannot
-interpolate to `auto`). Drag hit-testing re-reads geometry on
+interpolate to `auto`; PINNED windows ease natively -- both endpoints
+are numeric, and the FLIP must not hijack that transition). Drag hit-testing re-reads geometry on
 `transitionend`, filtered to the eased properties, so cached rects
 never lag the visible surface.
 
@@ -1108,8 +1109,9 @@ has surviving behavior of its own.
   the docked drawer + FLIP-glide model — content at committed geometry
   instantly, the region container width + canvas insets ease, columns
   glide between screen positions; floating collapse eases height with
-  measured-px FLIP endpoints for auto windows (the old "auto snaps"
-  gap is closed).
+  measured-px FLIP endpoints for AUTO windows only (the old "auto
+  snaps" gap is closed; pinned windows ease natively and the FLIP
+  stays out of their transition's way).
 - **D35** — real tooltips on every `−`/`+`/«/».
 - **D36** — bars show all labels that fit, in order; `+N` names the
   remainder only; per-label click/drag; per-label `tablist`.
