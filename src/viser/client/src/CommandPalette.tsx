@@ -79,9 +79,7 @@ function useSpotlightActions(
           description,
           disabled,
           onClick: disabled ? undefined : () => onTrigger(command.uuid),
-          style: disabled
-            ? { opacity: 0.5, cursor: "not-allowed" }
-            : undefined,
+          style: disabled ? { opacity: 0.5, cursor: "not-allowed" } : undefined,
           leftSection:
             command.props._icon_html != null ? (
               <span
@@ -159,8 +157,7 @@ export function CommandPalette() {
         .flatMap((c) => {
           const trigger = () => handleTrigger(c.uuid);
           return hotkeyToStrings(c.props.hotkey!, c.props.modifier).map(
-            (key) =>
-              [key, trigger] as [string, (event: KeyboardEvent) => void],
+            (key) => [key, trigger] as [string, (event: KeyboardEvent) => void],
           );
         }),
     [commands, handleTrigger],

@@ -134,7 +134,11 @@ const panes: PaneRegistry = {
   },
   // Inner panes: ordinary panes that happen to start inside nested areas.
   // There is no difference between these and the "standard" panes above.
-  layers: { id: "layers", title: "Layers", render: () => demoBody("Layers", 5) },
+  layers: {
+    id: "layers",
+    title: "Layers",
+    render: () => demoBody("Layers", 5),
+  },
   props: {
     id: "props",
     title: "Properties",
@@ -174,19 +178,45 @@ const initialLayout: DockLayout = {
         {
           id: "n-docked",
           weight: 1,
-          leaves: [
-            { id: "n-docked-leaf", group: dockedGroup.id, weight: 1 },
-          ],
+          leaves: [{ id: "n-docked-leaf", group: dockedGroup.id, weight: 1 }],
         },
       ],
     },
     right: null,
   },
   floating: [
-    { id: "w-a", x: 360, y: 40, width: 280, height: { mode: "auto" }, stack: [floatA.id] },
-    { id: "w-b", x: 680, y: 120, width: 260, height: { mode: "auto" }, stack: [floatB.id] },
-    { id: "w-c", x: 480, y: 320, width: 300, height: { mode: "auto" }, stack: [floatC.id] },
-    { id: "w-m", x: 900, y: 60, width: 300, height: { mode: "pinned", px: 380 }, stack: [floatM.id] },
+    {
+      id: "w-a",
+      x: 360,
+      y: 40,
+      width: 280,
+      height: { mode: "auto" },
+      stack: [floatA.id],
+    },
+    {
+      id: "w-b",
+      x: 680,
+      y: 120,
+      width: 260,
+      height: { mode: "auto" },
+      stack: [floatB.id],
+    },
+    {
+      id: "w-c",
+      x: 480,
+      y: 320,
+      width: 300,
+      height: { mode: "auto" },
+      stack: [floatC.id],
+    },
+    {
+      id: "w-m",
+      x: 900,
+      y: 60,
+      width: 300,
+      height: { mode: "pinned", px: 380 },
+      stack: [floatM.id],
+    },
   ],
   areas: {
     "area-scene": { group: areaSceneGroup.id },

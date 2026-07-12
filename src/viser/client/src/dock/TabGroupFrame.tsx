@@ -227,9 +227,7 @@ export function TabGroupFrame({
   const collapsed = isGroupEffectivelyCollapsed(dock.layout, group.id);
   // An unmergeable group always holds a single pane and renders its label as a
   // full-width header (never a tab); nothing can be merged into it.
-  const unmergeable = group.paneIds.some(
-    (p) => panes[p]?.unmergeable === true,
-  );
+  const unmergeable = group.paneIds.some((p) => panes[p]?.unmergeable === true);
   // A stacked titleNode header (the main panel's connection-status bar sitting
   // below another panel in a 2+ stack, docked or floating) gets a thin top rule
   // so it reads as separated from the panel above. Not needed when lone (nothing
@@ -416,7 +414,8 @@ export function TabGroupFrame({
                   fontSize: `${STRIP_FONT_EM}em`,
                   fontWeight: 600,
                   color: "var(--mantine-primary-color-filled)",
-                  boxShadow: "inset 0 -2px 0 0 var(--mantine-primary-color-filled)",
+                  boxShadow:
+                    "inset 0 -2px 0 0 var(--mantine-primary-color-filled)",
                   backgroundImage:
                     "linear-gradient(to top, var(--mantine-color-default-border) 2px, transparent 2px)",
                   backgroundSize: `100% ${TAB_ROW_EM}`,
@@ -488,7 +487,8 @@ export function TabGroupFrame({
           role="tablist"
           onPointerDown={(event) => {
             // Only the strip background (not a tab button) starts a group drag.
-            if ((event.target as HTMLElement).closest("[data-dock-tab]")) return;
+            if ((event.target as HTMLElement).closest("[data-dock-tab]"))
+              return;
             if (stripDragsGroup) dock.startGroupDrag(event, group.id);
           }}
           style={{

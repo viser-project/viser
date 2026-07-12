@@ -262,13 +262,9 @@ function EditNodePropsInner({
 }: {
   nodeName: string;
   nodeMessage: SceneNode["message"];
-  updateSceneNode: (
-    name: string,
-    props: Record<string, unknown>,
-  ) => void;
+  updateSceneNode: (name: string, props: Record<string, unknown>) => void;
   closePopoverFn: () => void;
 }) {
-
   // We'll use JSON, but add support for Infinity.
   // We use infinity for point cloud rendering norms.
   function stringify(value: any) {
@@ -451,24 +447,24 @@ function EditNodePropsInner({
                 key
               ] ?? { kind: "default", tsType: "" };
 
-            return (
-              <Flex key={key} align="center" data-prop-key={key}>
-                <Box style={{ flexGrow: "1" }} fz="xs">
-                  {label}
-                </Box>
-                <Flex gap="xs" style={{ width: "9em", flexShrink: 0 }}>
-                  <PropInput
-                    propKey={key}
-                    descriptor={descriptor}
-                    form={form}
-                    initialValues={initialValues}
-                    stringify={stringify}
-                    parse={parse}
-                    submit={() => form.onSubmit(handleSubmit)()}
-                    submitField={submitField}
-                  />
+              return (
+                <Flex key={key} align="center" data-prop-key={key}>
+                  <Box style={{ flexGrow: "1" }} fz="xs">
+                    {label}
+                  </Box>
+                  <Flex gap="xs" style={{ width: "9em", flexShrink: 0 }}>
+                    <PropInput
+                      propKey={key}
+                      descriptor={descriptor}
+                      form={form}
+                      initialValues={initialValues}
+                      stringify={stringify}
+                      parse={parse}
+                      submit={() => form.onSubmit(handleSubmit)()}
+                      submitField={submitField}
+                    />
+                  </Flex>
                 </Flex>
-              </Flex>
               );
             });
           })()}

@@ -44,13 +44,13 @@ function DockableTabGroup({
   // reconciliation, which removes spec-less panes). Panels the user dragged
   // out of the area are left where they are (addPaneToArea no-ops); the rest
   // follow the server's tab order.
-  const ready = tab_container_ids.every(
-    (cid) => dock.panes[cid] !== undefined,
-  );
+  const ready = tab_container_ids.every((cid) => dock.panes[cid] !== undefined);
   const orderKey = tab_container_ids.join("\n");
   React.useEffect(() => {
     if (!ready) return;
-    tab_container_ids.forEach((cid, i) => dock.api.addPaneToArea(areaId, cid, i));
+    tab_container_ids.forEach((cid, i) =>
+      dock.api.addPaneToArea(areaId, cid, i),
+    );
     dock.api.apply((layout) =>
       layoutOps.setAreaTabOrder(layout, areaId, tab_container_ids),
     );

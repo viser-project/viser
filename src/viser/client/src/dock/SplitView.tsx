@@ -17,11 +17,7 @@ import React from "react";
 import { useDock } from "./DockContext";
 import { dragGesture, focusDockControl } from "./gestures";
 import { collapseAnim } from "./DockStyles.css";
-import {
-  cascadeResize,
-  expandedFlags,
-  setNodeWeights,
-} from "./layoutOps";
+import { cascadeResize, expandedFlags, setNodeWeights } from "./layoutOps";
 import { ColumnCollapseChevron, StackHandleBar } from "./handles";
 import { TabGroupFrame } from "./TabGroupFrame";
 import { ColumnRail } from "./VerticalMinimizedColumn";
@@ -319,12 +315,10 @@ function RegionColumns({
                     // strips term cancels via collapsedPx below.
                     containerPx:
                       columns.reduce(
-                        (s, c, i) =>
-                          s + (columnRailed[i] ? 0 : c.weight),
+                        (s, c, i) => s + (columnRailed[i] ? 0 : c.weight),
                         0,
                       ) +
-                      columnRailed.filter(Boolean).length *
-                        MINIMIZED_STRIP_PX,
+                      columnRailed.filter(Boolean).length * MINIMIZED_STRIP_PX,
                     minCell: MIN_REGION_GRAB_PX,
                   })
                 }
@@ -333,9 +327,7 @@ function RegionColumns({
                     setNodeWeights(
                       l,
                       edge,
-                      Object.fromEntries(
-                        columns.map((c) => [c.id, c.weight]),
-                      ),
+                      Object.fromEntries(columns.map((c) => [c.id, c.weight])),
                     ),
                   )
                 }

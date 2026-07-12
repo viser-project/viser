@@ -23,7 +23,9 @@ export type PanelsById = { [uuid: string]: GuiPanelMessage };
  * space can't collide with a different multi-tab split -- numbered by creation
  * order within a bucket). The two namespaces are prefixed ("k:" / "i:") so an
  * explicit key can never collide with an inferred one by construction. */
-export function computePaneToStableKey(panels: PanelsById): Map<string, string> {
+export function computePaneToStableKey(
+  panels: PanelsById,
+): Map<string, string> {
   const keys = new Map<string, string>();
   const byLabel = new Map<string, string[]>();
   for (const [uuid, p] of Object.entries(panels)) {

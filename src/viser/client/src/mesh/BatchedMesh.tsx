@@ -17,14 +17,16 @@ export const BatchedMesh = React.forwardRef<
 >(function BatchedMesh({ children, ...message }, ref) {
   const viewer = React.useContext(ViewerContext)!;
   const clickable =
-    (viewer.useSceneTree(message.name, (node) => node?.clickBindings?.length)
-      ?? 0) > 0;
+    (viewer.useSceneTree(message.name, (node) => node?.clickBindings?.length) ??
+      0) > 0;
   const draggable =
-    (viewer.useSceneTree(
-      message.name,
-      (node) => node?.dragBindings,
-      shallowArrayEqual,
-    ) ?? []).length > 0;
+    (
+      viewer.useSceneTree(
+        message.name,
+        (node) => node?.dragBindings,
+        shallowArrayEqual,
+      ) ?? []
+    ).length > 0;
 
   // Create a material based on the message props.
   const material = useMemo(() => {

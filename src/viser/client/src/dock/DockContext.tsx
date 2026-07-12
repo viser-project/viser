@@ -4,7 +4,8 @@
 // split tree by hand.
 
 import React from "react";
-import { NodeId,
+import {
+  NodeId,
   AreaId,
   DockEdge,
   DockLayout,

@@ -498,8 +498,6 @@ describe("railed-column width paths (drop beside a rail)", () => {
     // a untouched; the newcomer takes its window width; regionWidth is the
     // rendered need of all three.
     expect(cols.map((c) => c.weight)).toEqual([150, 150, WIN_W]);
-    expect(regionWidthsOf(next).left).toBe(
-      150 + MINIMIZED_STRIP_PX + WIN_W,
-    );
+    expect(regionWidthsOf(next).left).toBe(150 + MINIMIZED_STRIP_PX + WIN_W);
   });
 });

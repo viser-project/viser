@@ -448,9 +448,7 @@ function layouts(): {
     // multi-band fixtures collapse into).
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b", 2), c: group("c") };
-    l.docked.left = toRegion(
-      rowS([leaf("a"), colS([leaf("b"), leaf("c")])]),
-    );
+    l.docked.left = toRegion(rowS([leaf("a"), colS([leaf("b"), leaf("c")])]));
     out.push({ name: "column of two beside a leaf (left)", layout: l });
   }
   {
@@ -811,9 +809,7 @@ describe("hitTest left/right mirror symmetry", () => {
   const mirrorRegion = (
     r: DockLayout["docked"]["left"],
   ): DockLayout["docked"]["left"] =>
-    r === null
-      ? null
-      : { ...r, columns: reverseNonEmpty(r.columns) };
+    r === null ? null : { ...r, columns: reverseNonEmpty(r.columns) };
   const mirrorLayout = (l: DockLayout): DockLayout => ({
     ...l,
     docked: {

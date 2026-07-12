@@ -7,14 +7,12 @@
 // Pure + allocation-light: returns a list of human-readable violation strings
 // (empty == healthy). Never throws; the caller decides what to do with the list.
 
-
 import {
   DockColumn,
   DockEdge,
   DockLayout,
   DockLeaf,
   GroupId,
-
   MINIMIZED_STRIP_PX,
   NodeId,
   PaneId,
@@ -32,8 +30,7 @@ function columnsOf(layout: DockLayout): DockColumn[] {
   const out: DockColumn[] = [];
   for (const edge of ["left", "right"] as DockEdge[]) {
     const region = layout.docked[edge];
-    if (region !== null)
-      out.push(...region.columns);
+    if (region !== null) out.push(...region.columns);
   }
   return out;
 }
@@ -130,8 +127,7 @@ export function invariantViolations(layout: DockLayout): string[] {
   for (const edge of ["left", "right"] as DockEdge[]) {
     const region = layout.docked[edge];
     if (region === null) continue;
-    if (region.columns.length === 0)
-      v.push(`region on ${edge} has no columns`);
+    if (region.columns.length === 0) v.push(`region on ${edge} has no columns`);
     for (const c of region.columns)
       if (c.leaves.length === 0)
         v.push(`column ${c.id} on ${edge} has no leaves`);
@@ -178,7 +174,8 @@ export function invariantViolations(layout: DockLayout): string[] {
   if (new Set(nodeIds).size !== nodeIds.length)
     v.push(`duplicate node ids in docked regions`);
   const wids = layout.floating.map((w) => w.id);
-  if (new Set(wids).size !== wids.length) v.push(`duplicate floating window ids`);
+  if (new Set(wids).size !== wids.length)
+    v.push(`duplicate floating window ids`);
 
   // 10. Container collapse flags (D38) are booleans when present, and no
   // group carries one (group-level collapse is unrepresentable -- a stray
@@ -234,9 +231,7 @@ export function invariantViolations(layout: DockLayout): string[] {
           0,
         );
         if (Math.abs(rw - need) > RW_TOL)
-          v.push(
-            `regionWidth.${edge} ${rw} != rendered need ${need} (D40)`,
-          );
+          v.push(`regionWidth.${edge} ${rw} != rendered need ${need} (D40)`);
       } else if (Math.abs(rw - railsPx) > RW_TOL) {
         // Fully railed: the rails are the content (D46).
         v.push(

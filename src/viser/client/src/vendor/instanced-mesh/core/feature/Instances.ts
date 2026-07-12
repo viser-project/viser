@@ -1,6 +1,6 @@
 // @ts-nocheck
-import { InstancedEntity } from '../InstancedEntity.js';
-import { InstancedMesh2 } from '../InstancedMesh2.js';
+import { InstancedEntity } from "../InstancedEntity.js";
+import { InstancedMesh2 } from "../InstancedMesh2.js";
 
 // TODO: optimize method to fill 'holes'.
 
@@ -11,9 +11,12 @@ export type Entity<T> = InstancedEntity & T;
 /**
  * A callback function used to update or initialize an entity.
  */
-export type UpdateEntityCallback<T = InstancedEntity> = (obj: Entity<T>, index: number) => void;
+export type UpdateEntityCallback<T = InstancedEntity> = (
+  obj: Entity<T>,
+  index: number,
+) => void;
 
-declare module '../InstancedMesh2.js' {
+declare module "../InstancedMesh2.js" {
   interface InstancedMesh2<TData = {}> {
     /**
      * Updates instances by applying a callback function to each instance. It calls `updateMatrix` for each instance.
@@ -27,14 +30,19 @@ declare module '../InstancedMesh2.js' {
      * @param onUpdate A callback function to update each entity.
      * @returns The current `InstancedMesh2` instance.
      */
-    updateInstancesPosition(onUpdate: UpdateEntityCallback<Entity<TData>>): this;
+    updateInstancesPosition(
+      onUpdate: UpdateEntityCallback<Entity<TData>>,
+    ): this;
     /**
      * Adds new instances and optionally initializes them using a callback function.
      * @param count The number of new instances to add.
      * @param onCreation An optional callback to initialize each new entity.
      * @returns The current `InstancedMesh2` instance.
      */
-    addInstances(count: number, onCreation?: UpdateEntityCallback<Entity<TData>>): this;
+    addInstances(
+      count: number,
+      onCreation?: UpdateEntityCallback<Entity<TData>>,
+    ): this;
     /**
      * Removes instances by their ids.
      * @param ids The ids of the instances to remove.
@@ -50,7 +58,10 @@ declare module '../InstancedMesh2.js' {
     /** @internal */ clearTempInstancePosition(index: number): InstancedEntity;
     /** @internal */ clearInstance(instance: InstancedEntity): InstancedEntity;
     /** @internal */ createEntities(start: number): this;
-    /** @internal */ addInstance(id: number, onCreation?: UpdateEntityCallback): void;
+    /** @internal */ addInstance(
+      id: number,
+      onCreation?: UpdateEntityCallback,
+    ): void;
   }
 }
 
@@ -74,7 +85,10 @@ InstancedMesh2.prototype.clearInstance = function (instance: InstancedEntity) {
   return instance;
 };
 
-InstancedMesh2.prototype.updateInstances = function (this: InstancedMesh2, onUpdate: UpdateEntityCallback) {
+InstancedMesh2.prototype.updateInstances = function (
+  this: InstancedMesh2,
+  onUpdate: UpdateEntityCallback,
+) {
   const end = this._instancesArrayCount;
   const instances = this.instances;
 
@@ -88,13 +102,18 @@ InstancedMesh2.prototype.updateInstances = function (this: InstancedMesh2, onUpd
   return this;
 };
 
-InstancedMesh2.prototype.updateInstancesPosition = function (this: InstancedMesh2, onUpdate: UpdateEntityCallback) {
+InstancedMesh2.prototype.updateInstancesPosition = function (
+  this: InstancedMesh2,
+  onUpdate: UpdateEntityCallback,
+) {
   const end = this._instancesArrayCount;
   const instances = this.instances;
 
   for (let i = 0; i < end; i++) {
     if (!this.getActiveAt(i)) continue;
-    const instance = instances ? instances[i] : this.clearTempInstancePosition(i);
+    const instance = instances
+      ? instances[i]
+      : this.clearTempInstancePosition(i);
     onUpdate(instance, i);
     instance.updateMatrixPosition();
   }
@@ -102,7 +121,10 @@ InstancedMesh2.prototype.updateInstancesPosition = function (this: InstancedMesh
   return this;
 };
 
-InstancedMesh2.prototype.createEntities = function (this: InstancedMesh2, start: number) {
+InstancedMesh2.prototype.createEntities = function (
+  this: InstancedMesh2,
+  start: number,
+) {
   const end = this._instancesArrayCount;
 
   if (!this.instances) {
@@ -123,9 +145,14 @@ InstancedMesh2.prototype.createEntities = function (this: InstancedMesh2, start:
   return this;
 };
 
-InstancedMesh2.prototype.addInstances = function (count: number, onCreation?: UpdateEntityCallback) {
+InstancedMesh2.prototype.addInstances = function (
+  count: number,
+  onCreation?: UpdateEntityCallback,
+) {
   if (!onCreation && this.bvh) {
-    console.warn('InstancedMesh2: if `computeBVH()` has already been called, it is better to valorize the instances in the `onCreation` callback for better performance.');
+    console.warn(
+      "InstancedMesh2: if `computeBVH()` has already been called, it is better to valorize the instances in the `onCreation` callback for better performance.",
+    );
   }
 
   // refill holes created from removeInstances
@@ -157,10 +184,15 @@ InstancedMesh2.prototype.addInstances = function (count: number, onCreation?: Up
   return this;
 };
 
-InstancedMesh2.prototype.addInstance = function (id: number, onCreation?: UpdateEntityCallback) {
+InstancedMesh2.prototype.addInstance = function (
+  id: number,
+  onCreation?: UpdateEntityCallback,
+) {
   this._instancesCount++;
   this.setActiveAndVisibilityAt(id, true);
-  const instance = this.instances ? this.clearInstance(this.instances[id]) : this.clearTempInstance(id);
+  const instance = this.instances
+    ? this.clearInstance(this.instances[id])
+    : this.clearTempInstance(id);
 
   if (onCreation) {
     onCreation(instance, id);

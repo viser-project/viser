@@ -428,10 +428,8 @@ export const isRegionFullyRailed = (region: DockRegion | null): boolean =>
  * chevron (rail-all) produces and per-column chevrons can compose. Under
  * the columns-only model (D46) this is exactly isRegionFullyRailed; the
  * name survives because chrome and tests key on the "packed" concept. */
-export const isRegionPackedOn = (
-  layout: DockLayout,
-  edge: DockEdge,
-): boolean => isRegionFullyRailed(layout.docked[edge]);
+export const isRegionPackedOn = (layout: DockLayout, edge: DockEdge): boolean =>
+  isRegionFullyRailed(layout.docked[edge]);
 
 /** The layout's region widths with defaults filled in (the one place the
  * missing-field fallback lives). */

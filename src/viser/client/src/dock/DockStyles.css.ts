@@ -137,27 +137,23 @@ export const focusRing = style({
  * original FloatingPanel's `<Divider />` exactly: gray-3 in light mode (one
  * step LIGHTER than --mantine-color-default-border) and dark-4 in dark mode. */
 export const headerRule = style({});
-globalStyle(
-  `:where([data-mantine-color-scheme="light"]) ${headerRule}`,
-  { borderBottom: "1px solid var(--mantine-color-gray-3)" },
-);
-globalStyle(
-  `:where([data-mantine-color-scheme="dark"]) ${headerRule}`,
-  { borderBottom: "1px solid var(--mantine-color-dark-4)" },
-);
+globalStyle(`:where([data-mantine-color-scheme="light"]) ${headerRule}`, {
+  borderBottom: "1px solid var(--mantine-color-gray-3)",
+});
+globalStyle(`:where([data-mantine-color-scheme="dark"]) ${headerRule}`, {
+  borderBottom: "1px solid var(--mantine-color-dark-4)",
+});
 
 /** Top rule above a DOCKED+STACKED unmergeable header. Same gray as headerRule
  * (gray-3 light / dark-4 dark), just on the top edge, so it matches the bottom
  * rule between docked panels. */
 export const headerRuleTop = style({});
-globalStyle(
-  `:where([data-mantine-color-scheme="light"]) ${headerRuleTop}`,
-  { borderTop: "1px solid var(--mantine-color-gray-3)" },
-);
-globalStyle(
-  `:where([data-mantine-color-scheme="dark"]) ${headerRuleTop}`,
-  { borderTop: "1px solid var(--mantine-color-dark-4)" },
-);
+globalStyle(`:where([data-mantine-color-scheme="light"]) ${headerRuleTop}`, {
+  borderTop: "1px solid var(--mantine-color-gray-3)",
+});
+globalStyle(`:where([data-mantine-color-scheme="dark"]) ${headerRuleTop}`, {
+  borderTop: "1px solid var(--mantine-color-dark-4)",
+});
 
 /** Wayfinding text -- the one style for every minimized-surface label (bar
  * segments, spine rows): theme text at chrome emphasis. Spec P3 ("chrome is

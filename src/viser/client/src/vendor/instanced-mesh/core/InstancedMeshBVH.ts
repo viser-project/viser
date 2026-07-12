@@ -1,8 +1,19 @@
 // @ts-nocheck
-import { box3ToArray, BVH, BVHNode, HybridBuilder, onFrustumIntersectionCallback, onFrustumIntersectionLODCallback, onIntersectionCallback, onIntersectionRayCallback, vec3ToArray, WebGLCoordinateSystem } from 'bvh.js';
-import { Box3, Matrix4, Raycaster, Sphere, Vector3 } from 'three';
-import { LODLevel } from './feature/LOD.js';
-import { InstancedMesh2 } from './InstancedMesh2.js';
+import {
+  box3ToArray,
+  BVH,
+  BVHNode,
+  HybridBuilder,
+  onFrustumIntersectionCallback,
+  onFrustumIntersectionLODCallback,
+  onIntersectionCallback,
+  onIntersectionRayCallback,
+  vec3ToArray,
+  WebGLCoordinateSystem,
+} from "bvh.js";
+import { Box3, Matrix4, Raycaster, Sphere, Vector3 } from "three";
+import { LODLevel } from "./feature/LOD.js";
+import { InstancedMesh2 } from "./InstancedMesh2.js";
 
 // TODO getBoxFromSphere updated if change geometry (and create accessor)
 // TODO accurateCulling in bvh.js?
@@ -83,7 +94,12 @@ export class InstancedMeshBVH {
    * @param getBBoxFromBSphere Flag to determine if instance bounding boxes should be computed from the geometry bounding sphere. Faster but less precise (default is false).
    * @param accurateCulling Flag to enable accurate frustum culling without considering margin (default is true).
    */
-  constructor(target: InstancedMesh2, margin = 0, getBBoxFromBSphere = false, accurateCulling = true) {
+  constructor(
+    target: InstancedMesh2,
+    margin = 0,
+    getBBoxFromBSphere = false,
+    accurateCulling = true,
+  ) {
     this.target = target;
     this.accurateCulling = accurateCulling;
     this._margin = margin;
@@ -99,9 +115,16 @@ export class InstancedMeshBVH {
       const center = geometry.boundingSphere.center;
       if (center.x === 0 && center.y === 0 && center.z === 0) {
         this._geoBoundingSphere = geometry.boundingSphere;
-        this._sphereTarget = { centerX: 0, centerY: 0, centerZ: 0, maxScale: 0 };
+        this._sphereTarget = {
+          centerX: 0,
+          centerY: 0,
+          centerZ: 0,
+          maxScale: 0,
+        };
       } else {
-        console.warn('"getBoxFromSphere" is ignored because geometry is not centered.');
+        console.warn(
+          '"getBoxFromSphere" is ignored because geometry is not centered.',
+        );
         getBBoxFromBSphere = false;
       }
     }
@@ -133,9 +156,14 @@ export class InstancedMeshBVH {
       index++;
     }
 
-    this.bvh.createFromArray(objects as unknown as number[], boxes, (node) => {
-      this.nodesMap.set(node.object, node);
-    }, this._margin);
+    this.bvh.createFromArray(
+      objects as unknown as number[],
+      boxes,
+      (node) => {
+        this.nodesMap.set(node.object, node);
+      },
+      this._margin,
+    );
   }
 
   /**
@@ -143,7 +171,11 @@ export class InstancedMeshBVH {
    * @param id The id of the instance to insert.
    */
   public insert(id: number): void {
-    const node = this.bvh.insert(id, this.getBox(id, new Float32Array(6)), this._margin);
+    const node = this.bvh.insert(
+      id,
+      this.getBox(id, new Float32Array(6)),
+      this._margin,
+    );
     this.nodesMap.set(id, node);
   }
 
@@ -200,17 +232,24 @@ export class InstancedMeshBVH {
    * @param onFrustumIntersection Callback function invoked when an instance intersects the frustum.
    * @param reversedDepth Whether the renderer uses a reversed depth buffer.
    */
-  public frustumCulling(projScreenMatrix: Matrix4, onFrustumIntersection: onFrustumIntersectionCallback<{}, number>, reversedDepth = false): void {
+  public frustumCulling(
+    projScreenMatrix: Matrix4,
+    onFrustumIntersection: onFrustumIntersectionCallback<{}, number>,
+    reversedDepth = false,
+  ): void {
     if (reversedDepth) {
       this._enableReversedDepthFrustum(projScreenMatrix);
     }
 
     if (this._margin > 0 && this.accurateCulling) {
-      this.bvh.frustumCulling(projScreenMatrix.elements, (node, frustum, mask) => {
-        if (frustum.isIntersectedMargin(node.box, mask, this._margin)) {
-          onFrustumIntersection(node);
-        }
-      });
+      this.bvh.frustumCulling(
+        projScreenMatrix.elements,
+        (node, frustum, mask) => {
+          if (frustum.isIntersectedMargin(node.box, mask, this._margin)) {
+            onFrustumIntersection(node);
+          }
+        },
+      );
     } else {
       this.bvh.frustumCulling(projScreenMatrix.elements, onFrustumIntersection);
     }
@@ -228,7 +267,13 @@ export class InstancedMeshBVH {
    * @param onFrustumIntersection Callback function invoked when an instance intersects the frustum.
    * @param reversedDepth Whether the renderer uses a reversed depth buffer.
    */
-  public frustumCullingLOD(projScreenMatrix: Matrix4, cameraPosition: Vector3, levels: LODLevel[], onFrustumIntersection: onFrustumIntersectionLODCallback<{}, number>, reversedDepth = false): void {
+  public frustumCullingLOD(
+    projScreenMatrix: Matrix4,
+    cameraPosition: Vector3,
+    levels: LODLevel[],
+    onFrustumIntersection: onFrustumIntersectionLODCallback<{}, number>,
+    reversedDepth = false,
+  ): void {
     if (!this.LODsMap.has(levels)) {
       this.LODsMap.set(levels, new Float32Array(levels.length));
     }
@@ -248,13 +293,23 @@ export class InstancedMeshBVH {
     }
 
     if (this._margin > 0 && this.accurateCulling) {
-      this.bvh.frustumCullingLOD(projScreenMatrix.elements, camera, levelsArray, (node, level, frustum, mask) => {
-        if (frustum.isIntersectedMargin(node.box, mask, this._margin)) {
-          onFrustumIntersection(node, level);
-        }
-      });
+      this.bvh.frustumCullingLOD(
+        projScreenMatrix.elements,
+        camera,
+        levelsArray,
+        (node, level, frustum, mask) => {
+          if (frustum.isIntersectedMargin(node.box, mask, this._margin)) {
+            onFrustumIntersection(node, level);
+          }
+        },
+      );
     } else {
-      this.bvh.frustumCullingLOD(projScreenMatrix.elements, camera, levelsArray, onFrustumIntersection);
+      this.bvh.frustumCullingLOD(
+        projScreenMatrix.elements,
+        camera,
+        levelsArray,
+        onFrustumIntersection,
+      );
     }
 
     if (reversedDepth) {
@@ -267,7 +322,10 @@ export class InstancedMeshBVH {
    * @param raycaster The raycaster used for raycasting.
    * @param onIntersection Callback function invoked when a ray intersects an instance.
    */
-  public raycast(raycaster: Raycaster, onIntersection: onIntersectionRayCallback<number>): void {
+  public raycast(
+    raycaster: Raycaster,
+    onIntersection: onIntersectionRayCallback<number>,
+  ): void {
     const ray = raycaster.ray;
     const origin = this._origin;
     const dir = this._dir;
@@ -276,7 +334,13 @@ export class InstancedMeshBVH {
     vec3ToArray(ray.direction, dir);
 
     // TODO should we add margin check? maybe is not worth it
-    this.bvh.rayIntersections(dir, origin, onIntersection, raycaster.near, raycaster.far);
+    this.bvh.rayIntersections(
+      dir,
+      origin,
+      onIntersection,
+      raycaster.near,
+      raycaster.far,
+    );
   }
 
   /**
@@ -285,7 +349,10 @@ export class InstancedMeshBVH {
    * @param onIntersection Callback function invoked when an intersection occurs.
    * @returns `True` if there is an intersection, otherwise `false`.
    */
-  public intersectBox(target: Box3, onIntersection: onIntersectionCallback<number>): boolean {
+  public intersectBox(
+    target: Box3,
+    onIntersection: onIntersectionCallback<number>,
+  ): boolean {
     if (!this._boxArray) this._boxArray = new Float32Array(6);
     const array = this._boxArray;
     box3ToArray(target, array);
@@ -295,7 +362,12 @@ export class InstancedMeshBVH {
   protected getBox(id: number, array: Float32Array): Float32Array {
     if (this._getBoxFromSphere) {
       const matrixArray = this.target.matricesTexture._data as Float32Array;
-      const { centerX, centerY, centerZ, maxScale } = this.getSphereFromMatrix_centeredGeometry(id, matrixArray, this._sphereTarget);
+      const { centerX, centerY, centerZ, maxScale } =
+        this.getSphereFromMatrix_centeredGeometry(
+          id,
+          matrixArray,
+          this._sphereTarget,
+        );
       const radius = this._geoBoundingSphere.radius * maxScale;
       array[0] = centerX - radius;
       array[1] = centerX + radius;
@@ -311,7 +383,11 @@ export class InstancedMeshBVH {
     return array;
   }
 
-  protected getSphereFromMatrix_centeredGeometry(id: number, array: Float32Array, target: SphereTarget): SphereTarget {
+  protected getSphereFromMatrix_centeredGeometry(
+    id: number,
+    array: Float32Array,
+    target: SphereTarget,
+  ): SphereTarget {
     const offset = id * 16;
 
     const m0 = array[offset + 0];
@@ -342,11 +418,13 @@ export class InstancedMeshBVH {
    * planes for reversed depth buffers. Called before bvh.frustumCulling so the
    * internal call to setFromProjectionMatrix produces correct planes.
    */
-  private _origSetFromProjectionMatrix: ((mat: ArrayLike<number>) => any) | null = null;
+  private _origSetFromProjectionMatrix:
+    ((mat: ArrayLike<number>) => any) | null = null;
 
   protected _enableReversedDepthFrustum(_projScreenMatrix: Matrix4): void {
     const frustum = this.bvh.frustum;
-    this._origSetFromProjectionMatrix = frustum.setFromProjectionMatrix.bind(frustum);
+    this._origSetFromProjectionMatrix =
+      frustum.setFromProjectionMatrix.bind(frustum);
 
     frustum.setFromProjectionMatrix = (mat: ArrayLike<number>) => {
       // Let bvh.js do its standard plane extraction for planes 0-3 first.
@@ -354,14 +432,26 @@ export class InstancedMeshBVH {
       const arr = frustum.array;
 
       // Recompute plane 4 (far) for reversed depth: (mat[2], mat[6], mat[10], mat[14])
-      let x = mat[2], y = mat[6], z = mat[10], w = mat[14];
+      let x = mat[2],
+        y = mat[6],
+        z = mat[10],
+        w = mat[14];
       let len = Math.sqrt(x * x + y * y + z * z);
-      arr[16] = x / len; arr[17] = y / len; arr[18] = z / len; arr[19] = w / len;
+      arr[16] = x / len;
+      arr[17] = y / len;
+      arr[18] = z / len;
+      arr[19] = w / len;
 
       // Recompute plane 5 (near) for reversed depth: (mat[3]-mat[2], mat[7]-mat[6], mat[11]-mat[10], mat[15]-mat[14])
-      x = mat[3] - mat[2]; y = mat[7] - mat[6]; z = mat[11] - mat[10]; w = mat[15] - mat[14];
+      x = mat[3] - mat[2];
+      y = mat[7] - mat[6];
+      z = mat[11] - mat[10];
+      w = mat[15] - mat[14];
       len = Math.sqrt(x * x + y * y + z * z);
-      arr[20] = x / len; arr[21] = y / len; arr[22] = z / len; arr[23] = w / len;
+      arr[20] = x / len;
+      arr[21] = y / len;
+      arr[22] = z / len;
+      arr[23] = w / len;
 
       return frustum;
     };
@@ -369,7 +459,8 @@ export class InstancedMeshBVH {
 
   protected _disableReversedDepthFrustum(): void {
     if (this._origSetFromProjectionMatrix) {
-      this.bvh.frustum.setFromProjectionMatrix = this._origSetFromProjectionMatrix;
+      this.bvh.frustum.setFromProjectionMatrix =
+        this._origSetFromProjectionMatrix;
       this._origSetFromProjectionMatrix = null;
     }
   }

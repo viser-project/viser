@@ -28,7 +28,10 @@ const AREA_ID = "area-1";
 /** A layout with one area (backed by AREA_GID, holding `panes`) plus any extra
  * plain groups passed in. The area's group lives ONLY in layout.areas + groups,
  * never docked or floating. */
-function areaLayout(panes: string[], extra: Record<GroupId, string[]> = {}): DockLayout {
+function areaLayout(
+  panes: string[],
+  extra: Record<GroupId, string[]> = {},
+): DockLayout {
   const l = emptyLayout();
   l.groups[AREA_GID] = {
     id: AREA_GID,
@@ -92,9 +95,9 @@ describe("(a) tearOutPane on a single-panel area group", () => {
     expect(win.stack).toEqual([out.floatingGroupId]);
 
     // The area group is NOT in any floating stack (it was never floated).
-    expect(
-      out.layout.floating.some((w) => w.stack.includes(AREA_GID)),
-    ).toBe(false);
+    expect(out.layout.floating.some((w) => w.stack.includes(AREA_GID))).toBe(
+      false,
+    );
   });
 });
 

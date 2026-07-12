@@ -16,7 +16,8 @@ import { htmlIconWrapper } from "../components/ComponentStyles.css";
 import { DockMetricsContext, useDock } from "../dock/DockContext";
 import { DockManager } from "../dock/DockManager";
 import * as ops from "../dock/layoutOps";
-import { isRegionPackedOn,
+import {
+  isRegionPackedOn,
   DockLayout,
   PaneRegistry,
   emptyLayout,
@@ -49,9 +50,7 @@ const PANEL_PAD_PX = 15;
  * geometry. Used to detect which panels a user gesture actually
  * MOVED/resized/(un)minimized, so only those get flagged user-touched.
  * Returns a map keyed by group id. */
-function groupPlacementSignatures(
-  layout: DockLayout,
-): Map<string, string> {
+function groupPlacementSignatures(layout: DockLayout): Map<string, string> {
   const sigs = new Map<string, string>();
   // Docked: signature = edge + the group's node id (its slot in the region) +
   // the REGION's width. The width matters so a user's region resize flags the
@@ -215,7 +214,9 @@ export function ControlPanelDockSurface({
       const before = groupPlacementSignatures(prev);
       const after = groupPlacementSignatures(next);
       // Groups whose placement signature changed (the user moved them).
-      const changed = [...after].filter(([gid, sig]) => before.get(gid) !== sig);
+      const changed = [...after].filter(
+        ([gid, sig]) => before.get(gid) !== sig,
+      );
       if (changed.length === 0) return; // e.g. a tab-reorder-only commit.
       // Map each panel's panes (tab containers) to its stable key; the main
       // panel's pane is CONTROL_PANEL_ID. Built only when something changed.
@@ -665,7 +666,6 @@ function StandalonePanelSync({
     </>
   );
 }
-
 
 /** Per-panel content registration ONLY: the panel's tabs become panes in the
  * dock registry (their content lives in the panels store). All PLACEMENT is

@@ -119,7 +119,10 @@ function renderedRowPx(cols: DockColumn[], px?: number[]): number {
  *   (MIN_REGION_GRAB_PX) and the 36px strip per railed one, not the
  *   pane-content minimum. A region narrower than its panes' content simply
  *   scrolls the body; it does not auto-grow. */
-export function reconcileRegionWidths(prev: DockLayout, next: DockLayout): void {
+export function reconcileRegionWidths(
+  prev: DockLayout,
+  next: DockLayout,
+): void {
   // Carry-over base: the op's own value when it set one (clones inherit
   // prev's, so a differing value is a deliberate write), else prev's.
   const nextRW = regionWidthsOf(next.regionWidth !== undefined ? next : prev);

@@ -173,9 +173,13 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
           e: grp("e", 1),
           f: grp("f", 1),
         };
-        l.docked.left = toRegion(rowS([leaf("a"), colS([leaf("b"), leaf("c")])]));
+        l.docked.left = toRegion(
+          rowS([leaf("a"), colS([leaf("b"), leaf("c")])]),
+        );
         l.docked.right = toRegion(colS([leaf("d"), leaf("e")]));
-        l.floating = [floatingWindow({ id: "wf", x: 50, y: 50, width: 280, stack: ["f"] })];
+        l.floating = [
+          floatingWindow({ id: "wf", x: 50, y: 50, width: 280, stack: ["f"] }),
+        ];
         return l;
       },
     },
@@ -189,7 +193,12 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
       name: "two row bands",
       make: () => {
         const l = emptyLayout();
-        l.groups = { a: grp("a", 1), b: grp("b", 2), c: grp("c", 1), d: grp("d", 1) };
+        l.groups = {
+          a: grp("a", 1),
+          b: grp("b", 2),
+          c: grp("c", 1),
+          d: grp("d", 1),
+        };
         // D46 shape: three side-by-side columns -- [a,b stack? no --
         // (a) alone, (b), (c,d) stack] exercising multi-column + multi-leaf.
         l.docked.left = toRegion(
@@ -254,7 +263,13 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
         const l = emptyLayout();
         l.groups = { a: grp("a", 1), b: grp("b", 2), c: grp("c", 1) };
         l.floating = [
-          floatingWindow({ id: "w1", x: 10, y: 10, width: 250, stack: ["a", "b"] }),
+          floatingWindow({
+            id: "w1",
+            x: 10,
+            y: 10,
+            width: 250,
+            stack: ["a", "b"],
+          }),
           floatingWindow({ id: "w2", x: 300, y: 40, width: 250, stack: ["c"] }),
         ];
         return l;
@@ -327,7 +342,8 @@ function pickGroups(rng: Rng, groups: GroupId[]): GroupId[] {
   const n = Math.min(groups.length, int(rng, 1, 3));
   const pool = [...groups];
   const out: GroupId[] = [];
-  for (let i = 0; i < n; i++) out.push(pool.splice(Math.floor(rng() * pool.length), 1)[0]);
+  for (let i = 0; i < n; i++)
+    out.push(pool.splice(Math.floor(rng() * pool.length), 1)[0]);
   return out;
 }
 function allDockedLeafTargets(
@@ -411,7 +427,10 @@ function buildOp(
     case "dockToEdge": {
       const gs = pickGroups(rng, groups);
       const edge = pick(rng, edges);
-      return { desc: `dockToEdge([${gs}], ${edge})`, apply: (x) => dockToEdge(x, gs, edge) };
+      return {
+        desc: `dockToEdge([${gs}], ${edge})`,
+        apply: (x) => dockToEdge(x, gs, edge),
+      };
     }
     case "dockToRegionEdge": {
       const gs = pickGroups(rng, groups);
@@ -443,7 +462,10 @@ function buildOp(
     case "insertTabsInto": {
       if (groups.length < 2) return null;
       const target = g();
-      const srcs = pickGroups(rng, groups.filter((x) => x !== target));
+      const srcs = pickGroups(
+        rng,
+        groups.filter((x) => x !== target),
+      );
       if (srcs.length === 0) return null;
       const idx = int(rng, -2, 6);
       return {
@@ -454,7 +476,10 @@ function buildOp(
     case "mergeGroupsInto": {
       if (groups.length < 2) return null;
       const target = g();
-      const srcs = pickGroups(rng, groups.filter((x) => x !== target));
+      const srcs = pickGroups(
+        rng,
+        groups.filter((x) => x !== target),
+      );
       if (srcs.length === 0) return null;
       return {
         desc: `mergeGroupsInto(${target}, [${srcs}])`,
@@ -465,7 +490,14 @@ function buildOp(
       const grp = g();
       return {
         desc: `floatGroup(${grp}, ...)`,
-        apply: (x) => floatGroup(x, grp, int(rng, 0, 500), int(rng, 0, 500), int(rng, 220, 400)).layout,
+        apply: (x) =>
+          floatGroup(
+            x,
+            grp,
+            int(rng, 0, 500),
+            int(rng, 0, 500),
+            int(rng, 220, 400),
+          ).layout,
       };
     }
     case "floatColumn": {
@@ -493,7 +525,9 @@ function buildOp(
       const panel = pick(rng, group.paneIds);
       return {
         desc: `tearOutPane(${grp}, ${panel}, ...)`,
-        apply: (x) => tearOutPane(x, grp, panel, int(rng, 0, 500), int(rng, 0, 500), 260).layout,
+        apply: (x) =>
+          tearOutPane(x, grp, panel, int(rng, 0, 500), int(rng, 0, 500), 260)
+            .layout,
       };
     }
     case "snapToWindowStack": {
@@ -522,14 +556,18 @@ function buildOp(
     }
     case "toggleCollapsed": {
       const grp = g();
-      return { desc: `toggleCollapsed(${grp})`, apply: (x) => toggleCollapsed(x, grp) };
+      return {
+        desc: `toggleCollapsed(${grp})`,
+        apply: (x) => toggleCollapsed(x, grp),
+      };
     }
     case "moveWindow": {
       if (l.floating.length === 0) return null;
       const w = pick(rng, l.floating);
       return {
         desc: `moveWindow(${w.id}, ...)`,
-        apply: (x) => moveWindow(x, w.id, int(rng, -100, 800), int(rng, -100, 800)),
+        apply: (x) =>
+          moveWindow(x, w.id, int(rng, -100, 800), int(rng, -100, 800)),
       };
     }
     case "resizeWindow": {
@@ -539,7 +577,12 @@ function buildOp(
       return {
         desc: `resizeWindow(${w.id}, ...)`,
         apply: (x) =>
-          resizeWindow(x, w.id, int(rng, 220, 500), useX ? int(rng, 0, 400) : undefined),
+          resizeWindow(
+            x,
+            w.id,
+            int(rng, 220, 500),
+            useX ? int(rng, 0, 400) : undefined,
+          ),
       };
     }
     case "resizeWindowHeight": {
@@ -553,7 +596,10 @@ function buildOp(
     case "bringToFront": {
       if (l.floating.length === 0) return null;
       const w = pick(rng, l.floating);
-      return { desc: `bringToFront(${w.id})`, apply: (x) => bringToFront(x, w.id) };
+      return {
+        desc: `bringToFront(${w.id})`,
+        apply: (x) => bringToFront(x, w.id),
+      };
     }
     case "setActiveTab": {
       const grp = g();
@@ -673,7 +719,13 @@ function runSequence(
   ];
   if (startV.length > 0)
     return {
-      failure: { step: -1, desc: "<start>", violations: startV, mutatedInput: false, threw: null },
+      failure: {
+        step: -1,
+        desc: "<start>",
+        violations: startV,
+        mutatedInput: false,
+        threw: null,
+      },
       descs,
     };
 
@@ -691,7 +743,13 @@ function runSequence(
       next = op.apply(before);
     } catch (err) {
       return {
-        failure: { step: i, desc: op.desc, violations: [], mutatedInput: false, threw: String(err) },
+        failure: {
+          step: i,
+          desc: op.desc,
+          violations: [],
+          mutatedInput: false,
+          threw: String(err),
+        },
         descs,
       };
     }
@@ -720,11 +778,9 @@ function runSequence(
     // must run it too or every committed width would be stale.
     if (next !== before) reconcileRegionWidths(before, next);
     // Input immutability: the argument object must be unchanged.
-    const mutatedInput = JSON.stringify(before) !== JSON.stringify(beforeSnapshot);
-    violations.push(
-      ...invariantViolations(next),
-      ...geometricViolations(next),
-    );
+    const mutatedInput =
+      JSON.stringify(before) !== JSON.stringify(beforeSnapshot);
+    violations.push(...invariantViolations(next), ...geometricViolations(next));
     // Panel conservation: the multiset of panel ids must be invariant.
     if (JSON.stringify(allPanels(next)) !== startPanels) {
       violations.push(
@@ -732,7 +788,10 @@ function runSequence(
       );
     }
     if (violations.length > 0 || mutatedInput) {
-      return { failure: { step: i, desc: op.desc, violations, mutatedInput, threw }, descs };
+      return {
+        failure: { step: i, desc: op.desc, violations, mutatedInput, threw },
+        descs,
+      };
     }
     layout = next;
   }
@@ -817,54 +876,62 @@ describe("layoutOps invariant fuzz", () => {
   const STEPS = 120;
 
   for (const start of starts) {
-    it(`maintains invariants under random op sequences (${start.name})`, { timeout: 30000 }, () => {
-      const failures: string[] = [];
-      // Offset the seed band per starting layout so the five tests explore
-      // disjoint regions of the seed space (wider net than overlapping bands).
-      const seedBase = starts.indexOf(start) * 10000;
-      for (let seed = seedBase + 1; seed <= seedBase + SEEDS; seed++) {
-        const { failure, descs } = runSequence(start.make, seed, STEPS);
-        if (failure !== null) {
-          failures.push(
-            `seed=${seed} step=${failure.step} op=${failure.desc}\n` +
-              (failure.threw ? `  THREW: ${failure.threw}\n` : "") +
-              (failure.mutatedInput ? `  MUTATED INPUT\n` : "") +
-              failure.violations.map((x) => `  - ${x}`).join("\n") +
-              `\n  sequence:\n    ${descs.join("\n    ")}`,
-          );
-          // Capture only the first few to keep output readable.
-          if (failures.length >= 3) break;
+    it(
+      `maintains invariants under random op sequences (${start.name})`,
+      { timeout: 30000 },
+      () => {
+        const failures: string[] = [];
+        // Offset the seed band per starting layout so the five tests explore
+        // disjoint regions of the seed space (wider net than overlapping bands).
+        const seedBase = starts.indexOf(start) * 10000;
+        for (let seed = seedBase + 1; seed <= seedBase + SEEDS; seed++) {
+          const { failure, descs } = runSequence(start.make, seed, STEPS);
+          if (failure !== null) {
+            failures.push(
+              `seed=${seed} step=${failure.step} op=${failure.desc}\n` +
+                (failure.threw ? `  THREW: ${failure.threw}\n` : "") +
+                (failure.mutatedInput ? `  MUTATED INPUT\n` : "") +
+                failure.violations.map((x) => `  - ${x}`).join("\n") +
+                `\n  sequence:\n    ${descs.join("\n    ")}`,
+            );
+            // Capture only the first few to keep output readable.
+            if (failures.length >= 3) break;
+          }
         }
-      }
-      expect(failures, failures.join("\n\n")).toEqual([]);
-    });
+        expect(failures, failures.join("\n\n")).toEqual([]);
+      },
+    );
   }
 
   // Randomized starting states: each seed builds a fresh valid layout AND drives
   // a random op sequence on it. Widens the starting-state space well beyond the
   // hand-written fixtures.
-  it("maintains invariants from RANDOMIZED starting layouts", { timeout: 30000 }, () => {
-    const failures: string[] = [];
-    for (let seed = 1; seed <= 800; seed++) {
-      // The op sequence uses a derived seed so it differs from the layout seed.
-      // (Seed transforms are arbitrary primes -- changing them explores fresh
-      // territory; the suite has stayed clean across several such bands.)
-      const { failure, descs } = runSequence(
-        () => randomStart(seed * 3 + 5),
-        seed * 11 + 29,
-        STEPS,
-      );
-      if (failure !== null) {
-        failures.push(
-          `startSeed=${seed} step=${failure.step} op=${failure.desc}\n` +
-            (failure.threw ? `  THREW: ${failure.threw}\n` : "") +
-            (failure.mutatedInput ? `  MUTATED INPUT\n` : "") +
-            failure.violations.map((x) => `  - ${x}`).join("\n") +
-            `\n  sequence:\n    ${descs.join("\n    ")}`,
+  it(
+    "maintains invariants from RANDOMIZED starting layouts",
+    { timeout: 30000 },
+    () => {
+      const failures: string[] = [];
+      for (let seed = 1; seed <= 800; seed++) {
+        // The op sequence uses a derived seed so it differs from the layout seed.
+        // (Seed transforms are arbitrary primes -- changing them explores fresh
+        // territory; the suite has stayed clean across several such bands.)
+        const { failure, descs } = runSequence(
+          () => randomStart(seed * 3 + 5),
+          seed * 11 + 29,
+          STEPS,
         );
-        if (failures.length >= 3) break;
+        if (failure !== null) {
+          failures.push(
+            `startSeed=${seed} step=${failure.step} op=${failure.desc}\n` +
+              (failure.threw ? `  THREW: ${failure.threw}\n` : "") +
+              (failure.mutatedInput ? `  MUTATED INPUT\n` : "") +
+              failure.violations.map((x) => `  - ${x}`).join("\n") +
+              `\n  sequence:\n    ${descs.join("\n    ")}`,
+          );
+          if (failures.length >= 3) break;
+        }
       }
-    }
-    expect(failures, failures.join("\n\n")).toEqual([]);
-  });
+      expect(failures, failures.join("\n\n")).toEqual([]);
+    },
+  );
 });

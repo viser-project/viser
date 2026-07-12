@@ -15,12 +15,7 @@
 //     left/right only -- vertical arrangement is leaf stacking).
 
 import { describe, it, expect } from "vitest";
-import {
-  DockLayout,
-  DockRegion,
-  GroupId,
-  MIN_REGION_GRAB_PX,
-} from "./types";
+import { DockLayout, DockRegion, GroupId, MIN_REGION_GRAB_PX } from "./types";
 import {
   widthColumns,
   minRegionWidth,
@@ -96,7 +91,10 @@ describe("minRegionWidth", () => {
     // The reconciler sums per-column mins (dividers are render chrome, added
     // separately) -- so an N-column region floors at N * grab-min.
     const region = reg(rowSplit([leaf("a"), leaf("b"), leaf("c")]));
-    const summed = widthColumns(region).reduce((sum) => sum + minRegionWidth(), 0);
+    const summed = widthColumns(region).reduce(
+      (sum) => sum + minRegionWidth(),
+      0,
+    );
     expect(summed).toBe(MIN_REGION_GRAB_PX * 3);
   });
 });
@@ -128,7 +126,9 @@ describe("setNodeWeights", () => {
       floating: [],
     };
     const out = setNodeWeights(layout, "left", { [lb.id]: 7, [lc.id]: 2 });
-    expect(widthColumns(out.docked.left!)[0].leaves.map((l) => l.weight)).toEqual([7, 2]);
+    expect(
+      widthColumns(out.docked.left!)[0].leaves.map((l) => l.weight),
+    ).toEqual([7, 2]);
   });
 
   it("ignores ids not present in the region", () => {
@@ -151,7 +151,9 @@ describe("setNodeWeights", () => {
       [ids[1]]: -3,
       [ids[2]]: Number.NaN,
     });
-    expect(widthColumns(out.docked.left!).map((c) => c.weight)).toEqual([2, 2, 2]);
+    expect(widthColumns(out.docked.left!).map((c) => c.weight)).toEqual([
+      2, 2, 2,
+    ]);
   });
 
   it("returns the input when the edge is empty", () => {
@@ -198,8 +200,16 @@ describe("dropOnDockedLeaf top/bottom: 50/50 split, width preserved", () => {
     // Right region [A(width 297) | B(width 297)] -- drop C above A.
     const region: DockRegion = {
       columns: [
-        { id: "Ca", weight: 297, leaves: [{ id: "La", group: "a", weight: 1 }] },
-        { id: "Cb", weight: 297, leaves: [{ id: "Lb", group: "b", weight: 1 }] },
+        {
+          id: "Ca",
+          weight: 297,
+          leaves: [{ id: "La", group: "a", weight: 1 }],
+        },
+        {
+          id: "Cb",
+          weight: 297,
+          leaves: [{ id: "Lb", group: "b", weight: 1 }],
+        },
       ],
     };
     const l: DockLayout = {
@@ -207,7 +217,14 @@ describe("dropOnDockedLeaf top/bottom: 50/50 split, width preserved", () => {
       docked: { left: null, right: region },
       regionCollapsed: { left: false, right: false },
       floating: [
-        { id: "w", x: 0, y: 0, width: 280, height: { mode: "auto" }, stack: ["c"] },
+        {
+          id: "w",
+          x: 0,
+          y: 0,
+          width: 280,
+          height: { mode: "auto" },
+          stack: ["c"],
+        },
       ],
     };
     return { l, targetId: "La" };

@@ -43,12 +43,7 @@ describe("planRegion", () => {
     l.groups = groups("a", "b");
     l.docked.left = toRegion(row([leaf("a", 150), leaf("b", 150)]));
     l.regionWidth = { left: 300, right: 300 };
-    const next = setColumnRailed(
-      l,
-      "left",
-      l.docked.left!.columns[0].id,
-      true,
-    );
+    const next = setColumnRailed(l, "left", l.docked.left!.columns[0].id, true);
     reconcileRegionWidths(l, next);
     expect(next.regionWidth!.left).toBe(150 + MINIMIZED_STRIP_PX);
     // The railed column's WEIGHT is untouched (P8 restore width).

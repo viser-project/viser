@@ -37,7 +37,6 @@ import {
 } from "./types";
 import { freshId } from "./gestures";
 
-
 // NonEmpty leaks through `.filter`/`.slice` (they return a plain T[]), so after
 // deriving a columns/leaves list we re-assert non-emptiness in one place before
 // assigning it back to a NonEmpty field. The "what to do when it is empty"
@@ -240,9 +239,7 @@ export function widthColumns(region: DockRegion): NonEmpty<DockColumn> {
  * column holding one leaf (D46: with columns full-height, every side reduces
  * to that same condition). */
 export function edgeIsSingleLeaf(region: DockRegion): boolean {
-  return (
-    region.columns.length === 1 && region.columns[0].leaves.length === 1
-  );
+  return region.columns.length === 1 && region.columns[0].leaves.length === 1;
 }
 
 /** Minimum width a single docked column may be resized to in the layout model:
@@ -347,8 +344,7 @@ export function cascadeResize(opts: {
   const index = opts.dividerIndex;
   const minCell = opts.minCell;
   if (containerPx <= 0) return null;
-  const total =
-    weights.reduce((s, w, i) => (collapsed[i] ? s : s + w), 0) || 1;
+  const total = weights.reduce((s, w, i) => (collapsed[i] ? s : s + w), 0) || 1;
   const next = weights.map((w, i) =>
     collapsed[i] ? 0 : (w / total) * containerPx,
   );
@@ -474,7 +470,8 @@ export function stackGroupIdsOf(
   groupId: GroupId,
 ): GroupId[] {
   const win = layout.floating.find((w) => w.stack.includes(groupId));
-  if (win !== undefined) return win.stack.length >= 2 ? [...win.stack] : [groupId];
+  if (win !== undefined)
+    return win.stack.length >= 2 ? [...win.stack] : [groupId];
   // Docked: the column holding this group's leaf is the stack.
   for (const edge of ["left", "right"] as DockEdge[]) {
     const found = findGroupInRegion(layout.docked[edge], groupId);
@@ -681,9 +678,7 @@ export function dockToEdge(
     // Add the new column at the outermost position (far left for "left",
     // far right for "right").
     const columns: NonEmpty<DockColumn> =
-      edge === "left"
-        ? [column, ...live.columns]
-        : [...live.columns, column];
+      edge === "left" ? [column, ...live.columns] : [...live.columns, column];
     draft.docked[edge] = { columns };
   }
   return draft;
@@ -725,8 +720,7 @@ export function dockToRegionEdge(
   // as a railed column.
   if (sourceCollapsed) column.railed = true;
   if (weights !== undefined) {
-    const total =
-      existing.columns.reduce((sum, c) => sum + c.weight, 0) || 1;
+    const total = existing.columns.reduce((sum, c) => sum + c.weight, 0) || 1;
     existing.columns.forEach((c) => {
       c.weight = (c.weight / total) * weights.existing;
     });
@@ -821,7 +815,9 @@ export function dropOnDockedLeaf(
   // receiving container's state wins there, so no flag travels.)
   if (sourceCollapsed) newColumn.railed = true;
   targetColumn.weight = targetShare;
-  const ci = draft.docked[edge]!.columns.findIndex((c) => c.id === targetColumn.id);
+  const ci = draft.docked[edge]!.columns.findIndex(
+    (c) => c.id === targetColumn.id,
+  );
   const at = region === "left" ? ci : ci + 1;
   const liveRegion2 = draft.docked[edge]!;
   liveRegion2.columns = withInserted(liveRegion2.columns, at, newColumn);
@@ -1458,10 +1454,7 @@ export function toggleCollapsed(
  * flag; docked -> the containing column's railed flag (the one docked store,
  * D44/D46; for a sole docked panel this reads as the packed region).
  * Area-hosted / unplaced groups have no collapsible container: no-op. */
-function collapseContainerOf(
-  layout: DockLayout,
-  groupId: GroupId,
-): DockLayout {
+function collapseContainerOf(layout: DockLayout, groupId: GroupId): DockLayout {
   const loc = findGroupLocation(layout, groupId);
   if (loc === null || loc.kind === "area") return layout;
   if (loc.kind === "floating") {
@@ -1560,8 +1553,7 @@ export function migrateRowsToColumnsInPlace(layout: DockLayout): void {
     if (allSingle && bands.length > 0) {
       const leaves: DockLeaf[] = bands.flatMap((b) => {
         const col = b.columns[0];
-        const innerTotal =
-          col.leaves.reduce((s, l) => s + l.weight, 0) || 1;
+        const innerTotal = col.leaves.reduce((s, l) => s + l.weight, 0) || 1;
         return col.leaves.map((l) => ({
           ...l,
           weight: (b.weight * l.weight) / innerTotal,
@@ -1590,8 +1582,7 @@ export function migrateRowsToColumnsInPlace(layout: DockLayout): void {
       const columns = bands.flatMap((band) => band.columns);
       const rw = layout.regionWidth?.[edge];
       const railedPx =
-        columns.filter((c) => c.railed === true).length *
-        MINIMIZED_STRIP_PX;
+        columns.filter((c) => c.railed === true).length * MINIMIZED_STRIP_PX;
       const expanded = columns.filter((c) => c.railed !== true);
       const expandedSum = expanded.reduce((s, c) => s + c.weight, 0);
       if (rw !== undefined && rw > railedPx && expandedSum > 0) {
@@ -1748,7 +1739,6 @@ export function expandStackOf(
   return expandGroup(layout, groupId);
 }
 
-
 /** Set node weights by node id (a leaf's or a column's) within a docked region.
  * Callers pass {nodeId: weight} for the nodes they resized -- a region-row drag
  * targets columns, a column-stack drag targets leaves -- and we write them onto
@@ -1832,16 +1822,16 @@ export function setRegionWidth(
       if (alreadyDistributed) {
         px = railedPx + expandedSum;
       } else {
-      const widths = resizeRegionColumns(
-        expanded.map((c) => c.weight),
-        expanded.map(() => minRegionWidth()),
-        expanded.map(() => Infinity),
-        px - railedPx,
-      );
-      expanded.forEach((c, i) => {
-        c.weight = widths[i];
-      });
-      px = railedPx + widths.reduce((a, b) => a + b, 0);
+        const widths = resizeRegionColumns(
+          expanded.map((c) => c.weight),
+          expanded.map(() => minRegionWidth()),
+          expanded.map(() => Infinity),
+          px - railedPx,
+        );
+        expanded.forEach((c, i) => {
+          c.weight = widths[i];
+        });
+        px = railedPx + widths.reduce((a, b) => a + b, 0);
       }
     }
   }
@@ -1955,7 +1945,11 @@ export function resolveRequestedFloatPosition(
   // Clamp against a measured canvas (a too-big window pins to the near edge); an
   // unmeasured canvas can't clamp meaningfully.
   if (bounds.width > 0) {
-    x = clamp(x, bounds.leftInset, Math.max(bounds.leftInset, canvasRight - winWidth));
+    x = clamp(
+      x,
+      bounds.leftInset,
+      Math.max(bounds.leftInset, canvasRight - winWidth),
+    );
   }
   if (bounds.height > 0) {
     y = clamp(y, 0, Math.max(0, bounds.height - winHeight));
@@ -2220,9 +2214,7 @@ export function applyPanelPlacement(
       // edge dock when the anchor isn't docked (floating / not yet placed).
       const anchorGroupId = anchorGroupOf(position.anchor_uuid);
       const leaf =
-        anchorGroupId === null
-          ? null
-          : resolveAnchorLeaf(draft, anchorGroupId);
+        anchorGroupId === null ? null : resolveAnchorLeaf(draft, anchorGroupId);
       if (leaf === null) {
         // The dock model can only split against a docked anchor; the anchor here
         // is floating, not yet placed, or gone. Surface it (a silent fallback
@@ -2237,7 +2229,13 @@ export function applyPanelPlacement(
         draft = dockToEdge(draft, [groupId], "right");
       } else {
         const region: DropRegion = position.side === "above" ? "top" : "bottom";
-        draft = dropOnDockedLeaf(draft, [groupId], leaf.edge, leaf.nodeId, region);
+        draft = dropOnDockedLeaf(
+          draft,
+          [groupId],
+          leaf.edge,
+          leaf.nodeId,
+          region,
+        );
       }
     } else {
       // Compile-time exhaustiveness over the wire union (a new placement kind
@@ -2275,10 +2273,7 @@ export function applyPanelPlacement(
   // no-orphans invariant -- and worse, findPaneGroup would report the panel
   // "placed" off the orphan, wedging callers' dedup with a panel rendered
   // nowhere. No attach + freshly-created group => the whole op is a no-op.
-  if (
-    !groupExistedBefore &&
-    findGroupLocation(draft, groupId) === null
-  )
+  if (!groupExistedBefore && findGroupLocation(draft, groupId) === null)
     return layout;
 
   // Collapsed axis (D47), applied after position so it acts on the panel's

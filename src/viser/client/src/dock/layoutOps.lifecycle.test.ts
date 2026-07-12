@@ -64,7 +64,14 @@ describe("addPaneToArea", () => {
   it("is a no-op when the panel is already placed elsewhere (dragged out)", () => {
     // tab2 torn out of the area into a floating window; the server later
     // re-sends the tab list -- re-adding must not duplicate it in the area.
-    const torn = tearOutPane(areaLayout(), "g-area", "tab2", 10, 10, 260).layout;
+    const torn = tearOutPane(
+      areaLayout(),
+      "g-area",
+      "tab2",
+      10,
+      10,
+      260,
+    ).layout;
     const out = addPaneToArea(torn, "area-1", "tab2");
     expect(out).toBe(torn);
     expect(out.groups["g-area"].paneIds).toEqual(["tab1"]);
@@ -83,7 +90,12 @@ describe("addFloatingPane", () => {
     );
     expect(windowId).not.toBeNull();
     const win = out.floating.find((w) => w.id === windowId)!;
-    expect(win).toMatchObject({ x: 40, y: 50, width: 300, height: { mode: "pinned", px: 420 } });
+    expect(win).toMatchObject({
+      x: 40,
+      y: 50,
+      width: 300,
+      height: { mode: "pinned", px: 420 },
+    });
     expect(out.groups[win.stack[0]].paneIds).toEqual(["p1"]);
   });
 
@@ -238,7 +250,12 @@ describe("floatColumn", () => {
     const win = out.floating.find((w) => w.id === windowId)!;
     expect(win.stack).toEqual(["a", "b"]);
     expect(win.stackWeights).toEqual({ a: 2, b: 1 });
-    expect(win).toMatchObject({ x: 10, y: 20, width: 300, height: { mode: "pinned", px: 400 } });
+    expect(win).toMatchObject({
+      x: 10,
+      y: 20,
+      width: 300,
+      height: { mode: "pinned", px: 400 },
+    });
     // The region collapsed to the surviving column (just leaf x).
     expect(widthColumns(out.docked.left!)).toHaveLength(1);
     expect(widthColumns(out.docked.left!)[0].leaves).toEqual([

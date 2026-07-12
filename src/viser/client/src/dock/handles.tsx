@@ -74,56 +74,56 @@ export function HandleIconButton({
   const [hover, setHover] = React.useState(false);
   return (
     <Tooltip label={tooltip} openDelay={300} withinPortal>
-    <Box
-      {...attrs}
-      role="button"
-      tabIndex={0}
-      className={focusRing}
-      aria-label={label}
-      aria-expanded={expanded}
-      onKeyDown={keyActivate(onActivate)}
-      onPointerDown={
-        dragThrough ? undefined : (event) => event.stopPropagation()
-      }
-      onClick={(event) => {
-        if (dragThrough && event.detail !== 0) return;
-        event.stopPropagation();
-        onActivate();
-      }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        cursor: "pointer",
-        // The smallest interactive unit owns the pointer (P12): a floating
-        // window's resize grips overlay the window border with an INSIDE
-        // bias (edges 5px, corners 11px, z 12/13), which reaches the top
-        // sliver of a header's right-end control -- the `-` at the
-        // top-right corner showed a resize cursor and armed a resize
-        // instead of the click. Chrome controls paint above the grips, so
-        // the grip keeps only the pixels the button doesn't claim.
-        position: "relative",
-        zIndex: 14,
-        color: hover
-          ? "var(--mantine-primary-color-filled)"
-          : "var(--mantine-color-dimmed)",
-        backgroundColor: hover
-          ? "var(--mantine-primary-color-light)"
-          : "transparent",
-        transition: "color 80ms ease, background-color 80ms ease",
-        ...(placement ?? {
-          position: "absolute",
-          right: 0,
-          top: 0,
-          bottom: 0,
-          width: `${HANDLE_BTN_EM}em`,
-        }),
-      }}
-    >
-      {children}
-    </Box>
+      <Box
+        {...attrs}
+        role="button"
+        tabIndex={0}
+        className={focusRing}
+        aria-label={label}
+        aria-expanded={expanded}
+        onKeyDown={keyActivate(onActivate)}
+        onPointerDown={
+          dragThrough ? undefined : (event) => event.stopPropagation()
+        }
+        onClick={(event) => {
+          if (dragThrough && event.detail !== 0) return;
+          event.stopPropagation();
+          onActivate();
+        }}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+          // The smallest interactive unit owns the pointer (P12): a floating
+          // window's resize grips overlay the window border with an INSIDE
+          // bias (edges 5px, corners 11px, z 12/13), which reaches the top
+          // sliver of a header's right-end control -- the `-` at the
+          // top-right corner showed a resize cursor and armed a resize
+          // instead of the click. Chrome controls paint above the grips, so
+          // the grip keeps only the pixels the button doesn't claim.
+          position: "relative",
+          zIndex: 14,
+          color: hover
+            ? "var(--mantine-primary-color-filled)"
+            : "var(--mantine-color-dimmed)",
+          backgroundColor: hover
+            ? "var(--mantine-primary-color-light)"
+            : "transparent",
+          transition: "color 80ms ease, background-color 80ms ease",
+          ...(placement ?? {
+            position: "absolute",
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: `${HANDLE_BTN_EM}em`,
+          }),
+        }}
+      >
+        {children}
+      </Box>
     </Tooltip>
   );
 }
@@ -365,7 +365,9 @@ export function StackHandleBar({
           attrs={{ "data-dock-minimize-all": "true" }}
           // One flag per container (D38), so the default action is plain
           // collapse/expand of the window's panels -- no "all" language.
-          label={toggleLabel ?? (collapsed ? "Expand panels" : "Minimize panels")}
+          label={
+            toggleLabel ?? (collapsed ? "Expand panels" : "Minimize panels")
+          }
           tooltip={toggleTooltip ?? (collapsed ? "Expand" : "Minimize")}
           expanded={!collapsed}
           onActivate={onToggle}

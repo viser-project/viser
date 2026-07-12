@@ -7,7 +7,12 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  migrateRegionCollapsedInPlace, addPaneToArea, dockToEdge, ensureArea, removePane } from "./layoutOps";
+  migrateRegionCollapsedInPlace,
+  addPaneToArea,
+  dockToEdge,
+  ensureArea,
+  removePane,
+} from "./layoutOps";
 import * as ops from "./layoutOps";
 import { invariantViolations } from "./layoutInvariants";
 import { emptyLayout, DockLayout } from "./types";
@@ -18,7 +23,9 @@ describe("invariantViolations", () => {
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b") };
     l.docked.right = toRegion(leaf("a"));
-    l.floating = [floatingWindow({ id: "w", x: 10, y: 10, width: 240, stack: ["b"] })];
+    l.floating = [
+      floatingWindow({ id: "w", x: 10, y: 10, width: 240, stack: ["b"] }),
+    ];
     expect(invariantViolations(l)).toEqual([]);
   });
 
@@ -50,18 +57,23 @@ describe("invariantViolations", () => {
     // A NON-area empty group is still a violation (sanity: the exemption is
     // scoped to area groups only).
     l.groups["bad"] = { id: "bad", paneIds: [], activeId: null };
-    expect(invariantViolations(l).some((s) => s.includes("empty paneIds"))).toBe(
-      true,
-    );
+    expect(
+      invariantViolations(l).some((s) => s.includes("empty paneIds")),
+    ).toBe(true);
   });
 
   it("flags a pane that appears in two groups (the duplication class)", () => {
     const l = emptyLayout();
-    l.groups = { a: group("a"), b: { id: "b", paneIds: ["dup"], activeId: "dup" } };
+    l.groups = {
+      a: group("a"),
+      b: { id: "b", paneIds: ["dup"], activeId: "dup" },
+    };
     // Inject the duplication: "dup" also in a.
     l.groups["a"].paneIds = ["a", "dup"];
     l.docked.left = toRegion(leaf("a"));
-    l.floating = [floatingWindow({ id: "w", x: 0, y: 0, width: 240, stack: ["b"] })];
+    l.floating = [
+      floatingWindow({ id: "w", x: 0, y: 0, width: 240, stack: ["b"] }),
+    ];
     const v = invariantViolations(l);
     expect(v.some((s) => s.includes("dup") && s.includes("both"))).toBe(true);
   });
@@ -70,7 +82,9 @@ describe("invariantViolations", () => {
     const l = emptyLayout();
     l.groups = { a: group("a") };
     l.docked.left = toRegion(leaf("a"));
-    l.floating = [floatingWindow({ id: "w", x: 0, y: 0, width: 240, stack: ["a"] })]; // also here
+    l.floating = [
+      floatingWindow({ id: "w", x: 0, y: 0, width: 240, stack: ["a"] }),
+    ]; // also here
     const v = invariantViolations(l);
     expect(v.some((s) => s.includes("referenced 2x"))).toBe(true);
   });
@@ -179,9 +193,7 @@ describe("invariantViolations", () => {
 // ===========================================================================
 
 /** Raw legacy region: {rows: [{columns, weight}]} (pre-D46 shape). */
-function legacyRegion(
-  rows: { columns: unknown[]; weight: number }[],
-): unknown {
+function legacyRegion(rows: { columns: unknown[]; weight: number }[]): unknown {
   return { rows };
 }
 function legacyCol(

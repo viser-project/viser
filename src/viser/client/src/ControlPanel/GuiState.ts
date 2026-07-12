@@ -353,7 +353,10 @@ export function useGuiState(initialServer: string) {
         store.set((state) => {
           const panel = state.panels[id];
           if (panel === undefined) {
-            console.error(`Tried to update non-existent panel '${id}'`, updates);
+            console.error(
+              `Tried to update non-existent panel '${id}'`,
+              updates,
+            );
             return {};
           }
           return {

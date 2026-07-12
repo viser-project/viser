@@ -248,7 +248,12 @@ export const tabInsertion = (
 export const verticalTabInsertion = (
   tabs: { rect: DOMRect }[],
   y: number,
-): { index: number; lineLeft: number; lineTop: number; lineWidth: number } | null => {
+): {
+  index: number;
+  lineLeft: number;
+  lineTop: number;
+  lineWidth: number;
+} | null => {
   if (tabs.length === 0) return null;
   let best = 0;
   let bestDy = Infinity;
@@ -425,7 +430,6 @@ export function hitTest(
     );
   };
 
-
   // 2. Region edges -> dock a full-height column beside everything in the
   // region. Checked before per-panel zones so an outermost panel's edge means
   // "beside everything" rather than "split just this one"; an interior panel is
@@ -463,10 +467,7 @@ export function hitTest(
     if (overCollapsedCell(edge)) continue;
     // Hints are a line spanning the whole region: a new column lands
     // beside everything, full height (P1).
-    if (
-      cx - regionLeft < sideBand &&
-      !edgeIsSingleLeaf(tree)
-    ) {
+    if (cx - regionLeft < sideBand && !edgeIsSingleLeaf(tree)) {
       return {
         result: { kind: "regionEdge", edge, side: "left" },
         hint: {
@@ -478,10 +479,7 @@ export function hitTest(
         },
       };
     }
-    if (
-      regionRight - cx < sideBand &&
-      !edgeIsSingleLeaf(tree)
-    ) {
+    if (regionRight - cx < sideBand && !edgeIsSingleLeaf(tree)) {
       return {
         result: { kind: "regionEdge", edge, side: "right" },
         hint: {
@@ -534,7 +532,8 @@ export function hitTest(
     const selfBoundary = side === "top" ? sr.top : sr.bottom;
     let best: { gapCenter: number; gap: number } | null = null;
     for (const t of targets.groups) {
-      if (t === self || t.ctx.kind !== "docked" || t.ctx.edge !== edge) continue;
+      if (t === self || t.ctx.kind !== "docked" || t.ctx.edge !== edge)
+        continue;
       const tr = t.rect;
       // Must horizontally overlap (same column) to be a vertical neighbor.
       if (tr.right <= sr.left || tr.left >= sr.right) continue;
@@ -627,14 +626,16 @@ export function hitTest(
         if (yDist > SEAM_GAP_MAX_PX) continue;
         if (
           tr.right <= clientX &&
-          (yDist < leftKey[0] || (yDist === leftKey[0] && tr.right > leftKey[1]))
+          (yDist < leftKey[0] ||
+            (yDist === leftKey[0] && tr.right > leftKey[1]))
         ) {
           leftT = t;
           leftKey = [yDist, tr.right];
         }
         if (
           tr.left >= clientX &&
-          (yDist < rightKey[0] || (yDist === rightKey[0] && tr.left < rightKey[1]))
+          (yDist < rightKey[0] ||
+            (yDist === rightKey[0] && tr.left < rightKey[1]))
         ) {
           rightT = t;
           rightKey = [yDist, tr.left];
@@ -692,10 +693,7 @@ export function hitTest(
       if (lower.ctx.kind !== "floating" || lower.ctx.index === 0) continue;
       // Scope to the owning window when known: a front window's header over
       // a back window's seam must not snap into the back window.
-      if (
-        owningWindow !== null &&
-        lower.ctx.windowId !== owningWindow.windowId
-      )
+      if (owningWindow !== null && lower.ctx.windowId !== owningWindow.windowId)
         continue;
       const upper = cellAbove.get(
         `${lower.ctx.windowId}:${lower.ctx.index - 1}`,
@@ -759,7 +757,8 @@ export function hitTest(
       // center so "below A" and "above B" coincide instead of jumping the
       // ~SPLIT_DIVIDER_PX divider width. With no sibling (region's outer edge),
       // fall back to the panel boundary + on-screen clamp.
-      const seam = gt.ctx.kind === "docked" ? dockedSeamSibling(gt, region) : null;
+      const seam =
+        gt.ctx.kind === "docked" ? dockedSeamSibling(gt, region) : null;
       const edgeY = region === "top" ? r.top : r.bottom;
       const raw = (seam !== null ? seam.gapCenter : edgeY) - t / 2;
       const top = clamp(raw, crect.top, crect.top + crect.height - t);
@@ -782,7 +781,10 @@ export function hitTest(
   const mergeResult = (): { result: DropResult; hint: DropHint } | null =>
     gt.unmergeable || draggingUnmergeable
       ? null
-      : { result: { kind: "merge", targetGroupId: gt.groupId }, hint: rel(r, "merge") };
+      : {
+          result: { kind: "merge", targetGroupId: gt.groupId },
+          hint: rel(r, "merge"),
+        };
 
   // 3-area. A nested dockable area is a flat tab group -- the only drops are
   // insert-at-a-tab-position (over its strip) or merge/append (anywhere else,
@@ -795,15 +797,27 @@ export function hitTest(
       const ins = tabInsertion(g.tabs, clientX, clientY);
       if (ins !== null) {
         return {
-          result: { kind: "insertTab", targetGroupId: g.groupId, index: ins.index },
+          result: {
+            kind: "insertTab",
+            targetGroupId: g.groupId,
+            index: ins.index,
+          },
           hint: rel(
-            { left: ins.lineLeft - 1, top: ins.lineTop, width: 2, height: ins.lineHeight },
+            {
+              left: ins.lineLeft - 1,
+              top: ins.lineTop,
+              width: 2,
+              height: ins.lineHeight,
+            },
             "line",
           ),
         };
       }
     }
-    return { result: { kind: "merge", targetGroupId: g.groupId }, hint: rel(r, "merge") };
+    return {
+      result: { kind: "merge", targetGroupId: g.groupId },
+      hint: rel(r, "merge"),
+    };
   }
 
   // 3z. A minimized target renders as a narrow vertical strip (a + cap atop a
@@ -884,7 +898,12 @@ export function hitTest(
               index: ins.index,
             },
             hint: rel(
-              { left: ins.lineLeft, top: ins.lineTop - 1, width: ins.lineWidth, height: 2 },
+              {
+                left: ins.lineLeft,
+                top: ins.lineTop - 1,
+                width: ins.lineWidth,
+                height: 2,
+              },
               "line" as const,
             ),
           };
@@ -892,9 +911,21 @@ export function hitTest(
     if (g.ctx.kind === "docked") {
       const e = g.ctx.edge;
       const n = g.ctx.nodeId;
-      if (rx < H) return { result: { kind: "split", edge: e, nodeId: n, region: "left" }, hint: splitLine("left") };
-      if (rx > 1 - H) return { result: { kind: "split", edge: e, nodeId: n, region: "right" }, hint: splitLine("right") };
-      if (inTopEdge) return { result: { kind: "split", edge: e, nodeId: n, region: "top" }, hint: splitLine("top") };
+      if (rx < H)
+        return {
+          result: { kind: "split", edge: e, nodeId: n, region: "left" },
+          hint: splitLine("left"),
+        };
+      if (rx > 1 - H)
+        return {
+          result: { kind: "split", edge: e, nodeId: n, region: "right" },
+          hint: splitLine("right"),
+        };
+      if (inTopEdge)
+        return {
+          result: { kind: "split", edge: e, nodeId: n, region: "top" },
+          hint: splitLine("top"),
+        };
       // A rail's droppable rect can extend past its spine content: the
       // strip's empty tail below the rows belongs to the last cell (the
       // scanner sizes it to the rail root), and the only honest drop there
@@ -931,12 +962,22 @@ export function hitTest(
     if (inTopEdge)
       return {
         result: { kind: "snap", windowId: g.ctx.windowId, index: g.ctx.index },
-        hint: rel({ left: r.left, top: r.top - 2, width: r.width, height: 4 }, "line"),
+        hint: rel(
+          { left: r.left, top: r.top - 2, width: r.width, height: 4 },
+          "line",
+        ),
       };
     if (inBottomEdge)
       return {
-        result: { kind: "snap", windowId: g.ctx.windowId, index: g.ctx.index + 1 },
-        hint: rel({ left: r.left, top: r.bottom - 2, width: r.width, height: 4 }, "line"),
+        result: {
+          kind: "snap",
+          windowId: g.ctx.windowId,
+          index: g.ctx.index + 1,
+        },
+        hint: rel(
+          { left: r.left, top: r.bottom - 2, width: r.width, height: 4 },
+          "line",
+        ),
       };
     return insertResult() ?? mergeResult();
   }
@@ -958,13 +999,21 @@ export function hitTest(
   ) {
     if (g.ctx.kind === "docked") {
       return {
-        result: { kind: "split", edge: g.ctx.edge, nodeId: g.ctx.nodeId, region: "top" },
+        result: {
+          kind: "split",
+          edge: g.ctx.edge,
+          nodeId: g.ctx.nodeId,
+          region: "top",
+        },
         hint: splitLine("top"),
       };
     }
     return {
       result: { kind: "snap", windowId: g.ctx.windowId, index: g.ctx.index },
-      hint: rel({ left: r.left, top: r.top - 2, width: r.width, height: 4 }, "line"),
+      hint: rel(
+        { left: r.left, top: r.top - 2, width: r.width, height: 4 },
+        "line",
+      ),
     };
   }
 
@@ -981,7 +1030,11 @@ export function hitTest(
     const ins = tabInsertion(g.tabs, clientX, clientY);
     if (ins !== null) {
       return {
-        result: { kind: "insertTab", targetGroupId: g.groupId, index: ins.index },
+        result: {
+          kind: "insertTab",
+          targetGroupId: g.groupId,
+          index: ins.index,
+        },
         hint: rel(
           {
             left: ins.lineLeft - 1,
@@ -1007,9 +1060,12 @@ export function hitTest(
   // also pixel-capped so the band doesn't balloon on a wide panel (a docked
   // control panel can be 320-384px wide -- 22% of that reads as "most of the
   // way in" rather than "near the edge").
-  const vBand = ch > 0 ? Math.min(SPLIT_BAND_V, SPLIT_BAND_V_MAX_PX / ch) : SPLIT_BAND_V;
+  const vBand =
+    ch > 0 ? Math.min(SPLIT_BAND_V, SPLIT_BAND_V_MAX_PX / ch) : SPLIT_BAND_V;
   const hBand =
-    r.width > 0 ? Math.min(SPLIT_BAND, SPLIT_BAND_H_MAX_PX / r.width) : SPLIT_BAND;
+    r.width > 0
+      ? Math.min(SPLIT_BAND, SPLIT_BAND_H_MAX_PX / r.width)
+      : SPLIT_BAND;
   if (g.ctx.kind === "docked") {
     // Content area splits this panel: top/left/right/below; center merges.
     // The grip bar (3a) also splits above -- the content-top band exists so
@@ -1023,14 +1079,26 @@ export function hitTest(
     else if (rx > 1 - hBand) region = "right";
     if (region !== null) {
       return {
-        result: { kind: "split", edge: g.ctx.edge, nodeId: g.ctx.nodeId, region },
+        result: {
+          kind: "split",
+          edge: g.ctx.edge,
+          nodeId: g.ctx.nodeId,
+          region,
+        },
         hint: splitLine(region),
       };
     }
   } else if (ry > 1 - vBand) {
     return {
-      result: { kind: "snap", windowId: g.ctx.windowId, index: g.ctx.index + 1 },
-      hint: rel({ left: r.left, top: r.bottom - 2, width: r.width, height: 4 }, "line"),
+      result: {
+        kind: "snap",
+        windowId: g.ctx.windowId,
+        index: g.ctx.index + 1,
+      },
+      hint: rel(
+        { left: r.left, top: r.bottom - 2, width: r.width, height: 4 },
+        "line",
+      ),
     };
   }
 

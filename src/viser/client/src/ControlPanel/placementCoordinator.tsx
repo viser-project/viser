@@ -263,9 +263,7 @@ export function usePlacementCoordinator(
       if (!isMain) {
         const orderKey = tabIds.join("\n");
         if (state.prevOrderKey !== orderKey) {
-          const removed = state.prevTabIds.filter(
-            (id) => !tabIds.includes(id),
-          );
+          const removed = state.prevTabIds.filter((id) => !tabIds.includes(id));
           state.prevOrderKey = orderKey;
           state.prevTabIds = tabIds;
           dock.api.apply((l) =>

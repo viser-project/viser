@@ -99,7 +99,9 @@ function MobilePanelSection({ panel }: { panel: GuiPanelMessage }) {
           : undefined
       }
       role={stripInHeader ? "button" : undefined}
-      aria-label={stripInHeader ? `Collapse panel ${labels[0] ?? ""}` : undefined}
+      aria-label={
+        stripInHeader ? `Collapse panel ${labels[0] ?? ""}` : undefined
+      }
       style={{
         display: "flex",
         alignItems: "center",

@@ -50,7 +50,9 @@ export function leaf(group: GroupId, weight = 1): TreeSpec {
 export function col(children: TreeSpec[], weight = 1): TreeSpec {
   const leaves = children.map((c) => {
     if (c.kind !== "leaf")
-      throw new Error("col() children must be leaf() (no nesting in the flat model)");
+      throw new Error(
+        "col() children must be leaf() (no nesting in the flat model)",
+      );
     return c.leaf;
   });
   return {
@@ -325,10 +327,7 @@ export function mulberry32(seed: number) {
 /** Rail every column of an edge IN PLACE -- the D44 test shorthand for
  * building the packed region rail (derived: every band single-column and
  * every column railed). */
-export function packRegionInPlace(
-  layout: DockLayout,
-  edge: DockEdge,
-): void {
+export function packRegionInPlace(layout: DockLayout, edge: DockEdge): void {
   const region = layout.docked[edge];
   if (region === null) return;
   for (const column of region.columns) column.railed = true;

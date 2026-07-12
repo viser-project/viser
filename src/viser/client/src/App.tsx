@@ -177,8 +177,7 @@ function ViewerRoot() {
   // Check for embedded scene data via window global.
   const embedData = (window as any).__VISER_EMBED_DATA__ as string | undefined;
   const embedConfig = (window as any).__VISER_EMBED_CONFIG__ as
-    | { darkMode?: boolean }
-    | undefined;
+    { darkMode?: boolean } | undefined;
   const darkMode = searchParams.get("darkMode") !== null;
 
   // Create a message source string.
