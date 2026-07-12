@@ -525,7 +525,6 @@ export function useDragController(deps: DragControllerDeps) {
     windowId: WindowId,
     groupIdForDim: GroupId | null,
     pointerId: number,
-    pointerType: string,
     grabX: number,
     grabY: number,
     /** Pre-drag layout for drags that commit an op up front (float a group/
@@ -797,7 +796,6 @@ export function useDragController(deps: DragControllerDeps) {
       params.windowId,
       params.groupIdForDim,
       e.pointerId,
-      e.pointerType,
       params.grabX,
       params.grabY,
       before,
@@ -984,14 +982,7 @@ export function useDragController(deps: DragControllerDeps) {
           win.x,
           win.y,
         );
-        beginWindowDrag(
-          windowId,
-          null,
-          e.pointerId,
-          e.pointerType,
-          grabX,
-          grabY,
-        );
+        beginWindowDrag(windowId, null, e.pointerId, grabX, grabY);
       },
       opts?.onClick,
     );
@@ -1030,14 +1021,7 @@ export function useDragController(deps: DragControllerDeps) {
             );
             // Dragging a minimized panel moves it as-is (still minimized);
             // expanding is a click-only gesture. So no expand-on-drag here.
-            beginWindowDrag(
-              windowId,
-              null,
-              e.pointerId,
-              e.pointerType,
-              grabX,
-              grabY,
-            );
+            beginWindowDrag(windowId, null, e.pointerId, grabX, grabY);
           },
           onClick,
         );
@@ -1226,18 +1210,17 @@ export function useDragController(deps: DragControllerDeps) {
       if (reordering) setDraggingTabId(null);
     };
     // Pointer-up while reordering: commit the reorder to the line's index, then
-    // glide the dragged tab from the cursor into its new slot.
+    // glide the dragged tab from the cursor into its new slot. With no resolved
+    // insertion (hint hidden) the release is a no-op: the tab just snaps back.
     const commitReorder = () => {
       teardown();
       if (!reordering) return;
-      if (lastInsert === null) {
-        setDraggingTabId(null);
-        return;
+      if (lastInsert !== null) {
+        const index = lastInsert;
+        flushSync(() =>
+          applyOp(ops.reorderTab(layoutRef.current, groupId, paneId, index)),
+        );
       }
-      const index = lastInsert;
-      flushSync(() =>
-        applyOp(ops.reorderTab(layoutRef.current, groupId, paneId, index)),
-      );
       const tabEl = draggedTabEl();
       if (tabEl !== null) {
         tabEl.style.transform = "";
@@ -1347,7 +1330,11 @@ export function useDragController(deps: DragControllerDeps) {
           variant: "line",
         });
       } else {
-        lastInsert = 0;
+        // No insertion resolved (no other tabs to measure -- e.g. a mid-drag
+        // layout change removed them). The hint is hidden, so a release must
+        // be a no-op (P1: a hidden hint means no drop), not a silent reorder
+        // to index 0.
+        lastInsert = null;
         showHint(null);
       }
 
@@ -1383,7 +1370,6 @@ export function useDragController(deps: DragControllerDeps) {
                 win.id,
                 groupId,
                 e0.pointerId,
-                e0.pointerType,
                 e0.clientX - crect.left - win.x,
                 e0.clientY - crect.top - win.y,
               );
