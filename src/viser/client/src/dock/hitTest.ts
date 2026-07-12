@@ -1067,14 +1067,16 @@ export function hitTest(
       ? Math.min(SPLIT_BAND, SPLIT_BAND_H_MAX_PX / r.width)
       : SPLIT_BAND;
   if (g.ctx.kind === "docked") {
-    // Content area splits this panel: top/left/right/below; center merges.
-    // The grip bar (3a) also splits above -- the content-top band exists so
-    // the upper content area honors spec 5.2's split band instead of silently
-    // widening the merge zone (an accidental merge is the one destructive
-    // gesture D1's generous bands exist to prevent).
+    // Content area: bottom/left/right split this panel; everything else
+    // merges. There is deliberately NO content-top band (D48): dock-above
+    // belongs to the grip bar alone. The old top band re-claimed "above"
+    // just below the tab strip, making the strip an island inside
+    // above-intent -- and the above-split's shrink preview displaced the
+    // strip while the user aimed at it. Overshooting the strip now lands
+    // in merge (same outcome family as the strip's own insert), so the
+    // aim is forgiving in the direction people actually miss.
     let region: "top" | "bottom" | "left" | "right" | null = null;
-    if (ry < vBand) region = "top";
-    else if (ry > 1 - vBand) region = "bottom";
+    if (ry > 1 - vBand) region = "bottom";
     else if (rx < hBand) region = "left";
     else if (rx > 1 - hBand) region = "right";
     if (region !== null) {

@@ -621,22 +621,29 @@ constants in `hitTest.ts`; changing one is a spec change.
 
 ### 5.2 Expanded docked cell zones
 
-- Above the tab strip (the grip bar): split above this cell. The
-  column's FIRST cell also claims the parent-handle run above it (the
-  scanner extends its drop rect to the column top, mirroring the rail
-  rule): region-owned chrome is never a no-drop hole (P5), and a slam
-  to the top of an occupied dock splits above the top cell.
+- Above the tab strip (the grip bar): split above this cell — the ONLY
+  above-claim on the cell (D48). The column's FIRST cell also claims
+  the parent-handle run above it (the scanner extends its drop rect to
+  the column top, mirroring the rail rule): region-owned chrome is
+  never a no-drop hole (P5), and a slam to the top of an occupied dock
+  splits above the top cell.
 - Over the tab strip: insert at that tab position (2D nearest-tab, works
   with wrapped rows).
 - Content side bands (30% of width, ≤120px): insert a NEW FULL-HEIGHT
   COLUMN beside this cell's column, on that side (D46: side drops are
   column inserts; the hint is region-tall, P1).
-- Content top/bottom bands (25%, ≤100px): split above/below this cell,
-  within its column. The content-TOP band splits ABOVE — it repeats the
-  grip bar's intent — so merge stays reachable only in the middle.
-- Content center — roughly the middle third each way — merges (become a
-  tab). Splits are the casual default; merging requires aim (D1: the one
-  destructive-by-accident gesture is an unwanted merge). Suppressed for
+- Content bottom band (25%, ≤100px): split below this cell, within its
+  column. There is NO content-top band (D48): the strip and everything
+  below it down to the bottom band merges, so overshooting the strip
+  lands in the same outcome family (a merge appends — structurally
+  identical to the strip's own insert-at-end, `mergeGroupsInto` IS
+  `insertTabsInto(end)`; the two claims are one action with two views,
+  P9-consistent).
+- Content center merges (become a tab). D1's "merge requires aim"
+  holds horizontally (side bands stay generous) and at the seams
+  (grip bars / bottom bands); vertically-above it is re-adjudicated by
+  D48 — a generous above-claim below the strip made the strip an
+  island and its preview displaced the aim target. Suppressed for
   unmergeable panels.
 
 ### 5.3 Rail cell zones (§5.2 rotated)
@@ -1147,6 +1154,15 @@ has surviving behavior of its own.
   `visible`/`order` honored; placement axes inert off the dock surface.
   Chosen over a tabbed sheet (one panel at a time; nested tab strips
   read poorly) and a full-height pager (hides the canvas relationship).
+- **D48** — no content-top band (user-adjudicated: "reduce the size of
+  the above drop zone — dropping into the tab strip or anywhere below
+  it always merges"): dock-above belongs to the grip bar alone; the
+  strip and the body below it merge (bottom + side bands survive).
+  Rationale: the old top band re-claimed "above" just below the strip,
+  making the strip an island inside above-intent, and the above
+  preview's live shrink displaced the strip while the user aimed at
+  it. Merge-on-overshoot is forgiving in the direction people miss,
+  and appends — the same family as the strip's insert-at-end.
 - **D47** — `minimize()` / `expand()` restored (user-adjudicated): a
   fourth write-only placement axis (`GuiSetPanelCollapsedMessage`,
   ordinary update_simple lifecycle), container-scoped per D38 -- panels

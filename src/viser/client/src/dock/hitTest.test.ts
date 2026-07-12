@@ -779,20 +779,14 @@ describe("docked group per-panel zones", () => {
     expect(out.hint.top + out.hint.height / 2).toBeCloseTo(frame.top, 0);
   });
 
-  it("content TOP band (just below the strip) -> split above (spec 5.2)", () => {
-    // The upper content band splits above, mirroring the bottom band: without
-    // it, drops in the top quarter of a panel's body silently MERGED -- the
-    // one destructive-by-accident gesture D1's generous split bands exist to
-    // prevent. (The grip bar above the tabs also splits above.)
-    // Content area is [strip.bottom=142 .. 500]; y=160 is inside the top band.
+  it("just below the strip MERGES -- no content-top band (D48)", () => {
+    // Dock-above belongs to the grip bar alone: the old top band re-claimed
+    // "above" right below the tab strip, making the strip an island inside
+    // above-intent (and the above preview displaced the strip mid-aim).
+    // Overshooting the strip downward now lands in merge, the same outcome
+    // family as the strip's own insert-at-end.
     const out = run(layout, [target()], 300, 160)!;
-    expect(out.result).toEqual({
-      kind: "split",
-      edge: "left",
-      nodeId: "n1",
-      region: "top",
-    });
-    expect(out.hint.variant).toBe("line");
+    expect(out.result.kind).toBe("merge");
   });
 
   it("over the strip -> insertTab at the nearest tab position", () => {
