@@ -121,8 +121,13 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
   // Paper's style prop (clearing our inline px -- expand triggers content
   // mounts immediately, which is why EXPAND snapped while minimize
   // animated), so the recorder effect below re-asserts the target every
-  // render until transitionend clears it.
-  const flipTargetH = React.useRef<number | null>(null);
+  // render until the transition ENDS OR CANCELS. The id token makes the
+  // teardown flip-specific: a rapid -/+ toggle cancels the first
+  // transition (transitionend never fires for it), and without the token
+  // the stale target was re-asserted forever -- the window locked at the
+  // wrong height (user report).
+  const flipTargetH = React.useRef<{ id: number; px: number } | null>(null);
+  const flipIdRef = React.useRef(0);
   React.useLayoutEffect(() => {
     const el = paperRef.current;
     if (el === null) return;
@@ -145,17 +150,25 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     void el.offsetWidth;
     el.style.transition = "";
     el.style.height = `${to}px`;
-    flipTargetH.current = to;
-    el.addEventListener(
-      "transitionend",
-      (ev) => {
-        if (ev.propertyName === "height") {
-          flipTargetH.current = null;
-          el.style.height = "";
-        }
-      },
-      { once: true },
-    );
+    // Clip while the flip is in flight: an EXPAND eases the paper up
+    // around already-mounted full-size content, which would poke out of
+    // the small mid-anim box (Paper's steady-state overflow is visible
+    // for the grips).
+    el.style.overflow = "hidden";
+    const myId = ++flipIdRef.current;
+    flipTargetH.current = { id: myId, px: to };
+    const settle = (ev: TransitionEvent) => {
+      if (ev.propertyName !== "height") return;
+      el.removeEventListener("transitionend", settle);
+      el.removeEventListener("transitioncancel", settle);
+      // Only MY flip may tear down: a newer toggle owns the element now.
+      if (flipTargetH.current?.id !== myId) return;
+      flipTargetH.current = null;
+      el.style.height = "";
+      el.style.overflow = "";
+    };
+    el.addEventListener("transitionend", settle);
+    el.addEventListener("transitioncancel", settle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collapsed]);
   React.useLayoutEffect(() => {
@@ -163,8 +176,10 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     // the style prop, wiping the inline px -- put the target back before
     // paint (same specified value, so the running transition continues).
     const el = paperRef.current;
-    if (el !== null && flipTargetH.current !== null)
-      el.style.height = `${flipTargetH.current}px`;
+    if (el !== null && flipTargetH.current !== null) {
+      el.style.height = `${flipTargetH.current.px}px`;
+      el.style.overflow = "hidden";
+    }
     // Live height (mid-transition included) so an interrupted toggle
     // continues from where the window visually is.
     prevPaperH.current = el?.getBoundingClientRect().height ?? null;

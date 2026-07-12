@@ -145,10 +145,12 @@ function RegionColumns({
       const widthChanged =
         prev !== undefined && Math.abs(prev.w - naturalW) > 0.5;
       if (skip || widthChanged || Math.abs(delta) < 0.5) continue;
-      // Retarget from wherever the column visually is (live rect includes
-      // any in-flight transform).
-      const liveX = el.getBoundingClientRect().left;
-      const startDelta = liveX - naturalX;
+      // Start where the column APPEARED last frame: its previous natural
+      // position plus any in-flight transform (the live rect's offset from
+      // the new natural). Fresh commit: tx = 0 -> start = prev position;
+      // mid-glide retarget: the offsets compose, continuing smoothly.
+      const tx = el.getBoundingClientRect().left - naturalX;
+      const startDelta = delta + tx;
       el.style.transition = "";
       el.style.transform = `translateX(${startDelta}px)`;
       // Force the start position before arming the transition.
