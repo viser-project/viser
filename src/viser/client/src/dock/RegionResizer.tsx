@@ -5,13 +5,13 @@ import React from "react";
 import { dragGesture } from "./gestures";
 import { DockEdge } from "./types";
 
-// How far the grab zone extends onto the CANVAS side of the region boundary.
+// How far the grab zone extends onto the canvas side of the region boundary.
 const RESIZER_OUTSET_PX = 10;
-// How far it extends INWARD over the panel, so a drag aimed at the visible
+// How far it extends inward over the panel, so a drag aimed at the visible
 // region edge registers instead of falling through to the panel. Kept small (and
 // below the grip bar, see `top`) so it doesn't shadow panel chrome.
 const RESIZER_INSET_PX = 5;
-// Top inset clearing the TALLEST chrome row (the unmergeable titleNode
+// Top inset clearing the tallest chrome row (the unmergeable titleNode
 // header is 2.75em ~= 44px), so the inward part of the straddle never covers
 // the canvas-facing chevron/minimize toggle at a left panel's top corner --
 // e.g. the docked main panel's header controls.
@@ -25,7 +25,7 @@ export function RegionResizer({
   edge: DockEdge;
   /** Called once per drag (at pointer down) so the handlers can snapshot the
    * columns' start widths (and the drag-start layout); returns the per-frame
-   * resize handler plus the release/cancel handler (called AFTER the final
+   * resize handler plus the release/cancel handler (called after the final
    * width settles). */
   makeOnResize: () => {
     onFrame: (px: number) => void;
@@ -62,10 +62,10 @@ export function RegionResizer({
       },
     });
   };
-  // The grab STRADDLES the region boundary as two strips sharing one
-  // handler. The OUTER (canvas-side) strip can never overlap panel chrome,
+  // The grab straddles the region boundary as two strips sharing one
+  // handler. The outer (canvas-side) strip can never overlap panel chrome,
   // so it runs the full height -- a drag aimed at the visible boundary line
-  // registers even beside the top cell's header. Only the INNER strip (the
+  // registers even beside the top cell's header. Only the inner strip (the
   // few px over the panel) starts below GRIP_BAR_CLEARANCE_PX, clearing the
   // tallest chrome row (the 2.75em unmergeable header), whose canvas-corner
   // chevron/toggle it would otherwise cover. The wrapper keeps the full

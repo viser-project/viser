@@ -1,8 +1,8 @@
-// Structural invariants for a DockLayout. THE single definition of "what a valid
-// layout is" -- imported by both the fuzz test (asserts after every random op
-// sequence) and applyOp (asserts on every commit in dev). Keeping one source
-// means a violation is caught the instant a gesture or op produces it, rather
-// than surfacing later as duplicated/orphaned panes.
+// Structural invariants for a DockLayout: the single definition of "what a
+// valid layout is" -- imported by both the fuzz test (asserts after every
+// random op sequence) and applyOp (asserts on every commit in dev). Keeping
+// one source means a violation is caught the instant a gesture or op produces
+// it, rather than surfacing later as duplicated/orphaned panes.
 //
 // Pure + allocation-light: returns a list of human-readable violation strings
 // (empty == healthy). Never throws; the caller decides what to do with the list.
@@ -20,10 +20,9 @@ import {
   PaneId,
 } from "./types";
 
-// The docked shape (Region -> Column -> Leaf, both NonEmpty) is now guaranteed
-// by the TYPES, so the structural checks the old invariant ran (>=2 children,
-// valid dir, no same-axis nesting, single-child splits) are gone -- they're
-// unrepresentable. What remains are VALUE-level invariants the type can't
+// The docked shape (Region -> Column -> Leaf, both NonEmpty) is guaranteed by
+// the types, so no structural shape checks run here -- bad shapes are
+// unrepresentable. What remains are value-level invariants the type can't
 // express: NonEmpty (defensive, in case a cast slipped through), finite/positive
 // weights, and the reference/orphan/duplication checks that span the whole
 // layout.
@@ -44,8 +43,8 @@ function leavesOf(layout: DockLayout): DockLeaf[] {
   return columnsOf(layout).flatMap((c) => c.leaves);
 }
 
-/** Every group id referenced anywhere -- docked leaves, floating stacks, AND
- * area backings -- WITH duplicates, so double-references are detectable. Area
+/** Every group id referenced anywhere -- docked leaves, floating stacks, and
+ * area backings -- with duplicates, so double-references are detectable. Area
  * groups count as referenced (each area's `group` is a real group that lives in
  * `groups` and must not be flagged as an orphan). */
 function referencedGroupIds(layout: DockLayout): GroupId[] {
@@ -64,19 +63,19 @@ function referencedGroupIds(layout: DockLayout): GroupId[] {
  *  4. No pane in two groups (the duplication class).
  *  5. activeId is a member; paneIds non-empty.
  *  6. NonEmpty (defensive): every region has >=1 column, every column >=1 leaf.
- *  8. Finite positive weights.
- *  9. Floating windows: non-empty stacks, finite geometry, valid stackWeights
+ *  7. Finite positive weights.
+ *  8. Floating windows: non-empty stacks, finite geometry, valid stackWeights
  *     (finite/positive, keyed only by groups in the window's stack).
- *  10/11. Unique node ids and floating window ids.
- *  12. Container collapse flags (window `collapsed` / column `railed`, D38)
- *      are booleans when present; groups carry NO collapse flag.
- *  13-15. RETIRED: 13 by D42 (a railed sole column is legal geometry --
- *      and unrepresentable as a "band" state at all since D46); 14/15 by
- *      D44 (the regionCollapsed store is deleted; an un-migrated legacy
- *      field is flagged instead).
- *  16. regionWidth (when present) is the rendered content need (D40/D46): a
+ *  9. Unique node ids and floating window ids.
+ *  10. Container collapse flags (window `collapsed` / column `railed`, D38)
+ *      are booleans when present; groups carry no collapse flag.
+ *  11. No un-migrated legacy `regionCollapsed` field (D44): the injection and
+ *      restore chokepoints run migrateRegionCollapsedInPlace.
+ *  12. regionWidth (when present) is the rendered content need (D40/D46): a
  *      multi-column region with an expanded column pins it to
- *      sum(railed ? 36 : weight); fully railed pins to 36 x columns. */
+ *      sum(railed ? 36 : weight); fully railed pins to 36 x columns.
+ *  (Numbering is contiguous since the 2026-07 cleanup; the spec-referenced
+ *  old #16 is now #12.) */
 export function invariantViolations(layout: DockLayout): string[] {
   const v: string[] = [];
   const refs = referencedGroupIds(layout);
@@ -108,7 +107,7 @@ export function invariantViolations(layout: DockLayout): string[] {
   }
 
   // 5. activeId ∈ paneIds for a non-empty group; null exactly when empty. Only
-  // an area-backing group may be empty -- it persists as a "drop a panel here"
+  // an area-backing group may be empty -- it persists as a "drop a pane here"
   // affordance even with no tabs (see ensureArea / addPaneToArea /
   // removePaneInPlace's area branch).
   const areaGroupIds = new Set(
@@ -138,7 +137,7 @@ export function invariantViolations(layout: DockLayout): string[] {
         v.push(`column ${c.id} on ${edge} has no leaves`);
   }
 
-  // 8. Finite positive weights (columns and leaves).
+  // 7. Finite positive weights (columns and leaves).
   for (const c of columnsOf(layout)) {
     if (!Number.isFinite(c.weight) || c.weight <= 0)
       v.push(`column ${c.id} bad weight ${c.weight}`);
@@ -147,7 +146,7 @@ export function invariantViolations(layout: DockLayout): string[] {
         v.push(`leaf ${l.id} bad weight ${l.weight}`);
   }
 
-  // 9. Floating windows: non-empty stacks + finite geometry + valid stackWeights
+  // 8. Floating windows: non-empty stacks + finite geometry + valid stackWeights
   // (finite, positive, and keyed only by groups actually in this window's stack).
   for (const w of layout.floating) {
     if (w.stack.length === 0) v.push(`floating window ${w.id} has empty stack`);
@@ -170,7 +169,7 @@ export function invariantViolations(layout: DockLayout): string[] {
     }
   }
 
-  // 10/11. Unique node + window ids.
+  // 9. Unique node + window ids.
   const nodeIds: NodeId[] = [];
   for (const c of columnsOf(layout)) {
     nodeIds.push(c.id);
@@ -181,7 +180,7 @@ export function invariantViolations(layout: DockLayout): string[] {
   const wids = layout.floating.map((w) => w.id);
   if (new Set(wids).size !== wids.length) v.push(`duplicate floating window ids`);
 
-  // 12. Container collapse flags (D38) are booleans when present, and no
+  // 10. Container collapse flags (D38) are booleans when present, and no
   // group carries one (group-level collapse is unrepresentable -- a stray
   // wire/persisted `collapsed` on a group would silently resurrect the
   // pre-D38 model).
@@ -198,25 +197,18 @@ export function invariantViolations(layout: DockLayout): string[] {
       v.push(`group ${gid} carries a group-level collapsed flag (D38)`);
   }
 
-  // 13. RETIRED (D42, moot under D46): any column may rail -- a lone railed
-  // column is legal committed geometry, and the "sole column of a band"
-  // shape it legalized no longer exists. (Numbering kept stable; 14+
-  // unchanged.)
-
-  // 14/15. RETIRED (D44): regionCollapsed is no longer a store -- the
-  // packed region rail is DERIVED (isRegionPackedOn: every column
-  // railed), so a stale flag over an empty
-  // edge or a multi-column packed region is unrepresentable. A LEGACY
-  // field surviving un-migrated in a committed layout IS a bug: injection
-  // and restore chokepoints run migrateRegionCollapsedInPlace.
+  // 11. No un-migrated legacy regionCollapsed field (D44): the packed region
+  // rail is derived (isRegionPackedOn: every column railed), so this store is
+  // never written -- a committed layout still carrying it means an
+  // injection/restore path skipped migrateRegionCollapsedInPlace.
   if (layout.regionCollapsed !== undefined)
     v.push(
       "layout carries the legacy regionCollapsed store (D44: run " +
         "migrateRegionCollapsedInPlace at the injection/restore chokepoint)",
     );
 
-  // 16. Region width matches the rendered-need semantic (D40): whenever a
-  // MULTI-column region holds an expanded column, regionWidth[edge] IS the
+  // 12. Region width matches the rendered-need semantic (D40): whenever a
+  // multi-column region holds an expanded column, regionWidth[edge] is the
   // sum over its columns of (railed ? 36 : weight) -- width reconciliation
   // maintains it on every commit, so a drift means an op wrote weights or
   // regionWidth without going through (or agreeing with) the reconciler.
@@ -246,18 +238,13 @@ export function invariantViolations(layout: DockLayout): string[] {
             `regionWidth.${edge} ${rw} != rendered need ${need} (D40)`,
           );
       } else if (Math.abs(rw - railsPx) > RW_TOL) {
-        // Fully railed: the rails ARE the content (D46).
+        // Fully railed: the rails are the content (D46).
         v.push(
           `regionWidth.${edge} ${rw} != all-railed pack width ${railsPx} (D40)`,
         );
       }
     }
   }
-
-  // (old 13 retired: areas no longer duplicate their key in an `id` field --
-  // the mismatch it policed is unrepresentable now. old 14 retired twice
-  // over: uniform-collapse per stack became structural in D38 -- groups have
-  // no collapse flag, so a mixed stack is unrepresentable.)
 
   return v;
 }

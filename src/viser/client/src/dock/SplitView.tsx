@@ -1,13 +1,12 @@
-// Renderer for a docked region. The model is a FIXED three-level shape
-// (D46: Region = Column[] = Leaf[]), so the renderer is too -- no recursion,
-// no band layer:
+// Renderer for a docked region. The model is a fixed three-level shape
+// (D46: Region = Column[] = Leaf[]), so the renderer is too -- no recursion:
 //
 //   SplitView     maps region.columns -> a horizontal flex row of columns,
 //                 with draggable vertical dividers between them;
 //   ColumnView    maps column.leaves  -> a vertical flex stack of leaves,
 //                 with draggable horizontal dividers between stacked leaves.
 //
-// Docked collapse is the RAIL, per column (D28/D46): a railed column swaps
+// Docked collapse is the rail, per column (D28/D46): a railed column swaps
 // for ColumnRail; a fully railed region is simply every column railed --
 // the packed reading is derived (isRegionPackedOn, D44), not a separate
 // rendering. Leaves are always expanded here -- per-leaf collapse is
@@ -39,7 +38,7 @@ import {
 // Minimum height for a stacked (column) cell; row cells use the per-panel width.
 const MIN_CELL_HEIGHT_PX = 50;
 
-// Pointer grab width for a split divider. The divider only DRAWS a 1px rule (and
+// Pointer grab width for a split divider. The divider only draws a 1px rule (and
 // reserves SPLIT_DIVIDER_PX of layout), but an invisible overlay widens the grab
 // zone to this so it's comfortable to hit without thickening the seam.
 const DIVIDER_GRAB_PX = 12;
@@ -59,7 +58,7 @@ export const SplitView = React.memo(function SplitView({
   region: DockRegion;
   edge: DockEdge;
   /** The region's committed rendered width (post canvas-guard scaling).
-   * The columns lay out inside a box FIXED at this width while only the
+   * The columns lay out inside a box fixed at this width while only the
    * region container's width eases (the drawer model): content never
    * reflows mid-transition, and no column moves when a sibling rails --
    * the one moving edge is the region's inner boundary. */
@@ -94,14 +93,14 @@ function RegionColumns({
 }) {
   const dock = useDock();
   const containerRef = React.useRef<HTMLDivElement>(null);
-  // FLIP slide (D34 rev 2): columns render at their COMMITTED positions
+  // FLIP slide (D34 rev 2): columns render at their committed positions
   // instantly (the drawer pane is fixed-width, so there is no mid-ease
-  // reflow) -- but a column whose SCREEN position changed (e.g. everything
+  // reflow) -- but a column whose screen position changed (e.g. everything
   // inner of a newly railed outer sibling) would otherwise jump while the
   // container edge eases. Measure each column's previous screen x, start it
   // at a translateX of the difference, and transition the transform to 0 on
   // the same 160ms curve as the container's width ease -- every column
-  // GLIDES from old slot to new; unmoved columns get delta 0 and stay
+  // glides from old slot to new; unmoved columns get delta 0 and stay
   // perfectly still. Presentation only (P4): the model committed before
   // this runs, reduced-motion and active divider drags skip it, and
   // nothing waits on the transition.
@@ -111,11 +110,11 @@ function RegionColumns({
   React.useLayoutEffect(() => {
     const root = containerRef.current;
     if (root === null) return;
-    // TRANSFORM-FREE natural positions: offsetLeft against the pane root
+    // Transform-free natural positions: offsetLeft against the pane root
     // (position: relative below), plus the root's screen x -- which is
-    // transform-free and CONSTANT mid-ease (the pane is fixed-width,
+    // transform-free and constant mid-ease (the pane is fixed-width,
     // anchored to the outer edge). Never clear an in-flight transform to
-    // measure: this effect runs on EVERY render, and a mid-glide
+    // measure: this effect runs on every render, and a mid-glide
     // re-render (tooltip close, panel-tracking update) that cleared
     // transforms to measure snapped settling columns to their final spot
     // (user report: the untouched column "jitters/jumps").
@@ -136,16 +135,16 @@ function RegionColumns({
       next.set(id, { x: naturalX, w: naturalW });
       const prev = prevColumnBox.current.get(id);
       const delta = prev === undefined ? 0 : prev.x - naturalX;
-      // Only PURE position changes glide. A column whose WIDTH changed
+      // Only pure position changes glide. A column whose width changed
       // (the one being railed/expanded) must render in place: translating
       // a size-changed box paints its full-width content over its
       // neighbor for the glide's duration. Its reveal is the drawer
-      // edge's job. Unmoved columns (delta 0) are NOT touched at all --
+      // edge's job. Unmoved columns (delta 0) are not touched at all --
       // a glide already in flight keeps settling undisturbed.
       const widthChanged =
         prev !== undefined && Math.abs(prev.w - naturalW) > 0.5;
       if (skip || widthChanged || Math.abs(delta) < 0.5) continue;
-      // Start where the column APPEARED last frame: its previous natural
+      // Start where the column appeared last frame: its previous natural
       // position plus any in-flight transform (the live rect's offset from
       // the new natural). Fresh commit: tx = 0 -> start = prev position;
       // mid-glide retarget: the offsets compose, continuing smoothly.
@@ -168,13 +167,13 @@ function RegionColumns({
     prevColumnBox.current = next;
   });
   const columns = region.columns;
-  // Per-column rail mask: a RAILED column renders as a fixed 36px spine
+  // Per-column rail mask: a railed column renders as a fixed 36px spine
   // strip (its width weight preserved for restore, P8) -- the one exception
   // to "columns always hold their width".
   const columnRailed = columns.map((c) => c.railed === true);
   const { atOrBefore: expandedAtOrBefore, after: expandedAfter } =
     expandedFlags(columnRailed);
-  // Railed columns hold no flexible width, so EXPANDED columns' grow factors
+  // Railed columns hold no flexible width, so expanded columns' grow factors
   // normalize over expanded weights only -- a fractional grow sum would
   // strand the freed space as dead area (edge case 16).
   const colWeightTotal =
@@ -186,7 +185,7 @@ function RegionColumns({
       style={{
         display: "flex",
         flexDirection: "row",
-        // Drawer model (D34 rev): the columns lay out at the COMMITTED
+        // Drawer model (D34 rev): the columns lay out at the committed
         // region width immediately -- only the region container's width
         // eases, revealing/concealing this box from the inner side. Fixing
         // the width here (not 100%) is what keeps content from reflowing
@@ -208,9 +207,9 @@ function RegionColumns({
           <React.Fragment key={column.id}>
             <Box
               data-dock-column={column.id}
-              // Deliberately NOT animated (D34 rev): the wrapper renders at
+              // Deliberately not animated (D34 rev): the wrapper renders at
               // its committed flex width instantly. The region container's
-              // width ease is the ONE transition on this axis -- a second
+              // width ease is the one transition on this axis -- a second
               // ease here would race it and wobble sibling columns.
               style={{
                 flexGrow: railed ? 0 : column.weight / colWeightTotal,
@@ -220,7 +219,7 @@ function RegionColumns({
                 minHeight: 0,
                 display: "flex",
                 flexDirection: "column",
-                // During the width ease the CONTENT already renders its
+                // During the width ease the content already renders its
                 // committed form; clip the reveal (same rule as bars) so
                 // the transient never shows final-size icons floating in a
                 // wide box -- that flash reads as "weirdly small icons".
@@ -229,7 +228,7 @@ function RegionColumns({
             >
               {railed ? (
                 // Per-column rail: the column collapsed to its 36px spine
-                // strip in place, rendered AT its final width inside the
+                // strip in place, rendered at its final width inside the
                 // easing wrapper (P1: the content is the committed result;
                 // the wrapper only reveals it). Its own narrow header is
                 // the parent handle while railed (a separate handle above
@@ -260,7 +259,7 @@ function RegionColumns({
                         dock.startColumnDrag(event, edge, column.id, {
                           // A motionless bar click backs the chevron's
                           // action (P9's hit-area rule -- same as the
-                          // region handle's bar), INCLUDING the focus
+                          // region handle's bar), including the focus
                           // handoff to the rail header's same-spot toggle:
                           // a pointer click routes here (the chevron is
                           // drag-through, T6), and focus must never fall to
@@ -295,7 +294,7 @@ function RegionColumns({
                 dir="row"
                 // A railed column is fixed-width chrome: the divider
                 // resizes only when an expanded column sits on both sides
-                // of it (D24: only RAILED columns go inert). Its RULE always
+                // of it (D24: only railed columns go inert). Its rule always
                 // runs the full region height either way -- a rail column's
                 // body is full-height (empty tail included), so the boundary
                 // between two columns is too.
@@ -310,13 +309,13 @@ function RegionColumns({
                     collapsedPx: MINIMIZED_STRIP_PX,
                     index,
                     deltaPx,
-                    // MODEL-based budget, not the measured box: the box
+                    // Model-based budget, not the measured box: the box
                     // includes divider chrome (weights would creep by
                     // +7px/gesture through the sameSet regionWidth pin)
-                    // and renders SCALED under the canvas guard (weights
+                    // and renders scaled under the canvas guard (weights
                     // would bake the squeeze in -- the same contract the
                     // RegionResizer protects). Expanded weights are px
-                    // (reconciled), so their sum IS the budget; the
+                    // (reconciled), so their sum is the budget; the
                     // strips term cancels via collapsedPx below.
                     containerPx:
                       columns.reduce(
@@ -373,7 +372,7 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
         minWidth: 0,
         minHeight: 0,
         // With the leaves' render floors, a squeezed column (short viewport,
-        // many cells) SCROLLS rather than pushing cells past the container
+        // many cells) scrolls rather than pushing cells past the container
         // where their chrome becomes unreachable (P5) -- mirrors the
         // floating stack's overflow rule (P7). data-dock-scroll lets
         // collectTargets clip leaf rects to the visible box (P1: a
@@ -449,7 +448,7 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
  * `number[]` weights), so the only per-axis input is the cell list, the
  * collapsed mask, the fixed chrome px a collapsed cell renders at, and the
  * min-cell floor. Collapsed (railed) cells are fixed-width chrome (D28/D38):
- * their STORED weight is preserved untouched for restore (P8), and their
+ * their stored weight is preserved untouched for restore (P8), and their
  * rendered extent is subtracted from the container so the expanded cells'
  * new weights stay on the true px basis. */
 function resizeCells(opts: {
@@ -457,7 +456,7 @@ function resizeCells(opts: {
   edge: DockEdge;
   cells: readonly { id: string; weight: number }[];
   collapsed: boolean[];
-  /** Rendered px of ONE collapsed cell (the 36px rail strip). Only read
+  /** Rendered px of one collapsed cell (the 36px rail strip). Only read
    * where the mask has collapsed cells. */
   collapsedPx?: number;
   index: number;
@@ -501,7 +500,7 @@ function DockLeafView({ leaf, edge }: { leaf: DockLeaf; edge: DockEdge }) {
         flexGrow: 1,
         minWidth: 0,
         minHeight: 0,
-        // Column flex so the group inside controls its own HEIGHT via flexGrow
+        // Column flex so the group inside controls its own height via flexGrow
         // (a row parent would make flexGrow control width). This lets a docked
         // group's collapse animate as a smooth height change (TabGroupFrame puts
         // a flex transition on the group when filling).
@@ -522,7 +521,7 @@ function DockLeafFrame({ groupId }: { groupId: string }) {
   const group = useDock().groups[groupId];
   if (group === undefined) return null;
   // D38: docked cells never render as bars -- a collapsed docked container
-  // is the column/region RAIL (rendered by RowView/SplitView), so a leaf
+  // is the column rail (ColumnRail, swapped in by RegionColumns), so a leaf
   // that renders here is always the expanded frame. Docked leaves can be
   // resized narrower than the panel-content minimum, so their body shows a
   // persistent horizontal scrollbar pinned to the bottom.
@@ -602,7 +601,7 @@ function SplitDivider({
         position: "relative",
         flexShrink: 0,
         [isRow ? "width" : "height"]: SPLIT_DIVIDER_PX,
-        // Splitter cursors (col/row-resize): this divider TRADES space
+        // Splitter cursors (col/row-resize): this divider trades space
         // between two panes -- the edge-resize cursors stay on grips that
         // resize one thing (window edges, the region's canvas boundary).
         cursor: !resizable ? "default" : isRow ? "col-resize" : "row-resize",
@@ -626,8 +625,8 @@ function SplitDivider({
           }}
         />
       )}
-      {/* Fix C: an INERT divider (rail-to-rail, resizable=false) must read as
-      "no resize here", not as a live handle. Both rules run the FULL seam
+      {/* An inert divider (rail-to-rail, resizable=false) must read as
+      "no resize here", not as a live handle. Both rules run the full seam
       length -- the boundary between two cells spans their whole shared edge,
       empty tails included -- but the inert one is drawn dimmer so users don't
       expect a handle where none exists. */}

@@ -391,7 +391,7 @@ describe("railed-column width paths (drop beside a rail)", () => {
     // Restore width intact -- the survivors' too.
     expect(cols.map((c) => c.weight)).toEqual([150, 150, 260]);
     expect(cols.map((c) => c.railed === true)).toEqual([true, true, false]);
-    // regionWidth pinned to the rendered need (invariant #16): two 36px
+    // regionWidth pinned to the rendered need (invariant #12): two 36px
     // rails + the 260px restore -- the region grows by (restore - 36).
     expect(regionWidthsOf(expanded).left).toBe(2 * MINIMIZED_STRIP_PX + 260);
     const reservedExpanded = reservedOf(expanded);

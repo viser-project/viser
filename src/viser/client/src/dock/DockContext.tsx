@@ -14,27 +14,27 @@ import { NodeId,
   TabGroup,
 } from "./types";
 
-/** Imperative layout API for code that drives panes from OUTSIDE a pointer
+/** Imperative layout API for code that drives panes from outside a pointer
  * gesture -- e.g. a sync layer adding/removing panes as server state changes.
  * All calls are routed through the manager's applyOp (so docked region widths
  * reconcile normally) and are stable across renders (safe in effect deps). */
 export interface DockApi {
   /** Apply an arbitrary pure layout transform (compose ops from layoutOps). */
   apply: (fn: (layout: DockLayout) => DockLayout) => void;
-  /** Replace the layout WHOLESALE with one whose ids did not come from this
+  /** Replace the layout wholesale with one whose ids did not come from this
    * session (restore, test-probe injection). Seeds the fresh-id counter past
    * the incoming ids before applying. */
   replace: (layout: DockLayout) => void;
-  /** Add a not-yet-placed panel to an area's tabs (creates the area if
-   * needed). No-op if the panel is already placed anywhere. */
+  /** Add a not-yet-placed pane to an area's tabs (creates the area if
+   * needed). No-op if the pane is already placed anywhere. */
   addPaneToArea: (areaId: AreaId, paneId: PaneId, index?: number) => void;
 }
 
 export interface DockContextValue {
   panes: PaneRegistry;
-  /** Imperative panel lifecycle API (stable identity). */
+  /** Imperative pane lifecycle API (stable identity). */
   api: DockApi;
-  /** The committed layout, for sync layers that need to OBSERVE where things
+  /** The committed layout, for sync layers that need to observe where things
    * are (e.g. findGroupLocation to report a panel's dock side). Mutating it
    * does nothing -- use `api` to change the layout. */
   layout: DockLayout;
@@ -53,7 +53,7 @@ export interface DockContextValue {
     opts?: { onClick?: () => void },
   ) => void;
   /** Begin a press on the collapsed region rail's parent handle: a drag
-   * floats the WHOLE region as one window stack; a motionless click runs
+   * floats the whole region as one window stack; a motionless click runs
    * `opts.onClick` (expand the region). */
   startRegionDrag: (
     event: React.PointerEvent<HTMLElement>,
@@ -67,7 +67,7 @@ export interface DockContextValue {
     groupId: GroupId,
     paneId: PaneId,
   ) => void;
-  /** Begin a press on ONE tab row of a MINIMIZED docked stack: a drag tears out
+  /** Begin a press on one tab row of a minimized docked stack: a drag tears out
    * just that pane into its own floating window (the rest of the stack stays
    * docked); a no-motion click expands the group to that tab. Unlike
    * startTabDrag this has no reorder phase -- a minimized strip is vertical and
@@ -91,26 +91,26 @@ export interface DockContextValue {
   /** Select a tab AND expand the group if minimized -- clicking a tab to read it
    * should reveal its content, not just switch the (hidden) active tab. */
   expandToTab: (groupId: GroupId, paneId: PaneId) => void;
-  /** Expand the container holding the group (D38: collapse is ONE flag per
+  /** Expand the container holding the group (D38: collapse is one flag per
    * container, so any bar's expand affordance reveals the whole window).
    * Optionally activates `toPaneId` on the pressed group first (a bar's
    * label click). */
   expandStackOf: (groupId: GroupId, toPaneId?: PaneId) => void;
-  /** Toggle the collapse flag of the group's CONTAINER (D38) -- driven only
+  /** Toggle the collapse flag of the group's container (D38) -- driven only
    * from a single-group floating window's chrome (D32). */
   toggleCollapsed: (groupId: GroupId) => void;
-  /** Rail EVERY column of a docked edge (the region chevron; the packed
+  /** Rail every column of a docked edge (the region chevron; the packed
    * reading is derived, D44/D46). Collapse-only: expansion is granular via
-   * each strip's own header. A USER commit (not runProgrammatic), so
+   * each strip's own header. A user commit (not runProgrammatic), so
    * ownership arbitration learns the user set the flags (P6). */
   collapseRegion: (edge: DockEdge) => void;
-  /** Collapse/expand a docked COLUMN to/from its per-column rail -- the
-   * column-collapse chevron and column-rail-header gesture. A USER commit
+  /** Collapse/expand a docked column to/from its per-column rail -- the
+   * column-collapse chevron and column-rail-header gesture. A user commit
    * like collapseRegion, for the same P6 reason. */
   railColumn: (edge: DockEdge, columnId: NodeId, on: boolean) => void;
   /** Drag one visual column out of a multi-column region as a stacked
    * window (D27) -- the per-column parent handle's gesture. A no-motion
-   * press fires `opts.onClick` if given -- the RAILED column's rail header
+   * press fires `opts.onClick` if given -- the railed column's rail header
    * uses this to expand the column on click while still dragging the whole
    * column on motion. */
   startColumnDrag: (
@@ -142,7 +142,7 @@ export function useDock(): DockContextValue {
  * Consumed only by observers that genuinely track these values (e.g. the
  * control panel's dock-state reporter). */
 export interface DockMetrics {
-  /** RENDERED region widths in px (regionWidth + strip/divider chrome): what
+  /** Rendered region widths in px (regionWidth + strip/divider chrome): what
    * actually insets the canvas. Use this for screen-geometry consumers like
    * the notifications offset. */
   reservedWidth: { left: number; right: number };

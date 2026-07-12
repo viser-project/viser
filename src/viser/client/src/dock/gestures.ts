@@ -9,12 +9,12 @@ export { motionExceedsThreshold } from "../dragUtils";
  * `window` so the gesture survives the cursor leaving that element; this shares
  * the move + (up/cancel -> end) wiring.
  *
- * When `pointerId` is given, events from any OTHER pointer are ignored -- so on
+ * When `pointerId` is given, events from any other pointer are ignored -- so on
  * a multi-touch surface a second finger can't drive or end the first finger's
  * gesture (a second finger's `pointerup` must not commit finger A's drop). This
  * mirrors the scene-pointer subsystem (pointer/gestures.ts). The end callback
  * receives the triggering event so callers can release the right pointer, plus
- * a first-class `cancelled` flag: true for anything that is NOT a real release
+ * a first-class `cancelled` flag: true for anything that is not a real release
  * (pointercancel from a browser-stolen touch, or Escape) -- consumers abort
  * their commit on it (a drag drops nothing, a reorder snaps back) instead of
  * sniffing event types. */
@@ -61,7 +61,7 @@ export function suppressTextSelection(): () => void {
   };
 }
 
-/** Show the "grabbing" cursor page-wide while a MOVE drag is in flight (the
+/** Show the "grabbing" cursor page-wide while a move drag is in flight (the
  * handles show "grab" at rest; without this the cursor never closes). Returns
  * a restore function. Resize gestures keep their own ew/ns-resize cursors. */
 export function grabbingCursor(): () => void {
@@ -75,14 +75,14 @@ export function grabbingCursor(): () => void {
 /** Run a rAF-throttled drag gesture: capture the pointer on `grip`, record the
  * latest pointer state via `update(e)` on every move, and apply it via
  * `flush()` at most once per animation frame (plus one final flush on release
- * if a move is still pending). `onEnd` runs exactly once, on release OR
+ * if a move is still pending). `onEnd` runs exactly once, on release or
  * cancellation, before the final flush -- the place to clear shared flags. It
- * receives `cancelled: true` when the gesture did NOT end with a real release
+ * receives `cancelled: true` when the gesture did not end with a real release
  * (Escape, browser-stolen touch, unmount), so callers can revert what their
  * per-frame flushes applied; no flush runs after a cancel.
  *
  * Returns a cancel function for unmount cleanup: it detaches the window
- * listeners, drops any pending frame WITHOUT flushing, and runs `onEnd`.
+ * listeners, drops any pending frame without flushing, and runs `onEnd`.
  * Idempotent, so calling it after a normal release is a no-op.
  *
  * This wraps the pattern shared by every resize/divider gesture (rAF
@@ -147,11 +147,8 @@ export function tryRelease(el: Element, pointerId: number): void {
   }
 }
 
-/** Activate a role=button element from the keyboard (Enter or Space), matching
- * the native <button> contract for our minimize/expand controls. Structurally
- * typed so it accepts React's synthetic KeyboardEvent without a React import. */
 /** Move keyboard focus to a pane's tab element on the next frame -- used
- * after a KEYBOARD-driven expand of a minimized group, whose bar/row
+ * after a keyboard-driven expand of a minimized group, whose bar/row
  * unmounts on expand (focus would otherwise fall to <body> and the user
  * would have to Tab back in from the top). Pointer paths don't call this:
  * mouse users don't expect a focus ring to appear. */
@@ -159,8 +156,8 @@ export function focusPaneTab(paneId: string) {
   focusDockControl(`[data-dock-tab="${CSS.escape(paneId)}"]`);
 }
 
-/** Like focusPaneTab, with a fallback chain for UNMERGEABLE panels (edge
- * case 14): the revealed expanded cell may render NO [data-dock-tab] at all
+/** Like focusPaneTab, with a fallback chain for unmergeable panels (edge
+ * case 14): the revealed expanded cell may render no [data-dock-tab] at all
  * (its label is a full-width header, not a tab strip), so focusing the tab
  * would silently fall to <body>. Fall back to the revealed group's header
  * toggle ([data-dock-minimize], e.g. a sole floating group's compact `-`),
@@ -190,7 +187,7 @@ export function focusPaneTabOrGroup(paneId: string, groupId: string) {
 }
 
 /** rAF-focus the first element matching `selector` -- same deferral contract
- * as focusPaneTab, for keyboard-driven MINIMIZE/COLLAPSE: the activated
+ * as focusPaneTab, for keyboard-driven minimize/collapse: the activated
  * control unmounts with its chrome row, so focus hands off to the control
  * that replaced it (the bar's toggle, the rail's header) instead of falling
  * to <body>. */
@@ -200,6 +197,9 @@ export function focusDockControl(selector: string) {
   });
 }
 
+/** Activate a role=button element from the keyboard (Enter or Space), matching
+ * the native <button> contract for our minimize/expand controls. Structurally
+ * typed so it accepts React's synthetic KeyboardEvent without a React import. */
 export function keyActivate(action: () => void) {
   return (event: {
     key: string;

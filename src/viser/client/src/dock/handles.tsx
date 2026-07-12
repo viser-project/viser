@@ -37,11 +37,6 @@ export function GripPill({
   );
 }
 
-/** Square-ish handle-button size (em): HandleIconButton's default width, the
- * ChromeToggle / rail-cap button extent, and the basis other chrome uses to
- * clear these buttons (e.g. the region-collapse chevron's inset). Lives here,
- * with the button it sizes, rather than in types.ts. */
-
 /** Hover-highlighted icon button used inside handles (the single-group
  * floating window's minimize on the grip bar, the window header's toggle,
  * expand on a rail header). `placement` overrides the default right-edge
@@ -51,7 +46,7 @@ export function GripPill({
  * Two pointer modes:
  * - Default: swallows pointerdown so pressing the button can't arm the
  *   handle's drag gesture; a click activates directly.
- * - `dragThrough`: the press FLOWS to the parent handle, whose click-vs-drag
+ * - `dragThrough`: the press flows to the parent handle, whose click-vs-drag
  *   arbitration decides -- motion drags the panel, a motionless release
  *   activates (the parent passes the activation as its onClick). The button
  *   itself only activates on synthetic clicks (element.click() from tests /
@@ -152,7 +147,7 @@ export function ChromeDivider({ vertical = false }: { vertical?: boolean }) {
   );
 }
 
-/** The +/- toggle placed at a chrome bar's RIGHT end (P13: where the
+/** The +/- toggle placed at a chrome bar's right end (P13: where the
  * expanded header's `-` sits; spatially stable across minimize/expand).
  * Thin wrapper over HandleIconButton fixing the shared geometry so every
  * bar's toggle is identical. dragThrough by design: a press flows to the
@@ -169,7 +164,7 @@ export function ChromeToggle({
   onActivate: () => void;
   /** Smaller, quieter form for hosts that carry their own prominent
    * controls (the unmergeable panel header's action icons): the toggle is
-   * ONLY a signifier there -- the whole header is the click target -- so it
+   * only a signifier there -- the whole header is the click target -- so it
    * can shrink without costing hit area (P11's backing-surface rule). */
   compact?: boolean;
 }) {
@@ -197,7 +192,7 @@ export function ChromeToggle({
 }
 
 /** Region-collapse chevron (D21/D26), rendered at the right end of the
- * docked region's PARENT HANDLE -- the same spot the rail header's + holds
+ * docked region's parent handle -- the same spot the rail header's + holds
  * while collapsed (P13). Drag-through like every other right-end control
  * (T6 resolved): a press flows to the host bar's drag arbitration -- motion
  * drags the stack, a motionless click collapses via the bar's own onClick
@@ -223,7 +218,7 @@ export function RegionCollapseChevron({
         // focus to the rail header's toggle (the same-spot undo control)
         // instead of <body> -- spec 4 / edge case 14.
         focusDockControl(
-          // D46: a packed region renders per-column rails; the FIRST
+          // D46: a packed region renders per-column rails; the first
           // column rail's toggle is the same-spot undo control.
           `[data-dock-region="${edge}"] [data-dock-minimize-all]`,
         );
@@ -243,7 +238,7 @@ export function RegionCollapseChevron({
   );
 }
 
-/** Column-collapse chevron: the per-COLUMN sibling of RegionCollapseChevron,
+/** Column-collapse chevron: the per-column sibling of RegionCollapseChevron,
  * rendered at the right end of a column parent handle whose region has sibling
  * columns (D27). It rails exactly what its handle owns -- that one column --
  * and, like the region chevron, is drag-through (T6 resolved): a press flows
@@ -317,10 +312,10 @@ export function StackHandleBar({
 }: {
   onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
   attrs: Record<string, string>;
-  /** The container's ONE collapse flag (D38), as rendered state. */
+  /** The container's one collapse flag (D38), as rendered state. */
   collapsed?: boolean;
   onToggle?: () => void;
-  /** The bar sits on a minimized STRIP (~36px wide): there is no room for the
+  /** The bar sits on a minimized strip (~36px wide): there is no room for the
    * centered pill next to the button, so the button alone fills the bar. */
   narrow?: boolean;
   /** Override the toggle's aria-label when the action is scoped narrower
@@ -350,7 +345,7 @@ export function StackHandleBar({
     >
       {!narrow && <GripPill width="3em" opacity={0.6} />}
       {endControl !== undefined && (
-        // The slot owns its geometry: end controls ALWAYS sit at the bar's
+        // The slot owns its geometry: end controls always sit at the bar's
         // right end, regardless of caller -- position is not a per-call-site
         // decision (two call sites once produced two placements).
         <Box

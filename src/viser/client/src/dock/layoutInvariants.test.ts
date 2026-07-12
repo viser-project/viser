@@ -82,7 +82,7 @@ describe("invariantViolations", () => {
     expect(invariantViolations(l).some((s) => s.includes("orphan"))).toBe(true);
   });
 
-  it("#13 retired (D42/D46): a railed column beside expanded siblings is LEGAL", () => {
+  it("a railed column beside expanded siblings is legal (D42/D46)", () => {
     // The lone rail renders its 36px strip beside the expanded column --
     // legal committed geometry (the column chevron produces it), so there
     // is no structural check against it.
@@ -93,8 +93,8 @@ describe("invariantViolations", () => {
     expect(invariantViolations(l)).toEqual([]);
   });
 
-  it("#14/#15 retired (D44): an un-migrated legacy regionCollapsed field is flagged", () => {
-    // The packed rail is DERIVED now; a committed layout still carrying the
+  it("#11: an un-migrated legacy regionCollapsed field is flagged (D44)", () => {
+    // The packed rail is derived; a committed layout still carrying the
     // legacy store means an injection/restore path skipped
     // migrateRegionCollapsedInPlace.
     const l = emptyLayout();
@@ -111,8 +111,8 @@ describe("invariantViolations", () => {
     expect(invariantViolations(l)).toEqual([]);
   });
 
-  it("#16: flags regionWidth drifting from the columns' rendered need (D40/D46)", () => {
-    // With an EXPANDED column in a multi-column region, regionWidth must
+  it("#12: flags regionWidth drifting from the columns' rendered need (D40/D46)", () => {
+    // With an expanded column in a multi-column region, regionWidth must
     // equal sum(railed ? 36 : weight) -- reconciliation maintains it on
     // every commit, so a drift means a bypassed/broken width write.
     const l = emptyLayout();
@@ -128,8 +128,8 @@ describe("invariantViolations", () => {
     expect(invariantViolations(l)).toEqual([]);
   });
 
-  it("#16: a fully railed multi-column region holds exactly its rails", () => {
-    // Every column railed: the rails ARE the content (D46 -- there are no
+  it("#12: a fully railed multi-column region holds exactly its rails", () => {
+    // Every column railed: the rails are the content (D46 -- there are no
     // other bands whose expanded content could carry the width), so
     // regionWidth is 36 x columns, never a phantom content width.
     const rails = emptyLayout();
@@ -145,7 +145,7 @@ describe("invariantViolations", () => {
     expect(invariantViolations(rails)).toEqual([]);
   });
 
-  it("#16: gated off for unreconciled layouts and single-column regions", () => {
+  it("#12: gated off for unreconciled layouts and single-column regions", () => {
     // No regionWidth field: never reconciled (flex-share literals) -- no
     // basis to check against.
     const literal = emptyLayout();

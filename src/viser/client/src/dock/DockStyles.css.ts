@@ -7,9 +7,9 @@ export const dockBodyScroll = style({});
 
 // Size the ScrollArea's content wrapper to `max(100%, MIN_PANEL_WIDTH_PX)`:
 // it fills the viewport when the panel is at least the content minimum, but
-// holds that minimum and OVERFLOWS (the viewport then shows a horizontal
+// holds that minimum and overflows (the viewport then shows a horizontal
 // scrollbar) once the region is dragged narrower -- the panel body never
-// squeezes below MIN_PANEL_WIDTH_PX. The floor is a FIXED pixel constant, not
+// squeezes below MIN_PANEL_WIDTH_PX. The floor is a fixed pixel constant, not
 // Mantine's default `min-content`: min-content lets fixed-pixel content -- e.g.
 // a plot canvas that sizes itself from a measure of this very wrapper -- ratchet
 // the wrapper wider in a measure->resize feedback loop; a constant floor keeps
@@ -31,7 +31,7 @@ globalStyle(`:where([data-mantine-color-scheme="dark"]) ${gripBarBg}`, {
   backgroundColor: "var(--mantine-color-dark-5)",
 });
 
-/** Minimize/expand motion (P4 as amended): PURE presentation. The model
+/** Minimize/expand motion (P4 as amended): pure presentation. The model
  * commits instantly; this class only eases the cell/column wrappers' flex
  * properties between their committed values. Three off-switches keep it
  * honest: prefers-reduced-motion (instant), an ancestor's
@@ -55,7 +55,7 @@ export const collapseAnim = style({
 
 /** D34 sibling of collapseAnim for the docked REGION container: railing /
  * expanding a region swaps its content for the 36px rail, and this eases the
- * container's WIDTH between the committed values (the canvas insets commit
+ * container's width between the committed values (the canvas insets commit
  * instantly -- motion is pure presentation). Same off-switches: reduced
  * motion, and an ancestor's [data-dock-resizing] (the region resizer writes
  * widths per frame; easing would lag the cursor). */
@@ -73,7 +73,7 @@ export const regionWidthAnim = style({
   },
 });
 
-/** D34 sibling of regionWidthAnim for the CANVAS wrapper: rail collapse /
+/** D34 sibling of regionWidthAnim for the canvas wrapper: rail collapse /
  * expand changes the canvas insets in one commit, and this eases the
  * wrapper's left/right between the committed values so the canvas tracks
  * the region edge's own ease instead of jumping (user-adjudicated). Same
@@ -94,10 +94,10 @@ export const canvasInsetAnim = style({
   },
 });
 
-/** D34 sibling of collapseAnim for a FLOATING window's collapse: eases the
- * window's HEIGHT between committed values. Both endpoints are numeric for a
- * PINNED window (px pinned height <-> the collapsed bars' calc() sum), so
- * the round-trip eases; an AUTO-height window's expanded height is `auto`,
+/** D34 sibling of collapseAnim for a floating window's collapse: eases the
+ * window's height between committed values. Both endpoints are numeric for a
+ * pinned window (px pinned height <-> the collapsed bars' calc() sum), so
+ * the round-trip eases; an auto-height window's expanded height is `auto`,
  * which CSS cannot interpolate -- that transition is instant (documented
  * gap: an honest auto endpoint would need a DOM measure, and motion may
  * never gate on measurement, P4). */
@@ -121,7 +121,7 @@ export const windowCollapseAnim = style({
 });
 
 /** Visible keyboard-focus ring for the dock's focusable non-native controls
- * (tabs, minimize/expand buttons). Drawn INSIDE the element (negative offset)
+ * (tabs, minimize/expand buttons). Drawn inside the element (negative offset)
  * so overflow:hidden ancestors -- tab strips, grip bars -- can't clip it. Only
  * on :focus-visible, so pointer clicks don't flash a ring. */
 export const focusRing = style({
@@ -159,7 +159,7 @@ globalStyle(
   { borderTop: "1px solid var(--mantine-color-dark-4)" },
 );
 
-/** Wayfinding text -- the ONE style for every minimized-surface label (bar
+/** Wayfinding text -- the one style for every minimized-surface label (bar
  * segments, spine rows): theme text at chrome emphasis. Spec P3 ("chrome is
  * quiet") + P13 (labels are the header's tabs, restyled). Sizing (0.85em)
  * matches the expanded tab strip so minimized labels are literal cousins of

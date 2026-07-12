@@ -21,12 +21,12 @@ import { focusDockControl, tabListKeyDown } from "./gestures";
 import { ChromeToggle, GripPill, HandleIconButton } from "./handles";
 import { GRIP_BAR_EM, HEADER_PAD_EM, PaneSpec, TabGroup } from "./types";
 
-// The active panel's BODY, memoized so it is rebuilt/reconciled only when its
-// OWN inputs change -- not on every unrelated dock op. A tab switch or a
+// The active pane's body, memoized so it is rebuilt/reconciled only when its
+// own inputs change -- not on every unrelated dock op. A tab switch or a
 // dock/undock elsewhere busts the dock context, so every TabGroupFrame
 // re-renders; without this, each one would re-invoke `panel.render()` and
 // re-reconcile the whole ScrollArea/Box wrapper chain. The memo holds because
-// panel specs are referentially STABLE across layout ops (the registry keys
+// pane specs are referentially stable across layout ops (the registry keys
 // content by id -- see ControlPanelDock), so an unrelated op leaves
 // (panel, fill, maxContentHeight) untouched and React skips the subtree. The
 // live content inside still updates via its own state subscriptions.
@@ -80,8 +80,8 @@ const PanelBody = React.memo(function PanelBody({
     </Box>
   );
   // Fill (docked leaves, and fixed-height floating windows): a plain ScrollArea
-  // that FILLS the panel's height, so the horizontal scrollbar (shown when the
-  // body is narrower than its content minimum) pins to the BOTTOM of the panel
+  // that fills the panel's height, so the horizontal scrollbar (shown when the
+  // body is narrower than its content minimum) pins to the bottom of the panel
   // rather than floating just under short content. The flex parent (flexGrow:1,
   // minHeight:0) gives it the definite height it needs to scroll. Docked leaves
   // pass persistentScrollbar so the bar stays visible; floating windows keep the
@@ -116,10 +116,10 @@ const TAB_ROW_EM = "2.4em";
 const STRIP_FONT_EM = 0.85;
 
 /** Slim handle bar above the tab strip (docked or floating). The bar itself is
- * a drag handle (centered grip line + grab cursor); on a SINGLE-GROUP
- * FLOATING window (D32) a button on the right minimizes/expands the window.
- * The button is drag-THROUGH: pressing it and moving drags the panel like the
- * bar would (a drag from the EXPAND button tears out the full panel), while a
+ * a drag handle (centered grip line + grab cursor); on a single-group
+ * floating window (D32) a button on the right minimizes/expands the window.
+ * The button is drag-through: pressing it and moving drags the panel like the
+ * bar would (a drag from the expand button tears out the full panel), while a
  * motionless release toggles. Everywhere else -- every docked cell, every
  * stacked floating cell -- the bar is a drag-only surface: the collapse
  * control is the enclosing scope's (the parent handle's chevron docked, the
@@ -130,7 +130,7 @@ function GripBar({
   startDrag,
 }: {
   collapsed: boolean;
-  /** The panel-level minimize -- present only on a single-group FLOATING
+  /** The panel-level minimize -- present only on a single-group floating
    * window (D32): the largest coinciding scope owns collapse, so docked and
    * stacked cells' toggles (and the bar clicks that back them) never render. */
   onToggle?: () => void;
@@ -144,7 +144,7 @@ function GripBar({
       data-dock-griphandle
       className={gripBarBg}
       onPointerDown={(event) => {
-        // A motionless tap toggles minimize/expand WHERE the toggle exists
+        // A motionless tap toggles minimize/expand where the toggle exists
         // (single-group floating windows, D32); otherwise the bar is
         // drag-only. A real drag moves the panel AS-IS (expanding is
         // click-only).
@@ -168,11 +168,11 @@ function GripBar({
       {/* Drag affordance. */}
       <GripPill />
       {/* Minimize / expand toggle -- present only on a single-group
-      FLOATING window (D32): the largest coinciding scope owns collapse, so
+      floating window (D32): the largest coinciding scope owns collapse, so
       a docked cell's control is its parent handle's chevron and a stacked
       floating cell's is the window header's toggle (one collapse control
       per scope, P12). Here panel = window, so the toggle flips the
-      window's ONE flag (D38). */}
+      window's one flag (D38). */}
       {onToggle !== undefined && (
         <HandleIconButton
           attrs={{ "data-dock-minimize": "true" }}
@@ -215,7 +215,7 @@ export function TabGroupFrame({
 }) {
   const dock = useDock();
   const { panes } = dock;
-  // The active pane's spec, resolved ONCE. `group.activeId` is null exactly
+  // The active pane's spec, resolved once. `group.activeId` is null exactly
   // when the group is empty (only an area's backing group), which renders
   // chrome only -- every consumer below handles the undefined.
   const activePane =
@@ -225,18 +225,18 @@ export function TabGroupFrame({
   // expanded frame normally renders only in expanded containers; this stays
   // container-derived so the toggle icon/backing reads honestly either way.)
   const collapsed = isGroupEffectivelyCollapsed(dock.layout, group.id);
-  // An unmergeable group always holds a single panel and renders its label as a
+  // An unmergeable group always holds a single pane and renders its label as a
   // full-width header (never a tab); nothing can be merged into it.
   const unmergeable = group.paneIds.some(
     (p) => panes[p]?.unmergeable === true,
   );
-  // A STACKED titleNode header (the main panel's connection-status bar sitting
-  // below another panel in a 2+ stack, docked OR floating) gets a thin top rule
-  // so it reads as separated from the panel above. Not needed when LONE (nothing
+  // A stacked titleNode header (the main panel's connection-status bar sitting
+  // below another panel in a 2+ stack, docked or floating) gets a thin top rule
+  // so it reads as separated from the panel above. Not needed when lone (nothing
   // above it).
   const stacked = isStackedGroup(dock.layout, group.id);
-  // D32: the panel-level minimize control exists ONLY when this group is
-  // the sole group of a FLOATING window (panel = stack = window, and the
+  // D32: the panel-level minimize control exists only when this group is
+  // the sole group of a floating window (panel = stack = window, and the
   // grip bar/header is that window's merged handle). Docked panels -- lone
   // or stacked -- never carry it: their collapse control is the enclosing
   // scope's chevron (docked collapse is uniformly chevron -> rail).
@@ -329,9 +329,9 @@ export function TabGroupFrame({
       }}
     >
       {/* Move-handle grip bar (with a minimize/expand button only on a
-      single-group FLOATING window, D32), above the tabs. */}
-      {/* The gray grip bar is shown for ordinary groups. An UNMERGEABLE panel
-      has no separate grip: its full-width header IS the handle, and -- on a
+      single-group floating window, D32), above the tabs. */}
+      {/* The gray grip bar is shown for ordinary groups. An unmergeable panel
+      has no separate grip: its full-width header is the handle, and -- on a
       single-group floating window -- clicking it (no drag) toggles minimize,
       matching the live FloatingPanel. */}
       {stripDragsGroup && !unmergeable && (
@@ -347,7 +347,7 @@ export function TabGroupFrame({
       {unmergeable ? (
         // Unmergeable: a full-width label header (not a tab strip), which is both
         // the move handle (drag to relocate) and the minimize toggle (click, no
-        // drag -- like FloatingPanel). A panel may supply a custom `titleNode`
+        // drag -- like FloatingPanel). A pane may supply a custom `titleNode`
         // (e.g. a connection-status bar) instead of the plain title text; then
         // the header doesn't impose the primary-color/bold title styling.
         <Box
@@ -361,14 +361,14 @@ export function TabGroupFrame({
               ? undefined
               : (activePane?.title ?? group.activeId ?? "")
           }
-          // The 1px BOTTOM rule separates the header from the content below, so
-          // only show it when EXPANDED -- a collapsed panel is header-only, and
-          // the rule would read as a stray border on its bottom edge. A 1px TOP
+          // The 1px bottom rule separates the header from the content below, so
+          // only show it when expanded -- a collapsed panel is header-only, and
+          // the rule would read as a stray border on its bottom edge. A 1px top
           // rule (same gray) is added when docked+stacked to separate it from
           // the panel above.
           className={
             activePane?.titleNode
-              ? // Top rule ALWAYS when docked (`fill`): a parent handle now
+              ? // Top rule always when docked (`fill`): a parent handle
                 // sits above every docked panel, and the rule is the visual
                 // separator between it and the panel's own header. Floating
                 // keeps the stacked-only condition (a lone window has
@@ -380,7 +380,7 @@ export function TabGroupFrame({
           }
           onPointerDown={(event) => {
             if (!stripDragsGroup) return;
-            // Click-to-minimize only on a single-group FLOATING window
+            // Click-to-minimize only on a single-group floating window
             // (D32): docked or stacked, the collapse control is the
             // enclosing scope's (chevron / window-header toggle), so the
             // header is a drag-only surface there.
@@ -395,10 +395,10 @@ export function TabGroupFrame({
             flexShrink: 0,
             overflow: "hidden",
             // With a custom titleNode (e.g. the connection-status bar), match the
-            // live FloatingPanel handle EXACTLY: 2.75em tall, 1.5em line-height,
+            // live FloatingPanel handle exactly: 2.75em tall, 1.5em line-height,
             // default font size, weight 400, 0.75em side padding, and just a
             // subtle 1px bottom divider (the headerRule class -- Divider's
-            // gray-3/dark-4, NOT default-border; no thick primary rule, no tab
+            // gray-3/dark-4, not default-border; no thick primary rule, no tab
             // gradient). The plain-title case keeps the compact bold look + rule.
             ...(activePane?.titleNode
               ? {
@@ -454,9 +454,9 @@ export function TabGroupFrame({
           )}
           {/* The header's ONE visible minimize signifier (P9: the whole
           header toggles on click, but an action with zero icons is
-          undiscoverable). Rendered for BOTH title forms -- a plain-title
+          undiscoverable). Rendered for both title forms -- a plain-title
           unmergeable panel otherwise reproduces the same zero-signifier
-          defect -- but ONLY on a single-group FLOATING window (D32): a
+          defect -- but only on a single-group floating window (D32): a
           docked or stacked cell has no panel-level minimize, so a toggle
           here would be a dead signifier. Same right-end +/- as every other
           chrome row (P13); panel-provided action icons sit just left of
@@ -564,7 +564,7 @@ export function TabGroupFrame({
                     {spec.icon}
                   </Box>
                 )}
-                {/* Ellipsis must live on a NON-flex (block) element, not the flex
+                {/* Ellipsis must live on a non-flex (block) element, not the flex
                     tab Box -- text-overflow is ignored on a flex container, so a
                     raw text child would hard-clip with no "...". minWidth:0 lets
                     this item shrink below its content width inside the flex row. */}

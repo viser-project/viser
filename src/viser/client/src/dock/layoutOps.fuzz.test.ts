@@ -223,11 +223,11 @@ function startingLayouts(): { name: string; make: () => DockLayout }[] {
       },
     },
     {
-      // EXPLICIT region collapse (D21) + a COLLAPSED floating window: the
-      // two container stores the fuzzer previously never started from. Ops
-      // must maintain regionCollapsed's preconditions (a region to collapse,
-      // single-column bands -- invariants #14/#15) and the collapsed
-      // window's identity transfers (docking it rails the landing scope).
+      // A packed (fully railed) region + a collapsed floating window: the
+      // two container-collapse stores the fuzzer previously never started
+      // from. Ops must keep the railed flags coherent and maintain the
+      // collapsed window's identity transfers (docking it rails the
+      // landing scope).
       name: "region-railed stack + collapsed float",
       make: () => {
         const l = emptyLayout();
@@ -651,10 +651,10 @@ function runSequence(
 ): { failure: RunFailure | null; descs: string[] } {
   const rng = mulberry32(seed);
   let layout = startMake();
-  // ESTABLISH the D40 width semantic the way a wholesale injection
+  // Establish the D40 width semantic the way a wholesale injection
   // (api.replace) does -- a structural reconcile from an empty dock
   // px-ifies the column weights and sets regionWidth to the rendered
-  // content need, so invariant #16 holds before the first op. (No
+  // content need, so invariant #12 holds before the first op. (No
   // canonicalization exists under D46 -- one structure per picture holds
   // by types.)
   reconcileRegionWidths(
@@ -714,9 +714,9 @@ function runSequence(
     ) {
       violations.push(`weight-only op restructured: ${op.desc}`);
     }
-    // PRODUCTION PIPELINE, width leg: applyOp reconciles region widths on
-    // every commit (the ONLY regionWidth writer) -- the D40 rendered-need
-    // invariant (#16) is maintained here by construction, so the fuzzer
+    // Production pipeline, width leg: applyOp reconciles region widths on
+    // every commit (the only regionWidth writer) -- the D40 rendered-need
+    // invariant (#12) is maintained here by construction, so the fuzzer
     // must run it too or every committed width would be stale.
     if (next !== before) reconcileRegionWidths(before, next);
     // Input immutability: the argument object must be unchanged.

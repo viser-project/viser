@@ -107,15 +107,29 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       )
     : undefined;
 
-  // D34 for AUTO-height windows: CSS cannot interpolate height to `auto`,
-  // so a collapse/expand of an unpinned window snapped. FLIP it instead:
-  // record the previous rendered height each render, and when `collapsed`
-  // flips, replay old px -> new px through the class's own 160ms height
-  // transition, clearing the inline px on transitionend (auto resumes at
-  // the identical measured value). Presentation only (P4): the model
-  // committed first; reduced motion and an active grip drag (the paper's
-  // own [data-dock-resizing]) skip it; interruptions retarget from the
-  // live mid-ease height.
+  // D34 for AUTO-height windows ONLY: CSS cannot interpolate height to
+  // `auto`, so a collapse/expand of an unpinned window snapped. FLIP it
+  // instead: record the previous rendered height each render, and when
+  // `collapsed` flips, replay old px -> new px through the class's own
+  // 160ms height transition, clearing the inline px on transitionend
+  // (auto resumes at the identical measured value). Presentation only
+  // (P4): the model committed first; reduced motion and an active grip
+  // drag (the paper's own [data-dock-resizing]) skip it; interruptions
+  // retarget from the live mid-ease height.
+  //
+  // PINNED windows must NOT flip: both of their committed endpoints are
+  // already numeric (px <-> the bars' calc()), so windowCollapseAnim
+  // eases the commit natively -- and that class transition has ALREADY
+  // STARTED by the time this effect runs (any post-commit layout read
+  // starts it; SplitView's measuring effect runs first and reads rects
+  // every render). Arming the FLIP on top of it canceled that transition
+  // with `transition: none`, and the browser then delivered the canceled
+  // transition's `transitioncancel` (propertyName "height", target: this
+  // paper) on the first frame AFTER settle() subscribed below -- the
+  // token identifies the flip, not the transition, so the stale cancel
+  // passed every check and tore the replay down at t~0: minimize SNAPPED
+  // (user report). Skipping pinned windows both restores their native
+  // ease and removes the only systematic source of stale height events.
   const prevPaperH = React.useRef<number | null>(null);
   // Non-null while a height FLIP is in flight: re-renders re-apply the
   // Paper's style prop (clearing our inline px -- expand triggers content
@@ -131,6 +145,9 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
   React.useLayoutEffect(() => {
     const el = paperRef.current;
     if (el === null) return;
+    // Pinned windows: the class transition eases px <-> calc natively
+    // (see the block comment above). Only AUTO-height windows FLIP.
+    if (pinnedPx !== undefined) return;
     const from = prevPaperH.current;
     const skip =
       el.hasAttribute("data-dock-resizing") ||
@@ -143,7 +160,17 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     const to = el.offsetHeight;
     if (Math.abs(from - to) < 0.5) {
       el.style.transition = "";
-      el.style.height = inlineBefore;
+      if (flipTargetH.current !== null) {
+        // An interrupted flip's inline target is still on the element
+        // (inlineBefore IS that stale px) -- against the NEW commit it's
+        // meaningless, so drop it and let auto resume at the committed
+        // height instead of locking the window at the dead flip's target.
+        flipTargetH.current = null;
+        el.style.height = "";
+        el.style.overflow = "";
+      } else {
+        el.style.height = inlineBefore;
+      }
       return;
     }
     el.style.height = `${from}px`;
@@ -158,14 +185,47 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     const myId = ++flipIdRef.current;
     flipTargetH.current = { id: myId, px: to };
     const settle = (ev: TransitionEvent) => {
-      if (ev.propertyName !== "height") return;
+      // Transition events BUBBLE: a descendant's height transition ending
+      // or canceling mid-flip must not settle the paper's replay. Keep
+      // listening (no listener removal) -- our own event is still coming.
+      if (ev.target !== el || ev.propertyName !== "height") return;
+      if (flipTargetH.current?.id !== myId) {
+        // A newer toggle owns the element now; this flip's listeners are
+        // stale -- retire them without touching the successor's state.
+        el.removeEventListener("transitionend", settle);
+        el.removeEventListener("transitioncancel", settle);
+        return;
+      }
+      // A cancel only settles the flip when NO height transition remains
+      // running: a mid-flight retarget (the style prop rewrote height,
+      // e.g. collapsedHeight changed) cancels + restarts in one style
+      // update, and the replay must keep waiting for the successor's end
+      // rather than snap. (A genuine kill -- reduced motion flipping on,
+      // [data-dock-resizing] landing mid-flip -- leaves no successor, so
+      // the teardown below still runs for it.)
+      if (
+        ev.type === "transitioncancel" &&
+        el
+          .getAnimations()
+          .some(
+            (a) =>
+              (a as CSSTransition).transitionProperty === "height" &&
+              a.playState === "running",
+          )
+      )
+        return;
       el.removeEventListener("transitionend", settle);
       el.removeEventListener("transitioncancel", settle);
-      // Only MY flip may tear down: a newer toggle owns the element now.
-      if (flipTargetH.current?.id !== myId) return;
       flipTargetH.current = null;
       el.style.height = "";
       el.style.overflow = "";
+      // The transition moved the height WITHOUT a render, so the
+      // per-render recorder below never saw the settled value. Refresh it
+      // here, or the NEXT toggle reads the pre-flip height as `from`,
+      // concludes from == to, and skips its flip -- which is exactly why
+      // expanding right after a settled minimize (or vice versa) snapped
+      // when nothing else re-rendered the window in between.
+      prevPaperH.current = el.getBoundingClientRect().height;
     };
     el.addEventListener("transitionend", settle);
     el.addEventListener("transitioncancel", settle);

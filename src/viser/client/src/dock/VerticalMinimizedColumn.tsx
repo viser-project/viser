@@ -1,11 +1,11 @@
-// Minimized VERTICAL chrome (spec 3.3): the rail -- the ONE docked collapsed
-// rendering (D38/D32), and the P13 exception that reclaims canvas WIDTH: so
-// instead of "the header kept in place" it is the header ROTATED: gray cap
+// Minimized vertical chrome (spec 3.3): the rail -- the ONE docked collapsed
+// rendering (D38/D32), and the P13 exception that reclaims canvas width: so
+// instead of "the header kept in place" it is the header rotated: gray cap
 // on top (the header's leading edge), one spine row per tab (upright icon
 // over rotated title, wayfinding-styled), hairline dividers between cells.
-// One scope (D46): a railed COLUMN as a 36px strip in place. A fully
+// One scope (D46): a railed column as a 36px strip in place. A fully
 // railed region is just every column railed -- N side-by-side strips
-// (rails never merge). The bar (MinimizedBar) is the FLOATING analog.
+// (rails never merge). The bar (MinimizedBar) is the floating analog.
 
 import { Box, Paper } from "@mantine/core";
 import React from "react";
@@ -17,12 +17,12 @@ import { startCollapsedGroupPress } from "./collapsedPress";
 import { collectLeaves } from "./layoutOps";
 import { GRIP_BAR_EM, DockColumn, DockEdge, NodeId, TabGroup } from "./types";
 
-/** One RAILED COLUMN as a 36px spine strip in place (per-column rail,
- * D28/D46 -- the ONE docked collapsed rendering). The
- * narrow StackHandleBar on top is the column's parent handle while railed:
- * drag floats the COLUMN as one COLLAPSED stacked window (order + height
- * ratios preserved; identity transfer, D38); click / `+` EXPANDS THE
- * COLUMN (clears its one railed flag). Spine-row clicks expand the column
+/** One railed column as a 36px spine strip in place (per-column rail,
+ * D28/D46 -- the one docked collapsed rendering). The narrow
+ * StackHandleBar on top is the column's parent handle while railed:
+ * drag floats the column as one collapsed stacked window (order + height
+ * ratios preserved; identity transfer, D38); click / `+` expands the
+ * column (clears its one railed flag). Spine-row clicks expand the column
  * to that tab (expandToTab clears the flag at the op level). */
 export function ColumnRail({
   column,
@@ -33,7 +33,7 @@ export function ColumnRail({
 }) {
   const dock = useDock();
   const leaves = collectLeaves(column);
-  // Expand the COLUMN: clears its ONE railed flag (D38) and reveals every
+  // Expand the column: clears its one railed flag (D38) and reveals every
   // cell expanded. Focus then lands on the first revealed cell's active
   // tab (unmergeable fallback: header toggle / group element), never on
   // <body> (edge case 14) -- mirrors expandRegion.
@@ -45,7 +45,7 @@ export function ColumnRail({
   };
   return (
     <Box
-      // The rail's DROPPABLE surface is the full strip (spec 3.3: rails hold
+      // The rail's droppable surface is the full strip (spec 3.3: rails hold
       // width, not height -- the strip renders region-tall). The cells
       // inside size to content, so DockManager's target scanner extends the
       // first/last cell's drop rect to this root's box (data-dock-rail-root)
@@ -72,7 +72,7 @@ export function ColumnRail({
         collapsed
         narrow
         onToggle={expandColumn}
-        // Honest scope label: this expands the COLUMN (clears its railed
+        // Honest scope label: this expands the column (clears its railed
         // flag, D38) -- same wording rule as the region rail's header.
         toggleLabel="Expand column"
         toggleTooltip="Expand"
@@ -101,7 +101,7 @@ export function ColumnRail({
                 edge={edge}
                 group={g}
                 // Same signifier budget as the region rail (P9/D25): the
-                // parent handle owns the ONE visible expand control; a LONE
+                // parent handle owns the ONE visible expand control; a lone
                 // cell's cap/background is unmarked backing for it, while
                 // with 2+ cells a background click stays inert.
                 clickExpands={leaves.length === 1}
@@ -115,14 +115,13 @@ export function ColumnRail({
 }
 
 /** One group as a rail cell: gray cap (always a quiet grip pill -- the
- * rail's ONE + lives on the parent handle, D25), then one spine row per
+ * rail's one + lives on the parent handle, D25), then one spine row per
  * tab. Used by the region rail (nodeId/edge feed the drop-target
- * wrapper). Gestures via startCollapsedGroupPress: row press tears out that pane
- * (still minimized) / row click expands the region to that tab; cap or
+ * wrapper). Gestures via startCollapsedGroupPress: row press tears out that
+ * pane (still minimized) / row click expands the column to that tab; cap or
  * background press drags the whole group / click expands (lone cells).
- * Expansion goes through the ops' expandGroup/expandToTab, which ALSO clear
- * the region-collapse flag (D21) -- a rail cell may back an expanded-state
- * group whose region is simply collapsed. */
+ * Expansion goes through the ops' expandGroup/expandToTab, which clear the
+ * containing column's railed flag. */
 export function VerticalMinimizedCell({
   nodeId,
   edge,
@@ -137,9 +136,9 @@ export function VerticalMinimizedCell({
   clickExpands?: boolean;
 }) {
   const dock = useDock();
-  // Expand this cell: un-collapse the group AND its region (op-level; the
-  // active tab stays). The rail only renders while the region is collapsed,
-  // so expand is the only direction.
+  // Expand this cell: clear the containing column's railed flag (op-level;
+  // the active tab stays). The rail only renders while the column is
+  // railed, so expand is the only direction.
   const expandCell = () => {
     if (group.activeId !== null) dock.expandToTab(group.id, group.activeId);
   };
@@ -169,7 +168,7 @@ export function VerticalMinimizedCell({
       }}
     >
       {/* Gray cap: the rotated header's leading edge, always a quiet grip
-      pill -- the rail's ONE + lives on the parent handle above (P9). */}
+      pill -- the rail's one + lives on the parent handle above (P9). */}
       <Box
         className={gripBarBg}
         style={{
@@ -259,8 +258,8 @@ export function VerticalMinimizedCell({
       </Box>
     </Box>
   );
-  // The wrapper carries data-dock-leaf/-edge and sizes to CONTENT. For a
-  // COLUMN rail, DockManager's scanner extends the first/last cell's drop
+  // The wrapper carries data-dock-leaf/-edge and sizes to content. For a
+  // column rail, DockManager's scanner extends the first/last cell's drop
   // rect to the rail root's full strip (data-dock-rail-root above): the
   // strip's header run and empty tail tile onto those cells' zones instead
   // of going dead.
