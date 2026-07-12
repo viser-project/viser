@@ -527,8 +527,11 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
             // Stats/Notes row").
             ...(collapsed && multi
               ? {
+                  // Same recipe as the bar-to-bar divider rules (1px
+                  // default-border at half opacity), so all the window's
+                  // horizontal lines read as one family.
                   borderTop:
-                    "1px solid var(--mantine-color-default-border)",
+                    "1px solid color-mix(in srgb, var(--mantine-color-default-border) 50%, transparent)",
                 }
               : {}),
             ...(fixedHeight
