@@ -307,6 +307,11 @@ export function TabGroupFrame({
     <Box
       data-dock-group={group.id}
       data-dock-collapsed={collapsed ? "true" : undefined}
+      // The keyboard-expand fallback focuses this element when the revealed
+      // panel offers no tab strip and no header toggle (a DOCKED unmergeable
+      // panel: its header is drag-only, D32) -- the ring class makes that
+      // landing visible (spec edge case 14: focus is never invisible).
+      className={focusRing}
       style={{
         display: "flex",
         flexDirection: "column",
