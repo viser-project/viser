@@ -326,7 +326,11 @@ function BarLabel({
         alignItems: "center",
         gap: "0.35em",
         flexShrink: 0,
-        padding: "0 0.6em",
+        // Same side padding as an expanded tab (TabGroupFrame's strip):
+        // P13/D33 exactness -- the label row keeps identical x offsets
+        // across the minimize round-trip (the visual audit measured a 4px
+        // drift at 0.6em).
+        padding: "0 0.9em",
         cursor: "pointer",
         visibility: hidden ? "hidden" : undefined,
         fontWeight: active ? 600 : undefined,

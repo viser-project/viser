@@ -126,6 +126,11 @@ const panes: PaneRegistry = {
     id: "monitor",
     title: "Connected",
     titleNode: <ConnectedTitle />,
+    // Face bar (D19): mirrors the live control panel, whose collapsed bar
+    // renders its connection-status row. Gives the playground coverage of
+    // the FACE_BAR height/offset constancy (D33) -- previously
+    // unexercisable here (visual-audit fixture gap).
+    minimizedFace: <ConnectedTitle />,
     unmergeable: true,
     // The whole body is a single full-bleed nested area (no padding, fills the
     // panel) -- there is nothing else in this panel.
