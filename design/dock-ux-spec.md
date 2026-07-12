@@ -643,10 +643,17 @@ constants in `hitTest.ts`; changing one is a spec change.
   holds horizontally (side bands stay generous) and at the seams
   (grip bars / bottom bands); vertically-above it is re-adjudicated by
   D48 — a generous above-claim below the strip made the strip an
-  island and its preview displaced the aim target. Suppressed for
-  unmergeable panels.
+  island and its preview displaced the aim target. MERGE-SUPPRESSED
+  pairs (an unmergeable target, or a dragged stack holding an
+  unmergeable panel) keep the pre-D48 top band as split-above: their
+  merge is null, so overshoot-lands-in-merge cannot hold (the zone
+  would be a P5 no-drop hole), and no strip island exists there — the
+  strip insert is suppressed too.
 
-### 5.3 Rail cell zones (§5.2 rotated)
+### 5.3 Rail cell zones (§5.2 rotated; D48 deliberately does NOT
+rotate here — a rail cell has no content body to re-claim above, its
+8px top edge is chrome-thin at P11's floor, and its hint is a line,
+not a target-displacing shrink)
 
 - 8px outer/inner side slivers: dock a new full-height column beside
   this rail's column.
@@ -884,7 +891,11 @@ sizing subset. Both exist on `server.gui` (broadcast) and `client.gui`
 - Known sharp edges, accepted by design: re-issuing a placement verb
   overrides whatever the user did (a periodic `dock_right()` loop will
   fight the user); per-client placement reaches only currently-connected
-  clients; notification offsets track only the control panel.
+  clients; notification offsets track only the control panel; and
+  `expand()` acts at container scope while touch-tracking is per-panel —
+  expanding panel A un-rails column-mates the user minimized alongside
+  it (the documented container contract, but the one place a server
+  command overrides sibling panels' user-set state).
 
 (The per-axis `update_simple` protocol above IS the shipped design; the
 coalesced placement dict it replaced is gone, and D47 completed the axis
@@ -1163,6 +1174,9 @@ has surviving behavior of its own.
   preview's live shrink displaced the strip while the user aimed at
   it. Merge-on-overshoot is forgiving in the direction people miss,
   and appends — the same family as the strip's insert-at-end.
+  Carve-out (review-found): merge-SUPPRESSED pairs keep the pre-D48
+  top band — their merge is null, so the adjudicated rationale cannot
+  hold there, and no strip island exists on those paths.
 - **D47** — `minimize()` / `expand()` restored (user-adjudicated): a
   fourth write-only placement axis (`GuiSetPanelCollapsedMessage`,
   ordinary update_simple lifecycle), container-scoped per D38 -- panels

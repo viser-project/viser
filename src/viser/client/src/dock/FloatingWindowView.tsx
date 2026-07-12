@@ -203,12 +203,10 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         el.removeEventListener("transitioncancel", settle);
         return;
       }
-      // A cancel only settles the flip when NO height transition remains
-      // running: a mid-flight retarget (the style prop rewrote height,
       // Timing insurance: only tear down on a cancel when no height
-      // transition remains running. (With the pinned-skip and the identical-
-      // px re-assert this path should be unreachable; it guards against
-      // browser scheduling differences, not a known scenario.)
+      // transition remains running. (With the pinned-skip and the
+      // identical-px re-assert this path should be unreachable; it guards
+      // against browser scheduling differences, not a known scenario.)
       if (
         ev.type === "transitioncancel" &&
         el
@@ -248,12 +246,12 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     }
     // Live height (mid-transition included) so an interrupted toggle
     // continues from where the window visually is. Pinned windows skip the
-    // read: the FLIP never consumes it for them (their class transition
-    // eases natively), and this effect runs per window per render.
-    prevPaperH.current =
-      pinnedPx !== undefined && flipTargetH.current === null
-        ? null
-        : (el?.getBoundingClientRect().height ?? null);
+    // read (the FLIP never consumes it for them -- their class transition
+    // eases natively) but KEEP the last recorded value: a single commit
+    // that both un-pins and toggles collapse then flips from a slightly
+    // stale height instead of snapping.
+    if (!(pinnedPx !== undefined && flipTargetH.current === null))
+      prevPaperH.current = el?.getBoundingClientRect().height ?? null;
   });
 
   // Cancel an in-flight grip gesture if this window unmounts mid-resize (e.g.

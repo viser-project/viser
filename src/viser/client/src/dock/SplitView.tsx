@@ -130,7 +130,7 @@ function RegionColumns({
       REDUCED_MOTION_MQL?.matches === true ||
       root.closest("[data-dock-resizing]") !== null
     ) {
-      prevColumnBox.current = new Map();
+      prevColumnBox.current.clear();
       return;
     }
     const rootLeft = root.getBoundingClientRect().left;

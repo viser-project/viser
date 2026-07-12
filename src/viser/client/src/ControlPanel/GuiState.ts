@@ -503,7 +503,7 @@ export function useGuiState(initialServer: string) {
           return { commands: next };
         });
       },
-      // The three write-only GuiSetPanel* messages each merge their single AXIS
+      // The four write-only GuiSetPanel* messages each merge their single AXIS
       // here, with the sending command's (counter, runId) stamp. One factory,
       // one axis apiece.
       setPanelPosition: setPanelAxis("position"),

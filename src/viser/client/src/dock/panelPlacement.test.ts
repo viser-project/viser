@@ -91,10 +91,10 @@ describe("applyPanelPlacement", () => {
       emptyLayout(),
       ["p"],
       {
+        ...EMPTY,
         position: { kind: "float", x: 42, y: 84 },
         width: 350,
         height: 250,
-        collapsed: null,
       },
       () => null,
     );
@@ -113,10 +113,8 @@ describe("applyPanelPlacement", () => {
       emptyLayout(),
       ["p"],
       {
+        ...EMPTY,
         position: { kind: "float", x: 40, y: 20 },
-        width: null,
-        height: null,
-        collapsed: null,
       },
       () => null,
       {
@@ -142,10 +140,9 @@ describe("applyPanelPlacement", () => {
       emptyLayout(),
       ["p"],
       {
+        ...EMPTY,
         position: { kind: "float", x: -15, y: 15 },
         width: 240,
-        height: null,
-        collapsed: null,
       },
       () => null,
       {
@@ -164,10 +161,10 @@ describe("applyPanelPlacement", () => {
       emptyLayout(),
       ["p"],
       {
+        ...EMPTY,
         position: { kind: "float", x: 15, y: -15 },
         width: 240,
         height: 200,
-        collapsed: null,
       },
       () => null,
       {
@@ -293,10 +290,10 @@ describe("applyPanelPlacement", () => {
       emptyLayout(),
       ["p"],
       {
+        ...EMPTY,
         position: { kind: "float", x: 0, y: 0 },
         width: 480,
         height: 360,
-        collapsed: null,
       },
       () => null,
     );
@@ -319,10 +316,11 @@ describe("applyPanelPlacement", () => {
     expect(out.floating).toHaveLength(0);
   });
 
-  it("leaves a user-collapsed container collapsed (no collapse axis exists)", () => {
-    // Placement carries no collapse axis (D31/D38): a size/position re-apply
-    // must not disturb a container the user minimized in the browser -- here
-    // the docked region's rail flag (the D38 store for a sole docked panel).
+  it("size/position bundles without a collapse axis leave user collapse alone", () => {
+    // The collapsed axis is independent (D47): a size/position re-apply
+    // whose bundle carries collapsed: null must not disturb a container the
+    // user minimized in the browser -- here the docked column's rail flag
+    // (the D38 store for a sole docked panel).
     let layout = applyPanelPlacement(
       emptyLayout(),
       ["p"],
@@ -570,10 +568,8 @@ describe("removing a panel removes its tabs even when borrowed elsewhere", () =>
       emptyLayout(),
       ["a1", "a2"],
       {
+        ...EMPTY,
         position: { kind: "edge", edge: "right" },
-        width: null,
-        height: null,
-        collapsed: null,
       },
       () => null,
       { canvasBounds: BOUNDS_1000 },
@@ -582,10 +578,9 @@ describe("removing a panel removes its tabs even when borrowed elsewhere", () =>
       layout,
       ["b1"],
       {
+        ...EMPTY,
         position: { kind: "float", x: 40, y: 40 },
         width: 240,
-        height: null,
-        collapsed: null,
       },
       () => null,
       { canvasBounds: BOUNDS_1000 },
@@ -617,10 +612,9 @@ describe("removing a panel removes its tabs even when borrowed elsewhere", () =>
       emptyLayout(),
       ["b1"],
       {
+        ...EMPTY,
         position: { kind: "float", x: 40, y: 40 },
         width: 240,
-        height: null,
-        collapsed: null,
       },
       () => null,
       { canvasBounds: BOUNDS_1000 },
@@ -651,10 +645,9 @@ describe("resizeWindowHeight pin / un-pin (auto-height)", () => {
       emptyLayout(),
       ["p"],
       {
+        ...EMPTY,
         position: { kind: "float", x: 40, y: 40 },
         width: 240,
-        height: null,
-        collapsed: null,
       },
       () => null,
       { canvasBounds: BOUNDS_1000 },
@@ -772,10 +765,8 @@ describe("placement re-gathers tabs dragged out of the panel", () => {
       emptyLayout(),
       ["a", "b"],
       {
+        ...EMPTY,
         position: { kind: "edge", edge: "right" },
-        width: null,
-        height: null,
-        collapsed: null,
       },
       () => null,
       { canvasBounds: BOUNDS_1000 },
@@ -795,10 +786,9 @@ describe("placement re-gathers tabs dragged out of the panel", () => {
       layout,
       ["a", "b"],
       {
+        ...EMPTY,
         position: { kind: "float", x: 100, y: 100 },
         width: 260,
-        height: null,
-        collapsed: null,
       },
       () => null,
       { canvasBounds: BOUNDS_1000 },
@@ -1016,10 +1006,8 @@ describe("applyPanelPlacement: docked->docked collapse identity (D38)", () => {
       railedSource(true),
       ["a:0"],
       {
+        ...EMPTY,
         position: { kind: "edge", edge: "right" },
-        width: null,
-        height: null,
-        collapsed: null,
       },
       () => null,
     );
@@ -1036,10 +1024,8 @@ describe("applyPanelPlacement: docked->docked collapse identity (D38)", () => {
       railedSource(false),
       ["a:0"],
       {
+        ...EMPTY,
         position: { kind: "edge", edge: "right" },
-        width: null,
-        height: null,
-        collapsed: null,
       },
       () => null,
     );
@@ -1058,10 +1044,8 @@ describe("applyPanelPlacement: docked->docked collapse identity (D38)", () => {
       layout,
       ["a:0"],
       {
+        ...EMPTY,
         position: { kind: "edge", edge: "right" },
-        width: null,
-        height: null,
-        collapsed: null,
       },
       () => null,
     );
@@ -1082,10 +1066,8 @@ describe("applyPanelPlacement: docked->docked collapse identity (D38)", () => {
       layout,
       ["a:0"],
       {
+        ...EMPTY,
         position: { kind: "edge", edge: "right" },
-        width: null,
-        height: null,
-        collapsed: null,
       },
       () => null,
     );

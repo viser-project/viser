@@ -269,16 +269,20 @@ export function useCanvasInsetSync({
     ((canvasWidth: number, canvasHeight: number) => void) | undefined
   >;
 }): void {
+  const armedOnceRef = React.useRef(false);
   React.useEffect(() => {
     const el = canvasWrapRef.current;
     if (el === null) return;
     if (containerRef.current?.hasAttribute("data-dock-resizing")) return;
+    const isMountArm = !armedOnceRef.current;
+    armedOnceRef.current = true;
     let raf = 0;
     // Seed from the CURRENT box: the loop then only notifies the host on a
     // real change. (A -1 seed fired one spurious GL resize + full scene
     // render per arm, mount included.)
     const seed = el.getBoundingClientRect();
     let last = { w: Math.round(seed.width), h: Math.round(seed.height) };
+    let fired = false;
     let still = 0;
     const started = performance.now();
     const tick = () => {
@@ -288,10 +292,19 @@ export function useCanvasInsetSync({
       if (w !== last.w || h !== last.h) {
         last = { w, h };
         still = 0;
+        fired = true;
         onRegionResizeFrameRef.current?.(w, h);
       } else {
         still += 1;
       }
+      // Instant inset changes (squeeze guard / reduced motion) put the box
+      // at its final size BEFORE the seed read -- no delta is ever
+      // observed. Fire the final size once at settle so the GL backbuffer
+      // doesn't wait out the host's debounced ResizeObserver; the mount
+      // arm stays silent (nothing changed, R3F sized itself at init).
+      const settled = still >= 2 || performance.now() - started >= 400;
+      if (settled && !fired && !isMountArm)
+        onRegionResizeFrameRef.current?.(last.w, last.h);
       // Two still frames after at least one change = the ease settled; the
       // 400ms cap is a stuck-transition backstop.
       if (still < 2 && performance.now() - started < 400)

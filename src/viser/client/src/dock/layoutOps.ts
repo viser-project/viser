@@ -1450,10 +1450,6 @@ export function toggleCollapsed(
   return collapseContainerOf(layout, groupId);
 }
 
-/** Collapse the container holding `groupId` (D38): floating -> the window's
- * flag; docked -> the containing column's railed flag (the one docked store,
- * D44/D46; for a sole docked panel this reads as the packed region).
- * Area-hosted / unplaced groups have no collapsible container: no-op. */
 /** In-place core of "collapse the group's container" (the mirror of
  * expandGroupInPlace): floating -> the window's flag; docked -> the
  * containing column's railed flag (the one docked store, D46; for a sole
@@ -1478,6 +1474,9 @@ function collapseContainerOfInPlace(
   return true;
 }
 
+/** Immutable wrapper over collapseContainerOfInPlace: same-reference
+ * return when nothing changed (already collapsed / no collapsible
+ * container). */
 function collapseContainerOf(layout: DockLayout, groupId: GroupId): DockLayout {
   const draft = clone(layout);
   return collapseContainerOfInPlace(draft, groupId) ? draft : layout;

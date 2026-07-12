@@ -984,8 +984,9 @@ export function hitTest(
 
   // 3a. Above the tab strip -> split above this panel (docked) / snap above
   // (floating). D46: vertical intent is always per-cell (no region-wide
-  // top band exists); the content top band (3c) offers the same split lower
-  // down.
+  // top band exists). This is the ONLY dock-above claim on a mergeable
+  // cell (D48: the old content-top band is gone; the body below the strip
+  // merges).
   //
   // An unmergeable group has no grip bar; its full-width header sits flush at
   // the panel top, so there is nothing "above the strip" -- the header itself
@@ -1068,15 +1069,25 @@ export function hitTest(
       : SPLIT_BAND;
   if (g.ctx.kind === "docked") {
     // Content area: bottom/left/right split this panel; everything else
-    // merges. There is deliberately NO content-top band (D48): dock-above
-    // belongs to the grip bar alone. The old top band re-claimed "above"
-    // just below the tab strip, making the strip an island inside
-    // above-intent -- and the above-split's shrink preview displaced the
-    // strip while the user aimed at it. Overshooting the strip now lands
-    // in merge (same outcome family as the strip's own insert), so the
-    // aim is forgiving in the direction people actually miss.
+    // merges. There is deliberately NO content-top band for mergeable
+    // pairs (D48): dock-above belongs to the grip bar alone. The old top
+    // band re-claimed "above" just below the tab strip, making the strip
+    // an island inside above-intent -- and the above-split's shrink
+    // preview displaced the strip while the user aimed at it.
+    // Overshooting the strip now lands in merge (same outcome family as
+    // the strip's own insert), so the aim is forgiving in the direction
+    // people actually miss.
+    //
+    // MERGE-SUPPRESSED pairs (unmergeable target, or the dragged stack
+    // holds an unmergeable panel) keep the pre-D48 top band: their merge
+    // is null, so "overshoot lands in merge" cannot hold -- the zone
+    // would be a no-drop hole (P5) -- and no strip island exists on
+    // these paths (the strip insert is suppressed too, so there is
+    // nothing below the grip bar to aim at).
+    const mergeSuppressed = gt.unmergeable || draggingUnmergeable;
     let region: "top" | "bottom" | "left" | "right" | null = null;
-    if (ry > 1 - vBand) region = "bottom";
+    if (mergeSuppressed && ry < vBand) region = "top";
+    else if (ry > 1 - vBand) region = "bottom";
     else if (rx < hBand) region = "left";
     else if (rx > 1 - hBand) region = "right";
     if (region !== null) {

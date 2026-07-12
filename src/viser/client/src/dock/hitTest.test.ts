@@ -113,8 +113,17 @@ function run(
   x: number,
   y: number,
   regionWidth = REGION_W,
+  opts?: { draggingUnmergeable?: boolean },
 ) {
-  return hitTest(layout, regionWidth, CONTAINER, { groups: targets }, x, y);
+  return hitTest(
+    layout,
+    regionWidth,
+    CONTAINER,
+    { groups: targets },
+    x,
+    y,
+    opts,
+  );
 }
 
 // ===========================================================================
@@ -786,7 +795,25 @@ describe("docked group per-panel zones", () => {
     // Overshooting the strip downward now lands in merge, the same outcome
     // family as the strip's own insert-at-end.
     const out = run(layout, [target()], 300, 160)!;
-    expect(out.result.kind).toBe("merge");
+    // Pin the TARGET too: the "same outcome family" argument rests on the
+    // merge appending into this group, not merely being a merge somewhere.
+    expect(out.result).toEqual({ kind: "merge", targetGroupId: "a" });
+  });
+
+  it("merge-suppressed pairs keep split-above in the upper body (D48 carve-out)", () => {
+    // Where merge is null (unmergeable target, or the dragged stack holds
+    // an unmergeable panel), "overshoot lands in merge" cannot hold -- the
+    // ex-top-band area keeps the pre-D48 dock-above so it is never a
+    // no-drop hole (P5). No strip island exists on these paths: the strip
+    // insert is suppressed too.
+    // (a) dragging an unmergeable stack over a normal docked panel.
+    const a = run(layout, [target()], 300, 160, undefined, {
+      draggingUnmergeable: true,
+    })!;
+    expect(a.result).toMatchObject({ kind: "split", region: "top" });
+    // (b) normal drag over an UNMERGEABLE docked target.
+    const b = run(layout, [{ ...target(), unmergeable: true }], 300, 160)!;
+    expect(b.result).toMatchObject({ kind: "split", region: "top" });
   });
 
   it("over the strip -> insertTab at the nearest tab position", () => {
