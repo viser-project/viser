@@ -431,38 +431,35 @@ describe("outer-edge dock beside a minimized region strip", () => {
     expect(out.result).toMatchObject({ kind: "split", region: "right" });
   });
 
-  it("single minimized strip: the EMPTY area below it (side thirds) docks a full-height column beside", () => {
-    // The strip cell is content-tall (~120px) but the region is 800px tall, so
-    // there's a large empty area below. A drop in the strip's outer/inner
-    // thirds there must offer a full-height "dock a column beside" zone
-    // (regionEdge; the packed region keeps its side bands hot).
+  it("single minimized strip: the empty tail belongs to the CELL -- its inner sliver docks a column beside", () => {
+    // The scanner extends a lone rail cell's drop rect to the FULL
+    // region-tall strip (data-dock-rail-root), so the "empty area below
+    // the spine" is the cell's own surface: its 8px side slivers dock a
+    // full-height column beside (the region-level side bands yield to
+    // collapsed cells unconditionally -- edge case 13).
     const node = leaf("g");
     const layout = layoutWith({ right: node });
     packRegionInPlace(layout, "right"); // the rail is the ONE docked store (D38)
-    // Content-tall strip at the top of the region; empty below.
-    const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft, 0, STRIP, 120));
+    // Region-tall strip rect, as the scanner provides it.
+    const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft, 0, STRIP, 800));
     const out = run(layout, [tgt], stripLeft + 2, 500, STRIP_W);
     expect(out).not.toBeNull();
-    expect(out!.result).toMatchObject({ kind: "regionEdge", edge: "right" });
-    // Full-height hint line (spans the container), not a strip-tall sliver.
-    expect(out!.hint.height).toBeGreaterThan(400);
+    expect(out!.result).toMatchObject({ kind: "split", region: "left" });
   });
 
-  it("lone railed cell: the region's bottom corner resolves to a SIDE dock (no band zones)", () => {
-    // D46: there are no top/bottom band zones at all -- a full-width band
-    // below the rail is unrepresentable. The bottom area's side thirds
-    // still resolve to "dock a column beside" (left/right), landing the
-    // newcomer as an expanded full-height column.
+  it("lone railed cell: the region's bottom corner is a SIDE dock via the cell's outer sliver", () => {
+    // D46: no top/bottom band zones exist, and the scanner-extended strip
+    // tiles the region -- the bottom corner sits in the cell's 8px OUTER
+    // sliver, which docks a full-height column beside (never a band
+    // insert; edge case 13).
     const node = leaf("g");
     const layout = layoutWith({ right: node });
     packRegionInPlace(layout, "right"); // the rail is the ONE docked store (D38)
-    const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft, 0, STRIP, 120));
-    // Drop near the region's bottom outer corner, far below the cell.
+    const tgt = collapsedRightTarget("g", leafIdOf(node), rect(stripLeft, 0, STRIP, 800));
+    // Drop near the region's bottom outer corner.
     const out = run(layout, [tgt], CONTAINER.width - 2, CONTAINER.height - 4, STRIP_W);
     expect(out).not.toBeNull();
-    expect(out!.result.kind).toBe("regionEdge");
-    const side = (out!.result as { side: string }).side;
-    expect(side === "left" || side === "right").toBe(true);
+    expect(out!.result).toMatchObject({ kind: "split", region: "right" });
   });
 
   it("packed railed stack: no bandInsert / top / bottom anywhere -- drops join the rail", () => {

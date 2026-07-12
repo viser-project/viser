@@ -453,10 +453,6 @@ export function hitTest(
     // With the third-cap the strip's middle falls through to those cell zones
     // while its outer/inner thirds still dock a sibling column.
     const sideBand = Math.min(REGION_SIDE_PX, w / 3);
-    // keepSideBand's one job: a PACKED region (every column railed)
-    // bypasses the single-leaf suppression below -- its strips pack at
-    // the edge and "dock beside the rails" needs a region-level claim.
-    const keepSideBand = isRegionPackedOn(layout, edge);
 
     // Side bands only (D46): columns are the region's sole horizontal
     // partition, so there are no cross-band seams and no top/bottom
@@ -465,13 +461,15 @@ export function hitTest(
     // under the pointer: a 40px side band would fully shadow a 36px rail
     // (its side slivers, tab rows and merge cap), and the rail's outer
     // sliver already docks a column beside it (sweep invariant: every
-    // target reachable).
+    // target reachable). This yield also covers PACKED regions whole --
+    // their strips tile the full region, so dock-beside there is entirely
+    // the rails' own slivers (edge case 13).
     if (overCollapsedCell(edge)) continue;
     // Hints are a line spanning the whole region: a new column lands
     // beside everything, full height (P1).
     if (
       cx - regionLeft < sideBand &&
-      (!edgeIsSingleLeaf(tree) || keepSideBand)
+      !edgeIsSingleLeaf(tree)
     ) {
       return {
         result: { kind: "regionEdge", edge, side: "left" },
@@ -486,7 +484,7 @@ export function hitTest(
     }
     if (
       regionRight - cx < sideBand &&
-      (!edgeIsSingleLeaf(tree) || keepSideBand)
+      !edgeIsSingleLeaf(tree)
     ) {
       return {
         result: { kind: "regionEdge", edge, side: "right" },

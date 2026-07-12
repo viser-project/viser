@@ -62,6 +62,7 @@ import {
   group as grp,
   floatingWindow,
   toRegion,
+  shapeOf,
 } from "./testUtils";
 
 type Rng = () => number;
@@ -695,6 +696,24 @@ function runSequence(
       };
     }
     const violations: string[] = [];
+    // P14 guardrail (successor to the deleted structureSignature gate):
+    // WEIGHT-ONLY ops must never restructure -- a per-frame divider commit
+    // that restructured would invalidate the node ids the drag is writing.
+    if (
+      (op.desc.startsWith("setNodeWeights") ||
+        op.desc.startsWith("setRegionWidth")) &&
+      next !== before &&
+      JSON.stringify([
+        shapeOf(next.docked.left),
+        shapeOf(next.docked.right),
+      ]) !==
+        JSON.stringify([
+          shapeOf(before.docked.left),
+          shapeOf(before.docked.right),
+        ])
+    ) {
+      violations.push(`weight-only op restructured: ${op.desc}`);
+    }
     // PRODUCTION PIPELINE, width leg: applyOp reconciles region widths on
     // every commit (the ONLY regionWidth writer) -- the D40 rendered-need
     // invariant (#16) is maintained here by construction, so the fuzzer

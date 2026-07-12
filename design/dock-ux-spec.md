@@ -603,11 +603,11 @@ constants in `hitTest.ts`; changing one is a spec change.
    column, never a region-level insert. The side bands YIELD entirely
    to any collapsed docked cell under the pointer — packed regions
    included: a 40px band would shadow a whole 36px strip whose own
-   8px sliver already docks a column beside it. Suppressed where they'd
-   duplicate a per-cell split (a single-column, single-leaf region —
-   except when that column is railed, where the band stays for the
-   empty tail) and while a floating window's paper rect owns the
-   pointer (§3.5).
+   8px sliver already docks a column beside it, and packed strips tile
+   the whole region, so dock-beside there is entirely the rails' own
+   slivers (edge case 13). Suppressed where they'd duplicate a per-cell
+   split (a single-column, single-leaf region) and while a floating
+   window's paper rect owns the pointer (§3.5).
 4. **Per-target zones**: the cell-, rail-, and bar-level zones of
    §5.2–5.4.
 5. **Anywhere else**: no drop; release floats the dragged stack at the
@@ -615,7 +615,11 @@ constants in `hitTest.ts`; changing one is a spec change.
 
 ### 5.2 Expanded docked cell zones
 
-- Above the tab strip (the grip bar): split above this cell.
+- Above the tab strip (the grip bar): split above this cell. The
+  column's FIRST cell also claims the parent-handle run above it (the
+  scanner extends its drop rect to the column top, mirroring the rail
+  rule): region-owned chrome is never a no-drop hole (P5), and a slam
+  to the top of an occupied dock splits above the top cell.
 - Over the tab strip: insert at that tab position (2D nearest-tab, works
   with wrapped rows).
 - Content side bands (30% of width, ≤120px): insert a NEW FULL-HEIGHT
@@ -796,10 +800,15 @@ op-level residue.
   (via its outermost strip's sliver, §5.1/§5.3).
 - Legacy migration: layouts persisted under the pre-D46 band model
   (`{rows: [...]}` regions) or the pre-D44 `regionCollapsed` flag are
-  converted at the injection/restore chokepoints
-  (`migrateRowsToColumnsInPlace`, then `migrateRegionCollapsedInPlace`):
-  band columns concatenate left-to-right into the region's column list;
-  a set region flag rails every column. No other code path sees the
+  converted at the injection/restore chokepoints (one owner,
+  `migrateLegacyLayout`, running rows-then-flag). The band era's
+  canonical form stored every EXPANDED stack as consecutive
+  single-column bands, so that shape converts to ONE multi-leaf column
+  (band weights become leaf height shares; an all-railed stack stays
+  railed) — never rotated into side-by-side columns. Mixed multi-column
+  bands are unrepresentable and fall back to columns left-to-right,
+  expanded weights rescaled so the remembered region width survives. A
+  set region flag rails every column. No other code path sees the
   legacy shapes.
 
 ---

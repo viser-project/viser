@@ -200,9 +200,12 @@ export function DockManager({
   // Seed the fresh-id counter past any ids the initial layout brought with it
   // (a restored/persisted layout): the counter restarts at 0 each session, so
   // without this a new `node-3` would collide with a restored `node-3`
-  // (duplicate-id invariant violation / groups-map clobber). useState's
-  // initializer runs exactly once per mount.
-  React.useState(() => bumpFreshIdFloor(ops.allLayoutIds(initialLayout)));
+  // (duplicate-id invariant violation / groups-map clobber). Seeds from the
+  // MIGRATED layout, never the raw prop: allLayoutIds walks the columns-only
+  // shape (a legacy {rows} prop would throw), and the migrated tree's ids
+  // are the ones that must not collide. useState's initializer runs exactly
+  // once per mount.
+  React.useState(() => bumpFreshIdFloor(ops.allLayoutIds(layoutRef.current)));
   const onLayoutChangeRef = React.useRef(onLayoutChange);
   onLayoutChangeRef.current = onLayoutChange;
   const onCommitRef = React.useRef(onCommit);
@@ -398,7 +401,11 @@ export function DockManager({
         runProgrammatic(() => {
           // MIGRATION chokepoint (D44): injected layouts (restore, test
           // probes) may carry the legacy regionCollapsed store.
-          layout = ops.migrateLegacyLayout(layout);
+          // Unconditional clone at the injection boundary: downstream
+          // reconciliation mutates the committed object in place, and the
+          // caller's snapshot must never be rewritten under it (with the
+          // clone-on-legacy-only form, ownership varied by data age).
+          layout = ops.migrateLegacyLayout(structuredClone(layout));
           bumpFreshIdFloor(ops.allLayoutIds(layout));
           applyOp(layout);
         }),
@@ -713,6 +720,27 @@ export function DockManager({
         if (top !== g.rect.top || bottom !== g.rect.bottom) {
           g.rect = new DOMRect(g.rect.left, top, g.rect.width, bottom - top);
         }
+      } else {
+        // EXPANDED columns: the parent-handle run above the first cell is
+        // region-owned chrome that must not be a no-drop hole (P5; the old
+        // top region band died with D46). Extend the column's FIRST leaf
+        // up to the column box -- the pointer there resolves to that
+        // cell's ABOVE zone (split above the first cell: honest, P1).
+        const columnEl = leaf.closest("[data-dock-column]");
+        if (columnEl !== null) {
+          const cells = columnEl.querySelectorAll("[data-dock-leaf]");
+          if (cells[0] === leaf) {
+            const cr = columnEl.getBoundingClientRect();
+            if (cr.top < g.rect.top) {
+              g.rect = new DOMRect(
+                g.rect.left,
+                cr.top,
+                g.rect.width,
+                g.rect.bottom - cr.top,
+              );
+            }
+          }
+        }
       }
       // Clip to the column's scroll box: with overflowY auto a squeezed,
       // scrolled column reports leaf rects extending past its visible box,
@@ -906,15 +934,17 @@ export function DockManager({
     // color/background transitions end on every hover and would otherwise
     // spuriously invalidate the cache.
     const onTransitionEnd = (e: TransitionEvent) => {
-      // The D34 transitions' eased properties: cell/column flex
-      // (collapseAnim), the region container's width (regionWidthAnim),
-      // and a floating window's collapse height (windowCollapseAnim).
+      // The D34 transitions' eased properties: cell flex (collapseAnim),
+      // the region container's width (regionWidthAnim), a floating
+      // window's collapse height (windowCollapseAnim), and the column
+      // FLIP glide (transform).
       if (
         e.propertyName === "flex-grow" ||
         e.propertyName === "flex-basis" ||
         e.propertyName === "min-height" ||
         e.propertyName === "width" ||
-        e.propertyName === "height"
+        e.propertyName === "height" ||
+        e.propertyName === "transform"
       )
         markTargetsStale();
     };
@@ -2073,6 +2103,42 @@ export function DockManager({
   }
   const leftInset = renderedWidth.left;
   const rightInset = renderedWidth.right;
+  // GL-backbuffer tracking for the inset EASE: the host's 3D canvas resizes
+  // via a debounced ResizeObserver, so a 160ms inset transition would render
+  // as one late jump even though the wrapper slides (drags already bypass
+  // this with per-frame onRegionResizeFrame calls). While an inset ease is
+  // plausibly running, feed the wrapper's LIVE box through the same hook
+  // each animation frame; stops when the box holds still. Presentation only.
+  const canvasWrapRef = React.useRef<HTMLDivElement>(null);
+  const insetKey = `${leftInset}:${rightInset}`;
+  React.useEffect(() => {
+    const el = canvasWrapRef.current;
+    if (el === null) return;
+    if (containerRef.current?.hasAttribute("data-dock-resizing")) return;
+    let raf = 0;
+    let last = { w: -1, h: -1 };
+    let still = 0;
+    const started = performance.now();
+    const tick = () => {
+      const r = el.getBoundingClientRect();
+      const w = Math.round(r.width);
+      const h = Math.round(r.height);
+      if (w !== last.w || h !== last.h) {
+        last = { w, h };
+        still = 0;
+        onRegionResizeFrameRef.current?.(w, h);
+      } else {
+        still += 1;
+      }
+      // Two still frames after at least one change = the ease settled; the
+      // 400ms cap is a stuck-transition backstop.
+      if (still < 2 && performance.now() - started < 400)
+        raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [insetKey]);
   // Rendered region widths, for hit-testing during drags: drop zones and
   // their hints must align to what's on screen, not to the MODEL regionWidth
   // (which excludes the strips and preserves widths through minimization).
@@ -2211,6 +2277,7 @@ export function DockManager({
           rail collapse/expand slides the canvas edge instead of snapping
           it; drags stay per-frame instant via [data-dock-resizing]. */}
           <Box
+            ref={canvasWrapRef}
             className={squeezeActive ? undefined : canvasInsetAnim}
             style={{
               position: "absolute",
@@ -2265,12 +2332,11 @@ export function DockManager({
                       flexDirection: "column",
                       backgroundColor: "var(--mantine-color-body)",
                       zIndex: 5,
-                      // Drawer model: the columns inside lay out at the
-                      // committed width immediately (SplitView pins its
-                      // root); this container's width ease reveals or
-                      // conceals them from the inner side. Clip the
-                      // overhang mid-ease.
-                      overflow: "hidden",
+                      // NO overflow:hidden here: the RegionResizer child
+                      // straddles the container boundary by design (its
+                      // outer grab strip lives over the canvas), and a
+                      // clip would silently swallow its hit area. The
+                      // drawer clip lives on the pane wrapper below.
                     }}
                   >
                     {/* Region PARENT handle (D26): the whole docked stack's
@@ -2328,8 +2394,11 @@ export function DockManager({
                         // edge: during the container's width ease every
                         // column keeps its screen position, and the only
                         // motion is the inner boundary sliding over the
-                        // canvas (the user-adjudicated drawer look).
+                        // canvas (the user-adjudicated drawer look). The
+                        // drawer clip lives HERE (not on the region
+                        // container, whose resizer straddles the edge).
                         justifyContent: edge === "right" ? "flex-end" : "flex-start",
+                        overflow: "hidden",
                       }}
                     >
                       <SplitView

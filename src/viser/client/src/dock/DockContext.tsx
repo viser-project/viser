@@ -99,9 +99,10 @@ export interface DockContextValue {
   /** Toggle the collapse flag of the group's CONTAINER (D38) -- driven only
    * from a single-group floating window's chrome (D32). */
   toggleCollapsed: (groupId: GroupId) => void;
-  /** Collapse/expand a docked EDGE to/from its rail (D21) -- the chevron and
-   * rail-header gesture. A USER commit (not runProgrammatic), so ownership
-   * arbitration learns the user set/cleared the flag (P6). */
+  /** Rail EVERY column of a docked edge (the region chevron; the packed
+   * reading is derived, D44/D46). Collapse-only: expansion is granular via
+   * each strip's own header. A USER commit (not runProgrammatic), so
+   * ownership arbitration learns the user set the flags (P6). */
   collapseRegion: (edge: DockEdge) => void;
   /** Collapse/expand a docked COLUMN to/from its per-column rail -- the
    * column-collapse chevron and column-rail-header gesture. A USER commit

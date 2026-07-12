@@ -1504,6 +1504,9 @@ export function railRegion(layout: DockLayout, edge: DockEdge): DockLayout {
 
 /** Expand every railed column of an edge's region (D44/D46): the packed
  * rail header's `+`. No-op when nothing is railed. */
+// NOTE: no UI affordance reaches this since D46 (packed strips expand
+// granularly via their own headers); kept as railRegion's inverse for the
+// op-level API and its tests.
 export function expandRegionRail(
   layout: DockLayout,
   edge: DockEdge,
@@ -1555,9 +1558,61 @@ export function migrateRowsToColumnsInPlace(layout: DockLayout): void {
         })
       | null;
     if (region === null || region.rows === undefined) continue;
-    const columns = region.rows.flatMap((band) => band.columns);
-    const ne = asNonEmpty(columns);
-    if (ne !== null) region.columns = ne;
+    const bands = region.rows;
+    // The band-era canonical form (D12) stored every EXPANDED plain stack
+    // as consecutive SINGLE-column bands -- so that shape's faithful D46
+    // picture is ONE multi-leaf column (a stack), NOT side-by-side
+    // columns. Band weights were the stack's height shares; carry them
+    // onto the leaves (rescaled within each band so multi-leaf bands keep
+    // their internal ratios). The column rails only when EVERY band was
+    // railed (partial stack collapse is unrepresentable, D38).
+    const allSingle = bands.every((b) => b.columns.length === 1);
+    if (allSingle && bands.length > 0) {
+      const leaves: DockLeaf[] = bands.flatMap((b) => {
+        const col = b.columns[0];
+        const innerTotal =
+          col.leaves.reduce((s, l) => s + l.weight, 0) || 1;
+        return col.leaves.map((l) => ({
+          ...l,
+          weight: (b.weight * l.weight) / innerTotal,
+        }));
+      });
+      const ne = asNonEmpty(leaves);
+      if (ne !== null) {
+        region.columns = [
+          {
+            id: bands[0].columns[0].id,
+            weight: 1,
+            leaves: ne,
+            ...(bands.every((b) => b.columns[0].railed === true)
+              ? { railed: true as const }
+              : {}),
+          },
+        ];
+      }
+    } else {
+      // Mixed/multi-column bands have no faithful D46 shape ([A] over
+      // [B][C] is unrepresentable): best-effort fallback, columns
+      // left-to-right in band order. Their px weights came from UNRELATED
+      // per-band scales -- rescale the expanded ones so the region's
+      // remembered width survives (leaving them raw let the first
+      // sameSet reconciliation pin regionWidth to a nonsense sum).
+      const columns = bands.flatMap((band) => band.columns);
+      const rw = layout.regionWidth?.[edge];
+      const railedPx =
+        columns.filter((c) => c.railed === true).length *
+        MINIMIZED_STRIP_PX;
+      const expanded = columns.filter((c) => c.railed !== true);
+      const expandedSum = expanded.reduce((s, c) => s + c.weight, 0);
+      if (rw !== undefined && rw > railedPx && expandedSum > 0) {
+        const scale = (rw - railedPx) / expandedSum;
+        expanded.forEach((c) => {
+          c.weight *= scale;
+        });
+      }
+      const ne = asNonEmpty(columns);
+      if (ne !== null) region.columns = ne;
+    }
     delete region.rows;
     if (region.columns === undefined) layout.docked[edge] = null;
   }
@@ -1704,27 +1759,6 @@ export function expandStackOf(
   return expandGroup(layout, groupId);
 }
 
-/** Structural fingerprint of a layout: the arrangement of ids and group
- * membership across docked trees and floating stacks, EXCLUDING weights and
- * collapse flags. Two layouts with equal signatures differ only in sizes /
- * collapse -- the distinction canonicalization (below) keys on: pure weight
- * commits (resizes) must never restructure mid-gesture (P14/D13). */
-export function structureSignature(layout: DockLayout): string {
-  const region = (r: DockRegion | null): string =>
-    r === null
-      ? "-"
-      : r.columns
-          .map(
-            (c) =>
-              `${c.id}:${c.leaves.map((l) => `${l.id}/${l.group}`).join(",")}`,
-          )
-          .join("|");
-  return [
-    region(layout.docked.left),
-    region(layout.docked.right),
-    layout.floating.map((w) => `${w.id}:${w.stack.join(",")}`).join(";"),
-  ].join("##");
-}
 
 // D46: canonicalization is GONE. The columns-only types admit exactly one
 // structure per picture (P14 holds by construction): vertical stacking is a
@@ -1803,11 +1837,19 @@ export function setRegionWidth(
     const expanded = cols.filter((c) => c.railed !== true);
     const railedPx = (cols.length - expanded.length) * MINIMIZED_STRIP_PX;
     const expandedSum = expanded.reduce((s, c) => s + c.weight, 0);
-    // Weights already at the target (the region-resize drag distributes
-    // per frame BEFORE committing through here): skip the redundant
-    // redistribution pass -- it would be an identity rewrite.
-    const alreadyDistributed = Math.abs(expandedSum - (px - railedPx)) < 0.5;
-    if (cols.length > 1 && expanded.length > 0 && !alreadyDistributed) {
+    // Weights already at the target AND at/above their floor (the
+    // region-resize drag distributes clamped px per frame BEFORE
+    // committing through here): skip the redundant redistribution -- it
+    // would be an identity rewrite. The floor check keeps the op's
+    // postcondition caller-independent (a caller with matching total but
+    // a sub-min column still gets the clamp).
+    const alreadyDistributed =
+      Math.abs(expandedSum - (px - railedPx)) < 0.5 &&
+      expanded.every((c) => c.weight >= minRegionWidth());
+    if (cols.length > 1 && expanded.length > 0) {
+      if (alreadyDistributed) {
+        px = railedPx + expandedSum;
+      } else {
       const widths = resizeRegionColumns(
         expanded.map((c) => c.weight),
         expanded.map(() => minRegionWidth()),
@@ -1818,9 +1860,8 @@ export function setRegionWidth(
         c.weight = widths[i];
       });
       px = railedPx + widths.reduce((a, b) => a + b, 0);
+      }
     }
-    if (cols.length > 1 && expanded.length > 0 && alreadyDistributed)
-      px = railedPx + expandedSum;
   }
   draft.regionWidth = { ...regionWidthsOf(layout), [edge]: px };
   return draft;

@@ -105,7 +105,9 @@ function RegionColumns({
   // perfectly still. Presentation only (P4): the model committed before
   // this runs, reduced-motion and active divider drags skip it, and
   // nothing waits on the transition.
-  const prevColumnX = React.useRef<Map<string, number>>(new Map());
+  const prevColumnBox = React.useRef<Map<string, { x: number; w: number }>>(
+    new Map(),
+  );
   React.useLayoutEffect(() => {
     const root = containerRef.current;
     if (root === null) return;
@@ -116,7 +118,7 @@ function RegionColumns({
       root.closest("[data-dock-resizing]") !== null ||
       (typeof window.matchMedia === "function" &&
         window.matchMedia("(prefers-reduced-motion: reduce)").matches);
-    const next = new Map<string, number>();
+    const next = new Map<string, { x: number; w: number }>();
     for (const el of els) {
       const id = el.getAttribute("data-dock-column");
       if (id === null) continue;
@@ -125,11 +127,20 @@ function RegionColumns({
       const liveX = el.getBoundingClientRect().left;
       el.style.transition = "";
       el.style.transform = "";
-      const naturalX = el.getBoundingClientRect().left;
-      next.set(id, naturalX);
-      const prev = prevColumnX.current.get(id) ?? liveX;
-      const delta = prev - naturalX;
-      if (skip || Math.abs(delta) < 0.5) continue;
+      const rect = el.getBoundingClientRect();
+      const naturalX = rect.left;
+      next.set(id, { x: naturalX, w: rect.width });
+      const prev = prevColumnBox.current.get(id);
+      const delta = (prev?.x ?? liveX) - naturalX;
+      // Only PURE position changes glide. A column whose WIDTH changed
+      // (the one being railed/expanded) must render in place: translating
+      // a size-changed box paints its full-width content over its
+      // neighbor for the glide's duration (user report: expanding [A]
+      // beside [B] overlapped their contents). Its reveal is the drawer
+      // edge's job.
+      const widthChanged =
+        prev !== undefined && Math.abs(prev.w - rect.width) > 0.5;
+      if (skip || widthChanged || Math.abs(delta) < 0.5) continue;
       el.style.transform = `translateX(${delta}px)`;
       // Force the start position before arming the transition.
       void el.offsetWidth;
@@ -143,7 +154,7 @@ function RegionColumns({
         { once: true },
       );
     }
-    prevColumnX.current = next;
+    prevColumnBox.current = next;
   });
   const columns = region.columns;
   // Per-column rail mask: a RAILED column renders as a fixed 36px spine
@@ -276,7 +287,7 @@ function RegionColumns({
                 // between two columns is too.
                 resizable={expandedAtOrBefore[index] && expandedAfter[index]}
                 containerRef={containerRef}
-                onResize={(deltaPx, containerPx) =>
+                onResize={(deltaPx) =>
                   resizeCells({
                     dock,
                     edge,
@@ -285,7 +296,22 @@ function RegionColumns({
                     collapsedPx: MINIMIZED_STRIP_PX,
                     index,
                     deltaPx,
-                    containerPx,
+                    // MODEL-based budget, not the measured box: the box
+                    // includes divider chrome (weights would creep by
+                    // +7px/gesture through the sameSet regionWidth pin)
+                    // and renders SCALED under the canvas guard (weights
+                    // would bake the squeeze in -- the same contract the
+                    // RegionResizer protects). Expanded weights are px
+                    // (reconciled), so their sum IS the budget; the
+                    // strips term cancels via collapsedPx below.
+                    containerPx:
+                      columns.reduce(
+                        (s, c, i) =>
+                          s + (columnRailed[i] ? 0 : c.weight),
+                        0,
+                      ) +
+                      columnRailed.filter(Boolean).length *
+                        MINIMIZED_STRIP_PX,
                     minCell: MIN_REGION_GRAB_PX,
                   })
                 }

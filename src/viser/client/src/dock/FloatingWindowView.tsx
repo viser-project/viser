@@ -117,6 +117,12 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
   // own [data-dock-resizing]) skip it; interruptions retarget from the
   // live mid-ease height.
   const prevPaperH = React.useRef<number | null>(null);
+  // Non-null while a height FLIP is in flight: re-renders re-apply the
+  // Paper's style prop (clearing our inline px -- expand triggers content
+  // mounts immediately, which is why EXPAND snapped while minimize
+  // animated), so the recorder effect below re-asserts the target every
+  // render until transitionend clears it.
+  const flipTargetH = React.useRef<number | null>(null);
   React.useLayoutEffect(() => {
     const el = paperRef.current;
     if (el === null) return;
@@ -139,19 +145,29 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     void el.offsetWidth;
     el.style.transition = "";
     el.style.height = `${to}px`;
+    flipTargetH.current = to;
     el.addEventListener(
       "transitionend",
       (ev) => {
-        if (ev.propertyName === "height") el.style.height = "";
+        if (ev.propertyName === "height") {
+          flipTargetH.current = null;
+          el.style.height = "";
+        }
       },
       { once: true },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collapsed]);
   React.useLayoutEffect(() => {
+    // Keep the in-flight FLIP alive across re-renders: React just rewrote
+    // the style prop, wiping the inline px -- put the target back before
+    // paint (same specified value, so the running transition continues).
+    const el = paperRef.current;
+    if (el !== null && flipTargetH.current !== null)
+      el.style.height = `${flipTargetH.current}px`;
     // Live height (mid-transition included) so an interrupted toggle
     // continues from where the window visually is.
-    prevPaperH.current = paperRef.current?.getBoundingClientRect().height ?? null;
+    prevPaperH.current = el?.getBoundingClientRect().height ?? null;
   });
 
   // Cancel an in-flight grip gesture if this window unmounts mid-resize (e.g.
