@@ -717,11 +717,18 @@ window is an open question (§11).
 
 ## 6. Sizing model
 
-- **Region width**: expanded columns carry pixel widths; the region's
-  width is their sum, with every RAILED column counted at its rendered
-  36px — a railed column's stored weight is ALWAYS its P8 restore
-  width, and no aggregator ever reads it as rendered width (D40). A
-  fully railed region reconciles to exactly 36 × its column count.
+- **Region width**: column weights are ALWAYS reconciled pixel widths —
+  every column, a lone one included (the old single-column carve-out,
+  weight as an unreconciled flex share with regionWidth as the width
+  memory, is retired; `migrateLegacyLayout` adopts persisted carve-out
+  layouts at the injection/restore chokepoints). The region's width is
+  the expanded weights' sum, with every RAILED column counted at its
+  rendered 36px — a railed column's stored weight is ALWAYS its P8
+  restore width, and no aggregator ever reads it as rendered width
+  (D40). A fully railed region reconciles to exactly 36 × its column
+  count — ANY column count: a packed single-column region reserves its
+  strip like the rest, restore width in the weight, so the reserved
+  width needs no packed override.
   Docking a new column *grows* the region by the newcomer's width (D3):
   existing panels never shrink because something arrived (P3 outranks
   canvas preservation; the resizer is the recovery). The newcomer's
@@ -918,10 +925,14 @@ Behaviors that MUST hold (each is or should be pinned by a test):
 4. A viewport resize between press and drag-threshold doesn't teleport
    the window (grab offsets resolve against the current model position).
 5. Undocking a minimized panel then expanding restores its docked width,
-   not the 36px rail width (P8).
+   not the 36px rail width (P8) — the width travels in the column
+   WEIGHT (always-px, D40), never in regionWidth.
 6. A pinned-height window expands from minimized at its pinned height.
 7. The last panel leaving an edge nulls the region; the next dock
-   recreates it at the remembered width (P8).
+   recreates it at the remembered width (P8). The memory is the edge's
+   preserved regionWidth when the region left expanded; a region that
+   left PACKED remembers only its strip run, so the recreate takes the
+   docked window's own width (which carried the restore px out).
 8. An emptied-then-revived docked panel reappears (no orphan group).
 9. Same-batch and reversed-order anchor splits both resolve (no race, no
    hang); never-dockable anchors fall back (§8).
@@ -976,9 +987,13 @@ at every consumer.
   time-throttled in production. Hard invariants include: no duplicate or
   orphaned panes/groups; no un-migrated legacy field (`regionCollapsed`
   or band-era `rows` — the injection/restore chokepoints run
-  `migrateRowsToColumnsInPlace` + `migrateRegionCollapsedInPlace`);
+  `migrateRowsToColumnsInPlace` + `migrateRegionCollapsedInPlace` +
+  `migrateLoneColumnWidthInPlace`, the last adopting a pre-always-px
+  lone column's regionWidth into its weight);
   `regionWidth` ≈ Σ over columns of (railed ? 36 : weight) — invariant
-  #12 in the checker's contiguous numbering (the pre-cleanup #16).
+  #12 in the checker's contiguous numbering (the pre-cleanup #16),
+  covering ANY column count since the always-px weights migration
+  removed its single-column gate.
 - **Single construction sites / choke points**: `movePaneInPlace`
   (detach-first — a pane can never be in two groups),
   `detachAllPreservingStackWeights` (capture-before-detach ordering
@@ -998,10 +1013,11 @@ at every consumer.
   predicate, with a timeout only as a stale-state tripwire.
 
 Planned structural work, in order: server-provided stable panel key
-(identity as input, not label+order inference); column weights always
-px (retiring the three-way weight decode); a placement coordinator (one
-ordered pass over the placement store, replacing per-panel effect
-fan-out).
+(identity as input, not label+order inference); a placement coordinator
+(one ordered pass over the placement store, replacing per-panel effect
+fan-out). (Column weights always px SHIPPED: the three-way weight
+decode and the packed-single reserved-width override are deleted — see
+the Region width bullet in §6 and D40.)
 
 ---
 
@@ -1143,7 +1159,13 @@ has surviving behavior of its own.
   exist as zones at all; nothing is left to suppress).
 - **D40** — a railed column's stored weight is ALWAYS its P8 restore
   width; born-railed columns store the source window's width;
-  aggregators account railed columns at the rendered 36px.
+  aggregators account railed columns at the rendered 36px. Extended by
+  the always-px weights migration: EVERY column weight — lone columns
+  included — is a reconciled pixel width, so `regionWidth` is uniformly
+  the rendered need (Σ railed ? 36 : weight) for any column count and a
+  packed single-column region holds exactly its 36px strip; the P8
+  restore/undock/recreate round-trips read the WEIGHT, never
+  regionWidth.
 - **D41** — retired by D46 (band heights died with bands; columns are
   full-height). Surviving spirit: rails never merge, and every divider
   between columns runs their full shared edge.

@@ -499,25 +499,17 @@ export function DockManager({
       reservedWidth: {
         left:
           plans.left !== null
-            ? plannedReservedWidth(
-                plans.left,
-                regionWidth.left,
-                isRegionPackedOn(layout, "left"),
-              )
+            ? plannedReservedWidth(plans.left, regionWidth.left)
             : 0,
         right:
           plans.right !== null
-            ? plannedReservedWidth(
-                plans.right,
-                regionWidth.right,
-                isRegionPackedOn(layout, "right"),
-              )
+            ? plannedReservedWidth(plans.right, regionWidth.right)
             : 0,
       },
       containerWidth,
       containerHeight,
     }),
-    [regionWidth, plans, layout, containerWidth, containerHeight],
+    [regionWidth, plans, containerWidth, containerHeight],
   );
 
   // Stable per-window handlers (windowId-first) so FloatingWindowView can be
@@ -564,9 +556,8 @@ export function DockManager({
 
   // Each docked region renders its FULL tree; railed columns render as
   // fixed 36px strips counted inside regionWidth by reconciliation (D40/
-  // D46), so a packed MULTI-column region reserves its true 36 x N. The
-  // one exception is a packed single-column region, whose regionWidth is
-  // the P8 restore width (see plannedReservedWidth).
+  // D46), so a packed region -- any column count -- reserves its true
+  // 36 x N (the columns' restore widths live in their weights).
   const regionFor = (edge: DockEdge) => {
     const tree = layout.docked[edge];
     const plan = plans[edge];
@@ -576,7 +567,6 @@ export function DockManager({
         reservedWidth: 0,
         resizable: false,
       };
-    const packed = isRegionPackedOn(layout, edge);
     return {
       tree,
       // The rail is fixed-width chrome: nothing to resize when EVERY column
@@ -590,7 +580,7 @@ export function DockManager({
       // Escape, which re-commits the start width) would bake the
       // temporarily-scaled width into the model and break "widths restore
       // when the viewport grows".
-      reservedWidth: plannedReservedWidth(plan, regionWidth[edge], packed),
+      reservedWidth: plannedReservedWidth(plan, regionWidth[edge]),
     };
   };
   // Keyed by edge (not positional array indices, whose left/right meaning was

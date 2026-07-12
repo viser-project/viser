@@ -1512,11 +1512,14 @@ export function expandRegionRail(
 }
 
 /** The one entry point for legacy persisted layouts (both injection/restore
- * chokepoints call this): detects pre-D46 band shapes and the pre-D44
- * regionCollapsed flag, and -- only when something is legacy -- clones and
- * runs the two migrations in their required order (rows first: the flag
- * applies to the migrated columns). Returns the input untouched when the
- * layout is current-format, so modern layouts pay two property checks. */
+ * chokepoints call this): detects pre-D46 band shapes, the pre-D44
+ * regionCollapsed flag, and the pre-always-px lone-column weight form, and
+ * -- only when something is legacy -- clones and runs the migrations in
+ * their required order (rows first: the flag applies to the migrated
+ * columns; the lone-width adoption last: the earlier migrations can
+ * produce the single-column shape it reads). Returns the input untouched
+ * when the layout is current-format, so modern layouts pay cheap property
+ * checks. */
 export function migrateLegacyLayout(layout: DockLayout): DockLayout {
   const legacy =
     layout.regionCollapsed !== undefined ||
@@ -1524,12 +1527,69 @@ export function migrateLegacyLayout(layout: DockLayout): DockLayout {
       (e) =>
         layout.docked[e] !== null &&
         (layout.docked[e] as { rows?: unknown }).rows !== undefined,
-    );
+    ) ||
+    hasLegacyLoneColumnWidth(layout);
   if (!legacy) return layout;
   const migrated = structuredClone(layout);
   migrateRowsToColumnsInPlace(migrated);
   migrateRegionCollapsedInPlace(migrated);
+  migrateLoneColumnWidthInPlace(migrated);
   return migrated;
+}
+
+/** Detect the pre-always-px lone-column width form (see
+ * migrateLoneColumnWidthInPlace). Cheap: two property walks over at most two
+ * single-column regions. */
+function hasLegacyLoneColumnWidth(layout: DockLayout): boolean {
+  return (["left", "right"] as DockEdge[]).some((edge) => {
+    const region = layout.docked[edge];
+    const rw = layout.regionWidth?.[edge];
+    if (
+      region === null ||
+      region.columns === undefined || // legacy {rows} shape: migrated first
+      region.columns.length !== 1 ||
+      rw === undefined
+    )
+      return false;
+    const column = region.columns[0];
+    return column.railed === true
+      ? rw > MINIMIZED_STRIP_PX + 0.5
+      : column.weight !== rw;
+  });
+}
+
+/** Migration (always-px column weights): layouts persisted before the
+ * lone-column weight carve-out was retired keep a single column's pixel
+ * width in `regionWidth` while the column's weight is an unreconciled flex
+ * share (or a stale px from a former multi-column era). regionWidth was the
+ * authoritative width memory under that model, so adopt it into the weight:
+ *  - expanded lone column: weight := regionWidth (floored at the grab-min),
+ *    and regionWidth follows the weight (invariant #12's identity);
+ *  - railed lone column (a packed single region): regionWidth held the P8
+ *    RESTORE width while the rail rendered 36px -- move the restore width
+ *    into the weight (D40's railed-weight-is-restore-width form) and set
+ *    regionWidth to the rendered 36px strip.
+ * Idempotent: a migrated expanded column satisfies weight === regionWidth,
+ * and a migrated packed single region holds exactly the strip width. No-op
+ * for layouts without a regionWidth field (never reconciled -- the first
+ * commit establishes px from defaults). */
+export function migrateLoneColumnWidthInPlace(layout: DockLayout): void {
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const region = layout.docked[edge];
+    const rw = layout.regionWidth?.[edge];
+    if (region === null || region.columns.length !== 1 || rw === undefined)
+      continue;
+    const column = region.columns[0];
+    if (column.railed === true) {
+      if (rw > MINIMIZED_STRIP_PX + 0.5) {
+        column.weight = Math.max(rw, minRegionWidth());
+        layout.regionWidth![edge] = MINIMIZED_STRIP_PX;
+      }
+    } else if (column.weight !== rw) {
+      column.weight = Math.max(rw, minRegionWidth());
+      layout.regionWidth![edge] = column.weight;
+    }
+  }
 }
 
 /** Migration (D46): regions persisted before the columns-only model carry
@@ -1801,9 +1861,10 @@ export function setNodeWeights(
  * region resizer's (proportional from current widths, clamped per column):
  * railed columns keep their P8 restore weights untouched (they render the
  * fixed 36px strip), and the committed width is what the weights actually
- * absorbed. A single column's px lives in regionWidth alone (its weight is
- * an unreconciled flex share), and a fully-railed region carries the width
- * as the region's content need -- both unchanged here. */
+ * absorbed -- for EVERY expanded column, a lone one included (weights are
+ * always reconciled px). A fully-railed region carries the width as the
+ * region's content need until reconciliation pins it back to the rails'
+ * pack width. */
 export function setRegionWidth(
   layout: DockLayout,
   edge: DockEdge,
@@ -1827,7 +1888,7 @@ export function setRegionWidth(
     const alreadyDistributed =
       Math.abs(expandedSum - (px - railedPx)) < 0.5 &&
       expanded.every((c) => c.weight >= minRegionWidth());
-    if (cols.length > 1 && expanded.length > 0) {
+    if (expanded.length > 0) {
       if (alreadyDistributed) {
         px = railedPx + expandedSum;
       } else {

@@ -106,14 +106,15 @@ function geometricViolations(layout: DockLayout): string[] {
     const region = layout.docked[edge];
     if (region === null) continue;
     const plan = planRegion(region);
-    // Plan internal consistency.
+    // Plan internal consistency. (API-shape update with the always-px
+    // weights migration: the plan's singleColumn field and the packed
+    // override in plannedReservedWidth are gone -- reserved width is
+    // uniform for every region shape, packed included.)
     if (!finite(plan.chromePx) || plan.chromePx < 0)
       v.push(`${edge}: bad chromePx ${plan.chromePx}`);
-    if (plan.singleColumn !== (plan.columns.length === 1))
-      v.push(`${edge}: singleColumn disagrees with columns length`);
-    // Derived widths must be finite and sane in both packed states.
-    for (const regionPacked of [false, true]) {
-      const reserved = plannedReservedWidth(plan, widths[edge], regionPacked);
+    // The derived width must be finite and sane.
+    {
+      const reserved = plannedReservedWidth(plan, widths[edge]);
       if (!finite(reserved) || reserved < 0)
         v.push(`${edge}: bad reserved width ${reserved}`);
     }

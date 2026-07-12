@@ -159,28 +159,40 @@ describe("invariantViolations", () => {
     expect(invariantViolations(rails)).toEqual([]);
   });
 
-  it("#12: gated off for unreconciled layouts and single-column regions", () => {
+  it("#12: gated off ONLY for unreconciled layouts (no regionWidth field)", () => {
     // No regionWidth field: never reconciled (flex-share literals) -- no
     // basis to check against.
     const literal = emptyLayout();
     literal.groups = { a: group("a"), b: group("b") };
     literal.docked.left = toRegion(row([leaf("a"), leaf("b")]));
     expect(invariantViolations(literal)).toEqual([]);
-    // Single column: its px lives in regionWidth itself; the weight may be
-    // a height share.
+  });
+
+  it("#12: covers SINGLE-column regions too (always-px weights)", () => {
+    // A lone column's weight is a reconciled px like everyone else's -- the
+    // old carve-out (weight as flex share, regionWidth as the width memory)
+    // is retired, so a drift between the two is now a flagged bypass.
     const single = emptyLayout();
     single.groups = { a: group("a") };
     single.docked.left = toRegion(leaf("a", 2));
     single.regionWidth = { left: 500, right: 300 };
+    expect(
+      invariantViolations(single).some((s) => s.includes("rendered need")),
+    ).toBe(true);
+    // The maintained form (weight == regionWidth) is clean.
+    single.docked.left!.columns[0].weight = 500;
     expect(invariantViolations(single)).toEqual([]);
-    // A packed single-column STACK (the sole column railed) is also a
-    // single width column -- gated off; regionWidth carries the restore
-    // width reconciliation maintains.
+    // A packed single-column STACK (the sole column railed) holds exactly
+    // its rail's pack width; the restore width lives in the WEIGHT (D40).
     const collapsed = emptyLayout();
     collapsed.groups = { a: group("a"), b: group("b") };
-    collapsed.docked.left = toRegion(col([leaf("a"), leaf("b")]));
+    collapsed.docked.left = toRegion(col([leaf("a"), leaf("b")], 480));
     collapsed.docked.left!.columns[0].railed = true;
     collapsed.regionWidth = { left: 480, right: 300 };
+    expect(
+      invariantViolations(collapsed).some((s) => s.includes("pack width")),
+    ).toBe(true);
+    collapsed.regionWidth = { left: 36, right: 300 };
     expect(invariantViolations(collapsed)).toEqual([]);
   });
 });
@@ -283,6 +295,63 @@ describe("migrateRowsToColumnsInPlace (D46)", () => {
     const l = emptyLayout();
     l.groups = { a: group("a") };
     l.docked.left = toRegion(leaf("a"));
+    expect(ops.migrateLegacyLayout(l)).toBe(l);
+  });
+});
+
+// ===========================================================================
+// Lone-column width migration (always-px weights): layouts persisted before
+// the single-column carve-out was retired keep the lone column's px in
+// regionWidth while its weight is a flex share (or a stale px). The
+// chokepoint adopts regionWidth -- the old model's authoritative width
+// memory -- into the weight.
+// ===========================================================================
+describe("migrateLegacyLayout: lone-column width adoption", () => {
+  it("adopts an EXPANDED lone column's regionWidth into its weight", () => {
+    const l = emptyLayout();
+    l.groups = { a: group("a") };
+    l.docked.right = toRegion(leaf("a", 1)); // flex-share weight
+    l.regionWidth = { left: 300, right: 500 };
+    const m = ops.migrateLegacyLayout(l);
+    expect(m).not.toBe(l); // migrated via clone; the input is untouched
+    expect(l.docked.right!.columns[0].weight).toBe(1);
+    expect(m.docked.right!.columns[0].weight).toBe(500);
+    expect(m.regionWidth!.right).toBe(500);
+    expect(invariantViolations(m)).toEqual([]);
+    // Idempotent: re-running is a passthrough.
+    expect(ops.migrateLegacyLayout(m)).toBe(m);
+  });
+
+  it("a STALE px weight is overridden by regionWidth (the old model's truth)", () => {
+    // Under the old model a lone column could keep a stale px from its
+    // multi-column era while setRegionWidth wrote only regionWidth.
+    const l = emptyLayout();
+    l.groups = { a: group("a") };
+    l.docked.left = toRegion(leaf("a", 300));
+    l.regionWidth = { left: 500, right: 300 };
+    const m = ops.migrateLegacyLayout(l);
+    expect(m.docked.left!.columns[0].weight).toBe(500);
+    expect(m.regionWidth!.left).toBe(500);
+  });
+
+  it("moves a packed single region's restore width into the weight, regionWidth to the strip", () => {
+    const l = emptyLayout();
+    l.groups = { a: group("a") };
+    l.docked.left = toRegion(leaf("a", 1));
+    l.docked.left!.columns[0].railed = true;
+    l.regionWidth = { left: 480, right: 300 }; // old model: restore width
+    const m = ops.migrateLegacyLayout(l);
+    expect(m.docked.left!.columns[0].weight).toBe(480);
+    expect(m.regionWidth!.left).toBe(36);
+    expect(invariantViolations(m)).toEqual([]);
+    // Idempotent: the migrated packed form (regionWidth == strip) is final.
+    expect(ops.migrateLegacyLayout(m)).toBe(m);
+  });
+
+  it("no-op without a regionWidth field (first commit establishes px)", () => {
+    const l = emptyLayout();
+    l.groups = { a: group("a") };
+    l.docked.left = toRegion(leaf("a", 1));
     expect(ops.migrateLegacyLayout(l)).toBe(l);
   });
 });

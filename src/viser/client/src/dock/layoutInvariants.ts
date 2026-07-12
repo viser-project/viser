@@ -68,8 +68,8 @@ function referencedGroupIds(layout: DockLayout): GroupId[] {
  *      are booleans when present; groups carry no collapse flag.
  *  11. No un-migrated legacy `regionCollapsed` field (D44): the injection and
  *      restore chokepoints run migrateRegionCollapsedInPlace.
- *  12. regionWidth (when present) is the rendered content need (D40/D46): a
- *      multi-column region with an expanded column pins it to
+ *  12. regionWidth (when present) is the rendered content need (D40/D46),
+ *      any column count: a region with an expanded column pins it to
  *      sum(railed ? 36 : weight); fully railed pins to 36 x columns.
  *  (Numbering is contiguous since the 2026-07 cleanup; the spec-referenced
  *  old #16 is now #12.) */
@@ -205,24 +205,24 @@ export function invariantViolations(layout: DockLayout): string[] {
     );
 
   // 12. Region width matches the rendered-need semantic (D40): whenever a
-  // multi-column region holds an expanded column, regionWidth[edge] is the
-  // sum over its columns of (railed ? 36 : weight) -- width reconciliation
-  // maintains it on every commit, so a drift means an op wrote weights or
-  // regionWidth without going through (or agreeing with) the reconciler.
-  // A fully railed region must hold exactly its rails' pack width.
+  // region holds an expanded column, regionWidth[edge] is the sum over its
+  // columns of (railed ? 36 : weight) -- width reconciliation maintains it
+  // on every commit, so a drift means an op wrote weights or regionWidth
+  // without going through (or agreeing with) the reconciler. A fully railed
+  // region must hold exactly its rails' pack width. ANY column count:
+  // column weights are always reconciled pixels, lone columns included (the
+  // old single-column carve-out -- weight as an unreconciled flex share,
+  // regionWidth as the width memory -- was retired by the always-px weights
+  // migration; migrateLegacyLayout adopts persisted carve-out layouts).
   // Gated on the field's presence: a layout without `regionWidth` has never
   // been reconciled (test literals mid-construction), so its weights may
-  // still be flex shares with no px basis to check against. Skipped for a
-  // single column: its width memory is regionWidth itself and its weight
-  // stays an unreconciled flex share (the height-weight shape died with
-  // D46; the planned always-px migration retires this gate).
+  // still be flex shares with no px basis to check against.
   const RW_TOL = 1.5;
   if (layout.regionWidth !== undefined) {
     for (const edge of ["left", "right"] as DockEdge[]) {
       const region = layout.docked[edge];
       if (region === null) continue;
       const cols = region.columns;
-      if (cols.length < 2) continue;
       const rw = layout.regionWidth[edge];
       const railsPx = cols.length * MINIMIZED_STRIP_PX;
       if (cols.some((c) => c.railed !== true)) {

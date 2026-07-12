@@ -878,13 +878,12 @@ export function useDragController(deps: DragControllerDeps) {
   // Width to float a docked item at. A minimized docked group/column renders as
   // a ~strip-narrow cell, so its measured rect width is a useless panel width;
   // float at the item's preserved expanded width instead so it isn't
-  // strip-narrow after expanding. That preserved width is:
-  // - the column's own weight in a multi-column region (weights are pixels
-  //   there, and every column -- minimized or not -- carries its width, D20);
-  // - regionWidth for a lone column (its px always lives there).
-  // Expanded items keep their measured width. Shared by startGroupDrag (single
-  // tear-out) and startTabTearOut so neither re-introduces the bug. `groupId`
-  // locates the item's column.
+  // strip-narrow after expanding. That preserved width is the column's own
+  // weight: weights are always reconciled pixels (lone columns included), and
+  // a railed column's weight is its P8 restore width (D40). Expanded items
+  // keep their measured width. Shared by startGroupDrag (single tear-out) and
+  // startTabTearOut so neither re-introduces the bug. `groupId` locates the
+  // item's column.
   const dockedFloatWidth = (
     edge: DockEdge,
     collapsed: boolean,
@@ -900,12 +899,10 @@ export function useDragController(deps: DragControllerDeps) {
     const col = cols.find((c) => ops.collectLeafGroups(c).includes(groupId));
     // Trust the column weight only when the reconciler actually wrote px into
     // it (any real width clears the grab-min; an unreconciled weight is a bare
-    // flex share like 1).
-    if (
-      cols.length > 1 &&
-      col !== undefined &&
-      col.weight >= ops.minRegionWidth()
-    )
+    // flex share like 1 -- possible only for layouts that bypassed the
+    // migration chokepoints). regionWidth is the fallback, not a width
+    // memory: a packed region reserves just its 36px strips there.
+    if (col !== undefined && col.weight >= ops.minRegionWidth())
       return col.weight;
     return rw;
   };
@@ -1094,9 +1091,8 @@ export function useDragController(deps: DragControllerDeps) {
           const wasRailed = column?.railed === true;
           // A railed column measures strip-narrow; float it at its preserved
           // expanded width instead -- dockedFloatWidth's policy exactly: the
-          // column weight when the reconciler wrote px into it (multi-column
-          // regions), else regionWidth (a lone column's weight may be a
-          // height; regionWidth is its only width memory, P8).
+          // column weight (always reconciled px, its P8 restore width when
+          // railed -- lone columns included).
           const floatWidth = dockedFloatWidth(
             edge,
             wasRailed,

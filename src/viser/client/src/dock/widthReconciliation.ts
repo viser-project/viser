@@ -9,19 +9,23 @@
 // semantic:
 //
 //   - The width-determining columns are all of the region's columns (D46:
-//     one horizontal partition). They store their pixel widths as tree
-//     weights; a railed column's weight is always its P8 restore width and
-//     is never read as rendered width.
+//     one horizontal partition). EVERY column -- lone ones included --
+//     stores its pixel width as its tree weight; a railed column's weight
+//     is always its P8 restore width and is never read as rendered width.
 //   - Whenever the region has at least one expanded column, regionWidth is
 //     the sum over the columns of (railed ? 36 : weight) -- enforced on
 //     every commit (layout invariant #12), so railing/expanding a column
 //     moves the region by exactly (weight - 36) and the restore round-trips.
 //   - A fully railed region's rails are its content: regionWidth is 36 x
-//     columns (never a phantom panel width).
-//   - A single column's px lives in regionWidth directly: its weight is an
-//     unreconciled flex share, and regionWidth stays the lone column's width
-//     memory until the planned always-px weights migration retires this
-//     carve-out.
+//     columns (never a phantom panel width) -- for ANY column count. A
+//     packed single column reserves its 36px strip like the rest; its
+//     restore width lives in the weight (D40), not in regionWidth.
+//
+// (Historical note: lone columns used to be the one carve-out -- their weight
+// stayed an unreconciled flex share while regionWidth carried the px. That
+// died with the always-px weights migration; migrateLegacyLayout adopts the
+// carried regionWidth into the weight for persisted layouts, and the sameSet
+// path below heals layouts that bypassed the chokepoint.)
 //
 // The width lives in the layout (DockLayout.regionWidth), so it has one
 // source of truth: clones carry it through every op, snapshots restore it,
@@ -32,7 +36,7 @@
 // newColumnPx defaults.
 
 import { collectLeafGroups, minRegionWidth, widthColumns } from "./layoutOps";
-import { planRegion, RegionPlan } from "./regionPlan";
+import { planRegion } from "./regionPlan";
 import {
   DEFAULT_REGION_PX,
   DockColumn,
@@ -44,25 +48,12 @@ import {
 
 // regionWidth is the rendered content need with no dividers -- the
 // inter-column dividers are chrome, added on top via the render plan's
-// chromePx (see regionPlan.plannedReservedWidth). So the bounds that clamp
-// regionWidth must not include dividers either, or the divider px would be
-// double-counted (once in the floor, once again in chromePx).
-
-/** Sum of `cols`' minimum rendered widths (no dividers -- those are chrome),
- * for clamping regionWidth. A railed column renders the fixed 36px strip, so
- * its floor is the strip, not the grab-min (a pure-rail row must be allowed
- * to reserve exactly its rails, D40). */
-function colsMin(cols: DockColumn[]): number {
-  return cols.reduce(
-    (s, c) => s + (c.railed === true ? MINIMIZED_STRIP_PX : minRegionWidth()),
-    0,
-  );
-}
-
-// There is no upper bound on region width -- a docked region may be dragged as
-// wide as the user likes. Only the grab-min floor is enforced (below + in
-// clampRegionWidth); the render-time MIN_CANVAS_PX guard keeps a canvas sliver
-// visible.
+// chromePx (see regionPlan.plannedReservedWidth). There is no upper bound on
+// region width -- a docked region may be dragged as wide as the user likes.
+// The grab-min floor is enforced per COLUMN at the weight-writing sites
+// (`intended` below, the resize ops, setRegionWidth), so regionWidth -- the
+// weights' sum -- can never be driven below the columns' summed minimum; the
+// render-time MIN_CANVAS_PX guard keeps a canvas sliver visible.
 
 /** Default pixel width for a column newly joining a docked region. D3: the
  * region grows by the newcomer's width -- which is the dragged floating
@@ -110,15 +101,15 @@ function renderedRowPx(cols: DockColumn[], px?: number[]): number {
  * - Pure-internal changes (resize, reorder, collapse toggles, floating moves)
  *   leave the column set alone; regionWidth is re-derived from the width
  *   row's rendered need whenever that row can express it (so a railed-flag
- *   flip moves the region by exactly weight-36), and carries over otherwise.
- *   An op that deliberately wrote `next.regionWidth` (setRegionWidth) is
- *   trusted as the carry-over base -- setRegionWidth keeps the width-row
- *   weights on the same basis by construction.
+ *   flip moves the region by exactly weight-36). An op that wrote
+ *   `next.regionWidth` (setRegionWidth) keeps the width-row weights on the
+ *   same basis by construction, so the re-derivation preserves its write.
  * - INVARIANT, enforced on every commit: regionWidth is never below the
  *   columns' summed minimum -- a tiny grabbable sliver per expanded column
  *   (MIN_REGION_GRAB_PX) and the 36px strip per railed one, not the
- *   pane-content minimum. A region narrower than its panes' content simply
- *   scrolls the body; it does not auto-grow. */
+ *   pane-content minimum. This holds because every weight-writing site
+ *   floors per column (a region narrower than its panes' content simply
+ *   scrolls the body; it does not auto-grow). */
 export function reconcileRegionWidths(
   prev: DockLayout,
   next: DockLayout,
@@ -146,22 +137,35 @@ export function reconcileRegionWidths(
     if (sameSet) {
       // Same columns. D40 rendered-need maintenance: flag flips
       // (setColumnRailed / expand's rail-clear) are non-structural, so this
-      // is where their regionWidth bookkeeping lands. Whenever a
-      // multi-column region holds an expanded column its rendered need is
+      // is where their regionWidth bookkeeping lands. Legacy heal first
+      // (one-shot): a lone column committed before the always-px weights
+      // migration carries a bare flex share (e.g. 1) while regionWidth holds
+      // its px -- adopt the carried width into the weight (the
+      // migrateLegacyLayout chokepoint does this for persisted layouts; this
+      // covers layouts that bypassed it, e.g. test literals). Any real width
+      // clears the grab-min, so a sub-min weight is a reliable flex-share
+      // tell.
+      if (
+        nextCols.length === 1 &&
+        nextCols[0].weight < minRegionWidth() &&
+        nextRW[edge] > (nextCols[0].railed === true ? MINIMIZED_STRIP_PX : 0)
+      ) {
+        nextCols[0].weight = Math.max(nextRW[edge], minRegionWidth());
+      }
+      // Whenever the region holds an expanded column its rendered need is
       // expressible in the weights -- re-derive it, so railing moves the
       // region by exactly (weight - 36) and expanding restores it.
-      if (nextCols.length > 1 && nextCols.some((c) => c.railed !== true)) {
+      if (nextCols.some((c) => c.railed !== true)) {
         // Pinned to the rendered need -- authoritative, no clamp on top
         // (the per-column minimums are the resize ops' business; a floor
         // here would break the exact px identity invariant #12 asserts).
         nextRW[edge] = renderedRowPx(nextCols);
         return;
       }
-      // Fully railed: the rails are the content (D40/D46).
-      if (nextCols.length > 1) {
-        nextRW[edge] = nextCols.length * MINIMIZED_STRIP_PX;
-      }
-      clampRegionWidth(nextRW, edge, nextPlan);
+      // Fully railed: the rails are the content (D40/D46) -- any column
+      // count. A packed single column reserves its strip like the rest; its
+      // restore width stays in the weight.
+      nextRW[edge] = nextCols.length * MINIMIZED_STRIP_PX;
       return;
     }
 
@@ -171,12 +175,14 @@ export function reconcileRegionWidths(
     // still holds the same panel, so id matching would wrongly treat it as
     // new and reset its width. Each prev column matches at most one next
     // column.
-    // A prev column's carried-over pixel width: weights are pixels once the
-    // region has multiple columns (this function wrote them); a single
-    // column's px lives in regionWidth instead (its weight is never
-    // rewritten).
+    // A prev column's carried-over pixel width: weights are always
+    // reconciled pixels (this function wrote them, lone columns included).
+    // Legacy fallback: a pre-migration lone column's weight is a bare flex
+    // share (sub-grab-min) while regionWidth carries its px.
     const prevPxOf = (c: DockColumn): number =>
-      prevCols.length === 1 ? prevRW[edge] : c.weight;
+      prevCols.length === 1 && c.weight < minRegionWidth()
+        ? prevRW[edge]
+        : c.weight;
     const prevInfo = (prevTree?.columns ?? []).map((c) => ({
       groups: new Set(collectLeafGroups(c)),
       px: prevPxOf(c),
@@ -195,12 +201,27 @@ export function reconcileRegionWidths(
         // width isn't automatically still legal for it.
         return Math.max(match.px, minRegionWidth());
       }
-      // New column, previously empty edge: the edge's preserved regionWidth
-      // is this content's width -- e.g. a layout snapshot being restored
-      // (Escape after an undock), where the carried width must round-trip
-      // exactly rather than reset to the default.
-      if (prevCols.length === 0 && nextCols.length === 1) {
-        return Math.max(nextRW[edge], minRegionWidth());
+      // New column, previously empty edge. Its own weight wins when it is a
+      // reconciled px (a layout snapshot being restored -- Escape after an
+      // undock -- or a wholesale injection carrying committed widths): the
+      // carried width must round-trip exactly rather than reset to the
+      // default. This is also the packed-single restore path: the
+      // snapshot's regionWidth is just the 36px strip, but the column's
+      // weight kept the restore width (D40).
+      if (prevCols.length === 0 && c.weight >= minRegionWidth()) {
+        return c.weight;
+      }
+      // Otherwise (a fresh flex-share column) the edge's preserved
+      // regionWidth is this content's width -- the P8 "recreate at the
+      // remembered width" round-trip -- as long as that memory is a real
+      // content width, not a packed region's 36px strip run (then the
+      // newcomer's own window width / the default below is the truth).
+      if (
+        prevCols.length === 0 &&
+        nextCols.length === 1 &&
+        nextRW[edge] >= minRegionWidth()
+      ) {
+        return nextRW[edge];
       }
       // New column joining existing content: the newcomer's own width when
       // it came from a floating window (D3), else the region default --
@@ -208,51 +229,26 @@ export function reconcileRegionWidths(
       return newColumnPx(c, prev);
     });
     // Set the columns' weights to their pixel widths so each renders at
-    // `intended` px within the summed region width. Only for genuinely
-    // side-by-side columns; a lone column's weight is an unreconciled flex
-    // share (it fills the region regardless), so only regionWidth is
-    // written (the planned always-px migration retires this gate).
-    if (nextCols.length > 1) {
-      nextCols.forEach((c, i) => {
-        c.weight = intended[i];
-      });
-    }
+    // `intended` px within the summed region width -- EVERY column, lone
+    // ones included (the weight is the one width memory; regionWidth is
+    // derived from it below).
+    nextCols.forEach((c, i) => {
+      c.weight = intended[i];
+    });
     // regionWidth = the region's rendered content need (D40).
-    if (nextCols.length === 1) {
-      // Single width column: its px is the region width.
-      nextRW[edge] = Math.max(intended[0], colsMin(nextCols));
-    } else if (nextCols.some((c) => c.railed !== true)) {
+    if (nextCols.some((c) => c.railed !== true)) {
       // Expanded content present: the rendered need is exact -- expanded
       // columns at their px, rails at the 36px strip. Authoritative (no
       // clamp on top): `intended` is already per-column floored, so the sum
       // can't be degenerate, and the D40 invariant asserts the identity.
       nextRW[edge] = renderedRowPx(nextCols, intended);
-      return;
     } else {
       // Fully railed: the rails are the content (D40/D46 -- an injected
-      // all-railed region must never reserve phantom panel widths).
+      // all-railed region must never reserve phantom panel widths), for
+      // any column count.
       nextRW[edge] = nextCols.length * MINIMIZED_STRIP_PX;
     }
-    clampRegionWidth(nextRW, edge, nextPlan);
   });
 
   next.regionWidth = nextRW;
-}
-
-/** The on-every-commit invariant: an edge's width is never below its columns'
- * summed minimum. Subsumes the old auto-grow effect (which watched for this
- * after the fact) -- with the floor applied here, a too-narrow region is
- * unrepresentable in committed state. */
-function clampRegionWidth(
-  rw: Record<DockEdge, number>,
-  edge: DockEdge,
-  plan: RegionPlan,
-): void {
-  // Floor the width on every commit so a server set_width can't drive the region
-  // below its panes' summed grab-min (interactive resize already clamps; this
-  // guards the server-driven path). The floor is the grabbable sliver per
-  // expanded column (a narrower region scrolls its body) and the fixed 36px
-  // strip per railed one. There is no max ceiling.
-  const min = colsMin(plan.columns);
-  if (rw[edge] < min) rw[edge] = min;
 }

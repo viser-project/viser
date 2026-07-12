@@ -17,13 +17,7 @@ import React from "react";
 import { flushSync } from "react-dom";
 import * as ops from "./layoutOps";
 import { planRegion } from "./regionPlan";
-import {
-  DockEdge,
-  DockLayout,
-  MINIMIZED_STRIP_PX,
-  regionWidthsOf,
-  WindowId,
-} from "./types";
+import { DockEdge, DockLayout, MINIMIZED_STRIP_PX, WindowId } from "./types";
 
 /** As a docked region's edge sweeps inward during a resize (reserved width
  * `oldReserved` -> `newReserved`), push floats it sweeps past so they stay fully
@@ -159,11 +153,9 @@ export function makeRegionResizeHandlers(
   const railedCols = plan.columns.filter((c) => c.railed === true);
   const railedStripPx = railedCols.length * MINIMIZED_STRIP_PX;
   const fixedPx = plan.chromePx + railedStripPx;
-  const startRegion = regionWidthsOf(layoutRef.current)[edge];
-  // Weights are pixels for side-by-side columns (the reconciler wrote them); a
-  // single column's px is the regionWidth itself (its weight is an
-  // unreconciled flex share).
-  const init = plan.singleColumn ? [startRegion] : cols.map((c) => c.weight);
+  // Weights are pixels for every column, lone ones included (the reconciler
+  // writes them on each commit).
+  const init = cols.map((c) => c.weight);
   const mins = cols.map(() => ops.minRegionWidth());
   // No per-column max: a region drag is bounded only by its columns' grab-mins
   // (and the render-time canvas guard), not a fixed per-panel width --
@@ -189,17 +181,15 @@ export function makeRegionResizeHandlers(
     // only while `resizable`, and rail flips can't happen mid-gesture.)
     const total = expandedTotal + railedStripPx;
     const newReservedPx = expandedTotal + fixedPx;
-    // Only rewrite weights for genuinely side-by-side columns; a lone column's
-    // weight is an unreconciled flex share and stays untouched. The total goes
-    // through the setRegionWidth op so the model stays the single source of
-    // truth for the width.
-    if (!plan.singleColumn) {
-      const byId: Record<string, number> = {};
-      ids.forEach((id, i) => {
-        byId[id] = widths[i];
-      });
-      next = ops.setNodeWeights(next, edge, byId);
-    }
+    // Write the redistributed pixel widths into the column weights (every
+    // expanded column, lone ones included -- weights are always reconciled
+    // px). The total goes through the setRegionWidth op so the model stays
+    // the single source of truth for the width.
+    const byId: Record<string, number> = {};
+    ids.forEach((id, i) => {
+      byId[id] = widths[i];
+    });
+    next = ops.setNodeWeights(next, edge, byId);
     // Push floats out of the way of this region's edge as it sweeps inward,
     // using the before/after seam of this very drag frame -- no history
     // needed. A float that was fully on the canvas (its edge clear of the old

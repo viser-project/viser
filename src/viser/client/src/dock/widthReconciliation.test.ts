@@ -1,10 +1,12 @@
 // Tests for the region-width model (post-D20): layout.regionWidth is the
-// width-determining columns' summed pixels -- ALL of them, minimized or not
+// columns' rendered need -- expanded columns at their pixel WEIGHTS (always
+// reconciled px, lone columns included), railed columns at the 36px strip
 // (a minimized cell renders as its 26px bar in place at its column's width,
-// so collapse never moves region width). The width lives in the layout
-// itself (single source of truth), and reconciliation -- run on every commit
-// -- must (a) carry widths across structural changes by content identity,
-// and (b) leave pure-internal changes (including collapse toggles) alone.
+// so per-cell minimize never moves region width). The width lives in the
+// layout itself (single source of truth), and reconciliation -- run on every
+// commit -- must (a) carry widths across structural changes by content
+// identity, and (b) keep pure-internal changes (including collapse toggles)
+// on the same weight basis.
 
 import { describe, expect, it } from "vitest";
 import {
@@ -55,11 +57,13 @@ function threeColumns(widths: [number, number, number]): DockLayout {
 }
 
 describe("lone minimized column: preserved width survives a sibling docking", () => {
-  // Regression: a SINGLE column's px always lives in regionWidth (its weight is
-  // never rewritten) -- including while minimized. The structural-change branch
-  // used to read the minimized lone column's px from its weight (the bare flex
-  // default, 1) and floor it to the grab-min, so dock A at 500 -> minimize ->
-  // dock B beside -> expand A came back at 96px instead of 500.
+  // A SINGLE column's px lives in its WEIGHT like every other column's
+  // (always-px weights) -- including while minimized (railed weight = P8
+  // restore width, D40). The starting literal here is the pre-migration
+  // legacy form (weight is a bare flex share, regionWidth carries the px):
+  // the first reconcile must ADOPT the px into the weight (the sameSet
+  // heal / migrateLegacyLayout chokepoint), so dock A at 500 -> minimize ->
+  // dock B beside -> expand A comes back at 500, never the 96px grab-min.
   function loneAt500(): DockLayout {
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b") };
@@ -71,7 +75,11 @@ describe("lone minimized column: preserved width survives a sibling docking", ()
   it("carries the preserved px into the column weight when a sibling docks", () => {
     const l = loneAt500();
     const m1 = toggleCollapsed(l, "a"); // minimize the lone column
-    expect(recon(l, m1).right).toBe(500); // width kept (bar in place, D20)
+    // The packed single region reserves exactly its rail (uniform D40 pack
+    // width; no regionWidth carve-out) -- the 500px restore moved into the
+    // column weight by the legacy heal.
+    expect(recon(l, m1).right).toBe(MINIMIZED_STRIP_PX);
+    expect(widthColumns(m1.docked.right!)[0].weight).toBe(500);
     const m2 = dockToRegionEdge(m1, ["b"], "right", "left"); // structural
     reconcileRegionWidths(m1, m2);
     const aCol = widthColumns(m2.docked.right!).find((c) =>
@@ -181,8 +189,52 @@ describe("reconcileRegionWidths with railed columns (D38/D40: rail moves width b
     const next = structuredClone(prev);
     // Remove a's column: keep only the second column (b).
     next.docked.right = { columns: [next.docked.right!.columns[1]] };
-    // The remaining (minimized) column keeps its preserved px.
-    expect(recon(prev, next).right).toBe(250);
+    // The remaining lone RAILED column is a packed region: it reserves
+    // exactly its rail (uniform D40 pack width, any column count) while its
+    // weight keeps the preserved 250px for the P8 restore.
+    expect(recon(prev, next).right).toBe(MINIMIZED_STRIP_PX);
+    expect(widthColumns(next.docked.right!)[0].weight).toBe(250);
+    // ...and expanding it restores the preserved px exactly.
+    const expanded = toggleCollapsed(next, "b");
+    expect(recon(next, expanded).right).toBe(250);
+  });
+
+  it("P8 round-trip (edge cases 5/7): a packed lone column undocks at its restore width and re-docks at it", () => {
+    // Always-px weights: a packed single region's regionWidth is just the
+    // 36px strip, so the restore width must travel via the WEIGHT -- the
+    // undock floats at the weight (dockedFloatWidth), and the re-dock takes
+    // the floating window's width (D3), never the remembered strip run.
+    const packed = emptyLayout();
+    packed.groups = { a: group("a") };
+    packed.docked.right = toRegion(leaf("a", 480));
+    packed.docked.right!.columns[0].railed = true;
+    packed.regionWidth = { left: 0, right: MINIMIZED_STRIP_PX };
+    // Undock: the column floats (at its 480px weight -- the drag layer reads
+    // it); the emptied edge keeps its width for restore.
+    const floated = structuredClone(packed);
+    floated.docked.right = null;
+    floated.floating = [
+      floatingWindow({
+        id: "w",
+        stack: ["a"],
+        width: 480,
+        collapsed: true,
+      }),
+    ];
+    expect(recon(packed, floated).right).toBe(MINIMIZED_STRIP_PX);
+    // Re-dock onto the now-empty edge: the remembered regionWidth is only
+    // the strip (not a content width), so the newcomer's own window width
+    // wins -- the region recreates at 480, and the born-railed column
+    // stores it as its restore width (D40) while reserving the strip.
+    const redocked = dockToRegionEdge(floated, ["a"], "right", "left");
+    reconcileRegionWidths(floated, redocked);
+    const col0 = widthColumns(redocked.docked.right!)[0];
+    expect(col0.railed).toBe(true); // identity transfer (D38): lands railed
+    expect(col0.weight).toBe(480); // the restore width, via the window (D3)
+    expect(regionWidthsOf(redocked).right).toBe(MINIMIZED_STRIP_PX);
+    // ...and expanding reveals the panel at its full restore width (P8).
+    const expanded = toggleCollapsed(redocked, "a");
+    expect(recon(redocked, expanded).right).toBe(480);
   });
 
   it("restoring a snapshot onto an empty edge keeps the preserved width", () => {
@@ -366,11 +418,7 @@ describe("railed-column width paths (drop beside a rail)", () => {
     const prev = v1(150, true);
     prev.floating[0].width = 260;
     const reservedOf = (l: DockLayout) =>
-      plannedReservedWidth(
-        planRegion(l.docked.left!),
-        regionWidthsOf(l).left,
-        false,
-      );
+      plannedReservedWidth(planRegion(l.docked.left!), regionWidthsOf(l).left);
     const next = dropOnDockedLeaf(
       prev,
       [NEW_G],
@@ -431,7 +479,6 @@ describe("railed-column width paths (drop beside a rail)", () => {
     const reserved = plannedReservedWidth(
       planRegion(next.docked.left!),
       regionWidthsOf(next).left,
-      false,
     );
     expect(reserved).toBe(2 * MINIMIZED_STRIP_PX + SPLIT_DIVIDER_PX);
   });
