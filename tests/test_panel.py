@@ -235,6 +235,36 @@ def test_float_sends_position_and_optional_size() -> None:
         server.stop()
 
 
+def test_minimize_sends_collapsed_message() -> None:
+    """minimize() queues a Collapsed(True) message; a fresh panel queues none."""
+    server = _make_server()
+    try:
+        panel = server.gui.add_panel()
+        uuid = panel._impl.uuid
+        assert m.GuiSetPanelCollapsedMessage not in _buffered_types(server, uuid)
+        panel.minimize()
+        assert _latest(server, uuid, m.GuiSetPanelCollapsedMessage).collapsed is True
+    finally:
+        server.stop()
+
+
+def test_expand_sends_collapsed_false() -> None:
+    """expand() is the imperative inverse of minimize(): Collapsed(False), with
+    a bumped counter so it beats an earlier minimize in the coalesced buffer."""
+    server = _make_server()
+    try:
+        panel = server.gui.add_panel()
+        uuid = panel._impl.uuid
+        panel.minimize()
+        first = _latest(server, uuid, m.GuiSetPanelCollapsedMessage)
+        panel.expand()
+        latest = _latest(server, uuid, m.GuiSetPanelCollapsedMessage)
+        assert latest.collapsed is False
+        assert latest.counter > first.counter
+    finally:
+        server.stop()
+
+
 def test_remove_purges_buffered_placement_messages() -> None:
     """Removing a panel purges its buffered per-axis placement messages (they
     share the panel's `gui` entity), so a late-joining client can't replay

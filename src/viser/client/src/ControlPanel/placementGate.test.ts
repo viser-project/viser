@@ -130,6 +130,7 @@ describe("gatePlacement", () => {
       position: null,
       width: null,
       height: null,
+      collapsed: null,
     });
   });
 });

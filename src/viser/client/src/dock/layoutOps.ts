@@ -39,8 +39,8 @@ import { freshId } from "./gestures";
 
 
 // NonEmpty leaks through `.filter`/`.slice` (they return a plain T[]), so after
-// deriving a columns/leaves list we re-assert non-emptiness in ONE place before
-// assigning it back to a NonEmpty field. The "what to do when it IS empty"
+// deriving a columns/leaves list we re-assert non-emptiness in one place before
+// assigning it back to a NonEmpty field. The "what to do when it is empty"
 // decision -- drop the column, or null the region -- is made explicitly at each
 // removal site (the type can't make that call for us).
 function asNonEmpty<T>(xs: T[]): NonEmpty<T> | null {
@@ -71,10 +71,10 @@ const clone = <T>(value: T): T => {
   return value;
 };
 
-/** Public deep-clone of a layout, for the rare caller OUTSIDE the ops that must
+/** Public deep-clone of a layout, for the rare caller outside the ops that must
  * hand a modified layout to applyOp: applyOp's normalize/reconcile steps
  * mutate their input in place, so a shallow `{ ...layout, field }` copy would
- * alias groups/docked with the COMMITTED layout and let those steps corrupt it
+ * alias groups/docked with the committed layout and let those steps corrupt it
  * (Escape-restore snapshots, onCommit diffing). */
 export const cloneLayout = (layout: DockLayout): DockLayout => clone(layout);
 
@@ -97,7 +97,7 @@ export function* allLayoutIds(layout: DockLayout): Iterable<string> {
 // ---------------------------------------------------------------------------
 // Flat-model accessors + structural helpers.
 //
-// The docked shape is fixed at THREE levels (D46: Region = side-by-side
+// The docked shape is fixed at three levels (D46: Region = side-by-side
 // columns; Column = stack of leaves; Leaf = one tab group), so what used to
 // be recursive tree walks are trivial array lookups. Removal helpers
 // maintain the invariant by re-wrapping: drop an emptied column from the
@@ -120,9 +120,9 @@ function findGroupInRegion(
 }
 
 /** Remove the leaf holding `groupId` from a region. Drops the leaf from its
- * column; drops the column if it emptied; drops the row if IT emptied; returns
- * null if the whole region emptied. Weights are preserved on the survivors so
- * the region's proportions don't jump. */
+ * column; drops the column if it emptied; returns null if the whole region
+ * emptied. Weights are preserved on the survivors so the region's proportions
+ * don't jump. */
 function regionRemoveGroup(
   region: DockRegion,
   groupId: GroupId,
@@ -179,17 +179,16 @@ export function findColumnById(
 // ---------------------------------------------------------------------------
 
 /** A docked column is "minimized" exactly when its container flag is set
- * (D38): it renders as the 36px rail in place. Leaf-level collapse no longer
- * exists, so this is purely the column's own `railed` flag (region-level
- * collapse is handled at region scope by the callers). */
+ * (D38): it renders as the 36px rail in place. Leaf-level collapse is
+ * unrepresentable, so this is purely the column's own `railed` flag. */
 export function isColumnMinimized(column: DockColumn): boolean {
   return column.railed === true;
 }
 
 /** True when the column with id `nodeId` (in either docked region) renders
- * collapsed -- its railed flag, the ONE docked collapse store (D44: the
+ * collapsed -- its railed flag, the one docked collapse store (D44: the
  * packed region rail is derived from these same flags). Used to skip the
- * shrink-the-leaf split PREVIEW over a minimized target (nothing to
+ * shrink-the-leaf split preview over a minimized target (nothing to
  * vacate). False if the column isn't found. */
 export function nodeAllMinimized(layout: DockLayout, nodeId: NodeId): boolean {
   for (const edge of ["left", "right"] as const) {
@@ -204,7 +203,7 @@ export function nodeAllMinimized(layout: DockLayout, nodeId: NodeId): boolean {
   return false;
 }
 
-/** True when a floating window is minimized: its ONE container flag (D38).
+/** True when a floating window is minimized: its one container flag (D38).
  * (Name kept from the per-group era so call sites read unchanged; "all
  * minimized" and "minimized" are the same thing now.) */
 export function windowAllMinimized(
@@ -227,20 +226,19 @@ export function collectLeaves(
   return column.leaves.map((l) => ({ id: l.id, group: l.group }));
 }
 
-/** The width-determining columns of a region: ALL of them (D46 -- the
- * columns-only model has exactly one horizontal partition, so the old
- * widest-band selection is gone). Width reconciliation and region-width
- * math run over these. */
+/** The width-determining columns of a region: all of them (D46: the
+ * columns-only model has exactly one horizontal partition). Width
+ * reconciliation and region-width math run over these. */
 export function widthColumns(region: DockRegion): NonEmpty<DockColumn> {
   return region.columns;
 }
 
 /** Whether a region's given edge is a single leaf -- so a "dock beside/above
  * everything" drop there would be identical to a per-panel split of that one
- * panel, and the region-edge zone is suppressed as redundant. Distinct only when
- * the edge spans multiple cells -- i.e. unless the region is exactly ONE
- * column holding ONE leaf (D46: with columns full-height, every side
- * reduces to that same condition, so the old per-side parameter is gone). */
+ * panel, and the region-edge zone is suppressed as redundant. Distinct only
+ * when the edge spans multiple cells -- i.e. unless the region is exactly one
+ * column holding one leaf (D46: with columns full-height, every side reduces
+ * to that same condition). */
 export function edgeIsSingleLeaf(region: DockRegion): boolean {
   return (
     region.columns.length === 1 && region.columns[0].leaves.length === 1
@@ -248,7 +246,7 @@ export function edgeIsSingleLeaf(region: DockRegion): boolean {
 }
 
 /** Minimum width a single docked column may be resized to in the layout model:
- * MIN_REGION_GRAB_PX -- a tiny grabbable sliver, NOT the panel-content minimum
+ * MIN_REGION_GRAB_PX -- a tiny grabbable sliver, not the pane-content minimum
  * (a too-narrow panel scrolls its body instead). A constant (leaves stacked in
  * a column share one width), named so a future per-column minimum has one home. */
 export function minRegionWidth(): number {
@@ -273,20 +271,19 @@ export function isAreaGroup(layout: DockLayout, groupId: GroupId): boolean {
 }
 
 /** A column with 2+ stacked leaves -- the case where "float the whole column"
- * is a distinct gesture from "float a single panel" (a 1-leaf column IS its
- * single panel). With the flat model every column is trivially linearizable
- * top-to-bottom, so the old "pure column" caveat (a column might hold a nested
- * row that can't round-trip) is gone: this is just a leaf-count check. */
+ * is a distinct gesture from "float a single panel" (a 1-leaf column is its
+ * single panel). Every column is trivially linearizable top-to-bottom, so
+ * this is just a leaf-count check. */
 export function isMultiLeafColumn(column: DockColumn): boolean {
   return column.leaves.length >= 2;
 }
 
 /** Distribute a region's total width across its side-by-side columns for a
- * region-edge resize. Every column scales proportionally from its DRAG-START
+ * region-edge resize. Every column scales proportionally from its drag-start
  * width; columns that would cross a min/max limit are clamped there, and the
  * difference is redistributed among the still-unclamped columns (iterated,
  * since redistribution can push more columns to a limit). The region can
- * therefore keep resizing while ANY column has room, instead of locking up as
+ * therefore keep resizing while any column has room, instead of locking up as
  * soon as one column hits a limit. `targetTotal` is clamped to
  * [sum(mins), sum(maxs)]; the result sums to the clamped target. */
 export function resizeRegionColumns(
@@ -327,9 +324,9 @@ export function resizeRegionColumns(
   return widths;
 }
 
-/** Pure cascading-divider resize, shared by docked column/row splits and
+/** Pure cascading-divider resize, shared by docked column/leaf splits and
  * floating snap-stacks. Dragging the boundary between cell `dividerIndex` and
- * `dividerIndex+1` grows the drag-side cell and shrinks the other side IN ORDER
+ * `dividerIndex+1` grows the drag-side cell and shrinks the other side in order
  * (when a neighbor hits `minCell` the next sibling gives space -- the boundary
  * "pushes" through), conserving the total. Collapsed cells are excluded (they
  * render at a fixed handle size and keep their weight). Returns the new per-cell
@@ -355,7 +352,7 @@ export function cascadeResize(opts: {
   const next = weights.map((w, i) =>
     collapsed[i] ? 0 : (w / total) * containerPx,
   );
-  // The grower is the nearest EXPANDED cell in the grow direction: a fixed
+  // The grower is the nearest expanded cell in the grow direction: a fixed
   // 26px bar adjacent to the seam is skipped rather than dead-ending the
   // drag (a resize cursor that no-ops in one direction lies -- hit-box loop
   // finding). Null only when no expanded cell exists on that side.
@@ -438,10 +435,9 @@ export function findGroupLocation(
   return null;
 }
 
-/** True when a group READS as collapsed -- derived purely from its CONTAINER
- * (D38): the floating window's `collapsed` flag, or (docked) its edge's
- * region collapse / its containing column's railed flag. Groups carry no
- * collapse state of their own. */
+/** True when a group reads as collapsed -- derived purely from its container
+ * (D38): the floating window's `collapsed` flag, or (docked) its containing
+ * column's railed flag. Groups carry no collapse state of their own. */
 export function isGroupEffectivelyCollapsed(
   layout: DockLayout,
   groupId: GroupId,
@@ -451,11 +447,11 @@ export function isGroupEffectivelyCollapsed(
   return isRailedDockedCell(layout, groupId);
 }
 
-/** True when a group is DOCKED and reads as collapsed there (its edge's
- * explicit region collapse or its containing column's railed flag, D38) --
- * i.e. the drag paths' "was this a railed cell" pre-op check, done in ONE
- * region walk (the walk also yields the containing column, which the
- * location kinds alone don't). Non-docked groups are always false. */
+/** True when a group is docked and reads as collapsed there (its containing
+ * column's railed flag, D38) -- i.e. the drag paths' "was this a railed
+ * cell" pre-op check, done in one region walk (the walk also yields the
+ * containing column, which the location kinds alone don't). Non-docked
+ * groups are always false. */
 export function isRailedDockedCell(
   layout: DockLayout,
   groupId: GroupId,
@@ -468,9 +464,9 @@ export function isRailedDockedCell(
   return false;
 }
 
-/** The group ids that share a STACK with `groupId` (including itself): a
- * floating window's whole stack, or the leaf groups of the docked COLUMN that
- * contains the group. A LONE group (its own window, or the sole leaf of its
+/** The group ids that share a stack with `groupId` (including itself): a
+ * floating window's whole stack, or the leaf groups of the docked column that
+ * contains the group. A lone group (its own window, or the sole leaf of its
  * column) returns just `[groupId]`. Used by chrome that styles a group
  * differently when stacked (e.g. the unmergeable header's top rule). */
 export function stackGroupIdsOf(
@@ -479,7 +475,7 @@ export function stackGroupIdsOf(
 ): GroupId[] {
   const win = layout.floating.find((w) => w.stack.includes(groupId));
   if (win !== undefined) return win.stack.length >= 2 ? [...win.stack] : [groupId];
-  // Docked: the column holding this group's leaf IS the stack.
+  // Docked: the column holding this group's leaf is the stack.
   for (const edge of ["left", "right"] as DockEdge[]) {
     const found = findGroupInRegion(layout.docked[edge], groupId);
     if (found === null) continue;
@@ -490,13 +486,12 @@ export function stackGroupIdsOf(
   return [groupId];
 }
 
-/** D32 gate: is this group the SOLE group of a FLOATING window? Only there
+/** D32 gate: is this group the sole group of a floating window? Only there
  * does the panel-level collapse control (the grip bar's `-` / the
  * unmergeable header's compact toggle, plus their backing clicks) render:
- * when scopes coincide the LARGEST coinciding scope owns collapse, so a
+ * when scopes coincide the largest coinciding scope owns collapse, so a
  * docked panel -- lone or stacked -- never carries one (docked collapse is
- * uniformly the chevron -> rail). Replaces the pre-D32 isLoneInVisualColumn
- * gate, which also matched docked sole panels. */
+ * uniformly the chevron -> rail). */
 export function isSoleFloatingGroup(
   layout: DockLayout,
   groupId: GroupId,
@@ -523,9 +518,9 @@ export function isStackedGroup(layout: DockLayout, groupId: GroupId): boolean {
 function detachInPlace(draft: DockLayout, groupId: GroupId): void {
   const loc = findGroupLocation(draft, groupId);
   if (loc === null) return;
-  // An area group is a fixed fixture -- it is never moved or removed. Panels are
+  // An area group is a fixed fixture -- it is never moved or removed. Panes are
   // added to / torn out of it individually; the group itself stays put (this
-  // should not be reached, since area groups are only ever drop TARGETS or the
+  // should not be reached, since area groups are only ever drop targets or the
   // source of a tearOutPane, never floated as a whole -- but guard anyway).
   if (loc.kind === "area") return;
   if (loc.kind === "docked") {
@@ -547,7 +542,7 @@ function detachInPlace(draft: DockLayout, groupId: GroupId): void {
 
 /** Drop any area-backing groups from a dragged set: an area's group is a fixed
  * fixture (detachInPlace is a no-op for it), so docking/snapping it would
- * REFERENCE it from a second place while it stays in its area -- a duplicated
+ * reference it from a second place while it stays in its area -- a duplicated
  * group. Not reachable from the UI today (drag stacks never contain area
  * groups), but guarded like insertTabsInto. */
 function withoutAreaGroups(layout: DockLayout, groupIds: GroupId[]): GroupId[] {
@@ -555,12 +550,12 @@ function withoutAreaGroups(layout: DockLayout, groupIds: GroupId[]): GroupId[] {
 }
 
 // ---------------------------------------------------------------------------
-// Group + panel construction.
+// Group, leaf, and column construction.
 // ---------------------------------------------------------------------------
 
 /** Build a fresh TabGroup. NonEmpty by type: `makeGroup([])` would have
  * produced `activeId: undefined` silently typed as a real PaneId -- an invalid
- * group flowing anywhere. (The one legal EMPTY group, an area's backing group,
+ * group flowing anywhere. (The one legal empty group, an area's backing group,
  * is built inline by ensureArea with an explicit `activeId: null`.) */
 export function makeGroup(paneIds: NonEmpty<PaneId>): TabGroup {
   return {
@@ -570,7 +565,7 @@ export function makeGroup(paneIds: NonEmpty<PaneId>): TabGroup {
   };
 }
 
-/** Whether a panel is flagged unmergeable in the registry. */
+/** Whether a pane is flagged unmergeable in the registry. */
 export function isPaneUnmergeable(
   panes: PaneRegistry,
   paneId: PaneId,
@@ -578,8 +573,8 @@ export function isPaneUnmergeable(
   return panes[paneId]?.unmergeable === true;
 }
 
-/** Whether a group holds an unmergeable panel. Unmergeable panes always live
- * alone, so any panel in the group being unmergeable marks the whole group. */
+/** Whether a group holds an unmergeable pane. Unmergeable panes always live
+ * alone, so any pane in the group being unmergeable marks the whole group. */
 export function isGroupUnmergeable(
   layout: DockLayout,
   panes: PaneRegistry,
@@ -598,7 +593,7 @@ function makeLeaf(groupId: GroupId, weight = 1): DockLeaf {
  * the column's stacked leaves (top to bottom), so a snapped floating stack keeps
  * its vertical arrangement when docked. The column's own weight defaults to 1
  * (its horizontal share in the region); callers override it when preserving a
- * sibling's width. `leafWeights` (per-group HEIGHT shares -- a floated stack's
+ * sibling's width. `leafWeights` (per-group height shares -- a floated stack's
  * preserved stackWeights) carry a 70/30 split back into the docked column;
  * absent entries default to 1. A lone group is a column of one leaf -- a count
  * of one, not a special shape. */
@@ -615,20 +610,20 @@ function buildColumn(
 }
 
 /** Detach every group in `groupIds` from the draft, returning the preserved
- * per-group height shares of the floating window that held ALL of them (its
+ * per-group height shares of the floating window that held all of them (its
  * whole stack being docked; `heights` undefined when the groups aren't
- * coming from one window) plus whether the source CONTAINER was COLLAPSED --
+ * coming from one window) plus whether the source container was collapsed --
  * transfers are identity (D38): docking a collapsed container rails/collapses
  * the landing scope, so the callers need the source container's state after
  * the container itself is gone. The source may be a floating window (every
- * user drag-dock path -- drags float first) OR a docked railed cell /
- * region-railed cell: server-driven docked->docked moves (applyPanelPlacement
- * edge/split) never float in between, and their collapse must carry the same
- * way the float path's does. Capture-then-detach lives in ONE helper because
- * the ORDER is load-bearing: detachInPlace deletes each departing group's
- * stackWeights entry as it leaves, so the weights must be copied out first --
- * this is the inverse of floatColumn, which wrote them, and it's what lets a
- * floated 70/30 stack dock back at 70/30. */
+ * user drag-dock path -- drags float first) or a docked railed cell:
+ * server-driven docked->docked moves (applyPanelPlacement edge/split) never
+ * float in between, and their collapse must carry the same way the float
+ * path's does. Capture-then-detach lives in ONE helper because the order is
+ * load-bearing: detachInPlace deletes each departing group's stackWeights
+ * entry as it leaves, so the weights must be copied out first -- this is the
+ * inverse of floatColumn, which wrote them, and it's what lets a floated
+ * 70/30 stack dock back at 70/30. */
 function detachAllPreservingStackWeights(
   draft: DockLayout,
   groupIds: NonEmpty<GroupId>,
@@ -677,13 +672,13 @@ export function dockToEdge(
     if (sourceCollapsed) column.railed = true;
     draft.docked[edge] = regionOf(column);
   } else {
-    // Identity transfer (D38): a collapsed window docked BESIDE existing
+    // Identity transfer (D38): a collapsed window docked beside existing
     // content lands as a railed column. Other columns' railed flags are
     // untouched (D44: the packed region reading is derived, never rebuilt
     // to preserve a packed look).
     if (sourceCollapsed) column.railed = true;
     const live = draft.docked[edge]!;
-    // Add the new column at the OUTERMOST position (far left for "left",
+    // Add the new column at the outermost position (far left for "left",
     // far right for "right").
     const columns: NonEmpty<DockColumn> =
       edge === "left"
@@ -694,12 +689,12 @@ export function dockToEdge(
   return draft;
 }
 
-/** Dock a stack of groups as a new full-height COLUMN at the region's outer
- * or inner side (D46: columns are the only horizontal partition; the old
- * top/bottom full-width band inserts are unrepresentable -- vertical
- * arrangement is leaf stacking within a column, via dropOnDockedLeaf).
- * Optional weights preserve the existing content's size (the new column
- * grows the region rather than resizing what's there). */
+/** Dock a stack of groups as a new full-height column at the region's outer
+ * or inner side (D46: columns are the only horizontal partition; top/bottom
+ * full-width band inserts are unrepresentable -- vertical arrangement is
+ * leaf stacking within a column, via dropOnDockedLeaf). Optional weights
+ * preserve the existing content's size (the new column grows the region
+ * rather than resizing what's there). */
 export function dockToRegionEdge(
   layout: DockLayout,
   groupIds: GroupId[],
@@ -722,8 +717,8 @@ export function dockToRegionEdge(
     draft.docked[edge] = regionOf(first);
     return draft;
   }
-  // A new full-height column beside EVERYTHING -- a plain columns insert
-  // (D46: nothing to zip; a vertical stack IS one multi-leaf column).
+  // A new full-height column beside everything -- a plain columns insert
+  // (D46: a vertical stack is one multi-leaf column).
   const dw = weights?.dragged ?? 1;
   const column = buildColumn(ne, dw, stackHeights);
   // Identity transfer (D38): a collapsed window docked beside content lands
@@ -745,10 +740,10 @@ export function dockToRegionEdge(
 }
 
 /** Drop a stack of groups onto an existing docked leaf. `center` merges every
- * dragged panel into the target's tabs. The flattening KEY SEMANTIC:
- * - top/bottom insert the dragged leaf(s) INTO the target leaf's COLUMN, just
+ * dragged pane into the target's tabs. The key semantic:
+ * - top/bottom insert the dragged leaf(s) into the target leaf's column, just
  *   above/below the target (a column gains a leaf);
- * - left/right insert a new COLUMN beside the target leaf's column (the region
+ * - left/right insert a new column beside the target leaf's column (the region
  *   gains a column).
  * This is what keeps every gesture inside the fixed 3-level shape. */
 export function dropOnDockedLeaf(
@@ -772,7 +767,7 @@ export function dropOnDockedLeaf(
   const draft = clone(layout);
   const { heights: stackHeights, sourceCollapsed } =
     detachAllPreservingStackWeights(draft, ne);
-  // Re-find the target leaf AFTER detach. If a dragged group shared this edge,
+  // Re-find the target leaf after detach. If a dragged group shared this edge,
   // detaching it may have dropped the target's column; if the target is gone (a
   // self-drop), abort rather than orphaning the dragged groups.
   const liveRegion = draft.docked[edge];
@@ -784,11 +779,11 @@ export function dropOnDockedLeaf(
   const li = targetColumn.leaves.findIndex((l) => l.id === targetNodeId);
 
   // Sibling weights may be on any scale (divider drags write px values), so
-  // new-vs-target defaults derive from the TARGET's current weight: each side
+  // new-vs-target defaults derive from the target's current weight: each side
   // takes half, which is scale-invariant and matches the hint's 50/50 promise.
   if (region === "top" || region === "bottom") {
     // Insert the dragged leaf(s) into the target's column, above/below it.
-    // The dragged STACK as a whole takes half the target's weight (the
+    // The dragged stack as a whole takes half the target's weight (the
     // hint's 50/50 promise); each leaf's share of that half follows the
     // floated stack's preserved height ratios (P8 round-trip -- same rule as
     // the left/right branch's buildColumn).
@@ -804,12 +799,12 @@ export function dropOnDockedLeaf(
     return draft;
   }
 
-  // left / right: a new column beside the TARGET's column (D46: columns
+  // left / right: a new column beside the target's column (D46: columns
   // are the region's only horizontal partition, so a side drop is a plain
-  // column insert -- the old band-split "beside just this cell" landing is
-  // unrepresentable, and the hint spans the full column to match, P1).
+  // column insert -- a "beside just this cell" landing is unrepresentable,
+  // and the hint spans the full column to match, P1).
   //
-  // A RAILED target column's stored weight is its P8 restore width (it
+  // A railed target column's stored weight is its P8 restore width (it
   // renders at the fixed 36px strip regardless), so the 50/50 split must
   // not touch it -- halving it would permanently corrupt the width the rail
   // re-expands to. The newcomer takes the region default instead;
@@ -821,8 +816,8 @@ export function dropOnDockedLeaf(
     : targetColumn.weight / 2;
   const newShare = targetRailed ? DEFAULT_REGION_PX : targetColumn.weight / 2;
   const newColumn = buildColumn(ne, newShare, stackHeights);
-  // Identity transfer (D38): a collapsed window dropped as a NEW column
-  // lands railed. (top/bottom drops JOIN the target's column instead -- the
+  // Identity transfer (D38): a collapsed window dropped as a new column
+  // lands railed. (top/bottom drops join the target's column instead -- the
   // receiving container's state wins there, so no flag travels.)
   if (sourceCollapsed) newColumn.railed = true;
   targetColumn.weight = targetShare;
@@ -833,7 +828,7 @@ export function dropOnDockedLeaf(
   return draft;
 }
 
-/** Insert every panel from `sourceGroupIds` into `targetGroupId`'s tab strip at
+/** Insert every pane from `sourceGroupIds` into `targetGroupId`'s tab strip at
  * `index`, dropping the now-empty source groups. The last inserted group's
  * active tab becomes active. */
 export function insertTabsInto(
@@ -842,7 +837,7 @@ export function insertTabsInto(
   sourceGroupIds: GroupId[],
   index: number,
 ): DockLayout {
-  // Like the other ops: an area's backing group is never a SOURCE (consuming it
+  // Like the other ops: an area's backing group is never a source (consuming it
   // would delete it from layout.groups while layout.areas still points at it).
   sourceGroupIds = withoutAreaGroups(layout, sourceGroupIds);
   const draft = clone(layout);
@@ -898,7 +893,7 @@ export function setStackWeights(
  * scroll -- when the browser shrinks below the saved height). In a tiny
  * container the cap is floored at MIN_WINDOW_HEIGHT_PX to keep the window
  * usable, but that floor is itself capped at the pinned height: we never render
- * a window TALLER than it was pinned to, so a small panel in a tiny container
+ * a window taller than it was pinned to, so a small panel in a tiny container
  * shrinks rather than overhanging. Independent of position: moving never
  * resizes. `containerHeight <= 0` (unmeasured) returns the pinned height. */
 export function cappedWindowHeight(
@@ -911,15 +906,15 @@ export function cappedWindowHeight(
 }
 
 /** Set a floating window's explicit height (px), switching it from auto-height
- * to fixed-height with its contents scrolling -- OR pass `undefined` to clear
- * the pin and RETURN it to auto-height (the window tracks its content again).
+ * to fixed-height with its contents scrolling -- or pass `undefined` to clear
+ * the pin and return it to auto-height (the window tracks its content again).
  * Reverting to auto is the user's escape hatch from a fixed height (e.g.
  * dragging the bottom grip back down to the natural content height). */
 export function resizeWindowHeight(
   layout: DockLayout,
   windowId: WindowId,
   height: number | undefined,
-  /** New top edge, for resizes that grab the TOP grips (the bottom edge stays
+  /** New top edge, for resizes that grab the top grips (the bottom edge stays
    * fixed by moving y as the height changes -- the vertical analog of
    * resizeWindow's `x`). */
   y?: number,
@@ -943,7 +938,7 @@ function markWindowUserOwned(win: FloatingWindow): void {
 
 /** Release a window's server anchor so it stops re-anchoring on canvas changes
  * -- it becomes a plainly user-owned float at its current absolute position.
- * Called when a USER gesture (drag, any resize grip) takes manual control of the
+ * Called when a user gesture (drag, any resize grip) takes manual control of the
  * window. No-op if it had none. */
 export function releaseAnchor(
   layout: DockLayout,
@@ -956,7 +951,7 @@ export function releaseAnchor(
   return draft;
 }
 
-/** Append every panel from `sourceGroupIds` to `targetGroupId`'s tab strip. */
+/** Append every pane from `sourceGroupIds` to `targetGroupId`'s tab strip. */
 export function mergeGroupsInto(
   layout: DockLayout,
   targetGroupId: GroupId,
@@ -967,16 +962,16 @@ export function mergeGroupsInto(
 }
 
 // ---------------------------------------------------------------------------
-// Panel lifecycle ops.
+// Pane lifecycle ops.
 //
-// Panels can appear and disappear at runtime (e.g. driven by server state).
-// These ops add a not-yet-placed panel to the layout and remove a panel from
+// Panes can appear and disappear at runtime (e.g. driven by server state).
+// These ops add a not-yet-placed pane to the layout and remove a pane from
 // wherever the user has since moved it, collapsing whatever empties out. They
-// are deliberately idempotent: adding a panel that's already placed and
+// are deliberately idempotent: adding a pane that's already placed and
 // removing one that isn't are both no-ops, so a sync layer can re-run them.
 // ---------------------------------------------------------------------------
 
-/** The group currently holding `paneId`, or null when the panel isn't placed
+/** The group currently holding `paneId`, or null when the pane isn't placed
  * anywhere in the layout. */
 export function findPaneGroup(
   layout: DockLayout,
@@ -997,7 +992,7 @@ export function ensureArea(layout: DockLayout, areaId: AreaId): DockLayout {
   }
   const draft = clone(layout);
   // An empty group has no active tab (activeId null, the only legal empty
-  // state); it becomes real when the first panel is added.
+  // state); it becomes real when the first pane is added.
   const group: TabGroup = { id: freshId("group"), paneIds: [], activeId: null };
   draft.groups[group.id] = group;
   draft.areas = {
@@ -1007,8 +1002,8 @@ export function ensureArea(layout: DockLayout, areaId: AreaId): DockLayout {
   return draft;
 }
 
-/** Add a panel to an area's tabs at `index` (default: append), creating the
- * area if needed. No-op when the panel is already placed ANYWHERE in the
+/** Add a pane to an area's tabs at `index` (default: append), creating the
+ * area if needed. No-op when the pane is already placed anywhere in the
  * layout -- the user may have dragged it out of the area, and re-adding it
  * would duplicate it; callers that really want to move it back should
  * removePane first. */
@@ -1031,7 +1026,7 @@ export function addPaneToArea(
   return draft;
 }
 
-/** Add a not-yet-placed panel as its own floating window. No-op when the panel
+/** Add a not-yet-placed pane as its own floating window. No-op when the pane
  * is already placed. Returns the new window's id (null on no-op). */
 export function addFloatingPane(
   layout: DockLayout,
@@ -1052,11 +1047,11 @@ export function addFloatingPane(
   return { layout: draft, windowId: win.id };
 }
 
-/** Remove a panel from wherever it currently lives (the user may have moved it
+/** Remove a pane from wherever it currently lives (the user may have moved it
  * far from where it was added). A non-area group left empty is detached and
  * deleted -- its window or docked cell collapses like a tear-out would; an
  * area's backing group persists empty as a drop affordance. No-op when the
- * panel isn't placed. */
+ * pane isn't placed. */
 export function removePane(layout: DockLayout, paneId: PaneId): DockLayout {
   if (findPaneGroup(layout, paneId) === null) return layout;
   const draft = clone(layout);
@@ -1086,7 +1081,7 @@ function removePaneInPlace(draft: DockLayout, paneId: PaneId): void {
 }
 
 /** Move `paneId` into `destGroupId` at `index` (append if omitted), in place.
- * Detaches the pane from wherever it currently lives FIRST (collapsing any group
+ * Detaches the pane from wherever it currently lives first (collapsing any group
  * it empties), so a pane can never end up in two groups -- the single primitive
  * for relocating a pane. No-op if it's already in dest. The caller owns the
  * draft and must ensure `destGroupId` exists. */
@@ -1106,7 +1101,7 @@ function movePaneInPlace(
 }
 
 /** Reorder an area's tabs to match `order` (e.g. a server-driven tab list).
- * Panels the user dragged OUT of the area aren't touched; panes in the area
+ * Panes the user dragged out of the area aren't touched; panes in the area
  * but not in `order` (shouldn't happen) keep their position at the end. No-op
  * when the area doesn't exist or the order already matches. */
 export function setAreaTabOrder(
@@ -1176,9 +1171,9 @@ export function floatGroup(
   height?: number,
 ): { layout: DockLayout; windowId: WindowId | null } {
   if (isAreaGroup(layout, groupId)) return { layout, windowId: null };
-  // Identity transfer (D38): a group floated out of a COLLAPSED container
-  // (a railed column / railed region / collapsed window) is born collapsed --
-  // the new window inherits the source container's state (P2: the user was
+  // Identity transfer (D38): a group floated out of a collapsed container
+  // (a railed column / collapsed window) is born collapsed -- the new
+  // window inherits the source container's state (P2: the user was
   // dragging a bar or rail cell, not a full panel).
   const sourceCollapsed = isGroupEffectivelyCollapsed(layout, groupId);
   const draft = clone(layout);
@@ -1206,8 +1201,8 @@ export function floatColumn(
   const found = findColumn(layout.docked[edge], columnNodeId);
   if (found === null) return { layout, windowId: null };
   const column = found.column;
-  // Capture order + weights BEFORE detaching (detach restructures the region).
-  // Sequential detachInPlace (by GROUP id) reuses the standard cleanup
+  // Capture order + weights before detaching (detach restructures the region).
+  // Sequential detachInPlace (by group id) reuses the standard cleanup
   // invariants (empty region -> null edge, drop emptied columns).
   const stack = column.leaves.map((l) => l.group);
   if (stack.some((g) => isAreaGroup(layout, g))) {
@@ -1217,8 +1212,8 @@ export function floatColumn(
   column.leaves.forEach((l) => {
     stackWeights[l.group] = l.weight;
   });
-  // Identity transfer (D38/D44): floating a RAILED column yields a
-  // COLLAPSED window (the column flag is the one docked store).
+  // Identity transfer (D38/D44): floating a railed column yields a
+  // collapsed window (the column flag is the one docked store).
   const sourceCollapsed = column.railed === true;
 
   const draft = clone(layout);
@@ -1229,7 +1224,7 @@ export function floatColumn(
   return { layout: draft, windowId: win.id };
 }
 
-/** Float an ENTIRE REGION as one window: every leaf across every column
+/** Float an entire region as one window: every leaf across every column
  * (columns left-to-right, leaves top-to-bottom), with heights carried from
  * each leaf's share of its column. Used by the region parent handle -- the
  * region-level analog of floatColumn. */
@@ -1254,8 +1249,8 @@ export function floatRegion(
   if (stack.some((g) => isAreaGroup(layout, g))) {
     return { layout, windowId: null };
   }
-  // Identity transfer (D38/D44): floating a FULLY-RAILED region yields a
-  // COLLAPSED window (the column flags leave with their columns; the window
+  // Identity transfer (D38/D44): floating a fully railed region yields a
+  // collapsed window (the column flags leave with their columns; the window
   // flag is their floating rendering).
   const sourceCollapsed = isRegionFullyRailed(region);
   const draft = clone(layout);
@@ -1266,13 +1261,8 @@ export function floatRegion(
   return { layout: draft, windowId: win.id };
 }
 
-// NOTE(D38): stampCollapsedInPlace is GONE. Transfers are identity at the op
-// level: floatGroup/floatColumn/floatRegion/tearOutPane inherit the source
-// container's collapse state onto the new window's own flag, so drag paths
-// no longer post-stamp group flags (there are none).
-
-/** Pull a single panel out of its group into a new floating window. If the
- * panel was the only one in its group, the whole group floats instead (no new
+/** Pull a single pane out of its group into a new floating window. If the
+ * pane was the only one in its group, the whole group floats instead (no new
  * group is created). Returns the new layout and the id of the group that ended
  * up floating, so the caller can immediately drive its drag. */
 export function tearOutPane(
@@ -1289,17 +1279,17 @@ export function tearOutPane(
 } {
   const group = layout.groups[groupId];
   // No-op when the pane isn't actually in this group: tearing out a pane the
-  // group doesn't hold would otherwise CONJURE it -- the split branch below
+  // group doesn't hold would otherwise conjure it -- the split branch below
   // wraps `paneId` in a fresh group regardless, so an absent (or undefined)
-  // paneId materializes a phantom panel and breaks conservation. The pane must
+  // paneId materializes a phantom pane and breaks conservation. The pane must
   // already live here for there to be anything to tear out.
   if (group !== undefined && !group.paneIds.includes(paneId)) {
     return { layout, windowId: null, floatingGroupId: null };
   }
   // An area group is a fixed fixture: never float it as a whole, even when it
-  // holds a single panel. Always split the torn panel into its OWN new group and
+  // holds a single pane. Always split the torn pane into its own new group and
   // leave the area group in place (it may end up empty -- it persists as a drop
-  // affordance). A normal group with <=1 panel floats wholesale as before.
+  // affordance). A normal group with <=1 pane floats wholesale as before.
   const area = isAreaGroup(layout, groupId);
   if (group === undefined || (!area && group.paneIds.length <= 1)) {
     const res = floatGroup(layout, groupId, x, y, width);
@@ -1310,7 +1300,7 @@ export function tearOutPane(
       floatingGroupId: groupId,
     };
   }
-  // Identity transfer (D38): a pane torn out of a COLLAPSED container (a
+  // Identity transfer (D38): a pane torn out of a collapsed container (a
   // collapsed window's bar label, a rail spine row) floats as a collapsed
   // window -- born collapsed; expanding is a click-only gesture. Same rule
   // as the wholesale-float branch above (floatGroup inherits it there).
@@ -1379,14 +1369,14 @@ export function snapToWindowStack(
   groupIds = withoutAreaGroups(layout, groupIds);
   if (groupIds.length === 0) return layout;
   const draft = clone(layout);
-  // Capture the dragged window's explicit height BEFORE detaching (detach
+  // Capture the dragged window's explicit height before detaching (detach
   // removes the now-empty source window, discarding its height). If the target
   // auto-sizes, adopt the dragged window's height so a height the user set on the
   // panel being snapped in isn't silently reset.
   const sourceHeight = layout.floating.find((w) =>
     groupIds.some((g) => w.stack.includes(g)),
   )?.height;
-  // Detach first; the dragged set may BE (part of) the target window's stack.
+  // Detach first; the dragged set may be (part of) the target window's stack.
   groupIds.forEach((g) => detachInPlace(draft, g));
   // Re-find the target after detach: if the dragged groups were its entire
   // stack, the window is now gone -- abort rather than splice into a stale
@@ -1399,7 +1389,7 @@ export function snapToWindowStack(
       : Math.max(0, Math.min(target.stack.length, index));
   target.stack.splice(i, 0, ...groupIds);
   // Copy (don't alias) the source's height object: sourceHeight is read from the
-  // ORIGINAL layout, so assigning it directly would share a reference between the
+  // original layout, so assigning it directly would share a reference between the
   // committed draft and the prior (immutable) state.
   if (target.height.mode === "auto" && sourceHeight?.mode === "pinned")
     target.height = { ...sourceHeight };
@@ -1446,10 +1436,10 @@ export function reorderTab(
   return draft;
 }
 
-/** Toggle the collapse state of the CONTAINER holding `groupId` (D38):
+/** Toggle the collapse state of the container holding `groupId` (D38):
  * collapse is one boolean per container, so the toggle resolves the group's
- * container and flips ITS flag -- a floating window's `collapsed`, or (for
- * docked groups) the containing column's railed flag (the ONE docked store,
+ * container and flips its flag -- a floating window's `collapsed`, or (for
+ * docked groups) the containing column's railed flag (the one docked store,
  * D44/D46). The expand direction shares expandGroup's path
  * (expandGroupInPlace), which clears every container flag over the group. */
 export function toggleCollapsed(
@@ -1465,7 +1455,7 @@ export function toggleCollapsed(
 }
 
 /** Collapse the container holding `groupId` (D38): floating -> the window's
- * flag; docked -> the containing column's railed flag (the ONE docked store,
+ * flag; docked -> the containing column's railed flag (the one docked store,
  * D44/D46; for a sole docked panel this reads as the packed region).
  * Area-hosted / unplaced groups have no collapsible container: no-op. */
 function collapseContainerOf(
@@ -1485,13 +1475,13 @@ function collapseContainerOf(
   if (region === null) return layout;
   const found = findGroupInRegion(region, groupId);
   if (found === null) return layout;
-  // The ONE docked store (D46): the containing column's railed flag. For a
-  // sole docked panel this IS the packed region (one column, railed).
+  // The one docked store (D46): the containing column's railed flag. For a
+  // sole docked panel this is the packed region (one column, railed).
   return setColumnRailed(layout, loc.edge, found.column.id, true);
 }
 
-/** Rail EVERY column of an edge's region (D44/D46): the region chevron's
- * op. The packed region rail is the DERIVED result -- side-by-side 36px
+/** Rail every column of an edge's region (D44/D46): the region chevron's
+ * op. The packed region rail is the derived result -- side-by-side 36px
  * strips, width reclaimed by the canvas. No-op on an empty or already
  * fully railed edge. */
 export function railRegion(layout: DockLayout, edge: DockEdge): DockLayout {
@@ -1519,7 +1509,7 @@ export function expandRegionRail(
   return draft;
 }
 
-/** The ONE entry point for legacy persisted layouts (both injection/restore
+/** The one entry point for legacy persisted layouts (both injection/restore
  * chokepoints call this): detects pre-D46 band shapes and the pre-D44
  * regionCollapsed flag, and -- only when something is legacy -- clones and
  * runs the two migrations in their required order (rows first: the flag
@@ -1540,12 +1530,12 @@ export function migrateLegacyLayout(layout: DockLayout): DockLayout {
   return migrated;
 }
 
-/** MIGRATION (D46): regions persisted before the columns-only model carry
+/** Migration (D46): regions persisted before the columns-only model carry
  * the legacy `{rows: [...]}` band shape. Convert each region in place:
  * every band's columns concatenate left-to-right in band order --
  * multi-column bands map 1:1; consecutive single-column bands' columns
  * line up side by side (their old vertical stacking has no cross-column
- * expression, so each becomes its own column; a plain stack that was ONE
+ * expression, so each becomes its own column; a plain stack that was one
  * multi-leaf column already maps exactly). Weights carry over as-is;
  * reconciliation re-establishes px on the first commit. Also strips the
  * legacy per-band level from any nested literals. No-op for current
@@ -1559,12 +1549,12 @@ export function migrateRowsToColumnsInPlace(layout: DockLayout): void {
       | null;
     if (region === null || region.rows === undefined) continue;
     const bands = region.rows;
-    // The band-era canonical form (D12) stored every EXPANDED plain stack
-    // as consecutive SINGLE-column bands -- so that shape's faithful D46
-    // picture is ONE multi-leaf column (a stack), NOT side-by-side
+    // The band-era canonical form (D12) stored every expanded plain stack
+    // as consecutive single-column bands -- so that shape's faithful D46
+    // picture is one multi-leaf column (a stack), not side-by-side
     // columns. Band weights were the stack's height shares; carry them
     // onto the leaves (rescaled within each band so multi-leaf bands keep
-    // their internal ratios). The column rails only when EVERY band was
+    // their internal ratios). The column rails only when every band was
     // railed (partial stack collapse is unrepresentable, D38).
     const allSingle = bands.every((b) => b.columns.length === 1);
     if (allSingle && bands.length > 0) {
@@ -1593,7 +1583,7 @@ export function migrateRowsToColumnsInPlace(layout: DockLayout): void {
     } else {
       // Mixed/multi-column bands have no faithful D46 shape ([A] over
       // [B][C] is unrepresentable): best-effort fallback, columns
-      // left-to-right in band order. Their px weights came from UNRELATED
+      // left-to-right in band order. Their px weights came from unrelated
       // per-band scales -- rescale the expanded ones so the region's
       // remembered width survives (leaving them raw let the first
       // sameSet reconciliation pin regionWidth to a nonsense sum).
@@ -1618,11 +1608,11 @@ export function migrateRowsToColumnsInPlace(layout: DockLayout): void {
   }
 }
 
-/** MIGRATION (D44): layouts persisted before the region-collapse store was
+/** Migration (D44): layouts persisted before the region-collapse store was
  * unified into per-column rails may still carry `regionCollapsed`. Convert
  * a set flag into railed flags on every column of that edge and drop the
  * field -- called at the injection/restore chokepoints (api.replace,
- * persistence load, test probes). Runs AFTER migrateRowsToColumnsInPlace
+ * persistence load, test probes). Runs after migrateRowsToColumnsInPlace
  * (the flag applies to the migrated columns). */
 export function migrateRegionCollapsedInPlace(layout: DockLayout): void {
   const legacy = layout.regionCollapsed;
@@ -1635,19 +1625,18 @@ export function migrateRegionCollapsedInPlace(layout: DockLayout): void {
   delete layout.regionCollapsed;
 }
 
-/** Set a COLUMN's railed flag: while set, the column renders as a 36px spine
- * strip in place; its width weight is preserved for restore (P8). The ONE
+/** Set a column's railed flag: while set, the column renders as a 36px spine
+ * strip in place; its width weight is preserved for restore (P8). The one
  * docked collapse store (D44/D46) -- the column-collapse chevron's op.
  * Setting or clearing on a missing column is a no-op, as is a value that
- * already matches. Per-cell collapse states are untouched (the rail is a
- * view over them).
+ * already matches.
  *
- * Any column may rail (D46: trivially -- columns are the region's only
- * partition, so a lone rail beside expanded siblings is legal committed
- * geometry and the op needs no gate). Railing NEVER touches siblings: the
- * D43 accordion was deleted by D46, so P3 has no exceptions. Scope ROUTING
- * (window flag vs column flag) is the caller's job: collapseContainerOf
- * picks the store; this op sets exactly the flag it is named for. */
+ * Any column may rail (D46: columns are the region's only partition, so a
+ * lone rail beside expanded siblings is legal committed geometry and the op
+ * needs no gate). Railing NEVER touches siblings (no accordion -- D43 was
+ * retired by D46, so P3 has no exceptions). Scope routing (window flag vs
+ * column flag) is the caller's job: collapseContainerOf picks the store;
+ * this op sets exactly the flag it is named for. */
 export function setColumnRailed(
   layout: DockLayout,
   edge: DockEdge,
@@ -1663,11 +1652,11 @@ export function setColumnRailed(
   return draft;
 }
 
-/** Clear the railed flag of the docked COLUMN holding `groupId` (if any), in
- * place -- the docked expand path (the ONE docked collapse store): expanding
+/** Clear the railed flag of the docked column holding `groupId` (if any), in
+ * place -- the docked expand path (the one docked collapse store): expanding
  * a panel from a rail must reveal it (P5/P6), so every expand path routes
  * through this via expandGroupInPlace. Granular by design: only the
- * CONTAINING column expands (a packed region's other rails stay railed --
+ * containing column expands (a packed region's other rails stay railed --
  * user-adjudicated). Returns whether a flag was actually cleared. */
 function clearColumnRailedForGroupInPlace(
   draft: DockLayout,
@@ -1684,9 +1673,9 @@ function clearColumnRailedForGroupInPlace(
 }
 
 /** Clear the `collapsed` flag of the floating window holding `groupId` (if
- * any), in place -- the floating mirror of the docked clears below: every
+ * any), in place -- the floating mirror of the docked clear above: every
  * expand path routes through this via expandGroupInPlace, so a bar's expand
- * affordances all clear the window's ONE flag (D38). Returns whether a flag
+ * affordances all clear the window's one flag (D38). Returns whether a flag
  * was actually cleared. */
 function clearWindowCollapsedForGroupInPlace(
   draft: DockLayout,
@@ -1698,11 +1687,11 @@ function clearWindowCollapsedForGroupInPlace(
   return true;
 }
 
-/** Expand `groupId`'s CONTAINER in place (D38): clear its floating window's
- * collapsed flag, its region's collapse flag (D21), and its containing
- * column's railed flag. Shared by expandGroup and toggleCollapsed's expand
- * direction, so every expand path (toggle, expand-to-tab, bar/rail expand)
- * reveals the panel. Returns whether anything changed. */
+/** Expand `groupId`'s container in place (D38): clear its floating window's
+ * collapsed flag or its containing column's railed flag. Shared by
+ * expandGroup and toggleCollapsed's expand direction, so every expand path
+ * (toggle, expand-to-tab, bar/rail expand) reveals the panel. Returns
+ * whether anything changed. */
 function expandGroupInPlace(draft: DockLayout, groupId: GroupId): boolean {
   let changed = false;
   if (clearWindowCollapsedForGroupInPlace(draft, groupId)) changed = true;
@@ -1711,7 +1700,7 @@ function expandGroupInPlace(draft: DockLayout, groupId: GroupId): boolean {
 }
 
 /** Expand the container holding `groupId` (D38): clears the floating
- * window's / region's / column's collapse flag, whichever applies. No-op
+ * window's / containing column's collapse flag, whichever applies. No-op
  * when nothing is collapsed over the group (or the group is unknown). */
 export function expandGroup(layout: DockLayout, groupId: GroupId): DockLayout {
   if (layout.groups[groupId] === undefined) return layout;
@@ -1722,7 +1711,7 @@ export function expandGroup(layout: DockLayout, groupId: GroupId): DockLayout {
 /** Minimize a whole stack -- the stack handle's minimize toggle. Under D38
  * this is just "collapse the container of the stack's groups": the caller
  * passes a window's stack or a docked column's leaf groups, and the shared
- * container resolution sets that ONE flag. No-op when already collapsed. */
+ * container resolution sets that one flag. No-op when already collapsed. */
 export function minimizeStack(
   layout: DockLayout,
   groupIds: GroupId[],
@@ -1744,27 +1733,20 @@ export function expandStack(
   return expandGroup(layout, first);
 }
 
-/** Expand the WHOLE stack containing `groupId`. Under D38 this is exactly
+/** Expand the whole stack containing `groupId`. Under D38 this is exactly
  * expandGroup -- collapse lives on the container, so clearing its one flag
- * reveals the whole stack (D31's per-member walk reduced to a flag clear).
- * Kept as its own export because chrome distinguishes "expand the stack I'm
- * in" (a stacked bar's affordances) from per-panel expands at call sites.
- * No-op (same reference) when nothing changes. */
+ * reveals the whole stack. Kept as its own export because chrome
+ * distinguishes "expand the stack I'm in" (a stacked bar's affordances) from
+ * per-panel expands at call sites. No-op (same reference) when nothing
+ * changes. */
 export function expandStackOf(
   layout: DockLayout,
   groupId: GroupId,
 ): DockLayout {
-  // The docked STACK scope IS the containing column (D46), which is what
+  // The docked stack scope is the containing column (D46), which is what
   // expandGroup's container clear targets; floating routes there too.
   return expandGroup(layout, groupId);
 }
-
-
-// D46: canonicalization is GONE. The columns-only types admit exactly one
-// structure per picture (P14 holds by construction): vertical stacking is a
-// multi-leaf column, horizontal arrangement is the region's columns list.
-// The D12 split, the D13 zip, and their fixpoint pipeline had nothing left
-// to normalize.
 
 
 /** Set node weights by node id (a leaf's or a column's) within a docked region.
@@ -1814,7 +1796,7 @@ export function setNodeWeights(
  * invariants).
  *
  * D40: regionWidth is the width row's rendered need whenever that row holds
- * an expanded column, so a bare width write must land IN the expanded
+ * an expanded column, so a bare width write must land in the expanded
  * width-row weights too -- otherwise reconciliation would re-derive the old
  * sum and snap the width straight back. The redistribution mirrors the
  * region resizer's (proportional from current widths, clamped per column):
@@ -1837,8 +1819,8 @@ export function setRegionWidth(
     const expanded = cols.filter((c) => c.railed !== true);
     const railedPx = (cols.length - expanded.length) * MINIMIZED_STRIP_PX;
     const expandedSum = expanded.reduce((s, c) => s + c.weight, 0);
-    // Weights already at the target AND at/above their floor (the
-    // region-resize drag distributes clamped px per frame BEFORE
+    // Weights already at the target and at/above their floor (the
+    // region-resize drag distributes clamped px per frame before
     // committing through here): skip the redundant redistribution -- it
     // would be an identity rewrite. The floor check keeps the op's
     // postcondition caller-independent (a caller with matching total but
@@ -1884,7 +1866,7 @@ export function setActiveTab(
 // Standalone panels (server-authored placement).
 //
 // A standalone panel (from Python `server.gui.add_panel()`) is a tab group that
-// lives as its OWN top-level dock group rather than nested in the control panel.
+// lives as its own top-level dock group rather than nested in the control panel.
 // The server sends a coalesced `placement` describing where it should go; the
 // ops below seed and re-apply that placement. After the initial placement the
 // user may drag the panel anywhere -- a later server placement command
@@ -1893,7 +1875,7 @@ export function setActiveTab(
 
 /** A panel's requested position, structurally identical to the wire shape
  * (EdgePlacement | SplitPlacement | FloatPlacement in _messages.py /
- * GuiSetPanelPositionMessage). Defined HERE rather than imported from
+ * GuiSetPanelPositionMessage). Defined here rather than imported from
  * WebsocketMessages so the dock library keeps no dependency on the viser wire
  * protocol (the sync layer's message payloads are structurally compatible and
  * flow in without conversion). */
@@ -1911,6 +1893,7 @@ export interface PanelPlacement {
   position: PanelPosition | null;
   width: number | null;
   height: number | null;
+  collapsed: boolean | null;
 }
 
 /** Default float geometry when the server leaves x/y/size unspecified: the
@@ -1934,15 +1917,15 @@ export interface CanvasBounds {
 /** Resolve a server-requested float coordinate pair (canvas-relative, possibly
  * negative) into an absolute parent-relative window position, given the window's
  * rendered size and the canvas bounds. Semantics:
- * - x >= 0: `leftInset + x` (x px from the canvas LEFT boundary).
- * - x <  0: right edge `|x|`px from the canvas RIGHT boundary, i.e.
+ * - x >= 0: `leftInset + x` (x px from the canvas left boundary).
+ * - x <  0: right edge `|x|`px from the canvas right boundary, i.e.
  *   `(width - rightInset) - winWidth + x`.
  * - y >= 0: `y` (from the top).
  * - y <  0: bottom edge `|y|`px from the bottom, i.e. `height - winHeight + y`.
  * When the canvas is measured (width/height > 0), the result is clamped to keep
  * the window's top-left within it (a window larger than the canvas pins to the
  * canvas left/top). When the canvas isn't measured yet (width/height 0, e.g. a
- * first apply before layout), a NEGATIVE coord can't be resolved against a
+ * first apply before layout), a negative coord can't be resolved against a
  * missing far edge, so it falls back to the canvas-left/top (positive raw values
  * pass through unclamped); the post-render effect re-resolves once measured. */
 export function resolveRequestedFloatPosition(
@@ -1953,7 +1936,7 @@ export function resolveRequestedFloatPosition(
   bounds: CanvasBounds,
 ): { x: number; y: number } {
   const canvasRight = bounds.width - bounds.rightInset;
-  // A negative coord is a gap from the FAR edge -- but that needs a measured
+  // A negative coord is a gap from the far edge -- but that needs a measured
   // canvas. When unmeasured (width/height 0, e.g. the first apply before
   // layout), fall back to the near edge (left/top) so the window isn't placed
   // off-screen; the post-render effect re-resolves once the canvas is measured.
@@ -1982,20 +1965,20 @@ export function resolveRequestedFloatPosition(
 
 /** Find the group whose paneIds are exactly this panel's panes (the standalone
  * panel's own group), or null if its panes aren't yet grouped together. We key
- * off the FIRST pane: a standalone panel always owns its panes, so whatever
+ * off the first pane: a standalone panel always owns its panes, so whatever
  * group holds the first pane is the panel's group. */
 function panelGroupOf(layout: DockLayout, paneIds: PaneId[]): GroupId | null {
   if (paneIds.length === 0) return null;
   return findPaneGroup(layout, paneIds[0]);
 }
 
-/** Reconcile a panel group's membership against the server's pane list, IN
- * PLACE, preserving the user's existing tab order for panes that remain. Panes
+/** Reconcile a panel group's membership against the server's pane list, in
+ * place, preserving the user's existing tab order for panes that remain. Panes
  * the server added are appended (in server order); panes in `removedPaneIds`
- * (tabs the server explicitly removed from THIS panel) are dropped; `activeId`
- * is kept unless it was removed. Does NOT reorder existing panes to match the
- * server (the user may have reordered tabs locally), and does NOT drop panes it
- * doesn't recognize: the group may also hold FOREIGN panes the user merged in
+ * (tabs the server explicitly removed from this panel) are dropped; `activeId`
+ * is kept unless it was removed. Does not reorder existing panes to match the
+ * server (the user may have reordered tabs locally), and does not drop panes it
+ * doesn't recognize: the group may also hold foreign panes the user merged in
  * from another panel, and filtering to the server's list would silently orphan
  * them (they'd render nowhere until reconnect). */
 function reconcileMembershipInPlace(
@@ -2047,21 +2030,21 @@ function applyMembership(
   groupId: GroupId,
   paneIds: PaneId[],
 ): void {
-  // A placement command re-assembles the WHOLE panel into its home group. Any
-  // pane the user dragged out into another group/window is MOVED back here via
+  // A placement command re-assembles the whole panel into its home group. Any
+  // pane the user dragged out into another group/window is moved back here via
   // the single move primitive (detach-then-insert), so a pane can't be left in
   // two places. reconcileMembershipInPlace then fixes order/activeId. A
-  // placement command knows nothing about tab REMOVALS (that's the membership
+  // placement command knows nothing about tab removals (that's the membership
   // reconcile's job), so it passes an empty removed set -- and foreign panes
   // the user merged in ride along with the relocated group.
   for (const paneId of paneIds) movePaneInPlace(draft, paneId, groupId);
   reconcileMembershipInPlace(draft.groups[groupId], paneIds, new Set());
 }
 
-/** Reconcile a standalone panel's group membership (tabs added/removed) WITHOUT
+/** Reconcile a standalone panel's group membership (tabs added/removed) without
  * repositioning it. Used on tab-list changes so a user-moved panel isn't yanked
  * back to its server placement just because a tab was added. `removedPaneIds`
- * are the tabs the server removed since the last reconcile -- ONLY those are
+ * are the tabs the server removed since the last reconcile -- only those are
  * dropped from the group (a foreign pane the user merged in stays). No-op until
  * the panel's group exists (placement creates it). */
 export function reconcilePanelMembership(
@@ -2099,7 +2082,7 @@ function resolveAnchorLeaf(
  * anchor panel uuid to its current group id (the caller knows how to resolve
  * both standalone panels and the control panel).
  *
- * Each field of `placement` is the latest value the server wrote, and is ALWAYS
+ * Each field of `placement` is the latest value the server wrote, and is always
  * applied when present -- there is no before/after gating. Because the three
  * write-only commands are independent (a set_width carries no position), applying
  * any single field can never re-dock a panel: a position re-docks/re-floats only
@@ -2136,18 +2119,18 @@ export function applyPanelPlacement(
     rightInset: 0,
   };
   if (paneIds.length === 0) return layout;
-  // Whether the panel already HAD a group before this op (used by the orphan
+  // Whether the panel already had a group before this op (used by the orphan
   // guard at the end: a group we created must not outlive the op unattached).
   const groupExistedBefore = panelGroupOf(layout, paneIds) !== null;
   let draft = clone(layout);
   const groupId = ensurePanelGroup(draft, paneIds);
   if (groupId === null) return layout;
 
-  // Float a group at the given REQUESTED coords: record them on the window (so
+  // Float a group at the given requested coords: record them on the window (so
   // the position re-resolves on canvas changes) and set an initial absolute
   // position from the current bounds + window size.
   //
-  // If the group is ALREADY the sole occupant of a floating window, reuse that
+  // If the group is already the sole occupant of a floating window, reuse that
   // window (preserving its id, z-order, and -- when the user has taken manual
   // control of its position via a drag, i.e. anchor was cleared -- its current
   // position). This is what makes a later size-only re-placement (set_width /
@@ -2166,7 +2149,7 @@ export function applyPanelPlacement(
         ? draft.floating.find((w) => w.id === loc.windowId)
         : undefined;
     let win: FloatingWindow | undefined;
-    // Reuse only a SOLO window (this group is its whole stack) -- a multi-group
+    // Reuse only a solo window (this group is its whole stack) -- a multi-group
     // stack must keep its other groups, so re-float into a fresh window.
     if (reusable !== undefined && reusable.stack.length === 1) {
       win = reusable;
@@ -2200,7 +2183,7 @@ export function applyPanelPlacement(
   if (position === null) {
     // No explicit position. If the panel isn't placed anywhere yet, float it at
     // the default so a freshly-created `add_panel()` (no placement verb called)
-    // is still VISIBLE rather than an orphaned group rendered nowhere. A panel
+    // is still visible rather than an orphaned group rendered nowhere. A panel
     // the user already moved is left alone. `floatIfUnplaced` is opt-in so the
     // control panel (placed separately by ControlPanelDockSync) isn't affected.
     if (floatIfUnplaced && findGroupLocation(draft, groupId) === null) {
@@ -2214,8 +2197,8 @@ export function applyPanelPlacement(
   } else {
     if (position.kind === "edge") {
       const loc = findGroupLocation(draft, groupId);
-      // ALWAYS dock to the requested edge (a position command means "dock here").
-      // Skip only the redundant re-dock when the group is ALREADY docked on this
+      // Always dock to the requested edge (a position command means "dock here").
+      // Skip only the redundant re-dock when the group is already docked on this
       // edge: re-docking would detach + recreate the leaf with a fresh node id,
       // which makes the width reconciler treat it as a new column and reset its
       // width to the default (and needlessly reorder a multi-panel region).
@@ -2233,7 +2216,7 @@ export function applyPanelPlacement(
         placement.height ?? undefined,
       );
     } else if (position.kind === "split") {
-      // split: dock above/below the anchor's docked leaf. Fall back to a right
+      // Split: dock above/below the anchor's docked leaf. Fall back to a right
       // edge dock when the anchor isn't docked (floating / not yet placed).
       const anchorGroupId = anchorGroupOf(position.anchor_uuid);
       const leaf =
@@ -2241,7 +2224,7 @@ export function applyPanelPlacement(
           ? null
           : resolveAnchorLeaf(draft, anchorGroupId);
       if (leaf === null) {
-        // The dock model can only split against a DOCKED anchor; the anchor here
+        // The dock model can only split against a docked anchor; the anchor here
         // is floating, not yet placed, or gone. Surface it (a silent fallback
         // reads as "dock_above/below did nothing sensible") and fall back to a
         // right-edge dock so the panel is at least visible.
@@ -2259,7 +2242,7 @@ export function applyPanelPlacement(
     } else {
       // Compile-time exhaustiveness over the wire union (a new placement kind
       // must be handled here, not silently routed into the last branch) -- but
-      // WIRE data from a newer server can genuinely carry an unknown kind at
+      // wire data from a newer server can genuinely carry an unknown kind at
       // runtime, so warn and leave the panel where it is instead of throwing.
       const _exhaustive: never = position;
       console.warn(
@@ -2286,7 +2269,7 @@ export function applyPanelPlacement(
     }
   }
 
-  // An ORPHAN group must be uncommittable from this op: if nothing above
+  // An orphan group must be uncommittable from this op: if nothing above
   // attached the group we created (no position + floatIfUnplaced disabled, or
   // an unknown wire position kind), committing the draft would violate the
   // no-orphans invariant -- and worse, findPaneGroup would report the panel
@@ -2297,6 +2280,30 @@ export function applyPanelPlacement(
     findGroupLocation(draft, groupId) === null
   )
     return layout;
+
+  // Collapsed axis (D47), applied after position so it acts on the panel's
+  // final container: a collapse rails the destination column / collapses
+  // the destination window (never the departing one), and an expand routes
+  // through expandGroupInPlace, which also clears the destination's rail
+  // flags (a server expand is always visible, never hidden behind a rail).
+  // Collapse is container state (D38): panels stacked with this one ride
+  // along, exactly like the on-screen minimize control.
+  if (placement.collapsed === true) {
+    const win = draft.floating.find((w) => w.stack.includes(groupId));
+    if (win !== undefined) {
+      win.collapsed = true;
+    } else {
+      for (const edge of ["left", "right"] as DockEdge[]) {
+        const found = findGroupInRegion(draft.docked[edge], groupId);
+        if (found !== null) {
+          found.column.railed = true;
+          break;
+        }
+      }
+    }
+  } else if (placement.collapsed === false) {
+    expandGroupInPlace(draft, groupId);
+  }
 
   return draft;
 }

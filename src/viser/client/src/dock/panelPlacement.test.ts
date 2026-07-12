@@ -41,6 +41,7 @@ const EMPTY: PanelPlacement = {
   position: null,
   width: null,
   height: null,
+  collapsed: null,
 };
 
 /** A placement carrying a position but no size (every other axis null).
@@ -85,7 +86,7 @@ describe("applyPanelPlacement", () => {
     const out = applyPanelPlacement(
       emptyLayout(),
       ["p"],
-      { position: { kind: "float", x: 42, y: 84 }, width: 350, height: 250 },
+      { position: { kind: "float", x: 42, y: 84 }, width: 350, height: 250, collapsed: null },
       () => null,
     );
     expect(out.floating).toHaveLength(1);
@@ -102,7 +103,7 @@ describe("applyPanelPlacement", () => {
     const out = applyPanelPlacement(
       emptyLayout(),
       ["p"],
-      { position: { kind: "float", x: 40, y: 20 }, width: null, height: null },
+      { position: { kind: "float", x: 40, y: 20 }, width: null, height: null, collapsed: null },
       () => null,
       {
         canvasBounds: {
@@ -126,7 +127,7 @@ describe("applyPanelPlacement", () => {
     const out = applyPanelPlacement(
       emptyLayout(),
       ["p"],
-      { position: { kind: "float", x: -15, y: 15 }, width: 240, height: null },
+      { position: { kind: "float", x: -15, y: 15 }, width: 240, height: null, collapsed: null },
       () => null,
       { canvasBounds: { width: 1000, height: 800, leftInset: 0, rightInset: 0 } },
     );
@@ -141,7 +142,7 @@ describe("applyPanelPlacement", () => {
     const out = applyPanelPlacement(
       emptyLayout(),
       ["p"],
-      { position: { kind: "float", x: 15, y: -15 }, width: 240, height: 200 },
+      { position: { kind: "float", x: 15, y: -15 }, width: 240, height: 200, collapsed: null },
       () => null,
       { canvasBounds: { width: 1000, height: 800, leftInset: 0, rightInset: 0 } },
     );
@@ -252,7 +253,7 @@ describe("applyPanelPlacement", () => {
     const out = applyPanelPlacement(
       emptyLayout(),
       ["p"],
-      { position: { kind: "float", x: 0, y: 0 }, width: 480, height: 360 },
+      { position: { kind: "float", x: 0, y: 0 }, width: 480, height: 360, collapsed: null },
       () => null,
     );
     expect(out.floating[0].width).toBe(480);
@@ -427,7 +428,7 @@ describe("requested float coordinates", () => {
     applyPanelPlacement(
       emptyLayout(),
       ["p"],
-      { position: { kind: "float", x, y }, width, height },
+      { position: { kind: "float", x, y }, width, height, collapsed: null },
       () => null,
       { canvasBounds: BOUNDS_1000 },
     );
@@ -518,14 +519,14 @@ describe("removing a panel removes its tabs even when borrowed elsewhere", () =>
     let layout = applyPanelPlacement(
       emptyLayout(),
       ["a1", "a2"],
-      { position: { kind: "edge", edge: "right" }, width: null, height: null },
+      { position: { kind: "edge", edge: "right" }, width: null, height: null, collapsed: null },
       () => null,
       { canvasBounds: BOUNDS_1000 },
     );
     layout = applyPanelPlacement(
       layout,
       ["b1"],
-      { position: { kind: "float", x: 40, y: 40 }, width: 240, height: null },
+      { position: { kind: "float", x: 40, y: 40 }, width: 240, height: null, collapsed: null },
       () => null,
       { canvasBounds: BOUNDS_1000 },
     );
@@ -555,7 +556,7 @@ describe("removing a panel removes its tabs even when borrowed elsewhere", () =>
     let layout = applyPanelPlacement(
       emptyLayout(),
       ["b1"],
-      { position: { kind: "float", x: 40, y: 40 }, width: 240, height: null },
+      { position: { kind: "float", x: 40, y: 40 }, width: 240, height: null, collapsed: null },
       () => null,
       { canvasBounds: BOUNDS_1000 },
     );
@@ -584,7 +585,7 @@ describe("resizeWindowHeight pin / un-pin (auto-height)", () => {
     applyPanelPlacement(
       emptyLayout(),
       ["p"],
-      { position: { kind: "float", x: 40, y: 40 }, width: 240, height: null },
+      { position: { kind: "float", x: 40, y: 40 }, width: 240, height: null, collapsed: null },
       () => null,
       { canvasBounds: BOUNDS_1000 },
     );
@@ -637,7 +638,7 @@ describe("orphan groups are uncommittable from applyPanelPlacement", () => {
     layout = applyPanelPlacement(
       layout,
       ["p"],
-      { position: null, width: 333, height: null },
+      { position: null, width: 333, height: null, collapsed: null },
       () => null,
       { canvasBounds: BOUNDS_1000 },
     );
@@ -700,7 +701,7 @@ describe("placement re-gathers tabs dragged out of the panel", () => {
     let layout = applyPanelPlacement(
       emptyLayout(),
       ["a", "b"],
-      { position: { kind: "edge", edge: "right" }, width: null, height: null },
+      { position: { kind: "edge", edge: "right" }, width: null, height: null, collapsed: null },
       () => null,
       { canvasBounds: BOUNDS_1000 },
     );
@@ -718,7 +719,7 @@ describe("placement re-gathers tabs dragged out of the panel", () => {
     layout = applyPanelPlacement(
       layout,
       ["a", "b"],
-      { position: { kind: "float", x: 100, y: 100 }, width: 260, height: null },
+      { position: { kind: "float", x: 100, y: 100 }, width: 260, height: null, collapsed: null },
       () => null,
       { canvasBounds: BOUNDS_1000 },
     );
@@ -744,7 +745,7 @@ describe("re-placing an already-floating panel reuses its window", () => {
     applyPanelPlacement(
       l,
       ["p"],
-      { position: { kind: "float", x: 80, y: 80 }, width: 240, height },
+      { position: { kind: "float", x: 80, y: 80 }, width: 240, height, collapsed: null },
       () => null,
       { canvasBounds: BOUNDS },
     );
@@ -786,7 +787,7 @@ describe("re-placing an already-DOCKED panel applies the new size", () => {
     applyPanelPlacement(
       l,
       ["p"],
-      { position: { kind: "edge", edge: "right" }, width, height: null },
+      { position: { kind: "edge", edge: "right" }, width, height: null, collapsed: null },
       () => null,
     );
 
@@ -921,7 +922,7 @@ describe("applyPanelPlacement: docked->docked collapse identity (D38)", () => {
     const out = applyPanelPlacement(
       railedSource(true),
       ["a:0"],
-      { position: { kind: "edge", edge: "right" }, width: null, height: null },
+      { position: { kind: "edge", edge: "right" }, width: null, height: null, collapsed: null },
       () => null,
     );
     expect(findGroupLocation(out, findPaneGroup(out, "a:0")!)).toMatchObject({
@@ -936,7 +937,7 @@ describe("applyPanelPlacement: docked->docked collapse identity (D38)", () => {
     const out = applyPanelPlacement(
       railedSource(false),
       ["a:0"],
-      { position: { kind: "edge", edge: "right" }, width: null, height: null },
+      { position: { kind: "edge", edge: "right" }, width: null, height: null, collapsed: null },
       () => null,
     );
     expect(isRegionPackedOn(out, "right")).toBe(false);
@@ -953,7 +954,7 @@ describe("applyPanelPlacement: docked->docked collapse identity (D38)", () => {
     const out = applyPanelPlacement(
       layout,
       ["a:0"],
-      { position: { kind: "edge", edge: "right" }, width: null, height: null },
+      { position: { kind: "edge", edge: "right" }, width: null, height: null, collapsed: null },
       () => null,
     );
     const cols = out.docked.right!.columns;
@@ -972,7 +973,7 @@ describe("applyPanelPlacement: docked->docked collapse identity (D38)", () => {
     const out = applyPanelPlacement(
       layout,
       ["a:0"],
-      { position: { kind: "edge", edge: "right" }, width: null, height: null },
+      { position: { kind: "edge", edge: "right" }, width: null, height: null, collapsed: null },
       () => null,
     );
     const aCol = out.docked.right!.columns.find((c) =>
@@ -980,5 +981,89 @@ describe("applyPanelPlacement: docked->docked collapse identity (D38)", () => {
     )!;
     expect(aCol.railed).toBe(true);
     expect(invariantViolations(out)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Collapsed axis (D47): minimize()/expand() act on the panel's CONTAINER
+// (floating window flag / docked column rail, D38) -- stack-mates ride along,
+// exactly like the on-screen minimize control.
+// ---------------------------------------------------------------------------
+describe("collapsed axis (D47)", () => {
+  const bundle = (p: Partial<PanelPlacement>): PanelPlacement => ({
+    position: null,
+    width: null,
+    height: null,
+    collapsed: null,
+    ...p,
+  });
+
+  it("collapsed=true on a docked panel rails its column (stack-mates ride)", () => {
+    let l = applyPanelPlacement(
+      emptyLayout(),
+      ["p"],
+      bundle({ position: { kind: "edge", edge: "right" } }),
+      () => null,
+    );
+    l = applyPanelPlacement(
+      l,
+      ["q"],
+      bundle({ position: { kind: "split", anchor_uuid: "p", side: "below" } }),
+      (uuid) => (uuid === "p" ? findPaneGroup(l, "p") : null),
+    );
+    const next = applyPanelPlacement(l, ["p"], bundle({ collapsed: true }), () => null);
+    const col = next.docked.right!.columns[0];
+    expect(col.railed).toBe(true);
+    // Both stacked panels live in the railed column: container scope.
+    expect(col.leaves).toHaveLength(2);
+  });
+
+  it("collapsed=false expands (clears the rail) and is a no-op when expanded", () => {
+    let l = applyPanelPlacement(
+      emptyLayout(),
+      ["p"],
+      bundle({ position: { kind: "edge", edge: "right" } }),
+      () => null,
+    );
+    l = applyPanelPlacement(l, ["p"], bundle({ collapsed: true }), () => null);
+    expect(l.docked.right!.columns[0].railed).toBe(true);
+    const expanded = applyPanelPlacement(
+      l,
+      ["p"],
+      bundle({ collapsed: false }),
+      () => null,
+    );
+    expect(expanded.docked.right!.columns[0].railed).not.toBe(true);
+    // Idempotent: expanding an expanded panel changes nothing structurally.
+    const again = applyPanelPlacement(
+      expanded,
+      ["p"],
+      bundle({ collapsed: false }),
+      () => null,
+    );
+    expect(again.docked.right!.columns[0].railed).not.toBe(true);
+  });
+
+  it("collapsed=true on a floating panel collapses its window", () => {
+    const l = applyPanelPlacement(
+      emptyLayout(),
+      ["p"],
+      bundle({ position: { kind: "float", x: 40, y: 40 }, width: 300 }),
+      () => null,
+      { canvasBounds: BOUNDS_1000 },
+    );
+    const next = applyPanelPlacement(l, ["p"], bundle({ collapsed: true }), () => null);
+    expect(next.floating[0].collapsed).toBe(true);
+  });
+
+  it("position + collapsed in one bundle rails the DESTINATION (after-position ordering)", () => {
+    const next = applyPanelPlacement(
+      emptyLayout(),
+      ["p"],
+      bundle({ position: { kind: "edge", edge: "left" }, collapsed: true }),
+      () => null,
+    );
+    expect(next.docked.left!.columns[0].railed).toBe(true);
+    expect(next.floating).toHaveLength(0);
   });
 });

@@ -61,11 +61,13 @@ export function gatePlacement(
   const position = freshAxis("position");
   const width = freshAxis("width");
   const height = freshAxis("height");
+  const collapsed = freshAxis("collapsed");
   const applied: AppliedAxes = {};
   for (const [axis, stored] of [
     ["position", position],
     ["width", width],
     ["height", height],
+    ["collapsed", collapsed],
   ] as const) {
     if (stored !== undefined)
       applied[axis] = { counter: stored.counter, runId: stored.runId };
@@ -75,9 +77,13 @@ export function gatePlacement(
       position: position?.value ?? null,
       width: width?.value ?? null,
       height: height?.value ?? null,
+      collapsed: collapsed?.value ?? null,
     },
     applied,
     anyFresh:
-      position !== undefined || width !== undefined || height !== undefined,
+      position !== undefined ||
+      width !== undefined ||
+      height !== undefined ||
+      collapsed !== undefined,
   };
 }

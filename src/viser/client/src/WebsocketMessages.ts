@@ -1664,6 +1664,24 @@ export interface GuiSetPanelHeightMessage {
   counter: number;
   run_id: string;
 }
+/** Minimize (collapse) or expand a panel's CONTAINER. Write-only.
+ *
+ * Collapse is container state on the client (a floating window's flag or a
+ * docked column's rail), so this applies to the panel's containing stack --
+ * panels stacked together minimize together, exactly like the on-screen
+ * minimize control (D47; supersedes D31's removal, whose motivating
+ * mixed-stack awkwardness was dissolved by container-owned collapse).
+ *
+ *
+ * (automatically generated)
+ */
+export interface GuiSetPanelCollapsedMessage {
+  type: "GuiSetPanelCollapsedMessage";
+  uuid: string;
+  collapsed: boolean;
+  counter: number;
+  run_id: string;
+}
 /** A standalone panel: a dockable / floating GUI container that lives outside
  * the control panel. Deliberately NOT a GuiComponentMessage -- it is a
  * top-level entity (like a modal), so it never enters the inline GUI tree.
@@ -2078,6 +2096,7 @@ export type Message =
   | GuiSetPanelPositionMessage
   | GuiSetPanelWidthMessage
   | GuiSetPanelHeightMessage
+  | GuiSetPanelCollapsedMessage
   | GuiPanelMessage
   | GuiPanelRemoveMessage
   | GuiModalMessage

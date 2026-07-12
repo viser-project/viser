@@ -306,6 +306,11 @@ collapse is its collapse instance. §10 catalogs the mechanisms.
 
 ## 2. Vocabulary
 
+Pane / panel / tab: a **pane** is the atomic client unit of content
+(`PaneId`/`PaneSpec`); a **panel** is the user-facing container (a tab
+group presented as a panel; Python `PanelHandle`); a **tab** is a pane's
+presentation in a strip.
+
 | Term | Meaning |
 |---|---|
 | **Region** | The docked container on the `left` or `right` screen edge: ≥1 **columns** side by side, each full region height. Column widths divide the region. |
@@ -832,9 +837,15 @@ sizing subset. Both exist on `server.gui` (broadcast) and `client.gui`
   no close affordance in the UI — they exist until `remove()`. Users
   rearrange, resize, and collapse freely; none of it is reported back to
   the server (no getters for position/size/collapse state).
-- Three independent write-only axes per panel: position, width, height.
-  There is no collapse axis (D31). A message carries exactly one axis;
-  applying one can never disturb another (no yank by construction).
+- Four independent write-only axes per panel: position, width, height,
+  collapsed (D47 -- `minimize()` / `expand()`; supersedes D31's removal).
+  A message carries exactly one axis; applying one can never disturb
+  another (no yank by construction). The collapsed axis acts at CONTAINER
+  scope, like every collapse (D38): minimizing a docked panel rails its
+  column (stack-mates ride along), a floating one collapses its window;
+  `expand()` routes through the group expand, clearing the destination's
+  rail. Applied after position, so a position+collapse bundle rails the
+  DESTINATION container, never the departing one.
 - Moves are identity for collapse (collapse law 3): a position command
   on a docked panel that lands docked carries its container's collapse —
   a railed source lands railed — exactly like the user path. A placement
@@ -867,11 +878,9 @@ sizing subset. Both exist on `server.gui` (broadcast) and `client.gui`
   fight the user); per-client placement reaches only currently-connected
   clients; notification offsets track only the control panel.
 
-Planned (adjudicated, not yet shipped): placement messages become four
-per-axis `update_simple` messages (position / width / height /
-collapsed) with client-owned placement state, replacing the coalesced
-placement dict — `set_width` structurally cannot carry a position, so
-the gate's per-field arbitration simplifies further.
+(The per-axis `update_simple` protocol above IS the shipped design; the
+coalesced placement dict it replaced is gone, and D47 completed the axis
+set with `collapsed`.)
 
 ---
 
@@ -949,9 +958,8 @@ at every consumer.
   orphaned panes/groups; no un-migrated legacy field (`regionCollapsed`
   or band-era `rows` — the injection/restore chokepoints run
   `migrateRowsToColumnsInPlace` + `migrateRegionCollapsedInPlace`);
-  `regionWidth` ≈ Σ over columns of (railed ? 36 : weight). (Retired
-  with the band level: #13 "no railed sole-column band", #14/#15 the
-  regionCollapsed coherence pair.)
+  `regionWidth` ≈ Σ over columns of (railed ? 36 : weight) — invariant
+  #12 in the checker's contiguous numbering (the pre-cleanup #16).
 - **Single construction sites / choke points**: `movePaneInPlace`
   (detach-first — a pane can never be in two groups),
   `detachAllPreservingStackWeights` (capture-before-detach ordering
@@ -1085,9 +1093,10 @@ has surviving behavior of its own.
 - **D30** — one collapse control per scope: a stacked cell's grip bar
   has no `−`; a 2+ stack collapses via its stack's control; expand is
   never gated.
-- **D31** — no server collapse axis: placement is
-  position/width/height only; stack-scope collapse both directions in
-  the UI.
+- **D31** — superseded in part by D47: the server collapse axis is
+  back (its removal's motivating mixed-stack awkwardness died with
+  container-owned collapse). Surviving: stack-scope collapse in both
+  directions in the UI.
 - **D32** — the LARGEST coinciding scope owns the collapse control: the
   `−` renders only on single-group floating windows; docked collapse is
   uniformly chevron → rail.
@@ -1136,6 +1145,17 @@ has surviving behavior of its own.
   `visible`/`order` honored; placement axes inert off the dock surface.
   Chosen over a tabbed sheet (one panel at a time; nested tab strips
   read poorly) and a full-height pager (hides the canvas relationship).
+- **D47** — `minimize()` / `expand()` restored (user-adjudicated): a
+  fourth write-only placement axis (`GuiSetPanelCollapsedMessage`,
+  ordinary update_simple lifecycle), container-scoped per D38 -- panels
+  stacked together minimize together, exactly like the on-screen
+  control, and the docstrings say so. D31's removal rationale ("strange
+  that panels in a stack can still be individually expanded after
+  they're all minimized together") described the pre-D38 group-flag
+  model; container-owned collapse made that state unrepresentable, so
+  the objection dissolved. Applied after position (destination-container
+  semantics); replays to late joiners; arbitration via the standard
+  per-axis (counter, runId) gate.
 - **D46** — columns-only layout model (user-adjudicated: rail-over-
   expanded whitespace and neighbor-expanding collapse revealed "some
   fundamental problems"; option 1 chosen over disabling per-column

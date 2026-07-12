@@ -1749,7 +1749,7 @@ class FloatPlacement(TypedDict):
 # per-axis messages below. There is no server-side placement state to read back;
 # all placement state lives on the client. Each message is an `update_simple`
 # entity update (entity "gui"), so they coalesce latest-wins PER MESSAGE TYPE
-# (position / width / height stay in independent slots, never
+# (position / width / height / collapsed stay in independent slots, never
 # clobbering each other), persist in the buffer, replay to late-joining clients,
 # and are purged when the panel is removed. This is the same lifecycle used by
 # scene SetPositionMessage / SetOrientationMessage. Because e.g. set_width emits
@@ -1858,6 +1858,29 @@ class GuiPanelProps:
     visible: bool
     """Visibility state of the panel: when False the panel renders nothing (its
     panes are removed from the dock layout) without being destroyed."""
+
+
+@dataclasses.dataclass
+class GuiSetPanelCollapsedMessage(
+    Message,
+    entity=EntityLifecycle("gui", "update_simple", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """Minimize (collapse) or expand a panel's CONTAINER. Write-only.
+
+    Collapse is container state on the client (a floating window's flag or a
+    docked column's rail), so this applies to the panel's containing stack --
+    panels stacked together minimize together, exactly like the on-screen
+    minimize control (D47; supersedes D31's removal, whose motivating
+    mixed-stack awkwardness was dissolved by container-owned collapse).
+    """
+
+    uuid: str
+    collapsed: bool
+    counter: int
+    """Per-panel layout-update counter; see GuiSetPanelPositionMessage."""
+    run_id: str
+    """Sending GuiApi instance id; see GuiSetPanelPositionMessage."""
 
 
 @dataclasses.dataclass

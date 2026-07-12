@@ -1023,7 +1023,13 @@ class GuiApi:
             )
         )
 
-    def add_panel(self, *, key: str | None = None, visible: bool = True) -> PanelHandle:
+    def add_panel(
+        self,
+        *,
+        key: str | None = None,
+        order: float | None = None,
+        visible: bool = True,
+    ) -> PanelHandle:
         """Add a standalone panel: a **movable** window (dockable / floating)
         that lives outside the main control panel. A panel is the *container*;
         its tabs (added with :meth:`PanelHandle.add_tab`) hold the content.
@@ -1040,8 +1046,10 @@ class GuiApi:
         :meth:`PanelHandle.remove` (there is no UI close button). See also
         :attr:`main_panel` to place the main control panel.
 
-        Panels always start expanded; minimizing is a browser-side gesture,
-        not a server command.
+        Panels start expanded; :meth:`PanelHandle.minimize` /
+        :meth:`PanelHandle.expand` collapse or reveal them imperatively,
+        applied to the panel's containing window or docked column like the
+        on-screen minimize control.
 
         Args:
             key: Optional stable identity for the panel, unique among live
@@ -1051,6 +1059,11 @@ class GuiApi:
                 what that memory is attached to. Without a key, an identity is
                 inferred from the panel's tab labels and creation order --
                 which works until tabs are renamed or reordered between runs.
+            order: Optional ordering, smallest values will be displayed first.
+                Used for the mobile bottom sheet's section order and as a
+                tiebreaker for inferred panel identity; docked/floating
+                placement is set with the ``dock_*`` / ``float`` commands, not
+                ``order``.
             visible: Whether the panel is visible.
 
         Returns:
@@ -1079,7 +1092,7 @@ class GuiApi:
         message = _messages.GuiPanelMessage(
             uuid=panel_id,
             props=_messages.GuiPanelProps(
-                order=_apply_default_order(None),
+                order=_apply_default_order(order),
                 _tab_labels=(),
                 visible=visible,
                 _tab_icons_html=(),

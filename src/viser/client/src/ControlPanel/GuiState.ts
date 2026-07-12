@@ -22,11 +22,11 @@ export interface PlacementAxis<T> {
   runId: string;
 }
 
-export type PlacementAxisName = "position" | "width" | "height";
+export type PlacementAxisName = "position" | "width" | "height" | "collapsed";
 
 /** Client-owned placement state for a single panel (a standalone panel keyed by
  * its uuid, or the main control panel keyed by CONTROL_PANEL_ID). Each of the
- * three write-only `GuiSetPanel*` messages merges its single axis here; the dock
+ * four write-only `GuiSetPanel*` messages merges its single axis here; the dock
  * applies each axis INDEPENDENTLY (a set_width can never re-apply a stale
  * position -- the axes carry their own counters). */
 export interface PanelPlacementState {
@@ -34,6 +34,7 @@ export interface PanelPlacementState {
   // null value = override cleared (revert to default/theme width; auto height).
   width?: PlacementAxis<number | null>;
   height?: PlacementAxis<number | null>;
+  collapsed?: PlacementAxis<boolean>;
 }
 
 /** The (counter, runId) stamp of the last server command APPLIED for one axis
@@ -169,6 +170,12 @@ export interface GuiActions {
   setPanelHeight: (
     uuid: string,
     height: number | null,
+    counter: number,
+    runId: string,
+  ) => void;
+  setPanelCollapsed: (
+    uuid: string,
+    collapsed: boolean,
     counter: number,
     runId: string,
   ) => void;
@@ -499,6 +506,7 @@ export function useGuiState(initialServer: string) {
       setPanelPosition: setPanelAxis("position"),
       setPanelWidth: setPanelAxis("width"),
       setPanelHeight: setPanelAxis("height"),
+      setPanelCollapsed: setPanelAxis("collapsed"),
       recordPanelLayoutApplied: (stableKey, applied) => {
         store.set((state) => {
           const prev = state.panelLayoutTracking[stableKey];

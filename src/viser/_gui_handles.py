@@ -55,6 +55,7 @@ from ._messages import (
     GuiRemoveMessage,
     GuiRgbaProps,
     GuiRgbProps,
+    GuiSetPanelCollapsedMessage,
     GuiSetPanelHeightMessage,
     GuiSetPanelPositionMessage,
     GuiSetPanelWidthMessage,
@@ -868,7 +869,7 @@ class _PlacementMixin:
 
     Placement is WRITE-ONLY from the server: there is no placement state stored
     or read back here. Each command fires one per-axis message
-    (``GuiSetPanel{Position,Width,Height}Message``); the client owns all
+    (``GuiSetPanel{Position,Width,Height,Collapsed}Message``); the client owns all
     placement state. The messages are ``update_simple`` updates that coalesce
     per-type, persist, and replay to late joiners -- so e.g. ``set_width`` never
     carries a position and cannot re-dock a panel the user has moved.
@@ -1040,6 +1041,39 @@ class _PlacementMixin:
         _check_dimension(height, "height", allow_none=False)
         self._queue_placement(
             GuiSetPanelHeightMessage(self._placement_uuid, height, counter=0, run_id="")
+        )
+
+    def minimize(self) -> None:
+        """Minimize the panel (collapse it to a bar / rail strip).
+
+        Collapse is applied to the panel's *container* -- its floating window
+        or its docked column -- so panels stacked together minimize together,
+        exactly like the on-screen minimize control. Imperative, like the
+        ``dock_*`` / :meth:`float` commands: it always minimizes, even if the
+        user expanded the panel in the browser. Replayed to clients that
+        connect later.
+
+        TODO: add a matching imperative collapse/expand method for folders
+        (:meth:`GuiApi.add_folder`), which today only has the
+        ``expand_by_default`` creation kwarg.
+        """
+        self._queue_placement(
+            GuiSetPanelCollapsedMessage(
+                self._placement_uuid, True, counter=0, run_id=""
+            )
+        )
+
+    def expand(self) -> None:
+        """Expand (un-minimize) the panel, the inverse of :meth:`minimize`.
+
+        Like :meth:`minimize` this acts at container scope -- expanding a
+        panel reveals its whole stack (and clears a docked column's rail) --
+        and is imperative: it always expands, even if the user minimized the
+        panel in the browser. Replayed to clients that connect later."""
+        self._queue_placement(
+            GuiSetPanelCollapsedMessage(
+                self._placement_uuid, False, counter=0, run_id=""
+            )
         )
 
 
