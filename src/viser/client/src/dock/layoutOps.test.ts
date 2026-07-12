@@ -676,7 +676,7 @@ describe("dropOnDockedLeaf", () => {
   /** Helper: find the node id of the leaf holding `group` on the given edge. */
   function leafIdOf(
     layout: DockLayout,
-    edge: DockEdge,
+    _edge: DockEdge,
     group: GroupId,
   ): string {
     const loc = findGroupLocation(layout, group);

@@ -229,7 +229,7 @@ function nodeExists(
 
 function validateResult(
   layout: DockLayout,
-  targets: DropTargets,
+  _targets: DropTargets,
   result: DropResult,
 ): string[] {
   const errs: string[] = [];
