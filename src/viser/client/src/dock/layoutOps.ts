@@ -1,3 +1,5 @@
+// D#/P#/section citations refer to ./dock-ux-spec.md (the normative spec,
+// in this directory).
 // Pure transformations over DockLayout.
 //
 // Every exported op takes a layout and returns a *new* layout, leaving the

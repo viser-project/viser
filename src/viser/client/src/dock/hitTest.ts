@@ -1,3 +1,5 @@
+// D#/P#/section citations refer to ./dock-ux-spec.md (the normative spec,
+// in this directory).
 // Pure drop-zone hit-testing for the docking surface.
 //
 // Given the current layout, region widths, container geometry, and the drop

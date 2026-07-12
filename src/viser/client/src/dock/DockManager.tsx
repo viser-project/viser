@@ -1,3 +1,5 @@
+// D#/P#/section citations refer to ./dock-ux-spec.md (the normative spec,
+// in this directory).
 // Top-level docking surface. Owns the layout model and its commit pipeline
 // (applyOp -> width reconciliation -> invariant checks -> ownership
 // attribution), renders the left/right docked regions and floating windows

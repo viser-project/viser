@@ -1,3 +1,6 @@
+// The dock's data model. D#/P#/section citations throughout this module
+// refer to ./dock-ux-spec.md -- the normative UX spec, kept next to the
+// code it governs (its section 10 protocol: behavior changes re-trace it).
 // Data model for the docking library.
 //
 // The layout is intentionally serializable: it holds only ids, geometry, and

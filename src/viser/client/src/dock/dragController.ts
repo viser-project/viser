@@ -1,3 +1,5 @@
+// D#/P#/section citations refer to ./dock-ux-spec.md (the normative spec,
+// in this directory).
 // The window-drag controller: every dock gesture that moves panels -- dragging
 // a floating window, floating a docked group/column/region, tearing out a tab,
 // reordering tabs -- is armed and run from here. DockManager composes this

@@ -1,6 +1,6 @@
 # viser — working conventions
 
-- **Dock/panel changes require a spec trace.** `design/dock-ux-spec.md` is
+- **Dock/panel changes require a spec trace.** `src/viser/client/src/dock/dock-ux-spec.md` (it lives next to the code it governs) is
   normative for the dock system; after any behavior change, re-trace the
   touched claims per its §10 protocol (normative text, gesture table,
   decision index). Where code and spec disagree, decide on paper first.
