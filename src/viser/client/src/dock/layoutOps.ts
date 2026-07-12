@@ -1454,23 +1454,33 @@ export function toggleCollapsed(
  * flag; docked -> the containing column's railed flag (the one docked store,
  * D44/D46; for a sole docked panel this reads as the packed region).
  * Area-hosted / unplaced groups have no collapsible container: no-op. */
-function collapseContainerOf(layout: DockLayout, groupId: GroupId): DockLayout {
-  const loc = findGroupLocation(layout, groupId);
-  if (loc === null || loc.kind === "area") return layout;
+/** In-place core of "collapse the group's container" (the mirror of
+ * expandGroupInPlace): floating -> the window's flag; docked -> the
+ * containing column's railed flag (the one docked store, D46; for a sole
+ * docked panel this is the packed region). Returns whether anything
+ * changed. Shared by the UI toggle path and the server placement path
+ * (D47) so the flag resolution cannot drift between them. */
+function collapseContainerOfInPlace(
+  draft: DockLayout,
+  groupId: GroupId,
+): boolean {
+  const loc = findGroupLocation(draft, groupId);
+  if (loc === null || loc.kind === "area") return false;
   if (loc.kind === "floating") {
-    const draft = clone(layout);
     const win = draft.floating.find((w) => w.id === loc.windowId);
-    if (win === undefined) return layout;
+    if (win === undefined || win.collapsed === true) return false;
     win.collapsed = true;
-    return draft;
+    return true;
   }
-  const region = layout.docked[loc.edge];
-  if (region === null) return layout;
-  const found = findGroupInRegion(region, groupId);
-  if (found === null) return layout;
-  // The one docked store (D46): the containing column's railed flag. For a
-  // sole docked panel this is the packed region (one column, railed).
-  return setColumnRailed(layout, loc.edge, found.column.id, true);
+  const found = findGroupInRegion(draft.docked[loc.edge], groupId);
+  if (found === null || found.column.railed === true) return false;
+  found.column.railed = true;
+  return true;
+}
+
+function collapseContainerOf(layout: DockLayout, groupId: GroupId): DockLayout {
+  const draft = clone(layout);
+  return collapseContainerOfInPlace(draft, groupId) ? draft : layout;
 }
 
 /** Rail every column of an edge's region (D44/D46): the region chevron's
@@ -2284,18 +2294,7 @@ export function applyPanelPlacement(
   // Collapse is container state (D38): panels stacked with this one ride
   // along, exactly like the on-screen minimize control.
   if (placement.collapsed === true) {
-    const win = draft.floating.find((w) => w.stack.includes(groupId));
-    if (win !== undefined) {
-      win.collapsed = true;
-    } else {
-      for (const edge of ["left", "right"] as DockEdge[]) {
-        const found = findGroupInRegion(draft.docked[edge], groupId);
-        if (found !== null) {
-          found.column.railed = true;
-          break;
-        }
-      }
-    }
+    collapseContainerOfInPlace(draft, groupId);
   } else if (placement.collapsed === false) {
     expandGroupInPlace(draft, groupId);
   }

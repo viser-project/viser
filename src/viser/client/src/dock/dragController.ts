@@ -1511,12 +1511,10 @@ export function useDragController(deps: DragControllerDeps) {
   );
 
   return {
-    /** Stable wrappers for the context value (identity never changes). */
+    /** Stable ref-dispatch wrappers (identity never changes): the context
+     * value spreads these, and DockManager's own region handle bar calls
+     * through them too -- per-render identities in the context deps voided
+     * the memo (every render re-rendered every consumer). */
     stableGestures,
-    /** Raw per-render starter DockManager wires directly (the region handle
-     * bar). The column drag ships inside stableGestures: it sits in the
-     * context value, and a per-render identity there voided the context
-     * memo (every render re-rendered every consumer). */
-    startRegionDrag,
   };
 }

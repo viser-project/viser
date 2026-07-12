@@ -39,6 +39,13 @@ const MIN_CELL_HEIGHT_PX = 50;
 // zone to this so it's comfortable to hit without thickening the seam.
 const DIVIDER_GRAB_PX = 12;
 
+// Module-level media query: the glide effect below runs on every render,
+// and matchMedia() allocates a fresh MediaQueryList per call.
+const REDUCED_MOTION_MQL =
+  typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia("(prefers-reduced-motion: reduce)")
+    : null;
+
 /** Render a docked region (D46: columns only): a horizontal flex row of
  * columns with draggable vertical dividers between them. Each column is a
  * vertical stack of leaves (ColumnView) or, railed, a 36px spine strip
@@ -114,14 +121,22 @@ function RegionColumns({
     // re-render (tooltip close, panel-tracking update) that cleared
     // transforms to measure snapped settling columns to their final spot
     // (user report: the untouched column "jitters/jumps").
+    // Bail before measuring when the result is guaranteed unused: under
+    // reduced motion nothing ever glides, and during a divider drag the
+    // per-frame renders must not pay the DOM walk. Clearing the map keeps
+    // the staleness contract -- the post-drag render sees no prev entries,
+    // so deltas read 0 and nothing glides off pre-drag positions.
+    if (
+      REDUCED_MOTION_MQL?.matches === true ||
+      root.closest("[data-dock-resizing]") !== null
+    ) {
+      prevColumnBox.current = new Map();
+      return;
+    }
     const rootLeft = root.getBoundingClientRect().left;
     const els = Array.from(
       root.querySelectorAll<HTMLElement>(":scope > [data-dock-column]"),
     );
-    const skip =
-      root.closest("[data-dock-resizing]") !== null ||
-      (typeof window.matchMedia === "function" &&
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches);
     const next = new Map<string, { x: number; w: number }>();
     for (const el of els) {
       const id = el.getAttribute("data-dock-column");
@@ -139,7 +154,7 @@ function RegionColumns({
       // a glide already in flight keeps settling undisturbed.
       const widthChanged =
         prev !== undefined && Math.abs(prev.w - naturalW) > 0.5;
-      if (skip || widthChanged || Math.abs(delta) < 0.5) continue;
+      if (widthChanged || Math.abs(delta) < 0.5) continue;
       // Start where the column appeared last frame: its previous natural
       // position plus any in-flight transform (the live rect's offset from
       // the new natural). Fresh commit: tx = 0 -> start = prev position;

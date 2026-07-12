@@ -1104,10 +1104,7 @@ describe("applyPanelPlacement: docked->docked collapse identity (D38)", () => {
 // ---------------------------------------------------------------------------
 describe("collapsed axis (D47)", () => {
   const bundle = (p: Partial<PanelPlacement>): PanelPlacement => ({
-    position: null,
-    width: null,
-    height: null,
-    collapsed: null,
+    ...EMPTY,
     ...p,
   });
 

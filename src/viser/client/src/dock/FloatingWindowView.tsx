@@ -205,11 +205,10 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       }
       // A cancel only settles the flip when NO height transition remains
       // running: a mid-flight retarget (the style prop rewrote height,
-      // e.g. collapsedHeight changed) cancels + restarts in one style
-      // update, and the replay must keep waiting for the successor's end
-      // rather than snap. (A genuine kill -- reduced motion flipping on,
-      // [data-dock-resizing] landing mid-flip -- leaves no successor, so
-      // the teardown below still runs for it.)
+      // Timing insurance: only tear down on a cancel when no height
+      // transition remains running. (With the pinned-skip and the identical-
+      // px re-assert this path should be unreachable; it guards against
+      // browser scheduling differences, not a known scenario.)
       if (
         ev.type === "transitioncancel" &&
         el
@@ -248,8 +247,13 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       el.style.overflow = "hidden";
     }
     // Live height (mid-transition included) so an interrupted toggle
-    // continues from where the window visually is.
-    prevPaperH.current = el?.getBoundingClientRect().height ?? null;
+    // continues from where the window visually is. Pinned windows skip the
+    // read: the FLIP never consumes it for them (their class transition
+    // eases natively), and this effect runs per window per render.
+    prevPaperH.current =
+      pinnedPx !== undefined && flipTargetH.current === null
+        ? null
+        : (el?.getBoundingClientRect().height ?? null);
   });
 
   // Cancel an in-flight grip gesture if this window unmounts mid-resize (e.g.

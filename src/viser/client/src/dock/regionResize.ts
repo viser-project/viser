@@ -274,7 +274,11 @@ export function useCanvasInsetSync({
     if (el === null) return;
     if (containerRef.current?.hasAttribute("data-dock-resizing")) return;
     let raf = 0;
-    let last = { w: -1, h: -1 };
+    // Seed from the CURRENT box: the loop then only notifies the host on a
+    // real change. (A -1 seed fired one spurious GL resize + full scene
+    // render per arm, mount included.)
+    const seed = el.getBoundingClientRect();
+    let last = { w: Math.round(seed.width), h: Math.round(seed.height) };
     let still = 0;
     const started = performance.now();
     const tick = () => {

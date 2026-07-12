@@ -360,9 +360,9 @@ export function DockManager({
 
   // Every drag-and-drop gesture (window/group/column/region drags, tab
   // reorder + tear-out) lives in the drag controller; layout changes flow
-  // back through applyOp/commit, and the two refs it returns let the resize
-  // observers below cooperate with an in-flight drag.
-  const { stableGestures, startRegionDrag } = useDragController({
+  // back through applyOp/commit, and the two drag-state refs passed to
+  // it let the resize observers below cooperate with an in-flight drag.
+  const { stableGestures } = useDragController({
     panes,
     containerRef,
     hintRef,
@@ -390,8 +390,6 @@ export function DockManager({
   // it, so the closure's captured `containerHeight` stays valid.
   const containerWidthRef = React.useRef(0);
   containerWidthRef.current = containerWidth;
-  const containerHeightRef = React.useRef(0);
-  containerHeightRef.current = containerHeight;
   // True only while a region-resize drag is committing a width this frame. The
   // drag owns float movement itself (pushFloatsAheadOfSeam, applied flush with
   // the seam), so the inset effect must NOT also re-clamp unanchored floats then
@@ -866,7 +864,7 @@ export function DockManager({
                         <StackHandleBar
                           attrs={{ "data-dock-region-handle": edge }}
                           onPointerDown={(event) =>
-                            startRegionDrag(event, edge, {
+                            stableGestures.startRegionDrag(event, edge, {
                               onClick: () => {
                                 collapseRegion(edge);
                                 // POINTER-path focus handoff (spec 4: focus
