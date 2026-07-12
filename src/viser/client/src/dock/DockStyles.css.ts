@@ -31,7 +31,7 @@ globalStyle(`:where([data-mantine-color-scheme="dark"]) ${gripBarBg}`, {
   backgroundColor: "var(--mantine-color-dark-5)",
 });
 
-/** Minimize/expand motion (P4 as amended): pure presentation. The model
+/** Minimize/expand motion (P4; mechanism D34): pure presentation. The model
  * commits instantly; this class only eases the cell/column wrappers' flex
  * properties between their committed values. Three off-switches keep it
  * honest: prefers-reduced-motion (instant), an ancestor's

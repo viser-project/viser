@@ -96,7 +96,7 @@ function RegionColumns({
 }) {
   const dock = useDock();
   const containerRef = React.useRef<HTMLDivElement>(null);
-  // FLIP slide (D34 rev 2): columns render at their committed positions
+  // FLIP slide (D34): columns render at their committed positions
   // instantly (the drawer pane is fixed-width, so there is no mid-ease
   // reflow) -- but a column whose screen position changed (e.g. everything
   // inner of a newly railed outer sibling) would otherwise jump while the
@@ -196,7 +196,7 @@ function RegionColumns({
       style={{
         display: "flex",
         flexDirection: "row",
-        // Drawer model (D34 rev): the columns lay out at the committed
+        // Drawer model (D34): the columns lay out at the committed
         // region width immediately -- only the region container's width
         // eases, revealing/concealing this box from the inner side. Fixing
         // the width here (not 100%) is what keeps content from reflowing
@@ -218,7 +218,7 @@ function RegionColumns({
           <React.Fragment key={column.id}>
             <Box
               data-dock-column={column.id}
-              // Deliberately not animated (D34 rev): the wrapper renders at
+              // Deliberately not animated (D34): the wrapper renders at
               // its committed flex width instantly. The region container's
               // width ease is the one transition on this axis -- a second
               // ease here would race it and wobble sibling columns.

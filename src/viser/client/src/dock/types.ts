@@ -69,7 +69,7 @@ export const MIN_REGION_GRAB_PX = 96;
 export const MINIMIZED_STRIP_PX = 36;
 /** Height of a minimized cell's in-place bar (the one minimized form, D20):
  * grip-bar scale -- the bar reads as "the panel collapsed to its handle"
- * (P13/D14) -- while clearing the P11 20px clickable floor. The 36px
+ * (P13/D10) -- while clearing the P11 20px clickable floor. The 36px
  * MINIMIZED_STRIP_PX above remains the vertical rail's width. */
 export const MINIMIZED_BAR_PX = 26;
 // A face-bearing bar (a lone pane with a minimizedFace -- the main panel's

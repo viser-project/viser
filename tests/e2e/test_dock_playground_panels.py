@@ -441,7 +441,7 @@ def test_drop_into_rail_at_tab_position(dock_context, vite_server: int) -> None:
             ),
         )
         gid = "t-controls"
-        # Collapse the region: per-tab rows live in the rail (D14/D21).
+        # Collapse the region: per-tab rows live in the rail (D9/D21).
         page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")
         page.wait_for_timeout(200)
         # Drag console's bar onto the TOP of the inspector row -> insert

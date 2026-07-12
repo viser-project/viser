@@ -181,30 +181,17 @@ resize, or change collapse state except by (a) a user gesture, (b) an
 explicit server placement command (position/size only), or (c) a
 structural necessity spelled out in §7. Minimized forms are wayfinding
 chrome: dimmed labels, compact geometry, no content preview, no
-attention-seeking styling. (D46 restored this principle's full force:
-the D43 accordion — the one adjudicated exception, where railing a
-column could expand its neighbor — is deleted. No gesture ever expands
-a scope it didn't aim at.)
+attention-seeking styling. No gesture ever expands a scope it didn't
+aim at (the D43 accordion is deleted, D46): this principle has no
+exceptions.
 
 **P4 — Deterministic core; motion is pure presentation. (A)** The MODEL
 commits instantly: no timers, no settle states, no logic gated on an
-animation finishing. Every collapse transition MAY animate (D34) — but
-only as presentation, on one 160ms ease family, honoring
-prefers-reduced-motion (instant) and suppressed under an active divider
-drag (`[data-dock-resizing]`) and while the canvas guard is actively
-scaling (squeeze-tracking values must not lag the resize). The docked
-form is the DRAWER + GLIDE model: content renders at its COMMITTED
-geometry immediately (columns lay out in a pane fixed at the drawn
-width — nothing reflows mid-ease, no scrollbar flicker); the region
-container's width and the canvas insets ease between committed values;
-and each column FLIP-glides from its previous screen position to its
-new one on the same curve, so a column whose position didn't change
-stays perfectly still. Floating collapse eases the window height, with
-measured-px FLIP endpoints for auto-height windows (CSS cannot
-interpolate to `auto`; PINNED windows ease natively -- both endpoints
-are numeric, and the FLIP must not hijack that transition). Drag hit-testing re-reads geometry on
-`transitionend`, filtered to the eased properties, so cached rects
-never lag the visible surface.
+animation finishing — and motion may never gate on measurement. Every
+collapse transition MAY animate, as presentation only; D34 states the
+full mechanism (ease family, suppression rules, the docked
+drawer + glide model, floating height endpoints, post-ease hit-test
+refresh).
 
 **P5 — No dead ends. (A)** Every reachable state offers a visible way
 out: a collapsed scope can always be expanded (one click) and moved (one
@@ -276,8 +263,6 @@ identically must be the same model value. Under D46 this holds BY
 CONSTRUCTION: vertical stacking exists only inside a column, columns
 exist only side by side in a region, so no two tree shapes can draw the
 same picture. There is no canonicalization pass — P15's strongest form.
-(Historically this was enforced by normalization rules D12/D13 over the
-four-level band tree; D46 deleted the band level and the rules with it.)
 
 **P15 — Correct by construction: invalid states are unrepresentable.
 (A)** When a state is wrong, make it unrepresentable — by types, model
@@ -426,8 +411,7 @@ chevron included, reappears automatically.
   strip in place — cap, spine rows, dividers — full region height.
   Sibling columns are unaffected. A fully railed region is simply N of
   these strips side by side (the derived packed reading, D44); they
-  never merge into one strip, and each keeps its own header (D46:
-  "multiple rails collapsing into the same rail is weird and wrong").
+  never merge into one strip, and each keeps its own header (D46).
   Structure stays in the MODEL and returns intact on expand — the rail
   is a view. Expanded width is remembered (P8): the column's stored
   weight is its restore width (D40).
@@ -469,7 +453,7 @@ chevron included, reappears automatically.
   window header and the first bar (every other bar boundary draws a
   divider; an unmarked header/bar seam reads as one surface). Mixed
   windows are unrepresentable (D38). Collapse/expand eases the window
-  height in both height modes (P4: auto endpoints are measured px).
+  height in both height modes (D34: auto endpoints are measured px).
 - Side grips resize width; top/bottom/corner grips resize height (pin),
   with a detent that snaps back to auto-height at the content height. A
   fully-minimized window keeps its WIDTH grips (D15 — the bars hold
@@ -717,18 +701,16 @@ window is an open question (§11).
 
 ## 6. Sizing model
 
-- **Region width**: column weights are ALWAYS reconciled pixel widths —
-  every column, a lone one included (the old single-column carve-out,
-  weight as an unreconciled flex share with regionWidth as the width
-  memory, is retired; `migrateLegacyLayout` adopts persisted carve-out
-  layouts at the injection/restore chokepoints). The region's width is
-  the expanded weights' sum, with every RAILED column counted at its
-  rendered 36px — a railed column's stored weight is ALWAYS its P8
-  restore width, and no aggregator ever reads it as rendered width
-  (D40). A fully railed region reconciles to exactly 36 × its column
-  count — ANY column count: a packed single-column region reserves its
-  strip like the rest, restore width in the weight, so the reserved
-  width needs no packed override.
+- **Region width**: ONE invariant (D40). Column weights are ALWAYS
+  reconciled pixel widths — every column, lone and railed included; a
+  railed column's weight is ALWAYS its P8 restore width, never read as
+  rendered width and never silently rewritten by a drop. `regionWidth`
+  is the derived rendered need: Σ over columns of (railed ? 36 :
+  weight), at any column count — so a fully railed region holds exactly
+  36 × its column count, restore widths in the weights. Every
+  consumer-visible layout has been reconciled: `migrateLegacyLayout`
+  adopts persisted pre-invariant layouts at the injection/restore
+  chokepoints (§10).
   Docking a new column *grows* the region by the newcomer's width (D3):
   existing panels never shrink because something arrived (P3 outranks
   canvas preservation; the resizer is the recovery). The newcomer's
@@ -737,11 +719,9 @@ window is an open question (§11).
   column STORES the window's width, so the rail round-trip restores it,
   and contributes only the rendered 36px strip. Columns with NO source
   window (server-built / injected layouts) take the 300px region
-  default as their restore width even when born railed. A RAILED column
-  renders at the fixed 36px rail width, stored weight preserved (P8) —
-  never silently rewritten by a drop; the resizer redistributes over
-  EXPANDED columns only, and the region stops being width-resizable
-  when every column is railed.
+  default as their restore width even when born railed. The resizer
+  redistributes over EXPANDED columns only, and the region stops being
+  width-resizable when every column is railed.
 - **Minimums**: expanded columns / regions / windows ≥ 96px grab width
   (`MIN_REGION_GRAB_PX`; the ~220px CONTENT minimum is the body's —
   below it the panel scrolls horizontally); cells ≥ ~50px; windows ≥
@@ -796,40 +776,34 @@ window is an open question (§11).
 The collapse law (§1.3) states the semantics; this section is the
 op-level residue.
 
-- Stores and ops (D38/D44/D46): the `−` / window-header toggle flips
-  `FloatingWindow.collapsed`; the column chevron sets
+- Ops and their flags (D38/D44/D46): the `−` / window-header toggle
+  flips `FloatingWindow.collapsed`; the column chevron sets
   `DockColumn.railed` (setColumnRailed — a bare flag flip; no
-  restructuring exists to accompany it); the region chevron
-  (single-column regions) rails that column; railRegion rails every
-  column (the packed reading is derived, not stored). Ops act on
-  containers; groups carry nothing. Collapsing a missing scope is a
-  no-op; clearing is always legal. Railing NEVER touches sibling
-  columns (D46 deleted the D43 accordion): the gesture's scope is
-  exactly its column, and a region of nothing but strips is a legal,
-  honest state — the canvas gets the width back.
+  restructuring exists to accompany it, and sibling columns are never
+  touched, P3); the region chevron (single-column regions) rails that
+  column; railRegion rails every column. Ops act on containers; groups
+  carry nothing. Collapsing a missing scope is a no-op; clearing is
+  always legal.
 - Expand ops clear docked flags at the op level (D28): any op that
   expands a docked panel (a spine-row expand-to-tab, a toggle landing
   expanded) clears the containing column's railed flag — an "expanded"
-  panel hidden behind a rail would be a dead end (P5). The rail
-  header's click/`+` clears only its column's flag — granular even when
-  the whole region is packed (D44/D46); a spine-row click also
-  activates that tab.
+  panel hidden behind a rail would be a dead end (P5). A spine-row
+  click also activates its tab. Granularity is §1.3 item 5's.
 - Rail toggles commit as USER ops, and the railed flags join every
   resident's ownership signature (P6, `:r` terms) — else a stale
   single-axis server replay could silently re-flip a rail the user just
   set.
-- Transfers (collapse law 3): floating a railed column by its header
-  yields a COLLAPSED window; docking a collapsed window rails the
-  landing column — a side drop lands as a railed full-height column, a
-  stack drop rails nothing (the pane joins the landing column's state) —
-  identity with NO exceptions; any container created by dragging out of
-  a collapsed scope (spine row, cap, bar label) is born collapsed. No
-  stamping exists; server `float()` moves geometry and touches no
-  collapse, and a server docked→docked position move carries the source
-  container's collapse the same way — identity on both paths (§8).
+- Transfer identity (collapse law 3) at the op level: docking a
+  collapsed window rails the landing column when the drop lands as a
+  column — a side drop lands as a railed full-height column — and rails
+  nothing on a stack drop (the pane joins the landing column's state).
+  Server `float()` moves geometry and touches no collapse, and a server
+  docked→docked position move carries the source container's collapse
+  the same way — identity on both paths (§8).
 - A railed column reserves exactly 36px; it is still a full drop target,
   and a packed region still hosts region-edge docking on its outer side
-  (via its outermost strip's sliver, §5.1/§5.3).
+  via its outermost strip's sliver (the yield rule, §5.1 item 3; zones
+  in §5.3).
 - Legacy migration: layouts persisted under the pre-D46 band model
   (`{rows: [...]}` regions) or the pre-D44 `regionCollapsed` flag are
   converted at the injection/restore chokepoints (one owner,
@@ -904,10 +878,6 @@ sizing subset. Both exist on `server.gui` (broadcast) and `client.gui`
   it (the documented container contract, but the one place a server
   command overrides sibling panels' user-set state).
 
-(The per-axis `update_simple` protocol above IS the shipped design; the
-coalesced placement dict it replaced is gone, and D47 completed the axis
-set with `collapsed`.)
-
 ---
 
 ## 9. Edge-case ledger
@@ -979,8 +949,7 @@ at every consumer.
   `DockColumn { children }` → leaves. P14 holds by construction —
   vertical stacking exists only inside a column — so there is NO
   canonicalization pass, no `structureSignature` gating, and no soft
-  "convergence owed" invariant class. (D12/D13 and
-  `normalizeCanonicalBandsInPlace` are deleted, not merely disabled.)
+  "convergence owed" invariant class.
 - **Invariant checker** (`dock/layoutInvariants.ts`): one function
   defines "valid layout" for the app AND the fuzzer. `applyOp` asserts
   it on every commit in dev (console.error, never throw) and
@@ -991,9 +960,7 @@ at every consumer.
   `migrateLoneColumnWidthInPlace`, the last adopting a pre-always-px
   lone column's regionWidth into its weight);
   `regionWidth` ≈ Σ over columns of (railed ? 36 : weight) — invariant
-  #12 in the checker's contiguous numbering (the pre-cleanup #16),
-  covering ANY column count since the always-px weights migration
-  removed its single-column gate.
+  #12, covering ANY column count.
 - **Single construction sites / choke points**: `movePaneInPlace`
   (detach-first — a pane can never be in two groups),
   `detachAllPreservingStackWeights` (capture-before-detach ordering
@@ -1015,9 +982,7 @@ at every consumer.
 Planned structural work, in order: server-provided stable panel key
 (identity as input, not label+order inference); a placement coordinator
 (one ordered pass over the placement store, replacing per-panel effect
-fan-out). (Column weights always px SHIPPED: the three-way weight
-decode and the packed-single reserved-width override are deleted — see
-the Region width bullet in §6 and D40.)
+fan-out).
 
 ---
 
@@ -1063,17 +1028,15 @@ Unadjudicated; do not resolve in code without recording the decision in
 ## 12. Decision index
 
 One line per decision ID — the CURRENT rule only (rationale and
-evolution live in git history). "Retired" means the decision no longer
-has surviving behavior of its own.
+evolution live in git history). Retired IDs (no surviving behavior of
+their own) are grouped at the end so they stay findable without
+consuming paragraphs.
 
 - **D1** — generous split bands; center-merge requires aim; no dwell
   timers.
-- **D2** — retired (band bar deleted, D20).
 - **D3** — side-docking GROWS the region by the newcomer's width;
   existing panels never shrink.
 - **D4** — sub-minimum drop zones are removed, not shrunk (P11).
-- **D5** — retired into D9/D36 (per-tab tear-out lives where per-tab
-  labels live).
 - **D6** — the `−` is the only visible minimize signifier; its host
   row's motionless click is unmarked backing. No double-click grammar.
 - **D7** — release over nothing floats at the pointer; Escape is the
@@ -1084,18 +1047,8 @@ has surviving behavior of its own.
   that tab, drag = tear out (rail spine rows; bars via D36).
 - **D10** — minimized bars are the expanded header kept in place; the
   rail is the exception (reclaims width). Sharpened by D33; see P13.
-- **D11** — retired by D46: the 4-level model was amputated after all.
-  (Its era's confusion was first addressed by canonical form, D12/D13;
-  real use showed the band level itself was the problem.)
-- **D12** — retired by D46 (no bands: a multi-leaf column is simply a
-  stack; no normalization exists).
-- **D13** — retired by D46 (no bands to zip).
-- **D14** — retired into D36 (bars show all labels that fit; `+N` for
-  overflow only).
 - **D15** — a fully-minimized window keeps side grips (bars hold
   `win.width`), hides vertical/corner grips.
-- **D16** — retired (per-cell minimize died with D37/D38; what survives
-  is the death of adoption rules).
 - **D17** — a window is ALWAYS a vertical stack of cells; the window
   header persists while collapsed; no fit-content jump.
 - **D18** — no pills on bars: a bar is a handle in its entirety.
@@ -1104,13 +1057,10 @@ has surviving behavior of its own.
   main panel's face is its connection-status row.
 - **D20** — bars render IN PLACE at their column's width (floating
   stacks); the segmented band bar is deleted.
-- **D21** — the packed region rendering: since D44 DERIVED (every
-  column railed), since D46 rendered as N per-column strips that never
-  merge — no single packed strip, no shared header.
-- **D22** — retired (nested-column stack handle deleted; superseded by
-  D27's per-column handles).
-- **D23** — retired into D26/D28 (chevron placement); its click-only
-  clause reversed (chevrons are drag-through).
+- **D21** — the rail reclaims WIDTH: the docked collapsed rendering is
+  a fixed 36px strip. Its region-scope form was absorbed by D44/D46:
+  packed is derived, N per-column strips that never merge — no single
+  packed strip, no shared header.
 - **D24** — a divider with nothing tradeable on one side is INERT; width
   dividers go inert beside a railed column (fixed 36px chrome).
 - **D25** — one `+` per rail: the header's; caps are quiet pills; honest
@@ -1137,43 +1087,43 @@ has surviving behavior of its own.
   uniformly chevron → rail.
 - **D33** — P13 is exact: label row offsets/padding and control
   form+inset are identical across the minimize round-trip.
-- **D34** — every collapse transition may animate; presentation-only
-  (instant model, reduced-motion honored, suppressed during divider
-  drags and active canvas-guard squeezes). Rev 2 (user-adjudicated):
-  the docked drawer + FLIP-glide model — content at committed geometry
-  instantly, the region container width + canvas insets ease, columns
-  glide between screen positions; floating collapse eases height with
-  measured-px FLIP endpoints for AUTO windows only (the old "auto
-  snaps" gap is closed; pinned windows ease natively and the FLIP
-  stays out of their transition's way).
+- **D34** — the collapse-motion mechanism (P4 is the axiom): every
+  collapse transition MAY animate, as presentation only — the model
+  commits instantly, motion rides one 160ms ease family, honors
+  prefers-reduced-motion (instant), and is suppressed under an active
+  divider drag (`[data-dock-resizing]`) and while the canvas guard is
+  actively scaling (squeeze-tracking values must not lag the resize).
+  Docked collapse is the DRAWER + GLIDE model: content renders at its
+  COMMITTED geometry immediately (columns lay out in a pane fixed at
+  the drawn width — nothing reflows mid-ease, no scrollbar flicker);
+  the region container's width and the canvas insets ease between
+  committed values; each column FLIP-glides from its previous screen
+  position to its new one on the same curve, so a column whose
+  position didn't change stays perfectly still. Floating collapse
+  eases the window height in both height modes, toward the
+  DETERMINISTIC collapsed endpoint — a calc() over chrome (header +
+  bars + dividers), never a DOM measure: a PINNED window's endpoints
+  are both numeric and ease natively (the FLIP must not hijack that
+  transition); an AUTO-height window's `auto` endpoint is a measured
+  px via FLIP (CSS cannot interpolate to `auto`). Drag hit-testing
+  re-reads geometry on `transitionend`, filtered to the eased
+  properties, so cached rects never lag the visible surface.
 - **D35** — real tooltips on every `−`/`+`/«/».
 - **D36** — bars show all labels that fit, in order; `+N` names the
   remainder only; per-label click/drag; per-label `tablist`.
-- **D37** — subsumed by D38 (uniform collapse became structural).
 - **D38** — collapse is ONE state per container
   (`FloatingWindow.collapsed` / `DockColumn.railed`; the third store,
   `regionCollapsed`, was later deleted by D44); `TabGroup.collapsed`
   deleted; bars and rail are two renderings; transfers between worlds
   are identity.
-- **D39** — retired by D46 (band-inserts and cross-band seams no longer
-  exist as zones at all; nothing is left to suppress).
-- **D40** — a railed column's stored weight is ALWAYS its P8 restore
-  width; born-railed columns store the source window's width;
-  aggregators account railed columns at the rendered 36px. Extended by
-  the always-px weights migration: EVERY column weight — lone columns
-  included — is a reconciled pixel width, so `regionWidth` is uniformly
-  the rendered need (Σ railed ? 36 : weight) for any column count and a
-  packed single-column region holds exactly its 36px strip; the P8
+- **D40** — the width contract: EVERY column weight — lone and railed
+  columns included — is a reconciled pixel width; a railed column's
+  weight is ALWAYS its P8 restore width (born-railed columns store the
+  source window's width), and aggregators account railed columns at
+  the rendered 36px, so `regionWidth` is uniformly the rendered need
+  (Σ railed ? 36 : weight) at any column count. The P8
   restore/undock/recreate round-trips read the WEIGHT, never
   regionWidth.
-- **D41** — retired by D46 (band heights died with bands; columns are
-  full-height). Surviving spirit: rails never merge, and every divider
-  between columns runs their full shared edge.
-- **D42** — retired by D46 (the "railed sole-column band" it legalized
-  is no longer a distinct shape: any column may rail, trivially).
-- **D43** — retired by D46: the accordion is DELETED (user: collapsing
-  one column expanding its neighbor "is a bit weird"). Railing a column
-  never touches its siblings; P3 has no exceptions again.
 - **D44** — region/column rail unification: `regionCollapsed` is
   DELETED as a store; the packed region reading is DERIVED
   (`isRegionPackedOn`: every column railed). railRegion rails every
@@ -1187,29 +1137,6 @@ has surviving behavior of its own.
   `visible`/`order` honored; placement axes inert off the dock surface.
   Chosen over a tabbed sheet (one panel at a time; nested tab strips
   read poorly) and a full-height pager (hides the canvas relationship).
-- **D48** — no content-top band (user-adjudicated: "reduce the size of
-  the above drop zone — dropping into the tab strip or anywhere below
-  it always merges"): dock-above belongs to the grip bar alone; the
-  strip and the body below it merge (bottom + side bands survive).
-  Rationale: the old top band re-claimed "above" just below the strip,
-  making the strip an island inside above-intent, and the above
-  preview's live shrink displaced the strip while the user aimed at
-  it. Merge-on-overshoot is forgiving in the direction people miss,
-  and appends — the same family as the strip's insert-at-end.
-  Carve-out (review-found): merge-SUPPRESSED pairs keep the pre-D48
-  top band — their merge is null, so the adjudicated rationale cannot
-  hold there, and no strip island exists on those paths.
-- **D47** — `minimize()` / `expand()` restored (user-adjudicated): a
-  fourth write-only placement axis (`GuiSetPanelCollapsedMessage`,
-  ordinary update_simple lifecycle), container-scoped per D38 -- panels
-  stacked together minimize together, exactly like the on-screen
-  control, and the docstrings say so. D31's removal rationale ("strange
-  that panels in a stack can still be individually expanded after
-  they're all minimized together") described the pre-D38 group-flag
-  model; container-owned collapse made that state unrepresentable, so
-  the objection dissolved. Applied after position (destination-container
-  semantics); replays to late joiners; arbitration via the standard
-  per-axis (counter, runId) gate.
 - **D46** — columns-only layout model (user-adjudicated: rail-over-
   expanded whitespace and neighbor-expanding collapse revealed "some
   fundamental problems"; option 1 chosen over disabling per-column
@@ -1223,3 +1150,52 @@ has surviving behavior of its own.
   its own header and granular expand); per-column collapse (D28/D40/
   D44) survives unchanged. Legacy `{rows}` layouts migrate at the
   injection/restore chokepoints.
+- **D47** — `minimize()` / `expand()` restored (user-adjudicated): a
+  fourth write-only placement axis (`GuiSetPanelCollapsedMessage`,
+  ordinary update_simple lifecycle), container-scoped per D38 -- panels
+  stacked together minimize together, exactly like the on-screen
+  control, and the docstrings say so. D31's removal rationale ("strange
+  that panels in a stack can still be individually expanded after
+  they're all minimized together") described the pre-D38 group-flag
+  model; container-owned collapse made that state unrepresentable, so
+  the objection dissolved. Applied after position (destination-container
+  semantics); replays to late joiners; arbitration via the standard
+  per-axis (counter, runId) gate.
+- **D48** — no content-top band (user-adjudicated): dock-above belongs
+  to the grip bar alone; the tab strip and everything below it down to
+  the bottom band merges (bottom + side bands survive). Carve-out:
+  merge-SUPPRESSED pairs keep the pre-D48 top band as split-above
+  (their merge is null). Rationale and the full zone statement: §5.2.
+
+Retired — one line per ID; the pointer is where any surviving content
+lives:
+
+- **D2** — retired: the segmented band bar died with D20's in-place
+  bars.
+- **D5** — retired into D9/D36: per-tab tear-out lives where per-tab
+  labels live.
+- **D11** — retired by D46: the band level was deleted after all.
+- **D12** — retired by D46: no bands, no canonical form, no
+  normalization pass. Its band-era canonical shape survives only as
+  §7's legacy-migration input.
+- **D13** — retired by D46: no bands to zip.
+- **D14** — retired into D36: bars show all labels that fit; `+N` for
+  the overflow remainder only.
+- **D16** — retired: per-cell minimize died with D37/D38. What
+  survives is the death of adoption rules — groups travel as-is
+  across drops (§5.5).
+- **D22** — retired: the nested-column stack handle was superseded by
+  D27's per-column handles.
+- **D23** — retired into D26/D28 (chevron placement); its click-only
+  clause reversed — chevrons are drag-through (§1.2).
+- **D37** — subsumed by D38: uniform collapse became structural.
+- **D39** — retired by D46: band-inserts and cross-band seams no
+  longer exist as zones; nothing is left to suppress.
+- **D41** — retired by D46: band heights died with bands. Its
+  surviving rules live in §3.3 (rails never merge) and §6 (column
+  dividers run the full region height).
+- **D42** — retired by D46: a railed column beside expanded siblings
+  is no longer a distinct legal shape to defend — any column may rail,
+  trivially.
+- **D43** — retired by D46: the accordion is DELETED; railing a column
+  never touches its siblings (P3).

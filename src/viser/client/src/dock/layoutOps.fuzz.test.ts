@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runSequence, startingLayouts, randomStart } from "./fuzzHarness";
+import { runSequence, startingLayouts } from "./fuzzHarness";
 
 // Tuned so each file runs well under the timeout while still exploring
 // deeply; the three fuzz files together apply ~600k fully invariant- and
