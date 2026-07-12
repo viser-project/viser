@@ -34,10 +34,10 @@ function runFixture(
   );
 }
 
-describe("layoutOps invariant fuzz (fixtures 0-1)", () => {
+describe("layoutOps invariant fuzz (fixtures 2-3)", () => {
   const starts = startingLayouts();
   // Seed bands offset per fixture so the fixture tests explore disjoint
   // regions of the seed space.
-  for (let i = 0; i <= Math.min(1, starts.length - 1); i++)
+  for (let i = 2; i <= Math.min(3, starts.length - 1); i++)
     runFixture(starts[i], i * 10000);
 });

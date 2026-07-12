@@ -34,10 +34,37 @@ function runFixture(
   );
 }
 
-describe("layoutOps invariant fuzz (fixtures 0-1)", () => {
+describe("layoutOps invariant fuzz (tail fixtures + randomized)", () => {
   const starts = startingLayouts();
-  // Seed bands offset per fixture so the fixture tests explore disjoint
-  // regions of the seed space.
-  for (let i = 0; i <= Math.min(1, starts.length - 1); i++)
-    runFixture(starts[i], i * 10000);
+  for (let i = 4; i <= starts.length - 1; i++) runFixture(starts[i], i * 10000);
+
+  // Each seed builds a fresh valid layout AND drives a random op sequence
+  // on it -- widens the starting-state space beyond the fixtures.
+  it(
+    "maintains invariants from RANDOMIZED starting layouts",
+    { timeout: 30000 },
+    () => {
+      const failures: string[] = [];
+      for (let seed = 1; seed <= SEEDS; seed++) {
+        // Derived op seed so it differs from the layout seed (arbitrary
+        // primes; fresh bands have stayed clean across several changes).
+        const { failure, descs } = runSequence(
+          () => randomStart(seed * 3 + 5),
+          seed * 11 + 29,
+          STEPS,
+        );
+        if (failure !== null) {
+          failures.push(
+            `startSeed=${seed} step=${failure.step} op=${failure.desc}\n` +
+              (failure.threw ? `  THREW: ${failure.threw}\n` : "") +
+              (failure.mutatedInput ? `  MUTATED INPUT\n` : "") +
+              failure.violations.map((x) => `  - ${x}`).join("\n") +
+              `\n  sequence:\n    ${descs.join("\n    ")}`,
+          );
+          if (failures.length >= 3) break;
+        }
+      }
+      expect(failures, failures.join("\n\n")).toEqual([]);
+    },
+  );
 });
