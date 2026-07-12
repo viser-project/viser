@@ -111,6 +111,15 @@ function RegionColumns({
   React.useLayoutEffect(() => {
     const root = containerRef.current;
     if (root === null) return;
+    // TRANSFORM-FREE natural positions: offsetLeft against the pane root
+    // (position: relative below), plus the root's screen x -- which is
+    // transform-free and CONSTANT mid-ease (the pane is fixed-width,
+    // anchored to the outer edge). Never clear an in-flight transform to
+    // measure: this effect runs on EVERY render, and a mid-glide
+    // re-render (tooltip close, panel-tracking update) that cleared
+    // transforms to measure snapped settling columns to their final spot
+    // (user report: the untouched column "jitters/jumps").
+    const rootLeft = root.getBoundingClientRect().left;
     const els = Array.from(
       root.querySelectorAll<HTMLElement>(":scope > [data-dock-column]"),
     );
@@ -122,26 +131,26 @@ function RegionColumns({
     for (const el of els) {
       const id = el.getAttribute("data-dock-column");
       if (id === null) continue;
-      // Interruption-friendly "first" position: the live rect includes any
-      // in-flight transform, so a retargeted slide continues smoothly.
-      const liveX = el.getBoundingClientRect().left;
-      el.style.transition = "";
-      el.style.transform = "";
-      const rect = el.getBoundingClientRect();
-      const naturalX = rect.left;
-      next.set(id, { x: naturalX, w: rect.width });
+      const naturalX = rootLeft + el.offsetLeft;
+      const naturalW = el.offsetWidth;
+      next.set(id, { x: naturalX, w: naturalW });
       const prev = prevColumnBox.current.get(id);
-      const delta = (prev?.x ?? liveX) - naturalX;
+      const delta = prev === undefined ? 0 : prev.x - naturalX;
       // Only PURE position changes glide. A column whose WIDTH changed
       // (the one being railed/expanded) must render in place: translating
       // a size-changed box paints its full-width content over its
-      // neighbor for the glide's duration (user report: expanding [A]
-      // beside [B] overlapped their contents). Its reveal is the drawer
-      // edge's job.
+      // neighbor for the glide's duration. Its reveal is the drawer
+      // edge's job. Unmoved columns (delta 0) are NOT touched at all --
+      // a glide already in flight keeps settling undisturbed.
       const widthChanged =
-        prev !== undefined && Math.abs(prev.w - rect.width) > 0.5;
+        prev !== undefined && Math.abs(prev.w - naturalW) > 0.5;
       if (skip || widthChanged || Math.abs(delta) < 0.5) continue;
-      el.style.transform = `translateX(${delta}px)`;
+      // Retarget from wherever the column visually is (live rect includes
+      // any in-flight transform).
+      const liveX = el.getBoundingClientRect().left;
+      const startDelta = liveX - naturalX;
+      el.style.transition = "";
+      el.style.transform = `translateX(${startDelta}px)`;
       // Force the start position before arming the transition.
       void el.offsetWidth;
       el.style.transition = "transform 160ms ease";
@@ -180,7 +189,10 @@ function RegionColumns({
         // eases, revealing/concealing this box from the inner side. Fixing
         // the width here (not 100%) is what keeps content from reflowing
         // and siblings from wobbling during the ease: flex resolves once,
-        // to the final geometry.
+        // to the final geometry. position:relative makes this box the
+        // columns' offsetParent, so the glide effect can read natural
+        // positions transform-free via offsetLeft.
+        position: "relative",
         width: drawnWidthPx,
         flexShrink: 0,
         height: "100%",
