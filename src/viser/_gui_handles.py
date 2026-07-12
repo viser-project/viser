@@ -1092,13 +1092,15 @@ class PanelHandle(
     tree -- that carries its own tabs; a single-tab panel renders as a plain
     header.
 
-    Placement and sizing are **imperative commands, not synced state**: they
-    apply to connected clients and replay to clients that connect later, but the
-    current layout is never read back from clients. There are no readable
-    ``.width`` / position properties, and a user dragging the panel afterward wins
-    until the next explicit command. (This is why sizing is ``set_width()`` rather
-    than a ``.width`` property.) Collapse (minimize/expand) is a client-side
-    gesture only: the server has no collapse command.
+    Placement, sizing, and collapse are **imperative commands, not synced
+    state**: they apply to connected clients and replay to clients that connect
+    later, but the current layout is never read back from clients. There are no
+    readable ``.width`` / position / minimized properties, and a user dragging
+    or minimizing the panel afterward wins until the next explicit command.
+    (This is why sizing is ``set_width()`` rather than a ``.width`` property.)
+    :meth:`minimize` / :meth:`expand` act on the panel's *container* -- its
+    floating window or its docked column -- so panels stacked together
+    minimize together, exactly like the on-screen minimize control.
 
     The server owns a panel's existence: users can rearrange, drag, minimize, and
     resize a panel, but cannot close it from the UI. A panel disappears only when
@@ -1191,7 +1193,8 @@ class PanelHandle(
 class MainPanelHandle(_PlacementMixin):
     """Handle for the main control panel. Returned by :attr:`GuiApi.main_panel`.
 
-    Supports the same placement / sizing commands as :class:`PanelHandle`, but
+    Supports the same placement / sizing / minimize commands as
+    :class:`PanelHandle`, but
     has no tabs and cannot be removed. Because the control panel renders on every
     client, it is a legal anchor for other panels' ``dock_*`` commands from any
     scope.
