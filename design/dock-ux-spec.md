@@ -729,6 +729,11 @@ window is an open question (§11).
   restore width, not a rendered share. A multi-group stack dropped
   top/bottom divides its half among its leaves by the stack's preserved
   height ratios (P8).
+- **Cursor vocabulary**: dividers BETWEEN panes show the splitter
+  cursors (`col-resize`/`row-resize` -- both sides trade); grips that
+  resize ONE thing keep the directional edge cursors (`ew`/`ns`/
+  `nwse`/`nesw-resize`: window edges and corners, and the region's
+  canvas-edge resizer, which resizes the region against the canvas).
 - **Dividers** (D24): a divider is INERT — no resize cursor, no armed
   gesture, no height-pin side effect — unless something tradeable sits
   on EACH side (a cursor that no-ops lies). Height dividers need an

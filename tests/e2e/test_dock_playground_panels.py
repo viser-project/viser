@@ -1316,8 +1316,10 @@ def test_inert_rail_divider_is_visually_distinct_from_resizable(
                 f"an inert divider must not show a resize cursor: {d}"
             )
         for d in live:
-            assert d["cursor"] == "ew-resize", (
-                f"a live row divider must show the resize cursor: {d}"
+            # Splitter cursor (col-resize): dividers TRADE space between two
+            # panes; edge grips keep the directional ew/ns-resize cursors.
+            assert d["cursor"] == "col-resize", (
+                f"a live row divider must show the splitter cursor: {d}"
             )
         # The inert rule is DIMMER than the live one (thinner-looking): "no
         # resize here" is honest, not an identical 1px line.

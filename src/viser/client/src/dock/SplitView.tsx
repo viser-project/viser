@@ -602,7 +602,10 @@ function SplitDivider({
         position: "relative",
         flexShrink: 0,
         [isRow ? "width" : "height"]: SPLIT_DIVIDER_PX,
-        cursor: !resizable ? "default" : isRow ? "ew-resize" : "ns-resize",
+        // Splitter cursors (col/row-resize): this divider TRADES space
+        // between two panes -- the edge-resize cursors stay on grips that
+        // resize one thing (window edges, the region's canvas boundary).
+        cursor: !resizable ? "default" : isRow ? "col-resize" : "row-resize",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",

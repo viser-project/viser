@@ -810,7 +810,9 @@ function FloatingStackDivider({
         position: "relative",
         flexShrink: 0,
         height: SPLIT_DIVIDER_PX,
-        cursor: resizable ? "ns-resize" : "default",
+        // Splitter cursor: this divider trades height between two stacked
+        // cells (window edge grips keep ns-resize).
+        cursor: resizable ? "row-resize" : "default",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
