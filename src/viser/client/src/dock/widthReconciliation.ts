@@ -115,7 +115,6 @@ export function reconcileRegionWidths(
   // Carry-over base: the op's own value when it set one (clones inherit
   // prev's, so a differing value is a deliberate write), else prev's.
   const nextRW = regionWidthsOf(next.regionWidth !== undefined ? next : prev);
-  const prevRW = regionWidthsOf(prev);
 
   (["left", "right"] as DockEdge[]).forEach((edge) => {
     const nextTree = next.docked[edge];
