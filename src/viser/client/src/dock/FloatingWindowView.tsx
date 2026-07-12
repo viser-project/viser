@@ -115,142 +115,140 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     : undefined;
 
   // D34 for AUTO-height windows ONLY: CSS cannot interpolate height to
-  // `auto`, so a collapse/expand of an unpinned window snapped. FLIP it
-  // instead: record the previous rendered height each render, and when
-  // `collapsed` flips, replay old px -> new px through the class's own
-  // 160ms height transition, clearing the inline px on transitionend
-  // (auto resumes at the identical measured value). Presentation only
-  // (P4): the model committed first; reduced motion and an active grip
-  // drag (the paper's own [data-dock-resizing]) skip it; interruptions
-  // retarget from the live mid-ease height.
+  // `auto`, so a collapse/expand of an unpinned window snapped. Ease it
+  // with a Web Animations API height animation (el.animate old px -> new
+  // px) instead of a style-channel FLIP: the script animation composites
+  // ABOVE the style attribute, so React re-renders rewriting the Paper's
+  // style prop cannot wipe the in-flight motion (the old FLIP needed a
+  // target token re-asserted every render), and it outranks the class's
+  // CSS height transition, so windowCollapseAnim cannot collide with it.
+  // The Animation object's own finish/cancel callbacks replace the old
+  // transition-event forensics (bubbled-event filtering, transitioncancel
+  // guards, getAnimations probing). Presentation only (P4): the model
+  // committed first, and the callbacks do cosmetic cleanup only. Reduced
+  // motion and an active grip drag (the paper's own [data-dock-resizing])
+  // skip it; a rapid re-toggle cancels the held Animation and retargets
+  // from the live mid-ease rect.
   //
-  // PINNED windows must NOT flip: both of their committed endpoints are
-  // already numeric (px <-> the bars' calc()), so windowCollapseAnim
-  // eases the commit natively -- and that class transition has ALREADY
-  // STARTED by the time this effect runs (any post-commit layout read
-  // starts it; SplitView's measuring effect runs first and reads rects
-  // every render). Arming the FLIP on top of it canceled that transition
-  // with `transition: none`, and the browser then delivered the canceled
-  // transition's `transitioncancel` (propertyName "height", target: this
-  // paper) on the first frame AFTER settle() subscribed below -- the
-  // token identifies the flip, not the transition, so the stale cancel
-  // passed every check and tore the replay down at t~0: minimize SNAPPED
-  // (user report). Skipping pinned windows both restores their native
-  // ease and removes the only systematic source of stale height events.
+  // PINNED windows must NOT get the script animation: both of their
+  // committed endpoints are already numeric (px <-> the bars' calc()), so
+  // windowCollapseAnim eases the commit natively -- a WAAPI animation
+  // armed on top would outrank and freeze that transition. Skipping
+  // pinned windows keeps their native ease exactly as before.
   const prevPaperH = React.useRef<number | null>(null);
-  // Non-null while a height FLIP is in flight: re-renders re-apply the
-  // Paper's style prop (clearing our inline px -- expand triggers content
-  // mounts immediately, which is why EXPAND snapped while minimize
-  // animated), so the recorder effect below re-asserts the target every
-  // render until the transition ENDS OR CANCELS. The id token makes the
-  // teardown flip-specific: a rapid -/+ toggle cancels the first
-  // transition (transitionend never fires for it), and without the token
-  // the stale target was re-asserted forever -- the window locked at the
-  // wrong height (user report).
-  const flipTargetH = React.useRef<{ id: number; px: number } | null>(null);
-  const flipIdRef = React.useRef(0);
+  // The in-flight auto-height Animation (plus its target px, the honest
+  // "where did it settle" fallback for the moment between the animation
+  // finishing and its finish event delivering), held so the next toggle
+  // can cancel it and retarget. The handle IS the flip: no id token
+  // needed, because canceling it can't be confused with anyone else's
+  // events.
+  const heightAnim = React.useRef<{ anim: Animation; toPx: number } | null>(
+    null,
+  );
   React.useLayoutEffect(() => {
     const el = paperRef.current;
     if (el === null) return;
     // Pinned windows: the class transition eases px <-> calc natively
-    // (see the block comment above). Only AUTO-height windows FLIP.
-    if (pinnedPx !== undefined) return;
-    const from = prevPaperH.current;
+    // (see the block comment above). Drop any auto-height animation a
+    // same-commit pin interrupted, so nothing outranks that transition.
+    if (pinnedPx !== undefined) {
+      if (heightAnim.current !== null) {
+        const held = heightAnim.current;
+        heightAnim.current = null;
+        held.anim.cancel();
+        el.style.overflow = "";
+      }
+      return;
+    }
+    // Retarget from where the window VISUALLY is: while the previous
+    // animation runs, the rect reads its mid-ease height (the animation
+    // composites into layout). If it already finished but its finish
+    // event hasn't delivered yet (so the cleanup below hasn't refreshed
+    // the recording), the window sits at that animation's own target. In
+    // every other case the rect already shows the NEW committed height,
+    // so use the per-render recording below instead.
+    const held = heightAnim.current;
+    const from =
+      held === null
+        ? prevPaperH.current
+        : held.anim.playState === "running"
+          ? el.getBoundingClientRect().height
+          : held.toPx;
+    if (held !== null) {
+      heightAnim.current = null;
+      held.anim.cancel();
+      el.style.overflow = "";
+    }
     const skip =
       el.hasAttribute("data-dock-resizing") ||
       (typeof window.matchMedia === "function" &&
         window.matchMedia("(prefers-reduced-motion: reduce)").matches);
     if (from === null || skip) return;
-    const inlineBefore = el.style.height;
+    // Measure the committed endpoint with the class transition
+    // neutralized: a same-commit un-pin + collapse rewrites the height
+    // px -> the bars' calc() -- BOTH numeric, so windowCollapseAnim
+    // starts transitioning at the commit and a plain read here would
+    // return the transition's t~0 value (the OLD height) instead of the
+    // committed one. transition:none cancels it -- correctly: the window
+    // is auto now, so its motion belongs to the script animation.
     el.style.transition = "none";
-    el.style.height = "";
     const to = el.offsetHeight;
-    if (Math.abs(from - to) < 0.5) {
-      el.style.transition = "";
-      if (flipTargetH.current !== null) {
-        // An interrupted flip's inline target is still on the element
-        // (inlineBefore IS that stale px) -- against the NEW commit it's
-        // meaningless, so drop it and let auto resume at the committed
-        // height instead of locking the window at the dead flip's target.
-        flipTargetH.current = null;
-        el.style.height = "";
-        el.style.overflow = "";
-      } else {
-        el.style.height = inlineBefore;
-      }
-      return;
-    }
-    el.style.height = `${from}px`;
-    void el.offsetWidth;
     el.style.transition = "";
-    el.style.height = `${to}px`;
-    // Clip while the flip is in flight: an EXPAND eases the paper up
+    if (Math.abs(from - to) < 0.5) return;
+    // Clip while the ease is in flight: an EXPAND eases the paper up
     // around already-mounted full-size content, which would poke out of
     // the small mid-anim box (Paper's steady-state overflow is visible
-    // for the grips).
+    // for the grips). The keyframes carry the clip on engines with
+    // discrete-property animation (unwipeable, like the height); the
+    // inline write covers older ones, with the recorder effect below
+    // re-asserting it if a re-render strips it (cosmetic-only insurance).
     el.style.overflow = "hidden";
-    const myId = ++flipIdRef.current;
-    flipTargetH.current = { id: myId, px: to };
-    const settle = (ev: TransitionEvent) => {
-      // Transition events BUBBLE: a descendant's height transition ending
-      // or canceling mid-flip must not settle the paper's replay. Keep
-      // listening (no listener removal) -- our own event is still coming.
-      if (ev.target !== el || ev.propertyName !== "height") return;
-      if (flipTargetH.current?.id !== myId) {
-        // A newer toggle owns the element now; this flip's listeners are
-        // stale -- retire them without touching the successor's state.
-        el.removeEventListener("transitionend", settle);
-        el.removeEventListener("transitioncancel", settle);
-        return;
-      }
-      // Timing insurance: only tear down on a cancel when no height
-      // transition remains running. (With the pinned-skip and the
-      // identical-px re-assert this path should be unreachable; it guards
-      // against browser scheduling differences, not a known scenario.)
-      if (
-        ev.type === "transitioncancel" &&
-        el
-          .getAnimations()
-          .some(
-            (a) =>
-              (a as CSSTransition).transitionProperty === "height" &&
-              a.playState === "running",
-          )
-      )
-        return;
-      el.removeEventListener("transitionend", settle);
-      el.removeEventListener("transitioncancel", settle);
-      flipTargetH.current = null;
-      el.style.height = "";
+    const anim = el.animate(
+      [
+        { height: `${from}px`, overflow: "hidden" },
+        { height: `${to}px`, overflow: "hidden" },
+      ],
+      { duration: 160, easing: "ease" },
+    );
+    heightAnim.current = { anim, toPx: to };
+    anim.onfinish = () => {
+      if (heightAnim.current?.anim !== anim) return; // superseded; not ours
+      heightAnim.current = null;
       el.style.overflow = "";
-      // The transition moved the height WITHOUT a render, so the
-      // per-render recorder below never saw the settled value. Refresh it
-      // here, or the NEXT toggle reads the pre-flip height as `from`,
-      // concludes from == to, and skips its flip -- which is exactly why
-      // expanding right after a settled minimize (or vice versa) snapped
-      // when nothing else re-rendered the window in between.
+      // The animation moved the height WITHOUT a render, so the per-render
+      // recorder below never saw the settled value. Refresh it here, or
+      // the NEXT toggle reads the pre-flip height as `from`, concludes
+      // from == to, and skips its ease -- which is exactly why expanding
+      // right after a settled minimize (or vice versa) snapped when
+      // nothing else re-rendered the window in between.
       prevPaperH.current = el.getBoundingClientRect().height;
     };
-    el.addEventListener("transitionend", settle);
-    el.addEventListener("transitioncancel", settle);
+    anim.oncancel = () => {
+      // Reachable only outside the toggle path (that path nulls the ref
+      // BEFORE canceling, and the guard makes this a no-op): e.g. the
+      // browser canceling animations on a display change.
+      if (heightAnim.current?.anim !== anim) return;
+      heightAnim.current = null;
+      el.style.overflow = "";
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collapsed]);
   React.useLayoutEffect(() => {
-    // Keep the in-flight FLIP alive across re-renders: React just rewrote
-    // the style prop, wiping the inline px -- put the target back before
-    // paint (same specified value, so the running transition continues).
     const el = paperRef.current;
-    if (el !== null && flipTargetH.current !== null) {
-      el.style.height = `${flipTargetH.current.px}px`;
+    // Old-engine insurance for the clip (see the keyframes note above):
+    // a re-render rewrote the style prop, which can strip the inline
+    // overflow; the height itself needs no such help (WAAPI outranks the
+    // style attribute).
+    if (el !== null && heightAnim.current !== null)
       el.style.overflow = "hidden";
-    }
-    // Live height (mid-transition included) so an interrupted toggle
-    // continues from where the window visually is. Pinned windows skip the
-    // read (the FLIP never consumes it for them -- their class transition
-    // eases natively) but KEEP the last recorded value: a single commit
-    // that both un-pins and toggles collapse then flips from a slightly
-    // stale height instead of snapping.
-    if (!(pinnedPx !== undefined && flipTargetH.current === null))
+    // Live height (mid-ease included -- the animated height shows in the
+    // rect) so an interrupted toggle continues from where the window
+    // visually is. Pinned windows skip the read (the WAAPI arm never
+    // consumes it for them -- their class transition eases natively) but
+    // KEEP the last recorded value: a single commit that both un-pins and
+    // toggles collapse then eases from a slightly stale height instead of
+    // snapping.
+    if (!(pinnedPx !== undefined && heightAnim.current === null))
       prevPaperH.current = el?.getBoundingClientRect().height ?? null;
   });
 
