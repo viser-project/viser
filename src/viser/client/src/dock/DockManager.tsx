@@ -362,22 +362,21 @@ export function DockManager({
   // reorder + tear-out) lives in the drag controller; layout changes flow
   // back through applyOp/commit, and the two refs it returns let the resize
   // observers below cooperate with an in-flight drag.
-  const { stableGestures, startRegionDrag } =
-    useDragController({
-      panes,
-      containerRef,
-      hintRef,
-      layoutRef,
-      reservedWidthRef,
-      activeCleanup,
-      draggingWindowIdRef,
-      markDragTargetsStaleRef,
-      applyOp,
-      commit,
-      expandToTab,
-      setDraggingGroupId,
-      setDraggingTabId,
-    });
+  const { stableGestures, startRegionDrag } = useDragController({
+    panes,
+    containerRef,
+    hintRef,
+    layoutRef,
+    reservedWidthRef,
+    activeCleanup,
+    draggingWindowIdRef,
+    markDragTargetsStaleRef,
+    applyOp,
+    commit,
+    expandToTab,
+    setDraggingGroupId,
+    setDraggingTabId,
+  });
 
   // Container height, for capping floating panes' scrolling bodies (matches
   // the original FloatingPanel, which capped its body to the parent height).
