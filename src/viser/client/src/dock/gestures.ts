@@ -181,6 +181,10 @@ export function focusPaneTabOrGroup(paneId: string, groupId: string) {
       toggle.focus();
       return;
     }
+    // The stamped tabindex persists after focus leaves (React doesn't own
+    // the attribute), leaving the group click-focusable thereafter --
+    // harmless: click focus fails :focus-visible, so no ring ever paints
+    // on the pointer path.
     if (!scope.hasAttribute("tabindex")) scope.tabIndex = -1;
     scope.focus();
   });

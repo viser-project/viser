@@ -15,6 +15,7 @@ import {
 } from "./layoutOps";
 import * as ops from "./layoutOps";
 import { invariantViolations } from "./layoutInvariants";
+import { reconcileRegionWidths } from "./widthReconciliation";
 import { emptyLayout, DockLayout } from "./types";
 import { leaf, group, floatingWindow, row, col, toRegion } from "./testUtils";
 
@@ -236,6 +237,10 @@ describe("migrateRowsToColumnsInPlace (D46)", () => {
       { columns: [legacyCol("c2", 300, ["b", "c"])], weight: 1 },
     ]);
     const migrated = ops.migrateLegacyLayout(l);
+    // Structure assertions run on the migration output; the invariant
+    // check runs on the full mount pipeline (reconciliation owns width
+    // adoption -- an unreconciled layout is out of contract for #12).
+    reconcileRegionWidths(emptyLayout(), migrated);
     const region = migrated.docked.right!;
     // ONE stacked column, leaves in band order -- NOT three side-by-side
     // columns (the pre-fix rotation).
@@ -306,32 +311,48 @@ describe("migrateRowsToColumnsInPlace (D46)", () => {
 // chokepoint adopts regionWidth -- the old model's authoritative width
 // memory -- into the weight.
 // ===========================================================================
-describe("migrateLegacyLayout: lone-column width adoption", () => {
+/** The MOUNT pipeline: what DockManager's initializer runs. Legacy width
+ * adoption lives in reconciliation's new-column carry (there is no
+ * dedicated migration leg), so pins assert on the pipeline's output --
+ * the only layout consumers ever see. */
+function mountPipeline(l: DockLayout): DockLayout {
+  const m = ops.migrateLegacyLayout(l);
+  const draft = m === l ? structuredClone(l) : m;
+  reconcileRegionWidths(emptyLayout(), draft);
+  return draft;
+}
+
+describe("mount pipeline: lone-column width adoption", () => {
   it("adopts an EXPANDED lone column's regionWidth into its weight", () => {
     const l = emptyLayout();
     l.groups = { a: group("a") };
     l.docked.right = toRegion(leaf("a", 1)); // flex-share weight
     l.regionWidth = { left: 300, right: 500 };
-    const m = ops.migrateLegacyLayout(l);
-    expect(m).not.toBe(l); // migrated via clone; the input is untouched
-    expect(l.docked.right!.columns[0].weight).toBe(1);
+    const m = mountPipeline(l);
+    expect(l.docked.right!.columns[0].weight).toBe(1); // input untouched
     expect(m.docked.right!.columns[0].weight).toBe(500);
     expect(m.regionWidth!.right).toBe(500);
     expect(invariantViolations(m)).toEqual([]);
-    // Idempotent: re-running is a passthrough.
-    expect(ops.migrateLegacyLayout(m)).toBe(m);
+    // Idempotent: a reconciled layout passes through unchanged in value.
+    const again = mountPipeline(m);
+    expect(again.docked.right!.columns[0].weight).toBe(500);
+    expect(again.regionWidth!.right).toBe(500);
   });
 
-  it("a STALE px weight is overridden by regionWidth (the old model's truth)", () => {
-    // Under the old model a lone column could keep a stale px from its
-    // multi-column era while setRegionWidth wrote only regionWidth.
+  it("a plausible px weight is TRUSTED over a diverging regionWidth", () => {
+    // Accepted behavior delta from deleting the dedicated migration leg:
+    // under the old model a lone column could carry a stale px from its
+    // multi-column era while setRegionWidth wrote only regionWidth. The
+    // reconciliation carry trusts any real (>= grab-min) weight, so such
+    // a layout restores at the weight, not the old regionWidth -- bounded,
+    // cosmetic for interim-era saves, self-healing on the first resize.
     const l = emptyLayout();
     l.groups = { a: group("a") };
     l.docked.left = toRegion(leaf("a", 300));
     l.regionWidth = { left: 500, right: 300 };
-    const m = ops.migrateLegacyLayout(l);
-    expect(m.docked.left!.columns[0].weight).toBe(500);
-    expect(m.regionWidth!.left).toBe(500);
+    const m = mountPipeline(l);
+    expect(m.docked.left!.columns[0].weight).toBe(300);
+    expect(m.regionWidth!.left).toBe(300);
   });
 
   it("moves a packed single region's restore width into the weight, regionWidth to the strip", () => {
@@ -340,18 +361,23 @@ describe("migrateLegacyLayout: lone-column width adoption", () => {
     l.docked.left = toRegion(leaf("a", 1));
     l.docked.left!.columns[0].railed = true;
     l.regionWidth = { left: 480, right: 300 }; // old model: restore width
-    const m = ops.migrateLegacyLayout(l);
+    const m = mountPipeline(l);
     expect(m.docked.left!.columns[0].weight).toBe(480);
     expect(m.regionWidth!.left).toBe(36);
     expect(invariantViolations(m)).toEqual([]);
-    // Idempotent: the migrated packed form (regionWidth == strip) is final.
-    expect(ops.migrateLegacyLayout(m)).toBe(m);
+    // Idempotent: the packed form (regionWidth == strip) is final.
+    const again = mountPipeline(m);
+    expect(again.docked.left!.columns[0].weight).toBe(480);
+    expect(again.regionWidth!.left).toBe(36);
   });
 
-  it("no-op without a regionWidth field (first commit establishes px)", () => {
+  it("no regionWidth field: the pipeline establishes the default px", () => {
     const l = emptyLayout();
     l.groups = { a: group("a") };
     l.docked.left = toRegion(leaf("a", 1));
-    expect(ops.migrateLegacyLayout(l)).toBe(l);
+    expect(ops.migrateLegacyLayout(l)).toBe(l); // nothing band/flag-legacy
+    const m = mountPipeline(l);
+    // No width memory anywhere: the new-column default applies.
+    expect(m.docked.left!.columns[0].weight).toBeGreaterThanOrEqual(96);
   });
 });

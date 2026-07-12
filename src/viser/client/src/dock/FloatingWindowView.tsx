@@ -148,16 +148,20 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
   React.useLayoutEffect(() => {
     const el = paperRef.current;
     if (el === null) return;
+    // Drop the held animation (ref nulled BEFORE cancel, so oncancel's
+    // guard makes it a no-op) and release the clip.
+    const dropHeld = () => {
+      const held = heightAnim.current;
+      if (held === null) return;
+      heightAnim.current = null;
+      held.anim.cancel();
+      el.style.overflow = "";
+    };
     // Pinned windows: the class transition eases px <-> calc natively
     // (see the block comment above). Drop any auto-height animation a
     // same-commit pin interrupted, so nothing outranks that transition.
     if (pinnedPx !== undefined) {
-      if (heightAnim.current !== null) {
-        const held = heightAnim.current;
-        heightAnim.current = null;
-        held.anim.cancel();
-        el.style.overflow = "";
-      }
+      dropHeld();
       return;
     }
     // Retarget from where the window VISUALLY is: while the previous
@@ -174,11 +178,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         : held.anim.playState === "running"
           ? el.getBoundingClientRect().height
           : held.toPx;
-    if (held !== null) {
-      heightAnim.current = null;
-      held.anim.cancel();
-      el.style.overflow = "";
-    }
+    dropHeld();
     const skip =
       el.hasAttribute("data-dock-resizing") ||
       (typeof window.matchMedia === "function" &&
@@ -198,18 +198,16 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     // Clip while the ease is in flight: an EXPAND eases the paper up
     // around already-mounted full-size content, which would poke out of
     // the small mid-anim box (Paper's steady-state overflow is visible
-    // for the grips). The keyframes carry the clip on engines with
-    // discrete-property animation (unwipeable, like the height); the
-    // inline write covers older ones, with the recorder effect below
-    // re-asserting it if a re-render strips it (cosmetic-only insurance).
+    // for the grips). ONE channel: this inline write, re-asserted by the
+    // recorder effect below before every paint (a React style-prop
+    // rewrite can strip it, but never visibly). Keyframed overflow would
+    // be unwipeable on newer engines, but carrying both channels for one
+    // cosmetic clip is more machinery than the clip is worth.
     el.style.overflow = "hidden";
-    const anim = el.animate(
-      [
-        { height: `${from}px`, overflow: "hidden" },
-        { height: `${to}px`, overflow: "hidden" },
-      ],
-      { duration: 160, easing: "ease" },
-    );
+    const anim = el.animate([{ height: `${from}px` }, { height: `${to}px` }], {
+      duration: 160,
+      easing: "ease",
+    });
     heightAnim.current = { anim, toPx: to };
     anim.onfinish = () => {
       if (heightAnim.current?.anim !== anim) return; // superseded; not ours

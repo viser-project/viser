@@ -897,13 +897,12 @@ export function useDragController(deps: DragControllerDeps) {
     if (tree === null || groupId === undefined) return rw;
     const cols = ops.widthColumns(tree);
     const col = cols.find((c) => ops.collectLeafGroups(c).includes(groupId));
-    // Trust the column weight only when the reconciler actually wrote px into
-    // it (any real width clears the grab-min; an unreconciled weight is a bare
-    // flex share like 1 -- possible only for layouts that bypassed the
-    // migration chokepoints). regionWidth is the fallback, not a width
-    // memory: a packed region reserves just its 36px strips there.
-    if (col !== undefined && col.weight >= ops.minRegionWidth())
-      return col.weight;
+    // Weights are always reconciled px (every consumer-visible layout has
+    // passed reconcileRegionWidths -- the mount chokepoint reconciles too),
+    // so the weight IS the restore width. regionWidth only covers the
+    // group-not-found edge; it is NOT a width memory (a packed region
+    // reserves just its 36px strips there).
+    if (col !== undefined) return col.weight;
     return rw;
   };
 

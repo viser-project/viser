@@ -61,14 +61,18 @@ describe("lone minimized column: preserved width survives a sibling docking", ()
   // (always-px weights) -- including while minimized (railed weight = P8
   // restore width, D40). The starting literal here is the pre-migration
   // legacy form (weight is a bare flex share, regionWidth carries the px):
-  // the first reconcile must ADOPT the px into the weight (the sameSet
-  // heal / migrateLegacyLayout chokepoint), so dock A at 500 -> minimize ->
-  // dock B beside -> expand A comes back at 500, never the 96px grab-min.
+  // it enters through the MOUNT chokepoint (reconcile against an empty
+  // prior), which adopts the px into the weight -- every consumer-visible
+  // layout has been reconciled, so downstream never sees a flex share.
+  // Dock A at 500 -> minimize -> dock B beside -> expand A comes back at
+  // 500, never the 96px grab-min.
   function loneAt500(): DockLayout {
     const l = emptyLayout();
     l.groups = { a: group("a"), b: group("b") };
     l.docked.right = toRegion(leaf("a"));
     l.regionWidth = { left: 0, right: 500 };
+    // Mount chokepoint: adopt the legacy form before anything consumes it.
+    reconcileRegionWidths(emptyLayout(), l);
     return l;
   }
 
@@ -115,6 +119,9 @@ describe("single-column px carries into the weights when the region gains a colu
     l.groups = { x: group("x"), z: group("z"), w: group("w") };
     l.docked.right = toRegion(col([leaf("x"), leaf("z")]));
     l.regionWidth = { left: 0, right: 500 };
+    // Mount chokepoint: the legacy literal (flex-share weight, px in
+    // regionWidth) is adopted into the weight before anything consumes it.
+    reconcileRegionWidths(emptyLayout(), l);
     const zNodeId = l.docked.right!.columns[0].leaves[1].id;
     const next = dropOnDockedLeaf(l, ["w"], "right", zNodeId, "left");
     reconcileRegionWidths(l, next);
@@ -256,16 +263,19 @@ describe("reconcileRegionWidths with railed columns (D38/D40: rail moves width b
 describe("reconcileRegionWidths width clamp (no max ceiling)", () => {
   it("preserves a deliberately wide single-column width (no per-panel cap)", () => {
     // There is no fixed max panel width: a server set_width(2000) on a docked
-    // column keeps its requested width. (Render-time MIN_CANVAS_PX keeps a canvas
-    // sliver visible; the model width itself is uncapped.) Same-set commit -> the
-    // clamp runs every commit but only enforces the grab-min floor.
+    // column keeps its requested width. (Render-time MIN_CANVAS_PX keeps a
+    // canvas sliver visible; the model width itself is uncapped.) The
+    // deliberate-write path is the setRegionWidth OP -- for a lone column
+    // it lands the width in the WEIGHT, and reconciliation re-derives
+    // regionWidth from it (regionWidth is derived state now, not a
+    // writable channel).
     const prev = emptyLayout();
     prev.groups = { a: group("a") };
-    prev.docked.right = toRegion(leaf("a", 1));
+    prev.docked.right = toRegion(leaf("a", 400));
     prev.regionWidth = { left: 0, right: 400 };
-    const next = structuredClone(prev);
-    next.regionWidth = { left: 0, right: 2000 };
+    const next = setRegionWidth(prev, "right", 2000);
     expect(recon(prev, next).right).toBe(2000);
+    expect(widthColumns(next.docked.right!)[0].weight).toBe(2000);
   });
 
   it("preserves a deliberately wide multi-column width (no colsMax cap)", () => {
@@ -284,19 +294,18 @@ describe("reconcileRegionWidths width clamp (no max ceiling)", () => {
 
 describe("reconcileRegionWidths min-width floor", () => {
   it("raises a too-narrow carried width to the grab minimum (pure-internal)", () => {
-    // A carried regionWidth below the layout floor is unrepresentable and must
-    // be floored on commit (replaces the old auto-grow effect). Same column set
-    // (a single leaf), so this exercises clampRegionWidth directly rather than
-    // the structural default-width path. The floor is MIN_REGION_GRAB_PX -- the
-    // grabbable sliver -- NOT the panel-content minimum (a narrower region
-    // scrolls its body instead).
+    // A width write below the layout floor is floored AT THE WRITE SITE
+    // (every weight-writing site floors per column; regionWidth is then a
+    // pure derivation). The floor is MIN_REGION_GRAB_PX -- the grabbable
+    // sliver -- NOT the panel-content minimum (a narrower region scrolls
+    // its body instead).
     const prev = emptyLayout();
     prev.groups = { a: group("a") };
-    prev.docked.right = toRegion(leaf("a", 1));
+    prev.docked.right = toRegion(leaf("a", 300));
     prev.regionWidth = { left: 0, right: 300 };
-    const next = structuredClone(prev);
-    next.regionWidth = { left: 0, right: 20 }; // deliberately below the floor.
+    const next = setRegionWidth(prev, "right", 20); // below the floor.
     expect(recon(prev, next).right).toBe(MIN_REGION_GRAB_PX);
+    expect(widthColumns(next.docked.right!)[0].weight).toBe(MIN_REGION_GRAB_PX);
   });
 
   it("floors a too-narrow multi-column width to the summed grab minimum", () => {
@@ -488,6 +497,9 @@ describe("railed-column width paths (drop beside a rail)", () => {
     prev.groups = { a: group("a") };
     prev.docked.left = toRegion(leaf("a"));
     prev.regionWidth = { left: 300, right: 300 };
+    // Mount chokepoint adopts the legacy lone-column literal (px lives in
+    // the weight from here on).
+    reconcileRegionWidths(emptyLayout(), prev);
     withDraggedWindow(prev);
     const aLeaf = prev.docked.left!.columns[0].leaves[0].id;
     const next = dropOnDockedLeaf(prev, [NEW_G], "left", aLeaf, "right");

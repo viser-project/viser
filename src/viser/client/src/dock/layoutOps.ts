@@ -1527,70 +1527,16 @@ export function migrateLegacyLayout(layout: DockLayout): DockLayout {
       (e) =>
         layout.docked[e] !== null &&
         (layout.docked[e] as { rows?: unknown }).rows !== undefined,
-    ) ||
-    hasLegacyLoneColumnWidth(layout);
+    );
   if (!legacy) return layout;
   const migrated = structuredClone(layout);
   migrateRowsToColumnsInPlace(migrated);
   migrateRegionCollapsedInPlace(migrated);
-  migrateLoneColumnWidthInPlace(migrated);
   return migrated;
 }
-
-/** Detect the pre-always-px lone-column width form (see
- * migrateLoneColumnWidthInPlace). Cheap: two property walks over at most two
- * single-column regions. */
-function hasLegacyLoneColumnWidth(layout: DockLayout): boolean {
-  return (["left", "right"] as DockEdge[]).some((edge) => {
-    const region = layout.docked[edge];
-    const rw = layout.regionWidth?.[edge];
-    if (
-      region === null ||
-      region.columns === undefined || // legacy {rows} shape: migrated first
-      region.columns.length !== 1 ||
-      rw === undefined
-    )
-      return false;
-    const column = region.columns[0];
-    return column.railed === true
-      ? rw > MINIMIZED_STRIP_PX + 0.5
-      : column.weight !== rw;
-  });
-}
-
-/** Migration (always-px column weights): layouts persisted before the
- * lone-column weight carve-out was retired keep a single column's pixel
- * width in `regionWidth` while the column's weight is an unreconciled flex
- * share (or a stale px from a former multi-column era). regionWidth was the
- * authoritative width memory under that model, so adopt it into the weight:
- *  - expanded lone column: weight := regionWidth (floored at the grab-min),
- *    and regionWidth follows the weight (invariant #12's identity);
- *  - railed lone column (a packed single region): regionWidth held the P8
- *    RESTORE width while the rail rendered 36px -- move the restore width
- *    into the weight (D40's railed-weight-is-restore-width form) and set
- *    regionWidth to the rendered 36px strip.
- * Idempotent: a migrated expanded column satisfies weight === regionWidth,
- * and a migrated packed single region holds exactly the strip width. No-op
- * for layouts without a regionWidth field (never reconciled -- the first
- * commit establishes px from defaults). */
-export function migrateLoneColumnWidthInPlace(layout: DockLayout): void {
-  for (const edge of ["left", "right"] as DockEdge[]) {
-    const region = layout.docked[edge];
-    const rw = layout.regionWidth?.[edge];
-    if (region === null || region.columns.length !== 1 || rw === undefined)
-      continue;
-    const column = region.columns[0];
-    if (column.railed === true) {
-      if (rw > MINIMIZED_STRIP_PX + 0.5) {
-        column.weight = Math.max(rw, minRegionWidth());
-        layout.regionWidth![edge] = MINIMIZED_STRIP_PX;
-      }
-    } else if (column.weight !== rw) {
-      column.weight = Math.max(rw, minRegionWidth());
-      layout.regionWidth![edge] = column.weight;
-    }
-  }
-}
+// (Pre-always-px lone-column WEIGHTS need no migration leg: both
+// chokepoints reconcile, and reconciliation's new-column carry adopts a
+// legacy regionWidth into the weight -- expanded and railed alike.)
 
 /** Migration (D46): regions persisted before the columns-only model carry
  * the legacy `{rows: [...]}` band shape. Convert each region in place:
@@ -1806,6 +1752,28 @@ export function expandStackOf(
   // The docked stack scope is the containing column (D46), which is what
   // expandGroup's container clear targets; floating routes there too.
   return expandGroup(layout, groupId);
+}
+
+/** Per-frame region-resize commit: write the drag's redistributed column
+ * px AND the region's rendered-need width in ONE draft (the split
+ * setNodeWeights -> setRegionWidth sequence deep-cloned twice per pointer
+ * frame, and the second op's redistribution was an identity pass over
+ * just-written weights). Same fast path as setNodeWeights: no clone when
+ * the cursor paused. */
+export function commitRegionResize(
+  layout: DockLayout,
+  edge: DockEdge,
+  weightsById: Record<NodeId, number>,
+  totalPx: number,
+): DockLayout {
+  const next = setNodeWeights(layout, edge, weightsById);
+  if (next === layout && regionWidthsOf(layout)[edge] === totalPx)
+    return layout;
+  // setNodeWeights cloned (or nothing changed but the width did -- clone
+  // now); either way regionWidth is written on OUR draft, no second clone.
+  const draft = next === layout ? clone(layout) : next;
+  draft.regionWidth = { ...regionWidthsOf(draft), [edge]: totalPx };
+  return draft;
 }
 
 /** Set node weights by node id (a leaf's or a column's) within a docked region.

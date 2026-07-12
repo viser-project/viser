@@ -42,6 +42,7 @@ import {
   pinnedPxOf,
   regionWidthsOf,
   WindowId,
+  emptyLayout,
 } from "./types";
 
 export function DockManager({
@@ -75,10 +76,20 @@ export function DockManager({
   const onRegionResizeFrameRef = React.useRef(onRegionResizeFrame);
   onRegionResizeFrameRef.current = onRegionResizeFrame;
   const [layout, setLayout] = React.useState(() => {
-    // MIGRATION chokepoint (D44): a restored/persisted layout may still
-    // carry the legacy regionCollapsed store -- convert it into per-column
-    // railed flags (the rail is derived now) before first commit.
-    return ops.migrateLegacyLayout(initialLayout);
+    // MIGRATION + RECONCILIATION chokepoint: convert legacy shapes
+    // (pre-D46 bands, pre-D44 regionCollapsed, pre-#119 lone-column
+    // weights), then reconcile against an empty prior -- the mount commit
+    // was previously the ONE consumer-visible layout that never passed
+    // reconcileRegionWidths, and a whole tier of downstream "is this
+    // weight really px?" guards existed only for that window. Invariant
+    // now: every consumer-visible layout has been reconciled (every
+    // expanded weight is px >= the grab min). Clone first: reconcile
+    // mutates, and the caller's object must stay untouched.
+    const migrated = ops.migrateLegacyLayout(initialLayout);
+    const draft =
+      migrated === initialLayout ? structuredClone(initialLayout) : migrated;
+    reconcileRegionWidths(emptyLayout(), draft);
+    return draft;
   });
   const layoutRef = React.useRef(layout);
   layoutRef.current = layout;

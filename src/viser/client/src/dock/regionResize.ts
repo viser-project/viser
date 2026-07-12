@@ -189,7 +189,9 @@ export function makeRegionResizeHandlers(
     ids.forEach((id, i) => {
       byId[id] = widths[i];
     });
-    next = ops.setNodeWeights(next, edge, byId);
+    // One draft for weights + regionWidth (commitRegionResize): the split
+    // two-op form deep-cloned twice per pointer frame.
+    next = ops.commitRegionResize(next, edge, byId, total);
     // Push floats out of the way of this region's edge as it sweeps inward,
     // using the before/after seam of this very drag frame -- no history
     // needed. A float that was fully on the canvas (its edge clear of the old
@@ -218,9 +220,7 @@ export function makeRegionResizeHandlers(
       // wasted work, and an Escape-cancel must leave no user-attributed trace.
       // The single user commit spanning the whole drag fires at release
       // instead (see onEnd above).
-      flushSync(() =>
-        runProgrammatic(() => applyOp(ops.setRegionWidth(next, edge, total))),
-      );
+      flushSync(() => runProgrammatic(() => applyOp(next)));
     } finally {
       regionResizeDraggingRef.current = false;
     }
