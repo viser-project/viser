@@ -1481,6 +1481,7 @@ export function useDragController(deps: DragControllerDeps) {
     startTabTearOut,
     startWindowDrag,
     startRegionDrag,
+    startColumnDrag,
   };
   const gestureRef = React.useRef(gestureImpls);
   gestureRef.current = gestureImpls;
@@ -1495,6 +1496,8 @@ export function useDragController(deps: DragControllerDeps) {
           gestureRef.current.startWindowDrag(...args),
         startRegionDrag: (...args) =>
           gestureRef.current.startRegionDrag(...args),
+        startColumnDrag: (...args) =>
+          gestureRef.current.startColumnDrag(...args),
       }) satisfies Pick<
         DockContextValue,
         | "startGroupDrag"
@@ -1502,6 +1505,7 @@ export function useDragController(deps: DragControllerDeps) {
         | "startTabTearOut"
         | "startWindowDrag"
         | "startRegionDrag"
+        | "startColumnDrag"
       >,
     [],
   );
@@ -1509,9 +1513,10 @@ export function useDragController(deps: DragControllerDeps) {
   return {
     /** Stable wrappers for the context value (identity never changes). */
     stableGestures,
-    /** Raw per-render starters DockManager wires directly (the region handle
-     * bar, the context's column drag). */
-    startColumnDrag,
+    /** Raw per-render starter DockManager wires directly (the region handle
+     * bar). The column drag ships inside stableGestures: it sits in the
+     * context value, and a per-render identity there voided the context
+     * memo (every render re-rendered every consumer). */
     startRegionDrag,
   };
 }

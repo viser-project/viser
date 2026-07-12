@@ -362,7 +362,7 @@ export function DockManager({
   // reorder + tear-out) lives in the drag controller; layout changes flow
   // back through applyOp/commit, and the two refs it returns let the resize
   // observers below cooperate with an in-flight drag.
-  const { stableGestures, startColumnDrag, startRegionDrag } =
+  const { stableGestures, startRegionDrag } =
     useDragController({
       panes,
       containerRef,
@@ -479,7 +479,6 @@ export function DockManager({
       toggleCollapsed,
       collapseRegion,
       railColumn,
-      startColumnDrag,
       draggingGroupId,
       draggingTabId,
     }),
@@ -494,7 +493,6 @@ export function DockManager({
       toggleCollapsed,
       collapseRegion,
       railColumn,
-      startColumnDrag,
       draggingGroupId,
       draggingTabId,
     ],
