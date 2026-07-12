@@ -18,8 +18,11 @@ A panel is a dockable container; tabs are its content. Placement is imperative:
 * :meth:`viser.PanelHandle.set_width` / :meth:`viser.PanelHandle.set_height`
   size a panel (``set_height`` applies to floating panels only).
 
-Panels always start expanded; minimizing is a browser-side gesture (the panel
-header's ``-`` button or the dock chevrons), not a server command.
+Panels start expanded. :meth:`viser.PanelHandle.minimize` /
+:meth:`viser.PanelHandle.expand` collapse or reveal one imperatively --
+applied to the panel's containing window or docked column, exactly like
+the on-screen minimize control (the panel header's ``-`` button or the
+dock chevrons).
 
 Placement is replayed to clients that connect later, but is not continuously
 synchronized: once a panel is placed, users can freely drag, dock, and minimize
@@ -42,8 +45,9 @@ def main() -> None:
 
     server.scene.add_frame("/axes", axes_length=1.0, axes_radius=0.02)
 
-    # A panel docked to the right edge, with two tabs. Panels start expanded;
-    # the user can minimize them in the browser (the `-` button / chevrons).
+    # A panel docked to the right edge, with two tabs. Panels start
+    # expanded; minimize() below collapses the log panel imperatively, and
+    # the user can minimize/expand freely in the browser.
     # `key=` gives the panel a stable identity: clients remember per-panel
     # layout state (e.g. "the user moved this panel") across reconnects and
     # program restarts. Without it, identity is inferred from tab labels.
@@ -63,6 +67,12 @@ def main() -> None:
     with tools_panel.add_tab("Tools", viser.Icon.TOOL):
         randomize = server.gui.add_button("Randomize point cloud")
     tools_panel.float(x=30, y=30, width=260)
+    # Start the tools panel minimized (a floating panel collapses to its
+    # header bar). Collapse applies to the panel's CONTAINER -- panels
+    # stacked together minimize together -- so we demo it on a panel with
+    # its own window; log_panel below shares a column with stats_panel,
+    # and minimizing it would rail them both.
+    tools_panel.minimize()
 
     # A panel stacked below the docked stats panel (a column split).
     log_panel = server.gui.add_panel(key="logs")
