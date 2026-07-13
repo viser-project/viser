@@ -151,6 +151,8 @@ class _CameraHandleState:
     image_width: int
     near: float
     far: float
+    min_distance: float
+    max_distance: float
     look_at: npt.NDArray[np.float64]
     up_direction: npt.NDArray[np.float64]
     update_timestamp: float
@@ -171,6 +173,10 @@ class CameraHandle:
             image_width=0,
             near=0.01,
             far=1000.0,
+            # Defaults match the client's <CameraControls> props exactly, so behaviour
+            # is unchanged unless a user opts in.
+            min_distance=0.01,
+            max_distance=float("inf"),
             look_at=np.zeros(3),
             up_direction=np.zeros(3),
             update_timestamp=0.0,
@@ -316,6 +322,46 @@ class CameraHandle:
         self._state.update_timestamp = time.time()
         self._state.client._websock_connection.queue_message(
             _messages.SetCameraFarMessage(far)
+        )
+
+    @property
+    def min_distance(self) -> float:
+        """How close the camera may be dollied in to its look-at point.
+        Synchronized automatically when assigned."""
+        assert self._state.update_timestamp != 0.0
+        return self._state.min_distance
+
+    @min_distance.setter
+    def min_distance(self, min_distance: float) -> None:
+        if np.allclose(self._state.min_distance, min_distance):
+            return
+        self._state.min_distance = min_distance
+        self._state.update_timestamp = time.time()
+        self._state.client._websock_connection.queue_message(
+            _messages.SetCameraMinDistanceMessage(min_distance)
+        )
+
+    @property
+    def max_distance(self) -> float:
+        """How far the camera may be dollied out from its look-at point. Defaults to
+        infinity, matching the underlying camera controls. Synchronized automatically
+        when assigned.
+
+        Dolly is multiplicative per wheel event, so an unbounded maximum means a long
+        scroll — a trackpad's inertial tail, for instance — can walk the camera out to
+        a distance where the scene is no longer visible or numerically well-behaved.
+        Set this to keep zoom-out inside the scene's scale."""
+        assert self._state.update_timestamp != 0.0
+        return self._state.max_distance
+
+    @max_distance.setter
+    def max_distance(self, max_distance: float) -> None:
+        if np.allclose(self._state.max_distance, max_distance):
+            return
+        self._state.max_distance = max_distance
+        self._state.update_timestamp = time.time()
+        self._state.client._websock_connection.queue_message(
+            _messages.SetCameraMaxDistanceMessage(max_distance)
         )
 
     @property
@@ -808,6 +854,12 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                     image_width=message.image_width,
                     near=message.near,
                     far=message.far,
+                    # Dolly limits are server-owned constraints, not something the
+                    # client reports back, so they have to survive this rebuild —
+                    # otherwise every incoming camera message would silently reset
+                    # them. Carried over like camera_cb.
+                    min_distance=client.camera._state.min_distance,
+                    max_distance=client.camera._state.max_distance,
                     look_at=np.array(message.look_at),
                     up_direction=np.array(message.up_direction),
                     update_timestamp=time.time(),

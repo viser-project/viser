@@ -499,6 +499,23 @@ function useMessageHandler() {
         camera.updateProjectionMatrix();
         return;
       }
+      case "SetCameraMinDistanceMessage": {
+        const controls = viewerMutable.cameraControl;
+        if (controls === null) return;
+        controls.minDistance = message.min_distance;
+        return;
+      }
+      case "SetCameraMaxDistanceMessage": {
+        const controls = viewerMutable.cameraControl;
+        if (controls === null) return;
+        controls.maxDistance = message.max_distance;
+        // camera-controls only enforces the bound on the next dolly, so a camera
+        // already parked beyond the new limit would stay there. Pull it in now.
+        if (controls.distance > message.max_distance) {
+          controls.dollyTo(message.max_distance, true);
+        }
+        return;
+      }
       case "SetOrientationMessage": {
         // Root node wxyz is kept in store for reactive world-rotation subscribers
         // (DefaultLights, InitialCameraSetter, WorldTransformUtils).
