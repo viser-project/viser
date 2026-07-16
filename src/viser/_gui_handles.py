@@ -898,23 +898,32 @@ class _PlacementMixin:
         return False
 
     def _queue_placement(self, message: _PlacementMessage) -> None:
-        # Single guard point for every command: reject placement on a removed
-        # panel, which would otherwise queue an update against a dead uuid.
-        if self._placement_removed():
-            raise RuntimeError(f"Cannot place a removed {type(self).__name__}.")
-        # Stamp the per-panel layout-update counter (bumped on EVERY placement
-        # command) and this GuiApi's run id. The client uses the pair to ignore
-        # replayed/late placement for a panel the user has since rearranged (see
-        # the message's `counter` / `run_id` docs). Methods construct the message
-        # with placeholder counter=0 / run_id=""; the authoritative values are
-        # assigned here, the single chokepoint.
         api = self._placement_gui_api
-        stamped = dataclasses.replace(
-            message,
-            counter=api._next_layout_counter(self._placement_uuid),
-            run_id=api._layout_run_id,
-        )
-        api._websock_interface.queue_message(stamped)
+        # The removed check and the enqueue are ONE atomic step under the
+        # lifecycle lock: a `remove()` on another thread otherwise slips
+        # between them -- its purge runs first, then this placement lands in
+        # the buffer as immortal residue for a dead uuid (replayed to every
+        # late joiner).
+        with api._panel_lifecycle_lock:
+            # Single guard point for every command: reject placement on a
+            # removed panel, which would otherwise queue an update against a
+            # dead uuid.
+            if self._placement_removed():
+                raise RuntimeError(f"Cannot place a removed {type(self).__name__}.")
+            # Stamp the layout-update counter (bumped on EVERY placement
+            # command, global across panels -- D50: conflicting container-
+            # scoped collapse axes replay in counter order) and this GuiApi's
+            # run id. The client uses the pair to ignore replayed/late
+            # placement for a panel the user has since rearranged (see the
+            # message's `counter` / `run_id` docs). Methods construct the
+            # message with placeholder counter=0 / run_id=""; the
+            # authoritative values are assigned here, the single chokepoint.
+            stamped = dataclasses.replace(
+                message,
+                counter=api._next_layout_counter(),
+                run_id=api._layout_run_id,
+            )
+            api._websock_interface.queue_message(stamped)
 
     def _set_position(
         self, position: EdgePlacement | SplitPlacement | FloatPlacement
@@ -1064,7 +1073,8 @@ class _PlacementMixin:
         exactly like the on-screen minimize control. Imperative, like the
         ``dock_*`` / :meth:`float` commands: it always minimizes, even if the
         user expanded the panel in the browser. Replayed to clients that
-        connect later.
+        connect later. On the mobile bottom sheet (where panels render as
+        sections, not windows) this collapses the panel's section.
 
         TODO: add a matching imperative collapse/expand method for folders
         (:meth:`GuiApi.add_folder`), which today only has the
@@ -1190,13 +1200,17 @@ class PanelHandle(
         # panel is marked removed (mirrors GuiTabGroupHandle.remove).
         for tab in tuple(self._tab_handles):
             tab.remove()
-        self._impl.removed = True
         gui_api = self._impl.gui_api
-        gui_api._websock_interface.queue_message(GuiPanelRemoveMessage(self._impl.uuid))
+        # Tombstone + remove-message (whose buffer push purges the panel's
+        # placement updates) as ONE atomic step under the lifecycle lock, so a
+        # concurrent placement command can't slip between the removed check
+        # and its enqueue (see _queue_placement).
+        with gui_api._panel_lifecycle_lock:
+            self._impl.removed = True
+            gui_api._websock_interface.queue_message(
+                GuiPanelRemoveMessage(self._impl.uuid)
+            )
         gui_api._panel_handle_from_uuid.pop(self._impl.uuid)
-        # Drain the panel's layout-update counter too, so a create/remove cycle
-        # doesn't leave a stale entry (matches the file's leak-hygiene elsewhere).
-        gui_api._layout_update_count_from_uuid.pop(self._impl.uuid, None)
 
 
 class MainPanelHandle(_PlacementMixin):

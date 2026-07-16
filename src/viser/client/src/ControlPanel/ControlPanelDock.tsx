@@ -181,40 +181,36 @@ export function ControlPanelDockSurface({
   // container width is measurable (top-right anchored).
   const initialLayout = React.useMemo(() => emptyLayout(), []);
 
-  // Prune layout tracking for panel uuids that no longer exist. Dead entries
-  // gate nothing (a new panel can never share a removed panel's uuid); this is
-  // a leak-guard for uuids orphaned wholesale, e.g. a restarted server whose
-  // replay recreated every panel under fresh uuids.
-  const panelUuidSig = viewer.useGui((state) =>
-    Object.keys(state.panels).sort().join(","),
-  );
-  React.useEffect(() => {
-    const panels = viewer.useGui.get().panels;
-    // An EMPTY panel set means the gui hasn't loaded yet (or resetGui just
-    // cleared it on reconnect, before the server replays panel creations) -- NOT
-    // that every panel was legitimately removed. Pruning here would wipe the
-    // tracking that must survive a reconnect, so skip it until panels exist.
-    if (Object.keys(panels).length === 0) return;
-    const active = new Set(Object.keys(panels));
-    active.add(CONTROL_PANEL_ID);
-    viewer.guiActions.pruneLayoutTracking(active);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [panelUuidSig, viewer]);
+  // Layout-tracking pruning has exactly two homes, neither here: removePanel
+  // (a live removal's uuid can never return) and the replayDone action (the
+  // one point where the panel set is provably complete for a connection). A
+  // mid-replay prune keyed on the panel set raced the replay's message
+  // windows and could drop a still-loading panel's userTouched state.
 
   // Flag a panel "user-touched" when a USER gesture (not a programmatic
   // server-placement apply) changes its position/size/collapsed -- so the
   // counter-gated placement effect stops re-applying server placement and the
   // user's arrangement survives reconnect. We diff per-group placement
-  // signatures and map each changed group back to its panel uuid.
+  // signatures, INCLUDING groups the commit dissolved (a merge deletes the
+  // source group while leaving the destination's signature untouched -- diffing
+  // only surviving groups missed exactly that gesture, and a later server
+  // command yanked the merged tab back out), and map each affected group back
+  // to its panel uuid.
   const handleCommit = React.useCallback(
     (prev: DockLayout, next: DockLayout, programmatic: boolean) => {
       if (programmatic) return;
       const before = groupPlacementSignatures(prev);
       const after = groupPlacementSignatures(next);
-      // Groups whose placement signature changed (the user moved them).
-      const changed = [...after].filter(
-        ([gid, sig]) => before.get(gid) !== sig,
-      );
+      // Groups whose placement signature changed (the user moved them), each
+      // paired with the layout that can resolve its panes.
+      const changed: { gid: string; layout: DockLayout }[] = [];
+      for (const [gid, sig] of after)
+        if (before.get(gid) !== sig) changed.push({ gid, layout: next });
+      // Groups the commit DISSOLVED (merge / tab-insert): their panes moved
+      // into another group by user gesture; resolve them from the PREV
+      // layout, where the group still exists.
+      for (const [gid] of before)
+        if (!after.has(gid)) changed.push({ gid, layout: prev });
       if (changed.length === 0) return; // e.g. a tab-reorder-only commit.
       // Map each panel's panes (tab containers) to its panel uuid; the main
       // panel's pane is CONTROL_PANEL_ID. Built only when something changed.
@@ -224,8 +220,8 @@ export function ControlPanelDockSurface({
         for (const cid of p.props._tab_container_ids)
           paneToPanelUuid.set(cid, puid);
       const touched = new Set<string>();
-      for (const [gid] of changed) {
-        const group = next.groups[gid];
+      for (const { gid, layout } of changed) {
+        const group = layout.groups[gid];
         if (group === undefined) continue;
         if (group.paneIds.includes(CONTROL_PANEL_ID)) {
           touched.add(CONTROL_PANEL_ID);
@@ -351,6 +347,19 @@ function useGuiTabPanelRegistry(viewer: ViewerContextContents): {
       const entry = registry.current.get(uuid);
       if (entry === undefined) return;
       const content = tabContentProvider(viewer, entry.source).get(uuid);
+      // Content gone while a (re)connect replay is in flight: DORMANT, not
+      // dead. resetGui empties the stores before the replay re-delivers them,
+      // and the replay re-creates surviving entities under the SAME uuids --
+      // tearing down here would drop the pane specs, let the dock reconcile
+      // the panes out of the layout, and re-seed server placement over the
+      // user's arrangement (the reconnect-destroys-layout bug). Keep the
+      // entry, subscription, and pane specs; reset the signature so the
+      // revived content always re-applies. Entries the replay does NOT revive
+      // are purged at the ReplayDoneMessage (the purge effect below).
+      if (content === null && viewer.useGui.get().replayActive) {
+        entry.sig = "\0unset";
+        return;
+      }
       // The source store fires for ANY change; only rebuild the specs (new
       // objects + icon elements, which re-renders every tab panel) when the tab
       // CONTENT actually changed.
@@ -411,6 +420,19 @@ function useGuiTabPanelRegistry(viewer: ViewerContextContents): {
     },
     [viewer, refreshTabGroup],
   );
+  // Purge, at end-of-replay, the dormant entries the replay did not revive:
+  // their entity was removed while we were disconnected, or the server
+  // restarted with fresh uuids. This is the ONE point where "content is null"
+  // provably means "gone" rather than "not delivered yet".
+  const replayDoneNonce = viewer.useGui((state) => state.replayDoneNonce);
+  React.useEffect(() => {
+    if (replayDoneNonce === 0) return; // no connection has completed a replay
+    const dead: string[] = [];
+    for (const [uuid, entry] of registry.current)
+      if (tabContentProvider(viewer, entry.source).get(uuid) === null)
+        dead.push(uuid);
+    for (const uuid of dead) refreshTabGroup(uuid); // replayActive=false: deletes
+  }, [replayDoneNonce, viewer, refreshTabGroup]);
   React.useEffect(() => {
     const reg = registry.current;
     return () => reg.forEach((entry) => entry.unsubscribe());
@@ -544,9 +566,23 @@ function ControlPanelDockSync({
   // effect (ref attached) and skip the first run, since the initial-placement
   // effect above already sized the window.
   const placementWidth = mainPlacementEntry?.width?.value ?? null;
-  const widthKey = `${placementWidth ?? "theme"}:${widthPx}`;
+  // The width axis's (counter, runId) stamp joins the key: a reconnect replay
+  // repopulates the SAME stamp, so the key round-trips to its pre-reset value
+  // and the effect stays quiet -- previously the replay's theme->stored flip
+  // re-applied a stale width over a user resize, bypassing the gate entirely.
+  const placementWidthStamp =
+    mainPlacementEntry?.width === undefined
+      ? "none"
+      : `${mainPlacementEntry.width.runId}:${mainPlacementEntry.width.counter}`;
+  const widthKey = `${placementWidth ?? "theme"}@${placementWidthStamp}:${widthPx}`;
+  const replayActive = viewer.useGui((state) => state.replayActive);
   const appliedWidthKey = React.useRef<string | null>(null);
   React.useLayoutEffect(() => {
+    // Hold during a (re)connect replay: the store flips through
+    // empty-then-replayed states that are not width COMMANDS (the key
+    // restores itself once the replay lands; a genuinely new command changes
+    // the stamp and applies on the first post-replay run).
+    if (replayActive) return;
     // Seed on first run (the initial-placement effect owns the mount width).
     if (appliedWidthKey.current === null) {
       appliedWidthKey.current = widthKey;
@@ -562,7 +598,14 @@ function ControlPanelDockSync({
         ? ops.resizeWindow(layout, loc.windowId, width)
         : layout;
     });
-  }, [widthKey, dock.api, fitToContainer, placementWidth, widthPx]);
+  }, [
+    widthKey,
+    replayActive,
+    dock.api,
+    fitToContainer,
+    placementWidth,
+    widthPx,
+  ]);
 
   // Report dock state up to App (notifications offset). `leftRegionWidthPx` is
   // the whole left-docked region (control panel + any standalone panels), so the

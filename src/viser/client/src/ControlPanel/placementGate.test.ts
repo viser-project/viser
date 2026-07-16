@@ -36,15 +36,15 @@ describe("gatePlacement", () => {
     expect(g.placement.position).toEqual(DOCK_RIGHT);
     expect(g.placement.width).toBe(400);
     expect(g.applied).toEqual({
-      position: { counter: 1, runId: RUN_A },
-      width: { counter: 2, runId: RUN_A },
+      position: { [RUN_A]: 1 },
+      width: { [RUN_A]: 2 },
     });
   });
 
   it("THE yank: touched panel, later set_width -> width applies, stale position does NOT", () => {
     // dock_right (counter 1) was applied; user then dragged the panel away.
     const tracking = {
-      applied: { position: { counter: 1, runId: RUN_A } },
+      applied: { position: { [RUN_A]: 1 } },
       userTouched: true,
     };
     // set_width arrives (counter 2). The store still holds the old position.
@@ -59,14 +59,14 @@ describe("gatePlacement", () => {
     expect(g.anyFresh).toBe(true);
     expect(g.placement.position).toBeNull(); // no re-dock
     expect(g.placement.width).toBe(400);
-    expect(g.applied).toEqual({ width: { counter: 2, runId: RUN_A } });
+    expect(g.applied).toEqual({ width: { [RUN_A]: 2 } });
   });
 
   it("replay (same counters, same run) on a touched panel applies nothing", () => {
     const tracking = {
       applied: {
-        position: { counter: 1, runId: RUN_A },
-        width: { counter: 2, runId: RUN_A },
+        position: { [RUN_A]: 1 },
+        width: { [RUN_A]: 2 },
       },
       userTouched: true,
     };
@@ -85,7 +85,7 @@ describe("gatePlacement", () => {
 
   it("server re-assert (same run, higher counter) applies to a touched panel", () => {
     const tracking = {
-      applied: { position: { counter: 1, runId: RUN_A } },
+      applied: { position: { [RUN_A]: 1 } },
       userTouched: true,
     };
     const g = gatePlacement(
@@ -98,7 +98,7 @@ describe("gatePlacement", () => {
 
   it("restarted server / other scope (different runId, LOWER counter) applies", () => {
     const tracking = {
-      applied: { position: { counter: 5, runId: RUN_A } },
+      applied: { position: { [RUN_A]: 5 } },
       userTouched: true,
     };
     const g = gatePlacement(
@@ -107,12 +107,38 @@ describe("gatePlacement", () => {
       true,
     );
     expect(g.placement.position).toEqual(DOCK_RIGHT);
-    expect(g.applied).toEqual({ position: { counter: 1, runId: RUN_B } });
+    expect(g.applied).toEqual({ position: { [RUN_B]: 1 } });
+  });
+
+  it("scan regression (P3): a reconnect replay of an OLD run's command is stale even when the last apply came from another scope", () => {
+    // server.gui (RUN_A) docked the panel; client.gui (RUN_B) later floated
+    // it; the user then dragged it. A reconnect replays only the broadcast
+    // buffer -- RUN_A's old position. With single-stamp tracking this read as
+    // "different runId from last-applied -> fresh" and yanked the panel; the
+    // per-run high-water map keeps RUN_A's mark and rejects it.
+    const tracking = {
+      applied: { position: { [RUN_A]: 5, [RUN_B]: 2 } },
+      userTouched: true,
+    };
+    const g = gatePlacement(
+      entry({ position: { value: DOCK_RIGHT, counter: 5, runId: RUN_A } }),
+      tracking,
+      true,
+    );
+    expect(g.anyFresh).toBe(false);
+    expect(g.placement.position).toBeNull();
+    // A genuinely NEW command from either run still applies.
+    const g2 = gatePlacement(
+      entry({ position: { value: DOCK_RIGHT, counter: 6, runId: RUN_A } }),
+      tracking,
+      true,
+    );
+    expect(g2.placement.position).toEqual(DOCK_RIGHT);
   });
 
   it("an UNPLACED panel applies everything (can't yank what isn't placed)", () => {
     const tracking = {
-      applied: { position: { counter: 1, runId: RUN_A } },
+      applied: { position: { [RUN_A]: 1 } },
       userTouched: true,
     };
     const g = gatePlacement(

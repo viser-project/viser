@@ -353,6 +353,48 @@ def test_reset_resets_main_panel_placement_to_default() -> None:
         server.stop()
 
 
+def test_reset_clears_main_panel_collapsed() -> None:
+    """Scan regression (P2): collapsed is the fourth independent axis with its
+    own redundancy slot, so gui.reset() must send Collapsed(False) -- otherwise
+    a prior main_panel.minimize() survives the reset in the buffer and late
+    joiners replay a minimized 'default' control panel."""
+    server = _make_server()
+    try:
+        server.gui.main_panel.minimize()
+        assert (
+            _latest(server, CONTROL_PANEL_ID, m.GuiSetPanelCollapsedMessage).collapsed
+            is True
+        )
+        server.gui.reset()
+        assert (
+            _latest(server, CONTROL_PANEL_ID, m.GuiSetPanelCollapsedMessage).collapsed
+            is False
+        )
+    finally:
+        server.stop()
+
+
+def test_layout_counter_is_global_across_panels() -> None:
+    """Scan regression (D50): collapse acts on the panel's CONTAINER, so when
+    stacked panels' collapse axes conflict, a late joiner must replay them in
+    command order -- which requires the counter to be one strictly increasing
+    sequence ACROSS panels, not per-panel."""
+    server = _make_server()
+    try:
+        a = server.gui.add_panel()
+        b = server.gui.add_panel()
+        b.dock_below(a)  # positions first (a right-edge fallback is fine here)
+        b.expand()
+        a.minimize()
+        b_collapsed = _latest(server, b._impl.uuid, m.GuiSetPanelCollapsedMessage)
+        a_collapsed = _latest(server, a._impl.uuid, m.GuiSetPanelCollapsedMessage)
+        assert a_collapsed.run_id == b_collapsed.run_id
+        # a.minimize() came AFTER b.expand() and must outrank it globally.
+        assert a_collapsed.counter > b_collapsed.counter
+    finally:
+        server.stop()
+
+
 def test_main_panel_handle_held_across_reset_stays_in_sync() -> None:
     """A MainPanelHandle obtained BEFORE reset() must keep working after it. The
     handle holds no state (placement is write-only, keyed by CONTROL_PANEL_ID), so

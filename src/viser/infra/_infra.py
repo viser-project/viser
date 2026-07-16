@@ -339,7 +339,11 @@ class WebsockServer(WebsockMessageHandler):
         message_class: type[Message] = Message,
         http_server_root: Path | None = None,
         verbose: bool = True,
+        backlog_done_message: Message | None = None,
     ):
+        """`backlog_done_message`, when given, is sent to each (re)connecting
+        client exactly once, immediately after the broadcast buffer's replay
+        backlog -- an explicit end-of-replay marker (never buffered)."""
         super().__init__()
 
         # Track connected clients.
@@ -355,6 +359,7 @@ class WebsockServer(WebsockMessageHandler):
         self._message_class = message_class
         self._http_server_root = http_server_root
         self._verbose = verbose
+        self._backlog_done_message = backlog_done_message
         self._background_event_loop: asyncio.AbstractEventLoop | None = None
 
         self._stop_event: asyncio.Event | None = None
@@ -537,6 +542,9 @@ class WebsockServer(WebsockMessageHandler):
                         connection,
                         self._broadcast_buffer,
                         client_id,
+                        # End-of-replay marker: rides the BROADCAST buffer only
+                        # (the per-client buffer has no persistent backlog).
+                        backlog_done_message=self._backlog_done_message,
                     ),
                     _message_consumer(connection, handle_incoming, message_class),
                 )
@@ -768,6 +776,7 @@ async def _message_producer(
     websocket: ServerConnection,
     buffer: AsyncMessageBuffer,
     client_id: int,
+    backlog_done_message: Message | None = None,
 ) -> None:
     """Infinite loop to broadcast windows of messages from a buffer.
 
@@ -790,7 +799,9 @@ async def _message_producer(
       [P bytes] padding to 8-byte alignment
       [M bytes] concatenated binary buffers (each 8-byte aligned)
     """
-    window_generator = buffer.window_generator(client_id)
+    window_generator = buffer.window_generator(
+        client_id, backlog_done_message=backlog_done_message
+    )
     zstd = zstandard.ZstdCompressor(level=1)
     while not buffer.done:
         try:

@@ -78,7 +78,26 @@ function useShowGenerated(): boolean {
  * and one tap opens the panel you came for. */
 function MobilePanelSection({ panel }: { panel: GuiPanelMessage }) {
   const { GuiContainer } = React.useContext(GuiComponentContext)!;
+  const viewer = React.useContext(ViewerContext)!;
   const [expanded, setExpanded] = React.useState(false);
+  // Server `minimize()` / `expand()` reach the mobile sheet too: the
+  // collapsed placement axis toggles this section. The mobile DEFAULT stays
+  // collapsed (deliberate: the sheet is wayfinding chrome) -- the axis is
+  // honored as a COMMAND, once per (runId, counter) stamp, so a user's tap
+  // wins afterwards until a genuinely newer command arrives, mirroring the
+  // dock's placement gate. A reconnect replay re-delivers the same stamp and
+  // is ignored.
+  const collapsedAxis = viewer.useGui(
+    (state) => state.panelPlacement[panel.uuid]?.collapsed,
+  );
+  const appliedCollapseStamp = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (collapsedAxis === undefined) return;
+    const stamp = `${collapsedAxis.runId}:${collapsedAxis.counter}`;
+    if (appliedCollapseStamp.current === stamp) return;
+    appliedCollapseStamp.current = stamp;
+    setExpanded(!collapsedAxis.value);
+  }, [collapsedAxis]);
   const labels = panel.props._tab_labels;
   const icons = panel.props._tab_icons_html;
   const ids = panel.props._tab_container_ids;

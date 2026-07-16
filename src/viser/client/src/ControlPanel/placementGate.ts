@@ -11,10 +11,15 @@
 //   tab-container swap, re-shown after hide): every present axis applies. You
 //   can't yank what isn't placed, and a stale-but-real server position beats
 //   dumping the panel at a default float.
-// - Otherwise (user-touched AND placed): an axis applies only when its stamp is
-//   NEWER than the last applied -- same run with a higher counter (the server
-//   actively re-asserted), or a different runId (a restarted server or another
-//   scope, whose counters aren't comparable -- treat as a fresh command).
+// - Otherwise (user-touched AND placed): an axis applies only when its stamp
+//   is NEWER than everything previously applied FROM ITS OWN RUN -- a higher
+//   counter than that run's recorded high-water mark, or a run never seen for
+//   this axis at all (a restarted server or another scope: a genuinely fresh
+//   command). Recording a PER-RUN high-water map (not just the last stamp) is
+//   what makes a reconnect replay of an OLD run's command stale even when the
+//   most recent apply came from a different scope -- "runId differs from the
+//   last applied" alone would misread that replay as fresh and yank the
+//   panel.
 //
 // Applying a SUBSET of axes is what kills the yank bug by construction: a
 // set_width after the user moved the panel re-applies only the width axis; the
@@ -50,12 +55,10 @@ export function gatePlacement(
   const freshAxis = <A extends PlacementAxisName>(axis: A) => {
     const stored = entry?.[axis];
     if (stored === undefined) return undefined;
-    const last = tracking?.applied[axis];
-    const fresh =
-      gateOpen ||
-      last === undefined ||
-      stored.runId !== last.runId ||
-      stored.counter > last.counter;
+    // Fresh iff newer than this axis's high-water mark FOR THE COMMAND'S OWN
+    // RUN; an unseen run has no mark and is always fresh.
+    const appliedForRun = tracking?.applied[axis]?.[stored.runId] ?? -1;
+    const fresh = gateOpen || stored.counter > appliedForRun;
     return fresh ? stored : undefined;
   };
   const position = freshAxis("position");
@@ -70,7 +73,7 @@ export function gatePlacement(
     ["collapsed", collapsed],
   ] as const) {
     if (stored !== undefined)
-      applied[axis] = { counter: stored.counter, runId: stored.runId };
+      applied[axis] = { [stored.runId]: stored.counter };
   }
   return {
     placement: {

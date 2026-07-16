@@ -2421,6 +2421,16 @@ class ShareUrlRequest(Message, include_in_scene_serialization=False):
 
 
 @dataclasses.dataclass
+class ReplayDoneMessage(Message, include_in_scene_serialization=False):
+    """Server->client marker: the (re)connect replay of the persistent message
+    buffer is complete -- everything after this is live traffic. Injected
+    per-connection by the message producer (never stored in the buffer). The
+    client uses it to end its reconnect phase: state held dormant across the
+    replay (e.g. dock panes for panels that may be re-created under the same
+    uuid) is purged for entities the replay did not revive."""
+
+
+@dataclasses.dataclass
 class ShareUrlUpdated(Message, include_in_scene_serialization=False):
     """Message from server->client to indicate that the share URL has been updated."""
 

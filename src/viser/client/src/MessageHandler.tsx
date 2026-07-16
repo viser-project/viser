@@ -289,6 +289,14 @@ function useMessageHandler() {
         );
         return;
       }
+      // End-of-replay marker: the (re)connect replay of the persistent buffer
+      // is complete. Ends the reconnect phase -- dormant dock registrations
+      // whose panel was not revived get purged, and layout tracking is pruned
+      // at this (and only this) provably-complete point.
+      case "ReplayDoneMessage": {
+        viewer.guiActions.replayDone();
+        return;
+      }
       // Configure the theme.
       case "ThemeConfigurationMessage": {
         setTheme(message);

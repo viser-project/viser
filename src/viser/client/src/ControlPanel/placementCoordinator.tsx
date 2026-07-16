@@ -228,11 +228,26 @@ export function usePlacementCoordinator(
         const placement = isMain
           ? mapMainPlacement(gated.placement)
           : gated.placement;
+        // The COLLAPSED axis is deferred out of the per-panel bundle: it acts
+        // on the panel's CONTAINER, so when stacked panels' collapse axes
+        // conflict, application order decides the container's final state --
+        // and per-panel iteration order is not command order. Collect it and
+        // apply after every panel's position, in global counter order (D50).
+        if (
+          gated.placement.collapsed !== null &&
+          entry?.collapsed !== undefined
+        )
+          collapseQueue.push({
+            tabIds,
+            collapsed: gated.placement.collapsed,
+            counter: entry.collapsed.counter,
+            runId: entry.collapsed.runId,
+          });
         dock.api.apply((l: DockLayout) =>
           ops.applyPanelPlacement(
             l,
             tabIds,
-            placement,
+            { ...placement, collapsed: null },
             (anchorUuid) => resolveAnchor(anchorUuid),
             {
               canvasBounds: canvasBoundsFromMetrics(metrics),
@@ -264,9 +279,54 @@ export function usePlacementCoordinator(
       }
     };
 
+    // Fresh collapse applications collected across the whole pass, applied
+    // AFTER every panel's position (D47's after-position rule, generalized)
+    // in COMMAND order (D50): within a run, the server's global counter
+    // orders commands across panels -- a late joiner replaying "B.expand()
+    // then A.minimize()" onto a shared column must end collapsed, exactly
+    // like a live client. Across runs counters aren't comparable; runs apply
+    // in first-appearance order (arrival order, as before).
+    const collapseQueue: {
+      tabIds: string[];
+      collapsed: boolean;
+      counter: number;
+      runId: string;
+    }[] = [];
+
     // Main panel first: it is everyone's potential split anchor.
     processPanel(CONTROL_PANEL_ID);
     for (const uuid of Object.keys(panels)) processPanel(uuid);
+
+    if (collapseQueue.length > 0) {
+      const byRun = new Map<string, typeof collapseQueue>();
+      for (const c of collapseQueue) {
+        const bucket = byRun.get(c.runId);
+        if (bucket === undefined) byRun.set(c.runId, [c]);
+        else bucket.push(c);
+      }
+      for (const bucket of byRun.values()) {
+        bucket.sort((a, b) => a.counter - b.counter);
+        for (const c of bucket) {
+          dock.api.apply((l: DockLayout) =>
+            ops.applyPanelPlacement(
+              l,
+              c.tabIds,
+              {
+                position: null,
+                width: null,
+                height: null,
+                collapsed: c.collapsed,
+              },
+              (anchorUuid) => resolveAnchor(anchorUuid),
+              {
+                canvasBounds: canvasBoundsFromMetrics(metrics),
+                floatIfUnplaced: false,
+              },
+            ),
+          );
+        }
+      }
+    }
     // `dock.layout` is a dependency ON PURPOSE: it is what turns deferral into
     // a fixpoint (an anchor docking commits a layout, which re-runs the pass).
     // Every step dedups, so the steady-state pass is a cheap no-op scan.

@@ -266,15 +266,23 @@ class GuiApi:
         }
         self._modal_handle_from_uuid: dict[str, GuiModalHandle] = {}
         self._panel_handle_from_uuid: dict[str, PanelHandle] = {}
-        # Per-panel layout-update counter, bumped on every placement command and
-        # stamped onto the placement message (see _PlacementMixin._queue_placement
-        # / GuiSetPanelPositionMessage.counter). Lets the client ignore replayed
-        # placement for a panel the user has rearranged. Keyed by panel uuid (the
-        # main panel uses CONTROL_PANEL_ID).
-        self._layout_update_count_from_uuid: dict[str, int] = {}
+        # Layout-update counter, bumped on every placement command (any panel)
+        # and stamped onto the placement message (see
+        # _PlacementMixin._queue_placement / GuiSetPanelPositionMessage.counter).
+        # Lets the client ignore replayed placement for a panel the user has
+        # rearranged. GLOBAL across panels within this GuiApi (D50): collapse
+        # is container-scoped, so when stacked panels' collapse axes conflict,
+        # a late joiner must replay them in COMMAND order -- per-panel counters
+        # cannot order commands across panels that share a container.
+        self._layout_counter: int = 0
         # Guards the counter's read-modify-write so concurrent placement calls
         # from different threads can't stamp duplicate counters.
         self._layout_update_lock = threading.Lock()
+        # Serializes placement commands against panel removal: the removed
+        # check + placement enqueue and remove()'s tombstone + purge must not
+        # interleave, or a racing dock_left() could re-enqueue a placement
+        # update for a just-removed panel (immortal buffer residue).
+        self._panel_lifecycle_lock = threading.Lock()
         # Random id identifying THIS GuiApi instance (fresh per server process,
         # and distinct for each client-scoped `client.gui`). Stamped on every
         # placement message alongside the counter: counters are only comparable
@@ -584,14 +592,15 @@ class GuiApi:
         """Set container ID associated with the current thread."""
         self._target_container_from_thread_id[threading.get_ident()] = container_uuid
 
-    def _next_layout_counter(self, uuid: str) -> int:
-        """Bump and return the panel's layout-update counter. THE single home of
-        the lock-guarded read-modify-write (used by every placement command and
-        by reset), so concurrent calls can't stamp duplicate counters."""
-        counts = self._layout_update_count_from_uuid
+    def _next_layout_counter(self) -> int:
+        """Bump and return the layout-update counter. THE single home of the
+        lock-guarded read-modify-write (used by every placement command and by
+        reset), so concurrent calls can't stamp duplicate counters. Global
+        across panels (D50): the client replays conflicting container-scoped
+        collapse axes in counter order."""
         with self._layout_update_lock:
-            counts[uuid] = counts.get(uuid, 0) + 1
-            return counts[uuid]
+            self._layout_counter += 1
+            return self._layout_counter
 
     def reset(self) -> None:
         """Reset the GUI."""
@@ -620,7 +629,7 @@ class GuiApi:
         # panel still sees this deliberate reset (counter increment beats its
         # last-applied), while a normal reconnect replay -- same counter -- is
         # ignored. (None width/height clears any override -> default/theme.)
-        reset_counter = self._next_layout_counter(CONTROL_PANEL_ID)
+        reset_counter = self._next_layout_counter()
         self._websock_interface.queue_message(
             _messages.GuiSetPanelPositionMessage(
                 CONTROL_PANEL_ID,
@@ -641,6 +650,18 @@ class GuiApi:
             _messages.GuiSetPanelHeightMessage(
                 CONTROL_PANEL_ID,
                 None,
+                counter=reset_counter,
+                run_id=self._layout_run_id,
+            )
+        )
+        # Collapsed is the fourth independent axis with its own redundancy
+        # slot: without this, a prior `main_panel.minimize()` survives the
+        # reset in the buffer and late joiners replay a minimized "default"
+        # control panel.
+        self._websock_interface.queue_message(
+            _messages.GuiSetPanelCollapsedMessage(
+                CONTROL_PANEL_ID,
+                False,
                 counter=reset_counter,
                 run_id=self._layout_run_id,
             )

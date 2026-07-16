@@ -1881,6 +1881,18 @@ export interface FileTransferPartAck {
 export interface ShareUrlRequest {
   type: "ShareUrlRequest";
 }
+/** Server->client marker: the (re)connect replay of the persistent message
+ * buffer is complete -- everything after this is live traffic. Injected
+ * per-connection by the message producer (never stored in the buffer). The
+ * client uses it to end its reconnect phase: state held dormant across the
+ * replay (e.g. dock panes for panels that may be re-created under the same
+ * uuid) is purged for entities the replay did not revive.
+ *
+ * (automatically generated)
+ */
+export interface ReplayDoneMessage {
+  type: "ReplayDoneMessage";
+}
 /** Message from server->client to indicate that the share URL has been updated.
  *
  * (automatically generated)
@@ -2111,6 +2123,7 @@ export type Message =
   | FileTransferPart
   | FileTransferPartAck
   | ShareUrlRequest
+  | ReplayDoneMessage
   | ShareUrlUpdated
   | ShareUrlDisconnect
   | SetGuiPanelLabelMessage

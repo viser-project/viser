@@ -1,6 +1,7 @@
 import React from "react";
 import { createStore, createKeyedStore } from "../store";
 import { ColorTranslator } from "colortranslator";
+import { CONTROL_PANEL_ID } from "./controlPanelId";
 
 import {
   GuiComponentMessage,
@@ -36,13 +37,17 @@ export interface PanelPlacementState {
   collapsed?: PlacementAxis<boolean>;
 }
 
-/** The (counter, runId) stamp of the last server command APPLIED for one axis
- * of one panel. The dock re-applies an axis only when the stored axis is newer
- * (same run, higher counter) or from a different run/scope. */
-export interface AppliedAxisRecord {
-  counter: number;
-  runId: string;
-}
+/** PER RUN, the highest counter APPLIED for one axis of one panel. A map --
+ * not just the last stamp -- because "different runId" alone cannot
+ * distinguish a NEW cross-scope command from a reconnect REPLAY of the other
+ * scope's old command: with two scopes (server.gui run S, client.gui run C)
+ * alternating on one panel, the replayed S position would read as "different
+ * run from last-applied C, so fresh" and yank a user-arranged panel. Keyed
+ * history makes the rule exact: an axis is fresh iff its counter beats the
+ * highest counter ever applied FROM ITS OWN RUN. Bounded in practice: one
+ * entry per scope/restart that ever placed the panel, and dead uuids' entries
+ * are pruned at replay-done / removal. */
+export type AppliedAxisRecord = { [runId: string]: number };
 export type AppliedAxes = Partial<Record<PlacementAxisName, AppliedAxisRecord>>;
 
 /** One panel's layout-application tracking (see GuiState.panelLayoutTracking).
@@ -129,6 +134,17 @@ export interface GuiState {
    * per-panel applied-key). Paired with clearing `panelLayoutTracking` so the
    * counter/dirty-bit gate lets every panel re-seed. */
   layoutResetNonce: number;
+  /** True from `resetGui` (a (re)connect wiped the stores; the server's replay
+   * is in flight) until the server's ReplayDoneMessage. While active,
+   * emptiness means "not loaded yet", never "removed": the dock's pane
+   * registry keeps entries dormant instead of tearing them down, so a
+   * same-uuid panel re-created by the replay rebinds to its existing panes
+   * and the user's arrangement survives the reconnect. */
+  replayActive: boolean;
+  /** Bumped by `replayDone` -- the point where the replay is provably
+   * complete. Dormant registry entries whose uuid was not revived are purged
+   * on this signal. */
+  replayDoneNonce: number;
 }
 
 export interface GuiActions {
@@ -143,6 +159,8 @@ export interface GuiActions {
   updateGuiProps: (id: string, updates: { [key: string]: any }) => void;
   removeGui: (id: string) => void;
   resetGui: () => void;
+  /** Handle the server's end-of-replay marker (ReplayDoneMessage). */
+  replayDone: () => void;
   updateUploadState: (
     state: (
       | { uploadedBytes: number; totalBytes: number }
@@ -185,10 +203,6 @@ export interface GuiActions {
   /** Mark the panel with this uuid as user-moved, so server placement is no
    * longer auto-applied unless its counter increments. */
   markPanelUserTouched: (uuid: string) => void;
-  /** Drop tracking entries whose uuid is not in `activeUuids` -- panels that no
-   * longer exist, e.g. a restarted server's replay recreated everything under
-   * fresh uuids (a leak-guard; dead entries gate nothing). */
-  pruneLayoutTracking: (activeUuids: ReadonlySet<string>) => void;
   /** Discard all user rearrangement: clear the touched/applied tracking and bump
    * `layoutResetNonce` so the dock re-applies every panel's server placement. */
   resetPanelLayout: () => void;
@@ -223,6 +237,10 @@ const cleanGuiState: GuiState = {
   panelPlacement: {},
   panelLayoutTracking: {},
   layoutResetNonce: 0,
+  // False until a connection's resetGui: a standalone dock (playground, no
+  // websocket) never enters a replay phase.
+  replayActive: false,
+  replayDoneNonce: 0,
 };
 
 export function computeRelativeLuminance(color: string) {
@@ -438,8 +456,36 @@ export function useGuiState(initialServer: string) {
           uploadsInProgress: cleanGuiState.uploadsInProgress,
           commands: cleanGuiState.commands,
           panelPlacement: cleanGuiState.panelPlacement,
+          // The (re)connect replay is now in flight. Reconnect-sensitive
+          // consumers (the dock's pane registry, the main-panel width effect)
+          // hold their teardown/apply until `replayDone` -- the store being
+          // momentarily empty means "replay incoming", never "everything was
+          // removed".
+          replayActive: true,
         });
         configStore.setAll({}, true);
+      },
+      replayDone: () => {
+        // The server's end-of-replay marker (ReplayDoneMessage): the panels
+        // store is now COMPLETE for this connection, so this is the one safe
+        // point to prune layout tracking for uuids the replay did not revive
+        // (a mid-replay prune raced the message windows and could drop a
+        // still-loading panel's userTouched state).
+        store.set((state) => {
+          const live = new Set(Object.keys(state.panels));
+          live.add(CONTROL_PANEL_ID);
+          const entries = Object.entries(state.panelLayoutTracking).filter(
+            ([uuid]) => live.has(uuid),
+          );
+          return {
+            replayActive: false,
+            replayDoneNonce: state.replayDoneNonce + 1,
+            panelLayoutTracking:
+              entries.length === Object.keys(state.panelLayoutTracking).length
+                ? state.panelLayoutTracking
+                : Object.fromEntries(entries),
+          };
+        });
       },
       updateUploadState: (uploadState) => {
         const state = store.get();
@@ -509,26 +555,38 @@ export function useGuiState(initialServer: string) {
       recordPanelLayoutApplied: (uuid, applied) => {
         store.set((state) => {
           const prev = state.panelLayoutTracking[uuid];
-          // No-op when every stamp is already recorded: record runs on every
-          // placement application, and an identical write would churn a new
-          // tracking object through every subscriber for nothing.
+          // No-op when every stamp is already at or below the recorded
+          // high-water marks: record runs on every placement application, and
+          // an identical write would churn a new tracking object through
+          // every subscriber for nothing.
           if (
             prev !== undefined &&
-            Object.entries(applied).every(([axis, stamp]) => {
-              const cur = prev.applied[axis as PlacementAxisName];
-              return (
-                cur !== undefined &&
-                cur.counter === stamp.counter &&
-                cur.runId === stamp.runId
-              );
-            })
+            Object.entries(applied).every(([axis, runMap]) =>
+              Object.entries(runMap).every(
+                ([rid, counter]) =>
+                  (prev.applied[axis as PlacementAxisName]?.[rid] ?? -1) >=
+                  counter,
+              ),
+            )
           )
             return {};
+          // Merge per-axis, per-run, keeping the high-water mark (an
+          // out-of-order replay can't regress a run's recorded counter).
+          const mergedApplied: AppliedAxes = { ...prev?.applied };
+          for (const [axis, runMap] of Object.entries(applied)) {
+            const axisName = axis as PlacementAxisName;
+            const merged: AppliedAxisRecord = {
+              ...prev?.applied[axisName],
+            };
+            for (const [rid, counter] of Object.entries(runMap))
+              merged[rid] = Math.max(merged[rid] ?? -1, counter);
+            mergedApplied[axisName] = merged;
+          }
           return {
             panelLayoutTracking: {
               ...state.panelLayoutTracking,
               [uuid]: {
-                applied: { ...prev?.applied, ...applied },
+                applied: mergedApplied,
                 userTouched: prev?.userTouched ?? false,
               },
             },
@@ -548,16 +606,6 @@ export function useGuiState(initialServer: string) {
               },
             },
           };
-        });
-      },
-      pruneLayoutTracking: (activeUuids) => {
-        store.set((state) => {
-          const entries = Object.entries(state.panelLayoutTracking).filter(
-            ([key]) => activeUuids.has(key),
-          );
-          if (entries.length === Object.keys(state.panelLayoutTracking).length)
-            return {}; // nothing to prune.
-          return { panelLayoutTracking: Object.fromEntries(entries) };
         });
       },
       resetPanelLayout: () => {
