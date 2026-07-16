@@ -340,13 +340,16 @@ def _open_dev_settings(page: Page) -> None:
     page.wait_for_timeout(400)
 
 
-def _reset_button(page: Page) -> dict:
-    """The Reset Panel Layout button's presence + disabled state."""
+def _reset_button_exists(page: Page) -> bool:
+    """Whether the Reset Panel Layout button is present. The button is always
+    ENABLED (D52): reset is idempotent, and the "has the user rearranged
+    anything" dirty bit was the last reader of the deleted user-touched
+    tracking -- there is no disabled state to assert anymore."""
     return page.evaluate(
         """() => {
             const b = [...document.querySelectorAll('button')].find(
                 (b) => /Reset Panel Layout/.test(b.textContent));
-            return b ? { exists: true, disabled: b.disabled } : { exists: false };
+            return b !== undefined;
         }"""
     )
 
@@ -354,8 +357,8 @@ def _reset_button(page: Page) -> dict:
 def test_reset_layout_restores_server_placement(
     viser_page: Page, viser_server: viser.ViserServer
 ) -> None:
-    """The Dev Settings "Reset Panel Layout" button is disabled until the user
-    moves a panel, then re-applies the server's placement when clicked."""
+    """The Dev Settings "Reset Panel Layout" button re-applies the server's
+    placement when clicked (always enabled; reset is idempotent, D52)."""
     viser_page.set_viewport_size(_VIEWPORT)
     viser_page.wait_for_timeout(200)
     # A GUI component is needed for the settings (generated) view to be available.
@@ -365,21 +368,17 @@ def test_reset_layout_restores_server_placement(
     viser_page.wait_for_timeout(400)
 
     _open_dev_settings(viser_page)
-    btn = _reset_button(viser_page)
-    assert btn["exists"], "Reset Panel Layout button not found in Dev Settings"
-    assert btn["disabled"], "reset button should be disabled before any change"
+    assert _reset_button_exists(viser_page), (
+        "Reset Panel Layout button not found in Dev Settings"
+    )
 
     _drag_panel_out(viser_page)
     floated = _panel_box(viser_page)
     assert floated is not None and not floated["docked"], (
         f"drag did not float the panel: {floated}"
     )
-    assert not _reset_button(viser_page)["disabled"], (
-        "reset button should enable after the user moves a panel"
-    )
 
-    # Click reset: the panel snaps back to the server's docked placement and the
-    # button disables again (no outstanding changes).
+    # Click reset: the panel snaps back to the server's docked placement.
     viser_page.evaluate(
         """() => {
             const b = [...document.querySelectorAll('button')].find(
@@ -391,7 +390,4 @@ def test_reset_layout_restores_server_placement(
     after = _panel_box(viser_page)
     assert after is not None and after["docked"], (
         f"reset did not restore the server's docked placement: {after}"
-    )
-    assert _reset_button(viser_page)["disabled"], (
-        "reset button should disable again after reset"
     )
