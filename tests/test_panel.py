@@ -13,8 +13,6 @@ import warnings
 from typing import Any
 from unittest.mock import patch
 
-import pytest
-
 import viser
 import viser._client_autobuild
 from viser import _messages as m
@@ -283,30 +281,6 @@ def test_remove_purges_buffered_placement_messages() -> None:
         assert _buffered_types(server, uuid) == {m.GuiPanelRemoveMessage}, (
             "placement messages must be purged with the panel"
         )
-    finally:
-        server.stop()
-
-
-def test_panel_key_stable_identity() -> None:
-    """add_panel(key=...) flows into the panel's props (the client keys layout
-    memory on it); duplicate keys among live panels are rejected at the API
-    boundary; a removed panel frees its key."""
-    server = _make_server()
-    try:
-        panel = server.gui.add_panel(key="stats")
-        assert panel.key == "stats"
-        assert (
-            _latest(server, panel._impl.uuid, m.GuiPanelMessage).props._stable_key
-            == "stats"
-        )
-        with pytest.raises(ValueError):
-            server.gui.add_panel(key="stats")
-        with pytest.raises(ValueError):
-            server.gui.add_panel(key="")
-        panel.remove()
-        reused = server.gui.add_panel(key="stats")  # freed by removal
-        assert reused.key == "stats"
-        assert server.gui.add_panel().key is None  # keyless panels infer
     finally:
         server.stop()
 

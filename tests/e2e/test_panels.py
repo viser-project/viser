@@ -1199,7 +1199,7 @@ def test_example_11_panels_collapsed_chrome(
     viser_page.wait_for_timeout(300)
 
     # Logs docks alone first: no cell-level `-` anywhere in the dock (D32).
-    logs = viser_server.gui.add_panel(key="logs")
+    logs = viser_server.gui.add_panel()
     with logs.add_tab("Log"):
         viser_server.gui.add_markdown("log content")
     logs.dock_right()
@@ -1212,7 +1212,7 @@ def test_example_11_panels_collapsed_chrome(
 
     # Stats stacks above logs; both cells render expanded, no cell toggles,
     # no bars (D32: docked bars do not exist).
-    stats = viser_server.gui.add_panel(key="stats")
+    stats = viser_server.gui.add_panel()
     with stats.add_tab("Stats"):
         viser_server.gui.add_markdown("stats content")
     stats.dock_above(logs)

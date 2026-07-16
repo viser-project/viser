@@ -19,6 +19,7 @@ from typing import (
     Literal,
     Tuple,
     TypeVar,
+    Union,
     cast,
     overload,
 )
@@ -67,7 +68,6 @@ from ._messages import (
     GuiUplotProps,
     GuiVector2Props,
     GuiVector3Props,
-    Message,
     RemoveCommandMessage,
     SplitPlacement,
 )
@@ -864,6 +864,16 @@ def _check_coordinate(value: float | None, name: str) -> None:
         raise ValueError(f"{name} must be a finite number, got {value!r}.")
 
 
+_PlacementMessage: TypeAlias = Union[
+    GuiSetPanelPositionMessage,
+    GuiSetPanelWidthMessage,
+    GuiSetPanelHeightMessage,
+    GuiSetPanelCollapsedMessage,
+]
+"""The four per-axis placement messages. All carry `counter` / `run_id` stamp
+fields, which `_PlacementMixin._queue_placement` fills in."""
+
+
 class _PlacementMixin:
     """Shared placement / sizing commands for panel handles.
 
@@ -881,13 +891,16 @@ class _PlacementMixin:
     _placement_uuid: str
     _placement_gui_api: GuiApi
 
-    def _queue_placement(self, message: Message) -> None:
+    def _placement_removed(self) -> bool:
+        """Whether placement commands must be rejected because the underlying
+        entity is gone. This base implementation serves handles that cannot be
+        removed (the main panel); `PanelHandle` overrides it."""
+        return False
+
+    def _queue_placement(self, message: _PlacementMessage) -> None:
         # Single guard point for every command: reject placement on a removed
         # panel, which would otherwise queue an update against a dead uuid.
-        # `MainPanelHandle` has no `_impl` and can't be removed, so it's never
-        # blocked.
-        impl = getattr(self, "_impl", None)
-        if impl is not None and impl.removed:
+        if self._placement_removed():
             raise RuntimeError(f"Cannot place a removed {type(self).__name__}.")
         # Stamp the per-panel layout-update counter (bumped on EVERY placement
         # command) and this GuiApi's run id. The client uses the pair to ignore
@@ -897,7 +910,7 @@ class _PlacementMixin:
         # assigned here, the single chokepoint.
         api = self._placement_gui_api
         stamped = dataclasses.replace(
-            cast(Any, message),
+            message,
             counter=api._next_layout_counter(self._placement_uuid),
             run_id=api._layout_run_id,
         )
@@ -1122,13 +1135,9 @@ class PanelHandle(
         # panel itself doesn't need a container entry.
         _impl.gui_api._panel_handle_from_uuid[_impl.uuid] = self
 
-    @property
-    def key(self) -> str | None:
-        """The panel's stable identity (`add_panel(key=...)`), or None when
-        the client infers one from tab labels + creation order."""
-        props = self._impl.props
-        assert isinstance(props, GuiPanelProps)
-        return props._stable_key
+    @override
+    def _placement_removed(self) -> bool:
+        return self._impl.removed
 
     @override
     def _queue_update(self, name: str, value: Any) -> None:
@@ -1194,10 +1203,10 @@ class MainPanelHandle(_PlacementMixin):
     """Handle for the main control panel. Returned by :attr:`GuiApi.main_panel`.
 
     Supports the same placement / sizing / minimize commands as
-    :class:`PanelHandle`, but
-    has no tabs and cannot be removed. Because the control panel renders on every
-    client, it is a legal anchor for other panels' ``dock_*`` commands from any
-    scope.
+    :class:`PanelHandle`, but nothing else from it: the main panel has no tabs
+    (its content is the inline GUI tree), no ``visible`` property, and cannot
+    be removed. Because the control panel renders on every client, it is a
+    legal anchor for other panels' ``dock_*`` commands from any scope.
 
     A fresh handle is returned on each access; placement state is keyed off the
     control panel's fixed uuid, so handles are interchangeable.

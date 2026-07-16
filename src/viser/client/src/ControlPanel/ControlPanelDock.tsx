@@ -35,7 +35,6 @@ import { GuiDockContext } from "./GuiDockContext";
 import { shallowArrayEqual } from "../utils/shallowArrayEqual";
 import { controlWidthPx } from "./controlWidth";
 import { CONTROL_PANEL_ID } from "./controlPanelId";
-import { buildPaneToStableKey } from "./panelIdentity";
 import { usePlacementCoordinator } from "./placementCoordinator";
 
 // Memoized so a torn-out tab's whole GUI tree doesn't re-render every time
@@ -182,11 +181,10 @@ export function ControlPanelDockSurface({
   // container width is measurable (top-right anchored).
   const initialLayout = React.useMemo(() => emptyLayout(), []);
 
-  // Prune layout tracking for panels that no longer exist, so a removed panel's
-  // {userTouched, applied} can't be inherited by a later panel that
-  // resolves to the same stable key (which would wrongly suppress the new
-  // panel's server placement). Recompute the active stable-key set when the
-  // panel set changes (keyed on a sorted-uuid signature).
+  // Prune layout tracking for panel uuids that no longer exist. Dead entries
+  // gate nothing (a new panel can never share a removed panel's uuid); this is
+  // a leak-guard for uuids orphaned wholesale, e.g. a restarted server whose
+  // replay recreated every panel under fresh uuids.
   const panelUuidSig = viewer.useGui((state) =>
     Object.keys(state.panels).sort().join(","),
   );
@@ -197,7 +195,7 @@ export function ControlPanelDockSurface({
     // that every panel was legitimately removed. Pruning here would wipe the
     // tracking that must survive a reconnect, so skip it until panels exist.
     if (Object.keys(panels).length === 0) return;
-    const active = new Set(buildPaneToStableKey(panels).values());
+    const active = new Set(Object.keys(panels));
     active.add(CONTROL_PANEL_ID);
     viewer.guiActions.pruneLayoutTracking(active);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -206,8 +204,8 @@ export function ControlPanelDockSurface({
   // Flag a panel "user-touched" when a USER gesture (not a programmatic
   // server-placement apply) changes its position/size/collapsed -- so the
   // counter-gated placement effect stops re-applying server placement and the
-  // user's arrangement survives reconnect/re-run. We diff per-group placement
-  // signatures and map each changed group back to its panel uuid -> stable key.
+  // user's arrangement survives reconnect. We diff per-group placement
+  // signatures and map each changed group back to its panel uuid.
   const handleCommit = React.useCallback(
     (prev: DockLayout, next: DockLayout, programmatic: boolean) => {
       if (programmatic) return;
@@ -218,17 +216,13 @@ export function ControlPanelDockSurface({
         ([gid, sig]) => before.get(gid) !== sig,
       );
       if (changed.length === 0) return; // e.g. a tab-reorder-only commit.
-      // Map each panel's panes (tab containers) to its stable key; the main
+      // Map each panel's panes (tab containers) to its panel uuid; the main
       // panel's pane is CONTROL_PANEL_ID. Built only when something changed.
       const panelState = viewer.useGui.get().panels;
-      const keyByUuid = buildPaneToStableKey(panelState);
-      const paneToStableKey = new Map<string, string>();
-      for (const [puid, p] of Object.entries(panelState)) {
-        const key = keyByUuid.get(puid);
-        if (key === undefined) continue;
+      const paneToPanelUuid = new Map<string, string>();
+      for (const [puid, p] of Object.entries(panelState))
         for (const cid of p.props._tab_container_ids)
-          paneToStableKey.set(cid, key);
-      }
+          paneToPanelUuid.set(cid, puid);
       const touched = new Set<string>();
       for (const [gid] of changed) {
         const group = next.groups[gid];
@@ -238,11 +232,11 @@ export function ControlPanelDockSurface({
           continue;
         }
         for (const pane of group.paneIds) {
-          const key = paneToStableKey.get(pane);
-          if (key !== undefined) touched.add(key);
+          const puid = paneToPanelUuid.get(pane);
+          if (puid !== undefined) touched.add(puid);
         }
       }
-      for (const key of touched) viewer.guiActions.markPanelUserTouched(key);
+      for (const puid of touched) viewer.guiActions.markPanelUserTouched(puid);
     },
     [viewer],
   );

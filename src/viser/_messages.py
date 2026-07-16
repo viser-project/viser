@@ -1848,11 +1848,6 @@ class GuiPanelProps:
     """(Private) Tuple of HTML strings for icons of each tab, or None if no icon."""
     _tab_container_ids: Tuple[str, ...]
     """(Private) Tuple of container IDs for each tab."""
-    _stable_key: Optional[str]
-    """(Private) Optional user-provided stable identity (`add_panel(key=...)`).
-    The client keys per-panel layout memory (user arrangement vs. server
-    placement) on this across reconnects and program re-runs; when None, an
-    identity is inferred from tab labels + creation order."""
     order: float
     """Order value for arranging panels."""
     visible: bool

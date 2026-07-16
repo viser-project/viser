@@ -48,10 +48,7 @@ def main() -> None:
     # A panel docked to the right edge, with two tabs. Panels start
     # expanded; minimize() below collapses the log panel imperatively, and
     # the user can minimize/expand freely in the browser.
-    # `key=` gives the panel a stable identity: clients remember per-panel
-    # layout state (e.g. "the user moved this panel") across reconnects and
-    # program restarts. Without it, identity is inferred from tab labels.
-    stats_panel = server.gui.add_panel(key="stats")
+    stats_panel = server.gui.add_panel()
     with stats_panel.add_tab("Stats", viser.Icon.CHART_BAR):
         counter = server.gui.add_number("Counter", initial_value=0, disabled=True)
         server.gui.add_markdown("Live values update in this docked panel.")
@@ -63,7 +60,7 @@ def main() -> None:
     # A floating panel at an explicit position. x/y are viewport-relative (the
     # canvas inside docked panels), so this stays clear of the left-docked main
     # panel below and shifts if the docked regions change.
-    tools_panel = server.gui.add_panel(key="tools")
+    tools_panel = server.gui.add_panel()
     with tools_panel.add_tab("Tools", viser.Icon.TOOL):
         randomize = server.gui.add_button("Randomize point cloud")
     tools_panel.float(x=30, y=30, width=260)
@@ -75,7 +72,7 @@ def main() -> None:
     tools_panel.minimize()
 
     # A panel stacked below the docked stats panel (a column split).
-    log_panel = server.gui.add_panel(key="logs")
+    log_panel = server.gui.add_panel()
     with log_panel.add_tab("Log", viser.Icon.TERMINAL):
         log = server.gui.add_markdown("Waiting for events...")
     log_panel.dock_below(stats_panel)

@@ -976,13 +976,11 @@ at every consumer.
   `""` sentinel); `makeGroup(NonEmpty<PaneId>)`.
 - **Placement protocol**: per-axis `(counter, runId)` stamps + one
   shared gate (`placementGate.ts`) for the main panel and standalone
-  panels; split placements defer on their anchor via a synchronous store
-  predicate, with a timeout only as a stale-state tripwire.
-
-Planned structural work, in order: server-provided stable panel key
-(identity as input, not label+order inference); a placement coordinator
-(one ordered pass over the placement store, replacing per-panel effect
-fan-out).
+  panels; layout-memory tracking keyed by panel uuid (D49 — no separate
+  identity notion); one placement coordinator (a single fixpoint pass
+  over the placement store) in which split placements defer on their
+  anchor via a synchronous store predicate — no timers, no pending
+  state.
 
 ---
 
@@ -1166,6 +1164,16 @@ consuming paragraphs.
   the bottom band merges (bottom + side bands survive). Carve-out:
   merge-SUPPRESSED pairs keep the pre-D48 top band as split-above
   (their merge is null). Rationale and the full zone statement: §5.2.
+- **D49** — panel layout memory is keyed by plain panel uuid
+  (user-adjudicated); the server-provided stable key
+  (`add_panel(key=...)`) and its tab-label+order inference fallback are
+  DELETED. The tracking store only ever gates SAME-RUN replay — a
+  reconnect, where uuids are unchanged; a restarted server's new runId
+  makes every axis fresh by design (placementGate), so cross-run
+  identity had no observable effect, and the label inference could
+  drift mid-run (adding a tab changed a panel's identity, orphaning its
+  user-touched flag). Reintroduce a stable identity only if client-side
+  layout persistence across browser sessions ever lands.
 
 Retired — one line per ID; the pointer is where any surviving content
 lives:

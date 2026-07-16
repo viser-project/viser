@@ -1026,7 +1026,6 @@ class GuiApi:
     def add_panel(
         self,
         *,
-        key: str | None = None,
         order: float | None = None,
         visible: bool = True,
     ) -> PanelHandle:
@@ -1052,18 +1051,10 @@ class GuiApi:
         on-screen minimize control.
 
         Args:
-            key: Optional stable identity for the panel, unique among live
-                panels. Clients remember per-panel layout state (for example,
-                whether the user moved a panel away from its server-assigned
-                placement) across reconnects and program re-runs; the key is
-                what that memory is attached to. Without a key, an identity is
-                inferred from the panel's tab labels and creation order --
-                which works until tabs are renamed or reordered between runs.
             order: Optional ordering, smallest values will be displayed first.
-                Used for the mobile bottom sheet's section order and as a
-                tiebreaker for inferred panel identity; docked/floating
-                placement is set with the ``dock_*`` / ``float`` commands, not
-                ``order``.
+                Used for the mobile bottom sheet's section order;
+                docked/floating placement is set with the ``dock_*`` /
+                ``float`` commands, not ``order``.
             visible: Whether the panel is visible.
 
         Returns:
@@ -1077,17 +1068,6 @@ class GuiApi:
             panel.dock_right()
             panel.set_width(320)
         """
-        if key is not None:
-            if key == "":
-                raise ValueError("Panel key must be a non-empty string.")
-            # Duplicate keys would fuse two panels' layout memory client-side;
-            # reject at the API boundary instead of misbehaving quietly.
-            for other in self._panel_handle_from_uuid.values():
-                if not other._impl.removed and other.key == key:
-                    raise ValueError(
-                        f"A panel with key={key!r} already exists. Panel keys "
-                        "must be unique among live panels."
-                    )
         panel_id = _make_uuid()
         message = _messages.GuiPanelMessage(
             uuid=panel_id,
@@ -1097,7 +1077,6 @@ class GuiApi:
                 visible=visible,
                 _tab_icons_html=(),
                 _tab_container_ids=(),
-                _stable_key=key,
             ),
         )
         self._websock_interface.queue_message(message)

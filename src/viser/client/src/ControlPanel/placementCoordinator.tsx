@@ -31,7 +31,6 @@ import * as ops from "../dock/layoutOps";
 import type { CanvasBounds } from "../dock/layoutOps";
 import { DockLayout } from "../dock/types";
 import { CONTROL_PANEL_ID } from "./controlPanelId";
-import { buildPaneToStableKey } from "./panelIdentity";
 import { gatePlacement } from "./placementGate";
 
 /** The canvas bounds (for resolving float placements) from the dock metrics. */
@@ -84,13 +83,12 @@ export function usePlacementCoordinator(
     }
     // Drop bookkeeping for panels that no longer exist (uuid-keyed, so a
     // removed panel's entry is dead; the layout-tracking store prunes its own
-    // stable-key entries separately).
+    // entries separately).
     for (const uuid of bookkeeping.current.keys())
       if (uuid !== CONTROL_PANEL_ID && panels[uuid] === undefined)
         bookkeeping.current.delete(uuid);
 
     const layout = dock.layout;
-    const stableKeys = buildPaneToStableKey(panels);
     const resolveAnchor = (anchorUuid: string): string | null => {
       if (anchorUuid === CONTROL_PANEL_ID)
         return ops.findPaneGroup(layout, CONTROL_PANEL_ID);
@@ -137,13 +135,9 @@ export function usePlacementCoordinator(
       const anchorEntry = panelPlacement[anchorUuid];
       const pos = anchorEntry?.position?.value;
       if (pos === undefined || pos.kind === "float") return false;
-      const anchorKey =
-        anchorUuid === CONTROL_PANEL_ID
-          ? CONTROL_PANEL_ID
-          : (stableKeys.get(anchorUuid) ?? anchorUuid);
       const gated = gatePlacement(
         anchorEntry,
-        tracking[anchorKey],
+        tracking[anchorUuid],
         resolveAnchor(anchorUuid) !== null,
       );
       if (gated.placement.position === null) return false;
@@ -163,9 +157,6 @@ export function usePlacementCoordinator(
         : [...(panel?.props._tab_container_ids ?? [])];
       const visible = isMain ? true : (panel?.props.visible ?? true);
       const entry = panelPlacement[uuid];
-      const stableKey = isMain
-        ? CONTROL_PANEL_ID
-        : (stableKeys.get(uuid) ?? uuid);
       let state = bookkeeping.current.get(uuid);
       if (state === undefined) {
         state = freshBookkeeping();
@@ -213,7 +204,7 @@ export function usePlacementCoordinator(
       const placementKey = JSON.stringify(entry ?? null);
       const placed = ops.findPaneGroup(layout, tabIds[0]) !== null;
       const applyGated = (): void => {
-        const gated = gatePlacement(entry, tracking[stableKey], placed);
+        const gated = gatePlacement(entry, tracking[uuid], placed);
         if (entry !== undefined && placed && !gated.anyFresh) {
           // Nothing fresh; remember we evaluated this bundle.
           state.appliedPlacementKey = placementKey;
@@ -233,7 +224,7 @@ export function usePlacementCoordinator(
         }
         state.appliedPlacementKey = placementKey;
         if (entry !== undefined)
-          viewer.guiActions.recordPanelLayoutApplied(stableKey, gated.applied);
+          viewer.guiActions.recordPanelLayoutApplied(uuid, gated.applied);
         const placement = isMain
           ? mapMainPlacement(gated.placement)
           : gated.placement;

@@ -1,7 +1,6 @@
 import React from "react";
 import { createStore, createKeyedStore } from "../store";
 import { ColorTranslator } from "colortranslator";
-import { buildPaneToStableKey } from "./panelIdentity";
 
 import {
   GuiComponentMessage,
@@ -113,17 +112,17 @@ export interface GuiState {
    * for the main panel). Built up by the four write-only `GuiSetPanel*`
    * messages; the dock applies whatever fields are present. */
   panelPlacement: { [uuid: string]: PanelPlacementState };
-  /** Per-panel layout-application tracking, keyed by STABLE KEY (not uuid -- a
-   * panel's uuid is random per run; the stable key is derived from its tab
-   * labels + creation order). Deliberately SURVIVES `resetGui`, so a reconnect
-   * or program re-run can decide -- per panel, per AXIS -- whether to re-apply
-   * server placement: an axis is re-applied to a user-touched panel only when
-   * its (counter, runId) stamp is newer than the last applied (same run, higher
-   * counter) or from a different run/scope. Entries for stable keys no longer
-   * present are pruned as the layout settles (and immediately when the server
-   * removes a panel). */
+  /** Per-panel layout-application tracking, keyed by panel uuid (and
+   * CONTROL_PANEL_ID for the main panel). Deliberately SURVIVES `resetGui`:
+   * the buffer replay after a reconnect re-delivers the same panels (same
+   * uuids) with the same placement stamps, and this memory is what stops the
+   * replay from re-applying placement to a panel the user has since
+   * rearranged. A RESTARTED server is different by design: its new runId makes
+   * every axis fresh (see placementGate.ts), so its dead uuids' entries gate
+   * nothing and are pruned as the layout settles (and immediately when the
+   * server removes a panel). */
   panelLayoutTracking: {
-    [stableKey: string]: PanelLayoutEntry;
+    [uuid: string]: PanelLayoutEntry;
   };
   /** Bumped by `resetPanelLayout` to force the dock to re-apply server placement
    * for every panel from scratch (the placement effects watch it and clear their
@@ -180,16 +179,16 @@ export interface GuiActions {
     runId: string,
   ) => void;
   /** Record which placement axes (with their counter/runId stamps) have been
-   * applied for the panel with this stable key, so a replay of the same
-   * commands is ignored while a genuinely newer command still applies. */
-  recordPanelLayoutApplied: (stableKey: string, applied: AppliedAxes) => void;
-  /** Mark the panel with this stable key as user-moved, so server placement is
-   * no longer auto-applied unless its counter increments. */
-  markPanelUserTouched: (stableKey: string) => void;
-  /** Drop tracking entries whose stable key is not in `activeKeys` (panels that
-   * no longer exist), so a removed panel's state can't be inherited by a later
-   * panel that happens to resolve to the same stable key. */
-  pruneLayoutTracking: (activeKeys: ReadonlySet<string>) => void;
+   * applied for the panel with this uuid, so a replay of the same commands is
+   * ignored while a genuinely newer command still applies. */
+  recordPanelLayoutApplied: (uuid: string, applied: AppliedAxes) => void;
+  /** Mark the panel with this uuid as user-moved, so server placement is no
+   * longer auto-applied unless its counter increments. */
+  markPanelUserTouched: (uuid: string) => void;
+  /** Drop tracking entries whose uuid is not in `activeUuids` -- panels that no
+   * longer exist, e.g. a restarted server's replay recreated everything under
+   * fresh uuids (a leak-guard; dead entries gate nothing). */
+  pruneLayoutTracking: (activeUuids: ReadonlySet<string>) => void;
   /** Discard all user rearrangement: clear the touched/applied tracking and bump
    * `layoutResetNonce` so the dock re-applies every panel's server placement. */
   resetPanelLayout: () => void;
@@ -375,17 +374,14 @@ export function useGuiState(initialServer: string) {
           // Drop its client-owned placement entry too (avoid a leak).
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { [id]: _placement, ...restPlacement } = state.panelPlacement;
-          // A server-REMOVED panel's layout tracking is pruned immediately (by
-          // the stable key computed from the pre-removal panel set): a later
-          // panel that resolves to the same stable key is a NEW panel and must
-          // not inherit this one's userTouched/applied state. (Reconnect goes
-          // through resetGui, which deliberately KEEPS tracking -- that's the
-          // "same panel, remembered arrangement" path.)
-          const stableKey = buildPaneToStableKey(state.panels).get(id);
+          // A server-REMOVED panel's layout tracking dies with it -- its uuid
+          // never comes back. (Reconnect goes through resetGui, which
+          // deliberately KEEPS tracking: the replayed panels carry the SAME
+          // uuids, and their remembered arrangement must survive.)
           let tracking = state.panelLayoutTracking;
-          if (stableKey !== undefined && stableKey in tracking) {
+          if (id in tracking) {
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { [stableKey]: _tracked, ...restTracking } = tracking;
+            const { [id]: _tracked, ...restTracking } = tracking;
             tracking = restTracking;
           }
           return {
@@ -510,9 +506,9 @@ export function useGuiState(initialServer: string) {
       setPanelWidth: setPanelAxis("width"),
       setPanelHeight: setPanelAxis("height"),
       setPanelCollapsed: setPanelAxis("collapsed"),
-      recordPanelLayoutApplied: (stableKey, applied) => {
+      recordPanelLayoutApplied: (uuid, applied) => {
         store.set((state) => {
-          const prev = state.panelLayoutTracking[stableKey];
+          const prev = state.panelLayoutTracking[uuid];
           // No-op when every stamp is already recorded: record runs on every
           // placement application, and an identical write would churn a new
           // tracking object through every subscriber for nothing.
@@ -531,7 +527,7 @@ export function useGuiState(initialServer: string) {
           return {
             panelLayoutTracking: {
               ...state.panelLayoutTracking,
-              [stableKey]: {
+              [uuid]: {
                 applied: { ...prev?.applied, ...applied },
                 userTouched: prev?.userTouched ?? false,
               },
@@ -539,14 +535,14 @@ export function useGuiState(initialServer: string) {
           };
         });
       },
-      markPanelUserTouched: (stableKey) => {
+      markPanelUserTouched: (uuid) => {
         store.set((state) => {
-          const prev = state.panelLayoutTracking[stableKey];
+          const prev = state.panelLayoutTracking[uuid];
           if (prev?.userTouched === true) return {};
           return {
             panelLayoutTracking: {
               ...state.panelLayoutTracking,
-              [stableKey]: {
+              [uuid]: {
                 applied: prev?.applied ?? {},
                 userTouched: true,
               },
@@ -554,10 +550,10 @@ export function useGuiState(initialServer: string) {
           };
         });
       },
-      pruneLayoutTracking: (activeKeys) => {
+      pruneLayoutTracking: (activeUuids) => {
         store.set((state) => {
           const entries = Object.entries(state.panelLayoutTracking).filter(
-            ([key]) => activeKeys.has(key),
+            ([key]) => activeUuids.has(key),
           );
           if (entries.length === Object.keys(state.panelLayoutTracking).length)
             return {}; // nothing to prune.
