@@ -76,13 +76,14 @@ function pushFloatsAheadOfSeam(
 
 /** Everything the resize handlers need from DockManager. Refs are passed as
  * refs (not snapshots) because the handlers run per drag frame and must read
- * the synchronous truth; `containerHeight` is a plain value because a width
- * drag never changes it, so the value captured at drag start stays valid. */
+ * the synchronous truth -- height included: a width drag never changes it,
+ * but a concurrent browser resize can, and a stale snapshot would re-impose
+ * the drag-start canvas height on the GL backbuffer each frame. */
 export interface RegionResizeDeps {
   layoutRef: React.MutableRefObject<DockLayout>;
   containerRef: React.RefObject<HTMLDivElement>;
   containerWidthRef: React.MutableRefObject<number>;
-  containerHeight: number;
+  containerHeightRef: React.MutableRefObject<number>;
   /** Rendered region widths per edge (assigned by DockManager each render). */
   reservedWidthRef: React.MutableRefObject<{ left: number; right: number }>;
   /** True only while a frame's width commit is flushing, so the manager's
@@ -117,7 +118,7 @@ export function makeRegionResizeHandlers(
     layoutRef,
     containerRef,
     containerWidthRef,
-    containerHeight,
+    containerHeightRef,
     reservedWidthRef,
     regionResizeDraggingRef,
     draggingWindowIdRef,
@@ -233,7 +234,7 @@ export function makeRegionResizeHandlers(
     const reserved = reservedWidthRef.current;
     onRegionResizeFrameRef.current?.(
       Math.max(0, containerWidthRef.current - reserved.left - reserved.right),
-      containerHeight,
+      containerHeightRef.current,
     );
   };
   return { onFrame, onEnd };

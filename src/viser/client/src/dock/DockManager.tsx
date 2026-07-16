@@ -47,6 +47,27 @@ import {
   emptyLayout,
 } from "./types";
 
+/** The MIN_CANVAS_PX overflow guard: scale the two regions' RENDERED widths
+ * proportionally when their sum would leave less than MIN_CANVAS_PX of scene.
+ * Model widths are untouched (they restore when the viewport grows back).
+ * ONE definition, consumed by both the render path and the DockMetrics memo,
+ * so the metrics can never drift from what actually insets the canvas. */
+function squeezeRendered(
+  planned: { left: number; right: number },
+  containerWidth: number,
+): { left: number; right: number; active: boolean } {
+  if (containerWidth <= 0) return { ...planned, active: false };
+  const available = containerWidth - MIN_CANVAS_PX;
+  const total = planned.left + planned.right;
+  if (total <= available || total <= 0) return { ...planned, active: false };
+  const scale = Math.max(0, available) / total;
+  return {
+    left: Math.floor(planned.left * scale),
+    right: Math.floor(planned.right * scale),
+    active: true,
+  };
+}
+
 export function DockManager({
   initialLayout,
   panes,
@@ -397,12 +418,16 @@ export function DockManager({
   // Container width, exposed via metrics so float coords (incl. negative
   // gap-from-right) can be resolved against the live canvas.
   const [containerWidth, setContainerWidth] = React.useState(0);
-  // Ref mirror so the region-resize drag closure reads the CURRENT container
-  // width synchronously (it computes the canvas's new width from this minus the
-  // freshly-committed insets). Height isn't mirrored: a width drag never changes
-  // it, so the closure's captured `containerHeight` stays valid.
+  // Ref mirrors so the region-resize drag closure reads the CURRENT container
+  // size synchronously (it computes the canvas's new width from this minus the
+  // freshly-committed insets). Height is mirrored too: a width drag doesn't
+  // change it, but the BROWSER can mid-drag (OS window snap, devtools dock),
+  // and a captured stale height would re-impose the drag-start canvas height
+  // on the GL backbuffer every frame, fighting the host's own resize handling.
   const containerWidthRef = React.useRef(0);
   containerWidthRef.current = containerWidth;
+  const containerHeightRef = React.useRef(0);
+  containerHeightRef.current = containerHeight;
   // True only while a region-resize drag is committing a width this frame. The
   // drag owns float movement itself (pushFloatsAheadOfSeam, applied flush with
   // the seam), so the inset effect must NOT also re-clamp unanchored floats then
@@ -507,23 +532,29 @@ export function DockManager({
       draggingTabId,
     ],
   );
-  const metrics: DockMetrics = React.useMemo(
-    () => ({
-      reservedWidth: {
-        left:
-          plans.left !== null
-            ? plannedReservedWidth(plans.left, regionWidth.left)
-            : 0,
-        right:
-          plans.right !== null
-            ? plannedReservedWidth(plans.right, regionWidth.right)
-            : 0,
-      },
+  const metrics: DockMetrics = React.useMemo(() => {
+    const planned = {
+      left:
+        plans.left !== null
+          ? plannedReservedWidth(plans.left, regionWidth.left)
+          : 0,
+      right:
+        plans.right !== null
+          ? plannedReservedWidth(plans.right, regionWidth.right)
+          : 0,
+    };
+    // Metrics report the RENDERED widths -- the squeeze-scaled values that
+    // actually inset the canvas (the DockMetrics doc contract) -- so
+    // screen-geometry consumers (notification offsets, float-coordinate
+    // resolution) aren't off by the squeeze delta on narrow viewports. The
+    // same helper drives the render path below; they cannot drift.
+    const rendered = squeezeRendered(planned, containerWidth);
+    return {
+      reservedWidth: { left: rendered.left, right: rendered.right },
       containerWidth,
       containerHeight,
-    }),
-    [regionWidth, plans, containerWidth, containerHeight],
-  );
+    };
+  }, [regionWidth, plans, containerWidth, containerHeight]);
 
   // Stable per-window handlers (windowId-first) so FloatingWindowView can be
   // memoized -- inline per-window closures would break the memo every render.
@@ -611,27 +642,24 @@ export function DockManager({
   // usable canvas strip always remains; model widths are untouched, so widths
   // restore when the viewport grows back. (containerWidth === 0 before first
   // measure -> skip.)
+  // While the guard is actively scaling, drawn widths track containerWidth
+  // per resize event -- easing a per-frame-tracking value is the same regime
+  // as a drag (the anim classes' own rule), and with the drawer's pinned pane
+  // a lagging container shows blank/clipped strips. Drop the width/inset
+  // eases (and the column glide, via [data-dock-squeezing]) for the duration;
+  // they return with the first unsqueezed render.
+  const squeezed = squeezeRendered(
+    {
+      left: regions.left.reservedWidth,
+      right: regions.right.reservedWidth,
+    },
+    containerWidth,
+  );
   const renderedWidth: Record<DockEdge, number> = {
-    left: regions.left.reservedWidth,
-    right: regions.right.reservedWidth,
+    left: squeezed.left,
+    right: squeezed.right,
   };
-  let squeezeActive = false;
-  if (containerWidth > 0) {
-    const available = containerWidth - MIN_CANVAS_PX;
-    const total = renderedWidth.left + renderedWidth.right;
-    if (total > available && total > 0) {
-      const scale = Math.max(0, available) / total;
-      renderedWidth.left = Math.floor(renderedWidth.left * scale);
-      renderedWidth.right = Math.floor(renderedWidth.right * scale);
-      // While the guard is actively scaling, drawn widths track
-      // containerWidth per resize event -- easing a per-frame-tracking
-      // value is the same regime as a drag (the anim classes' own rule),
-      // and with the drawer's pinned pane a lagging container shows
-      // blank/clipped strips. Drop the width/inset eases for the
-      // duration; they return with the first unsqueezed render.
-      squeezeActive = true;
-    }
-  }
+  const squeezeActive = squeezed.active;
   const leftInset = renderedWidth.left;
   const rightInset = renderedWidth.right;
   // While the canvas inset eases after a discrete change, feed the wrapper's
@@ -770,6 +798,12 @@ export function DockManager({
         <Box
           ref={containerRef}
           data-dock-root
+          // While the canvas guard is actively scaling, ALL D34 motion is
+          // suppressed (spec D34): the anim classes drop below, and the
+          // column FLIP glide reads this attribute -- a railed strip beside
+          // squeezing siblings shifts position per resize event, and arming
+          // a fresh 160ms glide each event would rubber-band the resize.
+          {...(squeezeActive ? { "data-dock-squeezing": "" } : {})}
           style={{
             position: "relative",
             width: "100%",
@@ -927,7 +961,7 @@ export function DockManager({
                             layoutRef,
                             containerRef,
                             containerWidthRef,
-                            containerHeight,
+                            containerHeightRef,
                             reservedWidthRef,
                             regionResizeDraggingRef,
                             draggingWindowIdRef,

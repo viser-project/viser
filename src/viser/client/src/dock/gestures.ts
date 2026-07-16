@@ -74,12 +74,16 @@ export function grabbingCursor(): () => void {
 
 /** Run a rAF-throttled drag gesture: capture the pointer on `grip`, record the
  * latest pointer state via `update(e)` on every move, and apply it via
- * `flush()` at most once per animation frame (plus one final flush on release
- * if a move is still pending). `onEnd` runs exactly once, on release or
- * cancellation, before the final flush -- the place to clear shared flags. It
+ * `flush()` at most once per animation frame. On a real release, a still-
+ * pending move is flushed BEFORE `onEnd`: the end commit must see the final
+ * geometry (a quick press-move-release would otherwise run its end commit on
+ * the pre-gesture layout and land the whole delta after it, unattributed),
+ * and end-of-gesture teardown (removing a transition suppressor) must
+ * postdate the last write so that write lands instantly instead of easing.
+ * `onEnd` then runs exactly once -- the place to clear shared flags. It
  * receives `cancelled: true` when the gesture did not end with a real release
  * (Escape, browser-stolen touch, unmount), so callers can revert what their
- * per-frame flushes applied; no flush runs after a cancel.
+ * per-frame flushes applied; no flush runs on a cancel.
  *
  * Returns a cancel function for unmount cleanup: it detaches the window
  * listeners, drops any pending frame without flushing, and runs `onEnd`.
@@ -118,9 +122,10 @@ export function dragGesture(opts: {
       if (raf === null) raf = requestAnimationFrame(frame);
     },
     (_endEvent, cancelled) => {
-      const pending = raf !== null;
+      // Final flush FIRST (see the doc comment): the end commit and teardown
+      // in onEnd must postdate the last geometry write.
+      if (raf !== null && !cancelled) flush();
       cancel(cancelled);
-      if (pending && !cancelled) flush();
       tryRelease(grip, pointerId);
     },
     pointerId, // ignore other pointers so a second finger can't drive/end this.

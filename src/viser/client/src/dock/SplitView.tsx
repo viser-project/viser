@@ -128,7 +128,13 @@ function RegionColumns({
     // so deltas read 0 and nothing glides off pre-drag positions.
     if (
       REDUCED_MOTION_MQL?.matches === true ||
-      root.closest("[data-dock-resizing]") !== null
+      root.closest("[data-dock-resizing]") !== null ||
+      // Squeeze regime (spec D34): drawn widths track containerWidth per
+      // resize event, so column positions shift every event -- arming a
+      // fresh glide each time would rubber-band the resize (railed strips
+      // especially: fixed-width, so the width-changed skip never exempts
+      // them).
+      root.closest("[data-dock-squeezing]") !== null
     ) {
       prevColumnBox.current.clear();
       return;
@@ -167,13 +173,19 @@ function RegionColumns({
       void el.offsetWidth;
       el.style.transition = "transform 160ms ease";
       el.style.transform = "";
-      el.addEventListener(
-        "transitionend",
-        () => {
-          el.style.transition = "";
-        },
-        { once: true },
-      );
+      // Filter to THIS element's transform ease: transitionend bubbles, so
+      // any descendant transition finishing mid-glide (a HandleIconButton's
+      // 80ms hover background, a leaf's collapse flex ease) would otherwise
+      // consume the once-listener, clear the inline transition, and snap the
+      // column to its final spot -- the exact jitter the glide exists to
+      // prevent (same hazard dragController's transitionend cache filter
+      // documents).
+      const onTransitionEnd = (e: TransitionEvent) => {
+        if (e.target !== el || e.propertyName !== "transform") return;
+        el.style.transition = "";
+        el.removeEventListener("transitionend", onTransitionEnd);
+      };
+      el.addEventListener("transitionend", onTransitionEnd);
     }
     prevColumnBox.current = next;
   });

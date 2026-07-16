@@ -673,27 +673,11 @@ export function useDragController(deps: DragControllerDeps) {
       (_endEvent, cancelled) => {
         // A cancelled pointer (Escape, browser-stolen touch) aborts: no dock,
         // no move -- clearing the transform snaps the window back to where the
-        // drag started. Only a real pointerup commits.
-        detach();
-        container.removeEventListener("scroll", markTargetsStale, true);
-        window.removeEventListener("resize", markTargetsStale);
-        container.removeEventListener("transitionend", onTransitionEnd, true);
-        markDragTargetsStaleRef.current = null;
-        activeCleanup.current = null;
-        if (raf !== null) {
-          cancelAnimationFrame(raf);
-          if (!cancelled) apply();
-        }
-        tryRelease(el, pointerId);
-        el.style.transform = "";
-        el.style.willChange = "";
-        el.style.opacity = "";
-        restoreSelect();
-        restoreCursor();
-        showHint(null);
-        setDraggingGroupId(null);
-        draggingWindowIdRef.current = null;
-        resetLeafPreview();
+        // drag started. Only a real pointerup commits. Flush the pending
+        // frame first (the drop must use the final pointer position), then
+        // run the ONE teardown shared with the unmount path.
+        if (raf !== null && !cancelled) apply();
+        teardown();
         if (cancelled) {
           // A deferred-float drag already committed its float op; put the
           // pre-drag layout back so Escape really means "never mind" --
@@ -766,14 +750,32 @@ export function useDragController(deps: DragControllerDeps) {
     // Suppress text selection anywhere while dragging over content.
     const restoreSelect = suppressTextSelection();
     tryCapture(el, pointerId);
-    activeCleanup.current = () => {
+    // ONE teardown for both exit paths -- the end handler above and an
+    // unmount mid-drag (activeCleanup). The paths previously diverged and the
+    // unmount path leaked the window `resize` listener (a window-lifetime
+    // listener retaining the whole drag closure: targets, container, layout)
+    // plus the container capture listeners, the stale-marking ref, and the
+    // dragged element's transform.
+    const teardown = () => {
       detach();
+      container.removeEventListener("scroll", markTargetsStale, true);
+      window.removeEventListener("resize", markTargetsStale);
+      container.removeEventListener("transitionend", onTransitionEnd, true);
+      markDragTargetsStaleRef.current = null;
+      activeCleanup.current = null;
+      if (raf !== null) cancelAnimationFrame(raf);
+      tryRelease(el, pointerId);
+      el.style.transform = "";
+      el.style.willChange = "";
       el.style.opacity = "";
       restoreSelect();
       restoreCursor();
+      showHint(null);
+      setDraggingGroupId(null);
       draggingWindowIdRef.current = null;
-      if (raf !== null) cancelAnimationFrame(raf);
+      resetLeafPreview();
     };
+    activeCleanup.current = teardown;
   };
 
   /** Run a drag whose gesture commits layout ops up front (float a group or
@@ -817,6 +819,11 @@ export function useDragController(deps: DragControllerDeps) {
     // otherwise arm a drag whose pointerup is swallowed by the context menu,
     // leaving the panel stuck "dragging" until the next move.
     if (event.button !== 0) return;
+    // One gesture at a time (same guard as RegionResizer): a second touch
+    // point arming a press while a drag is in flight would clobber the shared
+    // singletons (activeCleanup, draggingWindowIdRef, the hint element, the
+    // saved body cursor -- ending A then B left the cursor stuck "grabbing").
+    if (activeCleanup.current !== null) return;
     // Ignore presses that bubble in from portaled children (a share modal's
     // overlay, a tooltip label): React portals bubble through the React tree,
     // so without this DOM-containment check a click inside an open modal
@@ -1166,7 +1173,6 @@ export function useDragController(deps: DragControllerDeps) {
     const stripEl = (event.target as HTMLElement).closest<HTMLElement>(
       "[data-dock-strip]",
     );
-    const stripRect = stripEl?.getBoundingClientRect() ?? null;
 
     let raf: number | null = null;
     let latest: PointerEvent | null = null;
@@ -1290,6 +1296,13 @@ export function useDragController(deps: DragControllerDeps) {
       const e = latest;
       if (e === null) return;
       // Leaving the strip vertically tears the tab out into a floating window.
+      // The strip's rect is measured LIVE each frame (like the tab rects
+      // below): a mid-drag layout commit or scroll can shift the strip, and a
+      // pointerdown-time snapshot would tear out with the pointer visually
+      // still on the strip (or keep reordering after it left). A detached
+      // strip reads all-zeros and falls into tear-out -- the sane response to
+      // the group vanishing under the drag.
+      const stripRect = stripEl?.getBoundingClientRect() ?? null;
       if (
         stripEl === null ||
         stripRect === null ||

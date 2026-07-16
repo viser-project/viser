@@ -158,8 +158,13 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       el.style.overflow = "";
     };
     // Pinned windows: the class transition eases px <-> calc natively
-    // (see the block comment above). Drop any auto-height animation a
-    // same-commit pin interrupted, so nothing outranks that transition.
+    // (see the block comment above). Drop any auto-height animation a pin
+    // interrupted, so nothing outranks that transition -- which is why
+    // `pinnedPx` is in this effect's deps: a PIN-ONLY commit (server
+    // set_height, the stack divider's auto->pinned flip) landing while a
+    // collapse ease is in flight must reach this dropHeld too, or the held
+    // animation outranks the new pinned height until onfinish
+    // (freeze-then-snap).
     if (pinnedPx !== undefined) {
       dropHeld();
       return;
@@ -230,7 +235,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       el.style.overflow = "";
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collapsed]);
+  }, [collapsed, pinnedPx]);
   React.useLayoutEffect(() => {
     const el = paperRef.current;
     // Old-engine insurance for the clip (see the keyframes note above):
@@ -374,6 +379,12 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       contentReachable && Math.abs(h - contentHeight) < 0.5;
     return {
       startHeight,
+      // What a CANCEL must commit: the pre-gesture mode, not just the px. An
+      // auto window (pinnedPx undefined) returns to auto -- committing the
+      // measured startHeight would silently pin it and stop it tracking
+      // content (P2: "modes return to pre-gesture values", same rule as the
+      // stack divider's cancel).
+      startHeightCommit: pinnedPx,
       heightFrom: (dy: number) => {
         const raw = clamp(
           vside === "top" ? startHeight - dy : startHeight + dy,
@@ -408,6 +419,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       const startY = event.clientY;
       const {
         startHeight,
+        startHeightCommit,
         heightFrom,
         snappedToContent,
         yFor,
@@ -428,7 +440,8 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
           activeGrip.current = null;
           paperRef.current?.removeAttribute("data-dock-resizing");
           setSnappedToContent(false);
-          if (cancelled) onResizeHeight(win.id, startHeight, yFor(startHeight));
+          if (cancelled)
+            onResizeHeight(win.id, startHeightCommit, yFor(startHeight));
         },
       });
     };
@@ -449,6 +462,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       const startRight = win.x + win.width;
       const {
         startHeight,
+        startHeightCommit,
         heightFrom,
         snappedToContent,
         yFor,
@@ -485,7 +499,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
               startWidth,
               side === "left" ? startRight - startWidth : undefined,
             );
-            onResizeHeight(win.id, startHeight, yFor(startHeight));
+            onResizeHeight(win.id, startHeightCommit, yFor(startHeight));
           }
         },
       });

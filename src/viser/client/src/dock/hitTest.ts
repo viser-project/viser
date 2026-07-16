@@ -313,17 +313,34 @@ export function hitTest(
     variant,
   });
 
+  // Frontmost floating window under the pointer, resolved FIRST: §3.5 is
+  // categorical -- the window that visually holds the pointer OWNS it, and
+  // only its targets are eligible. Every zone family below that isn't a
+  // float's own target must yield to it, the empty-screen-edge zones
+  // included (a float parked within the 48px band of an empty edge must not
+  // let a drop dock a column THROUGH it). Window paper rects cover the whole
+  // window incl. chrome (header, dividers) -- cell rects alone left slivers
+  // where the suppression blinked off mid-drag.
+  const owningWindow = (() => {
+    let win: { windowId: string; rect: DOMRect } | null = null;
+    for (const w of targets.windows ?? []) {
+      if (inside(w.rect, clientX, clientY)) win = w; // last match = topmost
+    }
+    return win;
+  })();
+
   // 1. Screen edge zones, for a truly empty edge (docked[edge] === null). A
   // minimized region does not read as empty here: its rail/strips reserve real
   // width, and their cells carry their own drop zones -- the region-edge bands
   // below (kept full-height for a minimized region) handle "dock beside".
+  // Yields to an owning float (§3.5, above).
   const edgeReadsEmpty = (edge: DockEdge): boolean =>
     layout.docked[edge] === null;
   // No inner-side bound on either check: during a captured drag the pointer
   // can leave the container, and slamming past either screen edge should still
   // dock there (the right check has always accepted cx > width; keep the left
   // symmetric by accepting cx < 0).
-  if (cx < EDGE_ZONE_PX && edgeReadsEmpty("left")) {
+  if (cx < EDGE_ZONE_PX && edgeReadsEmpty("left") && owningWindow === null) {
     return {
       result: { kind: "edge", edge: "left" },
       hint: {
@@ -335,7 +352,11 @@ export function hitTest(
       },
     };
   }
-  if (crect.width - cx < EDGE_ZONE_PX && edgeReadsEmpty("right")) {
+  if (
+    crect.width - cx < EDGE_ZONE_PX &&
+    edgeReadsEmpty("right") &&
+    owningWindow === null
+  ) {
     return {
       result: { kind: "edge", edge: "right" },
       hint: {
@@ -379,17 +400,9 @@ export function hitTest(
     return false;
   };
   // A floating window visually covering a region-edge band spot claims the
-  // pointer first (3.5 back-to-front): a drop there should target the float,
-  // not dock a column through it into the region underneath. Window paper
-  // rects cover the whole window incl. chrome (header, dividers) -- cell
-  // rects alone left slivers where the suppression blinked off mid-drag.
-  const owningWindow = (() => {
-    let win: { windowId: string; rect: DOMRect } | null = null;
-    for (const w of targets.windows ?? []) {
-      if (inside(w.rect, clientX, clientY)) win = w; // last match = topmost
-    }
-    return win;
-  })();
+  // pointer first (§3.5, resolved above section 1): a drop there should
+  // target the float, not dock a column through it into the region
+  // underneath.
   const overFloatingTarget = (): boolean => {
     if (owningWindow !== null) return true;
     for (const t of targets.groups) {

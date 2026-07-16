@@ -1629,6 +1629,44 @@ describe("owning-window mask: a window's header sliver never hits the docked tar
   });
 });
 
+// Scan regression pin (G5): the empty-screen-edge zones yield to an owning
+// float (§3.5). A window parked within the 48px band of an EMPTY edge owns
+// the pointer -- a drop there targets the float, never docks a column
+// THROUGH it into the empty edge.
+describe("owning-window mask: empty-edge zones yield to a covering float", () => {
+  it("drop over a float parked at an empty left edge targets the float, not the edge", () => {
+    const l = emptyLayout();
+    l.groups = { f: group("f") };
+    l.docked.left = null; // truly empty edge
+    l.floating = [
+      floatingWindow({ id: "w1", x: 0, y: 300, width: 200, stack: ["f"] }),
+    ];
+    const cell = floatTarget("f", "w1", rect(0, 330, 200, 240));
+    cell.winId = "w1";
+    const targets: DropTargets = {
+      groups: [cell],
+      windows: [{ windowId: "w1", rect: rect(0, 300, 200, 300) }],
+    };
+    // Control: with no owning-window mask the point (inside the 48px band)
+    // docks the empty edge -- so the yield, not geometry, is what changes
+    // the resolution.
+    const unmasked = hitTest(
+      l,
+      REGION_W,
+      CONTAINER,
+      { groups: targets.groups },
+      20,
+      400,
+    );
+    expect(unmasked?.result).toEqual({ kind: "edge", edge: "left" });
+    // With the mask: w1 owns the pointer; the drop resolves to ITS target.
+    expect(hitTest(l, REGION_W, CONTAINER, targets, 20, 400)?.result).toEqual({
+      kind: "merge",
+      targetGroupId: "f",
+    });
+  });
+});
+
 // ===========================================================================
 // Unmergeable groups: nothing may be merged or inserted into them.
 // ===========================================================================
