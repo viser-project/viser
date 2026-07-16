@@ -24,9 +24,17 @@ runs:
         enable-cache: true
         cache-suffix: ${{ inputs.python-version }}
 
+    # Pin the interpreter for EVERY uv invocation in this job (this step and
+    # the calling workflow's test steps): a lone `uv run` without --python
+    # would otherwise resolve its own default interpreter, silently REBUILD
+    # .venv against it, and drop the dev extras installed below.
+    - name: Pin uv's Python for the whole job
+      shell: bash
+      run: echo "UV_PYTHON=${{ inputs.python-version }}" >> "$GITHUB_ENV"
+
     - name: Install Python dependencies
       shell: bash
-      run: uv sync --extra dev --python ${{ inputs.python-version }}
+      run: uv sync --extra dev
 
     # Cache the downloaded Playwright browser binaries (keyed on the resolved
     # dependency set, which pins the Playwright version). On a hit, the install
