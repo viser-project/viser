@@ -4,8 +4,8 @@ The server's placement commands (``dock_*`` / ``float`` / ``set_width`` /
 ``minimize``) are write-only and REPLAYED to a (re)connecting client. Without
 care, a reconnect re-applies the original placement and clobbers a layout the
 user rearranged in the browser. To prevent that, each placement message carries
-a per-panel counter, and the client tracks (per stable panel key) the last
-counter it applied plus whether the user has moved the panel:
+a counter, and the client tracks (per panel uuid, per run) the highest counter
+it applied plus whether the user has moved the panel:
 
 * an UNTOUCHED panel always re-applies server placement on reconnect;
 * a USER-MOVED panel ignores replayed placement (same counter) -- the user's
@@ -15,9 +15,9 @@ counter it applied plus whether the user has moved the panel:
 
 The tracking lives in client memory, so it survives a websocket reconnect (these
 tests) but intentionally NOT a full page reload (out of scope by design -- no
-persistent storage). A reconnect is simulated by toggling the browser context
-offline and back, which drops and re-establishes the websocket WITHOUT reloading
-the page.
+persistent storage). A reconnect is a real server-side socket drop
+(`disconnect_all_clients`) followed by the client's automatic retry + replay --
+see `_reconnect` for why the old `set_offline` approach was vacuous.
 
 Skips cleanly if the client toolchain isn't available (same harness as
 test_panels.py).
@@ -67,11 +67,17 @@ def _drag_panel_out(page: Page) -> None:
     page.wait_for_timeout(400)
 
 
-def _reconnect(page: Page) -> None:
-    """Drop + re-establish the websocket without reloading the page."""
-    page.context.set_offline(True)
-    page.wait_for_timeout(1500)
-    page.context.set_offline(False)
+def _reconnect(page: Page, server: viser.ViserServer) -> None:
+    """Drop + re-establish the websocket without reloading the page.
+
+    SERVER-side drop, deliberately: Playwright's `set_offline` does not close
+    an already-established localhost websocket, so the old client-side version
+    of this helper never disconnected anything and the whole suite passed
+    without exercising resetGui/replay (the reconnect bugs it 'covered'
+    shipped anyway). `disconnect_all_clients` closes the socket for real; the
+    client's retry loop then reconnects and replays."""
+    server._websock_server.disconnect_all_clients()
+    # Reconnect + full replay; the retry loop ticks at 1s.
     page.wait_for_timeout(3000)
 
 
@@ -102,7 +108,7 @@ def test_user_moved_panel_survives_reconnect(
         f"drag did not float the panel: {floated}"
     )
 
-    _reconnect(viser_page)
+    _reconnect(viser_page, viser_server)
     after = _panel_box(viser_page)
     assert after is not None and not after["docked"], (
         f"reconnect clobbered the user's float (re-docked): {after}"
@@ -123,7 +129,7 @@ def test_untouched_panel_reapplies_on_reconnect(
     before = _panel_box(viser_page)
     assert before is not None and before["docked"], f"expected docked: {before}"
 
-    _reconnect(viser_page)
+    _reconnect(viser_page, viser_server)
     after = _panel_box(viser_page)
     assert after is not None and after["docked"], (
         f"untouched panel lost its docked placement on reconnect: {after}"
@@ -296,7 +302,7 @@ def test_reconnect_with_multiple_panels_preserves_each(
         f"Moved did not float: {moved_floated}"
     )
 
-    _reconnect(viser_page)
+    _reconnect(viser_page, viser_server)
 
     moved_after = _labeled_box(viser_page, "Moved")
     kept_after = _labeled_box(viser_page, "Kept")

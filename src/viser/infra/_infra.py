@@ -365,7 +365,21 @@ class WebsockServer(WebsockMessageHandler):
         self._stop_event: asyncio.Event | None = None
 
         self._client_state_from_id: dict[int, _ClientHandleState] = {}
+        # Raw websocket connections of live clients, for disconnect_all_clients.
+        self._live_connections: dict[int, ServerConnection] = {}
         self._server_thread: threading.Thread | None = None
+
+    def disconnect_all_clients(self) -> None:
+        """Forcibly close every live client connection. The server keeps
+        running; clients auto-reconnect and replay. This is the supported way
+        to exercise the reconnect path (e.g. from tests): a network-level drop
+        cannot be scripted from the browser side -- Playwright's `set_offline`
+        does not close already-established localhost websockets."""
+        loop = self._background_event_loop
+        if loop is None:
+            return
+        for connection in tuple(self._live_connections.values()):
+            asyncio.run_coroutine_threadsafe(connection.close(), loop)
 
     def start(self) -> None:
         """Start the server."""
@@ -505,6 +519,7 @@ class WebsockServer(WebsockMessageHandler):
             )
             client_connection = WebsockClientConnection(client_id, client_state)
             self._client_state_from_id[client_id] = client_state
+            self._live_connections[client_id] = connection
 
             def handle_incoming(message: Message) -> None:
                 event_loop.create_task(
@@ -571,6 +586,7 @@ class WebsockServer(WebsockMessageHandler):
                 # `await` inside this finally) must not be able to skip it and
                 # leak the client. `pop(..., None)` keeps this idempotent.
                 self._client_state_from_id.pop(client_id, None)
+                self._live_connections.pop(client_id, None)
                 total_connections -= 1
 
                 # Disconnection callbacks.
