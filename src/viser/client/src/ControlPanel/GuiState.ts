@@ -49,13 +49,6 @@ export interface PanelPlacementState {
 export type AppliedAxisRecord = { [runId: string]: number };
 export type AppliedAxes = Partial<Record<PlacementAxisName, AppliedAxisRecord>>;
 
-/** One panel's layout-application tracking (see GuiState.panelLayoutTracking).
- * Named so the store and the placement gate share a single definition. */
-export interface PanelLayoutEntry {
-  applied: AppliedAxes;
-  userTouched: boolean;
-}
-
 /** Merge one placement axis into a panel's entry. Same run: keep the higher
  * counter (an out-of-order replay can't regress the axis). Different run: the
  * later arrival wins (counters aren't comparable across runs/scopes). Returns
@@ -116,17 +109,19 @@ export interface GuiState {
    * for the main panel). Built up by the four write-only `GuiSetPanel*`
    * messages; the dock applies whatever fields are present. */
   panelPlacement: { [uuid: string]: PanelPlacementState };
-  /** Per-panel layout-application tracking, keyed by panel uuid (and
-   * CONTROL_PANEL_ID for the main panel). Deliberately SURVIVES `resetGui`:
-   * the buffer replay after a reconnect re-delivers the same panels (same
-   * uuids) with the same placement stamps, and this memory is what stops the
-   * replay from re-applying placement to a panel the user has since
-   * rearranged. A RESTARTED server is different by design: its new runId makes
-   * every axis fresh (see placementGate.ts), so its dead uuids' entries gate
-   * nothing; they are pruned at replay-done (D51) and immediately when the
+  /** Per-panel applied high-water marks (per axis, per run), keyed by panel
+   * uuid (and CONTROL_PANEL_ID for the main panel). THE placement arbitration
+   * state (D52): an axis re-applies only above its own run's mark, so a
+   * replayed command can never disturb a layout it already shaped -- which is
+   * also what protects a user's rearrangement, with no separate "user
+   * touched" bit. Deliberately SURVIVES `resetGui`: the buffer replay after a
+   * reconnect re-delivers the same stamps, which the marks make stale. A
+   * RESTARTED server is different by design: its new runId is unseen, so
+   * every axis is fresh (see placementGate.ts); dead uuids' entries gate
+   * nothing and are pruned at replay-done (D51) and immediately when the
    * server removes a panel. */
   panelLayoutTracking: {
-    [uuid: string]: PanelLayoutEntry;
+    [uuid: string]: AppliedAxes;
   };
   /** Bumped by `resetPanelLayout` to force the dock to re-apply server placement
    * for every panel from scratch (the placement effects watch it and clear their
@@ -199,9 +194,6 @@ export interface GuiActions {
    * applied for the panel with this uuid, so a replay of the same commands is
    * ignored while a genuinely newer command still applies. */
   recordPanelLayoutApplied: (uuid: string, applied: AppliedAxes) => void;
-  /** Mark the panel with this uuid as user-moved, so server placement is no
-   * longer auto-applied unless its counter increments. */
-  markPanelUserTouched: (uuid: string) => void;
   /** Discard all user rearrangement: clear the touched/applied tracking and bump
    * `layoutResetNonce` so the dock re-applies every panel's server placement. */
   resetPanelLayout: () => void;
@@ -457,7 +449,7 @@ export function useGuiState(initialServer: string) {
         // store is now COMPLETE for this connection, so this is the one safe
         // point to prune layout tracking for uuids the replay did not revive
         // (a mid-replay prune raced the message windows and could drop a
-        // still-loading panel's userTouched state).
+        // still-loading panel's applied high-water marks).
         store.set((state) => {
           const live = new Set(Object.keys(state.panels));
           live.add(CONTROL_PANEL_ID);
@@ -551,46 +543,25 @@ export function useGuiState(initialServer: string) {
             Object.entries(applied).every(([axis, runMap]) =>
               Object.entries(runMap).every(
                 ([rid, counter]) =>
-                  (prev.applied[axis as PlacementAxisName]?.[rid] ?? -1) >=
-                  counter,
+                  (prev[axis as PlacementAxisName]?.[rid] ?? -1) >= counter,
               ),
             )
           )
             return {};
           // Merge per-axis, per-run, keeping the high-water mark (an
           // out-of-order replay can't regress a run's recorded counter).
-          const mergedApplied: AppliedAxes = { ...prev?.applied };
+          const merged: AppliedAxes = { ...prev };
           for (const [axis, runMap] of Object.entries(applied)) {
             const axisName = axis as PlacementAxisName;
-            const merged: AppliedAxisRecord = {
-              ...prev?.applied[axisName],
-            };
+            const axisMap: AppliedAxisRecord = { ...prev?.[axisName] };
             for (const [rid, counter] of Object.entries(runMap))
-              merged[rid] = Math.max(merged[rid] ?? -1, counter);
-            mergedApplied[axisName] = merged;
+              axisMap[rid] = Math.max(axisMap[rid] ?? -1, counter);
+            merged[axisName] = axisMap;
           }
           return {
             panelLayoutTracking: {
               ...state.panelLayoutTracking,
-              [uuid]: {
-                applied: mergedApplied,
-                userTouched: prev?.userTouched ?? false,
-              },
-            },
-          };
-        });
-      },
-      markPanelUserTouched: (uuid) => {
-        store.set((state) => {
-          const prev = state.panelLayoutTracking[uuid];
-          if (prev?.userTouched === true) return {};
-          return {
-            panelLayoutTracking: {
-              ...state.panelLayoutTracking,
-              [uuid]: {
-                applied: prev?.applied ?? {},
-                userTouched: true,
-              },
+              [uuid]: merged,
             },
           };
         });

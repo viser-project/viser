@@ -83,21 +83,32 @@ function MobilePanelSection({ panel }: { panel: GuiPanelMessage }) {
   // Server `minimize()` / `expand()` reach the mobile sheet too: the
   // collapsed placement axis toggles this section. The mobile DEFAULT stays
   // collapsed (deliberate: the sheet is wayfinding chrome) -- the axis is
-  // honored as a COMMAND, once per (runId, counter) stamp, so a user's tap
-  // wins afterwards until a genuinely newer command arrives, mirroring the
-  // dock's placement gate. A reconnect replay re-delivers the same stamp and
-  // is ignored.
+  // honored as a COMMAND, applied once above its per-run high-water mark, so
+  // a user's tap wins afterwards until a genuinely newer command arrives --
+  // the same D52 arbitration as the dock, RECORDED IN THE SAME STORE. The
+  // shared record is load-bearing twice over: it survives this component's
+  // unmount (a reconnect remounts the section; a ref-based dedup replayed the
+  // old command), and it makes commands apply exactly once ACROSS surfaces (a
+  // command applied on the desktop dock doesn't re-fire when the viewport
+  // shrinks to mobile -- switching back the other way is covered by the
+  // gate's unplaced arm, which re-applies everything to a fresh dock).
   const collapsedAxis = viewer.useGui(
     (state) => state.panelPlacement[panel.uuid]?.collapsed,
   );
-  const appliedCollapseStamp = React.useRef<string | null>(null);
+  const appliedCollapsed = viewer.useGui(
+    (state) => state.panelLayoutTracking[panel.uuid]?.collapsed,
+  );
   React.useEffect(() => {
     if (collapsedAxis === undefined) return;
-    const stamp = `${collapsedAxis.runId}:${collapsedAxis.counter}`;
-    if (appliedCollapseStamp.current === stamp) return;
-    appliedCollapseStamp.current = stamp;
+    if (
+      (appliedCollapsed?.[collapsedAxis.runId] ?? -1) >= collapsedAxis.counter
+    )
+      return;
+    viewer.guiActions.recordPanelLayoutApplied(panel.uuid, {
+      collapsed: { [collapsedAxis.runId]: collapsedAxis.counter },
+    });
     setExpanded(!collapsedAxis.value);
-  }, [collapsedAxis]);
+  }, [collapsedAxis, appliedCollapsed, panel.uuid, viewer]);
   const labels = panel.props._tab_labels;
   const icons = panel.props._tab_icons_html;
   const ids = panel.props._tab_container_ids;

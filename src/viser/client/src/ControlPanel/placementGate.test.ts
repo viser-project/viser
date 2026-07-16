@@ -8,7 +8,7 @@
 //   commands are not swallowed by the server scope's higher counters.
 
 import { describe, expect, it } from "vitest";
-import type { PanelLayoutEntry, PanelPlacementState } from "./GuiState";
+import type { AppliedAxes, PanelPlacementState } from "./GuiState";
 import { gatePlacement } from "./placementGate";
 import { applyPanelPlacement, findPaneGroup } from "../dock/layoutOps";
 import { emptyLayout } from "../dock/types";
@@ -23,7 +23,7 @@ function entry(axes: Partial<PanelPlacementState>): PanelPlacementState {
 }
 
 describe("gatePlacement", () => {
-  it("untouched panel: every present axis applies", () => {
+  it("no prior applies (fresh tracking): every present axis applies", () => {
     const g = gatePlacement(
       entry({
         position: { value: DOCK_RIGHT, counter: 1, runId: RUN_A },
@@ -41,12 +41,9 @@ describe("gatePlacement", () => {
     });
   });
 
-  it("THE yank: touched panel, later set_width -> width applies, stale position does NOT", () => {
+  it("THE yank: later set_width -> width applies, stale position does NOT (no touch bit needed, D52)", () => {
     // dock_right (counter 1) was applied; user then dragged the panel away.
-    const tracking = {
-      applied: { position: { [RUN_A]: 1 } },
-      userTouched: true,
-    };
+    const tracking: AppliedAxes = { position: { [RUN_A]: 1 } };
     // set_width arrives (counter 2). The store still holds the old position.
     const g = gatePlacement(
       entry({
@@ -62,13 +59,10 @@ describe("gatePlacement", () => {
     expect(g.applied).toEqual({ width: { [RUN_A]: 2 } });
   });
 
-  it("replay (same counters, same run) on a touched panel applies nothing", () => {
-    const tracking = {
-      applied: {
-        position: { [RUN_A]: 1 },
-        width: { [RUN_A]: 2 },
-      },
-      userTouched: true,
+  it("replay (same counters, same run) on a placed panel applies nothing", () => {
+    const tracking: AppliedAxes = {
+      position: { [RUN_A]: 1 },
+      width: { [RUN_A]: 2 },
     };
     const g = gatePlacement(
       entry({
@@ -83,11 +77,8 @@ describe("gatePlacement", () => {
     expect(g.placement.width).toBeNull();
   });
 
-  it("server re-assert (same run, higher counter) applies to a touched panel", () => {
-    const tracking = {
-      applied: { position: { [RUN_A]: 1 } },
-      userTouched: true,
-    };
+  it("server re-assert (same run, higher counter) applies", () => {
+    const tracking: AppliedAxes = { position: { [RUN_A]: 1 } };
     const g = gatePlacement(
       entry({ position: { value: DOCK_RIGHT, counter: 3, runId: RUN_A } }),
       tracking,
@@ -97,10 +88,7 @@ describe("gatePlacement", () => {
   });
 
   it("restarted server / other scope (different runId, LOWER counter) applies", () => {
-    const tracking = {
-      applied: { position: { [RUN_A]: 5 } },
-      userTouched: true,
-    };
+    const tracking: AppliedAxes = { position: { [RUN_A]: 5 } };
     const g = gatePlacement(
       entry({ position: { value: DOCK_RIGHT, counter: 1, runId: RUN_B } }),
       tracking,
@@ -116,10 +104,7 @@ describe("gatePlacement", () => {
     // buffer -- RUN_A's old position. With single-stamp tracking this read as
     // "different runId from last-applied -> fresh" and yanked the panel; the
     // per-run high-water map keeps RUN_A's mark and rejects it.
-    const tracking = {
-      applied: { position: { [RUN_A]: 5, [RUN_B]: 2 } },
-      userTouched: true,
-    };
+    const tracking: AppliedAxes = { position: { [RUN_A]: 5, [RUN_B]: 2 } };
     const g = gatePlacement(
       entry({ position: { value: DOCK_RIGHT, counter: 5, runId: RUN_A } }),
       tracking,
@@ -136,11 +121,27 @@ describe("gatePlacement", () => {
     expect(g2.placement.position).toEqual(DOCK_RIGHT);
   });
 
+  it("re-review regression (D52): a new message on ONE axis does not re-free another axis's already-applied command", () => {
+    // A.minimize() (counter 5) applied; B.expand() (counter 6) then expanded
+    // the shared column; A.set_width(444) (counter 7) arrives. The old
+    // "untouched panel re-applies every present axis" arm re-freed A's stale
+    // collapse and re-collapsed the column B had just expanded.
+    const tracking: AppliedAxes = { collapsed: { [RUN_A]: 5 } };
+    const g = gatePlacement(
+      entry({
+        collapsed: { value: true, counter: 5, runId: RUN_A },
+        width: { value: 444, counter: 7, runId: RUN_A },
+      }),
+      tracking,
+      true,
+    );
+    expect(g.placement.width).toBe(444);
+    expect(g.placement.collapsed).toBeNull(); // at its high-water: stale
+    expect(g.applied).toEqual({ width: { [RUN_A]: 7 } });
+  });
+
   it("an UNPLACED panel applies everything (can't yank what isn't placed)", () => {
-    const tracking = {
-      applied: { position: { [RUN_A]: 1 } },
-      userTouched: true,
-    };
+    const tracking: AppliedAxes = { position: { [RUN_A]: 1 } };
     const g = gatePlacement(
       entry({ position: { value: DOCK_RIGHT, counter: 1, runId: RUN_A } }),
       tracking,
@@ -192,10 +193,7 @@ describe("gate -> apply sequence: float then set_height/set_width", () => {
 
     // Pass 2: set_height(300) merged its axis; the panel is now placed and its
     // position axis already applied (recorded in tracking).
-    const tracking: PanelLayoutEntry = {
-      applied: g1.applied,
-      userTouched: false,
-    };
+    const tracking: AppliedAxes = g1.applied;
     const entry2 = entry({
       ...entry1,
       height: { value: 300, counter: 2, runId: RUN_A },
@@ -227,10 +225,7 @@ describe("gate -> apply sequence: float then set_height/set_width", () => {
       () => null,
       { canvasBounds: BOUNDS },
     );
-    const tracking: PanelLayoutEntry = {
-      applied: g1.applied,
-      userTouched: false,
-    };
+    const tracking: AppliedAxes = g1.applied;
     const entry2 = entry({
       ...entry1,
       width: { value: 360, counter: 2, runId: RUN_A },

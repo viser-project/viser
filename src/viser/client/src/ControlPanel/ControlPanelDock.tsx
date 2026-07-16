@@ -16,14 +16,7 @@ import { htmlIconWrapper } from "../components/ComponentStyles.css";
 import { DockMetricsContext, useDock } from "../dock/DockContext";
 import { DockManager } from "../dock/DockManager";
 import * as ops from "../dock/layoutOps";
-import {
-  isRegionPackedOn,
-  DockLayout,
-  PANEL_PAD_PX,
-  PaneRegistry,
-  emptyLayout,
-  regionWidthsOf,
-} from "../dock/types";
+import { PANEL_PAD_PX, PaneRegistry, emptyLayout } from "../dock/types";
 import {
   CommandsButton,
   ConnectionStatus,
@@ -41,52 +34,6 @@ import { usePlacementCoordinator } from "./placementCoordinator";
 // Memoized so a torn-out tab's whole GUI tree doesn't re-render every time
 // unrelated dock state changes (it only depends on its container uuid).
 const MemoizedGeneratedGuiContainer = React.memo(GeneratedGuiContainer);
-
-/** Per-group placement signature in a layout: where the group sits + its
- * container's collapse state (D38) + (for a floating group) its window
- * geometry. Used to detect which panels a user gesture actually
- * MOVED/resized/(un)minimized, so only those get flagged user-touched.
- * Returns a map keyed by group id. */
-function groupPlacementSignatures(layout: DockLayout): Map<string, string> {
-  const sigs = new Map<string, string>();
-  // Docked: signature = edge + the group's node id (its slot in the region) +
-  // the REGION's width. The width matters so a user's region resize flags the
-  // docked panels there as touched -- otherwise a reconnect replay of a server
-  // set_width would silently revert the drag (floating windows already include
-  // their geometry below). Programmatic width writes never reach this diff
-  // (handleCommit skips programmatic commits).
-  for (const edge of ["left", "right"] as const) {
-    const region = layout.docked[edge];
-    if (region === null) continue;
-    const w = Math.round(regionWidthsOf(layout)[edge]);
-    // The PACKED region-rail state joins every resident's signature (D44:
-    // derived from the column flags, but kept as its own term so the packed
-    // form's replay hazard stays covered even if per-column terms change).
-    const rail = isRegionPackedOn(layout, edge) ? "R" : "-";
-    for (const column of region.columns) {
-      // The containing column's railed state joins the signature like the
-      // region's `:R` term: a user's column-rail toggle must mark that
-      // column's residents touched, for the same P6 replay hazard.
-      const colRail = column.railed === true ? "r" : "-";
-      for (const { id, group } of ops.collectLeaves(column))
-        sigs.set(group, `d:${edge}:${id}:${w}:${rail}:${colRail}`);
-    }
-  }
-  // Floating: signature = the window (id + position/size) the group sits in,
-  // plus the WINDOW's collapse flag (D38 -- collapse is container state).
-  // Deliberately NOT the stack index -- a group that stays in the same window
-  // hasn't been "relocated" by the user, so tearing a SIBLING out (which
-  // shifts the others' indices) must not flag the ones left behind.
-  for (const win of layout.floating) {
-    const wsig = `f:${win.id}:${Math.round(win.x)},${Math.round(
-      win.y,
-    )},${Math.round(win.width)},${JSON.stringify(win.height)}:${
-      win.collapsed === true ? "c" : "e"
-    }`;
-    for (const gid of win.stack) sigs.set(gid, wsig);
-  }
-  return sigs;
-}
 
 /** Where the control panel currently sits, reported up to App so the
  * notifications layer can offset itself clear of a left-docked panel. */
@@ -183,57 +130,10 @@ export function ControlPanelDockSurface({
   // (a live removal's uuid can never return) and the replayDone action (the
   // one point where the panel set is provably complete for a connection). A
   // mid-replay prune keyed on the panel set raced the replay's message
-  // windows and could drop a still-loading panel's userTouched state.
-
-  // Flag a panel "user-touched" when a USER gesture (not a programmatic
-  // server-placement apply) changes its position/size/collapsed -- so the
-  // counter-gated placement effect stops re-applying server placement and the
-  // user's arrangement survives reconnect. We diff per-group placement
-  // signatures, INCLUDING groups the commit dissolved (a merge deletes the
-  // source group while leaving the destination's signature untouched -- diffing
-  // only surviving groups missed exactly that gesture, and a later server
-  // command yanked the merged tab back out), and map each affected group back
-  // to its panel uuid.
-  const handleCommit = React.useCallback(
-    (prev: DockLayout, next: DockLayout, programmatic: boolean) => {
-      if (programmatic) return;
-      const before = groupPlacementSignatures(prev);
-      const after = groupPlacementSignatures(next);
-      // Groups whose placement signature changed (the user moved them), each
-      // paired with the layout that can resolve its panes.
-      const changed: { gid: string; layout: DockLayout }[] = [];
-      for (const [gid, sig] of after)
-        if (before.get(gid) !== sig) changed.push({ gid, layout: next });
-      // Groups the commit DISSOLVED (merge / tab-insert): their panes moved
-      // into another group by user gesture; resolve them from the PREV
-      // layout, where the group still exists.
-      for (const [gid] of before)
-        if (!after.has(gid)) changed.push({ gid, layout: prev });
-      if (changed.length === 0) return; // e.g. a tab-reorder-only commit.
-      // Map each panel's panes (tab containers) to its panel uuid; the main
-      // panel's pane is CONTROL_PANEL_ID. Built only when something changed.
-      const panelState = viewer.useGui.get().panels;
-      const paneToPanelUuid = new Map<string, string>();
-      for (const [puid, p] of Object.entries(panelState))
-        for (const cid of p.props._tab_container_ids)
-          paneToPanelUuid.set(cid, puid);
-      const touched = new Set<string>();
-      for (const { gid, layout } of changed) {
-        const group = layout.groups[gid];
-        if (group === undefined) continue;
-        if (group.paneIds.includes(CONTROL_PANEL_ID)) {
-          touched.add(CONTROL_PANEL_ID);
-          continue;
-        }
-        for (const pane of group.paneIds) {
-          const puid = paneToPanelUuid.get(pane);
-          if (puid !== undefined) touched.add(puid);
-        }
-      }
-      for (const puid of touched) viewer.guiActions.markPanelUserTouched(puid);
-    },
-    [viewer],
-  );
+  // windows and could drop a still-loading panel's applied high-water marks.
+  // There is no per-gesture "user touched" marking either (D52): the applied
+  // marks recorded by the placement coordinator are the whole arbitration
+  // state, so user gestures need no bookkeeping at all here.
 
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
@@ -241,7 +141,6 @@ export function ControlPanelDockSurface({
         <DockManager
           initialLayout={initialLayout}
           panes={panes}
-          onCommit={handleCommit}
           // Resize the 3D canvas's GL backbuffer synchronously as a docked
           // region's width handle is dragged, so the scene tracks the divider
           // instead of trailing R3F's async ResizeObserver by a frame.

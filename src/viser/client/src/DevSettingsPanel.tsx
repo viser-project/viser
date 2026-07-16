@@ -20,13 +20,6 @@ export function DevSettingsPanel({ devSettingsStore }: DevSettingsPanelProps) {
     (state) => state.enableOrbitCrosshair,
   );
 
-  // The panel layout is "changed" once the user has manually moved/resized any
-  // panel (the dirty bit set by dock gestures). Reset discards that so the
-  // server's placement re-applies.
-  const layoutChanged = viewer.useGui((state) =>
-    Object.values(state.panelLayoutTracking).some((t) => t.userTouched),
-  );
-
   const darkMode = viewer.useGui((state) => state.theme.dark_mode);
   const setDarkMode = (dark: boolean) => {
     viewer.useGui.set({
@@ -150,19 +143,18 @@ export function DevSettingsPanel({ devSettingsStore }: DevSettingsPanelProps) {
         </Tooltip>
 
         <Tooltip
-          label={
-            layoutChanged
-              ? "Discard your panel rearrangement and restore the layout the server set."
-              : "No panel changes to reset."
-          }
+          label="Discard any panel rearrangement and restore the layout the server set."
           refProp="rootRef"
         >
+          {/* Always enabled: reset is idempotent, and the "has the user
+          rearranged anything" dirty bit was the last reader of the deleted
+          user-touched tracking (D52) -- not worth keeping a subsystem for a
+          disabled-state nicety. */}
           <Button
             size="xs"
             radius="xs"
             variant="default"
             leftSection={<IconLayoutDistributeHorizontal size={14} />}
-            disabled={!layoutChanged}
             onClick={() => viewer.guiActions.resetPanelLayout()}
           >
             Reset Panel Layout

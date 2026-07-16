@@ -1066,7 +1066,9 @@ class GuiApi:
         :meth:`PanelHandle.remove` (there is no UI close button). See also
         :attr:`main_panel` to place the main control panel.
 
-        Panels start expanded; :meth:`PanelHandle.minimize` /
+        Panels start expanded -- except on the mobile bottom sheet, where
+        panels render as sections that start collapsed (one tap opens the
+        panel; the sheet is wayfinding chrome). :meth:`PanelHandle.minimize` /
         :meth:`PanelHandle.expand` collapse or reveal them imperatively,
         applied to the panel's containing window or docked column like the
         on-screen minimize control.

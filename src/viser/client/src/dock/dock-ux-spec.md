@@ -201,9 +201,11 @@ unit is a drag handle for *something* — no inert pixels inside chrome.
 
 **P6 — The user owns the layout; the server owns intent. (A)** Placement
 is write-only from the server. A *new* server command always applies; a
-*replayed/stale* command never overrides what the user has touched since.
-The counter/run-id stamps make "new vs stale" decidable; there is no
-other arbitration.
+*replayed/stale* command never disturbs a layout it already shaped —
+which is what protects the user's rearrangement, with no notion of
+"user touched" (D52): every replayed stamp is at or below the applied
+high-water mark its own first application recorded. The counter/run-id
+stamps make "new vs stale" decidable; there is no other arbitration.
 
 **P7 — Symmetry and analogy. (A)** Left/right are exact mirrors. Docked
 and floating are analogs: a floating stack is a docked column that
@@ -476,8 +478,9 @@ chevron included, reappears automatically.
   Seam dead-spot recovery is scoped the same way, and region-edge bands
   yield under the same rule: a drop over a float never docks THROUGH it.
 - Multi-client: layout is per-client state; server placement commands
-  fan out and each client's gate arbitrates against its own user's
-  touches (P6). Clients never sync layouts with each other.
+  fan out and each client's gate arbitrates against its own applied
+  high-water marks (P6/D52). Clients never sync layouts with each
+  other.
 
 ### 3.6 Mobile (no dock surface)
 
@@ -849,14 +852,15 @@ sizing subset. Both exist on `server.gui` (broadcast) and `client.gui`
   a railed source lands railed — exactly like the user path. A placement
   command never expands a railed panel.
 - Fresh vs stale: ONE monotonically increasing layout counter per
-  server run, global across panels (D50). An axis message applies iff
-  the user hasn't touched that panel since the message's stamp, or the
-  stamp is provably newer than everything previously applied FROM ITS
-  OWN RUN — the client records a per-run high-water map per axis, so a
-  reconnect replay of an old run's command is stale even when the most
-  recent apply came from another scope (P6; `placementGate.ts`). Late
-  joiners replay the latest message per axis and reconstruct the same
-  placement.
+  server run, global across panels (D50). A PLACED panel's axis message
+  applies iff its stamp is provably newer than everything previously
+  applied FROM ITS OWN RUN — the client records a per-run high-water
+  map per axis (an unplaced panel applies every present axis). There is
+  no user-touched bit (D52): the marks alone protect a user's
+  rearrangement, and they also make a reconnect replay of an old run's
+  command stale even when the most recent apply came from another
+  scope (P6; `placementGate.ts`). Late joiners replay the latest
+  message per axis and reconstruct the same placement.
 - A replay bundle applies position first, then size — size ops resolve
   against the panel's FINAL location. Collapse applies last and in
   COMMAND order across panels (the global counter, D50): collapse is
@@ -894,7 +898,7 @@ sizing subset. Both exist on `server.gui` (broadcast) and `client.gui`
   overrides whatever the user did (a periodic `dock_right()` loop will
   fight the user); per-client placement reaches only currently-connected
   clients; notification offsets track only the control panel; and
-  `expand()` acts at container scope while touch-tracking is per-panel —
+  `expand()` acts at container scope while stamps are per-panel —
   expanding panel A un-rails column-mates the user minimized alongside
   it (the documented container contract, but the one place a server
   command overrides sibling panels' user-set state).
@@ -1004,9 +1008,11 @@ at every consumer.
   fixpoint pass over the placement store) in which split placements
   defer on their anchor via a synchronous store predicate — no timers,
   no pending state — and fresh collapse axes apply after all positions,
-  in command order (D50). Reconnects are an explicit phase ended by the
-  server's ReplayDoneMessage (D51); teardown decisions are never
-  inferred from store emptiness.
+  in command order (D50). There is no user-touched bit and no gesture
+  bookkeeping: the applied marks are the whole arbitration state (D52).
+  Reconnects are an explicit phase ended by the server's
+  ReplayDoneMessage (D51); teardown decisions are never inferred from
+  store emptiness.
 
 ---
 
@@ -1221,6 +1227,23 @@ consuming paragraphs.
   complete (a mid-replay prune raced the 128-message windows). Root
   cause this replaces: "the panels store is empty" was overloaded to
   mean both "removed" and "not yet delivered", and consumers guessed.
+- **D52** — the applied high-water marks ARE the arbitration; the
+  user-touched bit and its gesture inference are DELETED. For a placed
+  panel, an axis applies iff its counter beats its own run's recorded
+  mark; an unplaced panel applies everything. The old "an untouched
+  panel re-applies every present axis" arm existed to re-seed panels a
+  reconnect had destroyed — obsolete under D51's dormancy — and its one
+  live effect was a bug (external re-review): a new message on ANY axis
+  re-freed every stale axis of an untouched panel, so a `set_width`
+  could replay an already-applied collapse into a shared container and
+  re-collapse a column another panel's newer command had expanded. The
+  marks subsume the touch bit for protection (a replayed stamp is never
+  above its own first application's mark) and for re-assertion (a new
+  counter applies to touched and untouched panels alike), so the whole
+  inference layer — commit signature diffing, dissolved-group
+  accounting, `markPanelUserTouched` — is gone rather than patched. The
+  mobile sheet records its collapse applications in the same store, so
+  commands apply exactly once across surfaces and survive remounts.
 
 Retired — one line per ID; the pointer is where any surviving content
 lives:

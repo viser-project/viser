@@ -4,14 +4,15 @@ The server's placement commands (``dock_*`` / ``float`` / ``set_width`` /
 ``minimize``) are write-only and REPLAYED to a (re)connecting client. Without
 care, a reconnect re-applies the original placement and clobbers a layout the
 user rearranged in the browser. To prevent that, each placement message carries
-a counter, and the client tracks (per panel uuid, per run) the highest counter
-it applied plus whether the user has moved the panel:
+a counter, and the client tracks (per panel uuid, per axis, per run) the
+highest counter it has APPLIED -- there is no separate "user moved" bit (D52):
 
-* an UNTOUCHED panel always re-applies server placement on reconnect;
-* a USER-MOVED panel ignores replayed placement (same counter) -- the user's
-  arrangement survives the reconnect;
-* the server can still RE-ASSERT a moved panel's placement by calling a
-  placement method again (which increments the counter past the last applied).
+* a replayed command (counter at or below its own run's applied mark) never
+  re-applies, so a user-moved panel keeps the user's arrangement;
+* a panel the user never moved converges to the same state either way (the
+  replayed command re-describes the layout it already produced);
+* the server RE-ASSERTS by calling a placement method again (a new counter
+  above the mark), which applies whether or not the user moved anything.
 
 The tracking lives in client memory, so it survives a websocket reconnect (these
 tests) but intentionally NOT a full page reload (out of scope by design -- no
