@@ -145,30 +145,42 @@ export function reconcileRegionWidths(
       return;
     }
 
-    // Structural column change: rewrite weights to pixels. Match by shared
-    // panel groups (content identity), not node id: a column's root id
-    // changes when it's split internally (leaf -> split) even though it
-    // still holds the same panel, so id matching would wrongly treat it as
-    // new and reset its width. Each prev column matches at most one next
-    // column.
+    // Structural column change: rewrite weights to pixels. Matching runs in
+    // two passes. Pass 1 matches by SURVIVING COLUMN ID: a column that
+    // persists across the op keeps its own px, so a new column inserted
+    // before it in the array cannot steal its width via a shared group (the
+    // greedy group scan alone is insertion-order dependent -- the stationary
+    // column would reset to the default while the mover inherited its px).
+    // Pass 2 matches the remainder by shared panel groups (content
+    // identity): a column whose root id changed across the op (split
+    // internally, rebuilt by detach/insert) still holds the same panel and
+    // must keep its width. Each prev column matches at most one next column.
     // A prev column's carried-over pixel width: weights are always
     // reconciled pixels (this function wrote them, lone columns included;
     // the mount chokepoint reconciles, so no pre-reconcile layout is ever
     // consumer-visible).
     const prevPxOf = (c: DockColumn): number => c.weight;
     const prevInfo = (prevTree?.columns ?? []).map((c) => ({
+      id: c.id,
       groups: new Set(collectLeafGroups(c)),
       px: prevPxOf(c),
-      railed: c.railed === true,
       used: false,
     }));
-    const intended = nextCols.map((c) => {
-      const groupSet = collectLeafGroups(c);
-      const match = prevInfo.find(
-        (p) => !p.used && groupSet.some((g) => p.groups.has(g)),
-      );
+    const idMatches = nextCols.map((c) => {
+      const byId = prevInfo.find((p) => !p.used && p.id === c.id);
+      if (byId !== undefined) byId.used = true;
+      return byId;
+    });
+    const intended = nextCols.map((c, i) => {
+      let match = idMatches[i];
+      if (match === undefined) {
+        const groupSet = collectLeafGroups(c);
+        match = prevInfo.find(
+          (p) => !p.used && groupSet.some((g) => p.groups.has(g)),
+        );
+        if (match !== undefined) match.used = true;
+      }
       if (match !== undefined) {
-        match.used = true;
         // Clamp the carried-over width to this column's own min: the column's
         // contents may have changed shape across the op, so the old pixel
         // width isn't automatically still legal for it.
