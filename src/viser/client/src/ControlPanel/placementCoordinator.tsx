@@ -15,7 +15,8 @@
 // (keyed by its serialized form), and every other step no-ops on repeat.
 //
 // Per-panel bookkeeping is plain data in one map (no per-panel hooks):
-//   appliedPlacementKey -- last bundle applied while placed (dedup). Dedup is
+//   appliedPlacement -- last bundle applied while placed (dedup, by store-
+//     entry reference). Dedup is
 //     ONLY honored while the panel is placed: an unplaced panel (fresh, shown
 //     after hide, group lost in a container swap) always re-attempts, which
 //     unifies first-placement, re-show, and the old "ungrouped recovery"
@@ -32,6 +33,7 @@ import type { CanvasBounds } from "../dock/layoutOps";
 import { DockLayout } from "../dock/types";
 import { CONTROL_PANEL_ID } from "./controlPanelId";
 import { gatePlacement } from "./placementGate";
+import type { PanelPlacementState } from "./GuiState";
 
 /** The canvas bounds (for resolving float placements) from the dock metrics. */
 export function canvasBoundsFromMetrics(metrics: DockMetrics): CanvasBounds {
@@ -43,15 +45,25 @@ export function canvasBoundsFromMetrics(metrics: DockMetrics): CanvasBounds {
   };
 }
 
+/** Sentinel for "re-attempt regardless of the stored entry" (fresh
+ * bookkeeping, a layout reset, hide/empty transitions). A unique object so it
+ * can never equal a store entry (including `undefined` for panels with no
+ * placement). */
+const REAPPLY = Symbol("reapply");
+
 interface PanelBookkeeping {
-  appliedPlacementKey: string | null;
+  /** The placement-store entry last applied/evaluated while placed, BY
+   * REFERENCE -- the store allocates a new entry object only on a real
+   * change (mergePlacement), so identity is exactly "did a new command
+   * merge", without a per-panel-per-pass JSON.stringify. */
+  appliedPlacement: PanelPlacementState | undefined | typeof REAPPLY;
   prevOrderKey: string | null;
   prevTabIds: string[];
   lastTabIds: string[];
 }
 
 const freshBookkeeping = (): PanelBookkeeping => ({
-  appliedPlacementKey: null,
+  appliedPlacement: REAPPLY,
   prevOrderKey: null,
   prevTabIds: [],
   lastTabIds: [],
@@ -79,7 +91,7 @@ export function usePlacementCoordinator(
     if (lastResetNonce.current !== layoutResetNonce) {
       lastResetNonce.current = layoutResetNonce;
       for (const state of bookkeeping.current.values())
-        state.appliedPlacementKey = null;
+        state.appliedPlacement = REAPPLY;
     }
     // Drop bookkeeping for panels that no longer exist (uuid-keyed, so a
     // removed panel's entry is dead; the layout-tracking store prunes its own
@@ -168,7 +180,7 @@ export function usePlacementCoordinator(
       // re-showing re-place it (it will be UNPLACED then, so the full stored
       // bundle applies).
       if (!visible) {
-        state.appliedPlacementKey = null;
+        state.appliedPlacement = REAPPLY;
         if (tabIds.length > 0)
           dock.api.apply((l) => {
             let next = l;
@@ -182,7 +194,7 @@ export function usePlacementCoordinator(
       // (collapsing the group/leaf) and forget the applied placement so a
       // repopulated panel re-places cleanly.
       if (!isMain && tabIds.length === 0) {
-        state.appliedPlacementKey = null;
+        state.appliedPlacement = REAPPLY;
         const dead = state.lastTabIds;
         if (dead.length > 0)
           dock.api.apply((l) => {
@@ -201,13 +213,12 @@ export function usePlacementCoordinator(
       if (!ready) return;
 
       // 4. Placement: gate -> (defer?) -> apply -> record.
-      const placementKey = JSON.stringify(entry ?? null);
       const placed = ops.findPaneGroup(layout, tabIds[0]) !== null;
       const applyGated = (): void => {
         const gated = gatePlacement(entry, tracking[uuid], placed);
         if (entry !== undefined && placed && !gated.anyFresh) {
           // Nothing fresh; remember we evaluated this bundle.
-          state.appliedPlacementKey = placementKey;
+          state.appliedPlacement = entry;
           return;
         }
         const pos = gated.placement.position;
@@ -218,11 +229,11 @@ export function usePlacementCoordinator(
           anchorDockPending(pos.anchor_uuid)
         ) {
           // The anchor's own dock is on its way (possibly later in THIS
-          // pass); leave the applied key unset so the next pass -- triggered
+          // pass); leave the applied entry unset so the next pass -- triggered
           // by the anchor's commit -- retries. No timer, no pending state.
           return;
         }
-        state.appliedPlacementKey = placementKey;
+        state.appliedPlacement = entry;
         if (entry !== undefined)
           viewer.guiActions.recordPanelLayoutApplied(uuid, gated.applied);
         const placement = isMain
@@ -261,7 +272,7 @@ export function usePlacementCoordinator(
       // Dedup ONLY while placed (see header): an unplaced panel always
       // re-attempts, which covers first placement, re-show after hide, and
       // recovery from a full tab-container swap in one rule.
-      if (!placed || state.appliedPlacementKey !== placementKey) applyGated();
+      if (!placed || state.appliedPlacement !== entry) applyGated();
 
       // 5. Membership: tabs added/removed reconcile WITHOUT repositioning.
       // The REMOVED set is diffed here so reconciliation drops exactly the

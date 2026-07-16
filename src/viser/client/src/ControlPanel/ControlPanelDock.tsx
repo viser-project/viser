@@ -19,6 +19,7 @@ import * as ops from "../dock/layoutOps";
 import {
   isRegionPackedOn,
   DockLayout,
+  PANEL_PAD_PX,
   PaneRegistry,
   emptyLayout,
   regionWidthsOf,
@@ -40,9 +41,6 @@ import { usePlacementCoordinator } from "./placementCoordinator";
 // Memoized so a torn-out tab's whole GUI tree doesn't re-render every time
 // unrelated dock state changes (it only depends on its container uuid).
 const MemoizedGeneratedGuiContainer = React.memo(GeneratedGuiContainer);
-
-// Match the original FloatingPanel's 15px boundary pad for initial placement.
-const PANEL_PAD_PX = 15;
 
 /** Per-group placement signature in a layout: where the group sits + its
  * container's collapse state (D38) + (for a floating group) its window
@@ -544,6 +542,20 @@ function ControlPanelDockSync({
   const expanded =
     controlGroupId === null ||
     !ops.isGroupEffectivelyCollapsed(dock.layout, controlGroupId);
+  // The panel's element-identity signature for the decorate effect below:
+  // where it sits (window / leaf node -- restructures mint fresh ids) plus
+  // its collapse state (expanded<->minimized swaps which element carries the
+  // handle testid). Per-frame geometry commits leave this unchanged.
+  const locationKey =
+    location === null
+      ? "none"
+      : `${
+          location.kind === "floating"
+            ? `f:${location.windowId}`
+            : location.kind === "docked"
+              ? `d:${location.edge}:${location.nodeId}`
+              : location.kind
+        }:${expanded ? "e" : "c"}`;
   // RENDERED width (expanded px + strip/divider chrome): the notifications
   // offset must clear everything the region actually draws, not just the
   // expanded columns' model width.
@@ -669,9 +681,12 @@ function ControlPanelDockSync({
     }
     // Re-decorate only when the panel's element identity can actually change
     // (layout restructures recreate DOM nodes) -- not on every render, which
-    // would churn DOM attributes per resize frame.
+    // would churn DOM attributes per resize frame. Keyed on a LOCATION
+    // signature, not the layout object: per-frame gesture commits clone the
+    // layout ~60x/s while the panel's element identity is stable, and each
+    // re-run pays ~5 subtree querySelectors plus attribute writes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dock.layout, side, controlGroupId]);
+  }, [locationKey, side, controlGroupId]);
 
   return <span ref={markerRef} style={{ display: "none" }} />;
 }

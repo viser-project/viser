@@ -13,7 +13,6 @@ import {
   removePane,
   setAreaTabOrder,
   tearOutPane,
-  widthColumns,
 } from "./layoutOps";
 import { group } from "./testUtils";
 
@@ -257,8 +256,8 @@ describe("floatColumn", () => {
       height: { mode: "pinned", px: 400 },
     });
     // The region collapsed to the surviving column (just leaf x).
-    expect(widthColumns(out.docked.left!)).toHaveLength(1);
-    expect(widthColumns(out.docked.left!)[0].leaves).toEqual([
+    expect(out.docked.left!.columns).toHaveLength(1);
+    expect(out.docked.left!.columns[0].leaves).toEqual([
       { id: "Lx", group: "x", weight: 1 },
     ]);
   });
@@ -266,7 +265,7 @@ describe("floatColumn", () => {
   it("floating the LAST column empties the region", () => {
     const l = colLayout();
     // Drop the sibling column so COL is the whole region.
-    l.docked.left = { columns: [widthColumns(l.docked.left!)[1]] };
+    l.docked.left = { columns: [l.docked.left!.columns[1]] };
     const { layout: out, windowId } = floatColumn(l, "left", "COL", 0, 0, 300);
     expect(windowId).not.toBeNull();
     expect(out.docked.left).toBeNull();

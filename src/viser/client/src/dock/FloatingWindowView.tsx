@@ -21,6 +21,7 @@ import { MinimizedBar } from "./MinimizedBar";
 import {
   collapsedWindowHeightCss,
   clamp,
+  DOCK_ANIM_MS,
   FloatingWindow,
   GroupId,
   MIN_REGION_GRAB_PX,
@@ -210,7 +211,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     // cosmetic clip is more machinery than the clip is worth.
     el.style.overflow = "hidden";
     const anim = el.animate([{ height: `${from}px` }, { height: `${to}px` }], {
-      duration: 160,
+      duration: DOCK_ANIM_MS,
       easing: "ease",
     });
     heightAnim.current = { anim, toPx: to };
@@ -275,16 +276,36 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     return Math.max(MIN_REGION_GRAB_PX, containerW - RESIZE_KEEP_CANVAS_PX);
   };
 
+  // Start-of-gesture math shared by every horizontal resize (the vertical
+  // analog is vResizeStart): the right edge is held in parent coords and kept
+  // fixed when resizing from the left by moving x with the width.
+  const wResizeStart = (side: "left" | "right") => {
+    const startWidth = win.width;
+    const startRight = win.x + win.width;
+    const maxW = maxResizeWidth();
+    // Left-edge resize: keep the right edge fixed by moving x.
+    const xFor = (w: number) => (side === "left" ? startRight - w : undefined);
+    return {
+      startWidth,
+      widthFrom: (dx: number) =>
+        clamp(
+          side === "right" ? startWidth + dx : startWidth - dx,
+          MIN_REGION_GRAB_PX,
+          maxW,
+        ),
+      xFor,
+      // What a CANCEL must commit: the start width at the start position.
+      startXRestore: xFor(startWidth),
+    };
+  };
+
   const widthResizeHandler =
     (side: "left" | "right") => (event: React.PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0) return;
       if (activeGrip.current !== null) return;
       event.stopPropagation();
       const startX = event.clientX;
-      const startWidth = win.width;
-      // Right edge in parent coords; held fixed when resizing from the left.
-      const startRight = win.x + win.width;
-      const maxW = maxResizeWidth();
+      const { startWidth, widthFrom, xFor, startXRestore } = wResizeStart(side);
 
       let pending = startWidth;
       let pendingX: number | undefined = undefined;
@@ -292,23 +313,14 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         grip: event.currentTarget,
         pointerId: event.pointerId,
         update: (e) => {
-          const delta = e.clientX - startX;
-          const raw =
-            side === "right" ? startWidth + delta : startWidth - delta;
-          pending = clamp(raw, MIN_REGION_GRAB_PX, maxW);
-          // Left-edge resize: keep the right edge fixed by moving x.
-          pendingX = side === "left" ? startRight - pending : undefined;
+          pending = widthFrom(e.clientX - startX);
+          pendingX = xFor(pending);
         },
         flush: () => onResize(win.id, pending, pendingX),
         onEnd: (cancelled) => {
           activeGrip.current = null;
           // Cancel (Escape) reverts the per-frame resizes to the start size.
-          if (cancelled)
-            onResize(
-              win.id,
-              startWidth,
-              side === "left" ? startRight - startWidth : undefined,
-            );
+          if (cancelled) onResize(win.id, startWidth, startXRestore);
         },
       });
     };
@@ -458,8 +470,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       paperRef.current?.setAttribute("data-dock-resizing", "");
       const startX = event.clientX;
       const startY = event.clientY;
-      const startWidth = win.width;
-      const startRight = win.x + win.width;
+      const { startWidth, widthFrom, xFor, startXRestore } = wResizeStart(side);
       const {
         startHeight,
         startHeightCommit,
@@ -468,7 +479,6 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         yFor,
         heightToCommit,
       } = vResizeStart(vside);
-      const maxW = maxResizeWidth();
 
       let pendingW = startWidth;
       let pendingX: number | undefined = undefined;
@@ -478,10 +488,8 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
         grip: event.currentTarget,
         pointerId: event.pointerId,
         update: (e) => {
-          const dx = e.clientX - startX;
-          const raw = side === "right" ? startWidth + dx : startWidth - dx;
-          pendingW = clamp(raw, MIN_REGION_GRAB_PX, maxW);
-          pendingX = side === "left" ? startRight - pendingW : undefined;
+          pendingW = widthFrom(e.clientX - startX);
+          pendingX = xFor(pendingW);
           pendingH = heightFrom(e.clientY - startY);
           setSnappedToContent(snappedToContent(pendingH));
         },
@@ -494,11 +502,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
           paperRef.current?.removeAttribute("data-dock-resizing");
           setSnappedToContent(false);
           if (cancelled) {
-            onResize(
-              win.id,
-              startWidth,
-              side === "left" ? startRight - startWidth : undefined,
-            );
+            onResize(win.id, startWidth, startXRestore);
             onResizeHeight(win.id, startHeightCommit, yFor(startHeight));
           }
         },

@@ -580,7 +580,9 @@ constants in `hitTest.ts`; changing one is a spec change.
 
 1. **Empty screen edge** (48px at an edge with no region): docks as the
    region's first content, full height. Active past the screen edge
-   (slam gestures).
+   (slam gestures). Yields to a floating window whose paper rect owns
+   the pointer (§3.5, like every non-float zone family): a float parked
+   inside the band must not let a drop dock a column through it.
 2. **Insertable tab strip** (override, ⚠ inversion): a pointer over a
    tab strip where a tab insert would resolve always beats region-level
    side bands — specific intent beats broad intent (§11, T8).
@@ -846,13 +848,29 @@ sizing subset. Both exist on `server.gui` (broadcast) and `client.gui`
   on a docked panel that lands docked carries its container's collapse —
   a railed source lands railed — exactly like the user path. A placement
   command never expands a railed panel.
-- Fresh vs stale: each panel has a monotonically increasing layout
-  counter per server run. An axis message applies iff the user hasn't
-  touched that panel since the message's stamp, or the stamp is provably
-  newer than the last applied (P6; `placementGate.ts`). Late joiners
-  replay the latest message per axis and reconstruct the same placement.
+- Fresh vs stale: ONE monotonically increasing layout counter per
+  server run, global across panels (D50). An axis message applies iff
+  the user hasn't touched that panel since the message's stamp, or the
+  stamp is provably newer than everything previously applied FROM ITS
+  OWN RUN — the client records a per-run high-water map per axis, so a
+  reconnect replay of an old run's command is stale even when the most
+  recent apply came from another scope (P6; `placementGate.ts`). Late
+  joiners replay the latest message per axis and reconstruct the same
+  placement.
 - A replay bundle applies position first, then size — size ops resolve
-  against the panel's FINAL location.
+  against the panel's FINAL location. Collapse applies last and in
+  COMMAND order across panels (the global counter, D50): collapse is
+  container state, so when stacked panels' collapse axes conflict, a
+  late joiner replaying them in command order converges with live
+  clients — per-panel replay order cannot decide a shared container's
+  final state.
+- Reconnects have an explicit phase (D51): the server marks the end of
+  its buffer replay per connection (`ReplayDoneMessage`), and until it
+  arrives the client treats emptied stores as "not delivered yet" —
+  dock panes stay registered (dormant), so a same-uuid panel re-created
+  by the replay rebinds to its existing geometry and the user's
+  arrangement survives (P6/P8). At the marker, whatever the replay did
+  not revive is purged; a live-session removal tears down immediately.
 - Split placements (`dock_below(anchor)` etc.) defer until the anchor is
   actually docked; a never-dockable anchor (hidden, emptied, cyclic)
   falls back to a right-edge dock rather than hanging (P5). Anchors must
@@ -865,7 +883,10 @@ sizing subset. Both exist on `server.gui` (broadcast) and `client.gui`
   width when floating; `set_height` sets a floating window's height and
   is a documented no-op on docked panels (docked cells size to split
   weights).
-- `gui.reset()` removes standalone panels like other GUI elements;
+- `gui.reset()` removes standalone panels like other GUI elements and
+  re-defaults ALL FOUR of the main panel's axes — collapsed included
+  (each axis has its own redundancy slot; forgetting one leaks it
+  through the reset to late joiners);
   `configure_theme(control_layout=...)` is soft-deprecated in favor of
   `main_panel` verbs (`control_width` remains the theme default width;
   `set_width` overrides).
@@ -974,13 +995,18 @@ at every consumer.
   one optional `anchor: {x; y}` object (presence = anchored; half-set
   ownership unrepresentable); `TabGroup.activeId: PaneId | null` (no
   `""` sentinel); `makeGroup(NonEmpty<PaneId>)`.
-- **Placement protocol**: per-axis `(counter, runId)` stamps + one
-  shared gate (`placementGate.ts`) for the main panel and standalone
-  panels; layout-memory tracking keyed by panel uuid (D49 — no separate
-  identity notion); one placement coordinator (a single fixpoint pass
-  over the placement store) in which split placements defer on their
-  anchor via a synchronous store predicate — no timers, no pending
-  state.
+- **Placement protocol**: per-axis `(counter, runId)` stamps — the
+  counter global per run (D50) — + one shared gate (`placementGate.ts`)
+  for the main panel and standalone panels, with per-run applied
+  high-water maps (a replayed old-run command is stale even after a
+  cross-scope apply); layout-memory tracking keyed by panel uuid (D49 —
+  no separate identity notion); one placement coordinator (a single
+  fixpoint pass over the placement store) in which split placements
+  defer on their anchor via a synchronous store predicate — no timers,
+  no pending state — and fresh collapse axes apply after all positions,
+  in command order (D50). Reconnects are an explicit phase ended by the
+  server's ReplayDoneMessage (D51); teardown decisions are never
+  inferred from store emptiness.
 
 ---
 
@@ -1174,6 +1200,27 @@ consuming paragraphs.
   drift mid-run (adding a tab changed a panel's identity, orphaning its
   user-touched flag). Reintroduce a stable identity only if client-side
   layout persistence across browser sessions ever lands.
+- **D50** — one GLOBAL layout counter per server run, and collapse
+  axes replay in command order. Collapse is container state (D38), so
+  when stacked panels' collapse axes conflict, per-panel replay order
+  decided the shared container's final state and late joiners could
+  diverge from live clients ("B.expand() then A.minimize()" ended
+  expanded on replay). Per-panel counters cannot order commands across
+  panels; the global counter can, and the coordinator applies all
+  fresh collapse axes after all positions, sorted by counter within
+  each run (cross-run conflicts keep arrival order — counters aren't
+  comparable across runs).
+- **D51** — reconnects are an explicit phase, never inferred. The
+  server injects a per-connection end-of-replay marker
+  (`ReplayDoneMessage`) after its buffer backlog; until it arrives the
+  client holds reconnect-sensitive teardown (dock pane registrations go
+  dormant on content-null; layout panes persist), so a same-uuid panel
+  re-created by the replay rebinds and the user's arrangement survives
+  (P6/P8). At the marker, unrevived dormant state is purged and layout
+  tracking is pruned — the one point where the panel set is provably
+  complete (a mid-replay prune raced the 128-message windows). Root
+  cause this replaces: "the panels store is empty" was overloaded to
+  mean both "removed" and "not yet delivered", and consumers guessed.
 
 Retired — one line per ID; the pointer is where any surviving content
 lives:

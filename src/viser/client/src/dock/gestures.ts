@@ -152,16 +152,9 @@ export function tryRelease(el: Element, pointerId: number): void {
   }
 }
 
-/** Move keyboard focus to a pane's tab element on the next frame -- used
- * after a keyboard-driven expand of a minimized group, whose bar/row
- * unmounts on expand (focus would otherwise fall to <body> and the user
- * would have to Tab back in from the top). Pointer paths don't call this:
- * mouse users don't expect a focus ring to appear. */
-export function focusPaneTab(paneId: string) {
-  focusDockControl(`[data-dock-tab="${CSS.escape(paneId)}"]`);
-}
-
-/** Like focusPaneTab, with a fallback chain for unmergeable panels (edge
+/** Move keyboard focus to a pane's tab element on the next frame (same
+ * deferral contract as focusDockControl), with a fallback chain for
+ * unmergeable panels (edge
  * case 14): the revealed expanded cell may render no [data-dock-tab] at all
  * (its label is a full-width header, not a tab strip), so focusing the tab
  * would silently fall to <body>. Fall back to the revealed group's header
@@ -196,7 +189,7 @@ export function focusPaneTabOrGroup(paneId: string, groupId: string) {
 }
 
 /** rAF-focus the first element matching `selector` -- same deferral contract
- * as focusPaneTab, for keyboard-driven minimize/collapse: the activated
+ * as focusPaneTabOrGroup, for keyboard-driven minimize/collapse: the activated
  * control unmounts with its chrome row, so focus hands off to the control
  * that replaced it (the bar's toggle, the rail's header) instead of falling
  * to <body>. */

@@ -15,7 +15,6 @@ import {
   setColumnRailed,
   setRegionWidth,
   toggleCollapsed,
-  widthColumns,
 } from "./layoutOps";
 import {
   DEFAULT_REGION_PX,
@@ -83,10 +82,10 @@ describe("lone minimized column: preserved width survives a sibling docking", ()
     // width; no regionWidth carve-out) -- the 500px restore moved into the
     // column weight by the legacy heal.
     expect(recon(l, m1).right).toBe(MINIMIZED_STRIP_PX);
-    expect(widthColumns(m1.docked.right!)[0].weight).toBe(500);
+    expect(m1.docked.right!.columns[0].weight).toBe(500);
     const m2 = dockToRegionEdge(m1, ["b"], "right", "left"); // structural
     reconcileRegionWidths(m1, m2);
-    const aCol = widthColumns(m2.docked.right!).find((c) =>
+    const aCol = m2.docked.right!.columns.find((c) =>
       c.leaves.some((lf) => lf.group === "a"),
     )!;
     expect(aCol.weight).toBe(500); // NOT the 96px grab-min floor
@@ -125,7 +124,7 @@ describe("single-column px carries into the weights when the region gains a colu
     const zNodeId = l.docked.right!.columns[0].leaves[1].id;
     const next = dropOnDockedLeaf(l, ["w"], "right", zNodeId, "left");
     reconcileRegionWidths(l, next);
-    const cols = widthColumns(next.docked.right!);
+    const cols = next.docked.right!.columns;
     const zCol = cols.find((c) => c.leaves.some((lf) => lf.group === "z"))!;
     const wCol = cols.find((c) => c.leaves.some((lf) => lf.group === "w"))!;
     expect(zCol.weight).toBe(500); // carried px preserved across the change
@@ -200,7 +199,7 @@ describe("reconcileRegionWidths with railed columns (D38/D40: rail moves width b
     // exactly its rail (uniform D40 pack width, any column count) while its
     // weight keeps the preserved 250px for the P8 restore.
     expect(recon(prev, next).right).toBe(MINIMIZED_STRIP_PX);
-    expect(widthColumns(next.docked.right!)[0].weight).toBe(250);
+    expect(next.docked.right!.columns[0].weight).toBe(250);
     // ...and expanding it restores the preserved px exactly.
     const expanded = toggleCollapsed(next, "b");
     expect(recon(next, expanded).right).toBe(250);
@@ -235,7 +234,7 @@ describe("reconcileRegionWidths with railed columns (D38/D40: rail moves width b
     // stores it as its restore width (D40) while reserving the strip.
     const redocked = dockToRegionEdge(floated, ["a"], "right", "left");
     reconcileRegionWidths(floated, redocked);
-    const col0 = widthColumns(redocked.docked.right!)[0];
+    const col0 = redocked.docked.right!.columns[0];
     expect(col0.railed).toBe(true); // identity transfer (D38): lands railed
     expect(col0.weight).toBe(480); // the restore width, via the window (D3)
     expect(regionWidthsOf(redocked).right).toBe(MINIMIZED_STRIP_PX);
@@ -275,7 +274,7 @@ describe("reconcileRegionWidths width clamp (no max ceiling)", () => {
     prev.regionWidth = { left: 0, right: 400 };
     const next = setRegionWidth(prev, "right", 2000);
     expect(recon(prev, next).right).toBe(2000);
-    expect(widthColumns(next.docked.right!)[0].weight).toBe(2000);
+    expect(next.docked.right!.columns[0].weight).toBe(2000);
   });
 
   it("preserves a deliberately wide multi-column width (no colsMax cap)", () => {
@@ -287,7 +286,7 @@ describe("reconcileRegionWidths width clamp (no max ceiling)", () => {
     const next = setRegionWidth(prev, "right", 5000);
     expect(recon(prev, next).right).toBe(5000);
     // The weights absorbed it proportionally.
-    const weights = widthColumns(next.docked.right!).map((c) => c.weight);
+    const weights = next.docked.right!.columns.map((c) => c.weight);
     expect(weights.reduce((a, b) => a + b, 0)).toBeCloseTo(5000, 6);
   });
 });
@@ -305,7 +304,7 @@ describe("reconcileRegionWidths min-width floor", () => {
     prev.regionWidth = { left: 0, right: 300 };
     const next = setRegionWidth(prev, "right", 20); // below the floor.
     expect(recon(prev, next).right).toBe(MIN_REGION_GRAB_PX);
-    expect(widthColumns(next.docked.right!)[0].weight).toBe(MIN_REGION_GRAB_PX);
+    expect(next.docked.right!.columns[0].weight).toBe(MIN_REGION_GRAB_PX);
   });
 
   it("floors a too-narrow multi-column width to the summed grab minimum", () => {

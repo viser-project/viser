@@ -707,6 +707,12 @@ export function DockManager({
   // bounds (so e.g. a top-right-anchored panel tracks the corner). User-placed
   // floats are left where the user put them.
   const reanchorFloats = React.useCallback(() => {
+    // Bail before ANY DOM read when no float is server-anchored: this runs
+    // per ResizeObserver tick during height resizes / content growth, and
+    // readFloatBounds forces a layout (container rect + per-window
+    // offsetHeight) that would otherwise be paid for nothing on the common
+    // all-user-placed arrangement.
+    if (layoutRef.current.floating.every((w) => w.anchor === undefined)) return;
     const m = readFloatBounds();
     if (m === null) return;
     patchFloatPositions((w) => {

@@ -191,37 +191,39 @@ export function ChromeToggle({
   );
 }
 
-/** Region-collapse chevron (D21/D26), rendered at the right end of the
- * docked region's parent handle -- the same spot the rail header's + holds
- * while collapsed (P13). Drag-through like every other right-end control
- * (T6 resolved): a press flows to the host bar's drag arbitration -- motion
- * drags the stack, a motionless click collapses via the bar's own onClick
- * backing (the same action). onActivate covers keyboard and synthetic
- * clicks (element.click(), detail === 0) and keeps the focus handoff. */
-export function RegionCollapseChevron({
+/** Shared body of the region/column collapse chevrons, rendered at the right
+ * end of a parent handle -- the same spot the rail header's + holds while
+ * collapsed (P13). Drag-through like every other right-end control (T6
+ * resolved): a press flows to the host bar's drag arbitration -- motion drags
+ * the stack, a motionless click collapses via the bar's own onClick backing
+ * (the same action). onActivate covers keyboard and synthetic clicks
+ * (element.click(), detail === 0) and keeps the focus handoff: a keyboard
+ * collapse unmounts the chevron with its chrome row, so focus hands off to
+ * the rail's toggle at `focusSelector` (the same-spot undo control) instead
+ * of <body> -- spec 4 / edge case 14. */
+function CollapseChevron({
   edge,
+  attrs,
+  label,
+  focusSelector,
   onActivate,
 }: {
   edge: "left" | "right";
+  attrs: Record<string, string>;
+  label: string;
+  focusSelector: string;
   onActivate: () => void;
 }) {
   return (
     <HandleIconButton
-      attrs={{ "data-dock-region-collapse": edge }}
-      label="Collapse panel area"
+      attrs={attrs}
+      label={label}
       tooltip="Collapse"
       expanded
       dragThrough
       onActivate={() => {
         onActivate();
-        // A keyboard collapse unmounts the chevron with its chrome row; hand
-        // focus to the rail header's toggle (the same-spot undo control)
-        // instead of <body> -- spec 4 / edge case 14.
-        focusDockControl(
-          // D46: a packed region renders per-column rails; the first
-          // column rail's toggle is the same-spot undo control.
-          `[data-dock-region="${edge}"] [data-dock-minimize-all]`,
-        );
+        focusDockControl(focusSelector);
       }}
       placement={{
         width: `${HANDLE_BTN_EM}em`,
@@ -238,13 +240,34 @@ export function RegionCollapseChevron({
   );
 }
 
+/** Region-collapse chevron (D21/D26), rendered at the right end of the
+ * docked region's parent handle. See CollapseChevron for the shared
+ * drag-through and focus-handoff behavior. */
+export function RegionCollapseChevron({
+  edge,
+  onActivate,
+}: {
+  edge: "left" | "right";
+  onActivate: () => void;
+}) {
+  return (
+    <CollapseChevron
+      edge={edge}
+      attrs={{ "data-dock-region-collapse": edge }}
+      label="Collapse panel area"
+      // D46: a packed region renders per-column rails; the first column
+      // rail's toggle is the same-spot undo control.
+      focusSelector={`[data-dock-region="${edge}"] [data-dock-minimize-all]`}
+      onActivate={onActivate}
+    />
+  );
+}
+
 /** Column-collapse chevron: the per-column sibling of RegionCollapseChevron,
  * rendered at the right end of a column parent handle whose region has sibling
- * columns (D27). It rails exactly what its handle owns -- that one column --
- * and, like the region chevron, is drag-through (T6 resolved): a press flows
- * to the host bar (drag = float the column; motionless click = rail it, via
- * the bar's onClick backing), while onActivate covers keyboard/synthetic
- * activation and keeps the focus handoff. */
+ * columns (D27). It rails exactly what its handle owns -- that one column
+ * (drag = float the column; motionless click = rail it). See CollapseChevron
+ * for the shared drag-through and focus-handoff behavior. */
 export function ColumnCollapseChevron({
   edge,
   columnId,
@@ -255,33 +278,13 @@ export function ColumnCollapseChevron({
   onActivate: () => void;
 }) {
   return (
-    <HandleIconButton
+    <CollapseChevron
+      edge={edge}
       attrs={{ "data-dock-column-collapse": columnId }}
       label="Collapse column"
-      tooltip="Collapse"
-      expanded
-      dragThrough
-      onActivate={() => {
-        onActivate();
-        // A keyboard collapse unmounts the chevron with its handle; hand
-        // focus to the column rail's toggle (the same-spot undo control)
-        // instead of <body> -- spec 4 / edge case 14.
-        focusDockControl(
-          `[data-dock-column-rail="${columnId}"] [data-dock-minimize-all]`,
-        );
-      }}
-      placement={{
-        width: `${HANDLE_BTN_EM}em`,
-        height: "100%",
-        flexShrink: 0,
-      }}
-    >
-      {edge === "right" ? (
-        <IconChevronsRight size={13} />
-      ) : (
-        <IconChevronsLeft size={13} />
-      )}
-    </HandleIconButton>
+      focusSelector={`[data-dock-column-rail="${columnId}"] [data-dock-minimize-all]`}
+      onActivate={onActivate}
+    />
   );
 }
 

@@ -22,6 +22,7 @@ import { ColumnCollapseChevron, StackHandleBar } from "./handles";
 import { TabGroupFrame } from "./TabGroupFrame";
 import { ColumnRail } from "./VerticalMinimizedColumn";
 import {
+  DOCK_ANIM_MS,
   DockColumn,
   DockEdge,
   DockLeaf,
@@ -102,7 +103,7 @@ function RegionColumns({
   // inner of a newly railed outer sibling) would otherwise jump while the
   // container edge eases. Measure each column's previous screen x, start it
   // at a translateX of the difference, and transition the transform to 0 on
-  // the same 160ms curve as the container's width ease -- every column
+  // the same DOCK_ANIM_MS curve as the container's width ease -- every column
   // glides from old slot to new; unmoved columns get delta 0 and stay
   // perfectly still. Presentation only (P4): the model committed before
   // this runs, reduced-motion and active divider drags skip it, and
@@ -171,7 +172,7 @@ function RegionColumns({
       el.style.transform = `translateX(${startDelta}px)`;
       // Force the start position before arming the transition.
       void el.offsetWidth;
-      el.style.transition = "transform 160ms ease";
+      el.style.transition = `transform ${DOCK_ANIM_MS}ms ease`;
       el.style.transform = "";
       // Filter to THIS element's transform ease: transitionend bubbles, so
       // any descendant transition finishing mid-glide (a HandleIconButton's

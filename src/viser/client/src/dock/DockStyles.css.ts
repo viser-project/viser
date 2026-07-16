@@ -1,6 +1,9 @@
 import { globalStyle, style } from "@vanilla-extract/css";
 
-import { MIN_PANEL_WIDTH_PX } from "./types";
+import { DOCK_ANIM_MS, MIN_PANEL_WIDTH_PX } from "./types";
+
+/** The one dock animation clock, as a CSS duration. */
+const DOCK_ANIM = `${DOCK_ANIM_MS}ms`;
 
 /** Marker class for a panel body's ScrollArea. */
 export const dockBodyScroll = style({});
@@ -39,8 +42,7 @@ globalStyle(`:where([data-mantine-color-scheme="dark"]) ${gripBarBg}`, {
  * would rubber-band the cells behind the cursor), and nothing else -- no
  * timers, no transition-gated logic anywhere. */
 export const collapseAnim = style({
-  transition:
-    "flex-grow 160ms ease, flex-basis 160ms ease, min-height 160ms ease",
+  transition: `flex-grow ${DOCK_ANIM} ease, flex-basis ${DOCK_ANIM} ease, min-height ${DOCK_ANIM} ease`,
   "@media": {
     "(prefers-reduced-motion: reduce)": {
       transition: "none",
@@ -60,7 +62,7 @@ export const collapseAnim = style({
  * motion, and an ancestor's [data-dock-resizing] (the region resizer writes
  * widths per frame; easing would lag the cursor). */
 export const regionWidthAnim = style({
-  transition: "width 160ms ease",
+  transition: `width ${DOCK_ANIM} ease`,
   "@media": {
     "(prefers-reduced-motion: reduce)": {
       transition: "none",
@@ -81,7 +83,7 @@ export const regionWidthAnim = style({
  * (region-resize drags write insets per frame; easing would lag the
  * cursor). */
 export const canvasInsetAnim = style({
-  transition: "left 160ms ease, right 160ms ease",
+  transition: `left ${DOCK_ANIM} ease, right ${DOCK_ANIM} ease`,
   "@media": {
     "(prefers-reduced-motion: reduce)": {
       transition: "none",
@@ -102,7 +104,7 @@ export const canvasInsetAnim = style({
  * gap: an honest auto endpoint would need a DOM measure, and motion may
  * never gate on measurement, P4). */
 export const windowCollapseAnim = style({
-  transition: "height 160ms ease",
+  transition: `height ${DOCK_ANIM} ease`,
   "@media": {
     "(prefers-reduced-motion: reduce)": {
       transition: "none",

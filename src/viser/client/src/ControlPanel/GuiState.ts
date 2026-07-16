@@ -1,6 +1,5 @@
 import React from "react";
 import { createStore, createKeyedStore } from "../store";
-import { ColorTranslator } from "colortranslator";
 import { CONTROL_PANEL_ID } from "./controlPanelId";
 
 import {
@@ -124,8 +123,8 @@ export interface GuiState {
    * replay from re-applying placement to a panel the user has since
    * rearranged. A RESTARTED server is different by design: its new runId makes
    * every axis fresh (see placementGate.ts), so its dead uuids' entries gate
-   * nothing and are pruned as the layout settles (and immediately when the
-   * server removes a panel). */
+   * nothing; they are pruned at replay-done (D51) and immediately when the
+   * server removes a panel. */
   panelLayoutTracking: {
     [uuid: string]: PanelLayoutEntry;
   };
@@ -242,18 +241,6 @@ const cleanGuiState: GuiState = {
   replayActive: false,
   replayDoneNonce: 0,
 };
-
-export function computeRelativeLuminance(color: string) {
-  const colorTrans = new ColorTranslator(color);
-
-  // Coefficients are from:
-  // https://en.wikipedia.org/wiki/Relative_luminance#Relative_luminance_and_%22gamma_encoded%22_colorspaces
-  return (
-    ((0.2126 * colorTrans.R + 0.7152 * colorTrans.G + 0.0722 * colorTrans.B) /
-      255.0) *
-    100.0
-  );
-}
 
 /**
  * Apply property updates to a GUI component.

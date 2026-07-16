@@ -2,10 +2,10 @@
 // and the centralized width reconciliation in DockManager.applyOp.
 //
 // Scope (flat 3-level model: Region = row of columns; Column = stack of leaves):
-//   - widthColumns / widthColumns: a region's columns (they ARE widthColumns(region)
-//     now -- the old "descend into the widest child to guess the columns" logic,
-//     and the LEAD 1 bug it patched, are gone since deep nesting is
-//     unrepresentable).
+//   - region.columns: a region's width-determining columns are just its
+//     columns array (the old "descend into the widest child to guess the
+//     columns" logic, and the LEAD 1 bug it patched, are gone since deep
+//     nesting is unrepresentable).
 //   - minRegionWidth: a single column's grab-min (the divider-summing across
 //     side-by-side columns lives in widthReconciliation, not here).
 //   - setNodeWeights: id-based weight setting for a column's or leaf's weight.
@@ -17,7 +17,6 @@
 import { describe, it, expect } from "vitest";
 import { DockLayout, DockRegion, GroupId, MIN_REGION_GRAB_PX } from "./types";
 import {
-  widthColumns,
   minRegionWidth,
   setNodeWeights,
   dockToRegionEdge,
@@ -46,33 +45,31 @@ function layoutWith(spec: TreeSpec, ...gids: GroupId[]): DockLayout {
 const reg = (spec: TreeSpec): DockRegion => toRegion(spec)!;
 
 // ===========================================================================
-// widthColumns / widthColumns -- both are now just widthColumns(region).
+// region.columns -- the width-determining columns are the region's own array.
 // ===========================================================================
-describe("widthColumns / widthColumns", () => {
+describe("region.columns", () => {
   it("a single-column region (one leaf) has one column", () => {
     const region = reg(leaf("a"));
-    expect(widthColumns(region)).toEqual(widthColumns(region));
-    expect(widthColumns(region)).toEqual(widthColumns(region));
+    expect(region.columns).toHaveLength(1);
   });
 
   it("a row of leaves -> one column per leaf, in order", () => {
     const region = reg(rowSplit([leaf("a"), leaf("b")]));
-    expect(widthColumns(region).map((c) => collectLeafGroups(c)[0])).toEqual([
+    expect(region.columns.map((c) => collectLeafGroups(c)[0])).toEqual([
       "a",
       "b",
     ]);
-    expect(widthColumns(region)).toEqual(widthColumns(region));
   });
 
   it("a single column stacking 2 leaves is ONE column (shared width)", () => {
     const region = reg(colSplit([leaf("a"), leaf("b")]));
-    expect(widthColumns(region)).toHaveLength(1);
-    expect(collectLeafGroups(widthColumns(region)[0])).toEqual(["a", "b"]);
+    expect(region.columns).toHaveLength(1);
+    expect(collectLeafGroups(region.columns[0])).toEqual(["a", "b"]);
   });
 
   it("a row of [stack, leaf] surfaces both columns side by side", () => {
     const region = reg(rowSplit([colSplit([leaf("a"), leaf("b")]), leaf("c")]));
-    const cols = widthColumns(region);
+    const cols = region.columns;
     expect(cols).toHaveLength(2);
     expect(collectLeafGroups(cols[0])).toEqual(["a", "b"]);
     expect(collectLeafGroups(cols[1])).toEqual(["c"]);
@@ -91,10 +88,7 @@ describe("minRegionWidth", () => {
     // The reconciler sums per-column mins (dividers are render chrome, added
     // separately) -- so an N-column region floors at N * grab-min.
     const region = reg(rowSplit([leaf("a"), leaf("b"), leaf("c")]));
-    const summed = widthColumns(region).reduce(
-      (sum) => sum + minRegionWidth(),
-      0,
-    );
+    const summed = region.columns.reduce((sum) => sum + minRegionWidth(), 0);
     expect(summed).toBe(MIN_REGION_GRAB_PX * 3);
   });
 });
@@ -105,7 +99,7 @@ describe("minRegionWidth", () => {
 describe("setNodeWeights", () => {
   it("sets column weights by id (a region-row resize), leaving others alone", () => {
     const region = reg(rowSplit([leaf("a"), leaf("b")]));
-    const [ca, cb] = widthColumns(region);
+    const [ca, cb] = region.columns;
     const layout: DockLayout = {
       groups: groups("a", "b"),
       docked: { left: region, right: null },
@@ -113,12 +107,12 @@ describe("setNodeWeights", () => {
       floating: [],
     };
     const out = setNodeWeights(layout, "left", { [ca.id]: 3, [cb.id]: 5 });
-    expect(widthColumns(out.docked.left!).map((c) => c.weight)).toEqual([3, 5]);
+    expect(out.docked.left!.columns.map((c) => c.weight)).toEqual([3, 5]);
   });
 
   it("sets leaf weights by id (a column-stack resize)", () => {
     const region = reg(colSplit([leaf("b"), leaf("c")]));
-    const [lb, lc] = widthColumns(region)[0].leaves;
+    const [lb, lc] = region.columns[0].leaves;
     const layout: DockLayout = {
       groups: groups("b", "c"),
       docked: { left: region, right: null },
@@ -126,20 +120,20 @@ describe("setNodeWeights", () => {
       floating: [],
     };
     const out = setNodeWeights(layout, "left", { [lb.id]: 7, [lc.id]: 2 });
-    expect(
-      widthColumns(out.docked.left!)[0].leaves.map((l) => l.weight),
-    ).toEqual([7, 2]);
+    expect(out.docked.left!.columns[0].leaves.map((l) => l.weight)).toEqual([
+      7, 2,
+    ]);
   });
 
   it("ignores ids not present in the region", () => {
     const layout = dockedLeft(rowSplit([leaf("a", 4), leaf("b", 4)]));
     const out = setNodeWeights(layout, "left", { "no-such-id": 9 });
-    expect(widthColumns(out.docked.left!).map((c) => c.weight)).toEqual([4, 4]);
+    expect(out.docked.left!.columns.map((c) => c.weight)).toEqual([4, 4]);
   });
 
   it("rejects non-finite and non-positive weights (keeps the old weight)", () => {
     const region = reg(rowSplit([leaf("a", 2), leaf("b", 2), leaf("c", 2)]));
-    const ids = widthColumns(region).map((c) => c.id);
+    const ids = region.columns.map((c) => c.id);
     const layout: DockLayout = {
       groups: groups("a", "b", "c"),
       docked: { left: region, right: null },
@@ -151,9 +145,7 @@ describe("setNodeWeights", () => {
       [ids[1]]: -3,
       [ids[2]]: Number.NaN,
     });
-    expect(widthColumns(out.docked.left!).map((c) => c.weight)).toEqual([
-      2, 2, 2,
-    ]);
+    expect(out.docked.left!.columns.map((c) => c.weight)).toEqual([2, 2, 2]);
   });
 
   it("returns the input when the edge is empty", () => {
@@ -163,7 +155,7 @@ describe("setNodeWeights", () => {
 
   it("does not mutate the input layout", () => {
     const region = reg(rowSplit([leaf("a", 1), leaf("b", 1)]));
-    const id = widthColumns(region)[0].id;
+    const id = region.columns[0].id;
     const layout: DockLayout = {
       groups: groups("a", "b"),
       docked: { left: region, right: null },
@@ -233,19 +225,19 @@ describe("dropOnDockedLeaf top/bottom: 50/50 split, width preserved", () => {
   it("above A: column[C, A] is 50/50 and keeps A's column width", () => {
     const { l, targetId } = regionLayout();
     const out = dropOnDockedLeaf(l, ["c"], "right", targetId, "top");
-    const aCol = widthColumns(out.docked.right!)[0];
+    const aCol = out.docked.right!.columns[0];
     expect(aCol.leaves.map((x) => x.group)).toEqual(["c", "a"]); // C on top
     expect(aCol.leaves.map((x) => x.weight)).toEqual([0.5, 0.5]); // 50/50 height
     // The column keeps A's horizontal weight (297) so its width is preserved.
     expect(aCol.weight).toBe(297);
     // B is untouched.
-    expect(widthColumns(out.docked.right!)[1].weight).toBe(297);
+    expect(out.docked.right!.columns[1].weight).toBe(297);
   });
 
   it("below A: column[A, C] is 50/50 (dragged last)", () => {
     const { l, targetId } = regionLayout();
     const out = dropOnDockedLeaf(l, ["c"], "right", targetId, "bottom");
-    const aCol = widthColumns(out.docked.right!)[0];
+    const aCol = out.docked.right!.columns[0];
     expect(aCol.leaves.map((x) => x.group)).toEqual(["a", "c"]); // dragged last
     expect(aCol.leaves.map((x) => x.weight)).toEqual([0.5, 0.5]);
   });
@@ -258,7 +250,7 @@ describe("dropOnDockedLeaf top/bottom: 50/50 split, width preserved", () => {
 // ===========================================================================
 describe("region width clamp bounds", () => {
   function clampBounds(region: DockRegion): { lo: number; hi: number } {
-    const cols = widthColumns(region);
+    const cols = region.columns;
     const lo = cols.reduce((sum) => sum + minRegionWidth(), 0);
     return { lo, hi: Infinity };
   }

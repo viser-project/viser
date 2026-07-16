@@ -28,6 +28,7 @@ import {
   MINIMIZED_STRIP_PX,
   NodeId,
   NonEmpty,
+  PANEL_PAD_PX,
   PaneId,
   PaneRegistry,
   pinnedPxOf,
@@ -227,13 +228,6 @@ export function collectLeaves(
   return column.leaves.map((l) => ({ id: l.id, group: l.group }));
 }
 
-/** The width-determining columns of a region: all of them (D46: the
- * columns-only model has exactly one horizontal partition). Width
- * reconciliation and region-width math run over these. */
-export function widthColumns(region: DockRegion): NonEmpty<DockColumn> {
-  return region.columns;
-}
-
 /** Whether a region's given edge is a single leaf -- so a "dock beside/above
  * everything" drop there would be identical to a per-panel split of that one
  * panel, and the region-edge zone is suppressed as redundant. Distinct only
@@ -360,22 +354,16 @@ export function cascadeResize(opts: {
     growIdx += step;
   }
   if (growIdx < 0 || growIdx >= weights.length) return null;
-  if (deltaPx > 0) {
-    let need = Math.min(deltaPx, maxCell - next[growIdx]);
+  if (deltaPx !== 0) {
+    // Cells on the shrink side of the seam give space in order, nearest
+    // first, each floored at minCell; the grower receives whatever was
+    // actually given. Grow (deltaPx > 0) walks forward from past the seam;
+    // shrink walks backward from the seam -- the same rule mirrored.
+    const start = deltaPx > 0 ? index + 1 : index;
+    const dir = deltaPx > 0 ? 1 : -1;
+    let need = Math.min(Math.abs(deltaPx), maxCell - next[growIdx]);
     const want = need;
-    for (let j = index + 1; j < next.length && need > 0.5; j++) {
-      if (collapsed[j]) continue;
-      const give = Math.min(need, next[j] - minCell);
-      if (give > 0) {
-        next[j] -= give;
-        need -= give;
-      }
-    }
-    next[growIdx] += want - need;
-  } else if (deltaPx < 0) {
-    let need = Math.min(-deltaPx, maxCell - next[growIdx]);
-    const want = need;
-    for (let j = index; j >= 0 && need > 0.5; j--) {
+    for (let j = start; j >= 0 && j < next.length && need > 0.5; j += dir) {
       if (collapsed[j]) continue;
       const give = Math.min(need, next[j] - minCell);
       if (give > 0) {
@@ -465,8 +453,8 @@ export function isRailedDockedCell(
 /** The group ids that share a stack with `groupId` (including itself): a
  * floating window's whole stack, or the leaf groups of the docked column that
  * contains the group. A lone group (its own window, or the sole leaf of its
- * column) returns just `[groupId]`. Used by chrome that styles a group
- * differently when stacked (e.g. the unmergeable header's top rule). */
+ * column) returns just `[groupId]`. Test/fuzz-harness scaffolding (the fuzz
+ * invariants walk stacks with it); production chrome uses isStackedGroup. */
 export function stackGroupIdsOf(
   layout: DockLayout,
   groupId: GroupId,
@@ -651,39 +639,15 @@ function regionOf(column: DockColumn): DockRegion {
 
 /** Dock a stack of groups to a screen edge as a new column at the outermost
  * position (far left for "left", far right for "right"). Multiple groups (a
- * snapped floating stack) dock together, keeping their vertical arrangement. */
+ * snapped floating stack) dock together, keeping their vertical arrangement.
+ * Delegates to dockToRegionEdge with side === edge: inserting on the region's
+ * own edge side IS the outermost insert. */
 export function dockToEdge(
   layout: DockLayout,
   groupIds: GroupId[],
   edge: DockEdge,
 ): DockLayout {
-  groupIds = withoutAreaGroups(layout, groupIds);
-  const ne = asNonEmpty(groupIds);
-  if (ne === null) return layout;
-  const draft = clone(layout);
-  const { heights: stackHeights, sourceCollapsed } =
-    detachAllPreservingStackWeights(draft, ne);
-  const column = buildColumn(ne, 1, stackHeights);
-  const existing = draft.docked[edge];
-  if (existing === null) {
-    // Identity transfer (D38/D44): a collapsed window docked onto an empty
-    // edge lands as a railed column -- a packed region of one, derived.
-    if (sourceCollapsed) column.railed = true;
-    draft.docked[edge] = regionOf(column);
-  } else {
-    // Identity transfer (D38): a collapsed window docked beside existing
-    // content lands as a railed column. Other columns' railed flags are
-    // untouched (D44: the packed region reading is derived, never rebuilt
-    // to preserve a packed look).
-    if (sourceCollapsed) column.railed = true;
-    const live = draft.docked[edge]!;
-    // Add the new column at the outermost position (far left for "left",
-    // far right for "right").
-    const columns: NonEmpty<DockColumn> =
-      edge === "left" ? [column, ...live.columns] : [...live.columns, column];
-    draft.docked[edge] = { columns };
-  }
-  return draft;
+  return dockToRegionEdge(layout, groupIds, edge, edge);
 }
 
 /** Dock a stack of groups as a new full-height column at the region's outer
@@ -1522,23 +1486,6 @@ export function railRegion(layout: DockLayout, edge: DockEdge): DockLayout {
   return draft;
 }
 
-/** Expand every railed column of an edge's region (D44/D46): the packed
- * rail header's `+`. No-op when nothing is railed. */
-// NOTE: no UI affordance reaches this since D46 (packed strips expand
-// granularly via their own headers); kept as railRegion's inverse for the
-// op-level API and its tests.
-export function expandRegionRail(
-  layout: DockLayout,
-  edge: DockEdge,
-): DockLayout {
-  const region = layout.docked[edge];
-  if (region === null) return layout;
-  if (!region.columns.some((c) => c.railed === true)) return layout;
-  const draft = clone(layout);
-  for (const column of draft.docked[edge]!.columns) delete column.railed;
-  return draft;
-}
-
 /** The one entry point for legacy persisted layouts (both injection/restore
  * chokepoints call this): detects pre-D46 band shapes, the pre-D44
  * regionCollapsed flag, and the pre-always-px lone-column weight form, and
@@ -1871,7 +1818,7 @@ export function setRegionWidth(
   const draft = clone(layout);
   const region = draft.docked[edge];
   if (region !== null) {
-    const cols = widthColumns(region);
+    const cols = region.columns;
     const expanded = cols.filter((c) => c.railed !== true);
     const railedPx = (cols.length - expanded.length) * MINIMIZED_STRIP_PX;
     const expandedSum = expanded.reduce((s, c) => s + c.weight, 0);
@@ -1970,10 +1917,10 @@ export interface PanelPlacement {
 }
 
 /** Default float geometry when the server leaves x/y/size unspecified: the
- * top-left corner of the canvas (inset by the same 15px pad the control panel
- * floats with). `float()` with no coords lands here. */
-const DEFAULT_FLOAT_X = 15;
-const DEFAULT_FLOAT_Y = 15;
+ * top-left corner of the canvas (inset by the same PANEL_PAD_PX pad the
+ * control panel floats with). `float()` with no coords lands here. */
+const DEFAULT_FLOAT_X = PANEL_PAD_PX;
+const DEFAULT_FLOAT_Y = PANEL_PAD_PX;
 const DEFAULT_FLOAT_WIDTH = 300;
 
 /** The canvas geometry needed to resolve a (possibly negative) requested float

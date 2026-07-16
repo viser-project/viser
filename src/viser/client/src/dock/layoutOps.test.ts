@@ -65,7 +65,6 @@ import {
   toggleCollapsed,
   expandGroup,
   railRegion,
-  expandRegionRail,
   setColumnRailed,
   isGroupEffectivelyCollapsed,
   isRailedDockedCell,
@@ -80,17 +79,15 @@ import {
   cascadeResize,
   resizeRegionColumns,
   setStackWeights,
-  widthColumns,
 } from "./layoutOps";
 
 // ===========================================================================
-// railRegion / expandRegionRail (D21/D44): the region chevron rails every
-// column; the packed rail is DERIVED (isRegionPackedOn); the packed header's
-// + expands everything.
+// railRegion (D21/D44): the region chevron rails every column; the packed
+// rail is DERIVED (isRegionPackedOn).
 // ===========================================================================
 
-describe("railRegion / expandRegionRail (D21/D44)", () => {
-  it("rails every column; expand-all clears every flag", () => {
+describe("railRegion (D21/D44)", () => {
+  it("rails every column", () => {
     const ca = col([leaf("a")]);
     const layout = makeLayout({ left: row([ca, leaf("b")]) });
     const withRail = setColumnRailed(layout, "left", columnIdOf(ca), true);
@@ -99,9 +96,6 @@ describe("railRegion / expandRegionRail (D21/D44)", () => {
     // store -- side-by-side 36px strips).
     expect(isRegionPackedOn(collapsed, "left")).toBe(true);
     for (const c of collapsed.docked.left!.columns) expect(c.railed).toBe(true);
-    const restored = expandRegionRail(collapsed, "left");
-    for (const c of restored.docked.left!.columns)
-      expect(c.railed).toBeUndefined();
   });
 
   it("a single-column stack rails to the PACKED form (derived)", () => {
@@ -118,7 +112,6 @@ describe("railRegion / expandRegionRail (D21/D44)", () => {
 
   it("no-ops when the flag already matches", () => {
     const layout = makeLayout({ left: leaf("a") });
-    expect(expandRegionRail(layout, "left")).toBe(layout);
     const collapsed = railRegion(layout, "left");
     expect(railRegion(collapsed, "left")).toBe(collapsed);
   });
@@ -2140,7 +2133,7 @@ describe("normalization invariants", () => {
     });
     // b's own leaf weight is preserved through the removal.
     const region = out.docked.left!;
-    expect(widthColumns(region)[1].leaves).toEqual([
+    expect(region.columns[1].leaves).toEqual([
       { id: expect.any(String), group: "b", weight: 5 },
     ]);
   });
@@ -2181,7 +2174,7 @@ describe("normalization invariants", () => {
       layout,
       ["b"],
       "left",
-      widthColumns(layout.docked.left!)[0].leaves[0].id,
+      layout.docked.left!.columns[0].leaves[0].id,
       "left",
     );
     expect(layout).toEqual(snapshot);

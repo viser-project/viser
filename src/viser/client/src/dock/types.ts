@@ -166,6 +166,17 @@ export const MIN_CANVAS_PX = 120;
  * left as-is (the floor never inflates a window above its pinned height). */
 export const MIN_WINDOW_HEIGHT_PX = 50;
 
+/** Boundary pad (px) shared by default float placement (a `float()` with no
+ * coords lands this far from the canvas's top-left corner) and the control
+ * panel's initial floating margins -- the original FloatingPanel's 15px pad. */
+export const PANEL_PAD_PX = 15;
+
+/** Duration (ms) of every dock ease (D34 collapse/expand transitions, the
+ * FLIP column glide, the floating window's WAAPI height ease): one clock so
+ * concurrent motions -- e.g. a region width ease and the canvas inset ease --
+ * always land together. */
+export const DOCK_ANIM_MS = 160;
+
 /** Clamp `v` into [lo, hi]. Shared by every place a size/position is bounded
  * (resize gestures, width reconciliation, hint geometry). */
 export const clamp = (v: number, lo: number, hi: number): number =>

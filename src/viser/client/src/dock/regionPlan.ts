@@ -14,7 +14,6 @@
 // column count, single columns included, so the reserved width below is
 // uniform for every region shape.
 
-import { widthColumns } from "./layoutOps";
 import { DockColumn, DockRegion, SPLIT_DIVIDER_PX } from "./types";
 
 export interface RegionPlan {
@@ -29,7 +28,7 @@ export interface RegionPlan {
 export function planRegion(region: DockRegion): RegionPlan {
   // Resize math runs over all the region's columns (D46: one horizontal
   // partition).
-  const columns = widthColumns(region);
+  const columns = region.columns;
   return {
     columns,
     chromePx: (columns.length - 1) * SPLIT_DIVIDER_PX,

@@ -35,7 +35,7 @@
 // (api.replace, server-built layouts) establishes the semantic from the
 // newColumnPx defaults.
 
-import { collectLeafGroups, minRegionWidth, widthColumns } from "./layoutOps";
+import { collectLeafGroups, minRegionWidth } from "./layoutOps";
 import {
   DEFAULT_REGION_PX,
   DockColumn,
@@ -122,10 +122,10 @@ export function reconcileRegionWidths(
     const prevTree = prev.docked[edge];
     // The width-determining columns are all of the region's columns (D46) --
     // plan and reconciler iterate the identical list.
-    const prevCols = prevTree ? widthColumns(prevTree) : [];
-    // widthColumns(nextTree) IS region.columns (the same array object),
-    // so nextCols stays aligned with the tree by construction.
-    const nextCols = widthColumns(nextTree);
+    const prevCols = prevTree ? prevTree.columns : [];
+    // nextCols aliases the tree's own columns array, so it stays aligned
+    // with the tree by construction.
+    const nextCols = nextTree.columns;
     // plan by construction rather than by re-derivation.
     const sameSet =
       prevCols.length === nextCols.length &&

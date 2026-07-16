@@ -904,7 +904,7 @@ export function useDragController(deps: DragControllerDeps) {
     const rw = regionWidthsOf(layout)[edge];
     const tree = layout.docked[edge];
     if (tree === null || groupId === undefined) return rw;
-    const cols = ops.widthColumns(tree);
+    const cols = tree.columns;
     const col = cols.find((c) => ops.collectLeafGroups(c).includes(groupId));
     // Weights are always reconciled px (every consumer-visible layout has
     // passed reconcileRegionWidths -- the mount chokepoint reconciles too),
@@ -1002,34 +1002,16 @@ export function useDragController(deps: DragControllerDeps) {
     // header uses this to toggle minimize on click, like the live FloatingPanel).
     const onClick = opts?.onClick;
     const loc = ops.findGroupLocation(layoutRef.current, groupId);
-    // A group alone in its floating window just moves that window on drag.
+    // A group alone in its floating window just moves that window on drag --
+    // the same gesture as dragging the window itself. (Dragging a minimized
+    // panel moves it as-is, still minimized; expanding is a click-only
+    // gesture, so no expand-on-drag here.)
     if (loc?.kind === "floating") {
       const win0 = layoutRef.current.floating.find(
         (w) => w.id === loc.windowId,
       );
       if (win0 !== undefined && win0.stack.length === 1) {
-        const windowId = win0.id;
-        // Press-time pointer, drag-start model position (see startWindowDrag).
-        const pressX = event.clientX;
-        const pressY = event.clientY;
-        armPress(
-          event,
-          (e) => {
-            const win = layoutRef.current.floating.find(
-              (w) => w.id === windowId,
-            );
-            if (win === undefined) return;
-            const { grabX, grabY } = grabOffset(
-              { clientX: pressX, clientY: pressY },
-              win.x,
-              win.y,
-            );
-            // Dragging a minimized panel moves it as-is (still minimized);
-            // expanding is a click-only gesture. So no expand-on-drag here.
-            beginWindowDrag(windowId, null, e.pointerId, grabX, grabY);
-          },
-          onClick,
-        );
+        startWindowDrag(event, win0.id, opts);
         return;
       }
     }

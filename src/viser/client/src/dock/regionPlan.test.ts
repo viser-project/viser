@@ -8,12 +8,7 @@
 // override).
 
 import { describe, expect, it } from "vitest";
-import {
-  setColumnRailed,
-  railRegion,
-  expandRegionRail,
-  toggleCollapsed,
-} from "./layoutOps";
+import { setColumnRailed, railRegion, toggleCollapsed } from "./layoutOps";
 import { planRegion, plannedReservedWidth } from "./regionPlan";
 import { emptyLayout, MINIMIZED_STRIP_PX, SPLIT_DIVIDER_PX } from "./types";
 import { reconcileRegionWidths } from "./widthReconciliation";
@@ -140,9 +135,5 @@ describe("reconcile: collapse round-trips through the column weight (D20/D40)", 
     expect(plannedReservedWidth(plan, collapsed.regionWidth!.right)).toBe(
       MINIMIZED_STRIP_PX,
     );
-    // Expanding restores exactly.
-    const restored = expandRegionRail(collapsed, "right");
-    reconcileRegionWidths(collapsed, restored);
-    expect(restored.regionWidth!.right).toBe(320);
   });
 });
