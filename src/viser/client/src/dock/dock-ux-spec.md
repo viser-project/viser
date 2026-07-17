@@ -783,14 +783,18 @@ window is an open question (§11).
   full-height by construction). Floating stack dividers carry the same
   ~12px invisible grab overlay as docked ones (P11) — only while
   resizable.
-- **Divider rhythm** (D54): dividers reserve `SPLIT_DIVIDER_PX` (3px)
-  of layout, and a docked region adds the SAME gap as a gutter at its
-  two edges (`REGION_EDGE_GAP_PX`, counted in the region's chrome) —
-  every column reads gap-panel-gap symmetrically, instead of flush at
-  the screen edge next to a guttered interior seam. One value, one
-  spacing rhythm — carried to floating windows too (P7): a window's
-  stack is inset by the same horizontal gutter inside its paper, with
-  the header full-bleed exactly like the docked handle rows.
+- **Divider rhythm** (D54): ONE per-side gap constant (`DOCK_GAP_PX`,
+  2px) defines the whitespace on EACH FLANK of a panel, everywhere. A
+  divider between two panes is therefore gap + 1px rule + gap
+  (`SPLIT_DIVIDER_PX` = 2·gap + 1, derived — a flat divider constant
+  let the flanks drift from the edge gutters), and a region's edge
+  gutters are one gap (`REGION_EDGE_GAP_PX`, counted in the region's
+  chrome; the boundary there is the region shadow / viewport edge).
+  Carried to MULTI-group floating windows (P7): the stack is inset by
+  the same gutter inside the paper, header full-bleed like the docked
+  handle rows. A SINGLE-group window is exempt — the window IS the
+  panel, not a container of panels, so an internal gutter would be
+  padding around nothing.
 - **Stack grow normalization**: flex-grow factors normalize per site
   over EXPANDED cells only — minimized cells render flexGrow 0 — so
   freed space is never stranded (edge case 16).

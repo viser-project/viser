@@ -644,14 +644,17 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                       "1px solid color-mix(in srgb, var(--mantine-color-default-border) 50%, transparent)",
                   }
                 : {}),
-              // D54's floating analog (P7): the same horizontal gutter the
-              // docked regions give their columns, so cells (and collapsed
-              // bars, matching the rail's inset-in-region treatment) sit in
-              // the window with the one 3px rhythm. Horizontal only, exactly
-              // like the docked side; the window header stays full-bleed the
-              // way docked handle rows do. No height math changes.
-              paddingLeft: REGION_EDGE_GAP_PX,
-              paddingRight: REGION_EDGE_GAP_PX,
+              // D54's floating analog (P7): a MULTI-group window is a
+              // container of panels, so its stack sits in the same horizontal
+              // gutter the docked regions give their columns (cells and
+              // collapsed bars alike -- the bars' inset mirrors the
+              // rail-in-region treatment), with the header full-bleed like
+              // the docked handle rows. A SINGLE-group window is exempt: the
+              // window IS the panel (its paper is the panel's own frame), so
+              // an internal gutter would be padding around nothing.
+              // Horizontal only; no height math changes.
+              paddingLeft: multi ? REGION_EDGE_GAP_PX : 0,
+              paddingRight: multi ? REGION_EDGE_GAP_PX : 0,
               ...(fixedHeight
                 ? {
                     flexGrow: 1,
