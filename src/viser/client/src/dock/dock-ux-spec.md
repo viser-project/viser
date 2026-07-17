@@ -768,6 +768,12 @@ window is an open question (§11).
   full-height by construction). Floating stack dividers carry the same
   ~12px invisible grab overlay as docked ones (P11) — only while
   resizable.
+- **Divider rhythm** (D54): dividers reserve `SPLIT_DIVIDER_PX` (5px)
+  of layout, and a docked region adds the SAME gap as a gutter at its
+  two edges (`REGION_EDGE_GAP_PX`, counted in the region's chrome) —
+  every column reads gap-panel-gap symmetrically, instead of flush at
+  the screen edge next to a guttered interior seam. One value, one
+  spacing rhythm.
 - **Stack grow normalization**: flex-grow factors normalize per site
   over EXPANDED cells only — minimized cells render flexGrow 0 — so
   freed space is never stranded (edge case 16).

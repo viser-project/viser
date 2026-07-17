@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import { setColumnRailed, railRegion, toggleCollapsed } from "./layoutOps";
 import { planRegion, plannedReservedWidth } from "./regionPlan";
+import { REGION_EDGE_GAP_PX } from "./types";
 import { emptyLayout, MINIMIZED_STRIP_PX, SPLIT_DIVIDER_PX } from "./types";
 import { reconcileRegionWidths } from "./widthReconciliation";
 import {
@@ -27,8 +28,8 @@ describe("planRegion", () => {
   it("single leaf: one column, no chrome", () => {
     const plan = planOf(leaf("a"));
     expect(plan.columns).toHaveLength(1);
-    expect(plan.chromePx).toBe(0);
-    expect(plannedReservedWidth(plan, 300)).toBe(300);
+    expect(plan.chromePx).toBe(2 * REGION_EDGE_GAP_PX);
+    expect(plannedReservedWidth(plan, 300)).toBe(300 + 2 * REGION_EDGE_GAP_PX);
   });
 
   it("a RAILED width-column swaps its px for the strip width (D28/D38/D40)", () => {
@@ -47,21 +48,23 @@ describe("planRegion", () => {
     expect(next.docked.left!.columns[0].weight).toBe(150);
     const plan = planRegion(next.docked.left!);
     expect(plannedReservedWidth(plan, next.regionWidth!.left)).toBe(
-      150 + MINIMIZED_STRIP_PX + SPLIT_DIVIDER_PX,
+      150 + MINIMIZED_STRIP_PX + SPLIT_DIVIDER_PX + 2 * REGION_EDGE_GAP_PX,
     );
   });
 
   it("two side-by-side columns: divider chrome only", () => {
     const plan = planOf(row([leaf("a"), leaf("b")]));
     expect(plan.columns).toHaveLength(2);
-    expect(plan.chromePx).toBe(SPLIT_DIVIDER_PX);
-    expect(plannedReservedWidth(plan, 300)).toBe(300 + SPLIT_DIVIDER_PX);
+    expect(plan.chromePx).toBe(SPLIT_DIVIDER_PX + 2 * REGION_EDGE_GAP_PX);
+    expect(plannedReservedWidth(plan, 300)).toBe(
+      300 + SPLIT_DIVIDER_PX + 2 * REGION_EDGE_GAP_PX,
+    );
   });
 
   it("a column stacking 2 leaves is ONE column (shared width)", () => {
     const plan = planOf(col([leaf("a"), leaf("b")]));
     expect(plan.columns).toHaveLength(1);
-    expect(plan.chromePx).toBe(0);
+    expect(plan.chromePx).toBe(2 * REGION_EDGE_GAP_PX);
   });
 
   it("an ALL-RAILED region with NOTHING expanded reserves rails + chrome", () => {
@@ -81,7 +84,7 @@ describe("planRegion", () => {
     expect(next.regionWidth!.right).toBe(2 * MINIMIZED_STRIP_PX);
     const plan = planRegion(next.docked.right!);
     expect(plannedReservedWidth(plan, next.regionWidth!.right)).toBe(
-      2 * MINIMIZED_STRIP_PX + SPLIT_DIVIDER_PX,
+      2 * MINIMIZED_STRIP_PX + SPLIT_DIVIDER_PX + 2 * REGION_EDGE_GAP_PX,
     );
   });
 
@@ -92,7 +95,7 @@ describe("planRegion", () => {
     // same way (its restore width lives in the column weight, D40).
     const plan = planOf(row([leaf("a"), leaf("b")]));
     expect(plannedReservedWidth(plan, 2 * MINIMIZED_STRIP_PX)).toBe(
-      2 * MINIMIZED_STRIP_PX + SPLIT_DIVIDER_PX,
+      2 * MINIMIZED_STRIP_PX + SPLIT_DIVIDER_PX + 2 * REGION_EDGE_GAP_PX,
     );
   });
 });
@@ -113,7 +116,7 @@ describe("reconcile: collapse round-trips through the column weight (D20/D40)", 
     expect(next.docked.right!.columns[0].weight).toBe(320);
     const plan = planRegion(next.docked.right!);
     expect(plannedReservedWidth(plan, next.regionWidth!.right)).toBe(
-      MINIMIZED_STRIP_PX,
+      MINIMIZED_STRIP_PX + 2 * REGION_EDGE_GAP_PX,
     );
     // Expanding restores exactly (weight -> rendered need).
     const restored = toggleCollapsed(next, "a");
@@ -133,7 +136,7 @@ describe("reconcile: collapse round-trips through the column weight (D20/D40)", 
     expect(collapsed.docked.right!.columns[0].weight).toBe(320);
     const plan = planRegion(collapsed.docked.right!);
     expect(plannedReservedWidth(plan, collapsed.regionWidth!.right)).toBe(
-      MINIMIZED_STRIP_PX,
+      MINIMIZED_STRIP_PX + 2 * REGION_EDGE_GAP_PX,
     );
   });
 });

@@ -24,6 +24,7 @@ import {
   MIN_REGION_GRAB_PX,
   regionWidthsOf,
   SPLIT_DIVIDER_PX,
+  REGION_EDGE_GAP_PX,
 } from "./types";
 import { reconcileRegionWidths } from "./widthReconciliation";
 import { planRegion, plannedReservedWidth } from "./regionPlan";
@@ -452,12 +453,18 @@ describe("railed-column width paths (drop beside a rail)", () => {
     expect(regionWidthsOf(expanded).left).toBe(2 * MINIMIZED_STRIP_PX + 260);
     const reservedExpanded = reservedOf(expanded);
     expect(reservedExpanded).toBe(
-      260 + 2 * MINIMIZED_STRIP_PX + 2 * SPLIT_DIVIDER_PX,
+      260 +
+        2 * MINIMIZED_STRIP_PX +
+        2 * SPLIT_DIVIDER_PX +
+        2 * REGION_EDGE_GAP_PX,
     );
     // The rendered share of the expanded column is exactly its restore px:
     // reserved - rails - chrome = 260.
     expect(
-      reservedExpanded - 2 * MINIMIZED_STRIP_PX - 2 * SPLIT_DIVIDER_PX,
+      reservedExpanded -
+        2 * MINIMIZED_STRIP_PX -
+        2 * SPLIT_DIVIDER_PX -
+        2 * REGION_EDGE_GAP_PX,
     ).toBe(260);
   });
 
@@ -488,7 +495,9 @@ describe("railed-column width paths (drop beside a rail)", () => {
       planRegion(next.docked.left!),
       regionWidthsOf(next).left,
     );
-    expect(reserved).toBe(2 * MINIMIZED_STRIP_PX + SPLIT_DIVIDER_PX);
+    expect(reserved).toBe(
+      2 * MINIMIZED_STRIP_PX + SPLIT_DIVIDER_PX + 2 * REGION_EDGE_GAP_PX,
+    );
   });
 
   it("W9: docking beside a lone expanded panel grows the region by the newcomer; the target is not halved", () => {

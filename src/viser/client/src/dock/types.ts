@@ -146,7 +146,16 @@ export const HANDLE_BTN_EM = 1.7;
  * columns. Participates in the region-width model the same way strips do:
  * the rendered region is the expanded columns' regionWidth plus these fixed
  * chrome widths, so resize math stays 1:1 with the cursor. */
-export const SPLIT_DIVIDER_PX = 7;
+export const SPLIT_DIVIDER_PX = 5;
+
+/** Horizontal gutter at a docked region's OUTER and INNER edges (D54): the
+ * outermost columns get the same breathing room a divider gives interior
+ * seams, so every column reads gap-panel-gap symmetrically instead of being
+ * flush at the screen edge and guttered at the divider. One value with the
+ * divider width -- a single spacing rhythm; counted as region chrome
+ * (regionPlan.chromePx) so reserved widths, canvas insets, and the resizer
+ * all agree. */
+export const REGION_EDGE_GAP_PX = SPLIT_DIVIDER_PX;
 
 /** Width (px) a docked region starts at (and that a newly docked column gets)
  * before the user resizes it. */

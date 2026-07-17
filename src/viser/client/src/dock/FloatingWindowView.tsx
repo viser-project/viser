@@ -36,10 +36,10 @@ const RESIZE_KEEP_CANVAS_PX = 100;
 const MIN_HEIGHT_PX = MIN_WINDOW_HEIGHT_PX;
 // Minimum height for one group in a resizable snap-stack.
 const MIN_STACK_CELL_PX = 50;
-// The stack divider's invisible grab overlay overhangs its 7px layout seam on
+// The stack divider's invisible grab overlay overhangs its layout seam on
 // each side, widening the grab zone to ~12px (P11 zone floor is 8px; the
-// docked analog grabs ~12px) without thickening the drawn seam: (12 - 7) / 2.
-const DIVIDER_OVERHANG_PX = 2.5;
+// docked analog grabs ~12px) without thickening the drawn seam.
+const DIVIDER_OVERHANG_PX = (12 - SPLIT_DIVIDER_PX) / 2;
 
 export const FloatingWindowView = React.memo(function FloatingWindowView({
   win,

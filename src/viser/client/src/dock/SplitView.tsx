@@ -25,6 +25,7 @@ import {
   DOCK_ANIM_MS,
   DockColumn,
   DockEdge,
+  REGION_EDGE_GAP_PX,
   DockLeaf,
   DockRegion,
   MIN_REGION_GRAB_PX,
@@ -223,6 +224,13 @@ function RegionColumns({
         height: "100%",
         minWidth: 0,
         minHeight: 0,
+        // Edge gutters (D54): the outermost columns get the same gap the
+        // dividers give interior seams, so every column reads
+        // gap-panel-gap symmetrically (no flush screen edge next to a
+        // guttered divider). Counted in regionPlan.chromePx, so the flex
+        // space inside equals regionWidth exactly.
+        paddingLeft: REGION_EDGE_GAP_PX,
+        paddingRight: REGION_EDGE_GAP_PX,
       }}
     >
       {columns.map((column, index) => {

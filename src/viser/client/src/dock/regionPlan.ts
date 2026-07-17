@@ -14,14 +14,21 @@
 // column count, single columns included, so the reserved width below is
 // uniform for every region shape.
 
-import { DockColumn, DockRegion, SPLIT_DIVIDER_PX } from "./types";
+import {
+  DockColumn,
+  DockRegion,
+  REGION_EDGE_GAP_PX,
+  SPLIT_DIVIDER_PX,
+} from "./types";
 
 export interface RegionPlan {
   /** The width-determining columns -- all of the region's (D46), in render
    * order. All of them carry pixel widths as weights (a railed column's
    * weight is its P8 restore width; see the module note). */
   columns: DockColumn[];
-  /** Fixed chrome on top of regionWidth: the inter-column dividers. */
+  /** Fixed chrome on top of regionWidth: the inter-column dividers plus the
+   * region's two edge gutters (D54 -- outermost columns get the same gap the
+   * dividers give interior seams). */
   chromePx: number;
 }
 
@@ -31,7 +38,7 @@ export function planRegion(region: DockRegion): RegionPlan {
   const columns = region.columns;
   return {
     columns,
-    chromePx: (columns.length - 1) * SPLIT_DIVIDER_PX,
+    chromePx: (columns.length - 1) * SPLIT_DIVIDER_PX + 2 * REGION_EDGE_GAP_PX,
   };
 }
 
