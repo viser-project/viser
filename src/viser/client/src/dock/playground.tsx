@@ -19,6 +19,7 @@ import { theme } from "../AppTheme";
 import { DockArea } from "./DockArea";
 import { useDock } from "./DockContext";
 import { DockManager } from "./DockManager";
+import { measureNaturalHeight } from "./detent";
 import { makeGroup } from "./layoutOps";
 import { DockLayout, PaneRegistry, TabGroup } from "./types";
 
@@ -245,8 +246,13 @@ function LayoutInjector() {
   React.useEffect(() => {
     const probe = window as unknown as {
       __dockSetLayout?: (layout: DockLayout) => void;
+      __dockNaturalHeight?: (el: HTMLElement) => number;
     };
     probe.__dockSetLayout = (layout) => api.replace(layout);
+    // Read probe for the detent e2e: the REAL measureNaturalHeight, so the
+    // tests' content-height oracle can never drift from the production
+    // formula (it used to be a hand-maintained JS-string copy).
+    probe.__dockNaturalHeight = measureNaturalHeight;
     // One-shot seeding for screenshot tooling: `#layout=<base64 JSON>` in the
     // URL applies a layout at mount, so a single `chrome --screenshot` of a
     // playground URL can capture any configuration without a live CDP
@@ -262,6 +268,7 @@ function LayoutInjector() {
     }
     return () => {
       delete probe.__dockSetLayout;
+      delete probe.__dockNaturalHeight;
     };
   }, [api]);
   return null;

@@ -5,9 +5,12 @@
 // preference, not a "natural" size), and a detent without meaning is just
 // stickiness.
 //
-// snapToDetent is pure math (unit-pinned in detent.test.ts); the DOM
-// measurement helper lives beside it so every consumer computes "natural
-// content height" with the same formula.
+// snapToDetent and flankDetentDeltas are pure math (unit-pinned in
+// detent.test.ts); the DOM measurement helper and the divider rule's cue
+// style live beside them so every consumer computes "natural content
+// height" -- and draws the snap signifier -- with the same formula.
+
+import type { CSSProperties } from "react";
 
 /** Snap `value` onto the nearest detent within `bandPx` of it.
  *
@@ -34,6 +37,56 @@ export function snapToDetent(
   return best === null
     ? { value, snapped: false }
     : { value: best, snapped: true };
+}
+
+/** The cursor DELTAS at which a height divider's flanking cells land exactly
+ * at their natural content heights, in the divider's normalized drag scale.
+ *
+ * Both height dividers feed cascadeResize sizes renormalized over the
+ * container box height (divider chrome included), so a rendered-px content
+ * target converts by `scale` (container / rendered total) before
+ * differencing against the flank's normalized start size (`n0Above` /
+ * `n0Below`); snapping the DELTA then lands the flank exactly at content
+ * once the render divides the scale back out. A flank whose content height
+ * sits below `minPx` gets no detent: cascadeResize clamps at the cell
+ * floor, so that landing is unreachable and offering it would light the
+ * cue on a snap that cannot happen. A `null` content height (unmeasurable
+ * cell) is skipped the same way. */
+export function flankDetentDeltas(args: {
+  scale: number;
+  n0Above: number;
+  n0Below: number;
+  contentAbove: number | null;
+  contentBelow: number | null;
+  minPx: number;
+}): number[] {
+  const deltas: number[] = [];
+  if (args.contentAbove !== null && args.contentAbove >= args.minPx)
+    deltas.push(args.scale * args.contentAbove - args.n0Above);
+  if (args.contentBelow !== null && args.contentBelow >= args.minPx)
+    deltas.push(args.n0Below - args.scale * args.contentBelow);
+  return deltas;
+}
+
+/** The height-divider rule's drawn style, including the snap cue (D56):
+ * a 1px hairline at rest; while the drag is magnetized to a content-height
+ * detent, the SAME 2px primary bar the window grip's snappedToContent cue
+ * uses -- one snap signifier, one weight. `horizontal` is the rule's long
+ * axis; `restOpacity` dims inert (non-resizable) dividers so they don't
+ * read as live handles. */
+export function dividerRuleStyle(
+  snapped: boolean,
+  opts: { horizontal: boolean; restOpacity: number },
+): CSSProperties {
+  const thickness = snapped ? "2px" : "1px";
+  return {
+    width: opts.horizontal ? "100%" : thickness,
+    height: opts.horizontal ? thickness : "100%",
+    backgroundColor: snapped
+      ? "var(--mantine-primary-color-filled)"
+      : "var(--mantine-color-default-border)",
+    opacity: snapped ? 1 : opts.restOpacity,
+  };
 }
 
 /** `el`'s NATURAL content height: what it would auto-size to, INVARIANT of

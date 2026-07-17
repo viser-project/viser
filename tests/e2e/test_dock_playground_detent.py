@@ -36,7 +36,11 @@ import pytest
 from playwright.sync_api import Page  # noqa: E402
 
 from .dock_helpers import (
+    CONTENT_SNAP_BAND_PX,
+    center,
     dock_layout,
+    group_box,
+    layout,
     leaf_box,
     set_layout,
     stack,
@@ -45,53 +49,33 @@ from .dock_helpers import (
 from .dock_helpers import open_playground as _open
 from .dock_helpers import raf_alive as _raf_alive
 
-# The magnetic band around a content-height detent (types.ts,
-# CONTENT_SNAP_BAND_PX).
-SNAP_BAND_PX = 12
-
 
 # ---------------------------------------------------------------------------
 # Helpers.
 # ---------------------------------------------------------------------------
 # Natural content height of the element holding group `gid` (the floating
-# CELL, or the docked LEAF via closest) -- the same formula as
-# detent.ts:measureNaturalHeight: per TOP-LEVEL scroll viewport (a nested
-# scroll area lives inside the outer content wrapper and is already counted;
-# summing it too would double its overflow delta), the chrome around it plus
-# the content wrapper's true height.
-_NATURAL_JS = """(el) => {
-    let contentSum = 0, clientSum = 0;
-    el.querySelectorAll('.mantine-ScrollArea-viewport').forEach((v) => {
-        const outer = v.parentElement
-            && v.parentElement.closest('.mantine-ScrollArea-viewport');
-        if (outer && el.contains(outer)) return;
-        const c = v.querySelector('.mantine-ScrollArea-content');
-        contentSum += c ? c.offsetHeight : v.scrollHeight;
-        clientSum += v.clientHeight;
-    });
-    return el.offsetHeight - clientSum + contentSum;
-}"""
-
-
+# CELL, or the docked LEAF via closest), measured through the playground's
+# __dockNaturalHeight probe -- the REAL detent.ts:measureNaturalHeight, so
+# this oracle can never drift from the production formula.
 def _cell_natural(page: Page, gid: str) -> float:
-    return page.eval_on_selector(f'[data-dock-group="{gid}"]', _NATURAL_JS)
+    return page.eval_on_selector(
+        f'[data-dock-group="{gid}"]', "el => window.__dockNaturalHeight(el)"
+    )
 
 
 def _leaf_natural(page: Page, gid: str) -> float:
     return page.eval_on_selector(
         f'[data-dock-group="{gid}"]',
-        f"e => ({_NATURAL_JS})(e.closest('[data-dock-leaf]'))",
+        "e => window.__dockNaturalHeight(e.closest('[data-dock-leaf]'))",
     )
 
 
 def _cell_h(page: Page, gid: str) -> float:
-    return page.eval_on_selector(
-        f'[data-dock-group="{gid}"]', "e => e.getBoundingClientRect().height"
-    )
+    return group_box(page, gid)["h"]
 
 
 def _height_mode(page: Page) -> str:
-    return page.evaluate("() => window.__dockLayout.floating[0].height.mode")
+    return layout(page)["floating"][0]["height"]["mode"]
 
 
 def _divider_center(page: Page, selector: str) -> tuple[float, float] | None:
@@ -101,7 +85,7 @@ def _divider_center(page: Page, selector: str) -> tuple[float, float] | None:
     box = el.bounding_box()
     if box is None:
         return None
-    return box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    return center(box)
 
 
 def _drag_divider(
@@ -229,9 +213,11 @@ def test_docked_divider_snaps_exactly_to_content_height(
         # No snapped attribute at rest.
         assert page.query_selector("[data-dock-divider-snapped]") is None
 
-        # Drag to 6px SHORT of the exact content position (inside the band):
-        # the magnet must close the gap, exactly.
-        off = -6 if delta < 0 else 6
+        # Drag to half a band SHORT of the exact content position (well
+        # inside CONTENT_SNAP_BAND_PX): the magnet must close the gap,
+        # exactly.
+        half_band = CONTENT_SNAP_BAND_PX // 2
+        off = -half_band if delta < 0 else half_band
         snapped = _drag_divider(page, d, delta + off, check_snap=True)
         assert snapped, "the divider should expose data-dock-divider-snapped in-band"
 

@@ -175,6 +175,18 @@ export function findColumnById(
   return findColumn(region, nodeId)?.column ?? null;
 }
 
+/** Region-relative index of the column holding leaf `nodeId`: columnInsert
+ * seams are column indices (D55), and this is THE side-drop/side-band seam
+ * derivation (hitTest's side bands and dropOnDockedLeaf's side arm both use
+ * it). -1 when the node isn't in the region; callers clamp to seam 0. */
+export function columnIndexOf(
+  region: DockRegion | null,
+  nodeId: NodeId,
+): number {
+  if (region === null) return -1;
+  return region.columns.findIndex((c) => c.leaves.some((l) => l.id === nodeId));
+}
+
 // ---------------------------------------------------------------------------
 // Collapse / minimization.
 // ---------------------------------------------------------------------------
@@ -781,9 +793,7 @@ export function dropOnDockedLeaf(
     // re-anchors it across the detach (a same-region drag can shift or
     // remove columns) and preserves a railed target's P8 restore weight by
     // construction -- it never touches existing columns' weights.
-    const ci = existingRegion!.columns.findIndex((c) =>
-      c.leaves.some((l) => l.id === targetNodeId),
-    );
+    const ci = columnIndexOf(existingRegion, targetNodeId);
     return insertColumnAt(layout, ne, edge, region === "left" ? ci : ci + 1);
   }
 

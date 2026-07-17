@@ -160,6 +160,13 @@ export const DOCK_GAP_PX = 2;
  * standard gap on each flank (see DOCK_GAP_PX). */
 export const SPLIT_DIVIDER_PX = 2 * DOCK_GAP_PX + 1;
 
+/** Pointer grab width for a resizable divider (P11): the divider only draws a
+ * 1px rule (and reserves SPLIT_DIVIDER_PX of layout), but an invisible
+ * overlay widens the grab zone to this, overhanging the flanking panes by
+ * (DIVIDER_GRAB_PX - SPLIT_DIVIDER_PX) / 2 per side. Shared by the docked
+ * split dividers and the floating stack divider so both grab identically. */
+export const DIVIDER_GRAB_PX = 12;
+
 /** Horizontal gutter at a docked region's OUTER and INNER edges (D54): the
  * outermost columns get the same per-side breathing room a divider gives
  * interior seams, so every column reads gap-panel-gap symmetrically. Counted

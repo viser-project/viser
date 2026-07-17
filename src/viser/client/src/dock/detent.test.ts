@@ -7,7 +7,11 @@
 // test environment.
 
 import { describe, expect, it } from "vitest";
-import { measureNaturalHeight, snapToDetent } from "./detent";
+import {
+  flankDetentDeltas,
+  measureNaturalHeight,
+  snapToDetent,
+} from "./detent";
 
 const BAND = 12;
 
@@ -86,6 +90,63 @@ describe("snapToDetent", () => {
 
   it("no detents -> never snaps", () => {
     expect(snapToDetent(3, [], BAND)).toEqual({ value: 3, snapped: false });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// flankDetentDeltas: the shared height-divider delta math (both the docked
+// SplitDivider and the floating stack divider feed it their normalized
+// starts; these pins are the single unit coverage for the sign conventions
+// and the floor-reachability rule).
+// ---------------------------------------------------------------------------
+
+describe("flankDetentDeltas", () => {
+  const base = {
+    scale: 1,
+    n0Above: 200,
+    n0Below: 150,
+    contentAbove: 240 as number | null,
+    contentBelow: 100 as number | null,
+    minPx: 50,
+  };
+
+  it("above flank: delta moves the divider DOWN to grow onto content", () => {
+    // content 240 vs start 200 -> +40 (divider down grows the above cell).
+    expect(flankDetentDeltas({ ...base, contentBelow: null })).toEqual([40]);
+  });
+
+  it("below flank: delta moves the divider UP to grow onto content", () => {
+    // Landing the below cell at content 100 from start 150 means the
+    // divider sits 50 HIGHER: n0Below - content = +50 in divider-delta
+    // terms (positive = down for above, the below detent mirrors).
+    expect(flankDetentDeltas({ ...base, contentAbove: null })).toEqual([50]);
+  });
+
+  it("scale converts rendered px into the normalized drag scale", () => {
+    // container/rendered = 0.5: a 240px content target is 120 normalized.
+    expect(
+      flankDetentDeltas({ ...base, scale: 0.5, contentBelow: null }),
+    ).toEqual([0.5 * 240 - 200]);
+  });
+
+  it("a detent below the cell floor is not offered (unreachable)", () => {
+    expect(
+      flankDetentDeltas({
+        ...base,
+        contentAbove: 49, // below minPx 50: cascadeResize clamps first
+        contentBelow: 50, // exactly at the floor: reachable
+      }),
+    ).toEqual([150 - 50]);
+  });
+
+  it("null content heights (unmeasurable cells) are skipped", () => {
+    expect(
+      flankDetentDeltas({ ...base, contentAbove: null, contentBelow: null }),
+    ).toEqual([]);
+  });
+
+  it("both flanks in play: above first, then below", () => {
+    expect(flankDetentDeltas(base)).toEqual([40, 50]);
   });
 });
 

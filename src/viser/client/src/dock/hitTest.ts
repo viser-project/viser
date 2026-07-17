@@ -7,7 +7,10 @@
 // drop a pointer position maps to, plus the geometry of the visual hint. It is
 // intentionally DOM-free so it can be unit tested with synthetic rects.
 
-import { edgeIsSingleLeaf } from "./layoutOps";
+import {
+  columnIndexOf as regionColumnIndex,
+  edgeIsSingleLeaf,
+} from "./layoutOps";
 import {
   AreaId,
   clamp,
@@ -445,16 +448,11 @@ export function hitTest(
     );
   };
 
-  // The region-relative index of the column holding a docked target's leaf:
-  // columnInsert seams are column indices (D55). -1 when the node isn't in
-  // the layout (a stale synthetic target); callers clamp to seam 0.
-  const columnIndexOf = (edge: DockEdge, nodeId: NodeId): number => {
-    const region = layout.docked[edge];
-    if (region === null) return -1;
-    return region.columns.findIndex((c) =>
-      c.leaves.some((l) => l.id === nodeId),
-    );
-  };
+  // The region-relative index of the column holding a docked target's leaf
+  // (the shared D55 seam derivation; -1 for a stale synthetic target, and
+  // callers clamp to seam 0).
+  const columnIndexOf = (edge: DockEdge, nodeId: NodeId): number =>
+    regionColumnIndex(layout.docked[edge], nodeId);
 
   // THE one hint for a full-height column insertion (D55): a region-tall
   // vertical line centered on the SEAM at `index`. Region-edge bands,
@@ -1137,16 +1135,8 @@ export function hitTest(
     // these paths (the strip insert is suppressed too, so there is
     // nothing below the grip bar to aim at).
     const mergeSuppressed = gt.unmergeable || draggingUnmergeable;
-    let region: "top" | "bottom" | null = null;
-    let side: "left" | "right" | null = null;
-    if (mergeSuppressed && ry < vBand) region = "top";
-    else if (ry > 1 - vBand) region = "bottom";
-    else if (rx < hBand) side = "left";
-    else if (rx > 1 - hBand) side = "right";
-    if (side !== null) {
-      // Side band: a full-height column at the adjacent seam (D55).
-      return sideColumnInsert(g.ctx.edge, g.ctx.nodeId, side);
-    }
+    const region: "top" | "bottom" | null =
+      mergeSuppressed && ry < vBand ? "top" : ry > 1 - vBand ? "bottom" : null;
     if (region !== null) {
       return {
         result: {
@@ -1158,6 +1148,10 @@ export function hitTest(
         hint: splitLine(region),
       };
     }
+    // Side bands: a full-height column at the adjacent seam (D55).
+    if (rx < hBand) return sideColumnInsert(g.ctx.edge, g.ctx.nodeId, "left");
+    if (rx > 1 - hBand)
+      return sideColumnInsert(g.ctx.edge, g.ctx.nodeId, "right");
   } else if (ry > 1 - vBand) {
     return {
       result: {

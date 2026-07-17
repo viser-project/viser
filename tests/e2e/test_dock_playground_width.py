@@ -59,6 +59,7 @@ from playwright.sync_api import Page  # noqa: E402
 
 from .dock_helpers import (
     MIN_CELL_HEIGHT_PX,
+    REGION_EDGE_GAP_PX,
     click_column_chevron,
     columns,
     dock_layout,
@@ -592,7 +593,7 @@ def test_narrow_region_scrolls_body_with_bottom_scrollbar(page: Page) -> None:
     # inset REGION_EDGE_GAP_PX from the region boundary the resizer
     # straddles, and grabbing exactly at the leaf edge sits on the straddle's
     # inner limit (a rounding-dependent miss).
-    region_left = leaf["x"] - 2
+    region_left = leaf["x"] - REGION_EDGE_GAP_PX
     target_left = vw - 120
     _raw_drag(page, (region_left, 400), (target_left, 400))
 

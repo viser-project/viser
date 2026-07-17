@@ -25,6 +25,7 @@ import {
   CONTENT_SNAP_BAND_PX,
   DOCK_ANIM_MS,
   DockColumn,
+  DIVIDER_GRAB_PX,
   DockEdge,
   REGION_EDGE_GAP_PX,
   DockLeaf,
@@ -33,15 +34,15 @@ import {
   MINIMIZED_STRIP_PX,
   SPLIT_DIVIDER_PX,
 } from "./types";
-import { measureNaturalHeight, snapToDetent } from "./detent";
+import {
+  dividerRuleStyle,
+  flankDetentDeltas,
+  measureNaturalHeight,
+  snapToDetent,
+} from "./detent";
 
 // Minimum height for a stacked (column) cell; row cells use the per-panel width.
 const MIN_CELL_HEIGHT_PX = 50;
-
-// Pointer grab width for a split divider. The divider only draws a 1px rule (and
-// reserves SPLIT_DIVIDER_PX of layout), but an invisible overlay widens the grab
-// zone to this so it's comfortable to hit without thickening the seam.
-const DIVIDER_GRAB_PX = 12;
 
 // Module-level media query: the glide effect below runs on every render,
 // and matchMedia() allocates a fresh MediaQueryList per call.
@@ -392,13 +393,10 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
 
   // Content-height detent for the divider at `index` (D56): measured ONCE at
   // drag start (SplitDivider calls this on pointerdown), the cursor deltas
-  // at which a flanking cell lands exactly at its natural content height.
-  // resizeCells feeds cascadeResize the leaf WEIGHTS renormalized over the
-  // container BOX height (divider chrome included), so a rendered-px target
-  // converts by `scale` before differencing against the flank's normalized
-  // start -- snapping the DELTA then lands the flank exactly at content once
-  // the render divides the scale back out. No mode change here (docked cells
-  // have no auto state): just the detent and its cue.
+  // at which a flanking cell lands exactly at its natural content height
+  // (flankDetentDeltas holds the scale-conversion math; here n0 comes from
+  // the leaf WEIGHTS resizeCells feeds cascadeResize). No mode change (docked
+  // cells have no auto state): just the detent and its cue.
   const detentDeltasAt = (index: number) => (): number[] => {
     const container = containerRef.current;
     if (container === null) return [];
@@ -414,18 +412,15 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
     const containerPx = container.getBoundingClientRect().height;
     const renderedTotal = cells.reduce((s, el) => s + el.offsetHeight, 0);
     if (containerPx <= 0 || renderedTotal <= 0) return [];
-    const scale = containerPx / renderedTotal;
     const n0 = leaves.map((l) => (l.weight / leafWeightTotal) * containerPx);
-    const detents: number[] = [];
-    const contentAbove = measureNaturalHeight(above);
-    const contentBelow = measureNaturalHeight(below);
-    // A detent below the cell floor is unreachable (cascadeResize clamps
-    // there); offering it would light the cue on an impossible landing.
-    if (contentAbove >= MIN_CELL_HEIGHT_PX)
-      detents.push(scale * contentAbove - n0[index]);
-    if (contentBelow >= MIN_CELL_HEIGHT_PX)
-      detents.push(n0[index + 1] - scale * contentBelow);
-    return detents;
+    return flankDetentDeltas({
+      scale: containerPx / renderedTotal,
+      n0Above: n0[index],
+      n0Below: n0[index + 1],
+      contentAbove: measureNaturalHeight(above),
+      contentBelow: measureNaturalHeight(below),
+      minPx: MIN_CELL_HEIGHT_PX,
+    });
   };
 
   return (
@@ -727,19 +722,15 @@ function SplitDivider({
       expect a handle where none exists. */}
       {/* Snap cue (D56): while a height-divider drag is magnetized to a
       flanking cell's content height, the rule tints to the primary color --
-      the divider analog of the window grip's snappedToContent highlight. */}
+      the divider analog of the window grip's snappedToContent highlight.
+      Drawn by the shared dividerRuleStyle so the cue cannot fork between
+      the docked and floating dividers. */}
       <Box
         data-dock-divider-rule=""
-        style={{
-          // Snapped (D56): the SAME 2px primary bar as the window grip's
-          // snap cue -- one snap signifier, one weight.
-          [isRow ? "width" : "height"]: snapped ? "2px" : "1px",
-          [isRow ? "height" : "width"]: "100%",
-          backgroundColor: snapped
-            ? "var(--mantine-primary-color-filled)"
-            : "var(--mantine-color-default-border)",
-          opacity: snapped ? 1 : resizable ? 0.5 : 0.18,
-        }}
+        style={dividerRuleStyle(snapped, {
+          horizontal: !isRow,
+          restOpacity: resizable ? 0.5 : 0.18,
+        })}
       />
     </Box>
   );
