@@ -22,6 +22,7 @@ import {
   collapsedWindowHeightCss,
   clamp,
   DOCK_ANIM_MS,
+  REGION_EDGE_GAP_PX,
   FloatingWindow,
   GroupId,
   MIN_REGION_GRAB_PX,
@@ -643,6 +644,14 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                       "1px solid color-mix(in srgb, var(--mantine-color-default-border) 50%, transparent)",
                   }
                 : {}),
+              // D54's floating analog (P7): the same horizontal gutter the
+              // docked regions give their columns, so cells (and collapsed
+              // bars, matching the rail's inset-in-region treatment) sit in
+              // the window with the one 3px rhythm. Horizontal only, exactly
+              // like the docked side; the window header stays full-bleed the
+              // way docked handle rows do. No height math changes.
+              paddingLeft: REGION_EDGE_GAP_PX,
+              paddingRight: REGION_EDGE_GAP_PX,
               ...(fixedHeight
                 ? {
                     flexGrow: 1,

@@ -788,7 +788,9 @@ window is an open question (§11).
   two edges (`REGION_EDGE_GAP_PX`, counted in the region's chrome) —
   every column reads gap-panel-gap symmetrically, instead of flush at
   the screen edge next to a guttered interior seam. One value, one
-  spacing rhythm.
+  spacing rhythm — carried to floating windows too (P7): a window's
+  stack is inset by the same horizontal gutter inside its paper, with
+  the header full-bleed exactly like the docked handle rows.
 - **Stack grow normalization**: flex-grow factors normalize per site
   over EXPANDED cells only — minimized cells render flexGrow 0 — so
   freed space is never stranded (edge case 16).
