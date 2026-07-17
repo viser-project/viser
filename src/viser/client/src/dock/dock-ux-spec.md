@@ -788,7 +788,12 @@ window is an open question (§11).
   height within the 12px band (`CONTENT_SNAP_BAND_PX` — the window
   grip's band) of that cell's natural CONTENT height snaps the divider
   so the cell lands exactly at content; the nearest detent wins when
-  both flanks are in band. Cue while snapped: the divider's 1px rule
+  both flanks are in band. Content height is measured against the
+  cell's own TOP-LEVEL scroll content: a scroll area nested inside it
+  (a hosted dock area in a panel body) counts at its rendered height —
+  its internal overflow is its own concern, not the host cell's
+  (counting it too would double its overflow delta and move the detent
+  off the true auto height). Cue while snapped: the divider's 1px rule
   tints to the primary color (the divider analog of the grip's
   bottom-edge highlight), `data-dock-divider-snapped` exposed for
   tests. Detents below the cell floor are not offered (unreachable —

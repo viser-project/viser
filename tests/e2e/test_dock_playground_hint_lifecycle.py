@@ -27,6 +27,7 @@ from .dock_helpers import columns as _columns
 from .dock_helpers import dock_layout as _dock_layout
 from .dock_helpers import layout as _layout
 from .dock_helpers import open_playground as _open
+from .dock_helpers import raf_alive as _raf_alive
 from .dock_helpers import set_layout as _set_layout
 from .dock_helpers import stack as _stack
 from .dock_helpers import window as _window
@@ -52,19 +53,6 @@ def _hint_display(page: Page) -> str | None:
             const el = document.querySelector('[data-dock-hint]');
             return el === null ? null : getComputedStyle(el).display;
         }"""
-    )
-
-
-def _raf_alive(page: Page) -> bool:
-    """Whether requestAnimationFrame ticks. The drag's hint painting is
-    rAF-driven; on a wedged headless compositor (see the repo's dev notes)
-    rAF never fires and NO hint can ever appear -- the test must skip, not
-    fail, there."""
-    return page.evaluate(
-        """() => new Promise((resolve) => {
-              const t = setTimeout(() => resolve(false), 600);
-              requestAnimationFrame(() => { clearTimeout(t); resolve(true); });
-        })"""
     )
 
 

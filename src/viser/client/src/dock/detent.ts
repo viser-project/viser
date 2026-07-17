@@ -47,11 +47,21 @@ export function snapToDetent(
  * content wrapper keeps its true height regardless.
  *
  * Scope-agnostic: the floating window passes its whole paper (the detent is
- * the window's auto height); the height dividers pass ONE flanking cell. */
+ * the window's auto height); the height dividers pass ONE flanking cell.
+ *
+ * TOP-LEVEL viewports only: a scroll area NESTED inside another one (a real
+ * shape -- GUI TabGroup hosts a DockArea inside the panel body's own
+ * ScrollArea) already sits inside the outer viewport's content wrapper, so
+ * its own client/content delta is part of the outer content's offsetHeight.
+ * Summing it as well would count that delta twice and pull the detent away
+ * from the true auto height. A viewport whose enclosing viewport lies
+ * OUTSIDE `el` still counts: within the measured scope it is top-level. */
 export function measureNaturalHeight(el: HTMLElement): number {
   let contentSum = 0;
   let clientSum = 0;
   el.querySelectorAll(".mantine-ScrollArea-viewport").forEach((v) => {
+    const outer = v.parentElement?.closest(".mantine-ScrollArea-viewport");
+    if (outer != null && el.contains(outer)) return; // nested: already counted
     const content = v.querySelector<HTMLElement>(".mantine-ScrollArea-content");
     contentSum += content?.offsetHeight ?? (v as HTMLElement).scrollHeight;
     clientSum += (v as HTMLElement).clientHeight;

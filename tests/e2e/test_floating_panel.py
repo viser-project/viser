@@ -104,7 +104,7 @@ def test_drag_to_left_edge_docks(viser_page: Page) -> None:
 
     assert _dock_side(viser_page) == "left"
     panel = _panel_box(viser_page)
-    # D54: docked panels sit a small edge gutter (REGION_EDGE_GAP_PX = 3px)
+    # D54: docked panels sit a small edge gutter (REGION_EDGE_GAP_PX, 2px)
     # inside the screen edge.
     assert panel["x"] < 8
     assert panel["height"] > _VIEWPORT["height"] * 0.9

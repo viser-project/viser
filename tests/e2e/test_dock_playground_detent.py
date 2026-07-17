@@ -22,8 +22,11 @@ exists); no width assertions here by design.
 
 Geometry note: starting arrangements are INJECTED via dock_helpers.set_layout
 (window.__dockSetLayout), so each test begins from exactly the layout literal
-it states. Skips cleanly if the client toolchain is missing, if a divider is
-not rendered, or if the playground panes' rendered/content geometry does not
+it states. Skips cleanly if the client toolchain is missing, if
+requestAnimationFrame never ticks (divider commits and the snap cue are
+rAF-throttled -- on a wedged headless compositor the feature is unobservable,
+which is an environment fact, not a detent failure), if a divider is not
+rendered, or if the playground panes' rendered/content geometry does not
 support the gesture this run (e.g. an auto cell capped below its content).
 """
 
@@ -40,6 +43,7 @@ from .dock_helpers import (
     window,
 )
 from .dock_helpers import open_playground as _open
+from .dock_helpers import raf_alive as _raf_alive
 
 # The magnetic band around a content-height detent (types.ts,
 # CONTENT_SNAP_BAND_PX).
@@ -51,11 +55,16 @@ SNAP_BAND_PX = 12
 # ---------------------------------------------------------------------------
 # Natural content height of the element holding group `gid` (the floating
 # CELL, or the docked LEAF via closest) -- the same formula as
-# detent.ts:measureNaturalHeight: per scroll viewport, the chrome around it
-# plus the content wrapper's true height.
+# detent.ts:measureNaturalHeight: per TOP-LEVEL scroll viewport (a nested
+# scroll area lives inside the outer content wrapper and is already counted;
+# summing it too would double its overflow delta), the chrome around it plus
+# the content wrapper's true height.
 _NATURAL_JS = """(el) => {
     let contentSum = 0, clientSum = 0;
     el.querySelectorAll('.mantine-ScrollArea-viewport').forEach((v) => {
+        const outer = v.parentElement
+            && v.parentElement.closest('.mantine-ScrollArea-viewport');
+        if (outer && el.contains(outer)) return;
         const c = v.querySelector('.mantine-ScrollArea-content');
         contentSum += c ? c.offsetHeight : v.scrollHeight;
         clientSum += v.clientHeight;
@@ -99,9 +108,10 @@ def _drag_divider(
     page: Page, start: tuple[float, float], dy: float, check_snap: bool = False
 ) -> bool:
     """Vertical divider drag by `dy` with an axis-tracking arming nudge (a
-    diagonal nudge would slip off the seam). When `check_snap`, samples the
-    ``data-dock-divider-snapped`` attribute at the held end position (after a
-    beat for the rAF-throttled flush) before releasing."""
+    diagonal nudge would slip off the seam). When `check_snap`, POLLS the
+    ``data-dock-divider-snapped`` attribute at the held end position before
+    releasing -- the flush is rAF-throttled, so a single fixed-delay read
+    races the paint on slow engines."""
     ny = 2 if dy > 0 else -2
     page.mouse.move(*start)
     page.mouse.down()
@@ -110,8 +120,11 @@ def _drag_divider(
     page.mouse.move(start[0], start[1] + dy)
     snapped = False
     if check_snap:
-        page.wait_for_timeout(150)
-        snapped = page.query_selector('[data-dock-divider-snapped="true"]') is not None
+        for _ in range(10):
+            page.wait_for_timeout(100)
+            if page.query_selector('[data-dock-divider-snapped="true"]') is not None:
+                snapped = True
+                break
     page.mouse.up()
     page.wait_for_timeout(150)
     return snapped
@@ -126,6 +139,8 @@ def test_floating_divider_release_at_all_content_unpins(
 ) -> None:
     page = _open(dock_context, vite_server)
     try:
+        if not _raf_alive(page):
+            pytest.skip("rAF not firing (headless compositor wedge)")
         # A 2-cell auto-height stack; both panes' content fits under the
         # multi-group per-cell cap, so the auto rendering IS content height.
         set_layout(
@@ -189,6 +204,8 @@ def test_docked_divider_snaps_exactly_to_content_height(
 ) -> None:
     page = _open(dock_context, vite_server)
     try:
+        if not _raf_alive(page):
+            pytest.skip("rAF not firing (headless compositor wedge)")
         # A 2-leaf column on the right edge; the viewport-tall cells sit well
         # above their content, so the detent is a real drag away.
         set_layout(page, dock_layout(docked_right=stack("inspector", "console")))

@@ -1,10 +1,13 @@
-// Pins for the pure content-height detent math (detent.ts, spec section 6 /
-// D56): in-band snaps, out-of-band passes through, nearest detent wins, exact
-// landings, and the inclusive band edge the window grip's original magnet
-// used.
+// Pins for the content-height detent (detent.ts, spec section 6 / D56):
+// snapToDetent's pure math (in-band snaps, out-of-band pass-through, nearest
+// detent wins, exact landings, the inclusive band edge the window grip's
+// original magnet used) and measureNaturalHeight's viewport accounting --
+// the latter over a micro-DOM stub of exactly the traversal surface the
+// helper touches, so the nested-ScrollArea rule is pinned without a DOM
+// test environment.
 
 import { describe, expect, it } from "vitest";
-import { snapToDetent } from "./detent";
+import { measureNaturalHeight, snapToDetent } from "./detent";
 
 const BAND = 12;
 
@@ -83,5 +86,128 @@ describe("snapToDetent", () => {
 
   it("no detents -> never snaps", () => {
     expect(snapToDetent(3, [], BAND)).toEqual({ value: 3, snapped: false });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// measureNaturalHeight over a micro-DOM: fake nodes implementing the exact
+// members the helper uses (querySelectorAll/querySelector by class selector,
+// parentElement, closest, contains, offset/client/scrollHeight). Layout
+// numbers are stubbed, so each case states its arithmetic inline.
+// ---------------------------------------------------------------------------
+
+const VIEWPORT = "mantine-ScrollArea-viewport";
+const CONTENT = "mantine-ScrollArea-content";
+
+interface FakeEl {
+  cls: string;
+  offsetHeight: number;
+  clientHeight: number;
+  scrollHeight: number;
+  children: FakeEl[];
+  parentElement: FakeEl | null;
+  querySelectorAll: (sel: string) => FakeEl[];
+  querySelector: (sel: string) => FakeEl | null;
+  closest: (sel: string) => FakeEl | null;
+  contains: (n: FakeEl) => boolean;
+}
+
+function descendantsOf(root: FakeEl, cls: string): FakeEl[] {
+  const out: FakeEl[] = [];
+  const walk = (n: FakeEl) =>
+    n.children.forEach((c) => {
+      if (c.cls === cls) out.push(c);
+      walk(c);
+    });
+  walk(root);
+  return out;
+}
+
+function el(
+  cls: string,
+  heights: { offset?: number; client?: number; scroll?: number },
+  children: FakeEl[] = [],
+): FakeEl {
+  const node: FakeEl = {
+    cls,
+    offsetHeight: heights.offset ?? 0,
+    clientHeight: heights.client ?? 0,
+    scrollHeight: heights.scroll ?? 0,
+    children,
+    parentElement: null,
+    querySelectorAll: (sel) => descendantsOf(node, sel.slice(1)),
+    querySelector: (sel) => descendantsOf(node, sel.slice(1))[0] ?? null,
+    closest: (sel) => {
+      let n: FakeEl | null = node;
+      while (n !== null && n.cls !== sel.slice(1)) n = n.parentElement;
+      return n;
+    },
+    contains: (n) => {
+      let m: FakeEl | null = n;
+      while (m !== null && m !== node) m = m.parentElement;
+      return m === node;
+    },
+  };
+  children.forEach((c) => (c.parentElement = node));
+  return node;
+}
+
+const measure = (n: FakeEl) =>
+  measureNaturalHeight(n as unknown as HTMLElement);
+
+describe("measureNaturalHeight", () => {
+  it("flat cell: el chrome + content wrapper height", () => {
+    // 300 (el) - 200 (viewport client) + 250 (content) = 350.
+    const cell = el("cell", { offset: 300 }, [
+      el(VIEWPORT, { client: 200 }, [el(CONTENT, { offset: 250 })]),
+    ]);
+    expect(measure(cell)).toBe(350);
+  });
+
+  it("nested OVERFLOWING scroll area is not double-counted", () => {
+    // A DockArea-in-panel-body shape (TabGroup): the inner viewport's
+    // +60 overflow delta already lives inside the outer content's 250.
+    // All-descendants summing would give 300 - (200+80) + (250+140) = 410;
+    // top-level-only gives the true 300 - 200 + 250 = 350.
+    const inner = el(VIEWPORT, { client: 80 }, [el(CONTENT, { offset: 140 })]);
+    const cell = el("cell", { offset: 300 }, [
+      el(VIEWPORT, { client: 200 }, [el(CONTENT, { offset: 250 }, [inner])]),
+    ]);
+    expect(measure(cell)).toBe(350);
+  });
+
+  it("nested FITTING scroll area is not double-counted either", () => {
+    // Inner fits (client 100 > content 60): its -40 free-space delta would
+    // wrongly SHRINK the measure (300 - 300 + 310 = 310) if summed.
+    const inner = el(VIEWPORT, { client: 100 }, [el(CONTENT, { offset: 60 })]);
+    const cell = el("cell", { offset: 300 }, [
+      el(VIEWPORT, { client: 200 }, [el(CONTENT, { offset: 250 }, [inner])]),
+    ]);
+    expect(measure(cell)).toBe(350);
+  });
+
+  it("an enclosing viewport OUTSIDE el does not suppress el's own", () => {
+    // The measured cell may itself live inside some host scroll area (a
+    // docked leaf in a scrolling column). Its viewport is top-level WITHIN
+    // el and must still count.
+    const cell = el("cell", { offset: 300 }, [
+      el(VIEWPORT, { client: 200 }, [el(CONTENT, { offset: 250 })]),
+    ]);
+    el("root", { offset: 1000 }, [
+      el(VIEWPORT, { client: 500 }, [el(CONTENT, { offset: 900 }, [cell])]),
+    ]);
+    expect(measure(cell)).toBe(350);
+  });
+
+  it("no scroll viewport: the element's own height", () => {
+    expect(measure(el("cell", { offset: 123 }))).toBe(123);
+  });
+
+  it("viewport without a content wrapper falls back to scrollHeight", () => {
+    // 300 - 200 + 260 (scrollHeight) = 360.
+    const cell = el("cell", { offset: 300 }, [
+      el(VIEWPORT, { client: 200, scroll: 260 }),
+    ]);
+    expect(measure(cell)).toBe(360);
   });
 });

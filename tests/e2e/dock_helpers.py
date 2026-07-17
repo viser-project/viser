@@ -324,6 +324,19 @@ def hint_visible(page: Page) -> bool:
     )
 
 
+def raf_alive(page: Page) -> bool:
+    """Whether requestAnimationFrame ticks. Drop-hint painting and divider
+    commits are rAF-throttled; on a wedged headless compositor (see the repo's
+    dev notes) rAF never fires and no rAF-driven UI can ever appear -- tests
+    asserting on that UI must SKIP there, not fail."""
+    return page.evaluate(
+        """() => new Promise((resolve) => {
+              const t = setTimeout(() => resolve(false), 600);
+              requestAnimationFrame(() => { clearTimeout(t); resolve(true); });
+        })"""
+    )
+
+
 # ---------------------------------------------------------------------------
 # Direct layout injection (window.__dockSetLayout, a playground-only probe).
 #

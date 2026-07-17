@@ -45,9 +45,11 @@ const STRIP_OFFSET = 12; // handle bar above the strip
 const STRIP_H = 28;
 // Rail geometry, mirroring ColumnRail/VerticalMinimizedCell: a railed column
 // renders as a fixed MINIMIZED_STRIP_PX strip (packed at its slot -- it holds
-// no flexible width), its cells CONTENT-TALL (header, then cap + spine rows),
-// with the first/last cell's drop rect extended to the full strip per the
-// scanner's data-dock-rail-root rule.
+// no flexible width), its cells CONTENT-TALL (header, then cap + spine rows).
+// Per the scanner's data-dock-rail-root rule, every cell rect starts at its
+// own top clamped to the strip (the header run above the first cell is
+// controls, not a drop surface -- D53) and only the LAST cell extends down
+// to the rail bottom.
 const RAIL_HEADER = 16; // narrow StackHandleBar atop the rail
 const RAIL_CAP = 13; // gray cap (0.9em)
 const RAIL_PAD = 16; // spine-list margins
