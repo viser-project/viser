@@ -731,7 +731,9 @@ function SplitDivider({
       <Box
         data-dock-divider-rule=""
         style={{
-          [isRow ? "width" : "height"]: "1px",
+          // Snapped (D56): the SAME 2px primary bar as the window grip's
+          // snap cue -- one snap signifier, one weight.
+          [isRow ? "width" : "height"]: snapped ? "2px" : "1px",
           [isRow ? "height" : "width"]: "100%",
           backgroundColor: snapped
             ? "var(--mantine-primary-color-filled)"

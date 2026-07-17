@@ -5,6 +5,7 @@
 
 import { Box, Paper } from "@mantine/core";
 import React from "react";
+import { flushSync } from "react-dom";
 import { useDock } from "./DockContext";
 import { dragGesture } from "./gestures";
 import {
@@ -932,11 +933,17 @@ function FloatingStackDivider({
         activeDrag.current = null;
         // The captured element, not stackRef.current: the ref can re-point
         // to a new node mid-drag, stranding the attribute on the old one.
-        container.removeAttribute("data-dock-resizing");
-        paperRef.current?.removeAttribute("data-dock-resizing");
+        // Suppression comes off at the END of this handler: the semantic
+        // arm's unpin below must RENDER while transitions are still
+        // suppressed (see its comment).
+        const removeSuppression = () => {
+          container.removeAttribute("data-dock-resizing");
+          paperRef.current?.removeAttribute("data-dock-resizing");
+        };
         setSnapped(false);
         const moved = Math.abs(latest - start) > 3;
         if (cancelled || !moved) {
+          removeSuppression();
           // Escape OR a motionless click: full restore -- weights AND the
           // height mode (an auto window a click briefly pinned reverts to
           // auto; P2: layout, sizes, and modes return to pre-gesture
@@ -965,8 +972,15 @@ function FloatingStackDivider({
             );
           })
         ) {
-          setWindowHeight(undefined);
+          // Commit the unpin WHILE the transition suppressor is still on:
+          // pinned -> auto swaps the cell wrappers' flex config without
+          // moving them, and collapseAnim would ease that no-op config
+          // change into a visible wobble on the lower cell (user report).
+          // flushSync renders the commit under suppression; the attribute
+          // comes off after.
+          flushSync(() => setWindowHeight(undefined));
         }
+        removeSuppression();
       },
     });
   };
@@ -1001,12 +1015,13 @@ function FloatingStackDivider({
         />
       )}
       {/* Snap cue (D56): while the drag is magnetized to a content-height
-      detent, the 1px rule tints to the primary color -- the divider analog
-      of the window grip's snappedToContent highlight. */}
+      detent, the rule becomes the SAME 2px primary bar the window grip's
+      snappedToContent cue uses -- one snap signifier, one weight (user
+      report: the 1px tint read thinner than the resize cue). */}
       <Box
         data-dock-divider-rule=""
         style={{
-          height: "1px",
+          height: snapped ? "2px" : "1px",
           width: "100%",
           backgroundColor: snapped
             ? "var(--mantine-primary-color-filled)"
