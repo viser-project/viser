@@ -146,7 +146,7 @@ export const HANDLE_BTN_EM = 1.7;
  * columns. Participates in the region-width model the same way strips do:
  * the rendered region is the expanded columns' regionWidth plus these fixed
  * chrome widths, so resize math stays 1:1 with the cursor. */
-export const SPLIT_DIVIDER_PX = 5;
+export const SPLIT_DIVIDER_PX = 3;
 
 /** Horizontal gutter at a docked region's OUTER and INNER edges (D54): the
  * outermost columns get the same breathing room a divider gives interior
