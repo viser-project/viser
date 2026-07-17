@@ -192,6 +192,15 @@ export const MIN_WINDOW_HEIGHT_PX = 50;
  * panel's initial floating margins -- the original FloatingPanel's 15px pad. */
 export const PANEL_PAD_PX = 15;
 
+/** Magnetic band (px) around a content-height detent (D56): a height resize
+ * within this distance of the target snaps exactly onto it. Shared by the
+ * floating window's height grips (where the detent is the whole window's
+ * natural height, and landing in it reverts the window to auto) and by the
+ * HEIGHT dividers -- floating stack and docked column stack -- where each
+ * flanking cell's natural content height is a detent. Height only: width
+ * dividers deliberately carry no detent (no semantic width target exists). */
+export const CONTENT_SNAP_BAND_PX = 12;
+
 /** Duration (ms) of every dock ease (D34 collapse/expand transitions, the
  * FLIP column glide, the floating window's WAAPI height ease): one clock so
  * concurrent motions -- e.g. a region width ease and the canvas inset ease --

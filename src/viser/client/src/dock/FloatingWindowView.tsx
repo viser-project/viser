@@ -21,6 +21,7 @@ import { MinimizedBar } from "./MinimizedBar";
 import {
   collapsedWindowHeightCss,
   clamp,
+  CONTENT_SNAP_BAND_PX,
   DOCK_ANIM_MS,
   REGION_EDGE_GAP_PX,
   FloatingWindow,
@@ -30,6 +31,7 @@ import {
   SPLIT_DIVIDER_PX,
   pinnedPxOf,
 } from "./types";
+import { measureNaturalHeight, snapToDetent } from "./detent";
 
 // A width-resize always leaves this much canvas visible (the original
 // FloatingPanel's resizeParentPad).
@@ -327,27 +329,12 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     };
 
   // The window's NATURAL content height: what it would auto-size to, INVARIANT
-  // of the current window height. For each scroll viewport, the chrome around it
-  // (paper - viewport client) plus the viewport's CONTENT wrapper height. We use
-  // the `.mantine-ScrollArea-content` wrapper's offsetHeight, NOT the viewport's
-  // scrollHeight: when the window is TALLER than its content the viewport
-  // stretches and scrollHeight collapses to clientHeight (== the window height),
-  // so scrollHeight would wrongly report "content == current height" and the
-  // revert-to-auto detent would fire everywhere. The content wrapper keeps its
-  // true height regardless. Used as the resize FLOOR and the detent target.
+  // of the current window height (measureNaturalHeight in detent.ts -- the
+  // same formula the height dividers apply per CELL). Used as the resize
+  // FLOOR and the detent target.
   const measureContentHeight = () => {
     const paper = paperRef.current;
-    if (paper === null) return MIN_HEIGHT_PX;
-    let contentSum = 0;
-    let clientSum = 0;
-    paper.querySelectorAll(".mantine-ScrollArea-viewport").forEach((v) => {
-      const content = v.querySelector<HTMLElement>(
-        ".mantine-ScrollArea-content",
-      );
-      contentSum += content?.offsetHeight ?? (v as HTMLElement).scrollHeight;
-      clientSum += (v as HTMLElement).clientHeight;
-    });
-    return paper.offsetHeight - clientSum + contentSum;
+    return paper === null ? MIN_HEIGHT_PX : measureNaturalHeight(paper);
   };
 
   // The resize ceiling is the CONTAINER edge only -- never the content height.
@@ -360,11 +347,11 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     return (paper?.parentElement?.clientHeight ?? 2000) - 16;
   };
 
-  // Magnetic detent at the natural content height: dragging the edge within this
-  // band of the content height snaps it exactly there, which is the single
-  // "revert to auto" position (the window then tracks its content again). The
-  // grip highlights while snapped so the snap is discoverable.
-  const CONTENT_SNAP_BAND_PX = 12;
+  // Magnetic detent at the natural content height (CONTENT_SNAP_BAND_PX,
+  // D56): dragging the edge within the band of the content height snaps it
+  // exactly there, which is the single "revert to auto" position (the window
+  // then tracks its content again). The grip highlights while snapped so the
+  // snap is discoverable.
 
   // Start-of-gesture math shared by every vertical resize: top-side grips
   // hold the BOTTOM edge fixed by moving y with the height (the vertical
@@ -404,11 +391,13 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
           minHeight,
           maxHeight,
         );
-        // Magnetize to the content height when within the snap band.
-        return contentReachable &&
-          Math.abs(raw - contentHeight) <= CONTENT_SNAP_BAND_PX
-          ? contentHeight
-          : raw;
+        // Magnetize to the content height when within the snap band (the
+        // shared detent math -- snapToDetent, D56).
+        return snapToDetent(
+          raw,
+          contentReachable ? [contentHeight] : [],
+          CONTENT_SNAP_BAND_PX,
+        ).value;
       },
       snappedToContent,
       yFor: (h: number) => (vside === "top" ? startBottom - h : undefined),
@@ -798,6 +787,10 @@ function FloatingStackDivider({
   // after unmount and the shared `resizing` flag can't stick true.
   const activeDrag = React.useRef<(() => void) | null>(null);
   React.useEffect(() => () => activeDrag.current?.(), []);
+  // True while the drag is magnetized to a flanking cell's content-height
+  // detent (D56). Drives the rule tint + data-dock-divider-snapped, the
+  // divider analog of the window grip's snappedToContent cue.
+  const [snapped, setSnapped] = React.useState(false);
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!resizable) return;
     if (event.button !== 0) return;
@@ -847,6 +840,38 @@ function FloatingStackDivider({
     const belowCapacity = startPx
       .slice(dividerIndex + 1)
       .reduce((s, px) => s + Math.max(0, px - MIN_STACK_CELL_PX), 0);
+    // Content-height detent (D56): measure every cell's natural content
+    // height ONCE at drag start (same rule as the window grip's
+    // vResizeStart) -- the flanks' feed the magnet, the full list feeds the
+    // release arm below. cascadeResize works in a normalized scale (startPx
+    // renormalized over the container BOX height, divider chrome included),
+    // so a rendered-px target converts by `scale` before differencing
+    // against the flank's normalized start; snapping the DELTA then lands
+    // the flank exactly at its content height after the render divides the
+    // scale back out.
+    const contentPx: (number | null)[] = stack.map((g) => {
+      const el = container.querySelector<HTMLElement>(
+        `[data-dock-group="${CSS.escape(g)}"]`,
+      );
+      return el === null ? null : measureNaturalHeight(el);
+    });
+    const renderedTotal = stack.reduce((s, g) => s + renderedPx[g], 0);
+    const scale = renderedTotal > 0 ? containerPx / renderedTotal : 1;
+    const startPxTotal = startPx.reduce((a, b) => a + b, 0) || 1;
+    const n0 = startPx.map((w) => (w / startPxTotal) * containerPx);
+    const detentDeltas: number[] = [];
+    const contentAbove = contentPx[dividerIndex];
+    const contentBelow = contentPx[dividerIndex + 1];
+    // A detent below the cell floor is unreachable (cascadeResize clamps
+    // there) -- offering it would light the cue on a landing that cannot
+    // happen (the same reachability rule as the grip's contentReachable).
+    if (contentAbove !== null && contentAbove >= MIN_STACK_CELL_PX)
+      detentDeltas.push(scale * contentAbove - n0[dividerIndex]);
+    if (contentBelow !== null && contentBelow >= MIN_STACK_CELL_PX)
+      detentDeltas.push(n0[dividerIndex + 1] - scale * contentBelow);
+    // The last committed cascade result + push-through, for the release arm.
+    let lastNext: number[] | null = null;
+    let lastExtra = 0;
     const maxPaperH = () => {
       const parent = paperRef.current?.parentElement;
       if (!parent || paperRef.current === null) return Infinity;
@@ -864,7 +889,16 @@ function FloatingStackDivider({
         // all bars and none of its seams are resizable), so the mask is
         // uniformly false.
         const collapsed = stack.map(() => false);
-        const totalDelta = latest - start;
+        // Magnetize the cursor delta to the nearest flanking-cell
+        // content-height detent within the band (D56; nearest wins when
+        // both flanks are in band). The snap replaces the raw delta BEFORE
+        // the push-through split so both parts stay consistent with it.
+        const { value: totalDelta, snapped: hit } = snapToDetent(
+          latest - start,
+          detentDeltas,
+          CONTENT_SNAP_BAND_PX,
+        );
+        setSnapped(hit);
         // Split the downward delta into the zero-sum part (traded with the
         // cells below) and the push-through part (window growth).
         const extra =
@@ -885,6 +919,8 @@ function FloatingStackDivider({
         });
         if (next === null) return;
         if (extra > 0) next[dividerIndex] += extra;
+        lastNext = next;
+        lastExtra = extra;
         const wmap: Record<string, number> = {};
         stack.forEach((g, i) => {
           if (!collapsed[i]) wmap[g] = next[i];
@@ -898,14 +934,38 @@ function FloatingStackDivider({
         // to a new node mid-drag, stranding the attribute on the old one.
         container.removeAttribute("data-dock-resizing");
         paperRef.current?.removeAttribute("data-dock-resizing");
+        setSnapped(false);
         const moved = Math.abs(latest - start) > 3;
         if (cancelled || !moved) {
           // Escape OR a motionless click: full restore -- weights AND the
           // height mode (an auto window a click briefly pinned reverts to
           // auto; P2: layout, sizes, and modes return to pre-gesture
-          // values).
+          // values). The detent never touches this path: cancel restores
+          // the exact pre-gesture mode/values regardless of any snap.
           onSetWeights(startWeights);
           setWindowHeight(wasFixed ? paperStartH : undefined);
+          return;
+        }
+        // THE SEMANTIC ARM (D56): releasing with EVERY cell of the stack at
+        // its content height (within the band) commits the window back to
+        // AUTO -- the exact inverse of pin-on-first-divider-drag, mirroring
+        // how the bottom grip's detent reverts to auto. Checked against the
+        // final committed cascade result mapped back to render px (next /
+        // scale); skipped when push-through grew the window (the scale no
+        // longer holds, and cells parked at their minimum are not "at
+        // content").
+        const n = lastNext;
+        if (
+          n !== null &&
+          lastExtra === 0 &&
+          stack.every((_, i) => {
+            const c = contentPx[i];
+            return (
+              c !== null && Math.abs(n[i] / scale - c) <= CONTENT_SNAP_BAND_PX
+            );
+          })
+        ) {
+          setWindowHeight(undefined);
         }
       },
     });
@@ -913,6 +973,7 @@ function FloatingStackDivider({
   return (
     <Box
       data-floating-divider={dividerIndex}
+      {...(snapped ? { "data-dock-divider-snapped": "true" } : {})}
       onPointerDown={onPointerDown}
       style={{
         position: "relative",
@@ -939,12 +1000,18 @@ function FloatingStackDivider({
           }}
         />
       )}
+      {/* Snap cue (D56): while the drag is magnetized to a content-height
+      detent, the 1px rule tints to the primary color -- the divider analog
+      of the window grip's snappedToContent highlight. */}
       <Box
+        data-dock-divider-rule=""
         style={{
           height: "1px",
           width: "100%",
-          backgroundColor: "var(--mantine-color-default-border)",
-          opacity: 0.5,
+          backgroundColor: snapped
+            ? "var(--mantine-primary-color-filled)"
+            : "var(--mantine-color-default-border)",
+          opacity: snapped ? 1 : 0.5,
         }}
       />
     </Box>

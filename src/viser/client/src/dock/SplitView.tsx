@@ -22,6 +22,7 @@ import { ColumnCollapseChevron, StackHandleBar } from "./handles";
 import { TabGroupFrame } from "./TabGroupFrame";
 import { ColumnRail } from "./VerticalMinimizedColumn";
 import {
+  CONTENT_SNAP_BAND_PX,
   DOCK_ANIM_MS,
   DockColumn,
   DockEdge,
@@ -32,6 +33,7 @@ import {
   MINIMIZED_STRIP_PX,
   SPLIT_DIVIDER_PX,
 } from "./types";
+import { measureNaturalHeight, snapToDetent } from "./detent";
 
 // Minimum height for a stacked (column) cell; row cells use the per-panel width.
 const MIN_CELL_HEIGHT_PX = 50;
@@ -388,6 +390,44 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
   // Normalize grow factors (fractional sums strand free space).
   const leafWeightTotal = leaves.reduce((s, l) => s + l.weight, 0) || 1;
 
+  // Content-height detent for the divider at `index` (D56): measured ONCE at
+  // drag start (SplitDivider calls this on pointerdown), the cursor deltas
+  // at which a flanking cell lands exactly at its natural content height.
+  // resizeCells feeds cascadeResize the leaf WEIGHTS renormalized over the
+  // container BOX height (divider chrome included), so a rendered-px target
+  // converts by `scale` before differencing against the flank's normalized
+  // start -- snapping the DELTA then lands the flank exactly at content once
+  // the render divides the scale back out. No mode change here (docked cells
+  // have no auto state): just the detent and its cue.
+  const detentDeltasAt = (index: number) => (): number[] => {
+    const container = containerRef.current;
+    if (container === null) return [];
+    // Direct children are cell wrappers and dividers, interleaved; filter
+    // the dividers out so `cells[i]` flanks divider i above and i+1 below.
+    const cells = Array.from(container.children).filter(
+      (el): el is HTMLElement =>
+        el instanceof HTMLElement && !el.hasAttribute("data-dock-divider"),
+    );
+    const above = cells[index];
+    const below = cells[index + 1];
+    if (above === undefined || below === undefined) return [];
+    const containerPx = container.getBoundingClientRect().height;
+    const renderedTotal = cells.reduce((s, el) => s + el.offsetHeight, 0);
+    if (containerPx <= 0 || renderedTotal <= 0) return [];
+    const scale = containerPx / renderedTotal;
+    const n0 = leaves.map((l) => (l.weight / leafWeightTotal) * containerPx);
+    const detents: number[] = [];
+    const contentAbove = measureNaturalHeight(above);
+    const contentBelow = measureNaturalHeight(below);
+    // A detent below the cell floor is unreachable (cascadeResize clamps
+    // there); offering it would light the cue on an impossible landing.
+    if (contentAbove >= MIN_CELL_HEIGHT_PX)
+      detents.push(scale * contentAbove - n0[index]);
+    if (contentBelow >= MIN_CELL_HEIGHT_PX)
+      detents.push(n0[index + 1] - scale * contentBelow);
+    return detents;
+  };
+
   return (
     <Box
       ref={containerRef}
@@ -438,6 +478,7 @@ function ColumnView({ column, edge }: { column: DockColumn; edge: DockEdge }) {
               <SplitDivider
                 dir="column"
                 resizable
+                contentDetents={detentDeltasAt(index)}
                 containerRef={containerRef}
                 onResize={(deltaPx, containerPx) =>
                   resizeCells({
@@ -565,6 +606,7 @@ function SplitDivider({
   containerRef,
   onResize,
   onCancel,
+  contentDetents,
 }: {
   dir: "row" | "column";
   /** False when both sides of the divider are minimized strips: nothing can
@@ -574,6 +616,12 @@ function SplitDivider({
   onResize: (deltaPx: number, containerPx: number) => void;
   /** Revert whatever per-frame onResize calls applied (Escape mid-drag). */
   onCancel: () => void;
+  /** HEIGHT dividers only (D56): called once at drag start, returns the
+   * cursor deltas at which a flanking cell sits exactly at its content
+   * height; the drag magnetizes to the nearest within CONTENT_SNAP_BAND_PX.
+   * Width dividers pass nothing -- no semantic width target exists, so a
+   * detent there would be meaningless stickiness. */
+  contentDetents?: () => number[];
 }) {
   const isRow = dir === "row";
   // Cancel the in-flight gesture if the divider unmounts mid-drag (its region
@@ -581,6 +629,10 @@ function SplitDivider({
   // after unmount.
   const activeDrag = React.useRef<(() => void) | null>(null);
   React.useEffect(() => () => activeDrag.current?.(), []);
+  // True while the drag is magnetized to a flanking cell's content-height
+  // detent (D56, height dividers only). Drives the rule tint +
+  // data-dock-divider-snapped.
+  const [snapped, setSnapped] = React.useState(false);
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     if (!resizable) return; // nothing to resize between minimized strips
@@ -591,6 +643,9 @@ function SplitDivider({
     const rect = container.getBoundingClientRect();
     const containerPx = isRow ? rect.width : rect.height;
     const start = isRow ? event.clientX : event.clientY;
+    // Content-height detents, measured ONCE at drag start (height dividers
+    // only; width dividers have none -- D56).
+    const detents = contentDetents?.() ?? [];
 
     // Per-frame weight writes must land instantly: suppress the
     // minimize/expand transition (collapseAnim) under this container for
@@ -603,10 +658,21 @@ function SplitDivider({
       update: (e) => {
         latest = isRow ? e.clientX : e.clientY;
       },
-      flush: () => onResize(latest - start, containerPx),
+      flush: () => {
+        // Magnetize to the nearest in-band detent (nearest wins when both
+        // flanks are in band); out of band the raw delta passes through.
+        const { value, snapped: hit } = snapToDetent(
+          latest - start,
+          detents,
+          CONTENT_SNAP_BAND_PX,
+        );
+        setSnapped(hit);
+        onResize(value, containerPx);
+      },
       onEnd: (cancelled) => {
         activeDrag.current = null;
         container.removeAttribute("data-dock-resizing");
+        setSnapped(false);
         if (cancelled) onCancel();
       },
     });
@@ -625,6 +691,7 @@ function SplitDivider({
       onPointerDown={onPointerDown}
       data-dock-divider={dir}
       data-dock-divider-resizable={resizable ? "true" : "false"}
+      {...(snapped ? { "data-dock-divider-snapped": "true" } : {})}
       style={{
         position: "relative",
         flexShrink: 0,
@@ -658,13 +725,18 @@ function SplitDivider({
       length -- the boundary between two cells spans their whole shared edge,
       empty tails included -- but the inert one is drawn dimmer so users don't
       expect a handle where none exists. */}
+      {/* Snap cue (D56): while a height-divider drag is magnetized to a
+      flanking cell's content height, the rule tints to the primary color --
+      the divider analog of the window grip's snappedToContent highlight. */}
       <Box
         data-dock-divider-rule=""
         style={{
           [isRow ? "width" : "height"]: "1px",
           [isRow ? "height" : "width"]: "100%",
-          backgroundColor: "var(--mantine-color-default-border)",
-          opacity: resizable ? 0.5 : 0.18,
+          backgroundColor: snapped
+            ? "var(--mantine-primary-color-filled)"
+            : "var(--mantine-color-default-border)",
+          opacity: snapped ? 1 : resizable ? 0.5 : 0.18,
         }}
       />
     </Box>

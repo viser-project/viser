@@ -545,8 +545,8 @@ marked ⚠ (stated, not derived; see §11).
 | Rail spine row | that pane — new window born collapsed | expand the column to that tab |
 | Region resize divider | region width (expanded columns only; railed columns ride as fixed chrome, §6) | — |
 | Column (width) divider between sibling columns | neighboring columns' widths (inert when a RAILED column flanks it — fixed 36px chrome, D24/D28) | — |
-| Height divider (expanded docked stack) | neighboring cells' heights | — |
-| Height divider (expanded floating stack) | neighboring cells' heights; an AUTO-height window pins first, seeded with the cells' RENDERED px (entering pinned mode reproduces the exact on-screen layout); dragging DOWN past the below cells' minimum PUSHES the window bottom down (the excess grows the cell above the divider) | — (a motionless press restores everything, auto height included — P2) |
+| Height divider (expanded docked stack) | neighboring cells' heights, with the content-height detent (D56: in-band flank snaps exactly to its content height; rule tints while snapped) | — |
+| Height divider (expanded floating stack) | neighboring cells' heights, with the content-height detent (D56); an AUTO-height window pins first, seeded with the cells' RENDERED px (entering pinned mode reproduces the exact on-screen layout); dragging DOWN past the below cells' minimum PUSHES the window bottom down (the excess grows the cell above the divider). Releasing with EVERY cell at its content height (within the band) reverts the window to AUTO (D56 — the inverse of the pin) | — (a motionless press restores everything, auto height included — P2) |
 | Height divider (collapsed window — bars each side) | — (INERT, D24: nothing tradeable) | — |
 | Window edge/bottom grips | window size | — |
 
@@ -783,6 +783,22 @@ window is an open question (§11).
   full-height by construction). Floating stack dividers carry the same
   ~12px invisible grab overlay as docked ones (P11) — only while
   resizable.
+- **Height-divider content detent** (D56): while a HEIGHT divider drags
+  (docked column stack or floating stack), a proposed flanking-cell
+  height within the 12px band (`CONTENT_SNAP_BAND_PX` — the window
+  grip's band) of that cell's natural CONTENT height snaps the divider
+  so the cell lands exactly at content; the nearest detent wins when
+  both flanks are in band. Cue while snapped: the divider's 1px rule
+  tints to the primary color (the divider analog of the grip's
+  bottom-edge highlight), `data-dock-divider-snapped` exposed for
+  tests. Detents below the cell floor are not offered (unreachable —
+  the cue never lights on an impossible landing), and a cancel restores
+  the exact pre-gesture layout regardless of any snap (P2). Docked
+  cells have no auto state, so the docked detent changes no mode.
+  WIDTH dividers (and the region resizer) are deliberately EXCLUDED:
+  no semantic width target exists — panel width is a reading
+  preference, not a "natural" size — and a detent without meaning is
+  just stickiness.
 - **Divider rhythm** (D54): ONE per-side gap constant (`DOCK_GAP_PX`,
   2px) defines the whitespace on EACH FLANK of a panel, everywhere. A
   divider between two panes is therefore gap + 1px rule + gap
@@ -808,10 +824,16 @@ window is an open question (§11).
   height is user-set via the bottom grip OR by a stack-divider drag
   (which pins at the current rendered layout — seeding weights with the
   cells' rendered px, the same snapshot rule as docked divider drags);
-  the content-height detent un-pins. A stack-divider drag past the
-  below cells' minimum grows the window (push-through), clamped to the
-  dock container's bottom. A fully-minimized window ignores pinned
-  height.
+  the content-height detent un-pins. The stack divider carries the
+  inverse arm (D56): releasing a divider drag with EVERY cell of the
+  stack at its content height (within the band) commits the window
+  back to AUTO — the exact inverse of pin-on-first-divider-drag,
+  mirroring the bottom grip's revert-to-auto detent. Push-through
+  releases are exempt (cells parked at their minimum are not "at
+  content"), and cancel still restores the pre-gesture mode (P2). A
+  stack-divider drag past the below cells' minimum grows the window
+  (push-through), clamped to the dock container's bottom. A
+  fully-minimized window ignores pinned height.
 
 ---
 
@@ -1325,6 +1347,19 @@ consuming paragraphs.
   structural. Zone GEOMETRY is unchanged: band sizes, caps, yields,
   and suppressions (§5.1–5.4) are exactly as before; only the result
   shape and the hint unify.
+- **D56** — content-height detent on HEIGHT dividers, and only height
+  dividers (user-adjudicated). The window grip's 12px content magnet
+  (`CONTENT_SNAP_BAND_PX`) extends to both height dividers: an in-band
+  flanking cell snaps exactly to its content height (nearest detent
+  wins; primary-tinted rule + `data-dock-divider-snapped` while
+  snapped), and the FLOATING stack divider gains the semantic inverse
+  of its pin-on-first-drag — releasing with every cell at content
+  (within the band) reverts the window to auto, exactly as the bottom
+  grip's detent does. Cancel is untouched (P2: exact pre-gesture
+  mode/values). WIDTH dividers and the region resizer are excluded on
+  scope: no semantic width target exists (panel width is a reading
+  preference, not a natural size), so a width detent would be
+  meaningless stickiness. Full statement in §6.
 
 Retired — one line per ID; the pointer is where any surviving content
 lives:
