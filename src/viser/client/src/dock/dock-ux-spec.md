@@ -613,9 +613,10 @@ constants in `hitTest.ts`; changing one is a spec change.
 - Above the tab strip (the grip bar): split above this cell — the ONLY
   above-claim on the cell (D48). The column's FIRST cell also claims
   the parent-handle run above it (the scanner extends its drop rect to
-  the column top, mirroring the rail rule): region-owned chrome is
-  never a no-drop hole (P5), and a slam to the top of an occupied dock
-  splits above the top cell.
+  the column top): the parent handle is a GRIP, and D48 gives grips the
+  above-claim, so a slam to the top of an occupied dock splits above
+  the top cell. (Rails differ, D53: their header is dominated by the
+  `+`/chevron CONTROLS and claims nothing.)
 - Over the tab strip: insert at that tab position (2D nearest-tab, works
   with wrapped rows).
 - Content side bands (30% of width, ≤120px): insert a NEW FULL-HEIGHT
@@ -651,10 +652,21 @@ not a target-displacing shrink)
 - Over a spine row: insert at that tab position.
 - The rest, cap included: merge into that group, staying minimized.
 
-A rail's droppable surface is the FULL region-tall strip, not just its
-content-tall cells: the header run above the first cell belongs to that
-cell (top 8px stack-above, then insert at position 0) and the empty tail
-below the spine rows to the last cell (side slivers run full height; the
+A rail CELL's droppable surface runs from BELOW the header chrome to
+the strip's bottom (D53, reversing the earlier header-run rule): the
+`+` handle bar and chevron rows above the first cell are interactive
+CONTROLS, and a stack-above zone claiming their pixels read as the
+controls being drop targets — so the first cell's rect starts where the
+cell starts and its top split line draws at the honest landing seam
+below the chrome (the top-side analog of the tail's true-bottom rule,
+§5.5). The header pixels themselves resolve at REGION level: the §5.1
+side bands claim them where they reach (their collapsed-cell yield no
+longer applies there — no cell owns the pointer — so a drop on the
+chrome docks a column BESIDE the rail, with the unmistakable
+region-tall fill hint), and past the bands a release floats the drag
+at the pointer (§5.1 item 5). Either way, nothing docks through the
+controls into the cell. The empty tail below the spine
+rows still belongs to the last cell (side slivers run full height; the
 middle is stack-below, with the hint at the spine content's true
 bottom — where the new cell actually lands — not the strip's far
 bottom). Interior cells keep their own boxes.
@@ -1250,6 +1262,19 @@ consuming paragraphs.
   and a reconnect remount lost the state while the mark lived on).
   Both surfaces arbitrate with the same per-run high-water rule; they
   just do it independently, like the representations they gate.
+- **D53** — the rail header run is controls, not a CELL drop surface
+  (user-adjudicated, reversing §5.3's pre-D53 header-run rule): the
+  first rail cell's drop rect starts where the cell starts, so "stack
+  above <first panel>" begins below the `+`/chevron chrome and its
+  split line draws at the honest landing seam. The header pixels fall
+  through to REGION-level resolution: §5.1 side bands where they reach
+  (dock a column beside the rail — the region-tall fill hint cannot be
+  mistaken for a cell claim), float-at-pointer past them. The P5
+  concern the old rule cited is about states having exits, not every
+  pixel being a cell target, and both region-level outcomes are
+  well-defined. Expanded columns deliberately keep their parent-handle
+  claim (§5.2): that handle is a grip, and D48 gives grips the
+  above-claim; the rail header is dominated by its controls.
 
 Retired — one line per ID; the pointer is where any surviving content
 lives:

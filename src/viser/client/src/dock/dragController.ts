@@ -169,15 +169,17 @@ export function useDragController(deps: DragControllerDeps) {
   //   data-dock-leaf=<nodeId> + data-dock-edge=<left|right>
   //     A docked drop target. The leaf wrapper's rect is the drop rect,
   //     except inside a column rail (below): rail cell wrappers size to
-  //     content, so the scanner extends the first/last cell's rect to the
-  //     rail root's full strip. Rendered by SplitView's DockLeafView and
-  //     VerticalMinimizedColumn's rail cells (docked).
+  //     content, so the scanner extends the LAST cell's rect to the strip's
+  //     bottom (the header run above the first cell is controls, D53).
+  //     Rendered by SplitView's DockLeafView and VerticalMinimizedColumn's
+  //     rail cells (docked).
   //   data-dock-rail-root=<columnId>
   //     A ColumnRail's root: the full 36px strip (region-tall -- rails hold
-  //     width, not height). Its box is the column's true droppable surface;
-  //     the scanner tiles it onto the cells (first cell claims the header
-  //     run, last cell the empty tail below the spine rows), so a rail has
-  //     no dead pixels while interior cells keep their own boxes.
+  //     width, not height). The scanner tiles its box onto the cells BELOW
+  //     the header chrome (last cell claims the empty tail below the spine
+  //     rows; interior cells keep their own boxes). The header run -- the
+  //     `+` handle bar and chevron rows above the first cell -- is controls,
+  //     not a drop surface (D53).
   //   data-dock-group=<groupId>
   //     The group's element: the leaf wrapper itself or any descendant (both
   //     accepted). Scopes the strip/tab lookup; carries
@@ -334,12 +336,20 @@ export function useDragController(deps: DragControllerDeps) {
       const g = readGroup(groupEl, { kind: "docked", nodeId, edge }, leaf);
       if (g === null) return;
       // Column rail cells size to content, but the rail's droppable surface
-      // is the full strip (region-tall): extend the first cell's rect to the
-      // rail root's top (the header run) and the last cell's to its bottom
-      // (the empty tail -> that cell's stack-below zone + side slivers), so
-      // the strip tiles with no dead pixels while interior cells keep their
-      // own boxes. hitTest's collapsed branch anchors the stack-below hint
-      // at the spine content's true bottom, not the extended rect's.
+      // runs to the strip's BOTTOM: the last cell's rect extends to the rail
+      // root's bottom (the empty tail -> that cell's stack-below zone + side
+      // slivers). The header run ABOVE the first cell is deliberately NOT a
+      // cell drop surface (D53, user-adjudicated, reversing the pre-D53
+      // rule): the `+` handle bar and chevron rows are interactive CONTROLS,
+      // and a "stack above <first panel>" zone claiming their pixels read as
+      // the controls being drop targets -- so the first cell's rect starts
+      // where the cell actually starts and the top split line draws at the
+      // honest landing seam below the chrome. The header pixels resolve at
+      // REGION level instead: §5.1 side bands where they reach (dock a
+      // column BESIDE the rail), float-at-pointer past them -- never through
+      // the controls into the cell. hitTest's collapsed branch anchors the
+      // stack-below hint at the spine content's true bottom, not the
+      // extended rect's.
       //
       // And clamp every cell to the rail root box (stability pass 2026-07):
       // the rail's spine Paper scrolls (overflowY auto), so an overflowing
@@ -350,7 +360,7 @@ export function useDragController(deps: DragControllerDeps) {
       if (railRoot !== null) {
         const rr = railRoot.getBoundingClientRect();
         const cells = railRoot.querySelectorAll("[data-dock-leaf]");
-        const top = cells[0] === leaf ? rr.top : Math.max(g.rect.top, rr.top);
+        const top = Math.max(g.rect.top, rr.top);
         const bottom =
           cells[cells.length - 1] === leaf
             ? rr.bottom
@@ -604,9 +614,18 @@ export function useDragController(deps: DragControllerDeps) {
     let lastResult: DropResult | null = null;
     let finalX = restingLeft;
     let finalY = restingTop;
+    // Set by teardown. A queued rAF callback can outlive the gesture (the
+    // browser already scheduled it), and a post-teardown apply() would
+    // repaint the hint / leaf preview / transform against the post-drop
+    // layout with every listener detached -- nothing left to ever hide them
+    // (the user-visible stuck blue hint bar). The end handler cancels the
+    // pending frame explicitly too; this flag is the structural backstop
+    // that makes the whole stray-frame class inert regardless of path.
+    let ended = false;
 
     const apply = () => {
       raf = null;
+      if (ended) return;
       const e = latest;
       if (e === null) return;
       if (layoutRef.current !== targetsLayout || targetsStale) {
@@ -674,9 +693,17 @@ export function useDragController(deps: DragControllerDeps) {
         // A cancelled pointer (Escape, browser-stolen touch) aborts: no dock,
         // no move -- clearing the transform snaps the window back to where the
         // drag started. Only a real pointerup commits. Flush the pending
-        // frame first (the drop must use the final pointer position), then
-        // run the ONE teardown shared with the unmount path.
-        if (raf !== null && !cancelled) apply();
+        // frame first (the drop must use the final pointer position) --
+        // CANCELLING the queued rAF before the manual apply(): apply() nulls
+        // the local handle, so cancelling after would be a no-op and the
+        // browser-scheduled callback would fire once more AFTER teardown,
+        // repainting the hint with nobody left to hide it (the stuck-hint
+        // regression this ordering fixes).
+        if (raf !== null) {
+          cancelAnimationFrame(raf);
+          raf = null;
+          if (!cancelled) apply();
+        }
         teardown();
         if (cancelled) {
           // A deferred-float drag already committed its float op; put the
@@ -757,6 +784,7 @@ export function useDragController(deps: DragControllerDeps) {
     // plus the container capture listeners, the stale-marking ref, and the
     // dragged element's transform.
     const teardown = () => {
+      ended = true; // make any browser-scheduled stray apply() inert
       detach();
       container.removeEventListener("scroll", markTargetsStale, true);
       window.removeEventListener("resize", markTargetsStale);
