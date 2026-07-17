@@ -104,7 +104,9 @@ def test_drag_to_left_edge_docks(viser_page: Page) -> None:
 
     assert _dock_side(viser_page) == "left"
     panel = _panel_box(viser_page)
-    assert panel["x"] < 5
+    # D54: docked panels sit a small edge gutter (REGION_EDGE_GAP_PX = 3px)
+    # inside the screen edge.
+    assert panel["x"] < 8
     assert panel["height"] > _VIEWPORT["height"] * 0.9
 
     # The canvas is inset on the left by (about) the panel's width.
@@ -122,7 +124,7 @@ def test_drag_to_right_edge_docks(viser_page: Page) -> None:
 
     assert _dock_side(viser_page) == "right"
     panel = _panel_box(viser_page)
-    assert panel["x"] + panel["width"] > _VIEWPORT["width"] - 5
+    assert panel["x"] + panel["width"] > _VIEWPORT["width"] - 8  # D54 gutter
     assert panel["height"] > _VIEWPORT["height"] * 0.9
 
     # The canvas is inset on the right: its left edge stays at 0.
@@ -253,7 +255,7 @@ def test_deprecated_control_layout_docks_right(
     expect(viser_page.get_by_test_id("floating-panel")).to_be_visible()
     assert _dock_side(viser_page) == "right"
     panel = _panel_box(viser_page)
-    assert panel["x"] + panel["width"] > _VIEWPORT["width"] - 5
+    assert panel["x"] + panel["width"] > _VIEWPORT["width"] - 8  # D54 gutter
     assert panel["height"] > _VIEWPORT["height"] * 0.9
     # Canvas insets on the right (left edge stays at 0).
     assert _canvas_box(viser_page)["x"] < 5

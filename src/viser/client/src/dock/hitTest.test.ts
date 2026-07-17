@@ -31,6 +31,7 @@ import {
   DockLayout,
   GroupId,
   emptyLayout,
+  SPLIT_DIVIDER_PX,
 } from "./types";
 import {
   rect,
@@ -915,11 +916,12 @@ describe("docked group per-panel zones", () => {
 // hint jumped A.bottom -> (gone) -> B.top. Now all three resolve to a split that
 // inserts between A and B, with the hint pinned to the gap center.
 describe("seam between vertically-stacked docked panels is one stable target", () => {
-  // Mirror the live geometry: A[15..404], 7px divider, B[411..800], in a left
-  // column. B's strip starts STRIP_OFFSET below B.top, so [411..423) is B's grip
-  // bar (above-strip -> split top).
+  // Mirror the live geometry: A, then a SPLIT_DIVIDER_PX divider gap, then B,
+  // in a left column. B's strip starts STRIP_OFFSET below B.top, so B's first
+  // rows are its grip bar (above-strip -> split top). Built from the constant
+  // so the fixture tracks the real divider width.
   const A = rect(0, 15, 300, 389); // bottom = 404
-  const B = rect(0, 411, 300, 389); // top = 411
+  const B = rect(0, 404 + SPLIT_DIVIDER_PX, 300, 389);
   const tree = colSplit([leaf("a"), leaf("b")]);
   const layout = layoutWith({ left: tree });
   const aNode = leafIdsOf(tree)[0];
@@ -928,7 +930,7 @@ describe("seam between vertically-stacked docked panels is one stable target", (
     dockedTarget("a", aNode, "left", A),
     dockedTarget("b", bNode, "left", B),
   ];
-  const seamCenter = (A.bottom + B.top) / 2; // 407.5
+  const seamCenter = (A.bottom + B.top) / 2;
 
   it("A's content bottom band -> split BELOW A (region bottom), line at gap center", () => {
     const out = run(layout, targets(), 150, A.bottom - 5)!; // y=399, in A
@@ -943,7 +945,7 @@ describe("seam between vertically-stacked docked panels is one stable target", (
   });
 
   it("the divider gap (dead spot) -> split ABOVE B (region top), line at gap center", () => {
-    const out = run(layout, targets(), 150, 407)!; // y=407, over the 7px divider
+    const out = run(layout, targets(), 150, A.bottom + 2)!; // over the divider gap
     expect(out.result).toEqual({
       kind: "split",
       edge: "left",
@@ -1026,11 +1028,12 @@ describe("seam between vertically-stacked docked panels is one stable target", (
 // cells meet at a seam exactly there). The vertical recovery now falls back
 // per side to the nearest cell by y-distance (bounded by the seam gap).
 describe("T-junction of a column gap and a cell seam is not dead", () => {
-  // col0 = a over b (a[0..396], 7px seam, b[403..800]); col1 = c full height;
-  // column gap x in (146, 153).
+  // col0 = a over b with a SPLIT_DIVIDER_PX cell seam; col1 = c full height;
+  // a SPLIT_DIVIDER_PX column gap between them. Built from the constant so
+  // the fixture tracks the real divider width.
   const A = rect(0, 0, 146, 396);
-  const B = rect(0, 403, 146, 397);
-  const C = rect(153, 0, 147, 800);
+  const B = rect(0, 396 + SPLIT_DIVIDER_PX, 146, 800 - 396 - SPLIT_DIVIDER_PX);
+  const C = rect(146 + SPLIT_DIVIDER_PX, 0, 154 - SPLIT_DIVIDER_PX, 800);
   const tree = rowSplit([colSplit([leaf("a"), leaf("b")]), leaf("c")]);
   const junctionLayout = layoutWith({ left: tree });
   const ids = leafIdsOf(tree);
@@ -1042,7 +1045,8 @@ describe("T-junction of a column gap and a cell seam is not dead", () => {
 
   it("the pocket resolves to the column insert at the vertical seam", () => {
     // Dead-center of the junction: x in the column gap, y in the a/b seam.
-    const out = run(junctionLayout, junctionTargets(), 150, 400);
+    const gapMid = 146 + SPLIT_DIVIDER_PX / 2;
+    const out = run(junctionLayout, junctionTargets(), gapMid + 1, 400);
     expect(out).not.toBeNull();
     // Right half of the gap -> split LEFT of c (same landing as right-of-b).
     expect(out!.result).toEqual({
@@ -1052,7 +1056,7 @@ describe("T-junction of a column gap and a cell seam is not dead", () => {
       region: "left",
     });
     // Left half -> split RIGHT of the left column's nearest cell.
-    const out2 = run(junctionLayout, junctionTargets(), 148, 400);
+    const out2 = run(junctionLayout, junctionTargets(), gapMid - 1, 400);
     expect(out2).not.toBeNull();
     expect(out2!.result.kind).toBe("split");
     expect((out2!.result as { region: string }).region).toBe("right");
@@ -1060,7 +1064,12 @@ describe("T-junction of a column gap and a cell seam is not dead", () => {
 
   it("no null anywhere along the vertical gap, seam heights included", () => {
     for (let y = 0; y <= 800; y += 1) {
-      const out = run(junctionLayout, junctionTargets(), 149, y);
+      const out = run(
+        junctionLayout,
+        junctionTargets(),
+        146 + SPLIT_DIVIDER_PX / 2,
+        y,
+      );
       expect(out, `null at y=${y}`).not.toBeNull();
     }
   });

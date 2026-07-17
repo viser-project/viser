@@ -588,7 +588,11 @@ def test_narrow_region_scrolls_body_with_bottom_scrollbar(page: Page) -> None:
     # well below the 220px content minimum. The layout floor (MIN_REGION_GRAB_PX,
     # 96px) lets it commit this narrow instead of clamping at 220.
     vw = page.viewport_size["width"]  # type: ignore[index]
-    region_left = leaf["x"]
+    # Grab INSIDE the D54 edge gutter, not at the leaf's box: the leaf is
+    # inset REGION_EDGE_GAP_PX from the region boundary the resizer
+    # straddles, and grabbing exactly at the leaf edge sits on the straddle's
+    # inner limit (a rounding-dependent miss).
+    region_left = leaf["x"] - 2
     target_left = vw - 120
     _raw_drag(page, (region_left, 400), (target_left, 400))
 

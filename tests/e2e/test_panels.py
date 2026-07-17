@@ -772,7 +772,7 @@ def test_float_is_canvas_relative(
     viser_server.gui.main_panel.dock_left()
     viser_page.wait_for_timeout(400)
     ctrl = viser_page.get_by_test_id("floating-panel").bounding_box()
-    assert ctrl is not None and ctrl["x"] < 5  # docked at the left edge
+    assert ctrl is not None and ctrl["x"] < 8  # docked at the left edge (D54 gutter)
 
     panel = viser_server.gui.add_panel()
     with panel.add_tab("Floaty"):
