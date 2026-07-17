@@ -11,9 +11,9 @@ import { edgeIsSingleLeaf } from "./layoutOps";
 import {
   AreaId,
   clamp,
+  DockColumn,
   DockEdge,
   DockLayout,
-  DropRegion,
   GroupId,
   NodeId,
   PaneId,
@@ -61,26 +61,26 @@ const SPLIT_BAND_V_MAX_PX = 100;
 const SEAM_GAP_MAX_PX = SPLIT_DIVIDER_PX + 3;
 
 /** Where a drop will land, resolved from the pointer during a drag.
- * - edge: dock as a new outer column on an empty screen edge.
- * - regionEdge: dock a full-height column at a region's outer/inner side
- *   (D46: columns are the only horizontal partition; top/bottom full-width
- *   band drops are unrepresentable and their zones are gone).
- * - split: split a docked leaf's cell along one side.
+ * - edge: dock as a new outer column on an empty screen edge (creates the
+ *   region).
+ * - columnInsert: insert a full-height column at seam `index` (0..N
+ *   inclusive) of an OCCUPIED edge's region -- THE one result for every
+ *   full-height column insertion (D55): region-edge bands (seam 0/N),
+ *   per-panel and rail side bands, and column-divider gaps all resolve to
+ *   the same seam index, so adjacent zones on one seam are one drop (P9).
+ * - split: split a docked leaf's cell above/below, within its column (D46:
+ *   side intent is always a columnInsert, so top/bottom is all that's left).
  * - merge: append into an existing group's tab strip.
  * - insertTab: insert into an existing group's tabs at a specific index.
  * - snap: insert into a floating window's vertical stack at a specific index. */
 export type DropResult =
   | { kind: "edge"; edge: DockEdge }
-  | {
-      kind: "regionEdge";
-      edge: DockEdge;
-      side: "left" | "right";
-    }
+  | { kind: "columnInsert"; edge: DockEdge; index: number }
   | {
       kind: "split";
       edge: DockEdge;
       nodeId: NodeId;
-      region: Exclude<DropRegion, "center">;
+      region: "top" | "bottom";
     }
   | { kind: "merge"; targetGroupId: GroupId }
   | { kind: "insertTab"; targetGroupId: GroupId; index: number }
@@ -445,6 +445,62 @@ export function hitTest(
     );
   };
 
+  // The region-relative index of the column holding a docked target's leaf:
+  // columnInsert seams are column indices (D55). -1 when the node isn't in
+  // the layout (a stale synthetic target); callers clamp to seam 0.
+  const columnIndexOf = (edge: DockEdge, nodeId: NodeId): number => {
+    const region = layout.docked[edge];
+    if (region === null) return -1;
+    return region.columns.findIndex((c) =>
+      c.leaves.some((l) => l.id === nodeId),
+    );
+  };
+
+  // THE one hint for a full-height column insertion (D55): a region-tall
+  // vertical line centered on the SEAM at `index`. Region-edge bands,
+  // panel/rail side bands, and the column-divider recovery all call this,
+  // so the line is pixel-identical as the pointer sweeps one seam across
+  // its adjacent zones -- the hint can't hop between three nearby x
+  // positions for one landing. Interior seams center on the gap between
+  // the two flanking columns' on-screen target rects (facing edges of the
+  // nearest rects; with only one side scanned, that boundary +/- half a
+  // divider); boundary seams (0/N) sit on the region's outer/inner edge
+  // with the on-screen clamp (dockedSideSplitHint).
+  const columnInsertHint = (edge: DockEdge, index: number): DropHint => {
+    const region = layout.docked[edge];
+    const n = region === null ? 0 : region.columns.length;
+    const w = regionWidth[edge];
+    const regionLeftX = crect.left + (edge === "left" ? 0 : crect.width - w);
+    if (region !== null && index > 0 && index < n) {
+      // The facing edge of a column's targets: max right edge for the seam's
+      // left neighbor, min left edge for its right neighbor (a column's cells
+      // share x extents; min/max tolerates ragged synthetic rects).
+      const facing = (col: DockColumn, side: "left" | "right") => {
+        let best: number | null = null;
+        for (const t of targets.groups) {
+          if (t.ctx.kind !== "docked" || t.ctx.edge !== edge) continue;
+          const nodeId = t.ctx.nodeId;
+          if (!col.leaves.some((l) => l.id === nodeId)) continue;
+          const v = side === "right" ? t.rect.right : t.rect.left;
+          if (best === null || (side === "right" ? v > best : v < best))
+            best = v;
+        }
+        return best;
+      };
+      const leftEdge = facing(region.columns[index - 1], "right");
+      const rightEdge = facing(region.columns[index], "left");
+      if (leftEdge !== null && rightEdge !== null)
+        return dockedSideSplitHint((leftEdge + rightEdge) / 2);
+      if (leftEdge !== null)
+        return dockedSideSplitHint(leftEdge + SPLIT_DIVIDER_PX / 2);
+      if (rightEdge !== null)
+        return dockedSideSplitHint(rightEdge - SPLIT_DIVIDER_PX / 2);
+      // Neither neighbor scanned (no targets): the region boundary below is
+      // the only honest anchor left.
+    }
+    return dockedSideSplitHint(index <= 0 ? regionLeftX : regionLeftX + w);
+  };
+
   // 2. Region edges -> dock a full-height column beside everything in the
   // region. Checked before per-panel zones so an outermost panel's edge means
   // "beside everything" rather than "split just this one"; an interior panel is
@@ -457,8 +513,6 @@ export function hitTest(
     const regionLeft = edge === "left" ? 0 : crect.width - w;
     const regionRight = regionLeft + w;
     if (cx < regionLeft || cx > regionRight) continue;
-    // Insertion-line hint thickness for the side-band hints.
-    const t = LINE_PX;
     // Cap each left/right side band at a third of the region width so the two
     // bands leave the middle third for the per-panel zones underneath. A
     // fully-minimized region renders as a ~36px strip -- narrower than
@@ -480,30 +534,20 @@ export function hitTest(
     // their strips tile the full region, so dock-beside there is entirely
     // the rails' own slivers (edge case 13).
     if (overCollapsedCell(edge)) continue;
-    // Hints are a line spanning the whole region: a new column lands
-    // beside everything, full height (P1).
+    // Both bands resolve to the canonical seam (D55): the outer/inner
+    // boundary is seam 0 / seam N of the region's columns, with the one
+    // seam-centered region-tall line (a new column lands beside
+    // everything, full height, P1).
     if (cx - regionLeft < sideBand && !edgeIsSingleLeaf(tree)) {
       return {
-        result: { kind: "regionEdge", edge, side: "left" },
-        hint: {
-          left: regionLeft,
-          width: t,
-          top: 0,
-          height: crect.height,
-          variant: "line",
-        },
+        result: { kind: "columnInsert", edge, index: 0 },
+        hint: columnInsertHint(edge, 0),
       };
     }
     if (regionRight - cx < sideBand && !edgeIsSingleLeaf(tree)) {
       return {
-        result: { kind: "regionEdge", edge, side: "right" },
-        hint: {
-          left: regionRight - t,
-          width: t,
-          top: 0,
-          height: crect.height,
-          variant: "line",
-        },
+        result: { kind: "columnInsert", edge, index: tree.columns.length },
+        hint: columnInsertHint(edge, tree.columns.length),
       };
     }
   }
@@ -614,10 +658,10 @@ export function hitTest(
     // (spec 5.5: divider gaps are never dead): the pointer sits in the
     // ~SPLIT_DIVIDER_PX gap between two side-by-side docked columns (the
     // divider has no target; between two railed columns the gap is a full
-    // dead stripe without this). Map it to the column insert at that seam:
-    // the gap's left half splits right of the left cell, the right half
-    // splits left of the right cell -- the same landing either way, and
-    // left/right mirror-symmetric.
+    // dead stripe without this). Map it to the ONE columnInsert at that
+    // seam (D55) -- the same result and the same seam-centered line the
+    // flanking cells' side bands produce, whichever half of the gap the
+    // pointer is in.
     if (owningWindow === null) {
       // Per side, prefer a cell containing clientY; when none does (the
       // pointer sits at a T-junction -- the column gap crossing one side's
@@ -665,20 +709,14 @@ export function hitTest(
       ) {
         const gap = rightT.rect.left - leftT.rect.right;
         if (gap >= -1 && gap <= SEAM_GAP_MAX_PX) {
-          const gapCenter = (leftT.rect.right + rightT.rect.left) / 2;
-          const [tgt, region] =
-            clientX <= gapCenter
-              ? ([leftT, "right"] as const)
-              : ([rightT, "left"] as const);
-          if (tgt.ctx.kind === "docked") {
+          // The seam's index is the right neighbor's column index (== the
+          // left neighbor's + 1 across a real divider).
+          const edge = rightT.ctx.edge;
+          const index = columnIndexOf(edge, rightT.ctx.nodeId);
+          if (index >= 0) {
             return {
-              result: {
-                kind: "split",
-                edge: tgt.ctx.edge,
-                nodeId: tgt.ctx.nodeId,
-                region,
-              },
-              hint: dockedSideSplitHint(gapCenter),
+              result: { kind: "columnInsert", edge, index },
+              hint: columnInsertHint(edge, index),
             };
           }
         }
@@ -756,37 +794,41 @@ export function hitTest(
   const r = gt.rect;
   const strip = gt.stripRect;
 
-  // A per-panel split previews as a thin insertion line at the boundary where
-  // the new panel will go -- so "right of A" and "left of B" draw the same line
-  // on the A|B seam (one coherent "insert a column here").
-  const splitLine = (region: "top" | "bottom" | "left" | "right"): DropHint => {
+  // A per-panel top/bottom split previews as a thin insertion line at the
+  // boundary where the new panel will go. (Side intent is a columnInsert --
+  // its line is columnInsertHint's, D55.)
+  const splitLine = (region: "top" | "bottom"): DropHint => {
     const t = LINE_PX;
-    // Center the line on the seam, then clamp it fully inside the container so it
-    // stays visible. A panel docked at the region's outer edge sits flush with the
-    // screen edge, so a seam-centered line there would otherwise be half-clipped;
-    // a seam between two stacked/side-by-side panes is mid-region, so no clamp
-    // applies and "right of A" / "left of B" still draw the same line.
-    if (region === "top" || region === "bottom") {
-      // When this split lands on a seam shared with an adjacent stacked sibling
-      // (a divider gap between two docked panels), draw the line at the gap
-      // center so "below A" and "above B" coincide instead of jumping the
-      // ~SPLIT_DIVIDER_PX divider width. With no sibling (region's outer edge),
-      // fall back to the panel boundary + on-screen clamp.
-      const seam =
-        gt.ctx.kind === "docked" ? dockedSeamSibling(gt, region) : null;
-      const edgeY = region === "top" ? r.top : r.bottom;
-      const raw = (seam !== null ? seam.gapCenter : edgeY) - t / 2;
-      const top = clamp(raw, crect.top, crect.top + crect.height - t);
-      return rel({ left: r.left, top, width: r.width, height: t }, "line");
-    }
-    // Vertical extent = the drop's true extent: a docked side drop lands a
-    // full-height column (D46), so the line is region-tall.
-    const lineX = region === "left" ? r.left : r.right;
-    if (gt.ctx.kind === "docked") {
-      return dockedSideSplitHint(lineX);
-    }
-    const left = clamp(lineX - t / 2, crect.left, crect.left + crect.width - t);
-    return rel({ left, top: r.top, width: t, height: r.height }, "line");
+    // When this split lands on a seam shared with an adjacent stacked sibling
+    // (a divider gap between two docked panels), draw the line at the gap
+    // center so "below A" and "above B" coincide instead of jumping the
+    // ~SPLIT_DIVIDER_PX divider width. With no sibling (region's outer edge),
+    // fall back to the panel boundary, clamped fully inside the container so
+    // a line on a flush edge stays visible.
+    const seam =
+      gt.ctx.kind === "docked" ? dockedSeamSibling(gt, region) : null;
+    const edgeY = region === "top" ? r.top : r.bottom;
+    const raw = (seam !== null ? seam.gapCenter : edgeY) - t / 2;
+    const top = clamp(raw, crect.top, crect.top + crect.height - t);
+    return rel({ left: r.left, top, width: r.width, height: t }, "line");
+  };
+
+  // A docked target's side band resolves to the canonical column insert at
+  // the seam on that side of the target's column (D55): left band -> seam k,
+  // right band -> seam k+1, where k is the column's region index. Same
+  // result object and same seam-centered line as the region-edge bands and
+  // the divider-gap recovery for that seam.
+  const sideColumnInsert = (
+    edge: DockEdge,
+    nodeId: NodeId,
+    side: "left" | "right",
+  ): { result: DropResult; hint: DropHint } => {
+    const k = Math.max(0, columnIndexOf(edge, nodeId));
+    const index = side === "left" ? k : k + 1;
+    return {
+      result: { kind: "columnInsert", edge, index },
+      hint: columnInsertHint(edge, index),
+    };
   };
 
   // An unmergeable group never participates in a merge, from either side: a
@@ -926,16 +968,11 @@ export function hitTest(
     if (g.ctx.kind === "docked") {
       const e = g.ctx.edge;
       const n = g.ctx.nodeId;
-      if (rx < H)
-        return {
-          result: { kind: "split", edge: e, nodeId: n, region: "left" },
-          hint: splitLine("left"),
-        };
-      if (rx > 1 - H)
-        return {
-          result: { kind: "split", edge: e, nodeId: n, region: "right" },
-          hint: splitLine("right"),
-        };
+      // 8px side slivers: dock a full-height column beside this rail's
+      // column -- the canonical seam insert (D55), same result + line as
+      // the region bands / divider gap for that seam.
+      if (rx < H) return sideColumnInsert(e, n, "left");
+      if (rx > 1 - H) return sideColumnInsert(e, n, "right");
       if (inTopEdge)
         return {
           result: { kind: "split", edge: e, nodeId: n, region: "top" },
@@ -1100,11 +1137,16 @@ export function hitTest(
     // these paths (the strip insert is suppressed too, so there is
     // nothing below the grip bar to aim at).
     const mergeSuppressed = gt.unmergeable || draggingUnmergeable;
-    let region: "top" | "bottom" | "left" | "right" | null = null;
+    let region: "top" | "bottom" | null = null;
+    let side: "left" | "right" | null = null;
     if (mergeSuppressed && ry < vBand) region = "top";
     else if (ry > 1 - vBand) region = "bottom";
-    else if (rx < hBand) region = "left";
-    else if (rx > 1 - hBand) region = "right";
+    else if (rx < hBand) side = "left";
+    else if (rx > 1 - hBand) side = "right";
+    if (side !== null) {
+      // Side band: a full-height column at the adjacent seam (D55).
+      return sideColumnInsert(g.ctx.edge, g.ctx.nodeId, side);
+    }
     if (region !== null) {
       return {
         result: {

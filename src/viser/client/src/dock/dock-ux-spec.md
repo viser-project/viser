@@ -592,17 +592,28 @@ constants in `hitTest.ts`; changing one is a spec change.
 3. **Region edge side bands** (occupied edge): 40px outer/inner side
    bands (each capped to a third of the region width, so the middle
    stays for per-cell zones) dock a NEW FULL-HEIGHT COLUMN at that side
-   of the region. The hint is region-tall (P1: that is exactly what
-   lands). Under D46 there are no top/bottom region bands and no
-   cross-band seams — vertical adjacency is a per-cell split INSIDE a
-   column, never a region-level insert. The side bands YIELD entirely
-   to any collapsed docked cell under the pointer — packed regions
-   included: a 40px band would shadow a whole 36px strip whose own
-   8px sliver already docks a column beside it, and packed strips tile
-   the whole region, so dock-beside there is entirely the rails' own
-   slivers (edge case 13). Suppressed where they'd duplicate a per-cell
-   split (a single-column, single-leaf region) and while a floating
-   window's paper rect owns the pointer (§3.5).
+   of the region. THE UNIFIED RULE (D55, stated once and referenced
+   from §5.2/§5.3/§5.5): every full-height column insertion into an
+   occupied region — these region-edge bands, the expanded cells'
+   content side bands, the rail cells' side slivers, and the
+   column-divider gaps — resolves to ONE canonical seam index
+   (`columnInsert`: edge + index 0..N over the region's columns; the
+   outer band is seam 0, the inner band seam N, a cell's side band the
+   seam beside its column k), applied by ONE op (`insertColumnAt`) and
+   previewed by ONE region-tall line centered on the seam. Adjacent
+   zones for the same seam are one zone (P9): same result object,
+   pixel-identical line, no hint hop as the pointer sweeps the seam.
+   The hint is region-tall (P1: that is exactly what lands). Under D46
+   there are no top/bottom region bands and no cross-band seams —
+   vertical adjacency is a per-cell split INSIDE a column, never a
+   region-level insert. The side bands YIELD entirely to any collapsed
+   docked cell under the pointer — packed regions included: a 40px
+   band would shadow a whole 36px strip whose own 8px sliver already
+   resolves to the same seam insert, and packed strips tile the whole
+   region, so dock-beside there is entirely the rails' own slivers
+   (edge case 13). Suppressed where they'd duplicate the per-cell
+   resolution (a single-column, single-leaf region) and while a
+   floating window's paper rect owns the pointer (§3.5).
 4. **Per-target zones**: the cell-, rail-, and bar-level zones of
    §5.2–5.4.
 5. **Anywhere else**: no drop; release floats the dragged stack at the
@@ -620,8 +631,10 @@ constants in `hitTest.ts`; changing one is a spec change.
 - Over the tab strip: insert at that tab position (2D nearest-tab, works
   with wrapped rows).
 - Content side bands (30% of width, ≤120px): insert a NEW FULL-HEIGHT
-  COLUMN beside this cell's column, on that side (D46: side drops are
-  column inserts; the hint is region-tall, P1).
+  COLUMN beside this cell's column, on that side (D46) — the canonical
+  seam insert of §5.1 item 3 (D55): the left band is seam k, the right
+  band seam k+1 of the cell's column k, with the one region-tall seam
+  line (P1) shared with the region bands and divider gaps.
 - Content bottom band (25%, ≤100px): split below this cell, within its
   column. There is NO content-top band (D48): the strip and everything
   below it down to the bottom band merges, so overshooting the strip
@@ -646,7 +659,8 @@ rotate here — a rail cell has no content body to re-claim above, its
 not a target-displacing shrink)
 
 - 8px outer/inner side slivers: dock a new full-height column beside
-  this rail's column.
+  this rail's column — the same canonical seam insert as every other
+  side zone (§5.1 item 3, D55).
 - 8px top/bottom edges (`MINIMIZED_EDGE_BAND_PX` — P11's floor): stack a
   cell above/below within the rail's column.
 - Over a spine row: insert at that tab position.
@@ -700,11 +714,12 @@ bottom). Interior cells keep their own boxes.
   visible geometry.
 - Divider gaps are never dead spots, in EITHER axis: the horizontal gap
   between stacked docked cells maps to the seam split it sits in the
-  middle of; the vertical gap between side-by-side columns to the column
-  insert at that seam (left half inserts right of the left column, right
-  half left of the right column — the same landing, mirror-symmetric,
-  hint at the gap center); a floating stack's gap to the snap at that
-  index — the hint never flickers to "no drop" crossing a seam.
+  middle of; the vertical gap between side-by-side columns to the ONE
+  column insert at that seam (D55: both halves of the gap are the same
+  `columnInsert`, sharing its result and its seam-centered line with
+  the flanking cells' side bands — §5.1 item 3); a floating stack's gap
+  to the snap at that index — the hint never flickers to "no drop"
+  crossing a seam.
 
 Collapse is the container's (D38), so drops need no adoption or
 normalization rules: a group joining an expanded container renders
@@ -1007,7 +1022,9 @@ at every consumer.
 - **Single construction sites / choke points**: `movePaneInPlace`
   (detach-first — a pane can never be in two groups),
   `detachAllPreservingStackWeights` (capture-before-detach ordering
-  unviolatable), `planRegion` (parallel fields built at one site),
+  unviolatable), `insertColumnAt` (the ONE column-insert site, D55 —
+  every side/seam dock path delegates, so seam equivalence is
+  structural), `planRegion` (parallel fields built at one site),
   `patchFloatPositions` (the one sanctioned commit bypass; its type
   makes the position-only claim structural), `api.replace()` (the one
   wholesale-injection entry; seeds the fresh-id floor).
@@ -1281,6 +1298,27 @@ consuming paragraphs.
   well-defined. Expanded columns deliberately keep their parent-handle
   claim (§5.2): that handle is a grip, and D48 gives grips the
   above-claim; the rail header is dominated by its controls.
+- **D54** — divider rhythm: the region's outer/inner edges carry the
+  same `SPLIT_DIVIDER_PX` gutter as interior seams
+  (`REGION_EDGE_GAP_PX`), counted as region chrome — one spacing
+  rhythm, gap-panel-gap everywhere; full statement in §6.
+- **D55** — one seam, one drop (user-adjudicated; P9's litmus applied
+  to the drop system): every full-height column insertion into an
+  occupied region — region-edge bands, expanded cells' side bands,
+  rail side slivers, column-divider gaps — resolves to ONE canonical
+  result (`columnInsert`: edge + seam index 0..N) applied by ONE op
+  (`insertColumnAt`, which captures the seam as its left-neighbor
+  column ids and re-derives it after detach, so a same-region drag
+  can't dangle the index) with ONE region-tall seam-centered line.
+  Replaces `regionEdge {side}` (side → seam 0/N) and the left/right
+  arms of `split` (a side of column k → seam k/k+1; `split` is now
+  top/bottom in-column only). Why: three code paths produced one
+  outcome held together by an equivalence audit + e2e pins, and their
+  three hint positions (A.right / gap center / B.left) made the line
+  hop while sweeping one seam — what one representation now makes
+  structural. Zone GEOMETRY is unchanged: band sizes, caps, yields,
+  and suppressions (§5.1–5.4) are exactly as before; only the result
+  shape and the hint unify.
 
 Retired — one line per ID; the pointer is where any surviving content
 lives:

@@ -51,8 +51,9 @@ const CONTAINER: ContainerRect = { left: 0, top: 0, width: 1000, height: 800 };
 // Tunables mirrored from hitTest.ts for constructing pointer positions just
 // inside / outside each zone. (Kept local so the test documents the contract.)
 const EDGE_ZONE_PX = 48;
-// Thin outer top/bottom band -> regionEdge "span all". Now 8px (was 22) so it
-// doesn't shadow the topmost panel's grip bar.
+// Former thin outer top/bottom band width, kept as a probe offset: points
+// this close to the region's top/bottom edge exercise the deleted band's
+// pixels (D46: no top/bottom region zones survive there).
 const REGION_EDGE_PX = 8;
 const REGION_SIDE_PX = 40;
 
@@ -354,7 +355,7 @@ describe("screen-edge dock next to an occupied region", () => {
 // with the bands themselves. Suppressed for a single full-span leaf.)
 // ===========================================================================
 describe("region edge zones", () => {
-  it("top/bottom edges are NOT regionEdge zones (D46: band drops deleted)", () => {
+  it("top/bottom edges are NOT region-band zones (D46: band drops deleted)", () => {
     // A pointer at the region's top/bottom edge with no target under it
     // resolves to NOTHING (per-cell above/below zones own vertical intent).
     const tree = rowSplit([leaf("a"), leaf("b")]);
@@ -365,14 +366,15 @@ describe("region edge zones", () => {
     ).toBeNull();
   });
 
-  it("left band of a stacked-column region -> regionEdge left (REGION-TALL line)", () => {
+  it("left band of a stacked-column region -> columnInsert at seam 0 (REGION-TALL line)", () => {
     const tree = colSplit([leaf("a"), leaf("b")]);
     const layout = layoutWith({ left: tree });
     const out = run(layout, [], REGION_SIDE_PX - 5, 400)!;
+    // D55: the region's outer boundary is seam 0 of its columns.
     expect(out.result).toEqual({
-      kind: "regionEdge",
+      kind: "columnInsert",
       edge: "left",
-      side: "left",
+      index: 0,
     });
     expect(out.hint.variant).toBe("line");
     // The hint is region-tall (D46: the landing column is full height).
@@ -380,30 +382,31 @@ describe("region edge zones", () => {
     expect(out.hint.width).toBeLessThan(8); // thin
   });
 
-  it("right band (inner) of a stacked-column left region -> regionEdge right", () => {
+  it("right band (inner) of a stacked-column left region -> columnInsert at seam N", () => {
     const tree = colSplit([leaf("a"), leaf("b")]);
     const layout = layoutWith({ left: tree });
     const regionRight = REGION_W.left; // left region spans [0..300]
     const out = run(layout, [], regionRight - (REGION_SIDE_PX - 5), 400)!;
+    // One column (a stacked pair), so the inner boundary is seam 1 (D55).
     expect(out.result).toEqual({
-      kind: "regionEdge",
+      kind: "columnInsert",
       edge: "left",
-      side: "right",
+      index: 1,
     });
-    // Hint sits at the inner edge of the region.
-    expect(out.hint.left + out.hint.width).toBeLessThanOrEqual(regionRight + 1);
+    // The line is centered on the region's inner boundary (the seam).
+    expect(out.hint.left + out.hint.width / 2).toBeCloseTo(regionRight, 0);
   });
 
   it("right region: bands anchored to the right side of the screen", () => {
     const tree = colSplit([leaf("a"), leaf("b")]);
     const layout = layoutWith({ right: tree });
     const regionLeft = CONTAINER.width - REGION_W.right; // [700..1000]
-    // Outer-right band.
+    // Outer-right band -> seam N (= 1: one stacked column).
     const out = run(layout, [], CONTAINER.width - (REGION_SIDE_PX - 5), 400)!;
     expect(out.result).toEqual({
-      kind: "regionEdge",
+      kind: "columnInsert",
       edge: "right",
-      side: "right",
+      index: 1,
     });
     expect(out.hint.left).toBeGreaterThanOrEqual(regionLeft);
   });
@@ -415,7 +418,7 @@ describe("region edge zones", () => {
     const layout = layoutWith({ left: node });
     const tgt = dockedTarget("a", leafIdOf(node), "left", rect(0, 0, 300, 800));
     const out = run(layout, [tgt], 150, REGION_EDGE_PX - 5)!;
-    expect(out.result.kind).not.toBe("regionEdge");
+    expect(out.result.kind).not.toBe("columnInsert");
   });
 
   it("the top edge over a multi-leaf column resolves to the cell's ABOVE zone", () => {
@@ -482,13 +485,13 @@ describe("outer-edge dock beside a minimized region strip", () => {
     );
     // Over a collapsed cell the region side bands ALWAYS yield to the cell's
     // own zones (a 40px band would shadow the whole 36px strip); dock-beside
-    // is served by the rail's 8px outer sliver, whose side SPLIT lands a
-    // full-height column beside the target's column (D46).
+    // is served by the rail's 8px outer sliver, which resolves to the
+    // canonical columnInsert at the seam beside the rail's column (D55/D46).
     const out = run(layout, [t1, t2], CONTAINER.width - 1, 200, STRIP_W)!;
-    expect(out.result).toMatchObject({
-      kind: "split",
+    expect(out.result).toEqual({
+      kind: "columnInsert",
       edge: "right",
-      region: "right",
+      index: 1,
     });
   });
 
@@ -509,14 +512,14 @@ describe("outer-edge dock beside a minimized region strip", () => {
       rect(stripLeft, 400, STRIP, 400),
     );
     const out = run(layout, [t1, t2], stripLeft + 1, 200, STRIP_W)!;
-    expect(out.result).toMatchObject({
-      kind: "split",
+    expect(out.result).toEqual({
+      kind: "columnInsert",
       edge: "right",
-      region: "left",
+      index: 0,
     });
   });
 
-  it("single-leaf minimized strip: outer edge -> split right (new outer column)", () => {
+  it("single-leaf minimized strip: outer edge -> columnInsert (new outer column)", () => {
     const node = leaf("g");
     const layout = layoutWith({ right: node });
     const tgt = collapsedRightTarget(
@@ -525,10 +528,15 @@ describe("outer-edge dock beside a minimized region strip", () => {
       rect(stripLeft, 0, STRIP, 800),
     );
     // A single leaf suppresses the region-edge bands, so the collapsed 5-way
-    // (3z) handles it: the outer band maps to a per-panel "right" split, which
-    // builds [target, dragged] -> the dragged panel becomes the new outer column.
+    // (3z) handles it: the outer sliver is the canonical columnInsert at the
+    // seam past the strip's column (D55) -- the dragged panel becomes the
+    // new outer column.
     const out = run(layout, [tgt], CONTAINER.width - 1, 400, STRIP_W)!;
-    expect(out.result).toMatchObject({ kind: "split", region: "right" });
+    expect(out.result).toEqual({
+      kind: "columnInsert",
+      edge: "right",
+      index: 1,
+    });
   });
 
   it("single minimized strip: the empty tail belongs to the CELL -- its inner sliver docks a column beside", () => {
@@ -548,7 +556,11 @@ describe("outer-edge dock beside a minimized region strip", () => {
     );
     const out = run(layout, [tgt], stripLeft + 2, 500, STRIP_W);
     expect(out).not.toBeNull();
-    expect(out!.result).toMatchObject({ kind: "split", region: "left" });
+    expect(out!.result).toEqual({
+      kind: "columnInsert",
+      edge: "right",
+      index: 0,
+    });
   });
 
   it("lone railed cell: the region's bottom corner is a SIDE dock via the cell's outer sliver", () => {
@@ -573,14 +585,18 @@ describe("outer-edge dock beside a minimized region strip", () => {
       STRIP_W,
     );
     expect(out).not.toBeNull();
-    expect(out!.result).toMatchObject({ kind: "split", region: "right" });
+    expect(out!.result).toEqual({
+      kind: "columnInsert",
+      edge: "right",
+      index: 1,
+    });
   });
 
   it("packed railed stack: no bandInsert / top / bottom anywhere -- drops join the rail", () => {
-    // D46: band inserts are unrepresentable and the top/bottom regionEdge
+    // D46: band inserts are unrepresentable and the top/bottom region
     // zones are deleted. Drops at the packed rail's cell boundaries hit the
     // cells' own zones (stack above/below = split, merge, insertTab), and
-    // only the honest left/right side docks remain at region scope.
+    // only the honest side seams (columnInsert, D55) remain at region scope.
     const top = leaf("g1");
     const bot = leaf("g2");
     const tree = colSplit([top, bot]);
@@ -603,16 +619,17 @@ describe("outer-edge dock beside a minimized region strip", () => {
     const out = run(layout, [t1, t2], stripLeft + STRIP / 2, 121, STRIP_W);
     expect(out).not.toBeNull();
     expect(["split", "merge", "insertTab"]).toContain(out!.result.kind);
-    // And nowhere over the whole strip does bandInsert or a top/bottom
-    // regionEdge appear.
+    // And nowhere over the whole strip does a band insert appear -- only
+    // the cells' own zones and (at region scope) the honest side seams.
     for (let y = 0; y <= CONTAINER.height; y += 8) {
       const r = run(layout, [t1, t2], stripLeft + STRIP / 2, y, STRIP_W);
       if (r === null) continue;
-      expect(r.result.kind).not.toBe("bandInsert");
-      if (r.result.kind === "regionEdge") {
-        expect(["left", "right"]).toContain(
-          (r.result as { side: string }).side,
-        );
+      expect(["split", "merge", "insertTab", "columnInsert"]).toContain(
+        r.result.kind,
+      );
+      if (r.result.kind === "columnInsert") {
+        // Side seams of the single packed column only (D55).
+        expect([0, 1]).toContain(r.result.index);
       }
     }
   });
@@ -836,37 +853,40 @@ describe("docked group per-panel zones", () => {
     });
   });
 
-  it("content left band -> split left (thin line at the panel's left edge)", () => {
+  it("content left band -> columnInsert at the seam left of this column", () => {
     // rx < SPLIT_BAND. Frame x in [100..500], width 400. SPLIT_BAND*400=88.
     // Use a mid y (in the side band, not the top/bottom band).
     const out = run(layout, [target()], 100 + 40, 320)!;
+    // D55: the side band is the canonical seam insert (index 0: the leaf's
+    // column is the region's only column).
     expect(out.result).toEqual({
-      kind: "split",
+      kind: "columnInsert",
       edge: "left",
-      nodeId: leafIdOf(node),
-      region: "left",
+      index: 0,
     });
     expect(out.hint.variant).toBe("line");
     expect(out.hint.width).toBeLessThan(8); // thin vertical line
     // REGION-TALL (D46): a docked side drop lands a full-height column, so
     // the line spans the container, not just the target cell.
     expect(out.hint.height).toBeCloseTo(CONTAINER.height);
-    // The line is centered on the panel's left edge.
-    expect(out.hint.left + out.hint.width / 2).toBeCloseTo(frame.left, 0);
+    // Seam 0 is the region's OUTER boundary: the one line every zone of this
+    // seam draws (D55) -- the region-edge band's position, not the synthetic
+    // frame's inset left edge.
+    expect(out.hint.left).toBe(0);
   });
 
-  it("content right band -> split right (thin line at the panel's right edge)", () => {
+  it("content right band -> columnInsert at the seam right of this column", () => {
     const out = run(layout, [target()], 500 - 40, 320)!; // rx > 1-SPLIT_BAND
     expect(out.result).toEqual({
-      kind: "split",
+      kind: "columnInsert",
       edge: "left",
-      nodeId: leafIdOf(node),
-      region: "right",
+      index: 1,
     });
     expect(out.hint.variant).toBe("line");
     expect(out.hint.width).toBeLessThan(8);
-    // The line is centered on the panel's right edge.
-    expect(out.hint.left + out.hint.width / 2).toBeCloseTo(frame.right, 0);
+    // Seam 1 (= N) is the region's INNER boundary (D55): the line is
+    // centered there, shared pixel-for-pixel with the region-edge band.
+    expect(out.hint.left + out.hint.width / 2).toBeCloseTo(REGION_W.left, 0);
   });
 
   it("content bottom band -> split bottom (thin line at the panel's bottom edge)", () => {
@@ -1045,21 +1065,18 @@ describe("T-junction of a column gap and a cell seam is not dead", () => {
 
   it("the pocket resolves to the column insert at the vertical seam", () => {
     // Dead-center of the junction: x in the column gap, y in the a/b seam.
+    // BOTH halves of the gap are the ONE seam-1 insert (D55): no more
+    // "right half targets c, left half targets b" split pair.
     const gapMid = 146 + SPLIT_DIVIDER_PX / 2;
+    const expected = { kind: "columnInsert", edge: "left", index: 1 };
     const out = run(junctionLayout, junctionTargets(), gapMid + 1, 400);
     expect(out).not.toBeNull();
-    // Right half of the gap -> split LEFT of c (same landing as right-of-b).
-    expect(out!.result).toEqual({
-      kind: "split",
-      edge: "left",
-      nodeId: ids[2],
-      region: "left",
-    });
-    // Left half -> split RIGHT of the left column's nearest cell.
+    expect(out!.result).toEqual(expected);
     const out2 = run(junctionLayout, junctionTargets(), gapMid - 1, 400);
     expect(out2).not.toBeNull();
-    expect(out2!.result.kind).toBe("split");
-    expect((out2!.result as { region: string }).region).toBe("right");
+    expect(out2!.result).toEqual(expected);
+    // And the hint is the same rect on both halves (one seam, one line).
+    expect(out2!.hint).toEqual(out!.hint);
   });
 
   it("no null anywhere along the vertical gap, seam heights included", () => {
@@ -1072,6 +1089,72 @@ describe("T-junction of a column gap and a cell seam is not dead", () => {
       );
       expect(out, `null at y=${y}`).not.toBeNull();
     }
+  });
+});
+
+// ===========================================================================
+// P9 pin (D55): ONE seam is ONE zone. Between two docked columns A|B there
+// used to be three code paths for one intent -- A's right side band, the
+// vertical-divider dead-spot recovery, and B's left side band -- whose
+// results were equivalent only by audit and whose hints hopped between
+// three nearby x positions (A.right / gap center / B.left). Under D55 all
+// three resolve to the SAME columnInsert seam index with the SAME
+// seam-centered region-tall line: sweeping the pointer across the seam must
+// produce a deep-equal result and a pixel-identical hint at every sample.
+// ===========================================================================
+describe("P9 (D55): one seam resolves to one result and one line across all its zones", () => {
+  // Left region [a | b] with the real divider gap between the target rects.
+  const A = rect(0, 0, 148, 800);
+  const B = rect(148 + SPLIT_DIVIDER_PX, 0, 300 - 148 - SPLIT_DIVIDER_PX, 800);
+  const tree = rowSplit([leaf("a"), leaf("b")]);
+  const layout = layoutWith({ left: tree });
+  const ids = leafIdsOf(tree);
+  const targets = () => [
+    dockedTarget("a", ids[0], "left", A),
+    dockedTarget("b", ids[1], "left", B),
+  ];
+
+  it("A's right band -> divider gap -> B's left band: same result, same hint everywhere", () => {
+    // x=110..190 spans A's right side band, the whole divider gap, and B's
+    // left side band (clear of the 40px region bands on both sides); y=600
+    // is mid-content (below the strips, above the bottom bands).
+    const first = run(layout, targets(), 110, 600)!;
+    expect(first.result).toEqual({
+      kind: "columnInsert",
+      edge: "left",
+      index: 1,
+    });
+    for (let x = 110; x <= 190; x += 1) {
+      const out = run(layout, targets(), x, 600);
+      expect(out, `null at x=${x}`).not.toBeNull();
+      expect(out!.result, `result changed at x=${x}`).toEqual(first.result);
+      expect(out!.hint, `hint moved at x=${x}`).toEqual(first.hint);
+    }
+    // The one line is region-tall and centered on the seam (the gap center).
+    expect(first.hint.height).toBe(CONTAINER.height);
+    expect(first.hint.left + first.hint.width / 2).toBeCloseTo(
+      (A.right + B.left) / 2,
+      1,
+    );
+  });
+
+  it("outermost side band and region-edge band are the same seam drop (0 and N)", () => {
+    // Seam 0: the 40px region band (x=20) and A's left content band (x=42)
+    // -- one result object, one line (at the region's outer boundary).
+    const expected0 = { kind: "columnInsert", edge: "left", index: 0 };
+    const viaRegionBand = run(layout, targets(), 20, 600)!;
+    const viaTargetBand = run(layout, targets(), 42, 600)!;
+    expect(viaRegionBand.result).toEqual(expected0);
+    expect(viaTargetBand.result).toEqual(expected0);
+    expect(viaTargetBand.hint).toEqual(viaRegionBand.hint);
+    // Seam N (=2): the inner region band (x=270) and B's right content band
+    // (x=257, just outside the region band) -- same drop, same line.
+    const expectedN = { kind: "columnInsert", edge: "left", index: 2 };
+    const innerRegion = run(layout, targets(), 270, 600)!;
+    const innerTarget = run(layout, targets(), 257, 600)!;
+    expect(innerRegion.result).toEqual(expectedN);
+    expect(innerTarget.result).toEqual(expectedN);
+    expect(innerTarget.hint).toEqual(innerRegion.hint);
   });
 });
 
@@ -1372,9 +1455,15 @@ describe("zone priority", () => {
       rect(0, 0, 150, 800),
     );
     // Left side band of the multi-column region; also over group a's frame
-    // (D46: the side bands are the only region-edge zones).
+    // (D46: the side bands are the only region-edge zones). Both zones are
+    // the SAME seam-0 columnInsert under D55; the region band resolves
+    // first and the result is one object either way.
     const out = run(layout, [tgt], 20, 400)!;
-    expect(out.result.kind).toBe("regionEdge");
+    expect(out.result).toEqual({
+      kind: "columnInsert",
+      edge: "left",
+      index: 0,
+    });
   });
 
   // regression: a tab-strip insert beats the region-edge band that overlaps it.
@@ -1460,12 +1549,12 @@ describe("zone priority", () => {
           draggingUnmergeable: true,
         },
       )!;
-      expect(out.result.kind).toBe("regionEdge");
+      expect(out.result.kind).toBe("columnInsert");
     });
 
     it("the region-edge band still wins OFF the strip (content side band)", () => {
       // Same column region, but the pointer is in the content area (below the
-      // strip) within the left side band -> region span, as before.
+      // strip) within the left side band -> the seam-0 column insert.
       const tgt = colTarget(
         "b",
         leafIdsOf(tree)[1],
@@ -1474,9 +1563,9 @@ describe("zone priority", () => {
       );
       const out = run(layout, [tgt], 20, 600)!;
       expect(out.result).toEqual({
-        kind: "regionEdge",
+        kind: "columnInsert",
         edge: "left",
-        side: "left",
+        index: 0,
       });
     });
   });
@@ -1718,11 +1807,15 @@ describe("unmergeable target", () => {
     expect(out?.result.kind).not.toBe("insertTab");
   });
 
-  it("edge split still works on an UNMERGEABLE docked group", () => {
-    // Right split band of the content area (rx > 1 - SPLIT_BAND).
+  it("side dock still works on an UNMERGEABLE docked group", () => {
+    // Right side band of the content area (rx > 1 - SPLIT_BAND) -> the
+    // canonical seam insert (D55).
     const out = run(layout, [target(true)], 300 - 10, 400)!;
-    expect(out.result.kind).toBe("split");
-    expect((out.result as { region: string }).region).toBe("right");
+    expect(out.result).toEqual({
+      kind: "columnInsert",
+      edge: "left",
+      index: 1,
+    });
   });
 
   it("floating UNMERGEABLE: center is null, snap-below still works", () => {
@@ -1801,7 +1894,7 @@ describe("draggingUnmergeable suppresses merge/insertTab from the SOURCE side", 
     expect(r?.result).toEqual({ kind: "snap", windowId: "w1", index: 1 });
   });
 
-  it("docked split is still offered; only the center merge is suppressed", () => {
+  it("docked side/column insert is still offered; only the center merge is suppressed", () => {
     const l = floatingLayoutAB();
     l.docked.left = {
       columns: [
@@ -1811,12 +1904,13 @@ describe("draggingUnmergeable suppresses merge/insertTab from the SOURCE side", 
     const targets: DropTargets = {
       groups: [dockTarget("a", "La", rect(0, 0, 300, 800))],
     };
-    // Left band of the content area (rx < 0.22) -> split left, allowed for
-    // unmergeable. x=50 is past the 40px region-side band, inside the split band.
+    // Left band of the content area (rx < 0.22) -> the seam-0 column insert
+    // (D55), allowed for unmergeable. x=50 is past the 40px region-side
+    // band, inside the side band.
     const split = hitTest(l, REGION_W, CONTAINER, targets, 50, 400, {
       draggingUnmergeable: true,
     });
-    expect(split?.result.kind).toBe("split");
+    expect(split?.result.kind).toBe("columnInsert");
     // Center of the content area -> merge without the flag, null with it.
     const center = hitTest(l, REGION_W, CONTAINER, targets, 150, 400);
     expect(center?.result.kind).toBe("merge");
@@ -1870,7 +1964,7 @@ describe("unmergeable header acts as the dock-above / snap-above zone", () => {
       groups: [unmergeableDockTarget(rect(680, 0, 320, 800))],
     };
     // Header center; past the region's suppressed top band (y=22 > 8 works
-    // because the single-leaf region suppresses the regionEdge zone).
+    // because the single-leaf region suppresses the region side bands).
     const hit = hitTest(l, REGION_W, CONTAINER, targets, 840, 22);
     expect(hit?.result).toEqual({
       kind: "split",
@@ -1914,7 +2008,7 @@ describe("unmergeable header acts as the dock-above / snap-above zone", () => {
       groups: [unmergeableDockTarget(rect(500, 0, 500, 800))],
     };
     const inBand = hitTest(l, REGION_W, CONTAINER, targets, 500 + 100, 400);
-    expect(inBand?.result).toMatchObject({ kind: "split", region: "left" });
+    expect(inBand?.result).toMatchObject({ kind: "columnInsert", index: 0 });
     const pastCap = hitTest(l, REGION_W, CONTAINER, targets, 500 + 140, 400);
     expect(pastCap).toBeNull(); // dead center for unmergeable, not "left"
   });

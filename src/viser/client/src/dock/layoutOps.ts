@@ -11,7 +11,6 @@
 import {
   AreaId,
   clamp,
-  DEFAULT_REGION_PX,
   DockColumn,
   DockEdge,
   DockLayout,
@@ -655,7 +654,8 @@ export function dockToEdge(
  * full-width band inserts are unrepresentable -- vertical arrangement is
  * leaf stacking within a column, via dropOnDockedLeaf). Optional weights
  * preserve the existing content's size (the new column grows the region
- * rather than resizing what's there). */
+ * rather than resizing what's there). Delegates to insertColumnAt (D55):
+ * the region's own side IS seam 0 / seam N. */
 export function dockToRegionEdge(
   layout: DockLayout,
   groupIds: GroupId[],
@@ -663,9 +663,59 @@ export function dockToRegionEdge(
   side: "left" | "right",
   weights?: { existing: number; dragged: number },
 ): DockLayout {
+  const region = layout.docked[edge];
+  const index =
+    side === "left" ? 0 : region === null ? 0 : region.columns.length;
+  return insertColumnAt(layout, groupIds, edge, index, weights);
+}
+
+/** Insert a stack of groups as a NEW FULL-HEIGHT COLUMN at seam `index`
+ * (0..N inclusive) of `edge`'s region -- THE canonical op for every
+ * full-height column insertion (D55): region-edge docking (seam 0/N, via
+ * dockToRegionEdge), per-panel side bands and divider-gap drops (interior
+ * seams, via dropOnDockedLeaf's left/right arm and the hit-test's
+ * columnInsert result), and rail side slivers all land here, so "adjacent
+ * zones on one seam are one drop" is structural rather than an audited
+ * equivalence (P9). An empty edge creates the region (the index is moot: a
+ * region of one). Optional `weights` rescales the existing columns vs the
+ * newcomer (dockToRegionEdge's contract); without it the newcomer's weight
+ * is a placeholder 1 -- applyOp's width reconciliation rewrites new-column
+ * weights to real pixels (D3/D40) on every commit, so pre-reconcile weights
+ * are transient on every consumer-visible path.
+ *
+ * Index bookkeeping: detaching a same-region dragged group can remove or
+ * shift columns, so a pre-detach index may go stale. The seam is captured
+ * as the set of column IDS to its left before detach and re-derived as the
+ * count of those that SURVIVE -- which also clamps by construction (the
+ * count can never exceed the live column count). Re-inserting a column's
+ * own groups at its own seam is the identity (no fresh-id churn -- the
+ * BUG #3 sole-leaf no-op, generalized to any column). */
+export function insertColumnAt(
+  layout: DockLayout,
+  groupIds: GroupId[],
+  edge: DockEdge,
+  index: number,
+  weights?: { existing: number; dragged: number },
+): DockLayout {
   groupIds = withoutAreaGroups(layout, groupIds);
   const ne = asNonEmpty(groupIds);
   if (ne === null) return layout;
+  const before = layout.docked[edge];
+  if (before !== null) {
+    // Self-insert identity: the dragged set IS an existing column, dropped
+    // at one of its own two seams. Detach+rebuild would only churn node ids.
+    const p = before.columns.findIndex(
+      (c) =>
+        c.leaves.length === ne.length &&
+        c.leaves.every((l, i) => l.group === ne[i]),
+    );
+    if (p >= 0 && (index === p || index === p + 1)) return layout;
+  }
+  // The seam, captured as the column ids left of it (clamped into range) so
+  // it survives the detach below.
+  const leftNeighborIds = new Set(
+    (before?.columns ?? []).slice(0, Math.max(0, index)).map((c) => c.id),
+  );
   const draft = clone(layout);
   const { heights: stackHeights, sourceCollapsed } =
     detachAllPreservingStackWeights(draft, ne);
@@ -678,8 +728,8 @@ export function dockToRegionEdge(
     draft.docked[edge] = regionOf(first);
     return draft;
   }
-  // A new full-height column beside everything -- a plain columns insert
-  // (D46: a vertical stack is one multi-leaf column).
+  // A new full-height column at the seam -- a plain columns insert (D46: a
+  // vertical stack is one multi-leaf column).
   const dw = weights?.dragged ?? 1;
   const column = buildColumn(ne, dw, stackHeights);
   // Identity transfer (D38): a collapsed window docked beside content lands
@@ -691,11 +741,9 @@ export function dockToRegionEdge(
       c.weight = (c.weight / total) * weights.existing;
     });
   }
-  const columns: NonEmpty<DockColumn> =
-    side === "left"
-      ? [column, ...existing.columns]
-      : [...existing.columns, column];
-  draft.docked[edge] = { columns };
+  // Re-derive the seam: the surviving left-neighbor count.
+  const at = existing.columns.filter((c) => leftNeighborIds.has(c.id)).length;
+  existing.columns = withInserted(existing.columns, at, column);
   return draft;
 }
 
@@ -724,9 +772,26 @@ export function dropOnDockedLeaf(
     return mergeGroupsInto(layout, target.leaf.group, ne);
   }
 
+  if (region === "left" || region === "right") {
+    // A side drop is a full-height column insert at the seam beside the
+    // target's COLUMN (D46: columns are the region's only horizontal
+    // partition, so a "beside just this cell" landing is unrepresentable).
+    // Delegated to the ONE canonical column-insert op (D55): the seam index
+    // derives from the target column's position, and insertColumnAt
+    // re-anchors it across the detach (a same-region drag can shift or
+    // remove columns) and preserves a railed target's P8 restore weight by
+    // construction -- it never touches existing columns' weights.
+    const ci = existingRegion!.columns.findIndex((c) =>
+      c.leaves.some((l) => l.id === targetNodeId),
+    );
+    return insertColumnAt(layout, ne, edge, region === "left" ? ci : ci + 1);
+  }
+
   const draft = clone(layout);
-  const { heights: stackHeights, sourceCollapsed } =
-    detachAllPreservingStackWeights(draft, ne);
+  // (Collapse transfer doesn't apply here: a top/bottom drop joins the
+  // target's column, and the receiving container's state wins -- no flag
+  // travels. Side drops carry it inside insertColumnAt.)
+  const { heights: stackHeights } = detachAllPreservingStackWeights(draft, ne);
   // Re-find the target leaf after detach. If a dragged group shared this edge,
   // detaching it may have dropped the target's column; if the target is gone (a
   // self-drop), abort rather than orphaning the dragged groups.
@@ -738,55 +803,22 @@ export function dropOnDockedLeaf(
 
   const li = targetColumn.leaves.findIndex((l) => l.id === targetNodeId);
 
-  // Sibling weights may be on any scale (divider drags write px values), so
-  // new-vs-target defaults derive from the target's current weight: each side
-  // takes half, which is scale-invariant and matches the hint's 50/50 promise.
-  if (region === "top" || region === "bottom") {
-    // Insert the dragged leaf(s) into the target's column, above/below it.
-    // The dragged stack as a whole takes half the target's weight (the
-    // hint's 50/50 promise); each leaf's share of that half follows the
-    // floated stack's preserved height ratios (P8 round-trip -- same rule as
-    // the left/right branch's buildColumn).
-    const half = live.leaf.weight / 2;
-    targetColumn.leaves[li] = { ...live.leaf, weight: half };
-    const shareOf = (g: GroupId) => stackHeights?.[g] ?? 1;
-    const totalShares = ne.reduce((s2, g) => s2 + shareOf(g), 0) || 1;
-    const banded = mapNonEmpty(ne, (g) =>
-      makeLeaf(g, (half * shareOf(g)) / totalShares),
-    );
-    const at = region === "top" ? li : li + 1;
-    targetColumn.leaves = withInserted(targetColumn.leaves, at, ...banded);
-    return draft;
-  }
-
-  // left / right: a new column beside the target's column (D46: columns
-  // are the region's only horizontal partition, so a side drop is a plain
-  // column insert -- a "beside just this cell" landing is unrepresentable,
-  // and the hint spans the full column to match, P1).
-  //
-  // A railed target column's stored weight is its P8 restore width (it
-  // renders at the fixed 36px strip regardless), so the 50/50 split must
-  // not touch it -- halving it would permanently corrupt the width the rail
-  // re-expands to. The newcomer takes the region default instead;
-  // reconciliation immediately rewrites that to the dragged window's real
-  // width.
-  const targetRailed = targetColumn.railed === true;
-  const targetShare = targetRailed
-    ? targetColumn.weight
-    : targetColumn.weight / 2;
-  const newShare = targetRailed ? DEFAULT_REGION_PX : targetColumn.weight / 2;
-  const newColumn = buildColumn(ne, newShare, stackHeights);
-  // Identity transfer (D38): a collapsed window dropped as a new column
-  // lands railed. (top/bottom drops join the target's column instead -- the
-  // receiving container's state wins there, so no flag travels.)
-  if (sourceCollapsed) newColumn.railed = true;
-  targetColumn.weight = targetShare;
-  const ci = draft.docked[edge]!.columns.findIndex(
-    (c) => c.id === targetColumn.id,
+  // top / bottom: insert the dragged leaf(s) into the target's column,
+  // above/below it. Sibling weights may be on any scale (divider drags
+  // write px values), so new-vs-target defaults derive from the target's
+  // current weight: the dragged stack as a whole takes half (the hint's
+  // 50/50 promise, scale-invariant); each leaf's share of that half
+  // follows the floated stack's preserved height ratios (P8 round-trip --
+  // the same rule insertColumnAt's buildColumn applies to side drops).
+  const half = live.leaf.weight / 2;
+  targetColumn.leaves[li] = { ...live.leaf, weight: half };
+  const shareOf = (g: GroupId) => stackHeights?.[g] ?? 1;
+  const totalShares = ne.reduce((s2, g) => s2 + shareOf(g), 0) || 1;
+  const banded = mapNonEmpty(ne, (g) =>
+    makeLeaf(g, (half * shareOf(g)) / totalShares),
   );
-  const at = region === "left" ? ci : ci + 1;
-  const liveRegion2 = draft.docked[edge]!;
-  liveRegion2.columns = withInserted(liveRegion2.columns, at, newColumn);
+  const at = region === "top" ? li : li + 1;
+  targetColumn.leaves = withInserted(targetColumn.leaves, at, ...banded);
   return draft;
 }
 

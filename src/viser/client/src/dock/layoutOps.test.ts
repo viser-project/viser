@@ -51,6 +51,7 @@ import {
   findGroupLocation,
   dockToEdge,
   dockToRegionEdge,
+  insertColumnAt,
   dropOnDockedLeaf,
   insertTabsInto,
   mergeGroupsInto,
@@ -662,6 +663,67 @@ describe("dockToRegionEdge", () => {
 });
 
 // ===========================================================================
+// insertColumnAt (D55): THE canonical full-height column insert. Region-edge
+// docking (0/N via dockToRegionEdge), per-panel side drops (dropOnDockedLeaf
+// left/right) and the hit-test's columnInsert result all delegate here.
+// ===========================================================================
+
+describe("insertColumnAt", () => {
+  const mk = () =>
+    makeLayout({
+      left: row([leaf("a"), leaf("b")]),
+      floating: [{ id: "w", stack: ["c"] }],
+    });
+
+  it("index 0 / N equal dockToRegionEdge's left/right sides (delegation sanity)", () => {
+    const via0 = insertColumnAt(mk(), ["c"], "left", 0);
+    const edge0 = dockToRegionEdge(mk(), ["c"], "left", "left");
+    expect(groupsInTree(via0.docked.left)).toEqual(["c", "a", "b"]);
+    expect(shapeOf(via0.docked.left)).toEqual(shapeOf(edge0.docked.left));
+    const viaN = insertColumnAt(mk(), ["c"], "left", 2);
+    const edgeN = dockToRegionEdge(mk(), ["c"], "left", "right");
+    expect(groupsInTree(viaN.docked.left)).toEqual(["a", "b", "c"]);
+    expect(shapeOf(viaN.docked.left)).toEqual(shapeOf(edgeN.docked.left));
+  });
+
+  it("an interior seam inserts between the flanking columns", () => {
+    const out = insertColumnAt(mk(), ["c"], "left", 1);
+    expect(groupsInTree(out.docked.left)).toEqual(["a", "c", "b"]);
+    expect(refCount(out, "c")).toBe(1);
+    expect(out.floating).toHaveLength(0);
+  });
+
+  it("clamps a stale index after a same-region detach (only group of column k to a far seam)", () => {
+    // [a][b]: dragging a (column 0's only group) to seam 2 detaches a's
+    // column first, so a splice at the captured index 2 would dangle past
+    // the end. The surviving-neighbor re-derivation lands it after b.
+    const l = makeLayout({ left: row([leaf("a"), leaf("b")]) });
+    const out = insertColumnAt(l, ["a"], "left", 2);
+    expect(groupsInTree(out.docked.left)).toEqual(["b", "a"]);
+    expect(refCount(out, "a")).toBe(1);
+    expect(invariantViolations(out)).toEqual([]);
+  });
+
+  it("dragging the only group of column k to its OWN seam is the identity (no id churn)", () => {
+    const l = makeLayout({ left: row([leaf("a"), leaf("b"), leaf("c")]) });
+    // Both seams of b's own column: re-inserting there changes nothing, so
+    // the op is a no-op rather than a detach + rebuild with fresh node ids.
+    expect(insertColumnAt(l, ["b"], "left", 1)).toBe(l);
+    expect(insertColumnAt(l, ["b"], "left", 2)).toBe(l);
+    // A genuinely different seam still moves it.
+    const out = insertColumnAt(l, ["b"], "left", 3);
+    expect(groupsInTree(out.docked.left)).toEqual(["a", "c", "b"]);
+  });
+
+  it("out-of-range indices clamp to the seam range [0..N]", () => {
+    const big = insertColumnAt(mk(), ["c"], "left", 99);
+    expect(groupsInTree(big.docked.left)).toEqual(["a", "b", "c"]);
+    const neg = insertColumnAt(mk(), ["c"], "left", -1);
+    expect(groupsInTree(neg.docked.left)).toEqual(["c", "a", "b"]);
+  });
+});
+
+// ===========================================================================
 // dropOnDockedLeaf  (center merge + 4 splits, with weights)
 // ===========================================================================
 
@@ -791,7 +853,13 @@ describe("dropOnDockedLeaf", () => {
     expect(colsOf(out.docked.left)).toEqual([["a", "b"], ["c"]]);
   });
 
-  it("a side drop halves the target COLUMN's weight (50/50 with the newcomer)", () => {
+  it("a side drop never touches existing columns' weights (D55/D40)", () => {
+    // The side arm delegates to insertColumnAt, which leaves every existing
+    // column's weight alone (a railed target's weight is its P8 restore
+    // width -- rewriting any weight here could corrupt it) and gives the
+    // newcomer a placeholder 1. Real pixels are assigned centrally by
+    // applyOp's width reconciliation on every consumer-visible path
+    // (pinned in widthReconciliation.test.ts, W9/W12).
     const layout = makeLayout({
       left: row([leaf("x"), col([leaf("a"), leaf("b")], 6)]),
       floating: [{ id: "w1", stack: ["c"] }],
@@ -800,8 +868,8 @@ describe("dropOnDockedLeaf", () => {
     const out = dropOnDockedLeaf(layout, ["c"], "left", id, "left");
     const cols = out.docked.left!.columns;
     expect(colsOf(out.docked.left)).toEqual([["x"], ["c"], ["a", "b"]]);
-    expect(cols[1].weight).toBeCloseTo(3); // newcomer: half the target's 6
-    expect(cols[2].weight).toBeCloseTo(3); // target: the other half
+    expect(cols[1].weight).toBe(1); // newcomer: placeholder, reconciled later
+    expect(cols[2].weight).toBe(6); // target: untouched
   });
 
   it("beside a cell of a column with column SIBLINGS: a new column at that seam", () => {

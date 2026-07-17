@@ -7,8 +7,8 @@
 //   - insertTab/snap indices are within the legal range for their target;
 //   - the hint rect is finite, non-negative size, and stays within the
 //     container bounds (with a small tolerance);
-//   - regionEdge results only appear when that edge is multi-cell (not a single
-//     full-span leaf) -- the suppression contract.
+//   - columnInsert results only appear on an occupied edge, with a seam
+//     index inside [0..columns] (D55).
 // We also tally which zones were ever reached, to flag dead zones.
 
 import { describe, it, expect } from "vitest";
@@ -20,7 +20,7 @@ import {
   GroupTarget,
   ContainerRect,
 } from "./hitTest";
-import { edgeIsSingleLeaf, isGroupEffectivelyCollapsed } from "./layoutOps";
+import { isGroupEffectivelyCollapsed } from "./layoutOps";
 import {
   DockEdge,
   DockLayout,
@@ -238,16 +238,16 @@ function validateResult(
       if (layout.docked[result.edge] !== null)
         errs.push(`edge ${result.edge} result but that edge is occupied`);
       break;
-    case "regionEdge": {
+    case "columnInsert": {
       const tree = layout.docked[result.edge];
       if (tree === null) {
-        errs.push(`regionEdge on empty edge ${result.edge}`);
+        errs.push(`columnInsert on empty edge ${result.edge}`);
         break;
       }
-      // Suppression contract: must be a multi-cell edge for that side.
-      if (edgeIsSingleLeaf(tree))
+      // The seam index addresses one of the region's N+1 seams (D55).
+      if (result.index < 0 || result.index > tree.columns.length)
         errs.push(
-          `regionEdge ${result.side} on a single-leaf edge (should be suppressed)`,
+          `columnInsert index ${result.index} out of [0..${tree.columns.length}] on ${result.edge}`,
         );
       break;
     }
@@ -256,9 +256,9 @@ function validateResult(
         errs.push(
           `split references missing node ${result.nodeId} on ${result.edge}`,
         );
-      // A split region must be one of the four sides ("center" merges instead and
-      // is excluded from the split result's type).
-      if (!["top", "bottom", "left", "right"].includes(result.region))
+      // A split is an in-column stack insert: top/bottom only ("center"
+      // merges; side intent is a columnInsert, D55).
+      if (!["top", "bottom"].includes(result.region))
         errs.push(`split result with illegal region "${result.region}"`);
       break;
     case "merge":
@@ -835,17 +835,21 @@ describe("hitTest left/right mirror symmetry", () => {
 
   /** The result the MIRRORED world must produce for a left-world result.
    * insertTab's index is dropped: mirroring reverses the strip spatially, so
-   * the index flips around the matched tab -- same group, different number. */
-  const expectTwin = (res: DropResult): unknown => {
+   * the index flips around the matched tab -- same group, different number.
+   * columnInsert's seam index flips around the region's column count
+   * (mirroring reverses the column order): seam i -> seam N - i. */
+  const expectTwin = (res: DropResult, layout: DockLayout): unknown => {
     switch (res.kind) {
       case "edge":
         return { kind: "edge", edge: flipLR(res.edge) };
-      case "regionEdge":
+      case "columnInsert": {
+        const n = layout.docked[res.edge]?.columns.length ?? 0;
         return {
-          kind: "regionEdge",
+          kind: "columnInsert",
           edge: flipLR(res.edge),
-          side: flipLR(res.side),
+          index: n - res.index,
         };
+      }
       case "split":
         return {
           kind: "split",
@@ -867,8 +871,8 @@ describe("hitTest left/right mirror symmetry", () => {
     switch (res.kind) {
       case "edge":
         return { kind: "edge", edge: res.edge };
-      case "regionEdge":
-        return { kind: "regionEdge", edge: res.edge, side: res.side };
+      case "columnInsert":
+        return { kind: "columnInsert", edge: res.edge, index: res.index };
       case "split":
         return {
           kind: "split",
@@ -913,7 +917,7 @@ describe("hitTest left/right mirror symmetry", () => {
             continue;
           }
           if (L === null || R === null) continue;
-          const want = JSON.stringify(expectTwin(L.result));
+          const want = JSON.stringify(expectTwin(L.result, layout));
           const got = JSON.stringify(canon(R.result));
           if (want !== got) {
             key(`result asymmetry at (${x},${y}): L=${want} R=${got}`);

@@ -463,11 +463,11 @@ export function useDragController(deps: DragControllerDeps) {
 
   // --- Split preview ------------------------------------------------------
   // Top/bottom splits make vertical room by actually shrinking the target
-  // leaf's height (its contents just scroll -- no distortion). Left/right
-  // splits don't change widths at all (the region grows on drop and the new
-  // panel brings its own width), so the leaf is left untouched -- only the
-  // ghost is shown. Hit-testing uses rects cached at drag start, so the live
-  // height change here doesn't move the drop zones.
+  // leaf's height (its contents just scroll -- no distortion). Column
+  // inserts (side intent, D55) don't change widths at all (the region grows
+  // on drop and the new panel brings its own width), so no leaf is touched
+  // -- only the seam line is shown. Hit-testing uses rects cached at drag
+  // start, so the live height change here doesn't move the drop zones.
   const previewLeaf = React.useRef<HTMLElement | null>(null);
   // The wrapper's inline background before the preview tinted it. The wrapper
   // can be a React-managed element with its own inline backgroundColor (when
@@ -487,15 +487,9 @@ export function useDragController(deps: DragControllerDeps) {
       wrapper.style.backgroundColor = previewWrapperBg.current;
     previewLeaf.current = null;
   };
-  const applyLeafPreview = (
-    nodeId: NodeId,
-    region: "top" | "bottom" | "left" | "right",
-  ) => {
-    // Left/right: no leaf change (ghost only).
-    if (region === "left" || region === "right") {
-      resetLeafPreview();
-      return;
-    }
+  const applyLeafPreview = (nodeId: NodeId, region: "top" | "bottom") => {
+    // (Side intent is a columnInsert, not a split -- it never reaches here;
+    // column inserts show only the seam line, no leaf change.)
     // A minimized cell has no content half to vacate: the "shrink to 50% + tint
     // the freed half" preview would just flood the narrow strip (region-tall) in
     // blue. The thin split line already shows where the new cell lands, so skip
@@ -736,8 +730,11 @@ export function useDragController(deps: DragControllerDeps) {
         // or server command.
         if (result.kind === "edge") {
           applyOp(ops.dockToEdge(base, stack, result.edge));
-        } else if (result.kind === "regionEdge") {
-          applyOp(ops.dockToRegionEdge(base, stack, result.edge, result.side));
+        } else if (result.kind === "columnInsert") {
+          // The canonical full-height column insert (D55): region-edge
+          // bands, panel/rail side bands, and divider gaps all arrive here
+          // with one seam index.
+          applyOp(ops.insertColumnAt(base, stack, result.edge, result.index));
         } else if (result.kind === "split") {
           applyOp(
             ops.dropOnDockedLeaf(
