@@ -1,7 +1,11 @@
 import React from "react";
 import { createStore, createKeyedStore } from "../store";
 import { CONTROL_PANEL_ID } from "./controlPanelId";
-import { MobilePanelSection, mobileSectionAfterAxis } from "./mobileSection";
+import {
+  MobilePanelSection,
+  mobileSectionAfterAxis,
+  mobileSectionsFromPlacement,
+} from "./mobileSection";
 
 import {
   GuiComponentMessage,
@@ -126,8 +130,9 @@ export interface GuiState {
   };
   /** Bumped by `resetPanelLayout` to force the dock to re-apply server placement
    * for every panel from scratch (the placement effects watch it and clear their
-   * per-panel applied-key). Paired with clearing `panelLayoutTracking` so the
-   * counter/dirty-bit gate lets every panel re-seed. */
+   * per-panel applied-key). Paired with clearing `panelLayoutTracking` -- and
+   * rebuilding `mobilePanelSections` from the stored axes -- so BOTH surfaces
+   * return to the layout the server set. */
   layoutResetNonce: number;
   /** True from `resetGui` (a (re)connect wiped the stores; the server's replay
    * is in flight) until the server's ReplayDoneMessage. While active,
@@ -628,6 +633,14 @@ export function useGuiState(initialServer: string) {
       resetPanelLayout: () => {
         store.set((state) => ({
           panelLayoutTracking: {},
+          // Mobile sections rebuild from the latest stored collapsed axes
+          // (the "layout the server set"), discarding user taps and
+          // watermarks -- reset must reach BOTH surfaces, and the mobile
+          // command effect can't do it (it re-runs on axis changes; reset
+          // re-applies axes without changing them).
+          mobilePanelSections: mobileSectionsFromPlacement(
+            state.panelPlacement,
+          ),
           layoutResetNonce: state.layoutResetNonce + 1,
         }));
       },

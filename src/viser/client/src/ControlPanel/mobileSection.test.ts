@@ -4,7 +4,10 @@
 // one surface must still apply to the other.
 
 import { describe, expect, it } from "vitest";
-import { mobileSectionAfterAxis } from "./mobileSection";
+import {
+  mobileSectionAfterAxis,
+  mobileSectionsFromPlacement,
+} from "./mobileSection";
 
 const RUN_A = "runAAAAA";
 
@@ -59,5 +62,22 @@ describe("mobileSectionAfterAxis", () => {
     });
     expect(next?.expanded).toBe(true);
     expect(next?.collapsedApplied).toEqual({ [RUN_A]: 6 });
+  });
+});
+
+describe("mobileSectionsFromPlacement (resetPanelLayout)", () => {
+  it("fourth-review regression: reset restores the server's stored collapse on mobile, discarding taps and watermarks", () => {
+    // Server expand() (c5) applied on mobile; the user tapped the section
+    // closed. Reset Panel Layout must return the section to the layout the
+    // server set -- expanded -- not preserve the tap behind a surviving
+    // watermark (the mobile effect can't do this: it re-runs on axis
+    // CHANGES, and reset re-applies axes without changing them).
+    const rebuilt = mobileSectionsFromPlacement({
+      p1: { collapsed: { value: false, counter: 5, runId: RUN_A } },
+      p2: {}, // no stored collapse command -> sheet default (no entry)
+    });
+    expect(rebuilt).toEqual({
+      p1: { expanded: true, collapsedApplied: { [RUN_A]: 5 } },
+    });
   });
 });

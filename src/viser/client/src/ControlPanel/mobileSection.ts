@@ -35,3 +35,21 @@ export function mobileSectionAfterAxis(
     },
   };
 }
+
+/** Rebuild every mobile section from the LATEST stored collapsed axis -- the
+ * "layout the server set" -- discarding user taps and watermarks. Panels with
+ * no stored collapse command return to the sheet default (collapsed, i.e. no
+ * entry). Used by resetPanelLayout: the mobile command effect only re-runs
+ * when an axis CHANGES, and reset re-applies axes without changing them, so
+ * the rebuild must happen synchronously in the store. */
+export function mobileSectionsFromPlacement(panelPlacement: {
+  [uuid: string]: { collapsed?: PlacementAxis<boolean> };
+}): { [uuid: string]: MobilePanelSection } {
+  const out: { [uuid: string]: MobilePanelSection } = {};
+  for (const [uuid, placement] of Object.entries(panelPlacement)) {
+    if (placement.collapsed === undefined) continue;
+    const next = mobileSectionAfterAxis(undefined, placement.collapsed);
+    if (next !== null) out[uuid] = next;
+  }
+  return out;
+}
