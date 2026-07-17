@@ -1727,6 +1727,70 @@ describe("owning-window mask: a window's header sliver never hits the docked tar
   });
 });
 
+// D53 synthetic pin (engine-independent proof of the header exclusion): a
+// railed column's cell rect starts BELOW the header chrome, exactly as the
+// scanner tiles it. Over the header run the cell must NOT claim (region-level
+// resolution: a columnInsert where the side bands reach, else null); at the
+// cell's top band, stack-above claims with the horizontal split line.
+describe("D53: rail header resolves at region level; cell claims start below it", () => {
+  const STRIP = 36;
+  const HEADER = 16; // StackHandleBar chrome above the first cell
+  // One railed column on the LEFT edge; cell rect starts HEADER below the
+  // strip top, exactly like the real scanner post-D53.
+  const build = () => {
+    const l = emptyLayout();
+    l.groups = { a: group("a") };
+    const tree = colSplit([leaf("a")]);
+    l.docked.left = toRegion(tree);
+    l.docked.left!.columns[0].railed = true;
+    const nodeId = leafIdsOf(tree)[0];
+    const tgt: GroupTarget = {
+      groupId: "a",
+      rect: rect(0, HEADER, STRIP, 800 - HEADER),
+      stripRect: null,
+      tabs: [{ paneId: "a.0", rect: rect(0, HEADER + 20, STRIP, 24) }],
+      ctx: { kind: "docked", nodeId, edge: "left" },
+      collapsed: true,
+    };
+    return { l, tgt };
+  };
+  const stripW: Record<DockEdge, number> = { left: STRIP, right: 0 };
+
+  it("over the header run: never the cell's stack-above; region bands may claim", () => {
+    const { l, tgt } = build();
+    for (const x of [4, 18, 32]) {
+      const out = hitTest(l, stripW, CONTAINER, { groups: [tgt] }, x, 8);
+      if (out !== null) {
+        expect(out.result.kind).toBe("columnInsert"); // region-level only
+      }
+    }
+  });
+
+  it("at the cell's top band (below the chrome): stack-above with the horizontal line", () => {
+    const { l, tgt } = build();
+    const out = hitTest(
+      l,
+      stripW,
+      CONTAINER,
+      { groups: [tgt] },
+      18,
+      HEADER + 4,
+    )!;
+    expect(out).not.toBeNull();
+    expect(out.result).toEqual({
+      kind: "split",
+      edge: "left",
+      nodeId: tgt.ctx.kind === "docked" ? tgt.ctx.nodeId : "",
+      region: "top",
+    });
+    expect(out.hint.variant).toBe("line");
+    // Horizontal strip-wide line at the honest seam (the cell's top), never
+    // above the chrome.
+    expect(out.hint.width).toBeGreaterThan(out.hint.height);
+    expect(out.hint.top + out.hint.height / 2).toBeCloseTo(HEADER, 0);
+  });
+});
+
 // Scan regression pin (G5): the empty-screen-edge zones yield to an owning
 // float (§3.5). A window parked within the 48px band of an EMPTY edge owns
 // the pointer -- a drop there targets the float, never docks a column

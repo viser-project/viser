@@ -58,7 +58,11 @@ const RAIL_ROW = 70; // one spine row (icon + rotated title)
  * the real layout: a row splits width, a column splits height. Tabs are placed
  * along the strip; a group with >tabsPerRow panes wraps to a second row.
  * RAILED columns render like the real ColumnRail: fixed 36px wide, collapsed
- * targets with content-tall interior cells and full-strip first/last rects. */
+ * targets with content-tall interior cells; the LAST cell extends to the
+ * strip's bottom, and the header run above the first cell is EXCLUDED (D53:
+ * the `+`/chevron chrome is controls, not a cell drop surface -- this model
+ * must match the real scanner's tiling or the sweep approves the reversed
+ * contract). */
 function dockedTargets(
   layout: DockLayout,
   edge: DockEdge,
@@ -91,7 +95,8 @@ function dockedTargets(
       if (column.railed === true) {
         // ColumnRail: header, then content-tall cells; drop rects of the
         // first/last cell extend to the strip box (rails' droppable surface
-        // is the full strip -- no dead header run or empty tail) AND every
+        // runs from BELOW the header chrome to the strip's bottom (D53:
+        // the header resolves at region level, not as a cell) AND every
         // cell is CLAMPED to the rail root (band) box -- an overflowing
         // spine must not bleed targets into the next band (the scanner's
         // clamp, stability pass 2026-07). Fully-overflowed cells are
@@ -104,6 +109,7 @@ function dockedTargets(
           const group = layout.groups[lf.group];
           const nTabs = Math.max(1, group?.paneIds.length ?? 1);
           const cellH = RAIL_CAP + RAIL_PAD + nTabs * RAIL_ROW;
+          const cellStart = cellTop;
           const tabs = (group?.paneIds ?? []).map((paneId, i) => ({
             paneId,
             rect: rect(
@@ -113,7 +119,10 @@ function dockedTargets(
               RAIL_ROW,
             ),
           }));
-          const top = li === 0 ? railTop : Math.max(cellTop, railTop);
+          // D53: no header-run claim -- every cell's rect starts where the
+          // cell starts (clamped to the strip box), exactly like the real
+          // scanner; only the LAST cell extends to the strip's bottom.
+          const top = Math.max(cellStart, railTop);
           const bottom =
             li === column.leaves.length - 1
               ? railBottom

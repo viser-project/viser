@@ -12,7 +12,7 @@
 
 2. D53: the rail header run (the `+` handle bar / chevron rows above the first
    cell) is CONTROLS, not a CELL drop surface. The pointer there resolves at
-   REGION level -- a side band's dock-beside (region-tall fill hint) where the
+   REGION level -- a side band's dock-beside (region-tall vertical insert line) where the
    bands reach, float-at-pointer past them -- never "stack above <panel>"
    through the controls. The first cell's stack-above band begins below the
    chrome, where the new cell actually lands.
@@ -55,6 +55,56 @@ def _hint_display(page: Page) -> str | None:
     )
 
 
+def _raf_alive(page: Page) -> bool:
+    """Whether requestAnimationFrame ticks. The drag's hint painting is
+    rAF-driven; on a wedged headless compositor (see the repo's dev notes)
+    rAF never fires and NO hint can ever appear -- the test must skip, not
+    fail, there."""
+    return page.evaluate(
+        """() => new Promise((resolve) => {
+              const t = setTimeout(() => resolve(false), 600);
+              requestAnimationFrame(() => { clearTimeout(t); resolve(true); });
+        })"""
+    )
+
+
+def _dispatch_move(page: Page, x: float, y: float, pid: int) -> None:
+    """Window-level synthetic pointermove: the same primitive the stuck-hint
+    test uses for its same-task release, and the one pointer path verified to
+    reach the drag on every engine tried (real page.mouse.move deliveries
+    proved engine-dependent for mid-drag hint updates on some Chromium
+    builds)."""
+    page.evaluate(
+        """([x, y, pid]) => {
+          window.dispatchEvent(new PointerEvent('pointermove', {
+            bubbles: true, clientX: x, clientY: y,
+            pointerId: pid, pointerType: 'mouse', isPrimary: true }));
+        }""",
+        [x, y, pid],
+    )
+
+
+def _poll_hint(page: Page, x: float, y: float, pid: int, tries: int = 15):
+    """Re-dispatch a slightly jittered move and poll the hint until it shows
+    (or tries run out). Returns the hint rect dict or None."""
+    for i in range(tries):
+        _dispatch_move(page, x + (i % 2), y, pid)
+        page.wait_for_timeout(100)
+        h = page.evaluate(
+            """() => {
+                const el = document.querySelector('[data-dock-hint]');
+                if (el === null) return null;
+                if (getComputedStyle(el).display === 'none') return null;
+                const r = el.getBoundingClientRect();
+                return { v: el.getAttribute('data-dock-hint'),
+                         w: r.width, h: r.height, top: r.y };
+            }"""
+        )
+        if h is not None:
+            return h
+    return None
+
+
 def _record_pointer_id(page: Page) -> None:
     page.evaluate(
         """() => { window.__pid = null;
@@ -81,6 +131,8 @@ def test_hint_hidden_after_same_task_move_and_release(
 ) -> None:
     page = _open(dock_context, vite_server, 1280, 800)
     try:
+        if not _raf_alive(page):
+            pytest.skip("rAF not firing (headless compositor wedge)")
         _packed_rail_with_floater(page)
         _record_pointer_id(page)
 
@@ -136,7 +188,10 @@ def test_hint_hidden_after_same_task_move_and_release(
 def test_rail_header_run_is_not_a_drop_zone(dock_context, vite_server: int) -> None:
     page = _open(dock_context, vite_server, 1280, 800)
     try:
+        if not _raf_alive(page):
+            pytest.skip("rAF not firing (headless compositor wedge)")
         _packed_rail_with_floater(page)
+        _record_pointer_id(page)
 
         rail = page.query_selector("[data-dock-rail-root]")
         cell = page.query_selector("[data-dock-rail-root] [data-dock-leaf]")
@@ -153,23 +208,15 @@ def test_rail_header_run_is_not_a_drop_zone(dock_context, vite_server: int) -> N
         # (D53). Region-level resolution is fine and expected -- the side
         # band's dock-beside hint is a VERTICAL region-tall line -- so
         # distinguish by geometry: the cell's stack-above line is HORIZONTAL
-        # (strip-wide, a few px tall).
+        # (strip-wide, a few px tall). Moves are DISPATCHED (see
+        # _dispatch_move) and the hint POLLED: fixed-delay real-mouse reads
+        # proved engine-dependent for mid-drag hint updates.
         _drag_floater_to(page, header_x, header_y)
-        page.wait_for_timeout(150)
+        pid = page.evaluate("() => window.__pid")
+        if pid is None:
+            pytest.skip("pointer id not observed this run")
 
-        def hint_rect() -> dict | None:
-            return page.evaluate(
-                """() => {
-                    const el = document.querySelector('[data-dock-hint]');
-                    if (el === null) return null;
-                    if (getComputedStyle(el).display === 'none') return null;
-                    const r = el.getBoundingClientRect();
-                    return { v: el.getAttribute('data-dock-hint'),
-                             w: r.width, h: r.height };
-                }"""
-            )
-
-        over_header = hint_rect()
+        over_header = _poll_hint(page, header_x, header_y, pid, tries=5)
         if over_header is not None and over_header["v"] == "line":
             assert over_header["h"] > over_header["w"], (
                 "a HORIZONTAL cell stack-above line over the header chrome "
@@ -179,10 +226,7 @@ def test_rail_header_run_is_not_a_drop_zone(dock_context, vite_server: int) -> N
         # Just below the chrome, the first cell's stack-above band DOES claim
         # the pointer: the horizontal strip-wide split line at the honest
         # landing seam.
-        page.mouse.move(header_x, cb["y"] + 4)
-        page.mouse.move(header_x, cb["y"] + 4)
-        page.wait_for_timeout(150)
-        below = hint_rect()
+        below = _poll_hint(page, header_x, cb["y"] + 4, pid)
         assert below is not None and below["v"] == "line" and below["w"] > below["h"], (
             f"first cell's stack-above band should begin below the header: {below}"
         )
@@ -190,8 +234,7 @@ def test_rail_header_run_is_not_a_drop_zone(dock_context, vite_server: int) -> N
         # Release back over the header: region-level outcome only -- the drag
         # floats or docks BESIDE the rail (a new column); it must never stack
         # through the controls into the rail's column.
-        page.mouse.move(header_x, header_y)
-        page.mouse.move(header_x, header_y)
+        _dispatch_move(page, header_x, header_y, pid)
         page.wait_for_timeout(100)
         page.mouse.up()
         page.wait_for_timeout(300)

@@ -45,13 +45,14 @@ export function ColumnRail({
   };
   return (
     <Box
-      // The rail's droppable surface is the full strip (spec 3.3: rails hold
-      // width, not height -- the strip renders region-tall). The cells
-      // inside size to content, so DockManager's target scanner extends the
-      // first/last cell's drop rect to this root's box (data-dock-rail-root)
-      // -- the header run and the empty tail below the spine rows must not
-      // be dead pixels -- and CLAMPS every cell to it, so an overflowing
-      // (scrolling) spine can't bleed drop targets past the strip's box.
+      // The rail's droppable CELL surface runs from below the header chrome
+      // to the strip's bottom (D53: the `+`/chevron rows above the first
+      // cell are controls, resolved at region level, never a cell claim).
+      // The cells inside size to content, so DockManager's target scanner
+      // extends the LAST cell's drop rect to this root's bottom
+      // (data-dock-rail-root) -- the empty tail below the spine rows must
+      // not be dead pixels -- and CLAMPS every cell to the strip's box, so
+      // an overflowing (scrolling) spine can't bleed drop targets past it.
       data-dock-rail-root={column.id}
       style={{
         display: "flex",
@@ -259,10 +260,10 @@ export function VerticalMinimizedCell({
     </Box>
   );
   // The wrapper carries data-dock-leaf/-edge and sizes to content. For a
-  // column rail, DockManager's scanner extends the first/last cell's drop
-  // rect to the rail root's full strip (data-dock-rail-root above): the
-  // strip's header run and empty tail tile onto those cells' zones instead
-  // of going dead.
+  // column rail, DockManager's scanner extends the LAST cell's drop rect to
+  // the rail root's bottom (data-dock-rail-root above) so the empty tail
+  // tiles onto that cell's zones; the header run above the first cell stays
+  // out of the cell surface (D53 -- it's controls, region-level).
   return (
     <Box
       data-dock-leaf={nodeId}

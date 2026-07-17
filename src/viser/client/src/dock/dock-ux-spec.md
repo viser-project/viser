@@ -1319,8 +1319,9 @@ consuming paragraphs.
   above <first panel>" begins below the `+`/chevron chrome and its
   split line draws at the honest landing seam. The header pixels fall
   through to REGION-level resolution: §5.1 side bands where they reach
-  (dock a column beside the rail — the region-tall fill hint cannot be
-  mistaken for a cell claim), float-at-pointer past them. The P5
+  (dock a column beside the rail — the region-tall vertical insert
+  line cannot be mistaken for a cell claim), float-at-pointer past
+  them. The P5
   concern the old rule cited is about states having exits, not every
   pixel being a cell target, and both region-level outcomes are
   well-defined. Expanded columns deliberately keep their parent-handle
