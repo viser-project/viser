@@ -1242,8 +1242,14 @@ consuming paragraphs.
   counter applies to touched and untouched panels alike), so the whole
   inference layer — commit signature diffing, dissolved-group
   accounting, `markPanelUserTouched` — is gone rather than patched. The
-  mobile sheet records its collapse applications in the same store, so
-  commands apply exactly once across surfaces and survive remounts.
+  mobile sheet keeps its OWN watermark plus its rendered collapse state
+  in the store (amended after a third external review pass: a watermark
+  is only valid while the state its application produced survives, and
+  desktop/mobile don't share collapse state — one shared mark let a
+  desktop-consumed `expand()` starve a freshly mounted sheet section,
+  and a reconnect remount lost the state while the mark lived on).
+  Both surfaces arbitrate with the same per-run high-water rule; they
+  just do it independently, like the representations they gate.
 
 Retired — one line per ID; the pointer is where any surviving content
 lives:

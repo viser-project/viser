@@ -79,36 +79,33 @@ function useShowGenerated(): boolean {
 function MobilePanelSection({ panel }: { panel: GuiPanelMessage }) {
   const { GuiContainer } = React.useContext(GuiComponentContext)!;
   const viewer = React.useContext(ViewerContext)!;
-  const [expanded, setExpanded] = React.useState(false);
-  // Server `minimize()` / `expand()` reach the mobile sheet too: the
-  // collapsed placement axis toggles this section. The mobile DEFAULT stays
-  // collapsed (deliberate: the sheet is wayfinding chrome) -- the axis is
-  // honored as a COMMAND, applied once above its per-run high-water mark, so
-  // a user's tap wins afterwards until a genuinely newer command arrives --
-  // the same D52 arbitration as the dock, RECORDED IN THE SAME STORE. The
-  // shared record is load-bearing twice over: it survives this component's
-  // unmount (a reconnect remounts the section; a ref-based dedup replayed the
-  // old command), and it makes commands apply exactly once ACROSS surfaces (a
-  // command applied on the desktop dock doesn't re-fire when the viewport
-  // shrinks to mobile -- switching back the other way is covered by the
-  // gate's unplaced arm, which re-applies everything to a fresh dock).
+  // The section's collapse state and command watermark BOTH live in the gui
+  // store (MobilePanelSection): a watermark is only valid while the state its
+  // application produced survives, so component-local state (which dies on a
+  // reconnect remount or a breakpoint flip) can't carry either half. The
+  // watermark is SURFACE-SPECIFIC -- deliberately NOT the dock's
+  // panelLayoutTracking: desktop and mobile are independent representations
+  // of collapse, so an `expand()` consumed by the desktop dock must still
+  // apply here when the viewport shrinks (a shared mark starved the sheet and
+  // left it collapsed against the latest imperative command). The mobile
+  // DEFAULT stays collapsed (deliberate: the sheet is wayfinding chrome); the
+  // axis is honored as a COMMAND, once above the section's own per-run mark,
+  // so a user's tap wins afterwards until a genuinely newer command arrives.
+  const expanded = viewer.useGui(
+    (state) => state.mobilePanelSections[panel.uuid]?.expanded ?? false,
+  );
+  const setExpanded = React.useCallback(
+    (next: boolean) =>
+      viewer.guiActions.setMobileSectionExpanded(panel.uuid, next),
+    [viewer, panel.uuid],
+  );
   const collapsedAxis = viewer.useGui(
     (state) => state.panelPlacement[panel.uuid]?.collapsed,
   );
-  const appliedCollapsed = viewer.useGui(
-    (state) => state.panelLayoutTracking[panel.uuid]?.collapsed,
-  );
   React.useEffect(() => {
     if (collapsedAxis === undefined) return;
-    if (
-      (appliedCollapsed?.[collapsedAxis.runId] ?? -1) >= collapsedAxis.counter
-    )
-      return;
-    viewer.guiActions.recordPanelLayoutApplied(panel.uuid, {
-      collapsed: { [collapsedAxis.runId]: collapsedAxis.counter },
-    });
-    setExpanded(!collapsedAxis.value);
-  }, [collapsedAxis, appliedCollapsed, panel.uuid, viewer]);
+    viewer.guiActions.applyMobileCollapsedAxis(panel.uuid, collapsedAxis);
+  }, [collapsedAxis, panel.uuid, viewer]);
   const labels = panel.props._tab_labels;
   const icons = panel.props._tab_icons_html;
   const ids = panel.props._tab_container_ids;
@@ -190,7 +187,7 @@ function MobilePanelSection({ panel }: { panel: GuiPanelMessage }) {
         </Box>
       ) : (
         <Box
-          onClick={() => setExpanded((e) => !e)}
+          onClick={() => setExpanded(!expanded)}
           role="button"
           aria-expanded={expanded}
           aria-label={`${expanded ? "Collapse" : "Expand"} panel ${
@@ -200,7 +197,7 @@ function MobilePanelSection({ panel }: { panel: GuiPanelMessage }) {
           onKeyDown={(ev) => {
             if (ev.key === "Enter" || ev.key === " ") {
               ev.preventDefault();
-              setExpanded((e) => !e);
+              setExpanded(!expanded);
             }
           }}
           style={{

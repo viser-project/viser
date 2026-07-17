@@ -1,6 +1,7 @@
 import React from "react";
 import { createStore, createKeyedStore } from "../store";
 import { CONTROL_PANEL_ID } from "./controlPanelId";
+import { MobilePanelSection, mobileSectionAfterAxis } from "./mobileSection";
 
 import {
   GuiComponentMessage,
@@ -139,6 +140,10 @@ export interface GuiState {
    * complete. Dormant registry entries whose uuid was not revived are purged
    * on this signal. */
   replayDoneNonce: number;
+  /** Mobile bottom-sheet sections, keyed by panel uuid (see
+   * MobilePanelSection). Survives `resetGui` for the same reason
+   * panelLayoutTracking does; pruned at replay-done and on removal. */
+  mobilePanelSections: { [uuid: string]: MobilePanelSection };
 }
 
 export interface GuiActions {
@@ -184,6 +189,15 @@ export interface GuiActions {
     counter: number,
     runId: string,
   ) => void;
+  /** Set a mobile sheet section's rendered collapse state (user tap). */
+  setMobileSectionExpanded: (uuid: string, expanded: boolean) => void;
+  /** Arbitrate a collapsed-axis command against the mobile section's OWN
+   * watermark (surface-specific -- see MobilePanelSection) and apply it when
+   * fresh. */
+  applyMobileCollapsedAxis: (
+    uuid: string,
+    axis: PlacementAxis<boolean>,
+  ) => void;
   setPanelCollapsed: (
     uuid: string,
     collapsed: boolean,
@@ -228,6 +242,7 @@ const cleanGuiState: GuiState = {
   panelPlacement: {},
   panelLayoutTracking: {},
   layoutResetNonce: 0,
+  mobilePanelSections: {},
   // False until a connection's resetGui: a standalone dock (playground, no
   // websocket) never enters a replay phase.
   replayActive: false,
@@ -381,10 +396,17 @@ export function useGuiState(initialServer: string) {
             const { [id]: _tracked, ...restTracking } = tracking;
             tracking = restTracking;
           }
+          let mobile = state.mobilePanelSections;
+          if (id in mobile) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { [id]: _mobile, ...restMobile } = mobile;
+            mobile = restMobile;
+          }
           return {
             panels: rest,
             panelPlacement: restPlacement,
             panelLayoutTracking: tracking,
+            mobilePanelSections: mobile,
           };
         });
       },
@@ -456,6 +478,9 @@ export function useGuiState(initialServer: string) {
           const entries = Object.entries(state.panelLayoutTracking).filter(
             ([uuid]) => live.has(uuid),
           );
+          const mobile = Object.entries(state.mobilePanelSections).filter(
+            ([uuid]) => live.has(uuid),
+          );
           return {
             replayActive: false,
             replayDoneNonce: state.replayDoneNonce + 1,
@@ -463,6 +488,10 @@ export function useGuiState(initialServer: string) {
               entries.length === Object.keys(state.panelLayoutTracking).length
                 ? state.panelLayoutTracking
                 : Object.fromEntries(entries),
+            mobilePanelSections:
+              mobile.length === Object.keys(state.mobilePanelSections).length
+                ? state.mobilePanelSections
+                : Object.fromEntries(mobile),
           };
         });
       },
@@ -531,6 +560,36 @@ export function useGuiState(initialServer: string) {
       setPanelWidth: setPanelAxis("width"),
       setPanelHeight: setPanelAxis("height"),
       setPanelCollapsed: setPanelAxis("collapsed"),
+      setMobileSectionExpanded: (uuid, expanded) => {
+        store.set((state) => {
+          const prev = state.mobilePanelSections[uuid];
+          if (prev?.expanded === expanded) return {};
+          return {
+            mobilePanelSections: {
+              ...state.mobilePanelSections,
+              [uuid]: {
+                expanded,
+                collapsedApplied: prev?.collapsedApplied ?? {},
+              },
+            },
+          };
+        });
+      },
+      applyMobileCollapsedAxis: (uuid, axis) => {
+        store.set((state) => {
+          const next = mobileSectionAfterAxis(
+            state.mobilePanelSections[uuid],
+            axis,
+          );
+          if (next === null) return {};
+          return {
+            mobilePanelSections: {
+              ...state.mobilePanelSections,
+              [uuid]: next,
+            },
+          };
+        });
+      },
       recordPanelLayoutApplied: (uuid, applied) => {
         store.set((state) => {
           const prev = state.panelLayoutTracking[uuid];
