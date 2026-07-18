@@ -177,6 +177,19 @@ export function hasCmdCtrl(modifier: KeyModifier | null): boolean {
  * sites by reference, not by repeated literal. */
 export const MOTION_THRESHOLD_PX = 3;
 
+/** How long a *switch-created* drag segment's ``start`` is held back
+ * before being sent. A mid-drag modifier change ends the old segment
+ * immediately, but the new segment's ``start`` only goes out once the
+ * switch is confirmed: by this timer expiring, or sooner by pointer
+ * motion past :data:`MOTION_THRESHOLD_PX` from the switch point. If the
+ * button is released first, the pending ``start`` is discarded --
+ * releasing the modifier a beat before the mouse button (the natural
+ * order for ending a modifier-drag) must not fire a degenerate
+ * ``start``/``end`` pair on whatever combo remains. The same philosophy
+ * as the motion threshold at drag promotion, applied at segment
+ * boundaries. */
+export const SWITCH_START_DELAY_MS = 100;
+
 /** ``true`` when the L∞ distance between ``start`` and ``end`` exceeds
  * :data:`MOTION_THRESHOLD_PX`. Equivalent to the duplicated inline
  * ``Math.abs(end[0] - start[0]) > N || Math.abs(end[1] - start[1]) > N``
@@ -237,8 +250,20 @@ export type ActiveDragState = {
   /** Whether an in-flight segment is currently active (a ``start`` was
    * sent and its ``end`` hasn't). ``false`` while dormant -- the gesture
    * is physically held but the current modifier matches no binding, so
-   * no messages are sent. */
+   * no messages are sent -- and while a switch-created ``start`` is
+   * still pending confirmation (see ``pendingStart``). */
   segmentActive: boolean;
+  /** A switch-created segment whose ``start`` has not been sent yet
+   * (see :data:`SWITCH_START_DELAY_MS`). Confirmed -- and the ``start``
+   * sent -- by the timer or by pointer motion past the threshold from
+   * ``switchPointerXy`` (canvas-relative, captured at the switch);
+   * discarded wholesale if the drag ends or the modifier changes again
+   * first, in which case no message was ever sent for the segment.
+   * ``null`` when no start is pending. */
+  pendingStart: {
+    timerId: ReturnType<typeof setTimeout>;
+    switchPointerXy: [number, number];
+  } | null;
   /** Release for the camera-control lock held for the lifetime of
    * this drag. Called in `stopActiveDrag` (and on every cancel
    * path). Routing through `cameraLock` keeps a concurrent

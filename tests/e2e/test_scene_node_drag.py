@@ -521,6 +521,108 @@ def test_scene_node_drag_binding_added_mid_drag(
     )
 
 
+def test_scene_node_drag_modifier_release_before_button(
+    page: Page,
+    viser_server: viser.ViserServer,
+) -> None:
+    """Releasing the modifier a beat before the mouse button must not fire
+    a degenerate segment on the combo left behind.
+
+    With both a bare binding (no modifier) and ``cmd/ctrl`` registered,
+    ending a Ctrl-drag "modifier first, button second" (the natural
+    order) switches to the bare combo for the few milliseconds before
+    release. A switch-created segment's ``start`` is deferred
+    (``SWITCH_START_DELAY_MS``) and discarded when the button comes up
+    inside the window -- so the bare callback sees NOTHING, and the ctrl
+    callback sees one clean pair. A follow-up bare drag proves the bare
+    binding itself is live (the zero above isn't vacuous)."""
+    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
+
+    bare_starts = [0]
+    bare_ends = [0]
+    ctrl_starts = [0]
+    ctrl_ends = [0]
+    lock = threading.Lock()
+    ctrl_started = threading.Event()
+    ctrl_ended = threading.Event()
+    bare_started = threading.Event()
+    bare_ended = threading.Event()
+
+    box = viser_server.scene.add_box(
+        "/release_order_box",
+        dimensions=(4.0, 4.0, 0.2),
+        color=(240, 120, 120),
+    )
+
+    def _bare_start(_event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            bare_starts[0] += 1
+        bare_started.set()
+
+    def _bare_end(_event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            bare_ends[0] += 1
+        bare_ended.set()
+
+    def _ctrl_start(_event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            ctrl_starts[0] += 1
+        ctrl_started.set()
+
+    def _ctrl_end(_event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            ctrl_ends[0] += 1
+        ctrl_ended.set()
+
+    _on_drag_phase(box, "start", "left")(_bare_start)
+    _on_drag_phase(box, "end", "left")(_bare_end)
+    _on_drag_phase(box, "start", "left", modifier="cmd/ctrl")(_ctrl_start)
+    _on_drag_phase(box, "end", "left", modifier="cmd/ctrl")(_ctrl_end)
+
+    wait_for_connection(page, viser_server.get_port())
+    wait_for_scene_node(page, "/release_order_box")
+
+    (start_x, start_y), (end_x, end_y) = _get_canvas_drag_points(page)
+
+    # Ctrl-drag, then end it modifier-first: keyup immediately followed by
+    # mouse-up, well inside the deferral window.
+    page.keyboard.down("Control")
+    page.mouse.move(start_x, start_y)
+    page.mouse.down()
+    page.mouse.move(end_x, end_y, steps=8)
+    assert ctrl_started.wait(timeout=5.0), "cmd/ctrl segment didn't start"
+    page.keyboard.up("Control")
+    page.mouse.up()
+    assert ctrl_ended.wait(timeout=5.0), "cmd/ctrl segment didn't end"
+
+    # Give any (buggy) deferred bare start ample time to fire, then pin:
+    # the bare binding saw nothing, the ctrl binding saw one clean pair.
+    page.wait_for_timeout(600)
+    with lock:
+        assert bare_starts[0] == 0 and bare_ends[0] == 0, (
+            "modifier-first release fired a degenerate segment on the bare "
+            f"binding: {bare_starts[0]} starts, {bare_ends[0]} ends"
+        )
+        assert ctrl_starts[0] == 1 and ctrl_ends[0] == 1, (
+            ctrl_starts[0],
+            ctrl_ends[0],
+        )
+
+    # Positive control: a plain unmodified drag drives the bare binding.
+    page.mouse.move(start_x, start_y)
+    page.mouse.down()
+    page.mouse.move(end_x, end_y, steps=8)
+    assert bare_started.wait(timeout=5.0), "bare segment didn't start"
+    page.mouse.up()
+    assert bare_ended.wait(timeout=5.0), "bare segment didn't end"
+    with lock:
+        assert bare_starts[0] == 1 and bare_ends[0] == 1, (
+            bare_starts[0],
+            bare_ends[0],
+        )
+
+
 def test_scene_node_drag_many_stages_one_drag(
     page: Page,
     viser_server: viser.ViserServer,

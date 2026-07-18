@@ -637,6 +637,15 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         separate ``on_drag`` for each modifier combo. ``event.modifier``
         identifies the active segment.
 
+        A switch-created segment's ``start`` is confirmed briefly
+        (~100ms, or sooner on pointer motion) before it fires; releasing
+        the mouse button within that window discards the segment
+        entirely. In particular, releasing the modifier a beat before
+        the button -- the natural way to end a modifier-drag -- does
+        *not* fire a spurious start/end pair on the combo left behind
+        (e.g. a bare ``on_drag`` registered alongside a modifier
+        binding).
+
         Usable as a bare decorator (``@handle.on_drag``, defaults to
         ``button="left"`` and no modifiers) or with arguments
         (``@handle.on_drag("left", modifier="cmd/ctrl")``).

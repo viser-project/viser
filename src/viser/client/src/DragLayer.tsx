@@ -36,8 +36,10 @@ import {
   computeInstanceWorldMatrix,
   isInstancedMesh2VendoredMessage,
   keyModifierFromEvent,
+  motionExceedsThreshold,
   planDragStart,
   planModifierTransition,
+  SWITCH_START_DELAY_MS,
 } from "./dragUtils";
 import { DragLayerApi, DragLayerContext } from "./dragLayerContext";
 import { useDragArrow } from "./useDragArrow";
@@ -45,6 +47,15 @@ import { useDragArrow } from "./useDragArrow";
 // =============================================================================
 // DragLayer component.
 // =============================================================================
+
+/** Discard a not-yet-confirmed switch-created ``start`` (no-op when none
+ * is pending). No wire message was ever sent for the pending segment, so
+ * nothing needs ending -- the segment simply never existed. */
+function discardPendingStart(activeDrag: ActiveDragState): void {
+  if (activeDrag.pendingStart === null) return;
+  clearTimeout(activeDrag.pendingStart.timerId);
+  activeDrag.pendingStart = null;
+}
 
 /** In playback / embedded / static viewers ``sendMessage`` is a no-op,
  * so dragging makes no sense (it would disable camera controls and
@@ -248,11 +259,30 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
     [buildDragMessage, sendDragsThrottled, viewerMutable],
   );
 
-  // Apply a mid-drag modifier change. Ends the current segment (if any),
-  // switches ownership to ``nextModifier``, and starts a fresh segment
-  // when the new combo is bound. Geometry is untouched, so the drag
-  // continues without a visual jump -- only the addressed callback set
-  // changes. Dormant (unbound) modifiers send nothing; see
+  // Send a pending switch-created ``start`` now (no-op when none is
+  // pending). Called when the switch is confirmed: the deferral timer
+  // fires, or the pointer moves past the threshold from the switch
+  // point. */
+  const flushPendingStart = React.useCallback(
+    (activeDrag: ActiveDragState) => {
+      if (activeDrag.pendingStart === null) return;
+      clearTimeout(activeDrag.pendingStart.timerId);
+      activeDrag.pendingStart = null;
+      activeDrag.segmentActive = sendDragMessage(activeDrag, "start", false);
+    },
+    [sendDragMessage],
+  );
+
+  // Apply a mid-drag modifier change. Ends the current segment (if any)
+  // immediately, switches ownership to ``nextModifier``, and -- when the
+  // new combo is bound -- schedules a fresh segment whose ``start`` is
+  // DEFERRED until confirmed (``SWITCH_START_DELAY_MS`` timer, or pointer
+  // motion; see ``flushPendingStart``). Releasing the button first
+  // discards the pending start, so releasing the modifier a beat before
+  // the mouse button never fires a degenerate start/end pair on the
+  // combo left behind. Geometry is untouched, so the drag continues
+  // without a visual jump -- only the addressed callback set changes.
+  // Dormant (unbound) modifiers send nothing; see
   // ``planModifierTransition``. */
   const transitionDragModifier = React.useCallback(
     (activeDrag: ActiveDragState, nextModifier: KeyModifier | null) => {
@@ -271,6 +301,11 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
         activeDrag.segmentActive,
       );
       if (plan === null) return;
+      // Switching away from a combo whose start is still pending
+      // abandons that segment before it ever hit the wire -- a sub-delay
+      // pass-through combo (e.g. key rollover while releasing a
+      // multi-key combo) produces no messages at all.
+      discardPendingStart(activeDrag);
       if (plan.emitEnd) {
         // Flush queued throttled updates so the old segment's pending
         // update lands *before* its synthetic end -- preserves wire
@@ -278,14 +313,26 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
         flushDragsThrottled();
         sendDragMessage(activeDrag, "end", false);
       }
-      // Switch ownership before emitting the new ``start`` so the start
-      // message carries the new modifier. ``button`` is unchanged.
+      // Switch ownership before scheduling the new ``start`` so the
+      // start message carries the new modifier. ``button`` is unchanged.
       activeDrag.input = { ...activeDrag.input, modifier: nextModifier };
-      activeDrag.segmentActive = plan.emitStart
-        ? sendDragMessage(activeDrag, "start", false)
-        : false;
+      activeDrag.segmentActive = false;
+      if (plan.emitStart) {
+        activeDrag.pendingStart = {
+          switchPointerXy: [
+            activeDrag.endPointerXy[0],
+            activeDrag.endPointerXy[1],
+          ],
+          timerId: setTimeout(() => {
+            // The drag may have ended since (stopActiveDrag clears the
+            // timer, but guard against a same-tick race anyway).
+            if (activeDragRef.current !== activeDrag) return;
+            flushPendingStart(activeDrag);
+          }, SWITCH_START_DELAY_MS),
+        };
+      }
     },
-    [flushDragsThrottled, sendDragMessage, viewer],
+    [flushDragsThrottled, flushPendingStart, sendDragMessage, viewer],
   );
 
   type EndInfo = {
@@ -297,6 +344,13 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
     (sendEndMessage: boolean, endInfo?: EndInfo) => {
       const activeDrag = activeDragRef.current;
       if (activeDrag === null) return;
+
+      // A release (or cancel/blur/node-removal) while a switch-start is
+      // still pending discards it: the modifier change and the release
+      // were one gesture. No start was sent, so no end is owed -- this
+      // is the deferral's whole purpose (no degenerate start/end pair
+      // when the modifier lifts a beat before the button).
+      discardPendingStart(activeDrag);
 
       if (endInfo !== undefined) {
         // Refresh end fields from the final pointer position; if the
@@ -425,10 +479,25 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
             transitionDragModifier(activeDrag, liveModifier);
           }
 
+          // Real motion confirms a pending switch-start early: the
+          // pointer leaving the switch point past the promotion
+          // threshold proves the new segment is a deliberate
+          // continuation, not the leading edge of a release.
+          if (
+            activeDrag.pendingStart !== null &&
+            motionExceedsThreshold(
+              activeDrag.pendingStart.switchPointerXy,
+              activeDrag.endPointerXy,
+            )
+          ) {
+            flushPendingStart(activeDrag);
+          }
+
           // ``start_position`` is recomputed live inside buildDragMessage,
           // so the wire payload always reflects the click point's
           // current world position (tracking the moving object). Skip
-          // while dormant -- the current modifier matches no binding.
+          // while dormant -- the current modifier matches no binding --
+          // or while a switch-start is still pending confirmation.
           if (activeDrag.segmentActive) {
             sendDragMessage(activeDrag, "update", true);
           }
@@ -511,6 +580,9 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
           // still fail if the live grab point is unavailable, so we
           // trust its return value rather than assuming ``true``.
           segmentActive: false,
+          // The OPENING segment is never deferred -- crossing the
+          // motion threshold at promotion is already its confirmation.
+          pendingStart: null,
           releaseCameraLock: null,
           cleanup,
         };
