@@ -846,10 +846,15 @@ function FloatingStackDivider({
     // Push-through budget (user-adjudicated): dragging DOWN past the point
     // where every cell below the divider sits at its minimum keeps going by
     // GROWING the window -- the excess lands on the cell above the divider.
-    // Budget from the drag-start snapshot so it's stable across frames.
-    const startPx = wasFixed
-      ? stack.map((g) => startWeights[g])
-      : stack.map((g) => renderedPx[g]);
+    // Budget from the drag-start RENDERED snapshot in both modes: stored
+    // stackWeights are scale-free (snapToWindowStack seeds ~1s; rendering
+    // normalizes), so reading them as px on an already-pinned stack computes
+    // a zero belowCapacity and routes the whole downward delta into window
+    // growth while the lower cell never shrinks. renderedPx is the on-screen
+    // truth in px regardless of mode, and committing px-scale weights is
+    // exactly what the auto->pinned path already does (cascadeResize and the
+    // renderer both normalize).
+    const startPx = stack.map((g) => renderedPx[g]);
     const belowCapacity = startPx
       .slice(dividerIndex + 1)
       .reduce((s, px) => s + Math.max(0, px - MIN_STACK_CELL_PX), 0);

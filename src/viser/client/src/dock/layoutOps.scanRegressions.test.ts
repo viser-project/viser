@@ -42,8 +42,6 @@ describe("scan regressions: per-axis float placement", () => {
       ["p:0"],
       {
         position: { kind: "float", x: 40, y: 40 },
-        width: null,
-        height: null,
         collapsed: null,
       },
       () => null,

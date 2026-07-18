@@ -324,8 +324,6 @@ export function usePlacementCoordinator(
               c.tabIds,
               {
                 position: null,
-                width: null,
-                height: null,
                 collapsed: c.collapsed,
               },
               (anchorUuid) => resolveAnchor(anchorUuid),

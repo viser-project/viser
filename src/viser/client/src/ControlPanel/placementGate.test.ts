@@ -74,7 +74,8 @@ describe("gatePlacement", () => {
     );
     expect(g.anyFresh).toBe(false);
     expect(g.placement.position).toBeNull();
-    expect(g.placement.width).toBeNull();
+    // Gated-off width is ABSENT (undefined) -- null would be a fresh clear.
+    expect(g.placement.width).toBeUndefined();
   });
 
   it("server re-assert (same run, higher counter) applies", () => {
@@ -150,15 +151,30 @@ describe("gatePlacement", () => {
     expect(g.placement.position).toEqual(DOCK_RIGHT);
   });
 
-  it("no entry at all: nothing fresh, all axes null", () => {
+  it("no entry at all: nothing fresh, every axis absent", () => {
     const g = gatePlacement(undefined, undefined, true);
     expect(g.anyFresh).toBe(false);
-    expect(g.placement).toEqual({
-      position: null,
-      width: null,
-      height: null,
-      collapsed: null,
-    });
+    expect(g.placement.position).toBeNull();
+    expect(g.placement.collapsed).toBeNull();
+    // Width/height are tri-state: absent is undefined, NOT null (null would
+    // read as a fresh clear-to-default command downstream).
+    expect(g.placement.width).toBeUndefined();
+    expect(g.placement.height).toBeUndefined();
+  });
+
+  it("a FRESH width/height clear (stored value null) survives as null", () => {
+    // gui.reset() sends width/height None ("clear the override"); the gate
+    // must pass the null VALUE through as a command, not conflate it with a
+    // gated-off axis -- the regression that left reset windows pinned forever.
+    const g = gatePlacement(
+      entry({ height: { value: null, counter: 3, runId: RUN_A } }),
+      undefined,
+      true,
+    );
+    expect(g.anyFresh).toBe(true);
+    expect(g.placement.height).toBeNull(); // fresh clear -> revert to auto
+    expect(g.placement.width).toBeUndefined(); // absent axis -> untouched
+    expect(g.applied).toEqual({ height: { [RUN_A]: 3 } });
   });
 });
 
