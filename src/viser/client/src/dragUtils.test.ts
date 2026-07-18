@@ -7,6 +7,7 @@ import {
   anyBindingMatches,
   hasCmdCtrl,
   motionExceedsThreshold,
+  planDragStart,
   planModifierTransition,
   MOTION_THRESHOLD_PX,
 } from "./dragUtils";
@@ -149,6 +150,37 @@ describe("planModifierTransition", () => {
     expect(
       planModifierTransition(null, "cmd/ctrl", bindings, "right", false),
     ).toEqual({ emitEnd: false, emitStart: false });
+  });
+});
+
+describe("planDragStart", () => {
+  const bindings = [
+    { button: "left" as const, modifier: "cmd/ctrl" as const },
+    { button: "left" as const, modifier: "cmd/ctrl+shift" as const },
+  ];
+  const down = { button: "left" as const, modifier: "cmd/ctrl" as const };
+
+  it("keeps the pointerdown input when the modifier is unchanged", () => {
+    const plan = planDragStart(down, "cmd/ctrl", bindings);
+    expect(plan.input).toBe(down); // same reference -- no realloc
+    expect(plan.emitStart).toBe(true);
+  });
+
+  it("attributes the opening segment to the promotion-time modifier", () => {
+    // Shift added inside the pointerdown->promotion window: the opening
+    // start carries cmd/ctrl+shift, never a stale cmd/ctrl.
+    const plan = planDragStart(down, "cmd/ctrl+shift", bindings);
+    expect(plan.input).toEqual({ button: "left", modifier: "cmd/ctrl+shift" });
+    expect(plan.emitStart).toBe(true);
+  });
+
+  it("begins dormant when the promotion-time combo is unbound", () => {
+    // Ctrl released before the threshold crossing: no segment starts (no
+    // degenerate stale-modifier start/end pair), but the drag itself
+    // begins -- a later switch back to a bound combo resumes it.
+    const plan = planDragStart(down, null, bindings);
+    expect(plan.input).toEqual({ button: "left", modifier: null });
+    expect(plan.emitStart).toBe(false);
   });
 });
 

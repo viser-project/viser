@@ -36,6 +36,7 @@ import {
   computeInstanceWorldMatrix,
   isInstancedMesh2VendoredMessage,
   keyModifierFromEvent,
+  planDragStart,
   planModifierTransition,
 } from "./dragUtils";
 import { DragLayerApi, DragLayerContext } from "./dragLayerContext";
@@ -255,10 +256,17 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
   // ``planModifierTransition``. */
   const transitionDragModifier = React.useCallback(
     (activeDrag: ActiveDragState, nextModifier: KeyModifier | null) => {
+      // Bindings are read live from the scene-tree store (not a
+      // drag-start snapshot): a callback the server registers or removes
+      // *mid-drag* takes effect at the next modifier switch. A missing
+      // node (removed mid-gesture) reads as no bindings -- the switch
+      // goes dormant, and the revoke path ends the drag separately.
+      const liveBindings =
+        viewer.useSceneTree.get(activeDrag.nodeName)?.dragBindings ?? [];
       const plan = planModifierTransition(
         activeDrag.input.modifier,
         nextModifier,
-        activeDrag.bindings,
+        liveBindings,
         activeDrag.input.button,
         activeDrag.segmentActive,
       );
@@ -277,7 +285,7 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
         ? sendDragMessage(activeDrag, "start", false)
         : false;
     },
-    [flushDragsThrottled, sendDragMessage],
+    [flushDragsThrottled, sendDragMessage, viewer],
   );
 
   type EndInfo = {
@@ -334,9 +342,17 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
         pointerId,
         input,
         bindings,
+        promotionModifier,
       }) => {
         if (activeDragRef.current !== null) return false;
         if (!anyBindingMatches(bindings, input)) return false;
+
+        // The gate above validates the POINTERDOWN input (the combo that
+        // made this gesture a drag candidate). The opening segment is
+        // attributed to the PROMOTION-TIME modifier, which may differ --
+        // and may be unbound, in which case the drag begins dormant and
+        // the key/pointermove listeners below pick up the next switch.
+        const opening = planDragStart(input, promotionModifier, bindings);
 
         // Convert the raycast hit point to world coords. The frame of
         // ``eventPoint`` depends on which raycast produced it:
@@ -482,13 +498,12 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
           // / end_* fields agree).
           endPointWorld: startWorld.clone(),
           endPointerXy: [pointerXy[0], pointerXy[1]],
-          input,
-          bindings,
-          // Set from the initial ``start`` send below. The pointerdown
-          // path only calls ``beginDrag`` when ``input`` matches a
-          // binding, so the opening segment is bound -- but the send can
-          // still fail if the live grab point is unavailable, so we trust
-          // its return value rather than assuming ``true``.
+          input: opening.input,
+          // Set from the initial ``start`` send below. The opening
+          // segment is dormant when the promotion-time combo is unbound
+          // (``opening.emitStart`` false); even when bound, the send can
+          // still fail if the live grab point is unavailable, so we
+          // trust its return value rather than assuming ``true``.
           segmentActive: false,
           releaseCameraLock: null,
           cleanup,
@@ -502,11 +517,9 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
         window.addEventListener("blur", handleWindowBlur);
         window.addEventListener("keydown", handleWindowKeyChange);
         window.addEventListener("keyup", handleWindowKeyChange);
-        activeDragRef.current.segmentActive = sendDragMessage(
-          activeDragRef.current,
-          "start",
-          false,
-        );
+        activeDragRef.current.segmentActive = opening.emitStart
+          ? sendDragMessage(activeDragRef.current, "start", false)
+          : false;
         return true;
       },
       stopIfNodeIs: (nodeName) => {

@@ -139,6 +139,27 @@ export function planModifierTransition(
   };
 }
 
+/** Decide the opening segment for a drag promoted at the motion
+ * threshold. ``pointerdownInput`` was sampled at pointerdown, but the
+ * held modifier may have changed before the threshold-crossing
+ * pointermove (the promotion event) -- the drag layer's key listeners
+ * only install at promotion, so that window is otherwise invisible. The
+ * opening segment is attributed to the promotion-time modifier; when
+ * that combo is unbound the drag begins *dormant* (no ``start`` sent),
+ * exactly like a mid-drag switch to an unbound combo (see
+ * :func:`planModifierTransition`). */
+export function planDragStart(
+  pointerdownInput: DragInput,
+  promotionModifier: KeyModifier | null,
+  bindings: DragBinding[],
+): { input: DragInput; emitStart: boolean } {
+  const input =
+    promotionModifier === pointerdownInput.modifier
+      ? pointerdownInput
+      : { ...pointerdownInput, modifier: promotionModifier };
+  return { input, emitStart: anyBindingMatches(bindings, input) };
+}
+
 /** True when the held modifier includes cmd/ctrl. Used to gate browser
  * context-menu suppression: macOS raises a ``contextmenu`` event on
  * ctrl+click, and we only want to suppress it when the gesture is a
@@ -213,10 +234,6 @@ export type ActiveDragState = {
    * held modifier changes mid-drag, partitioning the gesture into one
    * segment per combo (see :func:`planModifierTransition`). */
   input: DragInput;
-  /** Registered drag bindings for this node, captured at drag-start.
-   * Used to decide whether a new modifier combo owns a segment or is
-   * dormant when the held modifier changes mid-drag. */
-  bindings: DragBinding[];
   /** Whether an in-flight segment is currently active (a ``start`` was
    * sent and its ``end`` hasn't). ``false`` while dormant -- the gesture
    * is physically held but the current modifier matches no binding, so

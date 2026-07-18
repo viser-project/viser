@@ -365,6 +365,162 @@ def test_scene_node_drag_dormant_then_resume(
         assert ends[0] == 2, ends[0]
 
 
+def test_scene_node_drag_modifier_change_before_promotion(
+    page: Page,
+    viser_server: viser.ViserServer,
+) -> None:
+    """A modifier change inside the pointerdown->promotion window is honored.
+
+    The drag candidate samples its modifier at pointerdown, but the drag
+    only *promotes* at the motion threshold -- and the drag layer's key
+    listeners install at promotion. Releasing Ctrl in that window used to
+    be invisible: the promoted drag opened a stale ``cmd/ctrl`` segment
+    (start + end) even though no modifier was held for any of the actual
+    motion.
+
+    Now the opening segment is attributed to the promotion-time modifier:
+    with Ctrl released before the threshold crossing, the drag begins
+    DORMANT -- no start fires -- and re-pressing Ctrl mid-gesture resumes
+    it with a properly-attributed segment (proving the gesture began as a
+    live drag rather than being dropped)."""
+    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
+
+    starts = [0]
+    ends = [0]
+    started = threading.Event()
+    ended = threading.Event()
+    lock = threading.Lock()
+
+    box = viser_server.scene.add_box(
+        "/prepromo_box",
+        dimensions=(4.0, 4.0, 0.2),
+        color=(255, 180, 90),
+    )
+
+    def _on_start(_event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            starts[0] += 1
+        started.set()
+
+    def _on_end(_event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            ends[0] += 1
+        ended.set()
+
+    _on_drag_phase(box, "start", "left", modifier="cmd/ctrl")(_on_start)
+    _on_drag_phase(box, "end", "left", modifier="cmd/ctrl")(_on_end)
+
+    wait_for_connection(page, viser_server.get_port())
+    wait_for_scene_node(page, "/prepromo_box")
+
+    (start_x, start_y), (end_x, end_y) = _get_canvas_drag_points(page)
+
+    # Pointerdown under the bound combo, then release Ctrl BEFORE any
+    # motion -- the change lands inside the promotion blind spot.
+    page.keyboard.down("Control")
+    page.mouse.move(start_x, start_y)
+    page.mouse.down()
+    page.keyboard.up("Control")
+
+    # Cross the threshold and keep dragging with nothing held. The drag
+    # must begin dormant: no stale cmd/ctrl start (the old bug fired a
+    # degenerate start/end pair here).
+    page.mouse.move(end_x, end_y, steps=12)
+    assert not started.wait(timeout=1.0), (
+        "a cmd/ctrl segment started even though Ctrl was released before "
+        "the promotion threshold (stale pointerdown modifier)"
+    )
+
+    # Re-press Ctrl with the button still down: the dormant drag resumes
+    # with a real cmd/ctrl segment -- distinguishing "began dormant" from
+    # "never began at all".
+    page.keyboard.down("Control")
+    assert started.wait(timeout=5.0), (
+        "re-pressing the bound modifier mid-gesture did not resume the "
+        "dormant drag -- was the pre-promotion gesture dropped entirely?"
+    )
+
+    page.mouse.up()
+    page.keyboard.up("Control")
+    assert ended.wait(timeout=5.0), "resumed segment didn't end on release"
+    with lock:
+        assert starts[0] == 1 and ends[0] == 1, (starts[0], ends[0])
+
+
+def test_scene_node_drag_binding_added_mid_drag(
+    page: Page,
+    viser_server: viser.ViserServer,
+) -> None:
+    """A binding registered while a drag is in progress takes effect at the
+    next modifier switch.
+
+    Bindings are read live at each switch (not snapshotted at drag
+    start): registering a ``cmd/ctrl+shift`` callback mid-``cmd/ctrl``-drag
+    and then pressing Shift must end the cmd/ctrl segment and START a
+    cmd/ctrl+shift one. With a drag-start snapshot, the switch would land
+    in a dormant gap and the new callback would never fire without a fresh
+    mouse-down."""
+    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
+
+    ctrl_started = threading.Event()
+    ctrl_ended = threading.Event()
+    ctrl_shift_started = threading.Event()
+    ctrl_shift_ended = threading.Event()
+
+    box = viser_server.scene.add_box(
+        "/live_bindings_box",
+        dimensions=(4.0, 4.0, 0.2),
+        color=(90, 180, 255),
+    )
+
+    _on_drag_phase(box, "start", "left", modifier="cmd/ctrl")(
+        lambda _: ctrl_started.set()
+    )
+    _on_drag_phase(box, "end", "left", modifier="cmd/ctrl")(lambda _: ctrl_ended.set())
+
+    wait_for_connection(page, viser_server.get_port())
+    wait_for_scene_node(page, "/live_bindings_box")
+
+    (start_x, start_y), (end_x, end_y) = _get_canvas_drag_points(page)
+    mid_x = (start_x + end_x) / 2
+    mid_y = (start_y + end_y) / 2
+
+    # cmd/ctrl segment: press and drag partway.
+    page.keyboard.down("Control")
+    page.mouse.move(start_x, start_y)
+    page.mouse.down()
+    page.mouse.move(mid_x, mid_y, steps=8)
+    assert ctrl_started.wait(timeout=5.0), "cmd/ctrl segment didn't start"
+
+    # Register the cmd/ctrl+shift binding MID-DRAG, and give the update
+    # message a beat to reach the client.
+    _on_drag_phase(box, "start", "left", modifier="cmd/ctrl+shift")(
+        lambda _: ctrl_shift_started.set()
+    )
+    _on_drag_phase(box, "end", "left", modifier="cmd/ctrl+shift")(
+        lambda _: ctrl_shift_ended.set()
+    )
+    page.wait_for_timeout(500)
+
+    # Shift lands the switch on the freshly-registered combo.
+    page.keyboard.down("Shift")
+    assert ctrl_ended.wait(timeout=5.0), "cmd/ctrl segment didn't end on switch"
+    assert ctrl_shift_started.wait(timeout=5.0), (
+        "the mid-drag-registered cmd/ctrl+shift binding didn't own the new "
+        "segment -- bindings were snapshotted at drag start instead of read live"
+    )
+
+    page.mouse.move(end_x, end_y, steps=8)
+    page.mouse.up()
+    page.keyboard.up("Shift")
+    page.keyboard.up("Control")
+    assert ctrl_shift_ended.wait(timeout=5.0), (
+        "cmd/ctrl+shift segment didn't end on release"
+    )
+
+
 def test_scene_node_drag_many_stages_one_drag(
     page: Page,
     viser_server: viser.ViserServer,
