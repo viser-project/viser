@@ -493,13 +493,18 @@ class GuiApi:
         self,
         client_id: ClientId,
         transfer_uuid: str,
-        source_component_uuid: str,
+        # None on the wire for server->client downloads; upload transfers carry
+        # the upload button's uuid, but that handle may have been removed
+        # mid-transfer -- both degrade to the same no-op below.
+        source_component_uuid: str | None,
     ) -> None:
         """Finalize a completed upload by assembling the file contents and
         firing the handle's update callbacks. Shared by the normal multi-part
         path and the zero-byte path (which has no parts)."""
         state = self._current_file_upload_states.pop(transfer_uuid, None)
         if state is None:
+            return
+        if source_component_uuid is None:
             return
 
         handle = self._gui_input_handle_from_uuid.get(source_component_uuid, None)
