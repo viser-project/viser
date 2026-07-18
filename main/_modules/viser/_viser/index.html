@@ -580,6 +580,8 @@
     <span class="n">image_width</span><span class="p">:</span> <span class="nb">int</span>
     <span class="n">near</span><span class="p">:</span> <span class="nb">float</span>
     <span class="n">far</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">min_orbit_distance</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">max_orbit_distance</span><span class="p">:</span> <span class="nb">float</span>
     <span class="n">look_at</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>
     <span class="n">up_direction</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>
     <span class="n">update_timestamp</span><span class="p">:</span> <span class="nb">float</span>
@@ -602,6 +604,12 @@
             <span class="n">image_width</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
             <span class="n">near</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
             <span class="n">far</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span>
+            <span class="c1"># Defaults must match the client&#39;s &lt;CameraControls&gt; props exactly:</span>
+            <span class="c1"># the setters early-return when the new value equals the value here,</span>
+            <span class="c1"># so a mismatch would make assigning the client-side default a silent</span>
+            <span class="c1"># no-op. Pinned by tests/test_initial_camera_defaults.py.</span>
+            <span class="n">min_orbit_distance</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+            <span class="n">max_orbit_distance</span><span class="o">=</span><span class="mf">1e4</span><span class="p">,</span>
             <span class="n">look_at</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">3</span><span class="p">),</span>
             <span class="n">up_direction</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">3</span><span class="p">),</span>
             <span class="n">update_timestamp</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
@@ -747,6 +755,47 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">_websock_connection</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">SetCameraFarMessage</span><span class="p">(</span><span class="n">far</span><span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">min_orbit_distance</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;How close the camera may be dollied in to its orbit (look-at) point.</span>
+<span class="sd">        Distinct from :attr:`near`, which clips rendering rather than camera</span>
+<span class="sd">        travel. Synchronized automatically when assigned.&quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">!=</span> <span class="mf">0.0</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">min_orbit_distance</span>
+
+    <span class="nd">@min_orbit_distance</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">min_orbit_distance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">min_orbit_distance</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">min_orbit_distance</span><span class="p">,</span> <span class="n">min_orbit_distance</span><span class="p">):</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">min_orbit_distance</span> <span class="o">=</span> <span class="n">min_orbit_distance</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">_websock_connection</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+            <span class="n">_messages</span><span class="o">.</span><span class="n">SetCameraMinOrbitDistanceMessage</span><span class="p">(</span><span class="n">min_orbit_distance</span><span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">max_orbit_distance</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;How far the camera may be dollied out from its orbit (look-at) point.</span>
+<span class="sd">        Distinct from :attr:`far`, which clips rendering rather than camera</span>
+<span class="sd">        travel. Defaults to 1e4. Synchronized automatically when assigned.</span>
+
+<span class="sd">        Dolly is multiplicative per wheel event, so a very large maximum means a long</span>
+<span class="sd">        scroll — a trackpad&#39;s inertial tail, for instance — can walk the camera out to</span>
+<span class="sd">        a distance where the scene is no longer visible. Set this to keep zoom-out</span>
+<span class="sd">        inside the scene&#39;s scale.&quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">!=</span> <span class="mf">0.0</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">max_orbit_distance</span>
+
+    <span class="nd">@max_orbit_distance</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">max_orbit_distance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">max_orbit_distance</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">max_orbit_distance</span><span class="p">,</span> <span class="n">max_orbit_distance</span><span class="p">):</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">max_orbit_distance</span> <span class="o">=</span> <span class="n">max_orbit_distance</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">_websock_connection</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+            <span class="n">_messages</span><span class="o">.</span><span class="n">SetCameraMaxOrbitDistanceMessage</span><span class="p">(</span><span class="n">max_orbit_distance</span><span class="p">)</span>
         <span class="p">)</span>
 
     <span class="nd">@property</span>
@@ -1270,6 +1319,12 @@
                     <span class="n">image_width</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">image_width</span><span class="p">,</span>
                     <span class="n">near</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">near</span><span class="p">,</span>
                     <span class="n">far</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">far</span><span class="p">,</span>
+                    <span class="c1"># Dolly limits are server-owned constraints, not something the</span>
+                    <span class="c1"># client reports back, so they have to survive this rebuild —</span>
+                    <span class="c1"># otherwise every incoming camera message would silently reset</span>
+                    <span class="c1"># them. Carried over like camera_cb.</span>
+                    <span class="n">min_orbit_distance</span><span class="o">=</span><span class="n">client</span><span class="o">.</span><span class="n">camera</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">min_orbit_distance</span><span class="p">,</span>
+                    <span class="n">max_orbit_distance</span><span class="o">=</span><span class="n">client</span><span class="o">.</span><span class="n">camera</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">max_orbit_distance</span><span class="p">,</span>
                     <span class="n">look_at</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">look_at</span><span class="p">),</span>
                     <span class="n">up_direction</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">up_direction</span><span class="p">),</span>
                     <span class="n">update_timestamp</span><span class="o">=</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">(),</span>

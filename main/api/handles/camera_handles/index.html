@@ -482,6 +482,26 @@ assigned.</p>
 </dd></dl>
 
 <dl class="py property">
+<dt class="sig sig-object py" id="viser.CameraHandle.min_orbit_distance">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">min_orbit_distance</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.CameraHandle.min_orbit_distance" title="Link to this definition">¶</a></dt>
+<dd><p>How close the camera may be dollied in to its orbit (look-at) point.
+Distinct from <a class="reference internal" href="#viser.CameraHandle.near" title="viser.CameraHandle.near"><code class="xref py py-attr docutils literal notranslate"><span class="pre">near</span></code></a>, which clips rendering rather than camera
+travel. Synchronized automatically when assigned.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="viser.CameraHandle.max_orbit_distance">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">max_orbit_distance</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.CameraHandle.max_orbit_distance" title="Link to this definition">¶</a></dt>
+<dd><p>How far the camera may be dollied out from its orbit (look-at) point.
+Distinct from <a class="reference internal" href="#viser.CameraHandle.far" title="viser.CameraHandle.far"><code class="xref py py-attr docutils literal notranslate"><span class="pre">far</span></code></a>, which clips rendering rather than camera
+travel. Defaults to 1e4. Synchronized automatically when assigned.</p>
+<p>Dolly is multiplicative per wheel event, so a very large maximum means a long
+scroll — a trackpad’s inertial tail, for instance — can walk the camera out to
+a distance where the scene is no longer visible. Set this to keep zoom-out
+inside the scene’s scale.</p>
+</dd></dl>
+
+<dl class="py property">
 <dt class="sig sig-object py" id="viser.CameraHandle.aspect">
 <em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">aspect</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.CameraHandle.aspect" title="Link to this definition">¶</a></dt>
 <dd><p>Canvas width divided by height. Not assignable.</p>
@@ -695,6 +715,8 @@ per-client camera control.</p>
 <li><a class="reference internal" href="#viser.CameraHandle.fov"><code class="docutils literal notranslate"><span class="pre">CameraHandle.fov</span></code></a></li>
 <li><a class="reference internal" href="#viser.CameraHandle.near"><code class="docutils literal notranslate"><span class="pre">CameraHandle.near</span></code></a></li>
 <li><a class="reference internal" href="#viser.CameraHandle.far"><code class="docutils literal notranslate"><span class="pre">CameraHandle.far</span></code></a></li>
+<li><a class="reference internal" href="#viser.CameraHandle.min_orbit_distance"><code class="docutils literal notranslate"><span class="pre">CameraHandle.min_orbit_distance</span></code></a></li>
+<li><a class="reference internal" href="#viser.CameraHandle.max_orbit_distance"><code class="docutils literal notranslate"><span class="pre">CameraHandle.max_orbit_distance</span></code></a></li>
 <li><a class="reference internal" href="#viser.CameraHandle.aspect"><code class="docutils literal notranslate"><span class="pre">CameraHandle.aspect</span></code></a></li>
 <li><a class="reference internal" href="#viser.CameraHandle.image_height"><code class="docutils literal notranslate"><span class="pre">CameraHandle.image_height</span></code></a></li>
 <li><a class="reference internal" href="#viser.CameraHandle.image_width"><code class="docutils literal notranslate"><span class="pre">CameraHandle.image_width</span></code></a></li>
