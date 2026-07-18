@@ -175,7 +175,7 @@ export const inside = (r: DOMRect, x: number, y: number) =>
  * horizontal inset slices the leftmost/rightmost tabs' insert zones at the top
  * corners and they become undroppable (the drop falls through to the host).
  * The body keeps the inset. */
-export const hitsTarget = (t: GroupTarget, x: number, y: number): boolean => {
+const hitsTarget = (t: GroupTarget, x: number, y: number): boolean => {
   if (
     t.hitRect !== undefined &&
     t.ctx.kind === "area" &&
@@ -250,7 +250,7 @@ export const tabInsertion = (
  * insertion line (between rows / above the first / below the last). Lets a drop
  * land at a specific position in a minimized tab set, mirroring how dropping
  * between expanded horizontal tabs works. */
-export const verticalTabInsertion = (
+const verticalTabInsertion = (
   tabs: { rect: DOMRect }[],
   y: number,
 ): {

@@ -859,7 +859,7 @@ export function insertTabsInto(
     delete draft.groups[sourceId];
   }
   if (incoming.length === 0) return layout;
-  const i = Math.max(0, Math.min(target.paneIds.length, index));
+  const i = clampIndex(index, target.paneIds.length);
   target.paneIds = [
     ...target.paneIds.slice(0, i),
     ...incoming,
@@ -1099,8 +1099,7 @@ function movePaneInPlace(
   removePaneInPlace(draft, paneId); // detach first -> no duplication possible
   const dest = draft.groups[destGroupId];
   if (dest === undefined) return;
-  const i = index === undefined ? dest.paneIds.length : index;
-  dest.paneIds.splice(Math.max(0, Math.min(dest.paneIds.length, i)), 0, paneId);
+  dest.paneIds.splice(clampIndex(index, dest.paneIds.length), 0, paneId);
   if (dest.paneIds.length === 1) dest.activeId = paneId;
 }
 
@@ -1413,10 +1412,7 @@ export function snapToWindowStack(
   for (const g of groupIds)
     nextWeights[g] = (meanTarget * shareOf(g)) / meanShare;
   target.stackWeights = nextWeights;
-  const i =
-    index === undefined
-      ? target.stack.length
-      : Math.max(0, Math.min(target.stack.length, index));
+  const i = clampIndex(index, target.stack.length);
   target.stack.splice(i, 0, ...groupIds);
   // Copy (don't alias) the source's height object: sourceHeight is read from the
   // original layout, so assigning it directly would share a reference between the
@@ -1455,7 +1451,7 @@ export function reorderTab(
   const group = layout.groups[groupId];
   if (group === undefined || !group.paneIds.includes(paneId)) return layout;
   const without = group.paneIds.filter((p) => p !== paneId);
-  const clamped = Math.max(0, Math.min(without.length, insertIndex));
+  const clamped = clampIndex(insertIndex, without.length);
   without.splice(clamped, 0, paneId);
   const unchanged =
     without.length === group.paneIds.length &&
