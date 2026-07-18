@@ -999,6 +999,12 @@ class GaussianSplatHandle(
         - [3]: reserved for renderer
         - [4:7]: covariance upper-triangular (6x float16)
         - [7]: RGBA (4x uint8)
+
+    When `sh_degree > 0`, view-dependent colors are computed from the
+    float16 spherical harmonics coefficients in `sh_buffer` instead of the
+    RGB values in `buffer`. The sub-property setters below (`centers`,
+    `rgbs`, ...) update `buffer` only; if they change the number of
+    Gaussians, a stale `sh_buffer` is ignored by the renderer.
     """
 
     def _ensure_buffer_size(self, num_gaussians: int) -> None:

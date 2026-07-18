@@ -45,6 +45,9 @@ class SplatFile(TypedDict):
     """(N, 1). Range [0, 1]."""
     covariances: npt.NDArray[np.floating]
     """(N, 3, 3)."""
+    sh_coeffs: npt.NDArray[np.floating] | None
+    """(N, K, 3) spherical harmonics coefficients (including the DC term), or
+    None if the file only stores per-Gaussian colors."""
 
 
 def load_splat_file(splat_path: Path, center: bool = False) -> SplatFile:
@@ -88,6 +91,8 @@ def load_splat_file(splat_path: Path, center: bool = False) -> SplatFile:
         opacities=splat_uint8[:, 27:28] / 255.0,
         # Covariances should have shape (N, 3, 3).
         covariances=covariances,
+        # .splat files don't store spherical harmonics.
+        sh_coeffs=None,
     )
 
 
@@ -102,8 +107,25 @@ def load_ply_file(ply_file_path: Path, center: bool = False) -> SplatFile:
     positions = np.stack([v["x"], v["y"], v["z"]], axis=-1)
     scales = np.exp(np.stack([v["scale_0"], v["scale_1"], v["scale_2"]], axis=-1))
     wxyzs = np.stack([v["rot_0"], v["rot_1"], v["rot_2"], v["rot_3"]], axis=1)
-    colors = 0.5 + SH_C0 * np.stack([v["f_dc_0"], v["f_dc_1"], v["f_dc_2"]], axis=1)
+    dc_terms = np.stack([v["f_dc_0"], v["f_dc_1"], v["f_dc_2"]], axis=1)
+    colors = 0.5 + SH_C0 * dc_terms
     opacities = 1.0 / (1.0 + np.exp(-v["opacity"][:, None]))
+
+    # Read higher-order spherical harmonics coefficients, if present. 3DGS
+    # checkpoints store them channel-major (all R terms, then G, then B); we
+    # want (N, K, 3) with the DC term first.
+    field_names = {prop.name for prop in v.properties}
+    num_rest = sum(1 for name in field_names if name.startswith("f_rest_"))
+    sh_coeffs = None
+    if num_rest > 0:
+        assert num_rest % 3 == 0
+        rest_per_channel = num_rest // 3
+        rest_terms = np.stack(
+            [v[f"f_rest_{i}"] for i in range(num_rest)], axis=1
+        ).reshape((-1, 3, rest_per_channel))
+        sh_coeffs = np.concatenate(
+            [dc_terms[:, :, None], rest_terms], axis=2
+        ).transpose(0, 2, 1)
 
     Rs = tf.SO3(wxyzs).as_matrix()
     covariances = np.einsum(
@@ -121,6 +143,7 @@ def load_ply_file(ply_file_path: Path, center: bool = False) -> SplatFile:
         rgbs=colors,
         opacities=opacities,
         covariances=covariances,
+        sh_coeffs=sh_coeffs,
     )
 
 
@@ -147,6 +170,7 @@ def main(
             rgbs=splat_data["rgbs"],
             opacities=splat_data["opacities"],
             covariances=splat_data["covariances"],
+            sh_coeffs=splat_data["sh_coeffs"],
         )
 
         remove_button = server.gui.add_button(f"Remove splat object {i}")

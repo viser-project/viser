@@ -582,6 +582,8 @@ function createObjectFactory(
             <group scale={normalizeScale(message.props.scale)}>
               <SplatObject
                 buffer={message.props.buffer}
+                shBuffer={message.props.sh_buffer}
+                shDegree={message.props.sh_degree}
                 sceneNodeName={message.name}
               />
             </group>
