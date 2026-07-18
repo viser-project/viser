@@ -487,10 +487,19 @@ class SceneNodeDragEvent(Generic[TSceneNodeHandle]):
     target: TSceneNodeHandle
     """Scene node that is being dragged."""
     phase: DragPhase
-    """Drag lifecycle phase: ``"start"`` at press, ``"update"`` on
-    every throttled pointermove (~20Hz), ``"end"`` at release. A
-    single drag fires exactly one ``"start"``, zero or more
-    ``"update"``s, and exactly one ``"end"``."""
+    """Drag lifecycle phase: ``"start"`` once a press is confirmed as a
+    drag (the pointer travels past a small motion threshold -- a
+    stationary press/release fires nothing), ``"update"`` on every
+    throttled pointermove (~20Hz), ``"end"`` at release.
+
+    A gesture is partitioned into one *segment* per held modifier-combo.
+    Each segment fires exactly one ``"start"``, zero or more
+    ``"update"``s, and exactly one ``"end"``. If the user changes the
+    held modifier mid-drag, the current segment ends and a new one
+    starts under the new modifier (see :attr:`modifier`) -- so a single
+    physical drag can produce more than one ``start``/``end`` pair. When
+    the modifier doesn't change, this collapses to the common case of a
+    single ``start`` ... ``end`` per gesture."""
     instance_index: int | None
     """Instance index within a batched scene node (e.g. batched meshes,
     batched GLBs, batched axes); ``None`` for non-batched nodes. Frozen
@@ -511,9 +520,12 @@ class SceneNodeDragEvent(Generic[TSceneNodeHandle]):
     button: Literal["left", "middle", "right"]
     """Mouse button that initiated the drag."""
     modifier: _messages.KeyModifier | None
-    """Modifier-combo held at drag-start (frozen for the drag's
-    lifetime). ``None`` if no modifiers were held; otherwise a
-    canonical :data:`KeyModifier` string."""
+    """Modifier-combo that owns the current drag segment. Constant within
+    a segment and matches the binding this callback was registered for;
+    if the user changes the held modifier mid-drag the segment ends and a
+    new one begins under the new combo (see :attr:`phase`). ``None`` if no
+    modifiers are held; otherwise a canonical :data:`KeyModifier`
+    string."""
 
 
 _VALID_DRAG_BUTTONS: Tuple[_messages.DragButton, ...] = get_args(_messages.DragButton)
@@ -624,12 +636,32 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
     ) -> Any:
         """Attach a callback for the full drag lifecycle.
 
-        Fires three times per gesture: once with
-        ``event.phase == "start"`` at press, zero or more times with
-        ``"update"`` (throttled pointermove), once with ``"end"`` at
-        release. ``end`` fires even on cancellation paths (window
-        blur, pointer cancel, node removed mid-drag) so per-drag
-        state can be released.
+        Fires once with ``event.phase == "start"`` when a press is
+        confirmed as a drag (the pointer travels past a small motion
+        threshold; a stationary press/release fires nothing), zero or
+        more times with ``"update"`` (throttled pointermove), and once
+        with ``"end"`` at release. ``end`` fires even on cancellation
+        paths (window blur, pointer cancel, node removed mid-drag) so
+        per-drag state can be released.
+
+        Modifiers are live: if the user changes the held modifier
+        mid-drag, the current segment ends and a new one begins under
+        the new combo, routing to whichever callback that combo is bound
+        to. A callback therefore sees a clean ``start`` ... ``end`` pair
+        for *its* modifier each time that modifier is engaged, and a
+        single physical drag may fire more than one such pair. To switch
+        behavior mid-drag (e.g. changing the drag plane), register a
+        separate ``on_drag`` for each modifier combo. ``event.modifier``
+        identifies the active segment.
+
+        A switch-created segment's ``start`` is confirmed briefly
+        (~100ms, or sooner on pointer motion) before it fires; releasing
+        the mouse button within that window discards the segment
+        entirely. In particular, releasing the modifier a beat before
+        the button -- the natural way to end a modifier-drag -- does
+        *not* fire a spurious start/end pair on the combo left behind
+        (e.g. a bare ``on_drag`` registered alongside a modifier
+        binding).
 
         Usable as a bare decorator (``@handle.on_drag``, defaults to
         ``button="left"`` and no modifiers) or with arguments
@@ -642,9 +674,12 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
                 ordered ``"+"``-separated string like ``"cmd/ctrl"``,
                 ``"shift"``, or ``"cmd/ctrl+shift"``. ``None`` matches
                 "no modifiers held". Matching is exact: listed modifiers
-                must be held and others must not be. Left-drag on this
-                node intercepts the gesture -- the camera only orbits on
-                empty-space drags.
+                must be held and others must not be. The match is
+                re-evaluated whenever the held modifier changes mid-drag,
+                so this callback is entered and exited as its combo is
+                engaged and released. Left-drag on this node intercepts
+                the gesture -- the camera only orbits on empty-space
+                drags.
 
         Note on ordering: synchronous (``def``) callbacks are submitted
         to a thread pool fire-and-forget and can run out of order -- an

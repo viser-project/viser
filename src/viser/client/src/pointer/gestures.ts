@@ -1,4 +1,5 @@
 import {
+  keyModifierFromEvent,
   matchesModifierFilter,
   motionExceedsThreshold,
   pointerButtonFromNative,
@@ -274,7 +275,10 @@ type NodeCandidate = {
   startClientXy: [number, number];
   release: (() => void) | null;
   cleanup: () => void;
-  onPromote: (() => boolean) | null;
+  /** Called with the modifier held on the promoting pointermove -- the
+   * modifier may have changed since pointerdown, and the drag layer's
+   * own key listeners only install once the drag begins. */
+  onPromote: ((promotionModifier: KeyModifier | null) => boolean) | null;
 };
 
 export class NodeGestureController {
@@ -300,7 +304,7 @@ export class NodeGestureController {
     nodeKey: string;
     startClientXy: [number, number];
     lockCamera: boolean;
-    onPromote: (() => boolean) | null;
+    onPromote: ((promotionModifier: KeyModifier | null) => boolean) | null;
   }): void {
     this.cancelCandidate();
 
@@ -315,7 +319,7 @@ export class NodeGestureController {
       ) {
         return;
       }
-      this.promoteOrCancelCandidate();
+      this.promoteOrCancelCandidate(keyModifierFromEvent(event));
     };
     const handlePointerUp = (event: PointerEvent) => {
       const candidate = this.candidate;
@@ -384,12 +388,14 @@ export class NodeGestureController {
     this.cancelAny();
   }
 
-  private promoteOrCancelCandidate(): void {
+  private promoteOrCancelCandidate(
+    promotionModifier: KeyModifier | null,
+  ): void {
     const candidate = this.candidate;
     if (candidate === null) return;
     const promote = candidate.onPromote;
     this.cancelCandidate();
-    if (promote !== null) promote();
+    if (promote !== null) promote(promotionModifier);
   }
 
   private cancelCandidate(): void {

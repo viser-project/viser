@@ -1053,7 +1053,11 @@ export function SceneNodeThreeObject(props: { name: string }) {
                       onPromote:
                         beginDragArgs === null || dragLayer === null
                           ? null
-                          : () => dragLayer.beginDrag(beginDragArgs),
+                          : (promotionModifier) =>
+                              dragLayer.beginDrag({
+                                ...beginDragArgs,
+                                promotionModifier,
+                              }),
                     });
                     if (dragMatches) e.nativeEvent.preventDefault();
                   }
