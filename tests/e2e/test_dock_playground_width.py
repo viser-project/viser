@@ -15,8 +15,9 @@ default; pure-internal changes leave widths untouched:
   default (~300, clamped per-panel).
 * Dock->undock round-trips keep widths stable.
 * No spurious width jump at drag start/drop beyond the ~divider reclaim.
-* M1: with one column of a multi-column region minimized (partially overlaid),
-  dragging the reserved divider resizes (no longer a silent no-op).
+* M1: with one column of a multi-column region RAILED (36px strip, D28/D38),
+  dragging the divider between the expanded columns resizes (no longer a
+  silent no-op).
 
 Divider cascade ("push" resize in SplitView) -- dragging a divider grows the
 pane on the drag side and shrinks the panes on the OTHER side in order: when
@@ -32,8 +33,8 @@ DockManager.tsx applyOp reconciliation): docking a panel ABOVE a docked panel
 collapsed the ORIGINAL panel to ~3px, because the reconciliation wrote a
 width-px value into a vertical child's height weight. These drive real pointer
 drags and assert the *rendered* heights/widths via getBoundingClientRect, so a
-regression fails loudly. (Grip-bar drop = per-panel "above this one"; thin
-region-top band = span-all-columns above.)
+regression fails loudly. (Grip-bar drop = per-panel "above this one", a leaf
+insert within that column; D46 has no region-top span band.)
 
 ACCEPTABLE exceptions (asserted as such, not bugs):
 * A single floating panel docked to an EMPTY edge adopts the region width (a sole
@@ -58,6 +59,8 @@ from playwright.sync_api import Page  # noqa: E402
 
 from .dock_helpers import (
     MIN_CELL_HEIGHT_PX,
+    REGION_EDGE_GAP_PX,
+    click_column_chevron,
     columns,
     dock_layout,
     open_playground,
@@ -142,9 +145,12 @@ def _right_group_ids(page: Page) -> list[str]:
     return [c["g"] for c in _right_columns(page)]
 
 
-def _minimize(page: Page, gid: str) -> None:
-    page.locator(f'[data-dock-group="{gid}"] [data-dock-minimize]').first.click()
-    page.wait_for_timeout(120)
+def _rail(page: Page, gid: str) -> None:
+    """Rail the column holding `gid` via its chevron (the docked collapse
+    gesture since D32; docked cells carry no minimize control)."""
+    click_column_chevron(page, gid)
+    # Wait out the rail width animation so widths are measured once settled.
+    page.wait_for_timeout(350)
 
 
 def _setup_two_side_by_side(page: Page) -> tuple[str, str]:
@@ -201,9 +207,9 @@ def test_removal_float_out_preserves_sibling_width(page: Page) -> None:
 # ===========================================================================
 # (2) Docking a new column keeps existing columns' widths; new one = default.
 # ===========================================================================
-def test_dock_new_column_keeps_existing_and_defaults_new(page: Page) -> None:
-    # Arrange: controls docked right alone; inspector floating clear of the
-    # region (the dock-b-beside-a gesture is the thing under test).
+def test_dock_new_column_keeps_existing_and_window_width(page: Page) -> None:
+    # Arrange: controls docked right alone; inspector floating clear of
+    # the docked region (the dock-b-beside-a gesture is the thing under test).
     a, b = "t-controls", "t-inspector"
     set_layout(
         page,
@@ -229,8 +235,12 @@ def test_dock_new_column_keeps_existing_and_defaults_new(page: Page) -> None:
     assert abs(a_after - a_alone) <= _DIVIDER_TOL, (
         f"existing column width changed on new dock: {a_alone} -> {a_after}"
     )
-    # New column gets ~the default (~300).
-    assert abs(b_after - 300) <= 25, f"new column not ~default width: {b_after}"
+    # The newcomer keeps the WIDTH ITS WINDOW HAD (260 here) -- the
+    # rail-polish width contract: a dragged window's width is the panel's
+    # chosen width (P8), not a fixed default.
+    assert abs(b_after - 260) <= 25, (
+        f"new column should keep the window's 260px width: {b_after}"
+    )
 
 
 # ===========================================================================
@@ -296,11 +306,11 @@ def test_no_width_jump_at_drag_start(page: Page) -> None:
 # ===========================================================================
 # (M1) Reserved divider resizes even when a column is minimized/overlaid.
 # ===========================================================================
-def test_reserved_divider_resizes_with_minimized_column(page: Page) -> None:
-    """Build a 3-column right region, minimize the OUTERMOST column (it overlays),
-    then drag the divider between the two reserved columns. Previously this was a
-    silent no-op (the reserved subtree reused the full split's id); now it must
-    actually resize."""
+def test_reserved_divider_resizes_with_railed_column(page: Page) -> None:
+    """Build a 3-column right region, RAIL the OUTERMOST column (36px fixed
+    strip), then drag the divider between the two expanded columns.
+    Previously this was a silent no-op (the reserved subtree reused the full
+    split's id); now it must actually resize."""
     # Arrange: a 3-column right region (the divider drag is the subject).
     set_layout(
         page, dock_layout(docked_right=columns("controls", "inspector", "console"))
@@ -308,10 +318,10 @@ def test_reserved_divider_resizes_with_minimized_column(page: Page) -> None:
     cols = _right_group_ids(page)
     assert len(cols) == 3, f"injected 3-column right region wrong: {cols}"
 
-    # Minimize the outermost (last, farthest from canvas) so it overlays and the
-    # reserved subtree keeps two columns + a divider between them.
+    # Rail the outermost (last, farthest from canvas): a fixed 36px strip;
+    # the two expanded columns keep a live divider between them.
     outermost = cols[-1]
-    _minimize(page, outermost)
+    _rail(page, outermost)
 
     col0, col1 = cols[0], cols[1]
     w0_before = _width(page, col0)
@@ -475,17 +485,18 @@ def test_dock_above_single_panel_splits_height_evenly(
 
 
 # ===========================================================================
-# Dock a panel ABOVE two side-by-side columns (thin region-top span band) ->
-# full-width top panel gets substantial height; the two columns keep their
-# side-by-side widths (region width preserved, not collapsed to one column).
+# Dock a panel ABOVE one of two side-by-side columns (grip-bar drop) -> the
+# new leaf stacks within THAT column with substantial height; the sibling
+# column keeps its width and full height (D46: there is no span-all band;
+# vertical intent is always scoped to one column).
 # ===========================================================================
-def test_dock_above_two_columns_spans_and_preserves_widths(
+def test_dock_above_one_of_two_columns_preserves_sibling(
     dock_context, vite_server: int
 ) -> None:
     page = open_playground(dock_context, vite_server, 1500, 800)
     try:
         # Arrange: two side-by-side right columns + a floating console; the
-        # dock-ABOVE-the-region drop is the gesture under test.
+        # dock-ABOVE-controls drop is the gesture under test.
         c = "t-console"
         set_layout(
             page,
@@ -496,55 +507,145 @@ def test_dock_above_two_columns_spans_and_preserves_widths(
         )
         cols = _right_cols(page)
         assert len(cols) == 2
+        controls = next(leaf for leaf in cols if leaf["g"] == "t-controls")
+        inspector = next(leaf for leaf in cols if leaf["g"] == "t-inspector")
+        insp_w_before, insp_h_before = inspector["w"], inspector["h"]
 
-        region_left = min(leaf["x"] for leaf in cols)
-        region_right = max(leaf["x"] + leaf["w"] for leaf in cols)
-        region_width_before = region_right - region_left
-        col_widths_before = sorted(leaf["w"] for leaf in cols)
-        region_cx = (region_left + region_right) / 2
-
-        # Dock `c` ABOVE BOTH via the thin region-top span band: horizontally
-        # centered over the region, within ~4px of the very top.
-        _drag_group(page, c, (region_cx, 4), steps=14)
+        # Dock `c` ABOVE controls via controls' grip bar.
+        _drag_group(page, c, _grip(page, "t-controls"), steps=14)
 
         after = _right_cols(page)
         if len(after) != 3:
-            pytest.skip("did not produce a top band + two columns this run")
+            pytest.skip("did not produce a stacked column this run")
 
-        # The new top band spans both columns: find the widest leaf (full width)
-        # -- it must get a substantial height (roughly half), not a sliver.
-        top = max(after, key=lambda leaf: leaf["w"])
-        bottom_cols = [leaf for leaf in after if leaf is not top]
+        top = next((leaf for leaf in after if leaf["g"] == c), None)
+        assert top is not None, f"console did not dock: {after}"
+        # The new leaf gets substantial height (not the ~3px regression).
         assert top["h"] > 100, (
-            f"the full-width top band got too little height ({top['h']}px); "
+            f"the new stacked leaf got too little height ({top['h']}px); "
             "dock-above height regressed"
         )
-        assert top["w"] >= region_width_before * 0.9, (
-            f"the top band did not span the region width "
-            f"({top['w']} vs region {region_width_before})"
+        # It stacks within controls' column: same x, above controls.
+        ctrl_after = next(leaf for leaf in after if leaf["g"] == "t-controls")
+        assert abs(top["x"] - controls["x"]) <= 6, (
+            f"the new leaf must join controls' column: {after}"
         )
-        # It sits above the two columns.
-        assert top["y"] <= min(leaf["y"] for leaf in bottom_cols), (
-            "the span band is not above the two columns"
-        )
+        assert top["y"] < ctrl_after["y"], "console must land ABOVE controls"
 
-        # The two original columns keep their side-by-side widths: region width
-        # preserved (not shrunk to one column), and two distinct columns remain.
-        bottom_left = min(leaf["x"] for leaf in bottom_cols)
-        bottom_right = max(leaf["x"] + leaf["w"] for leaf in bottom_cols)
-        assert abs((bottom_right - bottom_left) - region_width_before) <= 12, (
-            f"region width changed: was {region_width_before}, now "
-            f"{bottom_right - bottom_left}"
+        # The sibling inspector column is untouched: full height, same width.
+        insp_after = next(leaf for leaf in after if leaf["g"] == "t-inspector")
+        assert abs(insp_after["w"] - insp_w_before) <= 12, (
+            f"sibling column width changed: {insp_w_before} -> {insp_after['w']}"
         )
-        col_widths_after = sorted(leaf["w"] for leaf in bottom_cols)
-        for w_before, w_after in zip(col_widths_before, col_widths_after):
-            assert abs(w_before - w_after) <= 12, (
-                f"a column width changed: {col_widths_before} -> {col_widths_after}"
-            )
-        # Still two distinct side-by-side columns (different x positions).
-        xs = sorted(leaf["x"] for leaf in bottom_cols)
-        assert xs[1] - xs[0] >= 100, (
-            f"the two columns collapsed onto one another: {bottom_cols}"
+        assert abs(insp_after["h"] - insp_h_before) <= 12, (
+            f"sibling column height changed (the drop leaked out of controls' "
+            f"column): {insp_h_before} -> {insp_after['h']}"
         )
     finally:
         page.close()
+
+
+# ===========================================================================
+# (scroll) A docked column dragged narrower than the panel-content minimum
+# (220px) does NOT clamp -- the layout floor is now a tiny grabbable sliver.
+# Instead the panel BODY holds the content minimum and overflows, so a
+# horizontal scrollbar appears, pinned to the BOTTOM of the panel (the scroll
+# viewport fills the panel height) even when the content is short.
+# ===========================================================================
+def _body_viewport(page: Page, gid: str) -> dict:
+    """The docked panel body's scroll viewport metrics + its bottom relative to
+    the leaf bottom (so we can assert the horizontal scrollbar sits at the
+    panel's bottom, not floating under short content)."""
+    return page.eval_on_selector(
+        f'[data-dock-group="{gid}"]',
+        """e => {
+            const vp = e.querySelector('.mantine-ScrollArea-viewport');
+            const leaf = e.closest('[data-dock-leaf]');
+            const vr = vp.getBoundingClientRect();
+            const lr = leaf.getBoundingClientRect();
+            return {
+                scrollW: Math.round(vp.scrollWidth),
+                clientW: Math.round(vp.clientWidth),
+                vpBottom: Math.round(vr.bottom),
+                leafBottom: Math.round(lr.bottom),
+            };
+        }""",
+    )
+
+
+def test_narrow_region_scrolls_body_with_bottom_scrollbar(page: Page) -> None:
+    a = "t-controls"
+    set_layout(page, dock_layout(docked_right=columns("controls")))
+    assert not _is_float(page, a)
+
+    leaf = _box(page, a)
+    wide = _body_viewport(page, a)
+    # At a comfortable width the body fits -- no horizontal overflow.
+    assert wide["scrollW"] <= wide["clientW"] + 2, (
+        f"unexpected overflow at full width: {wide}"
+    )
+
+    # Drag the region's canvas-facing (left) edge rightward to ~120px wide --
+    # well below the 220px content minimum. The layout floor (MIN_REGION_GRAB_PX,
+    # 96px) lets it commit this narrow instead of clamping at 220.
+    vw = page.viewport_size["width"]  # type: ignore[index]
+    # Grab INSIDE the D54 edge gutter, not at the leaf's box: the leaf is
+    # inset REGION_EDGE_GAP_PX from the region boundary the resizer
+    # straddles, and grabbing exactly at the leaf edge sits on the straddle's
+    # inner limit (a rounding-dependent miss).
+    region_left = leaf["x"] - REGION_EDGE_GAP_PX
+    target_left = vw - 120
+    _raw_drag(page, (region_left, 400), (target_left, 400))
+
+    narrow_w = _width(page, a)
+    assert narrow_w < 200, (
+        f"region did not shrink below the old 220 floor: width {narrow_w}"
+    )
+
+    vp = _body_viewport(page, a)
+    # The body holds its content minimum and overflows -> horizontal scrollbar.
+    assert vp["scrollW"] > vp["clientW"] + 2, (
+        f"narrow panel body did not overflow horizontally: {vp}"
+    )
+    # The scroll viewport fills to the panel's bottom, so the horizontal
+    # scrollbar sits at the bottom of the panel (not mid-panel under short
+    # content). Allow a few px for the scrollbar track / sub-pixel rounding.
+    assert abs(vp["vpBottom"] - vp["leafBottom"]) <= 18, (
+        f"scroll viewport does not reach the panel bottom: {vp}"
+    )
+
+
+# ===========================================================================
+# RAILED columns beside an expanded column: the region must keep a WORKING
+# resizer. Regression for the "expanded region with no resize handle" hole
+# (rails are fixed-width chrome; the expanded column still needs a live
+# resizer).
+# ===========================================================================
+def test_region_resizer_works_with_railed_columns(page: Page) -> None:
+    set_layout(
+        page,
+        dock_layout(
+            docked_right=columns(
+                stack("controls", railed=True),
+                stack("inspector", railed=True),
+                "console",
+            )
+        ),
+    )
+    page.wait_for_timeout(300)
+    handle = page.query_selector('[data-dock-region-resize="right"]')
+    assert handle is not None, (
+        "region with an expanded column must render a resizer even when "
+        "sibling columns are railed"
+    )
+    before = page.evaluate("() => window.__dockLayout.regionWidth.right")
+    hb = handle.bounding_box()
+    assert hb is not None
+    x = hb["x"] + hb["width"] / 2
+    y = hb["y"] + hb["height"] * 0.75  # below the grip-bar clearance
+    _raw_drag(page, (x, y), (x - 120, y))
+    after = page.evaluate("() => window.__dockLayout.regionWidth.right")
+    assert after - before >= 100, (
+        f"dragging the resizer must widen the region via regionWidth: "
+        f"{before} -> {after}"
+    )

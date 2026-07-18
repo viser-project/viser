@@ -21,28 +21,49 @@ import {
   hitTest,
   tabInsertion,
   inside,
-  DEFAULT_REGION_PX,
   GroupTarget,
   ContainerRect,
   DropTargets,
 } from "./hitTest";
-import { DockEdge, DockLayout, DockNode, GroupId, emptyLayout } from "./types";
-import { rect, leaf, row as rowSplit, col as colSplit, group } from "./testUtils";
+import {
+  DEFAULT_REGION_PX,
+  DockEdge,
+  DockLayout,
+  GroupId,
+  emptyLayout,
+  SPLIT_DIVIDER_PX,
+} from "./types";
+import {
+  rect,
+  leaf,
+  row as rowSplit,
+  col as colSplit,
+  group,
+  floatingWindow,
+  toRegion,
+  leafIdOf,
+  leafIdsOf,
+  packRegionInPlace,
+} from "./testUtils";
 
 const CONTAINER: ContainerRect = { left: 0, top: 0, width: 1000, height: 800 };
 
 // Tunables mirrored from hitTest.ts for constructing pointer positions just
 // inside / outside each zone. (Kept local so the test documents the contract.)
 const EDGE_ZONE_PX = 48;
-// Thin outer top/bottom band -> regionEdge "span all". Now 8px (was 22) so it
-// doesn't shadow the topmost panel's grip bar.
+// Former thin outer top/bottom band width, kept as a probe offset: points
+// this close to the region's top/bottom edge exercise the deleted band's
+// pixels (D46: no top/bottom region zones survive there).
 const REGION_EDGE_PX = 8;
 const REGION_SIDE_PX = 40;
 
-function layoutWith(opts: { left?: DockNode | null; right?: DockNode | null }): DockLayout {
+function layoutWith(opts: {
+  left?: ReturnType<typeof leaf> | null;
+  right?: ReturnType<typeof leaf> | null;
+}): DockLayout {
   const l = emptyLayout();
-  l.docked.left = opts.left ?? null;
-  l.docked.right = opts.right ?? null;
+  l.docked.left = toRegion(opts.left ?? null);
+  l.docked.right = toRegion(opts.right ?? null);
   return l;
 }
 
@@ -61,7 +82,7 @@ function dockedTarget(
   edge: DockEdge,
   r: DOMRect,
   stripH = 30,
-  tabs: { panelId: string; rect: DOMRect }[] = [],
+  tabs: { paneId: string; rect: DOMRect }[] = [],
 ): GroupTarget {
   return {
     groupId,
@@ -94,8 +115,17 @@ function run(
   x: number,
   y: number,
   regionWidth = REGION_W,
+  opts?: { draggingUnmergeable?: boolean },
 ) {
-  return hitTest(layout, regionWidth, CONTAINER, { groups: targets }, x, y);
+  return hitTest(
+    layout,
+    regionWidth,
+    CONTAINER,
+    { groups: targets },
+    x,
+    y,
+    opts,
+  );
 }
 
 // ===========================================================================
@@ -123,7 +153,10 @@ describe("tabInsertion", () => {
   });
 
   it("before the first tab when pointer is on its left half", () => {
-    const tabs = [{ rect: rect(0, 0, 100, 30) }, { rect: rect(100, 0, 100, 30) }];
+    const tabs = [
+      { rect: rect(0, 0, 100, 30) },
+      { rect: rect(100, 0, 100, 30) },
+    ];
     const ins = tabInsertion(tabs, 20, 15)!;
     expect(ins.index).toBe(0);
     // The row-leftmost line is nudged INWARD (its tab's left edge is the
@@ -132,7 +165,10 @@ describe("tabInsertion", () => {
   });
 
   it("before a NON-leftmost tab keeps the line on the shared edge", () => {
-    const tabs = [{ rect: rect(0, 0, 100, 30) }, { rect: rect(100, 0, 100, 30) }];
+    const tabs = [
+      { rect: rect(0, 0, 100, 30) },
+      { rect: rect(100, 0, 100, 30) },
+    ];
     const ins = tabInsertion(tabs, 110, 15)!;
     expect(ins.index).toBe(1);
     expect(ins.lineLeft).toBe(100); // left edge of tab 1 = right edge of tab 0
@@ -150,14 +186,20 @@ describe("tabInsertion", () => {
   });
 
   it("after a tab when pointer is on its right half", () => {
-    const tabs = [{ rect: rect(0, 0, 100, 30) }, { rect: rect(100, 0, 100, 30) }];
+    const tabs = [
+      { rect: rect(0, 0, 100, 30) },
+      { rect: rect(100, 0, 100, 30) },
+    ];
     const ins = tabInsertion(tabs, 80, 15)!;
     expect(ins.index).toBe(1);
     expect(ins.lineLeft).toBe(100); // right edge of tab 0
   });
 
   it("appends after the last tab", () => {
-    const tabs = [{ rect: rect(0, 0, 100, 30) }, { rect: rect(100, 0, 100, 30) }];
+    const tabs = [
+      { rect: rect(0, 0, 100, 30) },
+      { rect: rect(100, 0, 100, 30) },
+    ];
     const ins = tabInsertion(tabs, 190, 15)!;
     expect(ins.index).toBe(2);
     expect(ins.lineLeft).toBe(200);
@@ -220,12 +262,22 @@ describe("screen edge zones", () => {
   it("left edge dock on an empty left edge", () => {
     const out = run(layoutWith({}), [], EDGE_ZONE_PX - 5, 400)!;
     expect(out.result).toEqual({ kind: "edge", edge: "left" });
-    expect(out.hint).toMatchObject({ left: 0, top: 0, width: DEFAULT_REGION_PX, variant: "fill" });
+    expect(out.hint).toMatchObject({
+      left: 0,
+      top: 0,
+      width: DEFAULT_REGION_PX,
+      variant: "fill",
+    });
     expect(out.hint.height).toBe(CONTAINER.height);
   });
 
   it("right edge dock on an empty right edge", () => {
-    const out = run(layoutWith({}), [], CONTAINER.width - (EDGE_ZONE_PX - 5), 400)!;
+    const out = run(
+      layoutWith({}),
+      [],
+      CONTAINER.width - (EDGE_ZONE_PX - 5),
+      400,
+    )!;
     expect(out.result).toEqual({ kind: "edge", edge: "right" });
     expect(out.hint).toMatchObject({
       left: CONTAINER.width - DEFAULT_REGION_PX,
@@ -239,7 +291,7 @@ describe("screen edge zones", () => {
     // region -> region/per-panel logic handles it, not the screen-edge zone.
     const node = leaf("a");
     const layout = layoutWith({ left: node });
-    const tgt = dockedTarget("a", node.id, "left", rect(0, 0, 300, 800));
+    const tgt = dockedTarget("a", leafIdOf(node), "left", rect(0, 0, 300, 800));
     const out = run(layout, [tgt], EDGE_ZONE_PX - 5, 400)!;
     expect(out.result.kind).not.toBe("edge");
   });
@@ -257,110 +309,466 @@ describe("screen edge zones", () => {
 describe("screen-edge dock next to an occupied region", () => {
   function minimizedRight(collapsed: boolean) {
     const l = emptyLayout();
-    l.groups = {
-      m: { ...group("m"), collapsed },
+    l.groups = { m: group("m") };
+    l.docked.right = {
+      columns: [
+        { id: "Cm", weight: 1, leaves: [{ id: "Lm", group: "m", weight: 1 }] },
+      ],
     };
-    l.docked.right = { type: "leaf", id: "Lm", group: "m", weight: 1 };
+    // D38: docked collapse is the REGION's flag (the rail), not group state.
+    if (collapsed) packRegionInPlace(l, "right");
     return l;
   }
 
   // Minimized columns RESERVE width as fixed strips (no canvas overlay), so a
-  // region holding only minimized panels is still an occupied edge: drops at
+  // region holding only minimized panes is still an occupied edge: drops at
   // the screen edge resolve against the strip's own zones (split/merge), not
   // the empty-edge zone.
   it("does NOT offer the edge zone when every docked group is minimized", () => {
-    const hit = hitTest(minimizedRight(true), REGION_W, CONTAINER, { groups: [] }, 990, 400);
+    const hit = hitTest(
+      minimizedRight(true),
+      REGION_W,
+      CONTAINER,
+      { groups: [] },
+      990,
+      400,
+    );
     expect(hit?.result.kind).not.toBe("edge");
   });
 
   it("does NOT offer the edge zone when the region has expanded content", () => {
-    const hit = hitTest(minimizedRight(false), REGION_W, CONTAINER, { groups: [] }, 990, 400);
+    const hit = hitTest(
+      minimizedRight(false),
+      REGION_W,
+      CONTAINER,
+      { groups: [] },
+      990,
+      400,
+    );
     expect(hit?.result.kind).not.toBe("edge");
   });
 });
 
 // ===========================================================================
-// Region edges (top/bottom full-width, left/right inner+outer; suppressed for
-// a single full-span leaf)
+// Region edges (D46: left/right side bands ONLY -- a side dock lands a
+// full-height column beside everything; top/bottom band zones are deleted
+// with the bands themselves. Suppressed for a single full-span leaf.)
 // ===========================================================================
 describe("region edge zones", () => {
-  // A multi-cell region so the edges are NOT single leaves: a row [a|b] makes
-  // top/bottom span both columns; a column [a/b] makes left/right span rows.
-  it("top band of a multi-column region -> regionEdge top (thin full-width line)", () => {
+  it("top/bottom edges are NOT region-band zones (D46: band drops deleted)", () => {
+    // A pointer at the region's top/bottom edge with no target under it
+    // resolves to NOTHING (per-cell above/below zones own vertical intent).
     const tree = rowSplit([leaf("a"), leaf("b")]);
     const layout = layoutWith({ left: tree });
-    const out = run(layout, [], 100, REGION_EDGE_PX - 5)!;
-    expect(out.result).toEqual({ kind: "regionEdge", edge: "left", side: "top" });
-    // Region-edge spans now preview as a thin LINE (consistent with per-panel
-    // split lines), spanning the full region width at the top edge.
-    expect(out.hint.variant).toBe("line");
-    expect(out.hint.top).toBe(0);
-    expect(out.hint.width).toBe(REGION_W.left);
-    expect(out.hint.height).toBeLessThan(8); // thin
+    expect(run(layout, [], 100, REGION_EDGE_PX - 5)).toBeNull();
+    expect(
+      run(layout, [], 100, CONTAINER.height - (REGION_EDGE_PX - 5)),
+    ).toBeNull();
   });
 
-  it("bottom band of a multi-column region -> regionEdge bottom (thin line at bottom)", () => {
-    const tree = rowSplit([leaf("a"), leaf("b")]);
-    const layout = layoutWith({ left: tree });
-    const out = run(layout, [], 100, CONTAINER.height - (REGION_EDGE_PX - 5))!;
-    expect(out.result).toEqual({ kind: "regionEdge", edge: "left", side: "bottom" });
-    expect(out.hint.variant).toBe("line");
-    expect(out.hint.height).toBeLessThan(8);
-    // Line sits at the bottom edge of the region.
-    expect(out.hint.top + out.hint.height).toBeCloseTo(CONTAINER.height, 0);
-  });
-
-  it("left band of a multi-row region -> regionEdge left (thin full-height line)", () => {
+  it("left band of a stacked-column region -> columnInsert at seam 0 (REGION-TALL line)", () => {
     const tree = colSplit([leaf("a"), leaf("b")]);
     const layout = layoutWith({ left: tree });
-    // Avoid the top band; pick a y in the vertical middle.
     const out = run(layout, [], REGION_SIDE_PX - 5, 400)!;
-    expect(out.result).toEqual({ kind: "regionEdge", edge: "left", side: "left" });
+    // D55: the region's outer boundary is seam 0 of its columns.
+    expect(out.result).toEqual({
+      kind: "columnInsert",
+      edge: "left",
+      index: 0,
+    });
     expect(out.hint.variant).toBe("line");
+    // The hint is region-tall (D46: the landing column is full height).
     expect(out.hint.height).toBe(CONTAINER.height);
     expect(out.hint.width).toBeLessThan(8); // thin
   });
 
-  it("right band (inner) of a multi-row left region -> regionEdge right", () => {
+  it("right band (inner) of a stacked-column left region -> columnInsert at seam N", () => {
     const tree = colSplit([leaf("a"), leaf("b")]);
     const layout = layoutWith({ left: tree });
     const regionRight = REGION_W.left; // left region spans [0..300]
     const out = run(layout, [], regionRight - (REGION_SIDE_PX - 5), 400)!;
-    expect(out.result).toEqual({ kind: "regionEdge", edge: "left", side: "right" });
-    // Hint sits at the inner edge of the region.
-    expect(out.hint.left + out.hint.width).toBeLessThanOrEqual(regionRight + 1);
+    // One column (a stacked pair), so the inner boundary is seam 1 (D55).
+    expect(out.result).toEqual({
+      kind: "columnInsert",
+      edge: "left",
+      index: 1,
+    });
+    // The line is centered on the region's inner boundary (the seam).
+    expect(out.hint.left + out.hint.width / 2).toBeCloseTo(regionRight, 0);
   });
 
   it("right region: bands anchored to the right side of the screen", () => {
     const tree = colSplit([leaf("a"), leaf("b")]);
     const layout = layoutWith({ right: tree });
     const regionLeft = CONTAINER.width - REGION_W.right; // [700..1000]
-    // Outer-right band.
+    // Outer-right band -> seam N (= 1: one stacked column).
     const out = run(layout, [], CONTAINER.width - (REGION_SIDE_PX - 5), 400)!;
-    expect(out.result).toEqual({ kind: "regionEdge", edge: "right", side: "right" });
+    expect(out.result).toEqual({
+      kind: "columnInsert",
+      edge: "right",
+      index: 1,
+    });
     expect(out.hint.left).toBeGreaterThanOrEqual(regionLeft);
   });
 
-  it("suppressed for top/bottom when the edge is a single full-span leaf", () => {
-    // A bare leaf: every edge is a single leaf, so region-edge zones are
-    // suppressed and the pointer falls through to the per-panel group logic.
+  it("a single full-span leaf falls through to the per-panel group logic", () => {
+    // A bare leaf: every side is a single leaf, so region-edge zones are
+    // suppressed and the pointer resolves against the panel's own zones.
     const node = leaf("a");
     const layout = layoutWith({ left: node });
-    const tgt = dockedTarget("a", node.id, "left", rect(0, 0, 300, 800));
+    const tgt = dockedTarget("a", leafIdOf(node), "left", rect(0, 0, 300, 800));
     const out = run(layout, [tgt], 150, REGION_EDGE_PX - 5)!;
-    expect(out.result.kind).not.toBe("regionEdge");
+    expect(out.result.kind).not.toBe("columnInsert");
   });
 
-  it("suppressed for left/right when a column's side is a single leaf", () => {
-    // A column [a/b]: top/bottom descend into single leaves (suppressed) but
-    // left/right span rows (active). Verify the top band is suppressed.
+  it("the top edge over a multi-leaf column resolves to the cell's ABOVE zone", () => {
+    // A column [a/b]: vertical intent belongs to the cells (leaf stacking,
+    // D46) -- the old full-width top band is gone, so the pointer falls
+    // through to the topmost cell's above-strip zone.
     const tree = colSplit([leaf("a"), leaf("b")]);
     const layout = layoutWith({ left: tree });
-    const tgt = dockedTarget("a", (tree as any).children[0].id, "left", rect(0, 0, 300, 400));
-    // Pointer in the top band, but in the middle horizontally (past the side
-    // bands). Top is single-leaf -> suppressed -> falls to group split logic.
+    const tgt = dockedTarget(
+      "a",
+      leafIdsOf(tree)[0],
+      "left",
+      rect(0, 0, 300, 400),
+    );
+    // Pointer at the top edge, middle horizontally (past the side bands).
     const out = run(layout, [tgt], 150, REGION_EDGE_PX - 5)!;
-    expect(out.result.kind).not.toBe("regionEdge");
+    expect(out.result).toMatchObject({ kind: "split", region: "top" });
+  });
+});
+
+// ===========================================================================
+// Docking to the OUTER edge of a fully-minimized region (a narrow strip).
+// A minimized region renders as a ~36px strip -- narrower than REGION_SIDE_PX
+// (40) -- so the inner and outer side bands would overlap. They're capped at
+// half the region width so the OUTER edge stays reachable (dock a new outer
+// column beside the minimized strip), matching an expanded region.
+// ===========================================================================
+describe("outer-edge dock beside a minimized region strip", () => {
+  const STRIP = 36; // MINIMIZED_STRIP_PX
+  // Rendered reserved width of a fully-minimized region is the strip width.
+  const STRIP_W: Record<DockEdge, number> = { left: STRIP, right: STRIP };
+  const stripLeft = CONTAINER.width - STRIP; // right region flush at screen edge
+
+  function collapsedRightTarget(
+    groupId: GroupId,
+    nodeId: string,
+    r: DOMRect,
+  ): GroupTarget {
+    return {
+      groupId,
+      rect: r,
+      stripRect: null,
+      tabs: [],
+      ctx: { kind: "docked", nodeId, edge: "right" },
+      collapsed: true,
+    };
+  }
+
+  it("multi-panel minimized strip: outer sliver -> split right (new outer column)", () => {
+    const top = leaf("g1");
+    const bot = leaf("g2");
+    const tree = colSplit([top, bot]); // one packed stack of two rail cells
+    const layout = layoutWith({ right: tree });
+    packRegionInPlace(layout, "right"); // the rail is the ONE docked store (D38)
+    const t1 = collapsedRightTarget(
+      "g1",
+      leafIdOf(top),
+      rect(stripLeft, 0, STRIP, 400),
+    );
+    const t2 = collapsedRightTarget(
+      "g2",
+      leafIdOf(bot),
+      rect(stripLeft, 400, STRIP, 400),
+    );
+    // Over a collapsed cell the region side bands ALWAYS yield to the cell's
+    // own zones (a 40px band would shadow the whole 36px strip); dock-beside
+    // is served by the rail's 8px outer sliver, which resolves to the
+    // canonical columnInsert at the seam beside the rail's column (D55/D46).
+    const out = run(layout, [t1, t2], CONTAINER.width - 1, 200, STRIP_W)!;
+    expect(out.result).toEqual({
+      kind: "columnInsert",
+      edge: "right",
+      index: 1,
+    });
+  });
+
+  it("multi-panel minimized strip: inner sliver -> split left (column toward the canvas)", () => {
+    const top = leaf("g1");
+    const bot = leaf("g2");
+    const tree = colSplit([top, bot]);
+    const layout = layoutWith({ right: tree });
+    packRegionInPlace(layout, "right"); // the rail is the ONE docked store (D38)
+    const t1 = collapsedRightTarget(
+      "g1",
+      leafIdOf(top),
+      rect(stripLeft, 0, STRIP, 400),
+    );
+    const t2 = collapsedRightTarget(
+      "g2",
+      leafIdOf(bot),
+      rect(stripLeft, 400, STRIP, 400),
+    );
+    const out = run(layout, [t1, t2], stripLeft + 1, 200, STRIP_W)!;
+    expect(out.result).toEqual({
+      kind: "columnInsert",
+      edge: "right",
+      index: 0,
+    });
+  });
+
+  it("single-leaf minimized strip: outer edge -> columnInsert (new outer column)", () => {
+    const node = leaf("g");
+    const layout = layoutWith({ right: node });
+    const tgt = collapsedRightTarget(
+      "g",
+      leafIdOf(node),
+      rect(stripLeft, 0, STRIP, 800),
+    );
+    // A single leaf suppresses the region-edge bands, so the collapsed 5-way
+    // (3z) handles it: the outer sliver is the canonical columnInsert at the
+    // seam past the strip's column (D55) -- the dragged panel becomes the
+    // new outer column.
+    const out = run(layout, [tgt], CONTAINER.width - 1, 400, STRIP_W)!;
+    expect(out.result).toEqual({
+      kind: "columnInsert",
+      edge: "right",
+      index: 1,
+    });
+  });
+
+  it("single minimized strip: the empty tail belongs to the CELL -- its inner sliver docks a column beside", () => {
+    // The scanner extends a lone rail cell's drop rect to the FULL
+    // region-tall strip (data-dock-rail-root), so the "empty area below
+    // the spine" is the cell's own surface: its 8px side slivers dock a
+    // full-height column beside (the region-level side bands yield to
+    // collapsed cells unconditionally -- edge case 13).
+    const node = leaf("g");
+    const layout = layoutWith({ right: node });
+    packRegionInPlace(layout, "right"); // the rail is the ONE docked store (D38)
+    // Region-tall strip rect, as the scanner provides it.
+    const tgt = collapsedRightTarget(
+      "g",
+      leafIdOf(node),
+      rect(stripLeft, 0, STRIP, 800),
+    );
+    const out = run(layout, [tgt], stripLeft + 2, 500, STRIP_W);
+    expect(out).not.toBeNull();
+    expect(out!.result).toEqual({
+      kind: "columnInsert",
+      edge: "right",
+      index: 0,
+    });
+  });
+
+  it("lone railed cell: the region's bottom corner is a SIDE dock via the cell's outer sliver", () => {
+    // D46: no top/bottom band zones exist, and the scanner-extended strip
+    // tiles the region -- the bottom corner sits in the cell's 8px OUTER
+    // sliver, which docks a full-height column beside (never a band
+    // insert; edge case 13).
+    const node = leaf("g");
+    const layout = layoutWith({ right: node });
+    packRegionInPlace(layout, "right"); // the rail is the ONE docked store (D38)
+    const tgt = collapsedRightTarget(
+      "g",
+      leafIdOf(node),
+      rect(stripLeft, 0, STRIP, 800),
+    );
+    // Drop near the region's bottom outer corner.
+    const out = run(
+      layout,
+      [tgt],
+      CONTAINER.width - 2,
+      CONTAINER.height - 4,
+      STRIP_W,
+    );
+    expect(out).not.toBeNull();
+    expect(out!.result).toEqual({
+      kind: "columnInsert",
+      edge: "right",
+      index: 1,
+    });
+  });
+
+  it("packed railed stack: no bandInsert / top / bottom anywhere -- drops join the rail", () => {
+    // D46: band inserts are unrepresentable and the top/bottom region
+    // zones are deleted. Drops at the packed rail's cell boundaries hit the
+    // cells' own zones (stack above/below = split, merge, insertTab), and
+    // only the honest side seams (columnInsert, D55) remain at region scope.
+    const top = leaf("g1");
+    const bot = leaf("g2");
+    const tree = colSplit([top, bot]);
+    const layout = layoutWith({ right: tree });
+    packRegionInPlace(layout, "right");
+    // Packed rail: two content-tall cells, a hairline apart (the packed
+    // strip renders no band boxes on screen).
+    const t1 = collapsedRightTarget(
+      "g1",
+      leafIdOf(top),
+      rect(stripLeft, 0, STRIP, 120),
+    );
+    const t2 = collapsedRightTarget(
+      "g2",
+      leafIdOf(bot),
+      rect(stripLeft, 121, STRIP, 120),
+    );
+    // Pointer at the cell boundary, mid-strip: a rail-cell zone (stack
+    // above/below = split, or merge/insertTab), NEVER a band insert.
+    const out = run(layout, [t1, t2], stripLeft + STRIP / 2, 121, STRIP_W);
+    expect(out).not.toBeNull();
+    expect(["split", "merge", "insertTab"]).toContain(out!.result.kind);
+    // And nowhere over the whole strip does a band insert appear -- only
+    // the cells' own zones and (at region scope) the honest side seams.
+    for (let y = 0; y <= CONTAINER.height; y += 8) {
+      const r = run(layout, [t1, t2], stripLeft + STRIP / 2, y, STRIP_W);
+      if (r === null) continue;
+      expect(["split", "merge", "insertTab", "columnInsert"]).toContain(
+        r.result.kind,
+      );
+      if (r.result.kind === "columnInsert") {
+        // Side seams of the single packed column only (D55).
+        expect([0, 1]).toContain(r.result.index);
+      }
+    }
+  });
+
+  it("single minimized strip: over the strip's own rows still inserts a tab (cell wins)", () => {
+    const node = leaf("g");
+    const layout = layoutWith({ right: node });
+    packRegionInPlace(layout, "right");
+    const tgt = collapsedRightTarget(
+      "g",
+      leafIdOf(node),
+      rect(stripLeft, 0, STRIP, 120),
+    );
+    tgt.tabs = [{ paneId: "p", rect: rect(stripLeft, 40, STRIP, 30) }];
+    // Over a row (inside the strip cell) -> the cell's tab-insert wins, not the
+    // region-beside band.
+    const out = run(layout, [tgt], stripLeft + STRIP / 2, 55, STRIP_W);
+    expect(out!.result).toMatchObject({
+      kind: "insertTab",
+      targetGroupId: "g",
+    });
+  });
+
+  it("over a spine-label row -> insertTab with an INSET hint line (not full strip width)", () => {
+    const node = leaf("g");
+    const layout = layoutWith({ right: node });
+    // A content-tall strip (~70px) with two spine-label rows near the top.
+    const tgt = collapsedRightTarget(
+      "g",
+      leafIdOf(node),
+      rect(stripLeft, 0, STRIP, 70),
+    );
+    tgt.tabs = [
+      { paneId: "p0", rect: rect(stripLeft, 4, STRIP, 30) },
+      { paneId: "p1", rect: rect(stripLeft, 36, STRIP, 30) },
+    ];
+    // Hover the middle of the strip's x, over the second row -> insert there.
+    const out = run(layout, [tgt], stripLeft + STRIP / 2, 40, STRIP_W)!;
+    expect(out.result).toMatchObject({ kind: "insertTab", targetGroupId: "g" });
+    // The hint line is inset from BOTH strip edges (no full-width rule).
+    expect(out.hint.variant).toBe("line");
+    expect(out.hint.width).toBeLessThan(STRIP);
+    expect(out.hint.left).toBeGreaterThan(stripLeft - CONTAINER.left);
+  });
+
+  it("collapsed strip drop zones use the CONTENT rect, not a region-tall box", () => {
+    // The leaf rect equals the visible strip (~70px), so a point below the rows
+    // is OUTSIDE the cell -> it must NOT resolve to a phantom 'bottom split'
+    // pinned to an 800px region bottom. (Regression: the tall-rect bug.)
+    const node = leaf("g");
+    const layout = layoutWith({ right: node });
+    const tgt = collapsedRightTarget(
+      "g",
+      leafIdOf(node),
+      rect(stripLeft, 0, STRIP, 70),
+    );
+    tgt.tabs = [{ paneId: "p0", rect: rect(stripLeft, 4, STRIP, 40) }];
+    // A point far below the 70px strip is not over the target at all.
+    const out = run(layout, [tgt], stripLeft + STRIP / 2, 500, STRIP_W);
+    // Either no target (null) or, at worst, not a split pinned to y=500+.
+    if (out !== null && out.result.kind === "split") {
+      expect(out.hint.top).toBeLessThan(200);
+    }
+  });
+
+  // A FLOATING collapsed window's cell -- the only bar form (D32/D38) -- as
+  // a hit-test target. Two labels per D36: insertion aims at the VISIBLE
+  // label rects.
+  const floatingBar = () => {
+    const flayout = layoutWith({});
+    flayout.groups["g"] = group("g");
+    flayout.floating = [
+      // D38: the WINDOW carries the collapse flag (its cell renders as a bar).
+      {
+        id: "w",
+        x: 300,
+        y: 100,
+        width: 300,
+        height: { mode: "auto" as const },
+        stack: ["g"],
+        collapsed: true,
+      },
+    ];
+    const ftgt: GroupTarget = {
+      groupId: "g",
+      rect: rect(300, 100, 300, STRIP),
+      stripRect: null,
+      tabs: [
+        { paneId: "p0", rect: rect(310, 106, 80, 24) },
+        { paneId: "p1", rect: rect(390, 106, 80, 24) },
+      ],
+      ctx: { kind: "floating", windowId: "w", index: 0 },
+      collapsed: true,
+      bar: true,
+    };
+    return { flayout, ftgt };
+  };
+
+  it("a BAR inserts HORIZONTALLY across its visible labels, appends past the last (D36)", () => {
+    // A bar lays its per-tab labels out horizontally: over a label the drop
+    // inserts at that X position (2D nearest-tab, vertical line) -- never
+    // the rail's Y-based row insertion. tabInsertion consumes the SAME
+    // per-label rects the expanded strip uses, so multi-label bars (D36)
+    // resolve every boundary; right of the LAST label the drop appends
+    // (merge), per spec 5.4's label-bounded rule.
+    const { flayout, ftgt } = floatingBar();
+    const midY = 100 + STRIP / 2;
+    // Left half of label 0 -> insert BEFORE it; vertical line hint.
+    const before = run(flayout, [ftgt], 320, midY, STRIP_W)!;
+    expect(before.result).toMatchObject({
+      kind: "insertTab",
+      targetGroupId: "g",
+      index: 0,
+    });
+    expect(before.hint.width).toBeLessThan(before.hint.height);
+    // Between the labels -> index 1 (right half of label 0 / left of label 1).
+    const between = run(flayout, [ftgt], 385, midY, STRIP_W)!;
+    expect(between.result).toMatchObject({ kind: "insertTab", index: 1 });
+    // Right half of label 1 -> index 2.
+    const after = run(flayout, [ftgt], 460, midY, STRIP_W)!;
+    expect(after.result).toMatchObject({ kind: "insertTab", index: 2 });
+    // Past the last label (+8px slack): APPEND via merge -- the trailing
+    // slack is the append surface, so append stays reachable (spec 5.4).
+    const out = run(flayout, [ftgt], 520, midY, STRIP_W)!;
+    expect(out.result).toMatchObject({ kind: "merge", targetGroupId: "g" });
+  });
+
+  it("a FLOATING bar snaps above/below within its 10px edge bands", () => {
+    // Spec 5.4: floating bars are ordinary stack cells (D17) with
+    // min(10px, height/3) snap bands at their top/bottom edges.
+    const { flayout, ftgt } = floatingBar();
+    const top = run(flayout, [ftgt], 450, 103, STRIP_W)!;
+    expect(top.result).toMatchObject({ kind: "snap", windowId: "w", index: 0 });
+    const bottom = run(flayout, [ftgt], 450, 100 + STRIP - 3, STRIP_W)!;
+    expect(bottom.result).toMatchObject({
+      kind: "snap",
+      windowId: "w",
+      index: 1,
+    });
   });
 });
 
@@ -375,15 +783,21 @@ describe("docked group per-panel zones", () => {
   const frame = rect(100, 100, 400, 400); // strip starts at y=112, 30px tall
   // Tabs live in the strip row (y in [112..142]).
   const baseTabs = [
-    { panelId: "a:0", rect: rect(100, 112, 80, 30) },
-    { panelId: "a:1", rect: rect(180, 112, 80, 30) },
+    { paneId: "a:0", rect: rect(100, 112, 80, 30) },
+    { paneId: "a:1", rect: rect(180, 112, 80, 30) },
   ];
-  const target = () => dockedTarget("a", node.id, "left", frame, 30, baseTabs);
+  const target = () =>
+    dockedTarget("a", leafIdOf(node), "left", frame, 30, baseTabs);
 
   it("above the strip -> split top (thin insertion line at the panel's top edge)", () => {
     // y in [frame.top=100 .. strip.top=112): inside the frame, above the strip.
     const out = run(layout, [target()], 300, 105)!;
-    expect(out.result).toEqual({ kind: "split", edge: "left", nodeId: node.id, region: "top" });
+    expect(out.result).toEqual({
+      kind: "split",
+      edge: "left",
+      nodeId: leafIdOf(node),
+      region: "top",
+    });
     // Per-panel split now previews as a thin LINE at the boundary, not a ghost.
     expect(out.hint.variant).toBe("line");
     expect(out.hint.width).toBeCloseTo(frame.width); // full-width line on the top edge
@@ -392,54 +806,98 @@ describe("docked group per-panel zones", () => {
     expect(out.hint.top + out.hint.height / 2).toBeCloseTo(frame.top, 0);
   });
 
-  it("content TOP (just below the strip) -> MERGE, not a split", () => {
-    // The content area no longer has an "above" band: per-panel "above this one"
-    // lives only in the grip bar above the tabs (covered by the test above).
-    // Just below the strip is merge territory, so "above" always reads as
-    // physically above the tabs, never below them.
-    // Content area is [strip.bottom=142 .. 500]; y=160 is at the top of content
-    // but in the horizontal middle (rx=0.5), so it merges.
+  it("just below the strip MERGES -- no content-top band (D48)", () => {
+    // Dock-above belongs to the grip bar alone: the old top band re-claimed
+    // "above" right below the tab strip, making the strip an island inside
+    // above-intent (and the above preview displaced the strip mid-aim).
+    // Overshooting the strip downward now lands in merge, the same outcome
+    // family as the strip's own insert-at-end.
     const out = run(layout, [target()], 300, 160)!;
+    // Pin the TARGET too: the "same outcome family" argument rests on the
+    // merge appending into this group, not merely being a merge somewhere.
     expect(out.result).toEqual({ kind: "merge", targetGroupId: "a" });
-    expect(out.hint.variant).toBe("merge");
+  });
+
+  it("merge-suppressed pairs keep split-above in the upper body (D48 carve-out)", () => {
+    // Where merge is null (unmergeable target, or the dragged stack holds
+    // an unmergeable panel), "overshoot lands in merge" cannot hold -- the
+    // ex-top-band area keeps the pre-D48 dock-above so it is never a
+    // no-drop hole (P5). No strip island exists on these paths: the strip
+    // insert is suppressed too.
+    // (a) dragging an unmergeable stack over a normal docked panel.
+    const a = run(layout, [target()], 300, 160, undefined, {
+      draggingUnmergeable: true,
+    })!;
+    expect(a.result).toMatchObject({ kind: "split", region: "top" });
+    // (b) normal drag over an UNMERGEABLE docked target.
+    const b = run(layout, [{ ...target(), unmergeable: true }], 300, 160)!;
+    expect(b.result).toMatchObject({ kind: "split", region: "top" });
   });
 
   it("over the strip -> insertTab at the nearest tab position", () => {
     const out = run(layout, [target()], 110, 125)!; // left half of tab 0
-    expect(out.result).toEqual({ kind: "insertTab", targetGroupId: "a", index: 0 });
+    expect(out.result).toEqual({
+      kind: "insertTab",
+      targetGroupId: "a",
+      index: 0,
+    });
     expect(out.hint.variant).toBe("line");
   });
 
   it("over the strip, right half of a tab -> insertTab after it", () => {
     const out = run(layout, [target()], 170, 125)!; // right half of tab 0
-    expect(out.result).toEqual({ kind: "insertTab", targetGroupId: "a", index: 1 });
+    expect(out.result).toEqual({
+      kind: "insertTab",
+      targetGroupId: "a",
+      index: 1,
+    });
   });
 
-  it("content left band -> split left (thin line at the panel's left edge)", () => {
+  it("content left band -> columnInsert at the seam left of this column", () => {
     // rx < SPLIT_BAND. Frame x in [100..500], width 400. SPLIT_BAND*400=88.
     // Use a mid y (in the side band, not the top/bottom band).
     const out = run(layout, [target()], 100 + 40, 320)!;
-    expect(out.result).toEqual({ kind: "split", edge: "left", nodeId: node.id, region: "left" });
+    // D55: the side band is the canonical seam insert (index 0: the leaf's
+    // column is the region's only column).
+    expect(out.result).toEqual({
+      kind: "columnInsert",
+      edge: "left",
+      index: 0,
+    });
     expect(out.hint.variant).toBe("line");
     expect(out.hint.width).toBeLessThan(8); // thin vertical line
-    expect(out.hint.height).toBeCloseTo(frame.height);
-    // The line is centered on the panel's left edge.
-    expect(out.hint.left + out.hint.width / 2).toBeCloseTo(frame.left, 0);
+    // REGION-TALL (D46): a docked side drop lands a full-height column, so
+    // the line spans the container, not just the target cell.
+    expect(out.hint.height).toBeCloseTo(CONTAINER.height);
+    // Seam 0 is the region's OUTER boundary: the one line every zone of this
+    // seam draws (D55) -- the region-edge band's position, not the synthetic
+    // frame's inset left edge.
+    expect(out.hint.left).toBe(0);
   });
 
-  it("content right band -> split right (thin line at the panel's right edge)", () => {
+  it("content right band -> columnInsert at the seam right of this column", () => {
     const out = run(layout, [target()], 500 - 40, 320)!; // rx > 1-SPLIT_BAND
-    expect(out.result).toEqual({ kind: "split", edge: "left", nodeId: node.id, region: "right" });
+    expect(out.result).toEqual({
+      kind: "columnInsert",
+      edge: "left",
+      index: 1,
+    });
     expect(out.hint.variant).toBe("line");
     expect(out.hint.width).toBeLessThan(8);
-    // The line is centered on the panel's right edge.
-    expect(out.hint.left + out.hint.width / 2).toBeCloseTo(frame.right, 0);
+    // Seam 1 (= N) is the region's INNER boundary (D55): the line is
+    // centered there, shared pixel-for-pixel with the region-edge band.
+    expect(out.hint.left + out.hint.width / 2).toBeCloseTo(REGION_W.left, 0);
   });
 
   it("content bottom band -> split bottom (thin line at the panel's bottom edge)", () => {
     // content area is [strip.bottom=142 .. 500], ch=358. ry>1-SPLIT_BAND.
     const out = run(layout, [target()], 300, 500 - 20)!;
-    expect(out.result).toEqual({ kind: "split", edge: "left", nodeId: node.id, region: "bottom" });
+    expect(out.result).toEqual({
+      kind: "split",
+      edge: "left",
+      nodeId: leafIdOf(node),
+      region: "bottom",
+    });
     expect(out.hint.variant).toBe("line");
     expect(out.hint.height).toBeLessThan(8); // thin horizontal line
     // The line is centered on the panel's bottom edge.
@@ -457,55 +915,331 @@ describe("docked group per-panel zones", () => {
   it("multi-row tab strip resolves to the wrapped row's tab", () => {
     // Strip starts at y=112; two rows of tabs at [112..132] and [132..152].
     const wrapTabs = [
-      { panelId: "a:0", rect: rect(100, 112, 80, 20) },
-      { panelId: "a:1", rect: rect(180, 112, 80, 20) },
-      { panelId: "a:2", rect: rect(100, 132, 80, 20) }, // second row
+      { paneId: "a:0", rect: rect(100, 112, 80, 20) },
+      { paneId: "a:1", rect: rect(180, 112, 80, 20) },
+      { paneId: "a:2", rect: rect(100, 132, 80, 20) }, // second row
     ];
-    const tgt = dockedTarget("a", node.id, "left", frame, 40, wrapTabs);
+    const tgt = dockedTarget("a", leafIdOf(node), "left", frame, 40, wrapTabs);
     const out = run(layout, [tgt], 110, 142)!; // over tab 2 (second row), left half
-    expect(out.result).toEqual({ kind: "insertTab", targetGroupId: "a", index: 2 });
+    expect(out.result).toEqual({
+      kind: "insertTab",
+      targetGroupId: "a",
+      index: 2,
+    });
   });
 });
 
-// regression: collapsed-target vertical zones are pixel-capped. A minimized
-// VERTICAL strip is narrow but region-tall; 30% of that height would be a huge
-// "split above/below" band. (No-op for short horizontal handle bars.)
-describe("collapsed-target vertical zone pixel cap", () => {
-  it("tall narrow strip: top split only near the top; mid-height merges", () => {
-    const l = emptyLayout();
-    l.groups = {
-      s: group("s", 1, true),
-      o: group("o"),
-    };
-    l.docked.right = {
-      type: "split",
-      id: "R",
-      dir: "row",
-      weight: 1,
-      children: [
-        { type: "leaf", id: "Lo", group: "o", weight: 1 },
-        { type: "leaf", id: "Ls", group: "s", weight: 1 },
-      ],
-    };
-    const strip: GroupTarget = {
-      groupId: "s",
-      rect: rect(960, 0, 40, 800),
-      stripRect: null,
-      tabs: [],
-      ctx: { kind: "docked", nodeId: "Ls", edge: "right" },
-      collapsed: true,
-    };
-    const targets: DropTargets = { groups: [strip] };
-    // y=40 (< 70px cap) -> split top.
-    expect(hitTest(l, REGION_W, CONTAINER, targets, 980, 40)?.result).toMatchObject({
+// regression: the SEAM between two vertically-stacked docked panels [A above B]
+// is one stable "insert between A and B" target. Crossing it used to flicker:
+// A's bottom band drew the line at A.bottom, the ~SPLIT_DIVIDER_PX divider gap
+// hit no target (a NONE dead frame), and B's grip bar drew at B.top -- so the
+// hint jumped A.bottom -> (gone) -> B.top. Now all three resolve to a split that
+// inserts between A and B, with the hint pinned to the gap center.
+describe("seam between vertically-stacked docked panels is one stable target", () => {
+  // Mirror the live geometry: A, then a SPLIT_DIVIDER_PX divider gap, then B,
+  // in a left column. B's strip starts STRIP_OFFSET below B.top, so B's first
+  // rows are its grip bar (above-strip -> split top). Built from the constant
+  // so the fixture tracks the real divider width.
+  const A = rect(0, 15, 300, 389); // bottom = 404
+  const B = rect(0, 404 + SPLIT_DIVIDER_PX, 300, 389);
+  const tree = colSplit([leaf("a"), leaf("b")]);
+  const layout = layoutWith({ left: tree });
+  const aNode = leafIdsOf(tree)[0];
+  const bNode = leafIdsOf(tree)[1];
+  const targets = () => [
+    dockedTarget("a", aNode, "left", A),
+    dockedTarget("b", bNode, "left", B),
+  ];
+  const seamCenter = (A.bottom + B.top) / 2;
+
+  it("A's content bottom band -> split BELOW A (region bottom), line at gap center", () => {
+    const out = run(layout, targets(), 150, A.bottom - 5)!; // y=399, in A
+    expect(out.result).toEqual({
       kind: "split",
+      edge: "left",
+      nodeId: aNode,
+      region: "bottom",
+    });
+    expect(out.hint.variant).toBe("line");
+    expect(out.hint.top + out.hint.height / 2).toBeCloseTo(seamCenter, 0);
+  });
+
+  it("the divider gap (dead spot) -> split ABOVE B (region top), line at gap center", () => {
+    const out = run(layout, targets(), 150, A.bottom + 2)!; // over the divider gap
+    expect(out.result).toEqual({
+      kind: "split",
+      edge: "left",
+      nodeId: bNode,
       region: "top",
     });
-    // y=300 (way past the cap, mid-strip, center x) -> merge, NOT a split.
-    expect(hitTest(l, REGION_W, CONTAINER, targets, 980, 300)?.result).toMatchObject({
-      kind: "merge",
-      targetGroupId: "s",
+    expect(out.hint.variant).toBe("line");
+    expect(out.hint.top + out.hint.height / 2).toBeCloseTo(seamCenter, 0);
+  });
+
+  it("B's grip bar -> split ABOVE B (region top), line at gap center", () => {
+    const out = run(layout, targets(), 150, B.top + 6)!; // y=417, B's grip bar
+    expect(out.result).toEqual({
+      kind: "split",
+      edge: "left",
+      nodeId: bNode,
+      region: "top",
     });
+    expect(out.hint.variant).toBe("line");
+    expect(out.hint.top + out.hint.height / 2).toBeCloseTo(seamCenter, 0);
+  });
+
+  it("the hint line stays at ONE position with NO null frame across the whole seam band", () => {
+    let lastTop: number | null = null;
+    const tops: number[] = [];
+    for (let y = A.bottom - 8; y <= B.top + 10; y += 1) {
+      const out = run(layout, targets(), 150, y);
+      // Once we are in the seam band (at/after A.bottom) there must be no dead
+      // frame and the result must insert between A and B.
+      if (y >= A.bottom) {
+        expect(out, `null hint at y=${y}`).not.toBeNull();
+        const res = out!.result;
+        expect(res.kind).toBe("split");
+        if (res.kind === "split") {
+          // Always either "below A" or "above B" -- both insert between them.
+          expect(
+            (res.nodeId === aNode && res.region === "bottom") ||
+              (res.nodeId === bNode && res.region === "top"),
+          ).toBe(true);
+        }
+        tops.push(out!.hint.top);
+      }
+      if (out !== null) lastTop = out.hint.top;
+    }
+    void lastTop;
+    // Hint line never moves while crossing the seam (stable, no 7px jump).
+    const min = Math.min(...tops);
+    const max = Math.max(...tops);
+    expect(max - min).toBeLessThanOrEqual(1);
+  });
+
+  it("single docked leaf (no sibling): bottom band still docks at the panel's own bottom edge", () => {
+    // Region-edge zones are suppressed for a single full-span leaf, so the
+    // per-panel bottom band must still work and anchor to the panel edge (the
+    // seam-snap must not kick in without a sibling).
+    const solo = leaf("a");
+    const soloLayout = layoutWith({ left: solo });
+    const frame = rect(0, 100, 300, 400); // bottom=500, mid-region (clamp inactive)
+    const out = run(
+      soloLayout,
+      [dockedTarget("a", leafIdOf(solo), "left", frame)],
+      150,
+      frame.bottom - 10,
+    )!;
+    expect(out.result).toEqual({
+      kind: "split",
+      edge: "left",
+      nodeId: leafIdOf(solo),
+      region: "bottom",
+    });
+    expect(out.hint.top + out.hint.height / 2).toBeCloseTo(frame.bottom, 0);
+  });
+});
+
+// regression (zones audit #4, spec 5.5): the T-JUNCTION where the vertical
+// column gap crosses one column's horizontal cell seam used to be a ~7x7px
+// dead pocket -- the horizontal recovery needs the pointer inside the lower
+// cell's x-span (it's in the column gap), and the vertical recovery required
+// BOTH flanking columns to have a cell CONTAINING clientY (the left column's
+// cells meet at a seam exactly there). The vertical recovery now falls back
+// per side to the nearest cell by y-distance (bounded by the seam gap).
+describe("T-junction of a column gap and a cell seam is not dead", () => {
+  // col0 = a over b with a SPLIT_DIVIDER_PX cell seam; col1 = c full height;
+  // a SPLIT_DIVIDER_PX column gap between them. Built from the constant so
+  // the fixture tracks the real divider width.
+  const A = rect(0, 0, 146, 396);
+  const B = rect(0, 396 + SPLIT_DIVIDER_PX, 146, 800 - 396 - SPLIT_DIVIDER_PX);
+  const C = rect(146 + SPLIT_DIVIDER_PX, 0, 154 - SPLIT_DIVIDER_PX, 800);
+  const tree = rowSplit([colSplit([leaf("a"), leaf("b")]), leaf("c")]);
+  const junctionLayout = layoutWith({ left: tree });
+  const ids = leafIdsOf(tree);
+  const junctionTargets = () => [
+    dockedTarget("a", ids[0], "left", A),
+    dockedTarget("b", ids[1], "left", B),
+    dockedTarget("c", ids[2], "left", C),
+  ];
+
+  it("the pocket resolves to the column insert at the vertical seam", () => {
+    // Dead-center of the junction: x in the column gap, y in the a/b seam.
+    // BOTH halves of the gap are the ONE seam-1 insert (D55): no more
+    // "right half targets c, left half targets b" split pair.
+    const gapMid = 146 + SPLIT_DIVIDER_PX / 2;
+    const expected = { kind: "columnInsert", edge: "left", index: 1 };
+    const out = run(junctionLayout, junctionTargets(), gapMid + 1, 400);
+    expect(out).not.toBeNull();
+    expect(out!.result).toEqual(expected);
+    const out2 = run(junctionLayout, junctionTargets(), gapMid - 1, 400);
+    expect(out2).not.toBeNull();
+    expect(out2!.result).toEqual(expected);
+    // And the hint is the same rect on both halves (one seam, one line).
+    expect(out2!.hint).toEqual(out!.hint);
+  });
+
+  it("no null anywhere along the vertical gap, seam heights included", () => {
+    for (let y = 0; y <= 800; y += 1) {
+      const out = run(
+        junctionLayout,
+        junctionTargets(),
+        146 + SPLIT_DIVIDER_PX / 2,
+        y,
+      );
+      expect(out, `null at y=${y}`).not.toBeNull();
+    }
+  });
+});
+
+// ===========================================================================
+// P9 pin (D55): ONE seam is ONE zone. Between two docked columns A|B there
+// used to be three code paths for one intent -- A's right side band, the
+// vertical-divider dead-spot recovery, and B's left side band -- whose
+// results were equivalent only by audit and whose hints hopped between
+// three nearby x positions (A.right / gap center / B.left). Under D55 all
+// three resolve to the SAME columnInsert seam index with the SAME
+// seam-centered region-tall line: sweeping the pointer across the seam must
+// produce a deep-equal result and a pixel-identical hint at every sample.
+// ===========================================================================
+describe("P9 (D55): one seam resolves to one result and one line across all its zones", () => {
+  // Left region [a | b] with the real divider gap between the target rects.
+  const A = rect(0, 0, 148, 800);
+  const B = rect(148 + SPLIT_DIVIDER_PX, 0, 300 - 148 - SPLIT_DIVIDER_PX, 800);
+  const tree = rowSplit([leaf("a"), leaf("b")]);
+  const layout = layoutWith({ left: tree });
+  const ids = leafIdsOf(tree);
+  const targets = () => [
+    dockedTarget("a", ids[0], "left", A),
+    dockedTarget("b", ids[1], "left", B),
+  ];
+
+  it("A's right band -> divider gap -> B's left band: same result, same hint everywhere", () => {
+    // x=110..190 spans A's right side band, the whole divider gap, and B's
+    // left side band (clear of the 40px region bands on both sides); y=600
+    // is mid-content (below the strips, above the bottom bands).
+    const first = run(layout, targets(), 110, 600)!;
+    expect(first.result).toEqual({
+      kind: "columnInsert",
+      edge: "left",
+      index: 1,
+    });
+    for (let x = 110; x <= 190; x += 1) {
+      const out = run(layout, targets(), x, 600);
+      expect(out, `null at x=${x}`).not.toBeNull();
+      expect(out!.result, `result changed at x=${x}`).toEqual(first.result);
+      expect(out!.hint, `hint moved at x=${x}`).toEqual(first.hint);
+    }
+    // The one line is region-tall and centered on the seam (the gap center).
+    expect(first.hint.height).toBe(CONTAINER.height);
+    expect(first.hint.left + first.hint.width / 2).toBeCloseTo(
+      (A.right + B.left) / 2,
+      1,
+    );
+  });
+
+  it("outermost side band and region-edge band are the same seam drop (0 and N)", () => {
+    // Seam 0: the 40px region band (x=20) and A's left content band (x=42)
+    // -- one result object, one line (at the region's outer boundary).
+    const expected0 = { kind: "columnInsert", edge: "left", index: 0 };
+    const viaRegionBand = run(layout, targets(), 20, 600)!;
+    const viaTargetBand = run(layout, targets(), 42, 600)!;
+    expect(viaRegionBand.result).toEqual(expected0);
+    expect(viaTargetBand.result).toEqual(expected0);
+    expect(viaTargetBand.hint).toEqual(viaRegionBand.hint);
+    // Seam N (=2): the inner region band (x=270) and B's right content band
+    // (x=257, just outside the region band) -- same drop, same line.
+    const expectedN = { kind: "columnInsert", edge: "left", index: 2 };
+    const innerRegion = run(layout, targets(), 270, 600)!;
+    const innerTarget = run(layout, targets(), 257, 600)!;
+    expect(innerRegion.result).toEqual(expectedN);
+    expect(innerTarget.result).toEqual(expectedN);
+    expect(innerTarget.hint).toEqual(innerRegion.hint);
+  });
+});
+
+// A content-sized minimized strip reads top-to-bottom: a thin top/bottom EDGE
+// band stacks a new cell above/below, the spine-label rows insert at a tab
+// position, and the + cap (just inside the top edge) merges. The cap must NOT be
+// swallowed by the "above" zone -- that was the merge-unreachable regression.
+describe("collapsed-target vertical zones (content-sized strip)", () => {
+  // A minimized RIGHT region renders as a strip flush at the screen edge, with
+  // the rendered (reserved) region width == the strip width -- that's what
+  // hitTest receives. Center the probes on the strip's MIDDLE third so they hit
+  // the cell's own zones (the outer/inner thirds are the region "dock beside"
+  // band, full height). The strip sits below the region top band.
+  const STRIP = 40;
+  const SW: Record<DockEdge, number> = { left: STRIP, right: STRIP };
+  const left = CONTAINER.width - STRIP; // flush right
+  const midX = left + STRIP / 2;
+  const mkStrip = (tabs: { paneId: string; rect: DOMRect }[]): GroupTarget => ({
+    groupId: "s",
+    rect: rect(left, 100, STRIP, 80), // top at y=100, clear of the region top band
+    stripRect: null,
+    tabs,
+    ctx: { kind: "docked", nodeId: "Ls", edge: "right" },
+    collapsed: true,
+  });
+  const baseLayout = () => {
+    const l = emptyLayout();
+    l.groups = { s: group("s") };
+    l.docked.right = {
+      columns: [
+        { id: "Cs", weight: 1, leaves: [{ id: "Ls", group: "s", weight: 1 }] },
+      ],
+    };
+    // D38: the strip is the region rail -- the container store, not a group flag.
+    packRegionInPlace(l, "right");
+    return l;
+  };
+
+  it("the + cap (just inside the top edge) -> add to the group, not split-above", () => {
+    const l = baseLayout();
+    const strip = mkStrip([
+      { paneId: "p0", rect: rect(left, 124, STRIP, 26) },
+      { paneId: "p1", rect: rect(left, 152, STRIP, 26) },
+    ]);
+    const targets: DropTargets = { groups: [strip] };
+    // y=115: the + cap, above the first row (at y=124) but past the 6px edge
+    // band (ends at y=106). It must ADD the panel to the group (insertTab at the
+    // top), NOT a split-above -- regression: the cap used to be swallowed by the
+    // "above" split zone, leaving no way to drop INTO a minimized strip.
+    const out = hitTest(l, SW, CONTAINER, targets, midX, 115)?.result;
+    expect(out).toMatchObject({
+      kind: "insertTab",
+      targetGroupId: "s",
+      index: 0,
+    });
+  });
+
+  it("thin top/bottom edges -> split; over a row -> insertTab", () => {
+    const l = baseLayout();
+    const strip = mkStrip([
+      { paneId: "p0", rect: rect(left, 124, STRIP, 26) },
+      { paneId: "p1", rect: rect(left, 152, STRIP, 26) },
+    ]);
+    const targets: DropTargets = { groups: [strip] };
+    // y=101: thin top edge -> split top.
+    expect(hitTest(l, SW, CONTAINER, targets, midX, 101)?.result).toMatchObject(
+      {
+        kind: "split",
+        region: "top",
+      },
+    );
+    // y=130: over the first row -> insertTab.
+    expect(hitTest(l, SW, CONTAINER, targets, midX, 130)?.result).toMatchObject(
+      {
+        kind: "insertTab",
+        targetGroupId: "s",
+      },
+    );
+    // y=179: thin bottom edge -> split bottom.
+    expect(hitTest(l, SW, CONTAINER, targets, midX, 179)?.result).toMatchObject(
+      {
+        kind: "split",
+        region: "bottom",
+      },
+    );
   });
 });
 
@@ -545,7 +1279,7 @@ describe("floating snap zones", () => {
 
   it("over the strip of a floating group -> insertTab still applies", () => {
     // Strip starts at frame.top+12 = 212, 30px tall -> tabs in [212..242].
-    const tabs = [{ panelId: "g:0", rect: rect(400, 212, 80, 30) }];
+    const tabs = [{ paneId: "g:0", rect: rect(400, 212, 80, 30) }];
     const tgt: GroupTarget = {
       groupId: "g",
       rect: frame,
@@ -569,15 +1303,15 @@ describe("area target", () => {
   // and the pointer is kept in the middle so screen-edge zones don't fire.
   const layout = (() => {
     const l = emptyLayout();
-    l.groups = { area: { id: "area", panelIds: ["p0", "p1"], activeId: "p0" } };
-    l.areas = { "a1": { id: "a1", group: "area" } };
+    l.groups = { area: { id: "area", paneIds: ["p0", "p1"], activeId: "p0" } };
+    l.areas = { a1: { group: "area" } };
     return l;
   })();
   const frame = rect(400, 200, 300, 300); // strip 30px, starts at y=212
 
   function areaTarget(opts?: {
     stripRect?: DOMRect | null;
-    tabs?: { panelId: string; rect: DOMRect }[];
+    tabs?: { paneId: string; rect: DOMRect }[];
   }): GroupTarget {
     return {
       groupId: "area",
@@ -586,11 +1320,10 @@ describe("area target", () => {
         opts?.stripRect === undefined
           ? rect(frame.left, frame.top + STRIP_OFFSET, frame.width, 30)
           : opts.stripRect,
-      tabs:
-        opts?.tabs ?? [
-          { panelId: "p0", rect: rect(400, frame.top + STRIP_OFFSET, 80, 30) },
-          { panelId: "p1", rect: rect(480, frame.top + STRIP_OFFSET, 80, 30) },
-        ],
+      tabs: opts?.tabs ?? [
+        { paneId: "p0", rect: rect(400, frame.top + STRIP_OFFSET, 80, 30) },
+        { paneId: "p1", rect: rect(480, frame.top + STRIP_OFFSET, 80, 30) },
+      ],
       ctx: { kind: "area", areaId: "a1" },
     };
   }
@@ -598,13 +1331,21 @@ describe("area target", () => {
   it("over the strip -> insertTab at the nearest tab position", () => {
     // Left half of tab 0 (strip y in [212..242]).
     const out = run(layout, [areaTarget()], 410, 225)!;
-    expect(out.result).toEqual({ kind: "insertTab", targetGroupId: "area", index: 0 });
+    expect(out.result).toEqual({
+      kind: "insertTab",
+      targetGroupId: "area",
+      index: 0,
+    });
     expect(out.hint.variant).toBe("line");
   });
 
   it("over the strip, right half of tab 0 -> insertTab after it", () => {
     const out = run(layout, [areaTarget()], 470, 225)!; // right half of tab 0
-    expect(out.result).toEqual({ kind: "insertTab", targetGroupId: "area", index: 1 });
+    expect(out.result).toEqual({
+      kind: "insertTab",
+      targetGroupId: "area",
+      index: 1,
+    });
   });
 
   it("over the body (below the strip) -> merge", () => {
@@ -642,14 +1383,24 @@ describe("area target", () => {
       frame.height - INSET,
     );
     // Pointer over the LEFT half of tab 0, inside the inset band (x < left+40).
-    const out = run(layout, [t], frame.left + 10, frame.top + STRIP_OFFSET + 15)!;
+    const out = run(
+      layout,
+      [t],
+      frame.left + 10,
+      frame.top + STRIP_OFFSET + 15,
+    )!;
     expect(out.result).toEqual({
       kind: "insertTab",
       targetGroupId: "area",
       index: 0,
     });
     // And the rightmost edge of the strip (after the last tab) still inserts.
-    const right = run(layout, [t], frame.right - 5, frame.top + STRIP_OFFSET + 15)!;
+    const right = run(
+      layout,
+      [t],
+      frame.right - 5,
+      frame.top + STRIP_OFFSET + 15,
+    )!;
     expect(right.result).toEqual({
       kind: "insertTab",
       targetGroupId: "area",
@@ -683,7 +1434,12 @@ describe("zone priority", () => {
   it("screen edge wins over a group under the same pointer (empty edge)", () => {
     const node = leaf("a");
     const layout = layoutWith({ right: node }); // left edge empty
-    const tgt = dockedTarget("a", node.id, "right", rect(0, 0, 300, 800));
+    const tgt = dockedTarget(
+      "a",
+      leafIdOf(node),
+      "right",
+      rect(0, 0, 300, 800),
+    );
     // Pointer in the left screen-edge band AND over the (mis-placed) target.
     const out = run(layout, [tgt], EDGE_ZONE_PX - 5, 400)!;
     expect(out.result).toEqual({ kind: "edge", edge: "left" });
@@ -692,10 +1448,126 @@ describe("zone priority", () => {
   it("region edge wins over the per-panel split for the same pointer", () => {
     const tree = rowSplit([leaf("a"), leaf("b")]);
     const layout = layoutWith({ left: tree });
-    const tgt = dockedTarget("a", (tree as any).children[0].id, "left", rect(0, 0, 150, 800));
-    // Top band of the multi-column region; also over group a's frame.
-    const out = run(layout, [tgt], 50, REGION_EDGE_PX - 5)!;
-    expect(out.result.kind).toBe("regionEdge");
+    const tgt = dockedTarget(
+      "a",
+      leafIdsOf(tree)[0],
+      "left",
+      rect(0, 0, 150, 800),
+    );
+    // Left side band of the multi-column region; also over group a's frame
+    // (D46: the side bands are the only region-edge zones). Both zones are
+    // the SAME seam-0 columnInsert under D55; the region band resolves
+    // first and the result is one object either way.
+    const out = run(layout, [tgt], 20, 400)!;
+    expect(out.result).toEqual({
+      kind: "columnInsert",
+      edge: "left",
+      index: 0,
+    });
+  });
+
+  // regression: a tab-strip insert beats the region-edge band that overlaps it.
+  // A region-edge band spans the WHOLE region, so the leftmost tab of a stacked
+  // (column) region sits inside the 40px left region-side band, and a topmost
+  // panel's strip sits inside the 8px top band. Dropping THERE must still
+  // insert at the tab position (more specific than a region span) -- not dock a
+  // region-wide column/row. (Lives in hitTest.ts: an "over an insertable strip"
+  // guard skips the region-edge bands.)
+  describe("tab-strip insert wins over the region-edge band it overlaps", () => {
+    // Column [a/b]: left/right span rows, so edgeIsSingleLeaf(_, "left") is
+    // false and the 40px left region-side band is LIVE across both panes.
+    const tree = colSplit([leaf("a"), leaf("b")]);
+    const layout = layoutWith({ left: tree });
+
+    function colTarget(
+      groupId: GroupId,
+      nodeId: string,
+      frame: DOMRect,
+      stripTop: number,
+    ): GroupTarget {
+      return {
+        groupId,
+        rect: frame,
+        stripRect: rect(frame.left, stripTop, frame.width, 30),
+        tabs: [
+          { paneId: `${groupId}:0`, rect: rect(frame.left, stripTop, 70, 30) },
+          {
+            paneId: `${groupId}:1`,
+            rect: rect(frame.left + 70, stripTop, 70, 30),
+          },
+        ],
+        ctx: { kind: "docked", nodeId, edge: "left" },
+      };
+    }
+
+    it("lower stacked panel: leftmost tab in the left side band -> insertTab 0", () => {
+      // b's strip is mid-region (clear of the 8px top band) but its leftmost tab
+      // is flush at x=0, i.e. inside the 40px left region-side band.
+      const tgt = colTarget(
+        "b",
+        leafIdsOf(tree)[1],
+        rect(0, 400, 300, 400),
+        412,
+      );
+      const out = run(layout, [tgt], 20, 425)!;
+      expect(out.result).toEqual({
+        kind: "insertTab",
+        targetGroupId: "b",
+        index: 0,
+      });
+    });
+
+    it("topmost stacked panel: strip in the top band -> insertTab 0", () => {
+      // a's strip is flush at the region top (y in the 8px top band) AND its
+      // leftmost tab is in the left side band -- both region bands overlap it.
+      const tgt = colTarget("a", leafIdsOf(tree)[0], rect(0, 0, 300, 400), 2);
+      const out = run(layout, [tgt], 20, 7)!;
+      expect(out.result).toEqual({
+        kind: "insertTab",
+        targetGroupId: "a",
+        index: 0,
+      });
+    });
+
+    it("draggingUnmergeable: still a region span (no tab insert possible)", () => {
+      // An unmergeable dragged stack can't become tabs, so the strip is NOT an
+      // insertable target -- the region-edge band must still win there.
+      const tgt = colTarget(
+        "b",
+        leafIdsOf(tree)[1],
+        rect(0, 400, 300, 400),
+        412,
+      );
+      const out = hitTest(
+        layout,
+        REGION_W,
+        CONTAINER,
+        { groups: [tgt] },
+        20,
+        425,
+        {
+          draggingUnmergeable: true,
+        },
+      )!;
+      expect(out.result.kind).toBe("columnInsert");
+    });
+
+    it("the region-edge band still wins OFF the strip (content side band)", () => {
+      // Same column region, but the pointer is in the content area (below the
+      // strip) within the left side band -> the seam-0 column insert.
+      const tgt = colTarget(
+        "b",
+        leafIdsOf(tree)[1],
+        rect(0, 400, 300, 400),
+        412,
+      );
+      const out = run(layout, [tgt], 20, 600)!;
+      expect(out.result).toEqual({
+        kind: "columnInsert",
+        edge: "left",
+        index: 0,
+      });
+    });
   });
 });
 
@@ -708,7 +1580,7 @@ function floatTarget(group: string, windowId: string, r: DOMRect): GroupTarget {
     groupId: group,
     rect: r,
     stripRect: rect(r.left, r.top + 12, r.width, 28),
-    tabs: [{ panelId: `${group}.0`, rect: rect(r.left, r.top + 12, 70, 28) }],
+    tabs: [{ paneId: `${group}.0`, rect: rect(r.left, r.top + 12, 70, 28) }],
     ctx: { kind: "floating", windowId, index: 0 },
   };
 }
@@ -717,7 +1589,7 @@ function dockTarget(group: string, nodeId: string, r: DOMRect): GroupTarget {
     groupId: group,
     rect: r,
     stripRect: rect(r.left, r.top + 12, r.width, 28),
-    tabs: [{ panelId: `${group}.0`, rect: rect(r.left, r.top + 12, 80, 28) }],
+    tabs: [{ paneId: `${group}.0`, rect: rect(r.left, r.top + 12, 80, 28) }],
     ctx: { kind: "docked", nodeId, edge: "left" },
   };
 }
@@ -736,8 +1608,8 @@ describe("BUG #4 (fixed): overlapping drop targets resolve to the one on TOP", (
       b: group("b"),
     };
     l.floating = [
-      { id: "w1", x: 400, y: 300, width: 200, stack: ["a"] }, // bottom
-      { id: "w2", x: 420, y: 320, width: 200, stack: ["b"] }, // top
+      floatingWindow({ id: "w1", x: 400, y: 300, width: 200, stack: ["a"] }), // bottom
+      floatingWindow({ id: "w2", x: 420, y: 320, width: 200, stack: ["b"] }), // top
     ];
     // Targets ordered back-to-front (ascending z): bottom window first, top last.
     const targets: DropTargets = {
@@ -760,8 +1632,14 @@ describe("BUG #4 (fixed): overlapping drop targets resolve to the one on TOP", (
       d: group("d"),
       f: group("f"),
     };
-    l.docked.left = { type: "leaf", id: "Ld", group: "d", weight: 1 } as DockNode;
-    l.floating = [{ id: "wf", x: 100, y: 300, width: 180, stack: ["f"] }];
+    l.docked.left = {
+      columns: [
+        { id: "Cd", weight: 1, leaves: [{ id: "Ld", group: "d", weight: 1 }] },
+      ],
+    };
+    l.floating = [
+      floatingWindow({ id: "wf", x: 100, y: 300, width: 180, stack: ["f"] }),
+    ];
     const targets: DropTargets = {
       groups: [
         dockTarget("d", "Ld", rect(0, 0, 300, 800)),
@@ -780,8 +1658,8 @@ describe("BUG #4 (fixed): overlapping drop targets resolve to the one on TOP", (
       b: group("b"),
     };
     l.floating = [
-      { id: "w1", x: 50, y: 300, width: 150, stack: ["a"] },
-      { id: "w2", x: 500, y: 300, width: 150, stack: ["b"] },
+      floatingWindow({ id: "w1", x: 50, y: 300, width: 150, stack: ["a"] }),
+      floatingWindow({ id: "w2", x: 500, y: 300, width: 150, stack: ["b"] }),
     ];
     const targets: DropTargets = {
       groups: [
@@ -797,6 +1675,156 @@ describe("BUG #4 (fixed): overlapping drop targets resolve to the one on TOP", (
     expect(hitTest(l, REGION_W, CONTAINER, targets, 575, 400)?.result).toEqual({
       kind: "merge",
       targetGroupId: "b",
+    });
+  });
+});
+
+// regression pin: the owning-window mask (DropTargets.windows). A floating
+// window's PAPER rect covers chrome slivers -- its header, divider gaps --
+// that no cell rect claims. A pointer there is OWNED by that window (3.5):
+// it must not fall through to a docked target painted underneath, even
+// though the docked rect contains the point.
+describe("owning-window mask: a window's header sliver never hits the docked target below", () => {
+  it("pointer on the header sliver (inside paper, outside cell) resolves to null, not the occluded docked panel", () => {
+    const l = emptyLayout();
+    l.groups = {
+      d: group("d"),
+      f: group("f"),
+    };
+    l.docked.left = {
+      columns: [
+        { id: "Cd", weight: 1, leaves: [{ id: "Ld", group: "d", weight: 1 }] },
+      ],
+    };
+    l.floating = [
+      floatingWindow({ id: "w1", x: 100, y: 300, width: 200, stack: ["f"] }),
+    ];
+    // The window's paper spans y [300..600]; its cell starts 30px lower (the
+    // header sliver), so (150, 315) is inside the paper but outside the cell
+    // -- and inside the docked target's rect.
+    const cell = floatTarget("f", "w1", rect(100, 330, 200, 240));
+    cell.winId = "w1";
+    const targets: DropTargets = {
+      groups: [dockTarget("d", "Ld", rect(0, 0, 300, 800)), cell],
+      windows: [{ windowId: "w1", rect: rect(100, 300, 200, 300) }],
+    };
+    // Control: WITHOUT the paper rect the same point falls through to the
+    // docked panel's content area (merge) -- so the mask, not geometry, is
+    // what suppresses it.
+    const unmasked = hitTest(
+      l,
+      REGION_W,
+      CONTAINER,
+      { groups: targets.groups },
+      150,
+      315,
+    );
+    expect(unmasked?.result).toEqual({ kind: "merge", targetGroupId: "d" });
+    // With the mask: w1 owns the pointer; only w1-scoped targets are
+    // eligible, the cell doesn't contain the point, and the window's own
+    // seam recovery has no index>0 cell -- so the resolution is null.
+    expect(hitTest(l, REGION_W, CONTAINER, targets, 150, 315)).toBeNull();
+  });
+});
+
+// D53 synthetic pin (engine-independent proof of the header exclusion): a
+// railed column's cell rect starts BELOW the header chrome, exactly as the
+// scanner tiles it. Over the header run the cell must NOT claim (region-level
+// resolution: a columnInsert where the side bands reach, else null); at the
+// cell's top band, stack-above claims with the horizontal split line.
+describe("D53: rail header resolves at region level; cell claims start below it", () => {
+  const STRIP = 36;
+  const HEADER = 16; // StackHandleBar chrome above the first cell
+  // One railed column on the LEFT edge; cell rect starts HEADER below the
+  // strip top, exactly like the real scanner post-D53.
+  const build = () => {
+    const l = emptyLayout();
+    l.groups = { a: group("a") };
+    const tree = colSplit([leaf("a")]);
+    l.docked.left = toRegion(tree);
+    l.docked.left!.columns[0].railed = true;
+    const nodeId = leafIdsOf(tree)[0];
+    const tgt: GroupTarget = {
+      groupId: "a",
+      rect: rect(0, HEADER, STRIP, 800 - HEADER),
+      stripRect: null,
+      tabs: [{ paneId: "a.0", rect: rect(0, HEADER + 20, STRIP, 24) }],
+      ctx: { kind: "docked", nodeId, edge: "left" },
+      collapsed: true,
+    };
+    return { l, tgt };
+  };
+  const stripW: Record<DockEdge, number> = { left: STRIP, right: 0 };
+
+  it("over the header run: never the cell's stack-above; region bands may claim", () => {
+    const { l, tgt } = build();
+    for (const x of [4, 18, 32]) {
+      const out = hitTest(l, stripW, CONTAINER, { groups: [tgt] }, x, 8);
+      if (out !== null) {
+        expect(out.result.kind).toBe("columnInsert"); // region-level only
+      }
+    }
+  });
+
+  it("at the cell's top band (below the chrome): stack-above with the horizontal line", () => {
+    const { l, tgt } = build();
+    const out = hitTest(
+      l,
+      stripW,
+      CONTAINER,
+      { groups: [tgt] },
+      18,
+      HEADER + 4,
+    )!;
+    expect(out).not.toBeNull();
+    expect(out.result).toEqual({
+      kind: "split",
+      edge: "left",
+      nodeId: tgt.ctx.kind === "docked" ? tgt.ctx.nodeId : "",
+      region: "top",
+    });
+    expect(out.hint.variant).toBe("line");
+    // Horizontal strip-wide line at the honest seam (the cell's top), never
+    // above the chrome.
+    expect(out.hint.width).toBeGreaterThan(out.hint.height);
+    expect(out.hint.top + out.hint.height / 2).toBeCloseTo(HEADER, 0);
+  });
+});
+
+// Scan regression pin (G5): the empty-screen-edge zones yield to an owning
+// float (§3.5). A window parked within the 48px band of an EMPTY edge owns
+// the pointer -- a drop there targets the float, never docks a column
+// THROUGH it into the empty edge.
+describe("owning-window mask: empty-edge zones yield to a covering float", () => {
+  it("drop over a float parked at an empty left edge targets the float, not the edge", () => {
+    const l = emptyLayout();
+    l.groups = { f: group("f") };
+    l.docked.left = null; // truly empty edge
+    l.floating = [
+      floatingWindow({ id: "w1", x: 0, y: 300, width: 200, stack: ["f"] }),
+    ];
+    const cell = floatTarget("f", "w1", rect(0, 330, 200, 240));
+    cell.winId = "w1";
+    const targets: DropTargets = {
+      groups: [cell],
+      windows: [{ windowId: "w1", rect: rect(0, 300, 200, 300) }],
+    };
+    // Control: with no owning-window mask the point (inside the 48px band)
+    // docks the empty edge -- so the yield, not geometry, is what changes
+    // the resolution.
+    const unmasked = hitTest(
+      l,
+      REGION_W,
+      CONTAINER,
+      { groups: targets.groups },
+      20,
+      400,
+    );
+    expect(unmasked?.result).toEqual({ kind: "edge", edge: "left" });
+    // With the mask: w1 owns the pointer; the drop resolves to ITS target.
+    expect(hitTest(l, REGION_W, CONTAINER, targets, 20, 400)?.result).toEqual({
+      kind: "merge",
+      targetGroupId: "f",
     });
   });
 });
@@ -818,8 +1846,8 @@ describe("unmergeable target", () => {
       groupId: "u",
       rect: frame,
       stripRect: rect(frame.left, frame.top + STRIP_OFFSET, frame.width, 30),
-      tabs: [{ panelId: "u:0", rect: rect(0, STRIP_OFFSET, 80, 30) }],
-      ctx: { kind: "docked", nodeId: node.id, edge: "left" },
+      tabs: [{ paneId: "u:0", rect: rect(0, STRIP_OFFSET, 80, 30) }],
+      ctx: { kind: "docked", nodeId: leafIdOf(node), edge: "left" },
       unmergeable,
     };
   }
@@ -843,11 +1871,15 @@ describe("unmergeable target", () => {
     expect(out?.result.kind).not.toBe("insertTab");
   });
 
-  it("edge split still works on an UNMERGEABLE docked group", () => {
-    // Right split band of the content area (rx > 1 - SPLIT_BAND).
+  it("side dock still works on an UNMERGEABLE docked group", () => {
+    // Right side band of the content area (rx > 1 - SPLIT_BAND) -> the
+    // canonical seam insert (D55).
     const out = run(layout, [target(true)], 300 - 10, 400)!;
-    expect(out.result.kind).toBe("split");
-    expect((out.result as { region: string }).region).toBe("right");
+    expect(out.result).toEqual({
+      kind: "columnInsert",
+      edge: "left",
+      index: 1,
+    });
   });
 
   it("floating UNMERGEABLE: center is null, snap-below still works", () => {
@@ -857,7 +1889,7 @@ describe("unmergeable target", () => {
       groupId: "u",
       rect: fr,
       stripRect: rect(fr.left, fr.top + STRIP_OFFSET, fr.width, 30),
-      tabs: [{ panelId: "u:0", rect: rect(400, 200 + STRIP_OFFSET, 80, 30) }],
+      tabs: [{ paneId: "u:0", rect: rect(400, 200 + STRIP_OFFSET, 80, 30) }],
       ctx: { kind: "floating", windowId: "w1", index: 0 },
       unmergeable: true,
     };
@@ -880,8 +1912,8 @@ describe("draggingUnmergeable suppresses merge/insertTab from the SOURCE side", 
       b: group("b"),
     };
     l.floating = [
-      { id: "w1", x: 400, y: 300, width: 200, stack: ["a"] },
-      { id: "w2", x: 700, y: 300, width: 200, stack: ["b"] },
+      floatingWindow({ id: "w1", x: 400, y: 300, width: 200, stack: ["a"] }),
+      floatingWindow({ id: "w2", x: 700, y: 300, width: 200, stack: ["b"] }),
     ];
     return l;
   }
@@ -926,18 +1958,23 @@ describe("draggingUnmergeable suppresses merge/insertTab from the SOURCE side", 
     expect(r?.result).toEqual({ kind: "snap", windowId: "w1", index: 1 });
   });
 
-  it("docked split is still offered; only the center merge is suppressed", () => {
+  it("docked side/column insert is still offered; only the center merge is suppressed", () => {
     const l = floatingLayoutAB();
-    l.docked.left = { type: "leaf", id: "La", group: "a", weight: 1 };
+    l.docked.left = {
+      columns: [
+        { id: "Ca", weight: 1, leaves: [{ id: "La", group: "a", weight: 1 }] },
+      ],
+    };
     const targets: DropTargets = {
       groups: [dockTarget("a", "La", rect(0, 0, 300, 800))],
     };
-    // Left band of the content area (rx < 0.22) -> split left, allowed for
-    // unmergeable. x=50 is past the 40px region-side band, inside the split band.
+    // Left band of the content area (rx < 0.22) -> the seam-0 column insert
+    // (D55), allowed for unmergeable. x=50 is past the 40px region-side
+    // band, inside the side band.
     const split = hitTest(l, REGION_W, CONTAINER, targets, 50, 400, {
       draggingUnmergeable: true,
     });
-    expect(split?.result.kind).toBe("split");
+    expect(split?.result.kind).toBe("columnInsert");
     // Center of the content area -> merge without the flag, null with it.
     const center = hitTest(l, REGION_W, CONTAINER, targets, 150, 400);
     expect(center?.result.kind).toBe("merge");
@@ -972,8 +2009,16 @@ describe("unmergeable header acts as the dock-above / snap-above zone", () => {
   }
   function layoutDockedRight() {
     const l = emptyLayout();
-    l.groups = { ctrl: { id: "ctrl", panelIds: ["c.0"], activeId: "c.0" } };
-    l.docked.right = { type: "leaf", id: "Lc", group: "ctrl", weight: 1 };
+    l.groups = { ctrl: { id: "ctrl", paneIds: ["c.0"], activeId: "c.0" } };
+    l.docked.right = {
+      columns: [
+        {
+          id: "Cc",
+          weight: 1,
+          leaves: [{ id: "Lc", group: "ctrl", weight: 1 }],
+        },
+      ],
+    };
     return l;
   }
 
@@ -983,7 +2028,7 @@ describe("unmergeable header acts as the dock-above / snap-above zone", () => {
       groups: [unmergeableDockTarget(rect(680, 0, 320, 800))],
     };
     // Header center; past the region's suppressed top band (y=22 > 8 works
-    // because the single-leaf region suppresses the regionEdge zone).
+    // because the single-leaf region suppresses the region side bands).
     const hit = hitTest(l, REGION_W, CONTAINER, targets, 840, 22);
     expect(hit?.result).toEqual({
       kind: "split",
@@ -995,8 +2040,10 @@ describe("unmergeable header acts as the dock-above / snap-above zone", () => {
 
   it("header of a floating unmergeable window -> snap above", () => {
     const l = emptyLayout();
-    l.groups = { ctrl: { id: "ctrl", panelIds: ["c.0"], activeId: "c.0" } };
-    l.floating = [{ id: "wc", x: 400, y: 100, width: 320, stack: ["ctrl"] }];
+    l.groups = { ctrl: { id: "ctrl", paneIds: ["c.0"], activeId: "c.0" } };
+    l.floating = [
+      floatingWindow({ id: "wc", x: 400, y: 100, width: 320, stack: ["ctrl"] }),
+    ];
     const t: GroupTarget = {
       groupId: "ctrl",
       rect: rect(400, 100, 320, 400),
@@ -1017,15 +2064,16 @@ describe("unmergeable header acts as the dock-above / snap-above zone", () => {
     expect(hitTest(l, REGION_W, CONTAINER, targets, 840, 400)).toBeNull();
   });
 
-  it("left/right split bands are pixel-capped on wide panels", () => {
+  it("left/right split bands are pixel-capped on wide panes", () => {
     const l = layoutDockedRight();
-    // 400px-wide panel: 22% would be 88px; the cap holds the band at 70px.
+    // 500px-wide panel: 30% would be 150px; the cap holds the band at 120px
+    // (spec D1 geometry).
     const targets: DropTargets = {
-      groups: [unmergeableDockTarget(rect(600, 0, 400, 800))],
+      groups: [unmergeableDockTarget(rect(500, 0, 500, 800))],
     };
-    const inBand = hitTest(l, REGION_W, CONTAINER, targets, 600 + 50, 400);
-    expect(inBand?.result).toMatchObject({ kind: "split", region: "left" });
-    const pastCap = hitTest(l, REGION_W, CONTAINER, targets, 600 + 80, 400);
+    const inBand = hitTest(l, REGION_W, CONTAINER, targets, 500 + 100, 400);
+    expect(inBand?.result).toMatchObject({ kind: "columnInsert", index: 0 });
+    const pastCap = hitTest(l, REGION_W, CONTAINER, targets, 500 + 140, 400);
     expect(pastCap).toBeNull(); // dead center for unmergeable, not "left"
   });
 });

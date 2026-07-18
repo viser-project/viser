@@ -225,7 +225,9 @@ function createObjectFactory(
         zy: [-Math.PI / 2.0, 0.0, -Math.PI / 2.0],
       };
       const gridQuaternion = new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(...(planeEulers[message.props.plane] ?? planeEulers.zy)),
+        new THREE.Euler(
+          ...(planeEulers[message.props.plane] ?? planeEulers.zy),
+        ),
       );
 
       return {

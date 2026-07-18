@@ -1,5 +1,6 @@
 import React from "react";
-import { Switch, Select, Stack, Paper, Tooltip } from "@mantine/core";
+import { Button, Switch, Select, Stack, Paper, Tooltip } from "@mantine/core";
+import { IconLayoutDistributeHorizontal } from "@tabler/icons-react";
 import { ViewerContext } from "./ViewerContext";
 
 interface DevSettingsPanelProps {
@@ -139,6 +140,25 @@ export function DevSettingsPanel({ devSettingsStore }: DevSettingsPanelProps) {
             radius="xs"
             clearable={false}
           />
+        </Tooltip>
+
+        <Tooltip
+          label="Discard any panel rearrangement and restore the layout the server set."
+          refProp="rootRef"
+        >
+          {/* Always enabled: reset is idempotent, and the "has the user
+          rearranged anything" dirty bit was the last reader of the deleted
+          user-touched tracking (D52) -- not worth keeping a subsystem for a
+          disabled-state nicety. */}
+          <Button
+            size="xs"
+            radius="xs"
+            variant="default"
+            leftSection={<IconLayoutDistributeHorizontal size={14} />}
+            onClick={() => viewer.guiActions.resetPanelLayout()}
+          >
+            Reset Panel Layout
+          </Button>
         </Tooltip>
       </Stack>
     </Paper>

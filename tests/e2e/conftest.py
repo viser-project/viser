@@ -33,11 +33,17 @@ _E2E_VIEWPORT = {"width": 960, "height": 600}
 
 @pytest.fixture()
 def browser_context_args(browser_context_args: dict) -> dict:
-    """Shrink the viewport to reduce software-WebGL raster cost on CI."""
+    """Shrink the viewport to reduce software-WebGL raster cost on CI.
+
+    reduced_motion: the dock's minimize/expand transitions honor
+    prefers-reduced-motion (they become instant), so tests keep short fixed
+    waits instead of animation-length sleeps. The playground module context
+    (dock_helpers) sets the same flag."""
     return {
         **browser_context_args,
         "viewport": _E2E_VIEWPORT,
         "device_scale_factor": 1,
+        "reduced_motion": "reduce",
     }
 
 
@@ -119,6 +125,34 @@ def _skip_client_autobuild() -> None:
     viser._client_autobuild.ensure_client_is_built = lambda: None
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _timer_polling_for_page_waits() -> Generator[None, None, None]:
+    """Default ``wait_for_function`` to 50ms TIMER polling instead of rAF.
+
+    Playwright polls wait_for_function predicates on requestAnimationFrame by
+    default. Headless Chromium throttles (or outright stalls) rAF when it is
+    not producing frames, which turns every millisecond-scale settle wait in
+    this suite into seconds -- a ~10x wall-clock inflation observed on a host
+    whose compositor had wedged. Timer polling has identical semantics for
+    our predicates (pure DOM/state reads) and is immune to frame throttling.
+    Patched once here so all call sites inherit it; an explicit ``polling=``
+    argument still wins."""
+    orig = Page.wait_for_function
+
+    def patched(self, expression, *, arg=None, timeout=None, polling=None):  # type: ignore[no-untyped-def]
+        return orig(
+            self,
+            expression,
+            arg=arg,
+            timeout=timeout,
+            polling=50 if polling is None else polling,
+        )
+
+    Page.wait_for_function = patched  # type: ignore[method-assign]
+    yield
+    Page.wait_for_function = orig  # type: ignore[method-assign]
+
+
 @pytest.fixture()
 def viser_server() -> Generator[viser.ViserServer, None, None]:
     """Start a ViserServer on a random port; stop it on teardown."""
@@ -165,12 +199,23 @@ DOCK_CLIENT_DIR = Path(__file__).resolve().parents[2] / "src" / "viser" / "clien
 
 # Wrap the client's vite config with HMR disabled: the playground tests drive
 # deterministic DOM interactions, and an HMR websocket reconnect mid-test can
-# reload the page under the pointer.
+# reload the page under the pointer. Also disable file watching entirely (the
+# tests never edit source mid-run) -- vite otherwise recursively watches the
+# whole client dir, including the huge `.nodeenv`/`node_modules` trees, which can
+# exhaust the OS inotify watcher limit and crash the dev server on startup
+# (ENOSPC). usePolling:false + ignored globs keeps the server lightweight.
 _DOCK_HMR_OFF_CONFIG = """\
 import base from "./vite.config.mts";
 export default async (env) => {
   const resolved = typeof base === "function" ? await base(env) : base;
-  return { ...resolved, server: { ...(resolved.server || {}), hmr: false } };
+  return {
+    ...resolved,
+    server: {
+      ...(resolved.server || {}),
+      hmr: false,
+      watch: { ignored: ["**/.nodeenv/**", "**/node_modules/**"] },
+    },
+  };
 };
 """
 

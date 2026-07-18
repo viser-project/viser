@@ -1,7 +1,16 @@
 // @ts-nocheck
-import { Color, ColorRepresentation, Euler, Matrix4, Mesh, Object3D, Quaternion, Vector3 } from 'three';
-import { InstancedMesh2 } from './InstancedMesh2.js';
-import { UniformValue, UniformValueObj } from './utils/SquareDataTexture.js';
+import {
+  Color,
+  ColorRepresentation,
+  Euler,
+  Matrix4,
+  Mesh,
+  Object3D,
+  Quaternion,
+  Vector3,
+} from "three";
+import { InstancedMesh2 } from "./InstancedMesh2.js";
+import { UniformValue, UniformValueObj } from "./utils/SquareDataTexture.js";
 
 // TODO add other object3D methods
 // TODO implement parent
@@ -44,42 +53,66 @@ export class InstancedEntity {
   /**
    * The visibility state set and got from `owner.availabilityArray`.
    */
-  public get visible(): boolean { return this.owner.getVisibilityAt(this.id); }
-  public set visible(value: boolean) { this.owner.setVisibilityAt(this.id, value); }
+  public get visible(): boolean {
+    return this.owner.getVisibilityAt(this.id);
+  }
+  public set visible(value: boolean) {
+    this.owner.setVisibilityAt(this.id, value);
+  }
 
   /**
    * The availability set and got from `owner.availabilityArray`.
    */
-  public get active(): boolean { return this.owner.getActiveAt(this.id); }
-  public set active(value: boolean) { this.owner.setActiveAt(this.id, value); }
+  public get active(): boolean {
+    return this.owner.getActiveAt(this.id);
+  }
+  public set active(value: boolean) {
+    this.owner.setActiveAt(this.id, value);
+  }
 
   /**
    * Color set and got from `owner.colorsTexture`.
    */
-  public get color(): Color { return this.owner.getColorAt(this.id); }
-  public set color(value: ColorRepresentation) { this.owner.setColorAt(this.id, value); }
+  public get color(): Color {
+    return this.owner.getColorAt(this.id);
+  }
+  public set color(value: ColorRepresentation) {
+    this.owner.setColorAt(this.id, value);
+  }
 
   /**
    * Opacity set and got from `owner.colorsTexture`.
    */
-  public get opacity(): number { return this.owner.getOpacityAt(this.id); }
-  public set opacity(value: number) { this.owner.setOpacityAt(this.id, value); }
+  public get opacity(): number {
+    return this.owner.getOpacityAt(this.id);
+  }
+  public set opacity(value: number) {
+    this.owner.setOpacityAt(this.id, value);
+  }
 
   /**
    * Morph target influences set and got from `owner.morphTexture`.
    */
-  public get morph(): Mesh { return this.owner.getMorphAt(this.id); }
-  public set morph(value: Mesh) { this.owner.setMorphAt(this.id, value); }
+  public get morph(): Mesh {
+    return this.owner.getMorphAt(this.id);
+  }
+  public set morph(value: Mesh) {
+    this.owner.setMorphAt(this.id, value);
+  }
 
   /**
    * The local transform matrix got from `owner.matricesTexture`.
    */
-  public get matrix(): Matrix4 { return this.owner.getMatrixAt(this.id); }
+  public get matrix(): Matrix4 {
+    return this.owner.getMatrixAt(this.id);
+  }
 
   /**
    * The world transform matrix got by multiplying the matrix got from `owner.matricesTexture` and `this.owner.matrixWorld`.
    */
-  public get matrixWorld(): Matrix4 { return this.matrix.premultiply(this.owner.matrixWorld); }
+  public get matrixWorld(): Matrix4 {
+    return this.matrix.premultiply(this.owner.matrixWorld);
+  }
 
   /**
    * This object is instantiated automatically by setting `createEntities` to `true` in the `InstancedMesh2` constructor parameters.
@@ -94,10 +127,12 @@ export class InstancedEntity {
 
     if (useEuler) {
       const quaternion = this.quaternion;
-      const rotation = this.rotation = new Euler();
+      const rotation = (this.rotation = new Euler());
 
       rotation._onChange(() => quaternion.setFromEuler(rotation, false));
-      quaternion._onChange(() => rotation.setFromQuaternion(quaternion, undefined, false));
+      quaternion._onChange(() =>
+        rotation.setFromQuaternion(quaternion, undefined, false),
+      );
     }
   }
 
@@ -146,13 +181,26 @@ export class InstancedEntity {
     const id = this.id;
     const offset = id * 16;
 
-    const x = quaternion._x, y = quaternion._y, z = quaternion._z, w = quaternion._w;
-    const x2 = x + x, y2 = y + y, z2 = z + z;
-    const xx = x * x2, xy = x * y2, xz = x * z2;
-    const yy = y * y2, yz = y * z2, zz = z * z2;
-    const wx = w * x2, wy = w * y2, wz = w * z2;
+    const x = quaternion._x,
+      y = quaternion._y,
+      z = quaternion._z,
+      w = quaternion._w;
+    const x2 = x + x,
+      y2 = y + y,
+      z2 = z + z;
+    const xx = x * x2,
+      xy = x * y2,
+      xz = x * z2;
+    const yy = y * y2,
+      yz = y * z2,
+      zz = z * z2;
+    const wx = w * x2,
+      wy = w * y2,
+      wz = w * z2;
 
-    const sx = scale.x, sy = scale.y, sz = scale.z;
+    const sx = scale.x,
+      sy = scale.y,
+      sz = scale.z;
 
     te[offset + 0] = (1 - (yy + zz)) * sx;
     te[offset + 1] = (xy + wz) * sx;
@@ -218,8 +266,11 @@ export class InstancedEntity {
    * Updates the bones of the skeleton to the instance.
    * @param updateBonesMatrices Whether to update the matrices of the bones. Default is `true`.
    * @param excludeBonesSet An optional set of bone names to exclude from updates, skipping their local matrix updates.
-  */
-  public updateBones(updateBonesMatrices = true, excludeBonesSet?: Set<string>): void {
+   */
+  public updateBones(
+    updateBonesMatrices = true,
+    excludeBonesSet?: Set<string>,
+  ): void {
     this.owner.setBonesAt(this.id, updateBonesMatrices, excludeBonesSet);
   }
 
@@ -249,7 +300,9 @@ export class InstancedEntity {
    * @returns The instance of the object.
    */
   public applyMatrix4(m: Matrix4): this {
-    this.matrix.premultiply(m).decompose(this.position, this.quaternion, this.scale);
+    this.matrix
+      .premultiply(m)
+      .decompose(this.position, this.quaternion, this.scale);
     return this;
   }
 

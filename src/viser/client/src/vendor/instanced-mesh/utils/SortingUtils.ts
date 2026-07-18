@@ -1,8 +1,8 @@
 // @ts-nocheck
-import { Material } from 'three';
-import { radixSort, RadixSortOptions } from 'three/addons/utils/SortUtils.js';
-import { InstancedMesh2 } from '../core/InstancedMesh2.js';
-import { InstancedRenderItem } from '../core/utils/InstancedRenderList.js';
+import { Material } from "three";
+import { radixSort, RadixSortOptions } from "three/addons/utils/SortUtils.js";
+import { InstancedMesh2 } from "../core/InstancedMesh2.js";
+import { InstancedRenderItem } from "../core/utils/InstancedRenderList.js";
 
 type radixSortCallback = (list: InstancedRenderItem[]) => void;
 
@@ -18,7 +18,7 @@ export function createRadixSort(target: InstancedMesh2): radixSortCallback {
   const options: RadixSortOptions<InstancedRenderItem> = {
     get: (el) => el.depthSort,
     aux: new Array(target._capacity),
-    reversed: false
+    reversed: false,
   };
 
   return function sortFunction(list: InstancedRenderItem[]): void {
@@ -48,11 +48,17 @@ export function createRadixSort(target: InstancedMesh2): radixSortCallback {
 }
 
 /** @internal */
-export function sortOpaque(a: InstancedRenderItem, b: InstancedRenderItem): number {
+export function sortOpaque(
+  a: InstancedRenderItem,
+  b: InstancedRenderItem,
+): number {
   return a.depth - b.depth;
 }
 
 /** @internal */
-export function sortTransparent(a: InstancedRenderItem, b: InstancedRenderItem): number {
+export function sortTransparent(
+  a: InstancedRenderItem,
+  b: InstancedRenderItem,
+): number {
   return b.depth - a.depth;
 }

@@ -1,10 +1,10 @@
 // @ts-nocheck
-import { DataTexture, FloatType, RedFormat, TypedArray } from 'three';
-import { InstancedMesh2 } from '../InstancedMesh2.js';
+import { DataTexture, FloatType, RedFormat, TypedArray } from "three";
+import { InstancedMesh2 } from "../InstancedMesh2.js";
 
 // TODO: add optimize method to reduce buffer size and remove instances objects
 
-declare module '../InstancedMesh2.js' {
+declare module "../InstancedMesh2.js" {
   interface InstancedMesh2 {
     /**
      * Resizes internal buffers to accommodate the specified capacity.
@@ -17,14 +17,18 @@ declare module '../InstancedMesh2.js' {
   }
 }
 
-InstancedMesh2.prototype.resizeBuffers = function (capacity: number): InstancedMesh2 {
+InstancedMesh2.prototype.resizeBuffers = function (
+  capacity: number,
+): InstancedMesh2 {
   const oldCapacity = this._capacity;
   this._capacity = capacity;
   const minCapacity = Math.min(capacity, oldCapacity);
 
   if (this.instanceIndex) {
     const indexArray = new Uint32Array(capacity);
-    indexArray.set(new Uint32Array(this.instanceIndex.array.buffer, 0, minCapacity)); // safely copy TODO method
+    indexArray.set(
+      new Uint32Array(this.instanceIndex.array.buffer, 0, minCapacity),
+    ); // safely copy TODO method
     this.instanceIndex.array = indexArray;
   }
 
@@ -34,7 +38,9 @@ InstancedMesh2.prototype.resizeBuffers = function (capacity: number): InstancedM
 
       if (obj.instanceIndex) {
         const indexArray = new Uint32Array(capacity);
-        indexArray.set(new Uint32Array(obj.instanceIndex.array.buffer, 0, minCapacity)); // safely copy TODO method
+        indexArray.set(
+          new Uint32Array(obj.instanceIndex.array.buffer, 0, minCapacity),
+        ); // safely copy TODO method
         obj.instanceIndex.array = indexArray;
       }
     }
@@ -51,11 +57,18 @@ InstancedMesh2.prototype.resizeBuffers = function (capacity: number): InstancedM
     }
   }
 
-  if (this.morphTexture) { // test it
+  if (this.morphTexture) {
+    // test it
     const oldArray = this.morphTexture.image.data as TypedArray; // TODO check if they fix d.ts
     const size = oldArray.length / oldCapacity;
     this.morphTexture.dispose();
-    this.morphTexture = new DataTexture(new Float32Array(size * capacity), size, capacity, RedFormat, FloatType);
+    this.morphTexture = new DataTexture(
+      new Float32Array(size * capacity),
+      size,
+      capacity,
+      RedFormat,
+      FloatType,
+    );
     (this.morphTexture.image.data as TypedArray).set(oldArray); // FIX if reduce
   }
 
@@ -64,7 +77,9 @@ InstancedMesh2.prototype.resizeBuffers = function (capacity: number): InstancedM
   return this;
 };
 
-InstancedMesh2.prototype.setInstancesArrayCount = function (count: number): void {
+InstancedMesh2.prototype.setInstancesArrayCount = function (
+  count: number,
+): void {
   if (count < this._instancesArrayCount) {
     const bvh = this.bvh;
     if (bvh) {

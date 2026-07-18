@@ -73,9 +73,9 @@ describe("matchesDragBinding / anyBindingMatches", () => {
       { button: "left" as const, modifier: null },
       { button: "right" as const, modifier: "alt" as const },
     ];
-    expect(anyBindingMatches(bindings, { button: "right", modifier: "alt" })).toBe(
-      true,
-    );
+    expect(
+      anyBindingMatches(bindings, { button: "right", modifier: "alt" }),
+    ).toBe(true);
     expect(
       anyBindingMatches(bindings, { button: "middle", modifier: null }),
     ).toBe(false);
@@ -95,15 +95,18 @@ describe("motionExceedsThreshold", () => {
   it("is false for movement at or under the threshold (L-infinity)", () => {
     expect(motionExceedsThreshold([0, 0], [0, 0])).toBe(false);
     expect(
-      motionExceedsThreshold([0, 0], [MOTION_THRESHOLD_PX, MOTION_THRESHOLD_PX]),
+      motionExceedsThreshold(
+        [0, 0],
+        [MOTION_THRESHOLD_PX, MOTION_THRESHOLD_PX],
+      ),
     ).toBe(false);
   });
   it("is true when either axis exceeds the threshold", () => {
     expect(motionExceedsThreshold([0, 0], [MOTION_THRESHOLD_PX + 1, 0])).toBe(
       true,
     );
-    expect(motionExceedsThreshold([10, 10], [10, 10 + MOTION_THRESHOLD_PX + 1])).toBe(
-      true,
-    );
+    expect(
+      motionExceedsThreshold([10, 10], [10, 10 + MOTION_THRESHOLD_PX + 1]),
+    ).toBe(true);
   });
 });

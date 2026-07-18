@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { GLBufferAttribute, TypedArray, WebGLRenderer } from 'three';
+import { GLBufferAttribute, TypedArray, WebGLRenderer } from "three";
 
 /**
  * A class that extends `GLBufferAttribute` to handle instanced buffer attributes.
@@ -33,7 +33,14 @@ export class GLInstancedBufferAttribute extends GLBufferAttribute {
    * @param array The data array that holds the attribute values.
    * @param meshPerAttribute The number of meshes that share the same attribute data.
    */
-  constructor(gl: WebGL2RenderingContext, type: GLenum, itemSize: number, elementSize: 1 | 2 | 4, array: TypedArray, meshPerAttribute = 1) {
+  constructor(
+    gl: WebGL2RenderingContext,
+    type: GLenum,
+    itemSize: number,
+    elementSize: 1 | 2 | 4,
+    array: TypedArray,
+    meshPerAttribute = 1,
+  ) {
     const buffer = gl.createBuffer();
     super(buffer, type, itemSize, elementSize, array.length / itemSize);
 

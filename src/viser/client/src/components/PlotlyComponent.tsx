@@ -63,8 +63,9 @@ const PlotWithAspectInner = React.memo(function PlotWithAspectInner({
     return () => {
       // Plotly is a global (dynamically imported via eval()); may be undefined
       // if the component unmounts before the script loads.
-      const plotly = (window as unknown as { Plotly?: { purge(n: HTMLElement): void } })
-        .Plotly;
+      const plotly = (
+        window as unknown as { Plotly?: { purge(n: HTMLElement): void } }
+      ).Plotly;
       if (node !== null && plotly !== undefined) {
         plotly.purge(node);
       }

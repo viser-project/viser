@@ -28,7 +28,10 @@ function useSpacebarTogglePause(setPaused: Dispatch<SetStateAction<boolean>>) {
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.code !== "Space") return;
-      if (isFormElement(event.target) || isFormElement(document.activeElement)) {
+      if (
+        isFormElement(event.target) ||
+        isFormElement(document.activeElement)
+      ) {
         return;
       }
       setPaused((prev) => !prev);

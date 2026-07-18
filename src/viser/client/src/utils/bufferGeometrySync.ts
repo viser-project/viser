@@ -115,8 +115,7 @@ export function syncBufferGeometry(
   let needsRealloc = false;
   for (const name of names) {
     const existing = geometry.getAttribute(name) as
-      | THREE.BufferAttribute
-      | undefined;
+      THREE.BufferAttribute | undefined;
     if (existing === undefined || !layoutMatches(existing, attributes[name])) {
       needsRealloc = true;
       break;

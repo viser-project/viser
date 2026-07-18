@@ -37,7 +37,7 @@ def _all_panel_ids(page: Page) -> list[str]:
     hidden (host tab inactive, host minimized) even though no panel was lost."""
     return sorted(
         page.evaluate(
-            "() => Object.values(window.__dockLayout.groups).flatMap(g => g.panelIds)"
+            "() => Object.values(window.__dockLayout.groups).flatMap(g => g.paneIds)"
         )
     )
 
@@ -103,7 +103,10 @@ def test_random_drags_never_throw_or_strand_windows(
     errors = collect_errors(page)
     try:
         page.goto(f"http://localhost:{vite_server}{PLAYGROUND_PATH}")
-        page.wait_for_selector("[data-dock-group]")
+        page.wait_for_function(
+            "() => document.querySelector('[data-dock-group]') !== null",
+            polling=50,
+        )
         rng = random.Random(seed)
 
         for _ in range(18):
@@ -152,5 +155,62 @@ def test_random_drags_conserve_panels(
                 f"panel set changed at seed={seed} step={step}: "
                 f"{_all_panel_ids(page)} != {expected}"
             )
+    finally:
+        page.close()
+
+
+# Multi-column seed: start from a region with sibling columns (one RAILED,
+# one a 2-leaf stack) so the random storm exercises the D46 column paths --
+# column inserts at side bands, in-column seam inserts, rail cells, and
+# dropping onto/around rails -- which the playground default (no docked
+# columns) never reaches.
+@pytest.mark.parametrize("seed", [1, 2, 5])
+def test_random_drags_multicolumn_seed_conserve_and_no_errors(
+    dock_context, vite_server: int, seed: int
+) -> None:
+    from .dock_helpers import columns, dock_layout, set_layout, stack, window
+
+    vw, vh = 1280, 900
+    page = dock_context.new_page()
+    page.set_viewport_size({"width": vw, "height": vh})
+    errors = collect_errors(page)
+    try:
+        page.goto(f"http://localhost:{vite_server}{PLAYGROUND_PATH}")
+        page.wait_for_function(
+            "() => document.querySelector('[data-dock-group]') !== null",
+            polling=50,
+        )
+        # Right edge: [controls(railed) | inspector+console stack]; a
+        # floating `scene` to drag around. (scene is a non-area, mergeable
+        # pane -- the area panes layers/props/history can't be reused here
+        # without putting a pane in two groups.) The railed column keeps a
+        # rail surface in the storm (D28/D38).
+        set_layout(
+            page,
+            dock_layout(
+                docked_right=columns(
+                    stack("controls", railed=True),
+                    stack("inspector", "console"),
+                ),
+                floating=[window("scene", x=200, y=200)],
+            ),
+        )
+        expected = _all_panel_ids(page)
+        rng = random.Random(seed)
+        for step in range(18):
+            grips = _grip_centers(page)
+            if not grips:
+                break
+            start = rng.choice(grips)
+            _drag(page, start, _random_end(rng, grips, start, vw, vh))
+            off = _floating_offscreen(page, vw, vh)
+            assert off == [], f"off-screen window at seed={seed} step={step}: {off}"
+            assert _all_panel_ids(page) == expected, (
+                f"panel set changed at seed={seed} step={step}: "
+                f"{_all_panel_ids(page)} != {expected}"
+            )
+        assert real_errors(errors) == [], (
+            f"JS errors during multiband seed={seed}: {real_errors(errors)}"
+        )
     finally:
         page.close()

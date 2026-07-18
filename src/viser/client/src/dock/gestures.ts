@@ -9,12 +9,12 @@ export { motionExceedsThreshold } from "../dragUtils";
  * `window` so the gesture survives the cursor leaving that element; this shares
  * the move + (up/cancel -> end) wiring.
  *
- * When `pointerId` is given, events from any OTHER pointer are ignored -- so on
+ * When `pointerId` is given, events from any other pointer are ignored -- so on
  * a multi-touch surface a second finger can't drive or end the first finger's
  * gesture (a second finger's `pointerup` must not commit finger A's drop). This
  * mirrors the scene-pointer subsystem (pointer/gestures.ts). The end callback
  * receives the triggering event so callers can release the right pointer, plus
- * a first-class `cancelled` flag: true for anything that is NOT a real release
+ * a first-class `cancelled` flag: true for anything that is not a real release
  * (pointercancel from a browser-stolen touch, or Escape) -- consumers abort
  * their commit on it (a drag drops nothing, a reorder snaps back) instead of
  * sniffing event types. */
@@ -61,7 +61,7 @@ export function suppressTextSelection(): () => void {
   };
 }
 
-/** Show the "grabbing" cursor page-wide while a MOVE drag is in flight (the
+/** Show the "grabbing" cursor page-wide while a move drag is in flight (the
  * handles show "grab" at rest; without this the cursor never closes). Returns
  * a restore function. Resize gestures keep their own ew/ns-resize cursors. */
 export function grabbingCursor(): () => void {
@@ -74,15 +74,19 @@ export function grabbingCursor(): () => void {
 
 /** Run a rAF-throttled drag gesture: capture the pointer on `grip`, record the
  * latest pointer state via `update(e)` on every move, and apply it via
- * `flush()` at most once per animation frame (plus one final flush on release
- * if a move is still pending). `onEnd` runs exactly once, on release OR
- * cancellation, before the final flush -- the place to clear shared flags. It
- * receives `cancelled: true` when the gesture did NOT end with a real release
+ * `flush()` at most once per animation frame. On a real release, a still-
+ * pending move is flushed BEFORE `onEnd`: the end commit must see the final
+ * geometry (a quick press-move-release would otherwise run its end commit on
+ * the pre-gesture layout and land the whole delta after it, unattributed),
+ * and end-of-gesture teardown (removing a transition suppressor) must
+ * postdate the last write so that write lands instantly instead of easing.
+ * `onEnd` then runs exactly once -- the place to clear shared flags. It
+ * receives `cancelled: true` when the gesture did not end with a real release
  * (Escape, browser-stolen touch, unmount), so callers can revert what their
- * per-frame flushes applied; no flush runs after a cancel.
+ * per-frame flushes applied; no flush runs on a cancel.
  *
  * Returns a cancel function for unmount cleanup: it detaches the window
- * listeners, drops any pending frame WITHOUT flushing, and runs `onEnd`.
+ * listeners, drops any pending frame without flushing, and runs `onEnd`.
  * Idempotent, so calling it after a normal release is a no-op.
  *
  * This wraps the pattern shared by every resize/divider gesture (rAF
@@ -118,9 +122,10 @@ export function dragGesture(opts: {
       if (raf === null) raf = requestAnimationFrame(frame);
     },
     (_endEvent, cancelled) => {
-      const pending = raf !== null;
+      // Final flush FIRST (see the doc comment): the end commit and teardown
+      // in onEnd must postdate the last geometry write.
+      if (raf !== null && !cancelled) flush();
       cancel(cancelled);
-      if (pending && !cancelled) flush();
       tryRelease(grip, pointerId);
     },
     pointerId, // ignore other pointers so a second finger can't drive/end this.
@@ -147,6 +152,53 @@ export function tryRelease(el: Element, pointerId: number): void {
   }
 }
 
+/** Move keyboard focus to a pane's tab element on the next frame (same
+ * deferral contract as focusDockControl), with a fallback chain for
+ * unmergeable panels (edge
+ * case 14): the revealed expanded cell may render no [data-dock-tab] at all
+ * (its label is a full-width header, not a tab strip), so focusing the tab
+ * would silently fall to <body>. Fall back to the revealed group's header
+ * toggle ([data-dock-minimize], e.g. a sole floating group's compact `-`),
+ * else the group element itself (given a programmatic tabindex -- a docked
+ * unmergeable panel carries no minimize control at all, D32). */
+export function focusPaneTabOrGroup(paneId: string, groupId: string) {
+  requestAnimationFrame(() => {
+    const tab = document.querySelector<HTMLElement>(
+      `[data-dock-tab="${CSS.escape(paneId)}"]`,
+    );
+    if (tab !== null) {
+      tab.focus();
+      return;
+    }
+    const scope = document.querySelector<HTMLElement>(
+      `[data-dock-group="${CSS.escape(groupId)}"]`,
+    );
+    if (scope === null) return;
+    const toggle = scope.querySelector<HTMLElement>("[data-dock-minimize]");
+    if (toggle !== null) {
+      toggle.focus();
+      return;
+    }
+    // The stamped tabindex persists after focus leaves (React doesn't own
+    // the attribute), leaving the group click-focusable thereafter --
+    // harmless: click focus fails :focus-visible, so no ring ever paints
+    // on the pointer path.
+    if (!scope.hasAttribute("tabindex")) scope.tabIndex = -1;
+    scope.focus();
+  });
+}
+
+/** rAF-focus the first element matching `selector` -- same deferral contract
+ * as focusPaneTabOrGroup, for keyboard-driven minimize/collapse: the activated
+ * control unmounts with its chrome row, so focus hands off to the control
+ * that replaced it (the bar's toggle, the rail's header) instead of falling
+ * to <body>. */
+export function focusDockControl(selector: string) {
+  requestAnimationFrame(() => {
+    document.querySelector<HTMLElement>(selector)?.focus();
+  });
+}
+
 /** Activate a role=button element from the keyboard (Enter or Space), matching
  * the native <button> contract for our minimize/expand controls. Structurally
  * typed so it accepts React's synthetic KeyboardEvent without a React import. */
@@ -163,16 +215,42 @@ export function keyActivate(action: () => void) {
   };
 }
 
-// Honors the OS-level "reduce motion" accessibility setting: dock animations
-// (FLIP slides, collapse transitions, preview tweens) become instant. The
-// MediaQueryList is module-scoped so `.matches` reads stay live without
-// re-querying; jsdom (unit tests) has no matchMedia, hence the optional call.
-const reducedMotionQuery =
-  typeof window !== "undefined"
-    ? window.matchMedia?.("(prefers-reduced-motion: reduce)")
-    : undefined;
-export function prefersReducedMotion(): boolean {
-  return reducedMotionQuery?.matches ?? false;
+/** Roving-focus keyboard handler for a tab list (horizontal strip or vertical
+ * minimized strip): the `prev`/`next` arrow keys move focus to the adjacent tab
+ * (found by its `data-dock-tab` attribute off the shared parent), and Enter/Space
+ * activate the focused tab. Both axes share this; the caller picks the key pair,
+ * the pane order, and what "activate"/"move" do. `onMove` (optional) runs when
+ * focus moves -- the expanded strip activates-on-move; the minimized strip
+ * doesn't (activating there would expand the panel). */
+export function tabListKeyDown(opts: {
+  paneId: string;
+  paneIds: readonly string[];
+  prevKey: "ArrowLeft" | "ArrowUp";
+  nextKey: "ArrowRight" | "ArrowDown";
+  onActivate: (paneId: string) => void;
+  onMove?: (paneId: string) => void;
+}) {
+  return (event: {
+    key: string;
+    preventDefault: () => void;
+    stopPropagation: () => void;
+    currentTarget: { parentElement: HTMLElement | null };
+  }) => {
+    if (event.key === opts.prevKey || event.key === opts.nextKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      const i = opts.paneIds.indexOf(opts.paneId);
+      const next = opts.paneIds[event.key === opts.prevKey ? i - 1 : i + 1];
+      if (next !== undefined) {
+        opts.onMove?.(next);
+        event.currentTarget.parentElement
+          ?.querySelector<HTMLElement>(`[data-dock-tab="${CSS.escape(next)}"]`)
+          ?.focus();
+      }
+      return;
+    }
+    keyActivate(() => opts.onActivate(opts.paneId))(event);
+  };
 }
 
 // Monotonic id counter. Module-scoped so ids are unique across the whole client
@@ -181,4 +259,16 @@ let idCounter = 0;
 export function freshId(prefix: string): string {
   idCounter += 1;
   return `${prefix}-${idCounter}`;
+}
+
+/** Raise the id counter past every `<prefix>-<n>` id already present in
+ * externally-supplied ids (a restored/injected layout). Without this a layout
+ * persisted from an earlier session collides with the fresh session's counter
+ * (which restarts at 0): a new `node-3` silently shadows a restored `node-3`,
+ * tripping the unique-id invariant or clobbering a groups-map entry. */
+export function bumpFreshIdFloor(ids: Iterable<string>): void {
+  for (const id of ids) {
+    const m = /-(\d+)$/.exec(id);
+    if (m !== null) idCounter = Math.max(idCounter, Number(m[1]));
+  }
 }

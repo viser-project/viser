@@ -19,8 +19,9 @@ import { theme } from "../AppTheme";
 import { DockArea } from "./DockArea";
 import { useDock } from "./DockContext";
 import { DockManager } from "./DockManager";
+import { measureNaturalHeight } from "./detent";
 import { makeGroup } from "./layoutOps";
-import { DockLayout, PanelRegistry, TabGroup } from "./types";
+import { DockLayout, PaneRegistry, TabGroup } from "./types";
 
 // Mock of the live control panel's title bar (see ControlPanel.tsx's
 // ConnectionStatus + ShareButton + the "Configuration & diagnostics" toggle).
@@ -72,7 +73,7 @@ function ConnectedTitle() {
   );
 }
 
-// A handful of demo panels with throwaway content.
+// A handful of demo panes with throwaway content.
 function demoBody(label: string, lines: number) {
   return (
     <Box>
@@ -85,8 +86,8 @@ function demoBody(label: string, lines: number) {
   );
 }
 
-// Inner panels available to drop into the nested dockable areas.
-const panels: PanelRegistry = {
+// Inner panes available to drop into the nested dockable areas.
+const panes: PaneRegistry = {
   scene: {
     id: "scene",
     title: "Scene",
@@ -126,15 +127,24 @@ const panels: PanelRegistry = {
     id: "monitor",
     title: "Connected",
     titleNode: <ConnectedTitle />,
+    // Face bar (D19): mirrors the live control panel, whose collapsed bar
+    // renders its connection-status row. Gives the playground coverage of
+    // the FACE_BAR height/offset constancy (D33) -- previously
+    // unexercisable here (visual-audit fixture gap).
+    minimizedFace: <ConnectedTitle />,
     unmergeable: true,
     // The whole body is a single full-bleed nested area (no padding, fills the
     // panel) -- there is nothing else in this panel.
     fullBleed: true,
     render: () => <DockArea areaId="area-main" fill />,
   },
-  // Inner panels: ordinary panels that happen to start inside nested areas.
-  // There is no difference between these and the "standard" panels above.
-  layers: { id: "layers", title: "Layers", render: () => demoBody("Layers", 5) },
+  // Inner panes: ordinary panes that happen to start inside nested areas.
+  // There is no difference between these and the "standard" panes above.
+  layers: {
+    id: "layers",
+    title: "Layers",
+    render: () => demoBody("Layers", 5),
+  },
   props: {
     id: "props",
     title: "Properties",
@@ -147,14 +157,14 @@ const panels: PanelRegistry = {
   },
 };
 
-// Build the initial layout: a few floating panels, one already-docked panel, and
+// Build the initial layout: a few floating panes, one already-docked panel, and
 // two nested dockable areas (each backed by a flat tab group in `groups`).
 const dockedGroup: TabGroup = makeGroup(["scene"]);
 const floatA: TabGroup = makeGroup(["controls"]);
 const floatB: TabGroup = makeGroup(["inspector"]);
 const floatC: TabGroup = makeGroup(["console"]);
 const floatM: TabGroup = makeGroup(["monitor"]);
-// Area-backing groups (flat tabs). Their panels start docked inside the areas.
+// Area-backing groups (flat tabs). Their panes start docked inside the areas.
 const areaSceneGroup: TabGroup = makeGroup(["layers"]);
 const areaMainGroup: TabGroup = makeGroup(["props", "history"]);
 
@@ -169,18 +179,54 @@ const initialLayout: DockLayout = {
     [areaMainGroup.id]: areaMainGroup,
   },
   docked: {
-    left: { type: "leaf", id: "n-docked", group: dockedGroup.id, weight: 1 },
+    left: {
+      columns: [
+        {
+          id: "n-docked",
+          weight: 1,
+          leaves: [{ id: "n-docked-leaf", group: dockedGroup.id, weight: 1 }],
+        },
+      ],
+    },
     right: null,
   },
   floating: [
-    { id: "w-a", x: 360, y: 40, width: 280, stack: [floatA.id] },
-    { id: "w-b", x: 680, y: 120, width: 260, stack: [floatB.id] },
-    { id: "w-c", x: 480, y: 320, width: 300, stack: [floatC.id] },
-    { id: "w-m", x: 900, y: 60, width: 300, height: 380, stack: [floatM.id] },
+    {
+      id: "w-a",
+      x: 360,
+      y: 40,
+      width: 280,
+      height: { mode: "auto" },
+      stack: [floatA.id],
+    },
+    {
+      id: "w-b",
+      x: 680,
+      y: 120,
+      width: 260,
+      height: { mode: "auto" },
+      stack: [floatB.id],
+    },
+    {
+      id: "w-c",
+      x: 480,
+      y: 320,
+      width: 300,
+      height: { mode: "auto" },
+      stack: [floatC.id],
+    },
+    {
+      id: "w-m",
+      x: 900,
+      y: 60,
+      width: 300,
+      height: { mode: "pinned", px: 380 },
+      stack: [floatM.id],
+    },
   ],
   areas: {
-    "area-scene": { id: "area-scene", group: areaSceneGroup.id },
-    "area-main": { id: "area-main", group: areaMainGroup.id },
+    "area-scene": { group: areaSceneGroup.id },
+    "area-main": { group: areaMainGroup.id },
   },
 };
 
@@ -200,10 +246,29 @@ function LayoutInjector() {
   React.useEffect(() => {
     const probe = window as unknown as {
       __dockSetLayout?: (layout: DockLayout) => void;
+      __dockNaturalHeight?: (el: HTMLElement) => number;
     };
-    probe.__dockSetLayout = (layout) => api.apply(() => layout);
+    probe.__dockSetLayout = (layout) => api.replace(layout);
+    // Read probe for the detent e2e: the REAL measureNaturalHeight, so the
+    // tests' content-height oracle can never drift from the production
+    // formula (it used to be a hand-maintained JS-string copy).
+    probe.__dockNaturalHeight = measureNaturalHeight;
+    // One-shot seeding for screenshot tooling: `#layout=<base64 JSON>` in the
+    // URL applies a layout at mount, so a single `chrome --screenshot` of a
+    // playground URL can capture any configuration without a live CDP
+    // session (this host's continuous frame scheduling is unreliable;
+    // deterministic one-shot mode is not).
+    const hash = window.location.hash;
+    if (hash.startsWith("#layout=")) {
+      try {
+        api.replace(JSON.parse(atob(hash.slice("#layout=".length))));
+      } catch (e) {
+        console.error("Bad #layout= hash:", e);
+      }
+    }
     return () => {
       delete probe.__dockSetLayout;
+      delete probe.__dockNaturalHeight;
     };
   }, [api]);
   return null;
@@ -221,9 +286,9 @@ function Playground() {
       <Box style={{ width: "100vw", height: "100vh" }}>
         <DockManager
           initialLayout={initialLayout}
-          panels={panels}
+          panes={panes}
           // Test probe: e2e suites read the committed layout model directly
-          // (DOM scans miss panels whose host tab is inactive, e.g. tabs inside
+          // (DOM scans miss panes whose host tab is inactive, e.g. tabs inside
           // a nested area when the area's host panel body is hidden).
           onLayoutChange={(l) => {
             (window as unknown as { __dockLayout: unknown }).__dockLayout = l;
