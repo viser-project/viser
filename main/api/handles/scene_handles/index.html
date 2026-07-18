@@ -626,12 +626,30 @@ whenever either Cmd or Ctrl is held.</p></li>
 <dt class="sig sig-object py" id="viser.BatchedAxesHandle.on_drag">
 <span class="sig-name descname"><span class="pre">on_drag</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">button</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'left'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'middle'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'right'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'left'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">modifier</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'cmd/ctrl'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt+shift'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></span></span><a class="headerlink" href="#viser.BatchedAxesHandle.on_drag" title="Link to this definition">¶</a></dt>
 <dd><p>Attach a callback for the full drag lifecycle.</p>
-<p>Fires three times per gesture: once with
-<code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> at press, zero or more times with
-<code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), once with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at
-release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation paths (window
-blur, pointer cancel, node removed mid-drag) so per-drag
-state can be released.</p>
+<p>Fires once with <code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> when a press is
+confirmed as a drag (the pointer travels past a small motion
+threshold; a stationary press/release fires nothing), zero or
+more times with <code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), and once
+with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation
+paths (window blur, pointer cancel, node removed mid-drag) so
+per-drag state can be released.</p>
+<p>Modifiers are live: if the user changes the held modifier
+mid-drag, the current segment ends and a new one begins under
+the new combo, routing to whichever callback that combo is bound
+to. A callback therefore sees a clean <code class="docutils literal notranslate"><span class="pre">start</span></code> … <code class="docutils literal notranslate"><span class="pre">end</span></code> pair
+for <em>its</em> modifier each time that modifier is engaged, and a
+single physical drag may fire more than one such pair. To switch
+behavior mid-drag (e.g. changing the drag plane), register a
+separate <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> for each modifier combo. <code class="docutils literal notranslate"><span class="pre">event.modifier</span></code>
+identifies the active segment.</p>
+<p>A switch-created segment’s <code class="docutils literal notranslate"><span class="pre">start</span></code> is confirmed briefly
+(~100ms, or sooner on pointer motion) before it fires; releasing
+the mouse button within that window discards the segment
+entirely. In particular, releasing the modifier a beat before
+the button – the natural way to end a modifier-drag – does
+<em>not</em> fire a spurious start/end pair on the combo left behind
+(e.g. a bare <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> registered alongside a modifier
+binding).</p>
 <p>Usable as a bare decorator (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag</span></code>, defaults to
 <code class="docutils literal notranslate"><span class="pre">button=&quot;left&quot;</span></code> and no modifiers) or with arguments
 (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag(&quot;left&quot;,</span> <span class="pre">modifier=&quot;cmd/ctrl&quot;)</span></code>).</p>
@@ -644,9 +662,12 @@ state can be released.</p>
 ordered <code class="docutils literal notranslate"><span class="pre">&quot;+&quot;</span></code>-separated string like <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl&quot;</span></code>,
 <code class="docutils literal notranslate"><span class="pre">&quot;shift&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl+shift&quot;</span></code>. <code class="docutils literal notranslate"><span class="pre">None</span></code> matches
 “no modifiers held”. Matching is exact: listed modifiers
-must be held and others must not be. Left-drag on this
-node intercepts the gesture – the camera only orbits on
-empty-space drags.</p></li>
+must be held and others must not be. The match is
+re-evaluated whenever the held modifier changes mid-drag,
+so this callback is entered and exited as its combo is
+engaged and released. Left-drag on this node intercepts
+the gesture – the camera only orbits on empty-space
+drags.</p></li>
 <li><p><strong>self</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Self" title="(in Python v3.14)"><em>Self</em></a>)</p></li>
 </ul>
 </dd>
@@ -807,12 +828,30 @@ whenever either Cmd or Ctrl is held.</p></li>
 <dt class="sig sig-object py" id="viser.BatchedGlbHandle.on_drag">
 <span class="sig-name descname"><span class="pre">on_drag</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">button</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'left'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'middle'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'right'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'left'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">modifier</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'cmd/ctrl'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt+shift'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></span></span><a class="headerlink" href="#viser.BatchedGlbHandle.on_drag" title="Link to this definition">¶</a></dt>
 <dd><p>Attach a callback for the full drag lifecycle.</p>
-<p>Fires three times per gesture: once with
-<code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> at press, zero or more times with
-<code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), once with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at
-release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation paths (window
-blur, pointer cancel, node removed mid-drag) so per-drag
-state can be released.</p>
+<p>Fires once with <code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> when a press is
+confirmed as a drag (the pointer travels past a small motion
+threshold; a stationary press/release fires nothing), zero or
+more times with <code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), and once
+with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation
+paths (window blur, pointer cancel, node removed mid-drag) so
+per-drag state can be released.</p>
+<p>Modifiers are live: if the user changes the held modifier
+mid-drag, the current segment ends and a new one begins under
+the new combo, routing to whichever callback that combo is bound
+to. A callback therefore sees a clean <code class="docutils literal notranslate"><span class="pre">start</span></code> … <code class="docutils literal notranslate"><span class="pre">end</span></code> pair
+for <em>its</em> modifier each time that modifier is engaged, and a
+single physical drag may fire more than one such pair. To switch
+behavior mid-drag (e.g. changing the drag plane), register a
+separate <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> for each modifier combo. <code class="docutils literal notranslate"><span class="pre">event.modifier</span></code>
+identifies the active segment.</p>
+<p>A switch-created segment’s <code class="docutils literal notranslate"><span class="pre">start</span></code> is confirmed briefly
+(~100ms, or sooner on pointer motion) before it fires; releasing
+the mouse button within that window discards the segment
+entirely. In particular, releasing the modifier a beat before
+the button – the natural way to end a modifier-drag – does
+<em>not</em> fire a spurious start/end pair on the combo left behind
+(e.g. a bare <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> registered alongside a modifier
+binding).</p>
 <p>Usable as a bare decorator (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag</span></code>, defaults to
 <code class="docutils literal notranslate"><span class="pre">button=&quot;left&quot;</span></code> and no modifiers) or with arguments
 (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag(&quot;left&quot;,</span> <span class="pre">modifier=&quot;cmd/ctrl&quot;)</span></code>).</p>
@@ -825,9 +864,12 @@ state can be released.</p>
 ordered <code class="docutils literal notranslate"><span class="pre">&quot;+&quot;</span></code>-separated string like <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl&quot;</span></code>,
 <code class="docutils literal notranslate"><span class="pre">&quot;shift&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl+shift&quot;</span></code>. <code class="docutils literal notranslate"><span class="pre">None</span></code> matches
 “no modifiers held”. Matching is exact: listed modifiers
-must be held and others must not be. Left-drag on this
-node intercepts the gesture – the camera only orbits on
-empty-space drags.</p></li>
+must be held and others must not be. The match is
+re-evaluated whenever the held modifier changes mid-drag,
+so this callback is entered and exited as its combo is
+engaged and released. Left-drag on this node intercepts
+the gesture – the camera only orbits on empty-space
+drags.</p></li>
 <li><p><strong>self</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Self" title="(in Python v3.14)"><em>Self</em></a>)</p></li>
 </ul>
 </dd>
@@ -1006,12 +1048,30 @@ whenever either Cmd or Ctrl is held.</p></li>
 <dt class="sig sig-object py" id="viser.BatchedMeshHandle.on_drag">
 <span class="sig-name descname"><span class="pre">on_drag</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">button</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'left'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'middle'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'right'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'left'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">modifier</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'cmd/ctrl'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt+shift'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></span></span><a class="headerlink" href="#viser.BatchedMeshHandle.on_drag" title="Link to this definition">¶</a></dt>
 <dd><p>Attach a callback for the full drag lifecycle.</p>
-<p>Fires three times per gesture: once with
-<code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> at press, zero or more times with
-<code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), once with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at
-release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation paths (window
-blur, pointer cancel, node removed mid-drag) so per-drag
-state can be released.</p>
+<p>Fires once with <code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> when a press is
+confirmed as a drag (the pointer travels past a small motion
+threshold; a stationary press/release fires nothing), zero or
+more times with <code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), and once
+with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation
+paths (window blur, pointer cancel, node removed mid-drag) so
+per-drag state can be released.</p>
+<p>Modifiers are live: if the user changes the held modifier
+mid-drag, the current segment ends and a new one begins under
+the new combo, routing to whichever callback that combo is bound
+to. A callback therefore sees a clean <code class="docutils literal notranslate"><span class="pre">start</span></code> … <code class="docutils literal notranslate"><span class="pre">end</span></code> pair
+for <em>its</em> modifier each time that modifier is engaged, and a
+single physical drag may fire more than one such pair. To switch
+behavior mid-drag (e.g. changing the drag plane), register a
+separate <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> for each modifier combo. <code class="docutils literal notranslate"><span class="pre">event.modifier</span></code>
+identifies the active segment.</p>
+<p>A switch-created segment’s <code class="docutils literal notranslate"><span class="pre">start</span></code> is confirmed briefly
+(~100ms, or sooner on pointer motion) before it fires; releasing
+the mouse button within that window discards the segment
+entirely. In particular, releasing the modifier a beat before
+the button – the natural way to end a modifier-drag – does
+<em>not</em> fire a spurious start/end pair on the combo left behind
+(e.g. a bare <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> registered alongside a modifier
+binding).</p>
 <p>Usable as a bare decorator (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag</span></code>, defaults to
 <code class="docutils literal notranslate"><span class="pre">button=&quot;left&quot;</span></code> and no modifiers) or with arguments
 (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag(&quot;left&quot;,</span> <span class="pre">modifier=&quot;cmd/ctrl&quot;)</span></code>).</p>
@@ -1024,9 +1084,12 @@ state can be released.</p>
 ordered <code class="docutils literal notranslate"><span class="pre">&quot;+&quot;</span></code>-separated string like <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl&quot;</span></code>,
 <code class="docutils literal notranslate"><span class="pre">&quot;shift&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl+shift&quot;</span></code>. <code class="docutils literal notranslate"><span class="pre">None</span></code> matches
 “no modifiers held”. Matching is exact: listed modifiers
-must be held and others must not be. Left-drag on this
-node intercepts the gesture – the camera only orbits on
-empty-space drags.</p></li>
+must be held and others must not be. The match is
+re-evaluated whenever the held modifier changes mid-drag,
+so this callback is entered and exited as its combo is
+engaged and released. Left-drag on this node intercepts
+the gesture – the camera only orbits on empty-space
+drags.</p></li>
 <li><p><strong>self</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Self" title="(in Python v3.14)"><em>Self</em></a>)</p></li>
 </ul>
 </dd>
@@ -1241,12 +1304,30 @@ whenever either Cmd or Ctrl is held.</p></li>
 <dt class="sig sig-object py" id="viser.BoxHandle.on_drag">
 <span class="sig-name descname"><span class="pre">on_drag</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">button</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'left'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'middle'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'right'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'left'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">modifier</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'cmd/ctrl'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt+shift'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></span></span><a class="headerlink" href="#viser.BoxHandle.on_drag" title="Link to this definition">¶</a></dt>
 <dd><p>Attach a callback for the full drag lifecycle.</p>
-<p>Fires three times per gesture: once with
-<code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> at press, zero or more times with
-<code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), once with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at
-release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation paths (window
-blur, pointer cancel, node removed mid-drag) so per-drag
-state can be released.</p>
+<p>Fires once with <code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> when a press is
+confirmed as a drag (the pointer travels past a small motion
+threshold; a stationary press/release fires nothing), zero or
+more times with <code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), and once
+with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation
+paths (window blur, pointer cancel, node removed mid-drag) so
+per-drag state can be released.</p>
+<p>Modifiers are live: if the user changes the held modifier
+mid-drag, the current segment ends and a new one begins under
+the new combo, routing to whichever callback that combo is bound
+to. A callback therefore sees a clean <code class="docutils literal notranslate"><span class="pre">start</span></code> … <code class="docutils literal notranslate"><span class="pre">end</span></code> pair
+for <em>its</em> modifier each time that modifier is engaged, and a
+single physical drag may fire more than one such pair. To switch
+behavior mid-drag (e.g. changing the drag plane), register a
+separate <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> for each modifier combo. <code class="docutils literal notranslate"><span class="pre">event.modifier</span></code>
+identifies the active segment.</p>
+<p>A switch-created segment’s <code class="docutils literal notranslate"><span class="pre">start</span></code> is confirmed briefly
+(~100ms, or sooner on pointer motion) before it fires; releasing
+the mouse button within that window discards the segment
+entirely. In particular, releasing the modifier a beat before
+the button – the natural way to end a modifier-drag – does
+<em>not</em> fire a spurious start/end pair on the combo left behind
+(e.g. a bare <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> registered alongside a modifier
+binding).</p>
 <p>Usable as a bare decorator (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag</span></code>, defaults to
 <code class="docutils literal notranslate"><span class="pre">button=&quot;left&quot;</span></code> and no modifiers) or with arguments
 (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag(&quot;left&quot;,</span> <span class="pre">modifier=&quot;cmd/ctrl&quot;)</span></code>).</p>
@@ -1259,9 +1340,12 @@ state can be released.</p>
 ordered <code class="docutils literal notranslate"><span class="pre">&quot;+&quot;</span></code>-separated string like <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl&quot;</span></code>,
 <code class="docutils literal notranslate"><span class="pre">&quot;shift&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl+shift&quot;</span></code>. <code class="docutils literal notranslate"><span class="pre">None</span></code> matches
 “no modifiers held”. Matching is exact: listed modifiers
-must be held and others must not be. Left-drag on this
-node intercepts the gesture – the camera only orbits on
-empty-space drags.</p></li>
+must be held and others must not be. The match is
+re-evaluated whenever the held modifier changes mid-drag,
+so this callback is entered and exited as its combo is
+engaged and released. Left-drag on this node intercepts
+the gesture – the camera only orbits on empty-space
+drags.</p></li>
 <li><p><strong>self</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Self" title="(in Python v3.14)"><em>Self</em></a>)</p></li>
 </ul>
 </dd>
@@ -1482,12 +1566,30 @@ whenever either Cmd or Ctrl is held.</p></li>
 <dt class="sig sig-object py" id="viser.CameraFrustumHandle.on_drag">
 <span class="sig-name descname"><span class="pre">on_drag</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">button</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'left'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'middle'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'right'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'left'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">modifier</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'cmd/ctrl'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt+shift'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></span></span><a class="headerlink" href="#viser.CameraFrustumHandle.on_drag" title="Link to this definition">¶</a></dt>
 <dd><p>Attach a callback for the full drag lifecycle.</p>
-<p>Fires three times per gesture: once with
-<code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> at press, zero or more times with
-<code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), once with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at
-release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation paths (window
-blur, pointer cancel, node removed mid-drag) so per-drag
-state can be released.</p>
+<p>Fires once with <code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> when a press is
+confirmed as a drag (the pointer travels past a small motion
+threshold; a stationary press/release fires nothing), zero or
+more times with <code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), and once
+with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation
+paths (window blur, pointer cancel, node removed mid-drag) so
+per-drag state can be released.</p>
+<p>Modifiers are live: if the user changes the held modifier
+mid-drag, the current segment ends and a new one begins under
+the new combo, routing to whichever callback that combo is bound
+to. A callback therefore sees a clean <code class="docutils literal notranslate"><span class="pre">start</span></code> … <code class="docutils literal notranslate"><span class="pre">end</span></code> pair
+for <em>its</em> modifier each time that modifier is engaged, and a
+single physical drag may fire more than one such pair. To switch
+behavior mid-drag (e.g. changing the drag plane), register a
+separate <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> for each modifier combo. <code class="docutils literal notranslate"><span class="pre">event.modifier</span></code>
+identifies the active segment.</p>
+<p>A switch-created segment’s <code class="docutils literal notranslate"><span class="pre">start</span></code> is confirmed briefly
+(~100ms, or sooner on pointer motion) before it fires; releasing
+the mouse button within that window discards the segment
+entirely. In particular, releasing the modifier a beat before
+the button – the natural way to end a modifier-drag – does
+<em>not</em> fire a spurious start/end pair on the combo left behind
+(e.g. a bare <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> registered alongside a modifier
+binding).</p>
 <p>Usable as a bare decorator (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag</span></code>, defaults to
 <code class="docutils literal notranslate"><span class="pre">button=&quot;left&quot;</span></code> and no modifiers) or with arguments
 (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag(&quot;left&quot;,</span> <span class="pre">modifier=&quot;cmd/ctrl&quot;)</span></code>).</p>
@@ -1500,9 +1602,12 @@ state can be released.</p>
 ordered <code class="docutils literal notranslate"><span class="pre">&quot;+&quot;</span></code>-separated string like <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl&quot;</span></code>,
 <code class="docutils literal notranslate"><span class="pre">&quot;shift&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl+shift&quot;</span></code>. <code class="docutils literal notranslate"><span class="pre">None</span></code> matches
 “no modifiers held”. Matching is exact: listed modifiers
-must be held and others must not be. Left-drag on this
-node intercepts the gesture – the camera only orbits on
-empty-space drags.</p></li>
+must be held and others must not be. The match is
+re-evaluated whenever the held modifier changes mid-drag,
+so this callback is entered and exited as its combo is
+engaged and released. Left-drag on this node intercepts
+the gesture – the camera only orbits on empty-space
+drags.</p></li>
 <li><p><strong>self</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Self" title="(in Python v3.14)"><em>Self</em></a>)</p></li>
 </ul>
 </dd>
@@ -1677,12 +1782,30 @@ whenever either Cmd or Ctrl is held.</p></li>
 <dt class="sig sig-object py" id="viser.CylinderHandle.on_drag">
 <span class="sig-name descname"><span class="pre">on_drag</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">button</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'left'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'middle'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'right'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'left'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">modifier</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'cmd/ctrl'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt+shift'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></span></span><a class="headerlink" href="#viser.CylinderHandle.on_drag" title="Link to this definition">¶</a></dt>
 <dd><p>Attach a callback for the full drag lifecycle.</p>
-<p>Fires three times per gesture: once with
-<code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> at press, zero or more times with
-<code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), once with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at
-release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation paths (window
-blur, pointer cancel, node removed mid-drag) so per-drag
-state can be released.</p>
+<p>Fires once with <code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> when a press is
+confirmed as a drag (the pointer travels past a small motion
+threshold; a stationary press/release fires nothing), zero or
+more times with <code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), and once
+with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation
+paths (window blur, pointer cancel, node removed mid-drag) so
+per-drag state can be released.</p>
+<p>Modifiers are live: if the user changes the held modifier
+mid-drag, the current segment ends and a new one begins under
+the new combo, routing to whichever callback that combo is bound
+to. A callback therefore sees a clean <code class="docutils literal notranslate"><span class="pre">start</span></code> … <code class="docutils literal notranslate"><span class="pre">end</span></code> pair
+for <em>its</em> modifier each time that modifier is engaged, and a
+single physical drag may fire more than one such pair. To switch
+behavior mid-drag (e.g. changing the drag plane), register a
+separate <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> for each modifier combo. <code class="docutils literal notranslate"><span class="pre">event.modifier</span></code>
+identifies the active segment.</p>
+<p>A switch-created segment’s <code class="docutils literal notranslate"><span class="pre">start</span></code> is confirmed briefly
+(~100ms, or sooner on pointer motion) before it fires; releasing
+the mouse button within that window discards the segment
+entirely. In particular, releasing the modifier a beat before
+the button – the natural way to end a modifier-drag – does
+<em>not</em> fire a spurious start/end pair on the combo left behind
+(e.g. a bare <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> registered alongside a modifier
+binding).</p>
 <p>Usable as a bare decorator (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag</span></code>, defaults to
 <code class="docutils literal notranslate"><span class="pre">button=&quot;left&quot;</span></code> and no modifiers) or with arguments
 (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag(&quot;left&quot;,</span> <span class="pre">modifier=&quot;cmd/ctrl&quot;)</span></code>).</p>
@@ -1695,9 +1818,12 @@ state can be released.</p>
 ordered <code class="docutils literal notranslate"><span class="pre">&quot;+&quot;</span></code>-separated string like <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl&quot;</span></code>,
 <code class="docutils literal notranslate"><span class="pre">&quot;shift&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl+shift&quot;</span></code>. <code class="docutils literal notranslate"><span class="pre">None</span></code> matches
 “no modifiers held”. Matching is exact: listed modifiers
-must be held and others must not be. Left-drag on this
-node intercepts the gesture – the camera only orbits on
-empty-space drags.</p></li>
+must be held and others must not be. The match is
+re-evaluated whenever the held modifier changes mid-drag,
+so this callback is entered and exited as its combo is
+engaged and released. Left-drag on this node intercepts
+the gesture – the camera only orbits on empty-space
+drags.</p></li>
 <li><p><strong>self</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Self" title="(in Python v3.14)"><em>Self</em></a>)</p></li>
 </ul>
 </dd>
@@ -1956,12 +2082,30 @@ whenever either Cmd or Ctrl is held.</p></li>
 <dt class="sig sig-object py" id="viser.FrameHandle.on_drag">
 <span class="sig-name descname"><span class="pre">on_drag</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">button</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'left'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'middle'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'right'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'left'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">modifier</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'cmd/ctrl'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt+shift'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></span></span><a class="headerlink" href="#viser.FrameHandle.on_drag" title="Link to this definition">¶</a></dt>
 <dd><p>Attach a callback for the full drag lifecycle.</p>
-<p>Fires three times per gesture: once with
-<code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> at press, zero or more times with
-<code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), once with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at
-release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation paths (window
-blur, pointer cancel, node removed mid-drag) so per-drag
-state can be released.</p>
+<p>Fires once with <code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> when a press is
+confirmed as a drag (the pointer travels past a small motion
+threshold; a stationary press/release fires nothing), zero or
+more times with <code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), and once
+with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation
+paths (window blur, pointer cancel, node removed mid-drag) so
+per-drag state can be released.</p>
+<p>Modifiers are live: if the user changes the held modifier
+mid-drag, the current segment ends and a new one begins under
+the new combo, routing to whichever callback that combo is bound
+to. A callback therefore sees a clean <code class="docutils literal notranslate"><span class="pre">start</span></code> … <code class="docutils literal notranslate"><span class="pre">end</span></code> pair
+for <em>its</em> modifier each time that modifier is engaged, and a
+single physical drag may fire more than one such pair. To switch
+behavior mid-drag (e.g. changing the drag plane), register a
+separate <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> for each modifier combo. <code class="docutils literal notranslate"><span class="pre">event.modifier</span></code>
+identifies the active segment.</p>
+<p>A switch-created segment’s <code class="docutils literal notranslate"><span class="pre">start</span></code> is confirmed briefly
+(~100ms, or sooner on pointer motion) before it fires; releasing
+the mouse button within that window discards the segment
+entirely. In particular, releasing the modifier a beat before
+the button – the natural way to end a modifier-drag – does
+<em>not</em> fire a spurious start/end pair on the combo left behind
+(e.g. a bare <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> registered alongside a modifier
+binding).</p>
 <p>Usable as a bare decorator (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag</span></code>, defaults to
 <code class="docutils literal notranslate"><span class="pre">button=&quot;left&quot;</span></code> and no modifiers) or with arguments
 (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag(&quot;left&quot;,</span> <span class="pre">modifier=&quot;cmd/ctrl&quot;)</span></code>).</p>
@@ -1974,9 +2118,12 @@ state can be released.</p>
 ordered <code class="docutils literal notranslate"><span class="pre">&quot;+&quot;</span></code>-separated string like <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl&quot;</span></code>,
 <code class="docutils literal notranslate"><span class="pre">&quot;shift&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl+shift&quot;</span></code>. <code class="docutils literal notranslate"><span class="pre">None</span></code> matches
 “no modifiers held”. Matching is exact: listed modifiers
-must be held and others must not be. Left-drag on this
-node intercepts the gesture – the camera only orbits on
-empty-space drags.</p></li>
+must be held and others must not be. The match is
+re-evaluated whenever the held modifier changes mid-drag,
+so this callback is entered and exited as its combo is
+engaged and released. Left-drag on this node intercepts
+the gesture – the camera only orbits on empty-space
+drags.</p></li>
 <li><p><strong>self</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Self" title="(in Python v3.14)"><em>Self</em></a>)</p></li>
 </ul>
 </dd>
@@ -2169,12 +2316,30 @@ whenever either Cmd or Ctrl is held.</p></li>
 <dt class="sig sig-object py" id="viser.GaussianSplatHandle.on_drag">
 <span class="sig-name descname"><span class="pre">on_drag</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">button</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'left'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'middle'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'right'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'left'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">modifier</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'cmd/ctrl'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt+shift'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></span></span><a class="headerlink" href="#viser.GaussianSplatHandle.on_drag" title="Link to this definition">¶</a></dt>
 <dd><p>Attach a callback for the full drag lifecycle.</p>
-<p>Fires three times per gesture: once with
-<code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> at press, zero or more times with
-<code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), once with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at
-release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation paths (window
-blur, pointer cancel, node removed mid-drag) so per-drag
-state can be released.</p>
+<p>Fires once with <code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> when a press is
+confirmed as a drag (the pointer travels past a small motion
+threshold; a stationary press/release fires nothing), zero or
+more times with <code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), and once
+with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation
+paths (window blur, pointer cancel, node removed mid-drag) so
+per-drag state can be released.</p>
+<p>Modifiers are live: if the user changes the held modifier
+mid-drag, the current segment ends and a new one begins under
+the new combo, routing to whichever callback that combo is bound
+to. A callback therefore sees a clean <code class="docutils literal notranslate"><span class="pre">start</span></code> … <code class="docutils literal notranslate"><span class="pre">end</span></code> pair
+for <em>its</em> modifier each time that modifier is engaged, and a
+single physical drag may fire more than one such pair. To switch
+behavior mid-drag (e.g. changing the drag plane), register a
+separate <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> for each modifier combo. <code class="docutils literal notranslate"><span class="pre">event.modifier</span></code>
+identifies the active segment.</p>
+<p>A switch-created segment’s <code class="docutils literal notranslate"><span class="pre">start</span></code> is confirmed briefly
+(~100ms, or sooner on pointer motion) before it fires; releasing
+the mouse button within that window discards the segment
+entirely. In particular, releasing the modifier a beat before
+the button – the natural way to end a modifier-drag – does
+<em>not</em> fire a spurious start/end pair on the combo left behind
+(e.g. a bare <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> registered alongside a modifier
+binding).</p>
 <p>Usable as a bare decorator (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag</span></code>, defaults to
 <code class="docutils literal notranslate"><span class="pre">button=&quot;left&quot;</span></code> and no modifiers) or with arguments
 (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag(&quot;left&quot;,</span> <span class="pre">modifier=&quot;cmd/ctrl&quot;)</span></code>).</p>
@@ -2187,9 +2352,12 @@ state can be released.</p>
 ordered <code class="docutils literal notranslate"><span class="pre">&quot;+&quot;</span></code>-separated string like <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl&quot;</span></code>,
 <code class="docutils literal notranslate"><span class="pre">&quot;shift&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl+shift&quot;</span></code>. <code class="docutils literal notranslate"><span class="pre">None</span></code> matches
 “no modifiers held”. Matching is exact: listed modifiers
-must be held and others must not be. Left-drag on this
-node intercepts the gesture – the camera only orbits on
-empty-space drags.</p></li>
+must be held and others must not be. The match is
+re-evaluated whenever the held modifier changes mid-drag,
+so this callback is entered and exited as its combo is
+engaged and released. Left-drag on this node intercepts
+the gesture – the camera only orbits on empty-space
+drags.</p></li>
 <li><p><strong>self</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Self" title="(in Python v3.14)"><em>Self</em></a>)</p></li>
 </ul>
 </dd>
@@ -2356,12 +2524,30 @@ whenever either Cmd or Ctrl is held.</p></li>
 <dt class="sig sig-object py" id="viser.GlbHandle.on_drag">
 <span class="sig-name descname"><span class="pre">on_drag</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">button</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'left'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'middle'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'right'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'left'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">modifier</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'cmd/ctrl'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt+shift'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></span></span><a class="headerlink" href="#viser.GlbHandle.on_drag" title="Link to this definition">¶</a></dt>
 <dd><p>Attach a callback for the full drag lifecycle.</p>
-<p>Fires three times per gesture: once with
-<code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> at press, zero or more times with
-<code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), once with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at
-release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation paths (window
-blur, pointer cancel, node removed mid-drag) so per-drag
-state can be released.</p>
+<p>Fires once with <code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> when a press is
+confirmed as a drag (the pointer travels past a small motion
+threshold; a stationary press/release fires nothing), zero or
+more times with <code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), and once
+with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation
+paths (window blur, pointer cancel, node removed mid-drag) so
+per-drag state can be released.</p>
+<p>Modifiers are live: if the user changes the held modifier
+mid-drag, the current segment ends and a new one begins under
+the new combo, routing to whichever callback that combo is bound
+to. A callback therefore sees a clean <code class="docutils literal notranslate"><span class="pre">start</span></code> … <code class="docutils literal notranslate"><span class="pre">end</span></code> pair
+for <em>its</em> modifier each time that modifier is engaged, and a
+single physical drag may fire more than one such pair. To switch
+behavior mid-drag (e.g. changing the drag plane), register a
+separate <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> for each modifier combo. <code class="docutils literal notranslate"><span class="pre">event.modifier</span></code>
+identifies the active segment.</p>
+<p>A switch-created segment’s <code class="docutils literal notranslate"><span class="pre">start</span></code> is confirmed briefly
+(~100ms, or sooner on pointer motion) before it fires; releasing
+the mouse button within that window discards the segment
+entirely. In particular, releasing the modifier a beat before
+the button – the natural way to end a modifier-drag – does
+<em>not</em> fire a spurious start/end pair on the combo left behind
+(e.g. a bare <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> registered alongside a modifier
+binding).</p>
 <p>Usable as a bare decorator (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag</span></code>, defaults to
 <code class="docutils literal notranslate"><span class="pre">button=&quot;left&quot;</span></code> and no modifiers) or with arguments
 (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag(&quot;left&quot;,</span> <span class="pre">modifier=&quot;cmd/ctrl&quot;)</span></code>).</p>
@@ -2374,9 +2560,12 @@ state can be released.</p>
 ordered <code class="docutils literal notranslate"><span class="pre">&quot;+&quot;</span></code>-separated string like <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl&quot;</span></code>,
 <code class="docutils literal notranslate"><span class="pre">&quot;shift&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl+shift&quot;</span></code>. <code class="docutils literal notranslate"><span class="pre">None</span></code> matches
 “no modifiers held”. Matching is exact: listed modifiers
-must be held and others must not be. Left-drag on this
-node intercepts the gesture – the camera only orbits on
-empty-space drags.</p></li>
+must be held and others must not be. The match is
+re-evaluated whenever the held modifier changes mid-drag,
+so this callback is entered and exited as its combo is
+engaged and released. Left-drag on this node intercepts
+the gesture – the camera only orbits on empty-space
+drags.</p></li>
 <li><p><strong>self</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Self" title="(in Python v3.14)"><em>Self</em></a>)</p></li>
 </ul>
 </dd>
@@ -2793,12 +2982,30 @@ whenever either Cmd or Ctrl is held.</p></li>
 <dt class="sig sig-object py" id="viser.IcosphereHandle.on_drag">
 <span class="sig-name descname"><span class="pre">on_drag</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">button</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'left'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'middle'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'right'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'left'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">modifier</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'cmd/ctrl'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt+shift'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></span></span><a class="headerlink" href="#viser.IcosphereHandle.on_drag" title="Link to this definition">¶</a></dt>
 <dd><p>Attach a callback for the full drag lifecycle.</p>
-<p>Fires three times per gesture: once with
-<code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> at press, zero or more times with
-<code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), once with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at
-release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation paths (window
-blur, pointer cancel, node removed mid-drag) so per-drag
-state can be released.</p>
+<p>Fires once with <code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> when a press is
+confirmed as a drag (the pointer travels past a small motion
+threshold; a stationary press/release fires nothing), zero or
+more times with <code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), and once
+with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation
+paths (window blur, pointer cancel, node removed mid-drag) so
+per-drag state can be released.</p>
+<p>Modifiers are live: if the user changes the held modifier
+mid-drag, the current segment ends and a new one begins under
+the new combo, routing to whichever callback that combo is bound
+to. A callback therefore sees a clean <code class="docutils literal notranslate"><span class="pre">start</span></code> … <code class="docutils literal notranslate"><span class="pre">end</span></code> pair
+for <em>its</em> modifier each time that modifier is engaged, and a
+single physical drag may fire more than one such pair. To switch
+behavior mid-drag (e.g. changing the drag plane), register a
+separate <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> for each modifier combo. <code class="docutils literal notranslate"><span class="pre">event.modifier</span></code>
+identifies the active segment.</p>
+<p>A switch-created segment’s <code class="docutils literal notranslate"><span class="pre">start</span></code> is confirmed briefly
+(~100ms, or sooner on pointer motion) before it fires; releasing
+the mouse button within that window discards the segment
+entirely. In particular, releasing the modifier a beat before
+the button – the natural way to end a modifier-drag – does
+<em>not</em> fire a spurious start/end pair on the combo left behind
+(e.g. a bare <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> registered alongside a modifier
+binding).</p>
 <p>Usable as a bare decorator (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag</span></code>, defaults to
 <code class="docutils literal notranslate"><span class="pre">button=&quot;left&quot;</span></code> and no modifiers) or with arguments
 (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag(&quot;left&quot;,</span> <span class="pre">modifier=&quot;cmd/ctrl&quot;)</span></code>).</p>
@@ -2811,9 +3018,12 @@ state can be released.</p>
 ordered <code class="docutils literal notranslate"><span class="pre">&quot;+&quot;</span></code>-separated string like <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl&quot;</span></code>,
 <code class="docutils literal notranslate"><span class="pre">&quot;shift&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl+shift&quot;</span></code>. <code class="docutils literal notranslate"><span class="pre">None</span></code> matches
 “no modifiers held”. Matching is exact: listed modifiers
-must be held and others must not be. Left-drag on this
-node intercepts the gesture – the camera only orbits on
-empty-space drags.</p></li>
+must be held and others must not be. The match is
+re-evaluated whenever the held modifier changes mid-drag,
+so this callback is entered and exited as its combo is
+engaged and released. Left-drag on this node intercepts
+the gesture – the camera only orbits on empty-space
+drags.</p></li>
 <li><p><strong>self</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Self" title="(in Python v3.14)"><em>Self</em></a>)</p></li>
 </ul>
 </dd>
@@ -3005,12 +3215,30 @@ whenever either Cmd or Ctrl is held.</p></li>
 <dt class="sig sig-object py" id="viser.ImageHandle.on_drag">
 <span class="sig-name descname"><span class="pre">on_drag</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">button</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'left'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'middle'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'right'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'left'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">modifier</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'cmd/ctrl'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt+shift'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></span></span><a class="headerlink" href="#viser.ImageHandle.on_drag" title="Link to this definition">¶</a></dt>
 <dd><p>Attach a callback for the full drag lifecycle.</p>
-<p>Fires three times per gesture: once with
-<code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> at press, zero or more times with
-<code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), once with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at
-release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation paths (window
-blur, pointer cancel, node removed mid-drag) so per-drag
-state can be released.</p>
+<p>Fires once with <code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> when a press is
+confirmed as a drag (the pointer travels past a small motion
+threshold; a stationary press/release fires nothing), zero or
+more times with <code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), and once
+with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation
+paths (window blur, pointer cancel, node removed mid-drag) so
+per-drag state can be released.</p>
+<p>Modifiers are live: if the user changes the held modifier
+mid-drag, the current segment ends and a new one begins under
+the new combo, routing to whichever callback that combo is bound
+to. A callback therefore sees a clean <code class="docutils literal notranslate"><span class="pre">start</span></code> … <code class="docutils literal notranslate"><span class="pre">end</span></code> pair
+for <em>its</em> modifier each time that modifier is engaged, and a
+single physical drag may fire more than one such pair. To switch
+behavior mid-drag (e.g. changing the drag plane), register a
+separate <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> for each modifier combo. <code class="docutils literal notranslate"><span class="pre">event.modifier</span></code>
+identifies the active segment.</p>
+<p>A switch-created segment’s <code class="docutils literal notranslate"><span class="pre">start</span></code> is confirmed briefly
+(~100ms, or sooner on pointer motion) before it fires; releasing
+the mouse button within that window discards the segment
+entirely. In particular, releasing the modifier a beat before
+the button – the natural way to end a modifier-drag – does
+<em>not</em> fire a spurious start/end pair on the combo left behind
+(e.g. a bare <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> registered alongside a modifier
+binding).</p>
 <p>Usable as a bare decorator (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag</span></code>, defaults to
 <code class="docutils literal notranslate"><span class="pre">button=&quot;left&quot;</span></code> and no modifiers) or with arguments
 (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag(&quot;left&quot;,</span> <span class="pre">modifier=&quot;cmd/ctrl&quot;)</span></code>).</p>
@@ -3023,9 +3251,12 @@ state can be released.</p>
 ordered <code class="docutils literal notranslate"><span class="pre">&quot;+&quot;</span></code>-separated string like <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl&quot;</span></code>,
 <code class="docutils literal notranslate"><span class="pre">&quot;shift&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl+shift&quot;</span></code>. <code class="docutils literal notranslate"><span class="pre">None</span></code> matches
 “no modifiers held”. Matching is exact: listed modifiers
-must be held and others must not be. Left-drag on this
-node intercepts the gesture – the camera only orbits on
-empty-space drags.</p></li>
+must be held and others must not be. The match is
+re-evaluated whenever the held modifier changes mid-drag,
+so this callback is entered and exited as its combo is
+engaged and released. Left-drag on this node intercepts
+the gesture – the camera only orbits on empty-space
+drags.</p></li>
 <li><p><strong>self</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Self" title="(in Python v3.14)"><em>Self</em></a>)</p></li>
 </ul>
 </dd>
@@ -3346,12 +3577,30 @@ whenever either Cmd or Ctrl is held.</p></li>
 <dt class="sig sig-object py" id="viser.MeshHandle.on_drag">
 <span class="sig-name descname"><span class="pre">on_drag</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">button</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'left'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'middle'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'right'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'left'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">modifier</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'cmd/ctrl'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt+shift'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></span></span><a class="headerlink" href="#viser.MeshHandle.on_drag" title="Link to this definition">¶</a></dt>
 <dd><p>Attach a callback for the full drag lifecycle.</p>
-<p>Fires three times per gesture: once with
-<code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> at press, zero or more times with
-<code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), once with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at
-release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation paths (window
-blur, pointer cancel, node removed mid-drag) so per-drag
-state can be released.</p>
+<p>Fires once with <code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> when a press is
+confirmed as a drag (the pointer travels past a small motion
+threshold; a stationary press/release fires nothing), zero or
+more times with <code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), and once
+with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation
+paths (window blur, pointer cancel, node removed mid-drag) so
+per-drag state can be released.</p>
+<p>Modifiers are live: if the user changes the held modifier
+mid-drag, the current segment ends and a new one begins under
+the new combo, routing to whichever callback that combo is bound
+to. A callback therefore sees a clean <code class="docutils literal notranslate"><span class="pre">start</span></code> … <code class="docutils literal notranslate"><span class="pre">end</span></code> pair
+for <em>its</em> modifier each time that modifier is engaged, and a
+single physical drag may fire more than one such pair. To switch
+behavior mid-drag (e.g. changing the drag plane), register a
+separate <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> for each modifier combo. <code class="docutils literal notranslate"><span class="pre">event.modifier</span></code>
+identifies the active segment.</p>
+<p>A switch-created segment’s <code class="docutils literal notranslate"><span class="pre">start</span></code> is confirmed briefly
+(~100ms, or sooner on pointer motion) before it fires; releasing
+the mouse button within that window discards the segment
+entirely. In particular, releasing the modifier a beat before
+the button – the natural way to end a modifier-drag – does
+<em>not</em> fire a spurious start/end pair on the combo left behind
+(e.g. a bare <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> registered alongside a modifier
+binding).</p>
 <p>Usable as a bare decorator (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag</span></code>, defaults to
 <code class="docutils literal notranslate"><span class="pre">button=&quot;left&quot;</span></code> and no modifiers) or with arguments
 (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag(&quot;left&quot;,</span> <span class="pre">modifier=&quot;cmd/ctrl&quot;)</span></code>).</p>
@@ -3364,9 +3613,12 @@ state can be released.</p>
 ordered <code class="docutils literal notranslate"><span class="pre">&quot;+&quot;</span></code>-separated string like <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl&quot;</span></code>,
 <code class="docutils literal notranslate"><span class="pre">&quot;shift&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl+shift&quot;</span></code>. <code class="docutils literal notranslate"><span class="pre">None</span></code> matches
 “no modifiers held”. Matching is exact: listed modifiers
-must be held and others must not be. Left-drag on this
-node intercepts the gesture – the camera only orbits on
-empty-space drags.</p></li>
+must be held and others must not be. The match is
+re-evaluated whenever the held modifier changes mid-drag,
+so this callback is entered and exited as its combo is
+engaged and released. Left-drag on this node intercepts
+the gesture – the camera only orbits on empty-space
+drags.</p></li>
 <li><p><strong>self</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Self" title="(in Python v3.14)"><em>Self</em></a>)</p></li>
 </ul>
 </dd>
@@ -3579,12 +3831,30 @@ whenever either Cmd or Ctrl is held.</p></li>
 <dt class="sig sig-object py" id="viser.MeshSkinnedHandle.on_drag">
 <span class="sig-name descname"><span class="pre">on_drag</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">button</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'left'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'middle'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'right'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'left'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">modifier</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><span class="pre">Literal</span></a><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'cmd/ctrl'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'alt+shift'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'cmd/ctrl+alt+shift'</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></span></span><a class="headerlink" href="#viser.MeshSkinnedHandle.on_drag" title="Link to this definition">¶</a></dt>
 <dd><p>Attach a callback for the full drag lifecycle.</p>
-<p>Fires three times per gesture: once with
-<code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> at press, zero or more times with
-<code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), once with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at
-release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation paths (window
-blur, pointer cancel, node removed mid-drag) so per-drag
-state can be released.</p>
+<p>Fires once with <code class="docutils literal notranslate"><span class="pre">event.phase</span> <span class="pre">==</span> <span class="pre">&quot;start&quot;</span></code> when a press is
+confirmed as a drag (the pointer travels past a small motion
+threshold; a stationary press/release fires nothing), zero or
+more times with <code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> (throttled pointermove), and once
+with <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at release. <code class="docutils literal notranslate"><span class="pre">end</span></code> fires even on cancellation
+paths (window blur, pointer cancel, node removed mid-drag) so
+per-drag state can be released.</p>
+<p>Modifiers are live: if the user changes the held modifier
+mid-drag, the current segment ends and a new one begins under
+the new combo, routing to whichever callback that combo is bound
+to. A callback therefore sees a clean <code class="docutils literal notranslate"><span class="pre">start</span></code> … <code class="docutils literal notranslate"><span class="pre">end</span></code> pair
+for <em>its</em> modifier each time that modifier is engaged, and a
+single physical drag may fire more than one such pair. To switch
+behavior mid-drag (e.g. changing the drag plane), register a
+separate <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> for each modifier combo. <code class="docutils literal notranslate"><span class="pre">event.modifier</span></code>
+identifies the active segment.</p>
+<p>A switch-created segment’s <code class="docutils literal notranslate"><span class="pre">start</span></code> is confirmed briefly
+(~100ms, or sooner on pointer motion) before it fires; releasing
+the mouse button within that window discards the segment
+entirely. In particular, releasing the modifier a beat before
+the button – the natural way to end a modifier-drag – does
+<em>not</em> fire a spurious start/end pair on the combo left behind
+(e.g. a bare <code class="docutils literal notranslate"><span class="pre">on_drag</span></code> registered alongside a modifier
+binding).</p>
 <p>Usable as a bare decorator (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag</span></code>, defaults to
 <code class="docutils literal notranslate"><span class="pre">button=&quot;left&quot;</span></code> and no modifiers) or with arguments
 (<code class="docutils literal notranslate"><span class="pre">&#64;handle.on_drag(&quot;left&quot;,</span> <span class="pre">modifier=&quot;cmd/ctrl&quot;)</span></code>).</p>
@@ -3597,9 +3867,12 @@ state can be released.</p>
 ordered <code class="docutils literal notranslate"><span class="pre">&quot;+&quot;</span></code>-separated string like <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl&quot;</span></code>,
 <code class="docutils literal notranslate"><span class="pre">&quot;shift&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">&quot;cmd/ctrl+shift&quot;</span></code>. <code class="docutils literal notranslate"><span class="pre">None</span></code> matches
 “no modifiers held”. Matching is exact: listed modifiers
-must be held and others must not be. Left-drag on this
-node intercepts the gesture – the camera only orbits on
-empty-space drags.</p></li>
+must be held and others must not be. The match is
+re-evaluated whenever the held modifier changes mid-drag,
+so this callback is entered and exited as its combo is
+engaged and released. Left-drag on this node intercepts
+the gesture – the camera only orbits on empty-space
+drags.</p></li>
 <li><p><strong>self</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Self" title="(in Python v3.14)"><em>Self</em></a>)</p></li>
 </ul>
 </dd>

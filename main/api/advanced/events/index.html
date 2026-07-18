@@ -559,10 +559,18 @@ were held; otherwise a canonical <code class="xref py py-data docutils literal n
 <dl class="py attribute">
 <dt class="sig sig-object py" id="viser.SceneNodeDragEvent.phase">
 <span class="sig-name descname"><span class="pre">phase</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">DragPhase</span></em><a class="headerlink" href="#viser.SceneNodeDragEvent.phase" title="Link to this definition">¶</a></dt>
-<dd><p><code class="docutils literal notranslate"><span class="pre">&quot;start&quot;</span></code> at press, <code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> on
-every throttled pointermove (~20Hz), <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at release. A
-single drag fires exactly one <code class="docutils literal notranslate"><span class="pre">&quot;start&quot;</span></code>, zero or more
-<code class="docutils literal notranslate"><span class="pre">&quot;update&quot;``s,</span> <span class="pre">and</span> <span class="pre">exactly</span> <span class="pre">one</span> <span class="pre">``&quot;end&quot;</span></code>.</p>
+<dd><p><code class="docutils literal notranslate"><span class="pre">&quot;start&quot;</span></code> once a press is confirmed as a
+drag (the pointer travels past a small motion threshold – a
+stationary press/release fires nothing), <code class="docutils literal notranslate"><span class="pre">&quot;update&quot;</span></code> on every
+throttled pointermove (~20Hz), <code class="docutils literal notranslate"><span class="pre">&quot;end&quot;</span></code> at release.</p>
+<p>A gesture is partitioned into one <em>segment</em> per held modifier-combo.
+Each segment fires exactly one <code class="docutils literal notranslate"><span class="pre">&quot;start&quot;</span></code>, zero or more
+<code class="docutils literal notranslate"><span class="pre">&quot;update&quot;``s,</span> <span class="pre">and</span> <span class="pre">exactly</span> <span class="pre">one</span> <span class="pre">``&quot;end&quot;</span></code>. If the user changes the
+held modifier mid-drag, the current segment ends and a new one
+starts under the new modifier (see <a class="reference internal" href="#viser.SceneNodeDragEvent.modifier" title="viser.SceneNodeDragEvent.modifier"><code class="xref py py-attr docutils literal notranslate"><span class="pre">modifier</span></code></a>) – so a single
+physical drag can produce more than one <code class="docutils literal notranslate"><span class="pre">start</span></code>/<code class="docutils literal notranslate"><span class="pre">end</span></code> pair. When
+the modifier doesn’t change, this collapses to the common case of a
+single <code class="docutils literal notranslate"><span class="pre">start</span></code> … <code class="docutils literal notranslate"><span class="pre">end</span></code> per gesture.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>Drag lifecycle phase</p>
@@ -616,9 +624,12 @@ in world coords.</p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="viser.SceneNodeDragEvent.modifier">
 <span class="sig-name descname"><span class="pre">modifier</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">_messages.KeyModifier</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></em><a class="headerlink" href="#viser.SceneNodeDragEvent.modifier" title="Link to this definition">¶</a></dt>
-<dd><p>Modifier-combo held at drag-start (frozen for the drag’s
-lifetime). <code class="docutils literal notranslate"><span class="pre">None</span></code> if no modifiers were held; otherwise a
-canonical <code class="xref py py-data docutils literal notranslate"><span class="pre">KeyModifier</span></code> string.</p>
+<dd><p>Modifier-combo that owns the current drag segment. Constant within
+a segment and matches the binding this callback was registered for;
+if the user changes the held modifier mid-drag the segment ends and a
+new one begins under the new combo (see <a class="reference internal" href="#viser.SceneNodeDragEvent.phase" title="viser.SceneNodeDragEvent.phase"><code class="xref py py-attr docutils literal notranslate"><span class="pre">phase</span></code></a>). <code class="docutils literal notranslate"><span class="pre">None</span></code> if no
+modifiers are held; otherwise a canonical <code class="xref py py-data docutils literal notranslate"><span class="pre">KeyModifier</span></code>
+string.</p>
 </dd></dl>
 
 </dd></dl>

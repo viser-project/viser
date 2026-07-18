@@ -923,10 +923,19 @@
     <span class="n">target</span><span class="p">:</span> <span class="n">TSceneNodeHandle</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Scene node that is being dragged.&quot;&quot;&quot;</span>
     <span class="n">phase</span><span class="p">:</span> <span class="n">DragPhase</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Drag lifecycle phase: ``&quot;start&quot;`` at press, ``&quot;update&quot;`` on</span>
-<span class="sd">    every throttled pointermove (~20Hz), ``&quot;end&quot;`` at release. A</span>
-<span class="sd">    single drag fires exactly one ``&quot;start&quot;``, zero or more</span>
-<span class="sd">    ``&quot;update&quot;``s, and exactly one ``&quot;end&quot;``.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Drag lifecycle phase: ``&quot;start&quot;`` once a press is confirmed as a</span>
+<span class="sd">    drag (the pointer travels past a small motion threshold -- a</span>
+<span class="sd">    stationary press/release fires nothing), ``&quot;update&quot;`` on every</span>
+<span class="sd">    throttled pointermove (~20Hz), ``&quot;end&quot;`` at release.</span>
+
+<span class="sd">    A gesture is partitioned into one *segment* per held modifier-combo.</span>
+<span class="sd">    Each segment fires exactly one ``&quot;start&quot;``, zero or more</span>
+<span class="sd">    ``&quot;update&quot;``s, and exactly one ``&quot;end&quot;``. If the user changes the</span>
+<span class="sd">    held modifier mid-drag, the current segment ends and a new one</span>
+<span class="sd">    starts under the new modifier (see :attr:`modifier`) -- so a single</span>
+<span class="sd">    physical drag can produce more than one ``start``/``end`` pair. When</span>
+<span class="sd">    the modifier doesn&#39;t change, this collapses to the common case of a</span>
+<span class="sd">    single ``start`` ... ``end`` per gesture.&quot;&quot;&quot;</span>
     <span class="n">instance_index</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Instance index within a batched scene node (e.g. batched meshes,</span>
 <span class="sd">    batched GLBs, batched axes); ``None`` for non-batched nodes. Frozen</span>
@@ -947,9 +956,12 @@
     <span class="n">button</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="s2">&quot;middle&quot;</span><span class="p">,</span> <span class="s2">&quot;right&quot;</span><span class="p">]</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Mouse button that initiated the drag.&quot;&quot;&quot;</span>
     <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Modifier-combo held at drag-start (frozen for the drag&#39;s</span>
-<span class="sd">    lifetime). ``None`` if no modifiers were held; otherwise a</span>
-<span class="sd">    canonical :data:`KeyModifier` string.&quot;&quot;&quot;</span></div>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Modifier-combo that owns the current drag segment. Constant within</span>
+<span class="sd">    a segment and matches the binding this callback was registered for;</span>
+<span class="sd">    if the user changes the held modifier mid-drag the segment ends and a</span>
+<span class="sd">    new one begins under the new combo (see :attr:`phase`). ``None`` if no</span>
+<span class="sd">    modifiers are held; otherwise a canonical :data:`KeyModifier`</span>
+<span class="sd">    string.&quot;&quot;&quot;</span></div>
 
 
 
@@ -1061,12 +1073,32 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a callback for the full drag lifecycle.</span>
 
-<span class="sd">        Fires three times per gesture: once with</span>
-<span class="sd">        ``event.phase == &quot;start&quot;`` at press, zero or more times with</span>
-<span class="sd">        ``&quot;update&quot;`` (throttled pointermove), once with ``&quot;end&quot;`` at</span>
-<span class="sd">        release. ``end`` fires even on cancellation paths (window</span>
-<span class="sd">        blur, pointer cancel, node removed mid-drag) so per-drag</span>
-<span class="sd">        state can be released.</span>
+<span class="sd">        Fires once with ``event.phase == &quot;start&quot;`` when a press is</span>
+<span class="sd">        confirmed as a drag (the pointer travels past a small motion</span>
+<span class="sd">        threshold; a stationary press/release fires nothing), zero or</span>
+<span class="sd">        more times with ``&quot;update&quot;`` (throttled pointermove), and once</span>
+<span class="sd">        with ``&quot;end&quot;`` at release. ``end`` fires even on cancellation</span>
+<span class="sd">        paths (window blur, pointer cancel, node removed mid-drag) so</span>
+<span class="sd">        per-drag state can be released.</span>
+
+<span class="sd">        Modifiers are live: if the user changes the held modifier</span>
+<span class="sd">        mid-drag, the current segment ends and a new one begins under</span>
+<span class="sd">        the new combo, routing to whichever callback that combo is bound</span>
+<span class="sd">        to. A callback therefore sees a clean ``start`` ... ``end`` pair</span>
+<span class="sd">        for *its* modifier each time that modifier is engaged, and a</span>
+<span class="sd">        single physical drag may fire more than one such pair. To switch</span>
+<span class="sd">        behavior mid-drag (e.g. changing the drag plane), register a</span>
+<span class="sd">        separate ``on_drag`` for each modifier combo. ``event.modifier``</span>
+<span class="sd">        identifies the active segment.</span>
+
+<span class="sd">        A switch-created segment&#39;s ``start`` is confirmed briefly</span>
+<span class="sd">        (~100ms, or sooner on pointer motion) before it fires; releasing</span>
+<span class="sd">        the mouse button within that window discards the segment</span>
+<span class="sd">        entirely. In particular, releasing the modifier a beat before</span>
+<span class="sd">        the button -- the natural way to end a modifier-drag -- does</span>
+<span class="sd">        *not* fire a spurious start/end pair on the combo left behind</span>
+<span class="sd">        (e.g. a bare ``on_drag`` registered alongside a modifier</span>
+<span class="sd">        binding).</span>
 
 <span class="sd">        Usable as a bare decorator (``@handle.on_drag``, defaults to</span>
 <span class="sd">        ``button=&quot;left&quot;`` and no modifiers) or with arguments</span>
@@ -1079,9 +1111,12 @@
 <span class="sd">                ordered ``&quot;+&quot;``-separated string like ``&quot;cmd/ctrl&quot;``,</span>
 <span class="sd">                ``&quot;shift&quot;``, or ``&quot;cmd/ctrl+shift&quot;``. ``None`` matches</span>
 <span class="sd">                &quot;no modifiers held&quot;. Matching is exact: listed modifiers</span>
-<span class="sd">                must be held and others must not be. Left-drag on this</span>
-<span class="sd">                node intercepts the gesture -- the camera only orbits on</span>
-<span class="sd">                empty-space drags.</span>
+<span class="sd">                must be held and others must not be. The match is</span>
+<span class="sd">                re-evaluated whenever the held modifier changes mid-drag,</span>
+<span class="sd">                so this callback is entered and exited as its combo is</span>
+<span class="sd">                engaged and released. Left-drag on this node intercepts</span>
+<span class="sd">                the gesture -- the camera only orbits on empty-space</span>
+<span class="sd">                drags.</span>
 
 <span class="sd">        Note on ordering: synchronous (``def``) callbacks are submitted</span>
 <span class="sd">        to a thread pool fire-and-forget and can run out of order -- an</span>
