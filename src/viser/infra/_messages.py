@@ -125,7 +125,7 @@ def _prepare_for_serialization(
 
     # Handle numpy arrays: extract or inline depending on mode.
     if isinstance(value, np.ndarray):
-        data = value.data if value.data.c_contiguous else value.copy().data
+        data = value.data if value.flags.c_contiguous else value.copy().data
         if binary_buffers is not None:
             # Extract into separate buffer with tagged placeholder.
             idx = len(binary_buffers)

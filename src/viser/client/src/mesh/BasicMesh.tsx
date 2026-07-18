@@ -4,6 +4,7 @@ import { ViserStandardMeshMaterial, ShadowMesh } from "./MeshUtils";
 import { MeshMessage } from "../WebsocketMessages";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
 import { normalizeScale } from "../utils/normalizeScale";
+import { syncBufferGeometry } from "../utils/bufferGeometrySync";
 
 /**
  * Component for rendering basic THREE.js meshes
@@ -15,22 +16,33 @@ export const BasicMesh = React.forwardRef<
   { children, ...message },
   ref: React.ForwardedRef<THREE.Group>,
 ) {
-  // Setup geometry using memoization.
-  // Kept imperative because setAttribute/setIndex/computeVertexNormals
-  // can't be expressed as JSX props, and the geometry is shared with
-  // the shadow mesh and accessed for OutlinesIfHovered heuristics.
-  const geometry = React.useMemo(() => {
-    const geometry = new THREE.BufferGeometry();
+  // Persistent geometry, synced in place: a streaming/deforming mesh reuses the
+  // existing GL buffers via bufferSubData instead of allocating a new
+  // BufferGeometry on every vertex/face update. Kept imperative (run during
+  // render via useMemo) because the geometry is read synchronously below for
+  // OutlinesIfHovered heuristics and the shadow mesh.
+  const geometryRef = React.useRef<THREE.BufferGeometry | null>(null);
+  if (geometryRef.current === null) {
+    geometryRef.current = new THREE.BufferGeometry();
+  }
+  const geometry = geometryRef.current;
+  React.useMemo(() => {
     // Vertices and faces arrive as Float32Array / Uint32Array views.
-    geometry.setAttribute(
-      "position",
-      new THREE.BufferAttribute(message.props.vertices, 3),
+    const reallocated = syncBufferGeometry(
+      geometry,
+      { position: { array: message.props.vertices, itemSize: 3 } },
+      message.props.faces,
     );
-    geometry.setIndex(new THREE.BufferAttribute(message.props.faces, 1));
+    // On realloc (e.g. vertex-count change), drop the stale 'normal' attribute:
+    // computeVertexNormals reuses an existing attribute without a size check,
+    // which would leave normals mismatched with the new position count.
+    if (reallocated) {
+      geometry.deleteAttribute("normal");
+    }
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
-    return geometry;
-  }, [message.props.vertices, message.props.faces]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [geometry, message.props.vertices, message.props.faces]);
 
   // Clean up geometry when it changes.
   React.useEffect(() => {

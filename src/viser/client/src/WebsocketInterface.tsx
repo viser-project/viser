@@ -104,7 +104,13 @@ export function WebsocketMessageProducer() {
           });
         }
       } else if (data.type === "message_batch") {
-        viewerMutable.messageQueue.push(...data.messages);
+        // Append with a loop rather than push(...spread): spreading a large
+        // array as call arguments overflows the call stack on big first-scene
+        // replays.
+        const queue = viewerMutable.messageQueue;
+        for (let i = 0; i < data.messages.length; i++) {
+          queue.push(data.messages[i]);
+        }
       }
     };
     postToWorker({ type: "set_server", server });

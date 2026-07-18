@@ -60,9 +60,10 @@ def _set_pose_vector(
     from ._scene_api import cast_vector
 
     value_cast: _PoseTupleT = cast_vector(value, length)
-    if np.allclose(value_cast, current):
+    value_arr = np.asarray(value_cast)
+    if np.allclose(value_arr, current):
         return
-    current[:] = np.asarray(value)
+    current[:] = value_arr
     websock.queue_message(make_message(value_cast))
 
 
@@ -258,11 +259,23 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
         # Ensure all ancestor nodes exist (creates intermediate frames as needed).
         api._ensure_ancestors_exist(name)
 
+        # Snapshot array props before the message is queued and persisted for
+        # replay. The add_* methods use np.asarray casts that may alias the
+        # caller's array; without a copy here, a caller mutating that array
+        # (e.g. reusing one buffer across an animation loop) could retroactively
+        # change what was already sent.
+        for _field_name, _field_value in vars(message.props).items():
+            if isinstance(_field_value, np.ndarray):
+                setattr(message.props, _field_name, _field_value.copy())
+
         # Send message.
         assert isinstance(message, _messages.Message)
         api._websock_interface.queue_message(message)
 
-        out = cls(_SceneNodeHandleState(name, copy.deepcopy(message.props), api))
+        # Shallow copy is enough to decouple the handle from the queued message:
+        # AssignablePropsBase.__init__ copies each top-level array, and
+        # scene-node props are flat (arrays + immutable scalars/tuples).
+        out = cls(_SceneNodeHandleState(name, copy.copy(message.props), api))
         api._handle_from_node_name[name] = out
 
         # Track parent -> child relationship.

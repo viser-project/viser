@@ -24,7 +24,7 @@ def colors_to_uint8(colors: np.ndarray) -> npt.NDArray[np.uint8]:
     if colors.dtype != np.uint8:
         if np.issubdtype(colors.dtype, np.floating):
             colors = np.clip(colors * 255.0, 0, 255).astype(np.uint8)
-        if np.issubdtype(colors.dtype, np.integer):
+        elif np.issubdtype(colors.dtype, np.integer):
             colors = np.clip(colors, 0, 255).astype(np.uint8)
     return colors
 

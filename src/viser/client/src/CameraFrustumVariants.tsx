@@ -51,31 +51,39 @@ export const CameraFrustumComponent = React.forwardRef<
     }
   });
 
-  const frustumPoints: [number, number, number][] = [
-    // Rectangle.
-    [-1, -1, 1],
-    [1, -1, 1],
-    [1, -1, 1],
-    [1, 1, 1],
-    [1, 1, 1],
-    [-1, 1, 1],
-    [-1, 1, 1],
-    [-1, -1, 1],
-    // Lines to origin.
-    [-1, -1, 1],
-    [0, 0, 0],
-    [0, 0, 0],
-    [1, -1, 1],
-    // Lines to origin.
-    [-1, 1, 1],
-    [0, 0, 0],
-    [0, 0, 0],
-    [1, 1, 1],
-    // Up direction indicator.
-    // Don't overlap with the image if the image is present.
-    [0.0, -1.2, 1.0],
-    imageTexture === undefined ? [0.0, -0.9, 1.0] : [0.0, -1.0, 1.0],
-  ].map((xyz) => [xyz[0] * x, xyz[1] * y, xyz[2] * z]);
+  // Memoized on geometry inputs only; <Line> rebuilds its geometry whenever
+  // the `points` identity changes.
+  const frustumPoints = React.useMemo<[number, number, number][]>(
+    () =>
+      (
+        [
+          // Rectangle.
+          [-1, -1, 1],
+          [1, -1, 1],
+          [1, -1, 1],
+          [1, 1, 1],
+          [1, 1, 1],
+          [-1, 1, 1],
+          [-1, 1, 1],
+          [-1, -1, 1],
+          // Lines to origin.
+          [-1, -1, 1],
+          [0, 0, 0],
+          [0, 0, 0],
+          [1, -1, 1],
+          // Lines to origin.
+          [-1, 1, 1],
+          [0, 0, 0],
+          [0, 0, 0],
+          [1, 1, 1],
+          // Up direction indicator.
+          // Don't overlap with the image if the image is present.
+          [0.0, -1.2, 1.0],
+          imageTexture === undefined ? [0.0, -0.9, 1.0] : [0.0, -1.0, 1.0],
+        ] as [number, number, number][]
+      ).map((xyz) => [xyz[0] * x, xyz[1] * y, xyz[2] * z]),
+    [x, y, z, imageTexture],
+  );
 
   // Fresh BufferGeometry per dimension change: in-place setAttribute swaps
   // hit the same truncation bug as LineSegments2. See:
@@ -112,10 +120,15 @@ export const CameraFrustumComponent = React.forwardRef<
     };
   }, [filledGeometry]);
 
-  const color = new THREE.Color().setRGB(
-    message.props.color[0] / 255,
-    message.props.color[1] / 255,
-    message.props.color[2] / 255,
+  // Only consumed by the "filled" variant's material.
+  const color = React.useMemo(
+    () =>
+      new THREE.Color().setRGB(
+        message.props.color[0] / 255,
+        message.props.color[1] / 255,
+        message.props.color[2] / 255,
+      ),
+    [message.props.color],
   );
 
   return (

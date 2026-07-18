@@ -59,6 +59,8 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
 
     const oldAngle = React.useRef(0);
     const oldGeometry = React.useRef<THREE.BufferGeometry>();
+    const oldPosition = React.useRef<THREE.BufferAttribute>();
+    const oldPositionVersion = React.useRef(-1);
     React.useLayoutEffect(() => {
       const group = localRef.current;
       if (!group) return;
@@ -67,12 +69,28 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
         THREE.SkinnedMesh &
         THREE.InstancedMesh;
       if (parent && parent.geometry) {
+        // The parent's geometry can be updated in place (see
+        // bufferGeometrySync), so geometry identity alone isn't enough to
+        // detect changes. When `angle` is set we render a creased *clone* of
+        // the geometry, which goes stale unless we also watch the position
+        // attribute's identity (replaced on realloc) and version (bumped by
+        // needsUpdate on in-place writes). When `angle` is unset the outline
+        // shares the parent's geometry object, so updates flow through and
+        // no rebuild is needed.
+        const position = parent.geometry.attributes
+          .position as THREE.BufferAttribute;
         if (
           oldAngle.current !== angle ||
-          oldGeometry.current !== parent.geometry
+          oldGeometry.current !== parent.geometry ||
+          (angle !== 0 &&
+            position !== undefined &&
+            (oldPosition.current !== position ||
+              oldPositionVersion.current !== position.version))
         ) {
           oldAngle.current = angle;
           oldGeometry.current = parent.geometry;
+          oldPosition.current = position;
+          oldPositionVersion.current = position?.version ?? -1;
 
           // Remove old mesh.
           let mesh = group.children[0] as any;
