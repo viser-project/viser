@@ -551,7 +551,7 @@
 
     <span class="c1"># Handle numpy arrays: extract or inline depending on mode.</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
-        <span class="n">data</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">data</span> <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">c_contiguous</span> <span class="k">else</span> <span class="n">value</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span><span class="o">.</span><span class="n">data</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">data</span> <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">flags</span><span class="o">.</span><span class="n">c_contiguous</span> <span class="k">else</span> <span class="n">value</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span><span class="o">.</span><span class="n">data</span>
         <span class="k">if</span> <span class="n">binary_buffers</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="c1"># Extract into separate buffer with tagged placeholder.</span>
             <span class="n">idx</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">binary_buffers</span><span class="p">)</span>
