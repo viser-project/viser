@@ -559,6 +559,26 @@ function useMessageHandler() {
         camera.updateProjectionMatrix();
         return;
       }
+      case "SetCameraMinOrbitDistanceMessage": {
+        const cameraControls = viewerMutable.cameraControl!;
+        cameraControls.minDistance = message.min_orbit_distance;
+        // camera-controls only enforces the bound on the next dolly, so a camera
+        // already parked inside the new limit would stay there. Push it out now.
+        if (cameraControls.distance < message.min_orbit_distance) {
+          cameraControls.dollyTo(message.min_orbit_distance, true);
+        }
+        return;
+      }
+      case "SetCameraMaxOrbitDistanceMessage": {
+        const cameraControls = viewerMutable.cameraControl!;
+        cameraControls.maxDistance = message.max_orbit_distance;
+        // camera-controls only enforces the bound on the next dolly, so a camera
+        // already parked beyond the new limit would stay there. Pull it in now.
+        if (cameraControls.distance > message.max_orbit_distance) {
+          cameraControls.dollyTo(message.max_orbit_distance, true);
+        }
+        return;
+      }
       case "SetOrientationMessage": {
         // Root node wxyz is kept in store for reactive world-rotation subscribers
         // (DefaultLights, InitialCameraSetter, WorldTransformUtils).

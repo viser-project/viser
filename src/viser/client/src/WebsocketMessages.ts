@@ -1414,6 +1414,29 @@ export interface SetCameraFovMessage {
   fov: number;
   initial: boolean;
 }
+/** Server -> client message to set how close the camera may be dollied in
+ * to its orbit (look-at) point.
+ *
+ * A constraint rather than a pose, so unlike the camera position/look-at messages
+ * there is no `initial` flag: URL parameters override where the camera *is*, not how
+ * far it is allowed to travel.
+ *
+ *
+ * (automatically generated)
+ */
+export interface SetCameraMinOrbitDistanceMessage {
+  type: "SetCameraMinOrbitDistanceMessage";
+  min_orbit_distance: number;
+}
+/** Server -> client message to set how far the camera may be dollied out
+ * from its orbit (look-at) point.
+ *
+ * (automatically generated)
+ */
+export interface SetCameraMaxOrbitDistanceMessage {
+  type: "SetCameraMaxOrbitDistanceMessage";
+  max_orbit_distance: number;
+}
 /** Server -> client message to set a scene node's orientation.
  *
  * As with all other messages, transforms take the `T_parent_local` convention.
@@ -2090,6 +2113,8 @@ export type Message =
   | SetCameraNearMessage
   | SetCameraFarMessage
   | SetCameraFovMessage
+  | SetCameraMinOrbitDistanceMessage
+  | SetCameraMaxOrbitDistanceMessage
   | SetOrientationMessage
   | SetPositionMessage
   | TransformControlsUpdateMessage
