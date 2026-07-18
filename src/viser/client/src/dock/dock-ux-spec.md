@@ -142,10 +142,12 @@ Collapse is ONE state, at STACK scope, stored per CONTAINER (D38):
    per-column — each strip's `+`, cap, or spine rows clear just THAT
    column's flag (granular by adjudication). There is no store
    migration and no flag consolidation anywhere in the system.
-6. **Client-only, instant.** Server placement is position/width/height —
-   no collapse axis (D31). Collapse changes only by user gesture (P3),
-   never emerges from state, and the model commits instantly; motion is
-   presentation (P4/D34).
+6. **Client-owned, instant.** Server placement is four write-only axes —
+   position/width/height/collapsed (D47, superseding D31's removal): a
+   fresh `minimize()`/`expand()` command applies in command order after
+   positions, container-scoped like the on-screen control. Otherwise
+   collapse changes only by user gesture (P3) and never emerges from
+   state; the model commits instantly; motion is presentation (P4/D34).
 
 ### 1.4 Principles
 
@@ -178,7 +180,8 @@ what you drag out of a collapsed container is born collapsed.
 
 **P3 — Content is sacred, chrome is quiet. (A)** Panels never move,
 resize, or change collapse state except by (a) a user gesture, (b) an
-explicit server placement command (position/size only), or (c) a
+explicit server placement command (one of the four write-only axes —
+position, width, height, collapsed; D47), or (c) a
 structural necessity spelled out in §7. Minimized forms are wayfinding
 chrome: dimmed labels, compact geometry, no content preview, no
 attention-seeking styling. No gesture ever expands a scope it didn't
@@ -497,9 +500,11 @@ Expanded, multi-tab panel: the REAL tab strip takes over the header
 row (tabs activate on tap; the chevron alone collapses). Sections
 start COLLAPSED (the sheet is wayfinding chrome on a small screen);
 several may be open at once. `visible` is honored (hidden panels render
-no section); sections sort by server-side `order`. Placement axes
-(position/width/height) do not apply off the dock surface; they replay
-when the viewport widens and the dock remounts.
+no section); sections sort by server-side `order`. The geometry axes
+(position/width/height) do not apply off the dock surface — they replay
+when the viewport widens and the dock remounts — while a fresh collapse
+command toggles the panel's sheet section (surface-specific watermark,
+never shared with the dock's).
 
 ### 3.7 Nested area
 
@@ -545,7 +550,7 @@ marked ⚠ (stated, not derived; see §11).
 | Rail spine row | that pane — new window born collapsed | expand the column to that tab |
 | Region resize divider | region width (expanded columns only; railed columns ride as fixed chrome, §6) | — |
 | Column (width) divider between sibling columns | neighboring columns' widths (inert when a RAILED column flanks it — fixed 36px chrome, D24/D28) | — |
-| Height divider (expanded docked stack) | neighboring cells' heights, with the content-height detent (D56: in-band flank snaps exactly to its content height; rule tints while snapped) | — |
+| Height divider (expanded docked stack) | neighboring cells' heights, with the content-height detent (D56: in-band flank snaps exactly to its content height; 2px primary rule while snapped) | — |
 | Height divider (expanded floating stack) | neighboring cells' heights, with the content-height detent (D56); an AUTO-height window pins first, seeded with the cells' RENDERED px (entering pinned mode reproduces the exact on-screen layout); dragging DOWN past the below cells' minimum PUSHES the window bottom down (the excess grows the cell above the divider). Releasing with EVERY cell at its content height (within the band) reverts the window to AUTO (D56 — the inverse of the pin) | — (a motionless press restores everything, auto height included — P2) |
 | Height divider (collapsed window — bars each side) | — (INERT, D24: nothing tradeable) | — |
 | Window edge/bottom grips | window size | — |
@@ -793,9 +798,10 @@ window is an open question (§11).
   (a hosted dock area in a panel body) counts at its rendered height —
   its internal overflow is its own concern, not the host cell's
   (counting it too would double its overflow delta and move the detent
-  off the true auto height). Cue while snapped: the divider's 1px rule
-  tints to the primary color (the divider analog of the grip's
-  bottom-edge highlight), `data-dock-divider-snapped` exposed for
+  off the true auto height). Cue while snapped: the divider's 1px
+  resting rule becomes the SAME 2px primary bar as the grip's
+  bottom-edge highlight (one snap signifier, one weight — drawn by the
+  shared dividerRuleStyle), `data-dock-divider-snapped` exposed for
   tests. Detents below the cell floor are not offered (unreachable —
   the cue never lights on an impossible landing), and a cancel restores
   the exact pre-gesture layout regardless of any snap (P2). Docked
@@ -1332,10 +1338,11 @@ consuming paragraphs.
   well-defined. Expanded columns deliberately keep their parent-handle
   claim (§5.2): that handle is a grip, and D48 gives grips the
   above-claim; the rail header is dominated by its controls.
-- **D54** — divider rhythm: the region's outer/inner edges carry the
-  same `SPLIT_DIVIDER_PX` gutter as interior seams
-  (`REGION_EDGE_GAP_PX`), counted as region chrome — one spacing
-  rhythm, gap-panel-gap everywhere; full statement in §6.
+- **D54** — divider rhythm: each region outer/inner edge carries ONE
+  per-side gap (`REGION_EDGE_GAP_PX` = `DOCK_GAP_PX`), while an
+  interior seam occupies `SPLIT_DIVIDER_PX` (gap + 1px rule + gap,
+  derived), all counted as region chrome — one spacing rhythm,
+  gap-panel-gap everywhere; full statement in §6.
 - **D55** — one seam, one drop (user-adjudicated; P9's litmus applied
   to the drop system): every full-height column insertion into an
   occupied region — region-edge bands, expanded cells' side bands,
