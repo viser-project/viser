@@ -343,7 +343,14 @@ class WebsockServer(WebsockMessageHandler):
     ):
         """`backlog_done_message`, when given, is sent to each (re)connecting
         client exactly once, immediately after the broadcast buffer's replay
-        backlog -- an explicit end-of-replay marker (never buffered)."""
+        backlog -- an explicit end-of-replay marker (never buffered).
+
+        Servers serving viser's stock client build MUST pass viser's
+        ``ReplayDoneMessage`` here: the client enters a reconnect/replay phase
+        on every (re)connect and leaves it only when this marker arrives, so
+        with the ``None`` default it never exits that phase (degraded panel
+        behavior). ``ViserServer`` does this automatically; it only needs
+        attention when building directly on ``viser.infra.WebsockServer``."""
         super().__init__()
 
         # Track connected clients.

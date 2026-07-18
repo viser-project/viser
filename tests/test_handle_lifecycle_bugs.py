@@ -318,10 +318,32 @@ def test_rgb_value_normalizes_floats() -> None:
         assert rgb.value == (1, 2, 3)
 
         # Out-of-range channels are clamped to [0, 255] rather than producing a
-        # wild value (e.g. a float 255.0 must not become 65025).
-        assert server.gui.add_rgb("e", (255.0, 1.2, -0.1)).value == (255, 255, 0)  # type: ignore[arg-type]
-        rgb.value = np.array([2.0, -5.0, 0.5])
+        # wild value (e.g. a float 255.0 must not become 65025) -- AND float
+        # channels > 1.0 warn: pre-1.1.0 float [0, 255] inputs passed through
+        # unchanged, so old code silently clamping to white needs a signpost.
+        with pytest.warns(UserWarning, match=r"\[0, 1\]"):
+            assert server.gui.add_rgb("e", (255.0, 1.2, -0.1)).value == (255, 255, 0)  # type: ignore[arg-type]
+        with pytest.warns(UserWarning, match=r"\[0, 1\]"):
+            rgb.value = np.array([2.0, -5.0, 0.5])
         assert rgb.value == (255, 0, 127)
+        # In-range floats stay silent.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            rgb.value = np.array([0.25, 1.0, 0.0])
+        assert rgb.value == (63, 255, 0)
+
+
+def test_numpy_assignment_to_int_tuple_rounds_not_truncates() -> None:
+    """Assigning float numpy values to an int-typed tuple handle must round to
+    the nearest integer, not truncate toward zero (int(2.9) == 2). Rounding
+    uses the round() builtin, i.e. round-half-even."""
+    with _server() as server:
+        ms = server.gui.add_multi_slider(
+            "m", min=0, max=20, step=1, initial_value=(0, 1)
+        )
+        ms.value = np.array([2.9, 9.999])
+        assert ms.value == (3, 10)
+        assert all(type(x) is int for x in ms.value)
 
 
 def test_gui_container_target_is_per_instance() -> None:
@@ -405,6 +427,61 @@ def test_gaussian_splat_subprop_update_does_not_alias_buffer() -> None:
         # already-queued message must stay untouched.
         s.centers = np.full((n, 3), 7.0, np.float32)
         assert np.array_equal(queued, before)
+
+
+def test_upload_part_after_button_removal_still_acks_and_completes() -> None:
+    """A FileTransferPart arriving after button.remove() mid-upload must not
+    assert (the handle is legitimately gone from the registry): parts keep
+    being buffered and acked, and completion pops the transfer state (no leak)
+    while _finish_file_upload no-ops on the removed handle."""
+    with _server() as server:
+        btn = server.gui.add_upload_button("up")
+        uuid = btn._impl.uuid
+
+        server.gui._handle_file_transfer_start(
+            ClientId(0),
+            _messages.FileTransferStartUpload(
+                source_component_uuid=uuid,
+                transfer_uuid="t1",
+                filename="a.bin",
+                mime_type="application/octet-stream",
+                part_count=2,
+                size_bytes=8,
+            ),
+        )
+        server.gui._handle_file_transfer_part(
+            ClientId(0),
+            _messages.FileTransferPart(
+                source_component_uuid=uuid,
+                transfer_uuid="t1",
+                part_index=0,
+                content=b"1234",
+            ),
+        )
+        btn.remove()  # Mid-upload removal.
+        # The next part must not raise; it is still acked and completes the
+        # transfer.
+        server.gui._handle_file_transfer_part(
+            ClientId(0),
+            _messages.FileTransferPart(
+                source_component_uuid=uuid,
+                transfer_uuid="t1",
+                part_index=1,
+                content=b"5678",
+            ),
+        )
+
+        # Transfer state was popped by completion -> no permanent leak.
+        assert "t1" not in server.gui._current_file_upload_states
+        # The final ack (all bytes) was queued despite the removed handle.
+        buf = server._websock_server._broadcast_buffer.message_from_id
+        acks = [
+            msg
+            for msg in buf.values()
+            if isinstance(msg, _messages.FileTransferPartAck)
+            and msg.transfer_uuid == "t1"
+        ]
+        assert acks and acks[-1].transferred_bytes == 8
 
 
 def test_zero_byte_upload_completes() -> None:

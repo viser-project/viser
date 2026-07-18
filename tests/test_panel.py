@@ -9,9 +9,12 @@ raises as specified.
 
 from __future__ import annotations
 
+import threading
 import warnings
 from typing import Any
 from unittest.mock import patch
+
+import pytest
 
 import viser
 import viser._client_autobuild
@@ -369,6 +372,144 @@ def test_reset_clears_main_panel_collapsed() -> None:
         assert (
             _latest(server, CONTROL_PANEL_ID, m.GuiSetPanelCollapsedMessage).collapsed
             is False
+        )
+    finally:
+        server.stop()
+
+
+def test_client_scoped_reset_does_not_touch_main_panel_placement() -> None:
+    """client.gui.reset() resets the GUI elements it owns but must NOT reset
+    the main panel's placement: a client-scoped GuiApi mints its own run_id,
+    which the client's placement gate treats as a fresh deliberate command --
+    so the default CONTROL_PANEL_ID messages would clobber server-authored
+    placement (e.g. undock a dock_left control panel) for that one client."""
+    from viser._viser import ClientHandle
+    from viser.infra._async_message_buffer import AsyncMessageBuffer
+    from viser.infra._infra import WebsockClientConnection, _ClientHandleState
+
+    server = _make_server()
+    try:
+        server.gui.main_panel.dock_left()
+
+        # Synthetic in-process client connection: no websocket needed, we only
+        # inspect the outgoing per-client message buffer (mirrors how
+        # WebsockServer constructs the per-client state).
+        buffer = AsyncMessageBuffer(server._event_loop, persistent_messages=False)
+        conn = WebsockClientConnection(
+            0, _ClientHandleState(buffer, server._event_loop)
+        )
+        client = ClientHandle(conn, server)
+
+        client.gui.add_button("local")
+        client.gui.reset()
+
+        # The client-scoped reset drained its own GUI elements...
+        root = client.gui._container_handle_from_uuid["root"]
+        assert root._children == {}
+        # ...but queued NO main-panel placement messages on the per-client
+        # connection.
+        placement_types = (
+            m.GuiSetPanelPositionMessage,
+            m.GuiSetPanelWidthMessage,
+            m.GuiSetPanelHeightMessage,
+            m.GuiSetPanelCollapsedMessage,
+        )
+        assert not any(
+            isinstance(msg, placement_types) for msg in buffer.message_from_id.values()
+        )
+        # The server-authored broadcast placement is untouched by the
+        # client-scoped reset...
+        assert _latest(
+            server, CONTROL_PANEL_ID, m.GuiSetPanelPositionMessage
+        ).position == {"kind": "edge", "edge": "left"}
+        # ...while a server-scoped reset still resets it to the default.
+        server.gui.reset()
+        assert _latest(
+            server, CONTROL_PANEL_ID, m.GuiSetPanelPositionMessage
+        ).position == {"kind": "float", "x": None, "y": None}
+    finally:
+        server.stop()
+
+
+@pytest.mark.filterwarnings("ignore:Attempted to remove an already removed")
+def test_concurrent_panel_remove_single_winner() -> None:
+    """Two concurrent remove() calls must resolve to exactly one winner: the
+    loser warns (filtered above; warnings state is global, so per-thread
+    catch_warnings would race) and returns. Regression: the tombstone check ran
+    before the lifecycle lock was taken and was never re-checked inside, so
+    both racers could pass and the loser's registry pop raised KeyError (which
+    would also abort a gui.reset() mid-drain)."""
+    server = _make_server()
+    try:
+        for _ in range(20):
+            panel = server.gui.add_panel()
+            uuid = panel._impl.uuid
+            barrier = threading.Barrier(2)
+            errors: list[BaseException] = []
+
+            def racer(p: viser.PanelHandle = panel) -> None:
+                try:
+                    barrier.wait()
+                    p.remove()
+                except BaseException as e:  # pragma: no cover - failure path
+                    errors.append(e)
+
+            threads = [threading.Thread(target=racer) for _ in range(2)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+            assert errors == [], errors
+            assert uuid not in server.gui._panel_handle_from_uuid
+            # Exactly the remove tombstone remains buffered for the panel.
+            assert _buffered_types(server, uuid) == {m.GuiPanelRemoveMessage}
+    finally:
+        server.stop()
+
+
+def test_panel_double_remove_warns_and_noops() -> None:
+    """A second remove() on the same handle warns and returns (no KeyError,
+    no duplicate remove message)."""
+    server = _make_server()
+    try:
+        panel = server.gui.add_panel()
+        panel.remove()
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            panel.remove()
+        assert any("already removed" in str(w.message) for w in caught)
+    finally:
+        server.stop()
+
+
+def test_queue_placement_rechecks_anchor_under_lock() -> None:
+    """dock_above/dock_below validate the anchor in _resolve_anchor_uuid BEFORE
+    the lifecycle lock is taken; _queue_placement must re-check `removed` under
+    the lock, or an anchor.remove() in between persists a split placement
+    referencing a dead anchor uuid in the replay buffer. Simulate the
+    interleaving by running the two stages with the removal in between."""
+    server = _make_server()
+    try:
+        anchor = server.gui.add_panel()
+        panel = server.gui.add_panel()
+        # Stage 1: the pre-lock check passes while the anchor is alive.
+        anchor_uuid = panel._resolve_anchor_uuid(anchor)
+        # The anchor is removed between the check and the enqueue.
+        anchor.remove()
+        # Stage 2: the locked enqueue must reject with the same ValueError the
+        # sequential path promises.
+        try:
+            panel._set_position(
+                {"kind": "split", "anchor_uuid": anchor_uuid, "side": "below"},
+                anchor=anchor,
+            )
+            assert False, "expected ValueError"
+        except ValueError as e:
+            assert "removed" in str(e)
+        # No split placement referencing the dead anchor was buffered.
+        assert m.GuiSetPanelPositionMessage not in _buffered_types(
+            server, panel._impl.uuid
         )
     finally:
         server.stop()

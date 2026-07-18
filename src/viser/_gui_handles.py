@@ -211,10 +211,23 @@ class _GuiInputHandle(
             # Preserve each element's expected Python type -- float for vectors,
             # int for colors. A blanket `float(...)` would turn an int tuple into
             # floats, and the `tuple(...)` cast below does not restore types.
+            #
+            # When the target type is int (bool excluded) and the incoming
+            # element is a float, ROUND instead of casting: `int(2.9)`
+            # truncates toward zero, which silently corrupts values that were
+            # meant to be near-integers. We use the round() builtin, which is
+            # round-half-even ("banker's rounding": 0.5 -> 0, 1.5 -> 2) --
+            # exact .5 inputs are rare for this path and half-even is the
+            # documented Python convention.
             elems = value.tolist()
             current = self._impl.value
             if isinstance(current, tuple) and len(current) == len(elems):
-                value = tuple(type(c)(e) for c, e in zip(current, elems))  # type: ignore
+                value = tuple(
+                    type(c)(round(e))
+                    if type(c) is int and isinstance(e, float)
+                    else type(c)(e)
+                    for c, e in zip(current, elems)
+                )  # type: ignore
             else:
                 value = tuple(elems)  # type: ignore
 
@@ -354,7 +367,7 @@ class GuiMultiSliderHandle(
     """
 
 
-def _colors_to_int_tuple(value: Any) -> tuple[int, ...]:
+def _colors_to_int_tuple(value: Any, *, warn_stacklevel: int = 3) -> tuple[int, ...]:
     """Coerce an RGB/RGBA color to an int tuple in [0, 255].
 
     Integer channels are taken as absolute [0, 255]; float channels are
@@ -362,9 +375,22 @@ def _colors_to_int_tuple(value: Any) -> tuple[int, ...]:
     255 (white) but ``1`` -> 1. The result is clamped to [0, 255] -- matching
     ``colors_to_uint8`` -- so out-of-range inputs (e.g. a float ``255.0`` or a
     negative value) degrade gracefully instead of producing a wild value.
-    Generalized to any channel count (RGB and RGBA)."""
+    Generalized to any channel count (RGB and RGBA).
+
+    Float channels > 1.0 emit a warning: before viser 1.1.0 they were passed
+    through unchanged (a float ``100.0`` behaved like the int ``100``), so old
+    code passing float [0, 255] colors now silently clamps to white without
+    it. ``warn_stacklevel`` should point the warning at user code; the default
+    fits the direct ``add_rgb(initial_value=...)`` call sites."""
     if isinstance(value, np.ndarray):
         assert value.ndim == 1, f"Expected a 1D color, got shape {value.shape}."
+    if any(not np.issubdtype(type(v), np.integer) and v > 1.0 for v in value):
+        warnings.warn(
+            "Float color channels are interpreted on [0, 1] and scaled to "
+            f"[0, 255]; values > 1.0 are clamped to 255 (got {tuple(value)!r}). "
+            "Use ints for absolute [0, 255] channels.",
+            stacklevel=warn_stacklevel,
+        )
     return tuple(
         max(0, min(255, int(v) if np.issubdtype(type(v), np.integer) else int(v * 255)))
         for v in value
@@ -385,7 +411,11 @@ class GuiRgbHandle(GuiInputHandle[Tuple[int, int, int]], GuiRgbProps):
         self, value: Tuple[int, int, int] | np.ndarray
     ) -> Tuple[int, int, int]:
         # Float channels are [0, 1] (scaled to [0, 255]); int channels absolute.
-        return cast(Tuple[int, int, int], _colors_to_int_tuple(value))
+        # warn_stacklevel: user assignment -> props_setattr -> value.fset ->
+        # this method -> _colors_to_int_tuple = 5 frames.
+        return cast(
+            Tuple[int, int, int], _colors_to_int_tuple(value, warn_stacklevel=5)
+        )
 
 
 class GuiRgbaHandle(GuiInputHandle[Tuple[int, int, int, int]], GuiRgbaProps):
@@ -402,7 +432,11 @@ class GuiRgbaHandle(GuiInputHandle[Tuple[int, int, int, int]], GuiRgbaProps):
         self, value: Tuple[int, int, int, int] | np.ndarray
     ) -> Tuple[int, int, int, int]:
         # Float channels are [0, 1] (scaled to [0, 255]); int channels absolute.
-        return cast(Tuple[int, int, int, int], _colors_to_int_tuple(value))
+        # warn_stacklevel: user assignment -> props_setattr -> value.fset ->
+        # this method -> _colors_to_int_tuple = 5 frames.
+        return cast(
+            Tuple[int, int, int, int], _colors_to_int_tuple(value, warn_stacklevel=5)
+        )
 
 
 class GuiVector2Handle(GuiInputHandle[Tuple[float, float]], GuiVector2Props):
@@ -718,6 +752,14 @@ class _TabContainerMixin:
         source of truth for a tab's id/label/icon. Every mutation (add, remove,
         icon change) rebuilds through here, so the parallel tuples can never
         desync in length or order."""
+        if self._impl.removed:
+            # Tear-down path: PanelHandle.remove() tombstones BEFORE draining
+            # its tabs (the tombstone must be an atomic check-and-set against
+            # concurrent removers), so the drain's write-backs land here after
+            # removal. Skip the wire write-back: props_setattr would
+            # (correctly) reject a props write on a removed handle, and the
+            # client drops the whole entity via its remove message anyway.
+            return
         self._tab_container_ids = tuple(h._id for h in self._tab_handles)
         self._tab_labels = tuple(h._label for h in self._tab_handles)
         self._tab_icons_html = tuple(
@@ -897,7 +939,9 @@ class _PlacementMixin:
         removed (the main panel); `PanelHandle` overrides it."""
         return False
 
-    def _queue_placement(self, message: _PlacementMessage) -> None:
+    def _queue_placement(
+        self, message: _PlacementMessage, *, anchor: PanelHandle | None = None
+    ) -> None:
         api = self._placement_gui_api
         # The removed check and the enqueue are ONE atomic step under the
         # lifecycle lock: a `remove()` on another thread otherwise slips
@@ -910,6 +954,15 @@ class _PlacementMixin:
             # dead uuid.
             if self._placement_removed():
                 raise RuntimeError(f"Cannot place a removed {type(self).__name__}.")
+            # Re-check the anchor (dock_above/dock_below) under the SAME lock:
+            # `_resolve_anchor_uuid` runs before this lock is taken, so an
+            # `anchor.remove()` on another thread -- whose tombstone is set
+            # under this lock; the anchor shares our GuiApi per the scope
+            # check -- could otherwise slip between that check and this
+            # enqueue, persisting a split placement that references a dead
+            # anchor uuid. Same error the sequential path promises.
+            if anchor is not None and anchor._impl.removed:
+                raise ValueError("Cannot dock relative to a removed panel.")
             # Stamp the layout-update counter (bumped on EVERY placement
             # command, global across panels -- D50: conflicting container-
             # scoped collapse axes replay in counter order) and this GuiApi's
@@ -926,12 +979,16 @@ class _PlacementMixin:
             api._websock_interface.queue_message(stamped)
 
     def _set_position(
-        self, position: EdgePlacement | SplitPlacement | FloatPlacement
+        self,
+        position: EdgePlacement | SplitPlacement | FloatPlacement,
+        *,
+        anchor: PanelHandle | None = None,
     ) -> None:
         self._queue_placement(
             GuiSetPanelPositionMessage(
                 self._placement_uuid, position, counter=0, run_id=""
-            )
+            ),
+            anchor=anchor,
         )
 
     def _resolve_anchor_uuid(self, anchor: PlaceableHandle) -> str:
@@ -992,7 +1049,10 @@ class _PlacementMixin:
                 "kind": "split",
                 "anchor_uuid": self._resolve_anchor_uuid(anchor),
                 "side": "above",
-            }
+            },
+            # Re-validated under the lifecycle lock (see _queue_placement);
+            # main_panel needs no removed-check (it cannot be removed).
+            anchor=anchor if isinstance(anchor, PanelHandle) else None,
         )
 
     def dock_below(self, anchor: PlaceableHandle) -> None:
@@ -1007,7 +1067,10 @@ class _PlacementMixin:
                 "kind": "split",
                 "anchor_uuid": self._resolve_anchor_uuid(anchor),
                 "side": "below",
-            }
+            },
+            # Re-validated under the lifecycle lock (see _queue_placement);
+            # main_panel needs no removed-check (it cannot be removed).
+            anchor=anchor if isinstance(anchor, PanelHandle) else None,
         )
 
     def float(
@@ -1189,28 +1252,37 @@ class PanelHandle(
 
         This is the only way a panel disappears -- there is no UI close button
         (see :class:`PanelHandle`)."""
-        if self._impl.removed:
-            warnings.warn(
-                "Attempted to remove an already removed PanelHandle.",
-                stacklevel=2,
-            )
-            return
-        # Remove tabs first: each tab.remove() writes back to this panel's tab
-        # tuples, which the removed-guard in props_setattr would reject once the
-        # panel is marked removed (mirrors GuiTabGroupHandle.remove).
-        for tab in tuple(self._tab_handles):
-            tab.remove()
         gui_api = self._impl.gui_api
-        # Tombstone + remove-message (whose buffer push purges the panel's
-        # placement updates) as ONE atomic step under the lifecycle lock, so a
-        # concurrent placement command can't slip between the removed check
-        # and its enqueue (see _queue_placement).
+        # Tombstone CHECK-AND-SET + remove-message (whose buffer push purges
+        # the panel's placement updates) as ONE atomic step under the
+        # lifecycle lock. This serves two races:
+        # - a concurrent placement command can't slip between the removed
+        #   check and its enqueue (see _queue_placement);
+        # - two concurrent remove() calls (or remove() racing gui.reset()'s
+        #   drain) resolve to exactly one winner -- checking `removed` before
+        #   taking the lock let both pass, queue duplicate remove messages,
+        #   and double-pop the registry (KeyError, aborting reset mid-drain).
         with gui_api._panel_lifecycle_lock:
+            if self._impl.removed:
+                warnings.warn(
+                    "Attempted to remove an already removed PanelHandle.",
+                    stacklevel=2,
+                )
+                return
             self._impl.removed = True
             gui_api._websock_interface.queue_message(
                 GuiPanelRemoveMessage(self._impl.uuid)
             )
-        gui_api._panel_handle_from_uuid.pop(self._impl.uuid)
+        # Only the tombstone winner reaches here, so the pop and tab drain run
+        # exactly once. `.pop(..., None)` is belt-and-suspenders. The drain
+        # runs AFTER the tombstone and OUTSIDE the lock (a plain,
+        # non-reentrant Lock): each tab.remove() writes back to this panel's
+        # tab tuples, which _rebuild_tab_props now skips for a removed panel
+        # (props_setattr would reject the write; the client drops the whole
+        # entity via the remove message anyway).
+        gui_api._panel_handle_from_uuid.pop(self._impl.uuid, None)
+        for tab in tuple(self._tab_handles):
+            tab.remove()
 
 
 class MainPanelHandle(_PlacementMixin):
