@@ -1,6 +1,6 @@
 // @ts-nocheck
-import { MeshDistanceMaterial, WebGLRenderer } from 'three';
-import { InstancedMesh2 } from '../InstancedMesh2.js';
+import { MeshDistanceMaterial, WebGLRenderer } from "three";
+import { InstancedMesh2 } from "../InstancedMesh2.js";
 
 // TODO: Fix if multiple renderers?
 
@@ -24,7 +24,9 @@ function addProperties(material: unknown): void {
   propertiesGet.set(material, () => {
     // Fix pointLight bug. Related: https://github.com/mrdoob/three.js/blob/dev/src/renderers/webgl/WebGLShadowMap.js#L333
     if ((material as MeshDistanceMaterial).isMeshDistanceMaterial) {
-      const materialPropertiesBase = propertiesGetBase(material) as { [x: string]: any };
+      const materialPropertiesBase = propertiesGetBase(material) as {
+        [x: string]: any;
+      };
       materialProperties.light = materialPropertiesBase.light;
     }
 
@@ -32,7 +34,11 @@ function addProperties(material: unknown): void {
   });
 }
 
-export function patchProperties(obj: InstancedMesh2, renderer: WebGLRenderer, material: unknown): void {
+export function patchProperties(
+  obj: InstancedMesh2,
+  renderer: WebGLRenderer,
+  material: unknown,
+): void {
   const properties = renderer.properties;
   propertiesGetBase = properties.get;
 

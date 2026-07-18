@@ -53,7 +53,8 @@ def main(
         downsample_factor: Downsample factor for the images.
     """
     server = viser.ViserServer()
-    server.gui.configure_theme(titlebar_content=None, control_layout="collapsible")
+    server.gui.configure_theme(titlebar_content=None)
+    server.gui.main_panel.dock_right()
 
     # Load the colmap info.
     cameras = read_cameras_binary(colmap_path / "cameras.bin")

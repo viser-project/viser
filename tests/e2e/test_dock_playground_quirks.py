@@ -4,16 +4,17 @@ These lock in fixes for small behavior bugs found by a code audit:
 
 1. Escape cancels an in-flight window drag: the window snaps back to where the
    drag started and no dock is committed (even with an edge drop hint showing).
-2. The grip-bar minimize button is keyboard-accessible: focus + Enter collapses
-   the group, Space expands it again (role=button contract).
+2. A floating window's minimize button is keyboard-accessible: focus + Enter
+   collapses the window, Space on the bar's label expands it again
+   (role=button contract).
 3. Tabs expose their full label via a `title` attribute (labels ellipsize at a
    max width, so the tooltip is the only way to read a long one).
 4. Tabs are keyboard-activatable: focus + Enter switches the group's active tab.
 5. Escape during a DEFERRED-FLOAT drag (dragging a docked group out, which
    commits a float op up front) restores the pre-drag docked layout instead of
    stranding the panel as a floater.
-6. Dropping a panel onto a minimized (collapsed) group auto-expands it, so the
-   dropped panel is visible instead of vanishing into the minimized handle.
+6. Dropping a panel onto a collapsed floating window's bar merges WITHOUT
+   expanding it (organizing minimized panels never expands them).
 7. Escape during a region edge-resize reverts the region to its drag-start
    width instead of keeping the partially-applied size.
 
@@ -30,12 +31,17 @@ from __future__ import annotations
 import pytest
 
 from .dock_helpers import (
+    click_column_chevron,
     columns,
     dock_layout,
     group,
+    region_collapsed,
     set_layout,
     stack,
     window,
+)
+from .dock_helpers import (
+    collapsed as _collapsed,
 )
 from .dock_helpers import (
     drag as _drag,
@@ -103,15 +109,19 @@ def test_minimize_button_keyboard(dock_context, vite_server) -> None:
     page.eval_on_selector(sel, "e => e.focus()")
     page.keyboard.press("Enter")
     page.wait_for_timeout(100)
-    assert page.evaluate(
-        "(gid) => window.__dockLayout.groups[gid].collapsed === true", gid
-    ), "Enter on the focused minimize button should collapse the group"
-    page.eval_on_selector(sel, "e => e.focus()")
+    assert _collapsed(page, gid), (
+        "Enter on the focused minimize button should collapse the window"
+    )
+    # Collapsed, the floating window is its bar: Space on the focused tab
+    # LABEL inside the bar expands the window again (labels are the
+    # focusable elements; the container is a pure drag surface).
+    bar_sel = f'[data-floating-window] [data-dock-group="{gid}"] [data-dock-tab]'
+    page.eval_on_selector(bar_sel, "e => e.focus()")
     page.keyboard.press("Space")
     page.wait_for_timeout(100)
-    assert page.evaluate(
-        "(gid) => window.__dockLayout.groups[gid].collapsed !== true", gid
-    ), "Space on the focused button should expand the group again"
+    assert not _collapsed(page, gid), (
+        "Space on the focused bar label should expand the window again"
+    )
     page.close()
 
 
@@ -135,7 +145,7 @@ def test_tab_title_and_keyboard_activation(dock_context, vite_server) -> None:
         ),
     )
     gid = _group_id_for_panel(page, "controls")
-    merged = page.evaluate("(gid) => window.__dockLayout.groups[gid].panelIds", gid)
+    merged = page.evaluate("(gid) => window.__dockLayout.groups[gid].paneIds", gid)
     assert "inspector" in merged
 
     # The merged-in tab is active; both tabs carry their full label as a title
@@ -200,33 +210,34 @@ def test_escape_restores_docked_group_drag(dock_context, vite_server) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 6. Dropping onto a minimized group auto-expands it.
+# 6. Merging onto a minimized group keeps it minimized (organizing minimized
+#    panels never expands them); the dropped panel becomes another collapsed tab.
 # ---------------------------------------------------------------------------
-def test_drop_on_minimized_group_expands(dock_context, vite_server) -> None:
+def test_drop_on_minimized_group_stays_minimized(dock_context, vite_server) -> None:
     page = _open(dock_context, vite_server)
-    # Minimize the floating Controls window, then drop Inspector onto its
-    # collapsed handle (center = merge).
+    # Minimize the floating Controls window (now an in-place bar), then drop
+    # Inspector onto that bar: the drop lands in the still-minimized group.
     gid = _group_id_for_panel(page, "controls")
     page.eval_on_selector(
         f'[data-dock-group="{gid}"] [data-dock-minimize]', "e => e.click()"
     )
     page.wait_for_timeout(120)
-    assert page.evaluate(
-        "(gid) => window.__dockLayout.groups[gid].collapsed === true", gid
-    )
+    assert _collapsed(page, gid)
+    # Aim at the BAR (the collapsed group element on the minimized floating
+    # window); a drop there merges/inserts into the still-minimized group.
     target = page.eval_on_selector(
-        f'[data-dock-group="{gid}"]',
+        f'[data-floating-window] [data-dock-group="{gid}"]',
         "e => { const r = e.getBoundingClientRect(); "
         "return { x: r.x + r.width/2, y: r.y + r.height/2 }; }",
     )
     _drag(page, _grip(page, "inspector"), (target["x"], target["y"]))
 
-    merged = page.evaluate("(gid) => window.__dockLayout.groups[gid].panelIds", gid)
+    merged = page.evaluate("(gid) => window.__dockLayout.groups[gid].paneIds", gid)
     if "inspector" not in merged:
         pytest.skip("merge didn't land this run; geometry off by a few px")
-    assert page.evaluate(
-        "(gid) => window.__dockLayout.groups[gid].collapsed !== true", gid
-    ), "merging into a minimized group should expand it"
+    assert _collapsed(page, gid), (
+        "merging into a collapsed window must keep it collapsed"
+    )
     page.close()
 
 
@@ -271,17 +282,22 @@ def test_escape_reverts_region_resize(dock_context, vite_server) -> None:
 #    cursor 1:1 and the fixed-width minimized strips are left alone
 #    (regionWidth counts expanded columns only; strips render on top).
 # ---------------------------------------------------------------------------
-def test_region_resize_ignores_minimized_columns(dock_context, vite_server) -> None:
+def test_region_resize_lands_on_expanded_column_rails_fixed(
+    dock_context, vite_server
+) -> None:
+    """RAILED columns are fixed-width chrome (36px, D28/D38), so a region
+    edge resize lands entirely on the EXPANDED column: it tracks the cursor
+    1:1 while the rails stay at strip width."""
     page = _open(dock_context, vite_server)
 
     # Arrange: three side-by-side right-docked columns, controls at the edge
-    # and console canvas-adjacent (the minimize clicks + region resize below
+    # and console canvas-adjacent (the column rails + region resize below
     # are the subject).
     set_layout(
         page, dock_layout(docked_right=columns("console", "inspector", "controls"))
     )
     tree = _layout(page)["docked"]["right"]
-    assert tree is not None and tree["type"] == "split" and len(tree["children"]) == 3
+    assert tree is not None and len(tree["columns"]) == 3
 
     def leaf_width(panel: str) -> float:
         gid = _group_id_for_panel(page, panel)
@@ -290,25 +306,22 @@ def test_region_resize_ignores_minimized_columns(dock_context, vite_server) -> N
             "e => e.closest('[data-dock-leaf]').getBoundingClientRect().width",
         )
 
-    # Minimize the MIDDLE column (inspector) and the region-edge column
-    # (controls): both render as fixed strips sandwiched in the reserved
-    # block, leaving console as the only expanded panel.
+    # Rail the MIDDLE column (inspector) and the region-edge column
+    # (controls) via their chevrons (the docked collapse gesture, D32),
+    # leaving console as the only expanded panel.
     for panel in ["inspector", "controls"]:
-        gid = _group_id_for_panel(page, panel)
-        page.eval_on_selector(
-            f'[data-dock-group="{gid}"] [data-dock-minimize]', "e => e.click()"
-        )
-        page.wait_for_timeout(120)
+        click_column_chevron(page, _group_id_for_panel(page, panel))
+    page.wait_for_timeout(350)  # settle
 
-    before = leaf_width("console")
-    strip_before = leaf_width("inspector")
-    assert strip_before < 60, f"inspector should be a strip, got {strip_before}"
+    rail_before = leaf_width("inspector")
+    assert rail_before < 60, f"inspector rail should be ~36px, got {rail_before}"
+    console_before = leaf_width("console")
 
     # Drag the region's edge grip 150px toward the canvas (wider region).
     handle = page.eval_on_selector(
         '[data-dock-region-resize="right"]',
         "e => { const r = e.getBoundingClientRect(); "
-        "return { x: r.x + r.width/2, y: r.y + r.height/2 }; }",
+        "return { x: r.x + r.width/2, y: r.y + r.height*0.75 }; }",
     )
     page.mouse.move(handle["x"], handle["y"])
     page.mouse.down()
@@ -317,22 +330,20 @@ def test_region_resize_ignores_minimized_columns(dock_context, vite_server) -> N
     page.mouse.up()
     page.wait_for_timeout(120)
 
-    after = leaf_width("console")
-    assert abs((after - before) - 150) < 8, (
-        f"expanded panel should track the cursor 1:1 ({before} -> {after}, wanted +150)"
+    console_after = leaf_width("console")
+    assert abs((console_after - console_before) - 150) < 10, (
+        f"the expanded column should track the cursor 1:1 "
+        f"({console_before} -> {console_after}, wanted +150)"
     )
-    assert abs(leaf_width("inspector") - strip_before) < 2, (
-        "minimized strip width must not change during a region resize"
-    )
-    assert abs(leaf_width("controls") - strip_before) < 2, (
-        "second minimized strip must not change either"
+    assert leaf_width("inspector") < 60, (
+        "railed columns are fixed-width chrome and must not grow (D28)"
     )
     page.close()
 
 
 # ---------------------------------------------------------------------------
 # 9. Drag-through minimize buttons: dragging the - moves the panel (no
-#    toggle); a drag from a strip's + tears out the EXPANDED panel.
+#    toggle); a drag from a collapsed window's + moves it, still collapsed.
 # ---------------------------------------------------------------------------
 def test_minus_button_drag_moves_panel(dock_context, vite_server) -> None:
     page = _open(dock_context, vite_server)
@@ -345,122 +356,106 @@ def test_minus_button_drag_moves_panel(dock_context, vite_server) -> None:
     )
     _drag(page, (btn["x"], btn["y"]), (btn["x"] - 200, btn["y"] + 150))
     after = _floating_window_for_panel(page, "controls")
-    assert page.evaluate(
-        "(gid) => window.__dockLayout.groups[gid].collapsed !== true", gid
-    ), "dragging the minimize button must not toggle"
+    assert not _collapsed(page, gid), "dragging the minimize button must not toggle"
     assert before is not None and after is not None
     assert abs(after["x"] - before["x"]) > 100, "drag should have moved the window"
     page.close()
 
 
-def test_plus_drag_tears_out_expanded(dock_context, vite_server) -> None:
+def test_plus_drag_moves_collapsed_window_still_collapsed(
+    dock_context, vite_server
+) -> None:
+    """The bar's + is drag-through like every right-end control: a DRAG from
+    it moves the collapsed window AS-IS (expanding is a click-only
+    gesture)."""
     page = _open(dock_context, vite_server)
-    # Arrange: controls docked right (the minimize + drag-from-+ below are the
-    # subject; the canvas is otherwise empty so the drop floats).
-    set_layout(page, dock_layout(docked_right=columns("controls")))
-    gid = _group_id_for_panel(page, "controls")
-    page.eval_on_selector(
-        f'[data-dock-group="{gid}"] [data-dock-minimize]', "e => e.click()"
+    set_layout(
+        page,
+        dock_layout(floating=[window("controls", x=400, y=200, collapsed=True)]),
     )
-    page.wait_for_timeout(120)
-    assert page.evaluate(
-        "(gid) => window.__dockLayout.groups[gid].collapsed === true", gid
-    )
-    # The strip cell's + sits in the gray cap; drag it out over the canvas.
+    gid = "t-controls"
+    assert _collapsed(page, gid)
+    before = _floating_window_for_panel(page, "controls")
+    assert before is not None
+    # The bar's right-end + (single-group window keeps it, T4/D25).
     btn = page.eval_on_selector(
         f'[data-dock-group="{gid}"] [data-dock-minimize]',
         "e => { const r = e.getBoundingClientRect(); "
         "return { x: r.x + r.width/2, y: r.y + r.height/2 }; }",
     )
-    _drag(page, (btn["x"], btn["y"]), (700, 250))
-    # The drop may land on empty canvas (float) or, if geometry drifts, on
-    # another surface -- either way the panel must end up EXPANDED. Re-resolve
-    # the group id: a merge would have moved the panel to a new group.
-    gid = _group_id_for_panel(page, "controls")
-    assert page.evaluate(
-        "(gid) => window.__dockLayout.groups[gid].collapsed !== true", gid
-    ), "a drag from the + should EXPAND the panel"
-    assert _floating_window_for_panel(page, "controls") is not None, (
-        "the expanded panel should now float"
-    )
+    _drag(page, (btn["x"], btn["y"]), (btn["x"] - 200, btn["y"] + 250))
+    assert _collapsed(page, gid), "a drag from the + must NOT expand the window"
+    after = _floating_window_for_panel(page, "controls")
+    assert after is not None
+    assert abs(after["x"] - before["x"]) > 100, "drag should have moved the window"
     page.close()
 
 
 # ---------------------------------------------------------------------------
-# 10. The column handle persists when every child is minimized (strips reserve
-#     width; no more canvas-overlay rail), so minimize-all is reversible from
-#     the handle.
+# 10. Chevrons are drag-through (T6 resolved): a real pointer DRAG from the
+#     region chevron drags the whole stack out (no collapse committed); a
+#     motionless real click collapses via the host bar's backing click.
 # ---------------------------------------------------------------------------
-def test_column_handle_persists_fully_minimized(dock_context, vite_server) -> None:
+def test_region_chevron_drag_through_and_click(dock_context, vite_server) -> None:
+    """Spec D32/T6: the region-collapse chevron flows its press to the region
+    parent handle's drag arbitration. Motion drags the REGION out as one
+    floating window (nothing collapses); a motionless click collapses the
+    region to its rail."""
     page = _open(dock_context, vite_server)
-    # Arrange: a 2-leaf vertical column docked right (the minimize-all clicks
-    # on its column handle are the subject).
     set_layout(page, dock_layout(docked_right=stack("inspector", "controls")))
-    assert page.query_selector("[data-dock-column-handle]") is not None
     a = _group_id_for_panel(page, "controls")
     b = _group_id_for_panel(page, "inspector")
 
-    page.eval_on_selector(
-        "[data-dock-column-handle] [data-dock-minimize-all]", "e => e.click()"
-    )
-    page.wait_for_timeout(120)
-    assert page.query_selector("[data-dock-column-handle]") is not None, (
-        "the column handle must persist when all children are minimized"
-    )
+    # D32: neither stacked cell renders a cell-level minimize control.
     for gid in (a, b):
-        assert page.evaluate(
-            "(gid) => window.__dockLayout.groups[gid].collapsed === true", gid
-        )
-    page.eval_on_selector(
-        "[data-dock-column-handle] [data-dock-minimize-all]", "e => e.click()"
-    )
-    page.wait_for_timeout(120)
-    for gid in (a, b):
-        assert page.evaluate(
-            "(gid) => window.__dockLayout.groups[gid].collapsed !== true", gid
-        )
-    page.close()
+        assert (
+            page.eval_on_selector_all(
+                f'[data-dock-group="{gid}"] [data-dock-minimize]', "els => els.length"
+            )
+            == 0
+        ), "a plain stack's cells must not render a cell-level minimize (D32)"
 
-
-# ---------------------------------------------------------------------------
-# 11. Dropping an expanded panel BELOW a minimized strip restores the region
-#     to a usable width (regression: the region used to stay at strip width,
-#     squeezing the new panel into 36px).
-# ---------------------------------------------------------------------------
-def test_drop_below_strip_restores_region_width(dock_context, vite_server) -> None:
-    page = _open(dock_context, vite_server)
-    # Arrange: controls docked right + inspector floating (the minimize and the
-    # drop-below-the-strip gesture are the subject).
-    set_layout(
-        page,
-        dock_layout(
-            docked_right=columns("controls"),
-            floating=[window("inspector", x=680, y=120, width=260)],
-        ),
-    )
-    gid = _group_id_for_panel(page, "controls")
-    page.eval_on_selector(
-        f'[data-dock-group="{gid}"] [data-dock-minimize]', "e => e.click()"
-    )
-    page.wait_for_timeout(120)
-    strip = page.eval_on_selector(
-        '[data-dock-leaf][data-dock-edge="right"]',
+    # DRAG from the chevron: the press flows to the parent handle -> the
+    # whole region floats as one (expanded) window; no rail appears.
+    btn = page.eval_on_selector(
+        '[data-dock-region-collapse="right"]',
         "e => { const r = e.getBoundingClientRect(); "
-        "return { x: r.x + r.width/2, bottom: r.bottom }; }",
+        "return { x: r.x + r.width/2, y: r.y + r.height/2 }; }",
     )
-    # Drop inspector on the strip's BOTTOM band -> column[strip, inspector].
-    _drag(page, _grip(page, "inspector"), (strip["x"], strip["bottom"] - 30))
-    tree = _layout(page)["docked"]["right"]
-    if tree is None or tree.get("dir") != "column":
-        pytest.skip("below-split didn't land this run")
-    widths = page.evaluate(
-        """() => [...document.querySelectorAll(
-            '[data-dock-leaf][data-dock-edge="right"]')]
-            .map(l => Math.round(l.getBoundingClientRect().width))"""
+    _drag(page, (btn["x"], btn["y"]), (500, 400))
+    state = page.evaluate(
+        """() => {
+            const l = window.__dockLayout;
+            const win = l.floating.find((w) => w.stack.length === 2);
+            return {
+                dockedRight: l.docked.right,
+                floated: win !== undefined,
+                collapsed: win ? win.collapsed === true : null,
+            };
+        }"""
     )
-    assert all(w >= 200 for w in widths), (
-        f"region must restore to a usable width after the drop, got {widths}"
+    assert state["floated"] and state["dockedRight"] is None, (
+        "dragging the chevron should drag the whole stack out (drag-through)"
     )
+    assert state["collapsed"] is not True, (
+        "a drag from the chevron must NOT collapse (motion beats click)"
+    )
+    assert page.query_selector("[data-dock-rail-root]") is None
+
+    # Re-seed, then a REAL motionless click on the chevron collapses
+    # the whole region to its rail (the host bar's backing click).
+    set_layout(page, dock_layout(docked_right=stack("inspector", "controls")))
+    btn2 = page.eval_on_selector(
+        '[data-dock-region-collapse="right"]',
+        "e => { const r = e.getBoundingClientRect(); "
+        "return { x: r.x + r.width/2, y: r.y + r.height/2 }; }",
+    )
+    page.mouse.click(btn2["x"], btn2["y"])
+    page.wait_for_timeout(200)
+    assert page.query_selector("[data-dock-rail-root]") is not None, (
+        "a motionless real click on the chevron must collapse to the rail"
+    )
+    page.close()
 
 
 # ---------------------------------------------------------------------------
@@ -516,32 +511,36 @@ def test_escape_after_undock_restores_region_width(dock_context, vite_server) ->
 #     window restores the minimized state (the expand is an up-front commit,
 #     paired with its restore snapshot by dragAfterCommit).
 # ---------------------------------------------------------------------------
-def test_escape_after_expand_on_drag_restores_minimized(
-    dock_context, vite_server
-) -> None:
+def test_escape_during_rail_cell_drag_restores_rail(dock_context, vite_server) -> None:
+    """Dragging a rail cell out commits a float up front (born collapsed,
+    D38); Escape mid-drag must restore the pre-drag DOCKED rail state (the
+    up-front commit is paired with its restore snapshot)."""
     page = _open(dock_context, vite_server)
-    set_layout(
-        page,
-        dock_layout(floating=[window(group("controls", collapsed=True), x=400, y=200)]),
-    )
-    gid = "t-controls"
-    btn = page.eval_on_selector(
-        f'[data-dock-group="{gid}"] [data-dock-minimize]',
+    set_layout(page, dock_layout(docked_right=stack("inspector", "controls")))
+    page.eval_on_selector('[data-dock-region-collapse="right"]', "e => e.click()")
+    page.wait_for_timeout(200)
+    assert region_collapsed(page, "right")
+    cell = page.eval_on_selector(
+        '[data-dock-group="t-controls"][data-dock-collapsed]',
         "e => { const r = e.getBoundingClientRect(); "
         "return { x: r.x + r.width/2, y: r.y + r.height/2 }; }",
     )
-    page.mouse.move(btn["x"], btn["y"])
+    page.mouse.move(cell["x"], cell["y"])
     page.mouse.down()
-    page.mouse.move(btn["x"] + 6, btn["y"] + 6, steps=2)
-    page.mouse.move(btn["x"] + 80, btn["y"] + 120, steps=10)
-    page.wait_for_timeout(120)  # expand-on-drag has committed by now
+    page.mouse.move(cell["x"] - 6, cell["y"] + 6, steps=2)
+    page.mouse.move(500, 400, steps=10)
+    page.wait_for_timeout(120)  # the float-out has committed by now
     page.keyboard.press("Escape")
     page.wait_for_timeout(120)
     page.mouse.up()
     page.wait_for_timeout(120)
-    assert page.evaluate(
-        "(gid) => window.__dockLayout.groups[gid].collapsed === true", gid
-    ), "Escape must restore the pre-drag minimized state"
+    assert _floating_window_for_panel(page, "controls") is None, (
+        "Escape must undo the drag's up-front float"
+    )
+    assert region_collapsed(page, "right"), (
+        "Escape must restore the pre-drag railed region"
+    )
+    assert page.query_selector("[data-dock-rail-root]") is not None
     page.close()
 
 
@@ -620,5 +619,51 @@ def test_dragged_window_stays_on_cursor_through_resize(
     assert win is not None
     assert abs(win["x"] - expected) < 30, (
         f"drop should commit the cursor-aligned x (~{expected}), got {win['x']}"
+    )
+    page.close()
+
+
+# ---------------------------------------------------------------------------
+# Spec edge case 10: target rects that move MID-DRAG without a layout change
+# (viewport resize here; container scroll shares the same staleness flag) must
+# not desync drop resolution -- the drop lands on what's visibly under the
+# pointer, not on drag-start geometry.
+# ---------------------------------------------------------------------------
+def test_viewport_resize_mid_drag_keeps_drop_targets_fresh(
+    dock_context, vite_server
+) -> None:
+    page = _open(dock_context, vite_server)
+    set_layout(
+        page,
+        dock_layout(
+            docked_right=columns("controls"),
+            floating=[window("console", x=250, y=350, width=240)],
+        ),
+    )
+    gx, gy = _grip(page, "console")
+    page.mouse.move(gx, gy)
+    page.mouse.down()
+    page.mouse.move(500, 300, steps=8)  # drag well clear of the region
+    # Mid-drag the viewport narrows by 300px: the right region's rects shift
+    # left while the layout model is unchanged (no re-collect trigger before
+    # the staleness fix).
+    page.set_viewport_size({"width": 980, "height": 720})
+    page.wait_for_timeout(150)
+    # Drop on the region's NEW content center (region spans ~680..980; the
+    # D1 center-merge third is comfortably around x=830). Against drag-start
+    # rects this point was empty canvas.
+    page.mouse.move(830, 300, steps=6)
+    page.mouse.move(830, 300)
+    page.mouse.up()
+    page.wait_for_timeout(200)
+    merged = page.evaluate(
+        "() => window.__dockLayout.groups['t-controls']?.paneIds ?? []"
+    )
+    docked_right = page.evaluate(
+        "() => JSON.stringify(window.__dockLayout.docked.right ?? {})"
+    )
+    assert "console" in merged or "t-console" in docked_right, (
+        f"drop after mid-drag resize should land in the region "
+        f"(merged={merged}, right={docked_right})"
     )
     page.close()

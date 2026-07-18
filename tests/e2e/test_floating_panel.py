@@ -104,7 +104,9 @@ def test_drag_to_left_edge_docks(viser_page: Page) -> None:
 
     assert _dock_side(viser_page) == "left"
     panel = _panel_box(viser_page)
-    assert panel["x"] < 5
+    # D54: docked panels sit a small edge gutter (REGION_EDGE_GAP_PX, 2px)
+    # inside the screen edge.
+    assert panel["x"] < 8
     assert panel["height"] > _VIEWPORT["height"] * 0.9
 
     # The canvas is inset on the left by (about) the panel's width.
@@ -122,7 +124,7 @@ def test_drag_to_right_edge_docks(viser_page: Page) -> None:
 
     assert _dock_side(viser_page) == "right"
     panel = _panel_box(viser_page)
-    assert panel["x"] + panel["width"] > _VIEWPORT["width"] - 5
+    assert panel["x"] + panel["width"] > _VIEWPORT["width"] - 8  # D54 gutter
     assert panel["height"] > _VIEWPORT["height"] * 0.9
 
     # The canvas is inset on the right: its left edge stays at 0.
@@ -232,37 +234,84 @@ def test_notification_offset_clear_of_left_dock(
     )
 
 
-def test_switching_layout_releases_dock(
+def test_deprecated_control_layout_docks_right(
     viser_page: Page, viser_server: viser.ViserServer
 ) -> None:
-    """Regression: docking, then switching control_layout away from floating,
-    must release the dock so the canvas stops reserving the panel's column.
-
-    The sidebar layout lives on the right, so a stale *left* dock would leave
-    the canvas pushed in from the left -- the artifact this guards against."""
+    """The deprecated ``control_layout="fixed"`` / ``"collapsible"`` now docks the
+    control panel to the right edge (via the new `main_panel` placement path),
+    instead of switching to the old sidebar layout. The floating panel stays
+    mounted on the dock surface; the canvas insets on the right."""
     viser_page.set_viewport_size(_VIEWPORT)
     viser_page.wait_for_timeout(300)
 
-    # Dock to the left; the canvas should inset from the left.
-    start = _center(_bbox(viser_page, "floating-panel-handle"))
-    _drag_handle_to(viser_page, (20, start[1]))
-    assert _dock_side(viser_page) == "left"
-    assert _canvas_box(viser_page)["x"] > 100
+    # Start undocked (default top-right float).
+    assert _dock_side(viser_page) == "none"
 
-    # Switch to a sidebar layout: the floating panel unmounts and must clean up.
+    # The deprecated setting translates to main_panel.dock_right().
     viser_server.gui.configure_theme(control_layout="fixed")
-    expect(viser_page.get_by_test_id("floating-panel")).to_have_count(0, timeout=5_000)
-    viser_page.wait_for_timeout(300)
+    viser_page.wait_for_timeout(500)
 
-    # Canvas no longer carries the (now-defunct) left dock inset.
+    # Panel stays mounted and is now docked to the right edge.
+    expect(viser_page.get_by_test_id("floating-panel")).to_be_visible()
+    assert _dock_side(viser_page) == "right"
+    panel = _panel_box(viser_page)
+    assert panel["x"] + panel["width"] > _VIEWPORT["width"] - 8  # D54 gutter
+    assert panel["height"] > _VIEWPORT["height"] * 0.9
+    # Canvas insets on the right (left edge stays at 0).
     assert _canvas_box(viser_page)["x"] < 5
 
 
-def test_minimize_while_docked_keeps_handle(viser_page: Page) -> None:
-    """Minimizing a DOCKED control panel must keep the floating-panel-handle
-    testid reachable (on the minimized strip) and clicking it must expand the
-    panel again -- the original FloatingPanel kept its handle through
-    minimize."""
+def test_minimize_floating_keeps_face_bar_geometry(viser_page: Page) -> None:
+    """D33 constancy pin, FLOATING: a header click (no motion) minimizes the
+    single-group floating control panel to its FACE bar -- the header kept
+    in place. The bar keeps the header's exact outer height (the compact
+    toggle sits at the same header inset) and the window's width; clicking
+    again expands it back. (Since D32 the header-click minimize exists ONLY
+    on a single-group floating window; the docked flow is the chevron --
+    see the companion test.)"""
+    viser_page.set_viewport_size(_VIEWPORT)
+    viser_page.wait_for_timeout(300)
+    assert _dock_side(viser_page) == "none"
+    wide = _panel_box(viser_page)["width"]
+
+    # Measure the HEADER box, not the testid (the connection-status row is
+    # the header's content box while expanded but stretches to fill the bar
+    # while minimized -- the constant thing is the header's outer height).
+    expanded_h = viser_page.eval_on_selector(
+        "[data-dock-unmergeable-header]",
+        "e => e.getBoundingClientRect().height",
+    )
+    handle = viser_page.get_by_test_id("floating-panel-handle")
+    handle.click()
+    viser_page.wait_for_timeout(400)
+    handle = viser_page.get_by_test_id("floating-panel-handle")
+    expect(handle).to_be_visible()
+    bar = handle.bounding_box()
+    assert bar is not None and abs(bar["height"] - expanded_h) <= 2, (
+        f"minimized face bar must keep the header height "
+        f"(expanded {expanded_h}), got {bar}"
+    )
+    assert bar["width"] > wide - 30, (
+        f"the bar keeps the window's width (P8/D17/D20), got {bar}"
+    )
+
+    # Clicking the bar expands it back to the full panel.
+    handle.click()
+    viser_page.wait_for_timeout(400)
+    restored = _panel_box(viser_page)
+    assert restored["width"] > wide - 30
+    assert restored["height"] > bar["height"] + 40, (
+        f"expand should restore the panel body ({bar['height']} -> "
+        f"{restored['height']})"
+    )
+
+
+def test_docked_collapse_via_chevron_keeps_handle(viser_page: Page) -> None:
+    """Docked, the control panel has NO header-click minimize (D32): its
+    collapse affordance is the region chevron, which renders the 36px rail.
+    The floating-panel-handle testid follows to the rail cell, and clicking
+    it expands the panel again (a lone rail cell's background backs the
+    expand, P9)."""
     viser_page.set_viewport_size(_VIEWPORT)
     viser_page.wait_for_timeout(300)
 
@@ -271,19 +320,28 @@ def test_minimize_while_docked_keeps_handle(viser_page: Page) -> None:
     assert _dock_side(viser_page) == "right"
     wide = _panel_box(viser_page)["width"]
 
-    # Click the handle (no motion) to minimize: the panel becomes a narrow
-    # vertical strip, and the handle testid must follow it.
-    handle = viser_page.get_by_test_id("floating-panel-handle")
-    handle.click()
+    # A header click must NOT minimize while docked (drag-only surface).
+    viser_page.get_by_test_id("floating-panel-handle").click()
+    viser_page.wait_for_timeout(300)
+    assert viser_page.locator("[data-dock-group][data-dock-collapsed]").count() == 0, (
+        "a docked header click must not minimize (D32)"
+    )
+
+    # The chevron collapses the region to its rail; the handle testid moves
+    # to the rail cell.
+    chevron = viser_page.locator("[data-dock-region-collapse='right']")
+    expect(chevron).to_have_count(1)
+    chevron.click()
     viser_page.wait_for_timeout(400)
+    expect(viser_page.locator("[data-dock-rail-root]")).to_have_count(1)
     handle = viser_page.get_by_test_id("floating-panel-handle")
     expect(handle).to_be_visible()
     strip = handle.bounding_box()
     assert strip is not None and strip["width"] < 60, (
-        f"minimized docked panel should be a narrow strip, got {strip}"
+        f"the docked collapsed form is the ~36px rail cell, got {strip}"
     )
 
-    # Clicking the strip handle expands it back to a wide docked panel.
+    # Clicking the rail cell expands the panel back to a wide docked panel.
     handle.click()
     viser_page.wait_for_timeout(400)
     restored = _panel_box(viser_page)["width"]

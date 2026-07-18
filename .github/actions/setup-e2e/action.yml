@@ -13,15 +13,24 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Set up Python ${{ inputs.python-version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ inputs.python-version }}
-
+    # Python is provisioned by uv (like every other Python workflow in this
+    # repo: pytest/pyright pass --python to uv). actions/setup-python@v4
+    # broke for 3.9 when the runner image dropped EOL versions from its tool
+    # cache (its fallback download returns an HTML error page); uv's managed
+    # Python downloads are independent of the runner's tool cache.
     - name: Install uv
       uses: astral-sh/setup-uv@v5
       with:
         enable-cache: true
+        cache-suffix: ${{ inputs.python-version }}
+
+    # Pin the interpreter for EVERY uv invocation in this job (this step and
+    # the calling workflow's test steps): a lone `uv run` without --python
+    # would otherwise resolve its own default interpreter, silently REBUILD
+    # .venv against it, and drop the dev extras installed below.
+    - name: Pin uv's Python for the whole job
+      shell: bash
+      run: echo "UV_PYTHON=${{ inputs.python-version }}" >> "$GITHUB_ENV"
 
     - name: Install Python dependencies
       shell: bash

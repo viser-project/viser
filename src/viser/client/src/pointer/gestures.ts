@@ -1,4 +1,5 @@
 import {
+  keyModifierFromEvent,
   matchesModifierFilter,
   motionExceedsThreshold,
   pointerButtonFromNative,
@@ -6,10 +7,7 @@ import {
   type KeyModifier,
 } from "../dragUtils";
 import { CameraLockManager } from "./cameraLock";
-import {
-  HoverCursorManager,
-  type ScenePointerEventType,
-} from "./hoverSet";
+import { HoverCursorManager, type ScenePointerEventType } from "./hoverSet";
 
 export type { ScenePointerEventType } from "./hoverSet";
 
@@ -52,7 +50,10 @@ const IDLE: CanvasGesture = { kind: "idle" };
 
 export class ScenePointerController {
   private gesture: CanvasGesture = IDLE;
-  private readonly filters = new Map<ScenePointerEventType, (KeyModifier | null)[]>();
+  private readonly filters = new Map<
+    ScenePointerEventType,
+    (KeyModifier | null)[]
+  >();
   /** Cleanup for window-level pointerup/pointercancel listeners
    * installed while a gesture is engaged. Null when idle. The
    * listeners catch releases that happen off the canvas -- a
@@ -84,7 +85,9 @@ export class ScenePointerController {
       this.cancelPointer(event.pointerId);
     };
     window.addEventListener("pointerup", onPointerUp, { passive: true });
-    window.addEventListener("pointercancel", onPointerCancel, { passive: true });
+    window.addEventListener("pointercancel", onPointerCancel, {
+      passive: true,
+    });
     this.windowListenerCleanup = () => {
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerCancel);
@@ -178,7 +181,10 @@ export class ScenePointerController {
   /** Returns true when the rect-select overlay should repaint. */
   onPointerMove(args: { pointerId: number; xy: [number, number] }): boolean {
     const g = this.gesture;
-    if (g.kind !== "scene-pointer-candidate" && g.kind !== "scene-rect-select") {
+    if (
+      g.kind !== "scene-pointer-candidate" &&
+      g.kind !== "scene-rect-select"
+    ) {
       return false;
     }
     if (g.pointerId !== args.pointerId) return false;
@@ -269,7 +275,10 @@ type NodeCandidate = {
   startClientXy: [number, number];
   release: (() => void) | null;
   cleanup: () => void;
-  onPromote: (() => boolean) | null;
+  /** Called with the modifier held on the promoting pointermove -- the
+   * modifier may have changed since pointerdown, and the drag layer's
+   * own key listeners only install once the drag begins. */
+  onPromote: ((promotionModifier: KeyModifier | null) => boolean) | null;
 };
 
 export class NodeGestureController {
@@ -295,7 +304,7 @@ export class NodeGestureController {
     nodeKey: string;
     startClientXy: [number, number];
     lockCamera: boolean;
-    onPromote: (() => boolean) | null;
+    onPromote: ((promotionModifier: KeyModifier | null) => boolean) | null;
   }): void {
     this.cancelCandidate();
 
@@ -310,7 +319,7 @@ export class NodeGestureController {
       ) {
         return;
       }
-      this.promoteOrCancelCandidate();
+      this.promoteOrCancelCandidate(keyModifierFromEvent(event));
     };
     const handlePointerUp = (event: PointerEvent) => {
       const candidate = this.candidate;
@@ -379,12 +388,14 @@ export class NodeGestureController {
     this.cancelAny();
   }
 
-  private promoteOrCancelCandidate(): void {
+  private promoteOrCancelCandidate(
+    promotionModifier: KeyModifier | null,
+  ): void {
     const candidate = this.candidate;
     if (candidate === null) return;
     const promote = candidate.onPromote;
     this.cancelCandidate();
-    if (promote !== null) promote();
+    if (promote !== null) promote(promotionModifier);
   }
 
   private cancelCandidate(): void {

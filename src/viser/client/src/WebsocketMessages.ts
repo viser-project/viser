@@ -1647,6 +1647,87 @@ export interface GuiFormDirtyMessage {
   type: "GuiFormDirtyMessage";
   uuid: string;
 }
+/** Dock/float a panel (or the main control panel). Write-only.
+ *
+ * (automatically generated)
+ */
+export interface GuiSetPanelPositionMessage {
+  type: "GuiSetPanelPositionMessage";
+  uuid: string;
+  position:
+    | { kind: "edge"; edge: "left" | "right" }
+    | { kind: "split"; anchor_uuid: string; side: "above" | "below" }
+    | { kind: "float"; x: number | null; y: number | null };
+  counter: number;
+  run_id: string;
+}
+/** Set a panel's width in pixels (None clears the override -> default/theme
+ * width). Write-only.
+ *
+ * (automatically generated)
+ */
+export interface GuiSetPanelWidthMessage {
+  type: "GuiSetPanelWidthMessage";
+  uuid: string;
+  width: number | null;
+  counter: number;
+  run_id: string;
+}
+/** Set a panel's height in pixels (floating panels only; None clears the
+ * override -> auto). Write-only.
+ *
+ * (automatically generated)
+ */
+export interface GuiSetPanelHeightMessage {
+  type: "GuiSetPanelHeightMessage";
+  uuid: string;
+  height: number | null;
+  counter: number;
+  run_id: string;
+}
+/** Minimize (collapse) or expand a panel's CONTAINER. Write-only.
+ *
+ * Collapse is container state on the client (a floating window's flag or a
+ * docked column's rail), so this applies to the panel's containing stack --
+ * panels stacked together minimize together, exactly like the on-screen
+ * minimize control (D47; supersedes D31's removal, whose motivating
+ * mixed-stack awkwardness was dissolved by container-owned collapse).
+ *
+ *
+ * (automatically generated)
+ */
+export interface GuiSetPanelCollapsedMessage {
+  type: "GuiSetPanelCollapsedMessage";
+  uuid: string;
+  collapsed: boolean;
+  counter: number;
+  run_id: string;
+}
+/** A standalone panel: a dockable / floating GUI container that lives outside
+ * the control panel. Deliberately NOT a GuiComponentMessage -- it is a
+ * top-level entity (like a modal), so it never enters the inline GUI tree.
+ *
+ * (automatically generated)
+ */
+export interface GuiPanelMessage {
+  type: "GuiPanelMessage";
+  uuid: string;
+  props: {
+    _tab_labels: string[];
+    _tab_icons_html: (string | null)[];
+    _tab_container_ids: string[];
+    order: number;
+    visible: boolean;
+  };
+}
+/** Sent server->client to remove a standalone panel.
+ *
+ * (automatically generated)
+ */
+export interface GuiPanelRemoveMessage {
+  type: "GuiPanelRemoveMessage";
+  uuid: string;
+}
 /** GuiModalMessage(order: 'float', uuid: 'str', title: 'str')
  *
  * (automatically generated)
@@ -1820,6 +1901,18 @@ export interface FileTransferPartAck {
  */
 export interface ShareUrlRequest {
   type: "ShareUrlRequest";
+}
+/** Server->client marker: the (re)connect replay of the persistent message
+ * buffer is complete -- everything after this is live traffic. Injected
+ * per-connection by the message producer (never stored in the buffer). The
+ * client uses it to end its reconnect phase: state held dormant across the
+ * replay (e.g. dock panes for panels that may be re-created under the same
+ * uuid) is purged for entities the replay did not revive.
+ *
+ * (automatically generated)
+ */
+export interface ReplayDoneMessage {
+  type: "ReplayDoneMessage";
 }
 /** Message from server->client to indicate that the share URL has been updated.
  *
@@ -2034,6 +2127,12 @@ export type Message =
   | ResetGuiMessage
   | GuiFormSubmitMessage
   | GuiFormDirtyMessage
+  | GuiSetPanelPositionMessage
+  | GuiSetPanelWidthMessage
+  | GuiSetPanelHeightMessage
+  | GuiSetPanelCollapsedMessage
+  | GuiPanelMessage
+  | GuiPanelRemoveMessage
   | GuiModalMessage
   | GuiCloseModalMessage
   | GuiButtonHoldMessage
@@ -2047,6 +2146,7 @@ export type Message =
   | FileTransferPart
   | FileTransferPartAck
   | ShareUrlRequest
+  | ReplayDoneMessage
   | ShareUrlUpdated
   | ShareUrlDisconnect
   | SetGuiPanelLabelMessage

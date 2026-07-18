@@ -225,7 +225,9 @@ function createObjectFactory(
         zy: [-Math.PI / 2.0, 0.0, -Math.PI / 2.0],
       };
       const gridQuaternion = new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(...(planeEulers[message.props.plane] ?? planeEulers.zy)),
+        new THREE.Euler(
+          ...(planeEulers[message.props.plane] ?? planeEulers.zy),
+        ),
       );
 
       return {
@@ -1051,7 +1053,11 @@ export function SceneNodeThreeObject(props: { name: string }) {
                       onPromote:
                         beginDragArgs === null || dragLayer === null
                           ? null
-                          : () => dragLayer.beginDrag(beginDragArgs),
+                          : (promotionModifier) =>
+                              dragLayer.beginDrag({
+                                ...beginDragArgs,
+                                promotionModifier,
+                              }),
                     });
                     if (dragMatches) e.nativeEvent.preventDefault();
                   }

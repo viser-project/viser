@@ -810,6 +810,10 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             message_class=_messages.Message,
             http_server_root=Path(__file__).resolve().parent / "client" / "build",
             verbose=verbose,
+            # End-of-replay marker: lets the client hold reconnect-sensitive
+            # state (dock panes for same-uuid panels) dormant until the replay
+            # provably finished, instead of guessing from store emptiness.
+            backlog_done_message=_messages.ReplayDoneMessage(),
         )
         self._websock_server = server
 

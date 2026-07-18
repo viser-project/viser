@@ -97,6 +97,69 @@ export function anyBindingMatches(
   return bindings.some((b) => matchesDragBinding(b, input));
 }
 
+/** Plan emitted by :func:`planModifierTransition`: which lifecycle
+ * messages a mid-drag modifier change should produce. */
+export type DragModifierTransition = {
+  /** Send a ``phase="end"`` for the *current* (pre-switch) modifier
+   * before switching ownership. True iff a segment is currently active. */
+  emitEnd: boolean;
+  /** Send a ``phase="start"`` under the *new* modifier after switching.
+   * True iff the new combo matches a registered binding. */
+  emitStart: boolean;
+};
+
+/** Decide how an in-progress drag reacts to a mid-gesture modifier change.
+ *
+ * A single physical drag is partitioned into one logical segment per
+ * (button, modifier) combo. When the held modifier changes, the current
+ * segment is ended and -- if the new combo matches a registered binding --
+ * a fresh segment is started under it. The grab geometry (plane, grab
+ * point, instance) is preserved across the boundary by the caller, so the
+ * drag continues without a visual jump; only which callback set is
+ * addressed changes.
+ *
+ * If the new combo matches no binding the drag goes *dormant*: the
+ * physical gesture stays alive (camera locked, geometry retained) but no
+ * messages are sent, so the user's callbacks see properly paired
+ * start/end per bound combo. Re-entering a bound combo before release
+ * starts a fresh segment.
+ *
+ * Returns ``null`` when the modifier is unchanged (a no-op). */
+export function planModifierTransition(
+  current: KeyModifier | null,
+  next: KeyModifier | null,
+  bindings: DragBinding[],
+  button: PointerButton,
+  segmentActive: boolean,
+): DragModifierTransition | null {
+  if (next === current) return null;
+  return {
+    emitEnd: segmentActive,
+    emitStart: anyBindingMatches(bindings, { button, modifier: next }),
+  };
+}
+
+/** Decide the opening segment for a drag promoted at the motion
+ * threshold. ``pointerdownInput`` was sampled at pointerdown, but the
+ * held modifier may have changed before the threshold-crossing
+ * pointermove (the promotion event) -- the drag layer's key listeners
+ * only install at promotion, so that window is otherwise invisible. The
+ * opening segment is attributed to the promotion-time modifier; when
+ * that combo is unbound the drag begins *dormant* (no ``start`` sent),
+ * exactly like a mid-drag switch to an unbound combo (see
+ * :func:`planModifierTransition`). */
+export function planDragStart(
+  pointerdownInput: DragInput,
+  promotionModifier: KeyModifier | null,
+  bindings: DragBinding[],
+): { input: DragInput; emitStart: boolean } {
+  const input =
+    promotionModifier === pointerdownInput.modifier
+      ? pointerdownInput
+      : { ...pointerdownInput, modifier: promotionModifier };
+  return { input, emitStart: anyBindingMatches(bindings, input) };
+}
+
 /** True when the held modifier includes cmd/ctrl. Used to gate browser
  * context-menu suppression: macOS raises a ``contextmenu`` event on
  * ctrl+click, and we only want to suppress it when the gesture is a
@@ -114,6 +177,19 @@ export function hasCmdCtrl(modifier: KeyModifier | null): boolean {
  * sites by reference, not by repeated literal. */
 export const MOTION_THRESHOLD_PX = 3;
 
+/** How long a *switch-created* drag segment's ``start`` is held back
+ * before being sent. A mid-drag modifier change ends the old segment
+ * immediately, but the new segment's ``start`` only goes out once the
+ * switch is confirmed: by this timer expiring, or sooner by pointer
+ * motion past :data:`MOTION_THRESHOLD_PX` from the switch point. If the
+ * button is released first, the pending ``start`` is discarded --
+ * releasing the modifier a beat before the mouse button (the natural
+ * order for ending a modifier-drag) must not fire a degenerate
+ * ``start``/``end`` pair on whatever combo remains. The same philosophy
+ * as the motion threshold at drag promotion, applied at segment
+ * boundaries. */
+export const SWITCH_START_DELAY_MS = 100;
+
 /** ``true`` when the L∞ distance between ``start`` and ``end`` exceeds
  * :data:`MOTION_THRESHOLD_PX`. Equivalent to the duplicated inline
  * ``Math.abs(end[0] - start[0]) > N || Math.abs(end[1] - start[1]) > N``
@@ -129,7 +205,6 @@ export function motionExceedsThreshold(
     Math.abs(end[1] - start[1]) > MOTION_THRESHOLD_PX
   );
 }
-
 
 // ============================================================================
 // Active-drag state shape + batched-pose math.
@@ -167,7 +242,28 @@ export type ActiveDragState = {
    * compute ``end_screen_pos`` and re-cast the pointer ray each
    * pointermove. */
   endPointerXy: [number, number];
+  /** Current (button, modifier) the drag is owned by. ``button`` is
+   * frozen at drag-start; ``modifier`` is *live* -- it switches when the
+   * held modifier changes mid-drag, partitioning the gesture into one
+   * segment per combo (see :func:`planModifierTransition`). */
   input: DragInput;
+  /** Whether an in-flight segment is currently active (a ``start`` was
+   * sent and its ``end`` hasn't). ``false`` while dormant -- the gesture
+   * is physically held but the current modifier matches no binding, so
+   * no messages are sent -- and while a switch-created ``start`` is
+   * still pending confirmation (see ``pendingStart``). */
+  segmentActive: boolean;
+  /** A switch-created segment whose ``start`` has not been sent yet
+   * (see :data:`SWITCH_START_DELAY_MS`). Confirmed -- and the ``start``
+   * sent -- by the timer or by pointer motion past the threshold from
+   * ``switchPointerXy`` (canvas-relative, captured at the switch);
+   * discarded wholesale if the drag ends or the modifier changes again
+   * first, in which case no message was ever sent for the segment.
+   * ``null`` when no start is pending. */
+  pendingStart: {
+    timerId: ReturnType<typeof setTimeout>;
+    switchPointerXy: [number, number];
+  } | null;
   /** Release for the camera-control lock held for the lifetime of
    * this drag. Called in `stopActiveDrag` (and on every cancel
    * path). Routing through `cameraLock` keeps a concurrent

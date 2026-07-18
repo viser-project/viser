@@ -35,10 +35,13 @@ function checkWebGLSupport(): {
     supported = true;
     const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
     if (debugInfo) {
-      renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) ?? "unknown";
+      renderer =
+        gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) ?? "unknown";
       vendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) ?? "unknown";
     } else {
-      console.log("WEBGL_debug_renderer_info unavailable; software rendering detection skipped.");
+      console.log(
+        "WEBGL_debug_renderer_info unavailable; software rendering detection skipped.",
+      );
     }
   } else if (!contextCreationFailed) {
     // getContext returned null but no exception -- WebGL might not exist.

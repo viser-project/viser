@@ -1,5 +1,9 @@
 // @ts-nocheck
-export type InstancedRenderItem = { index: number; depth: number; depthSort: number };
+export type InstancedRenderItem = {
+  index: number;
+  depth: number;
+  depthSort: number;
+};
 
 /**
  * A class that creates and manages a list of render items, used to determine the rendering order based on depth.

@@ -22,7 +22,11 @@ describe("syncPointCloudGeometry", () => {
     const posVersion = pos1.version;
 
     const newPoints = new Float32Array([2, 2, 2, 3, 3, 3]);
-    syncPointCloudGeometry(geom, newPoints, new Uint8Array([0, 0, 255, 255, 255, 0]));
+    syncPointCloudGeometry(
+      geom,
+      newPoints,
+      new Uint8Array([0, 0, 255, 255, 255, 0]),
+    );
 
     expect(geom.getAttribute("position")).toBe(pos1); // same object -> same GPU buffer
     expect(geom.getAttribute("color")).toBe(col1);

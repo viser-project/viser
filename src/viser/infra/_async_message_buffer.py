@@ -148,12 +148,23 @@ class AsyncMessageBuffer:
             pass
 
     async def window_generator(
-        self, client_id: int
+        self, client_id: int, backlog_done_message: Message | None = None
     ) -> AsyncGenerator[Sequence[Message], None]:
         """Async iterator over messages. Loops infinitely, and waits when no messages
-        are available."""
+        are available.
+
+        When `backlog_done_message` is given, it is injected into the stream
+        exactly once, immediately after the last message that was already
+        buffered when this generator started -- an explicit end-of-replay
+        marker for a (re)connecting client. It is never stored in the buffer
+        (each connection gets its own), so it has no redundancy/coalescing
+        semantics."""
 
         last_sent_id = -1
+        # The replay boundary: everything at or below this id is backlog the
+        # client must consume before the marker; everything above is live.
+        backlog_last_id = self.message_counter - 1
+        backlog_done_pending = backlog_done_message is not None
         flush_wait = self.event_loop.create_task(self.flush_event.wait())
         while not self.done:
             window: List[Message] = []
@@ -177,6 +188,18 @@ class AsyncMessageBuffer:
 
                 if message is not None and message.excluded_self_client != client_id:
                     window.append(message)
+
+            if (
+                backlog_done_pending
+                and last_sent_id >= backlog_last_id
+                and self.atomic_counter == 0
+            ):
+                # Backlog fully drained (or empty at connect): mark the end of
+                # the replay in-stream, ordered before any live message that
+                # lands after this window.
+                backlog_done_pending = False
+                assert backlog_done_message is not None
+                window.append(backlog_done_message)
 
             if len(window) > 0:
                 # Yield a window!

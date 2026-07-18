@@ -9,7 +9,7 @@ from typing import Any, ClassVar, Dict, Optional, Tuple, Type, TypeVar, Union, c
 
 import numpy as np
 import numpy.typing as npt
-from typing_extensions import Annotated, Literal, TypeAlias, override
+from typing_extensions import Annotated, Literal, TypeAlias, TypedDict, override
 
 from . import infra, theme, uplot
 
@@ -1740,6 +1740,101 @@ class GuiImageMessage(_CreateGuiComponentMessage):
     props: GuiImageProps
 
 
+class EdgePlacement(TypedDict):
+    """Dock a standalone panel to a viewport edge."""
+
+    kind: Literal["edge"]
+    edge: Literal["left", "right"]
+
+
+class SplitPlacement(TypedDict):
+    """Split a standalone panel above/below another panel (a column split)."""
+
+    kind: Literal["split"]
+    anchor_uuid: str
+    """Tab-group uuid of the anchor panel (CONTROL_PANEL_ID for the main panel)."""
+    side: Literal["above", "below"]
+
+
+class FloatPlacement(TypedDict):
+    """Float a standalone panel at an explicit position (None => client default)."""
+
+    kind: Literal["float"]
+    x: Optional[float]
+    y: Optional[float]
+
+
+# Panel placement is WRITE-ONLY from the server: each command fires one of the
+# per-axis messages below. There is no server-side placement state to read back;
+# all placement state lives on the client. Each message is an `update_simple`
+# entity update (entity "gui"), so they coalesce latest-wins PER MESSAGE TYPE
+# (position / width / height / collapsed stay in independent slots, never
+# clobbering each other), persist in the buffer, replay to late-joining clients,
+# and are purged when the panel is removed. This is the same lifecycle used by
+# scene SetPositionMessage / SetOrientationMessage. Because e.g. set_width emits
+# only GuiSetPanelWidthMessage (never a position), resizing can't re-dock a panel
+# the user has moved -- no before/after gating needed.
+
+
+@dataclasses.dataclass
+class GuiSetPanelPositionMessage(
+    Message,
+    entity=EntityLifecycle("gui", "update_simple", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """Dock/float a panel (or the main control panel). Write-only."""
+
+    uuid: str
+    position: Union[EdgePlacement, SplitPlacement, FloatPlacement]
+    counter: int
+    """Per-panel layout-update counter (bumped on EVERY placement call). The
+    client applies a replayed/late placement only if this exceeds the last it
+    applied for the panel -- OR the user hasn't manually moved the panel yet --
+    so a reconnect/re-run doesn't clobber a layout the user rearranged, while the
+    server can still re-assert by calling a placement method again."""
+    run_id: str
+    """Random id of the GuiApi instance that sent this (fresh per server process
+    and per client-scoped `client.gui`). The client compares it axis-by-axis
+    against the run_id it last applied: a DIFFERENT run_id means a new server
+    run (whose counters restarted) or another scope (whose counters are
+    independent), so the counter comparison is meaningless and the placement is
+    treated as a fresh, deliberate command."""
+
+
+@dataclasses.dataclass
+class GuiSetPanelWidthMessage(
+    Message,
+    entity=EntityLifecycle("gui", "update_simple", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """Set a panel's width in pixels (None clears the override -> default/theme
+    width). Write-only."""
+
+    uuid: str
+    width: Optional[float]
+    counter: int
+    """Per-panel layout-update counter; see GuiSetPanelPositionMessage."""
+    run_id: str
+    """Sending GuiApi instance id; see GuiSetPanelPositionMessage."""
+
+
+@dataclasses.dataclass
+class GuiSetPanelHeightMessage(
+    Message,
+    entity=EntityLifecycle("gui", "update_simple", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """Set a panel's height in pixels (floating panels only; None clears the
+    override -> auto). Write-only."""
+
+    uuid: str
+    height: Optional[float]
+    counter: int
+    """Per-panel layout-update counter; see GuiSetPanelPositionMessage."""
+    run_id: str
+    """Sending GuiApi instance id; see GuiSetPanelPositionMessage."""
+
+
 @dataclasses.dataclass
 class GuiTabGroupProps:
     _tab_labels: Tuple[str, ...]
@@ -1758,6 +1853,73 @@ class GuiTabGroupProps:
 class GuiTabGroupMessage(_CreateGuiComponentMessage):
     container_uuid: str
     props: GuiTabGroupProps
+
+
+@dataclasses.dataclass
+class GuiPanelProps:
+    """Props for a standalone panel (`server.gui.add_panel()`). A panel carries
+    its own tabs (it IS the tab container). Placement is NOT a prop: it is
+    write-only client state, driven by the GuiSetPanel* messages above."""
+
+    _tab_labels: Tuple[str, ...]
+    """(Private) Tuple of labels for each tab."""
+    _tab_icons_html: Tuple[Union[str, None], ...]
+    """(Private) Tuple of HTML strings for icons of each tab, or None if no icon."""
+    _tab_container_ids: Tuple[str, ...]
+    """(Private) Tuple of container IDs for each tab."""
+    order: float
+    """Order value for arranging panels."""
+    visible: bool
+    """Visibility state of the panel: when False the panel renders nothing (its
+    panes are removed from the dock layout) without being destroyed."""
+
+
+@dataclasses.dataclass
+class GuiSetPanelCollapsedMessage(
+    Message,
+    entity=EntityLifecycle("gui", "update_simple", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """Minimize (collapse) or expand a panel's CONTAINER. Write-only.
+
+    Collapse is container state on the client (a floating window's flag or a
+    docked column's rail), so this applies to the panel's containing stack --
+    panels stacked together minimize together, exactly like the on-screen
+    minimize control (D47; supersedes D31's removal, whose motivating
+    mixed-stack awkwardness was dissolved by container-owned collapse).
+    """
+
+    uuid: str
+    collapsed: bool
+    counter: int
+    """Per-panel layout-update counter; see GuiSetPanelPositionMessage."""
+    run_id: str
+    """Sending GuiApi instance id; see GuiSetPanelPositionMessage."""
+
+
+@dataclasses.dataclass
+class GuiPanelMessage(
+    Message,
+    entity=EntityLifecycle("gui", "create", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """A standalone panel: a dockable / floating GUI container that lives outside
+    the control panel. Deliberately NOT a GuiComponentMessage -- it is a
+    top-level entity (like a modal), so it never enters the inline GUI tree."""
+
+    uuid: str
+    props: GuiPanelProps
+
+
+@dataclasses.dataclass
+class GuiPanelRemoveMessage(
+    Message,
+    entity=EntityLifecycle("gui", "remove", "uuid"),
+    include_in_scene_serialization=False,
+):
+    """Sent server->client to remove a standalone panel."""
+
+    uuid: str
 
 
 @dataclasses.dataclass
@@ -2275,6 +2437,16 @@ class FileTransferPartAck(Message, include_in_scene_serialization=False):
 @dataclasses.dataclass
 class ShareUrlRequest(Message, include_in_scene_serialization=False):
     """Message from client->server to connect to the share URL server."""
+
+
+@dataclasses.dataclass
+class ReplayDoneMessage(Message, include_in_scene_serialization=False):
+    """Server->client marker: the (re)connect replay of the persistent message
+    buffer is complete -- everything after this is live traffic. Injected
+    per-connection by the message producer (never stored in the buffer). The
+    client uses it to end its reconnect phase: state held dormant across the
+    replay (e.g. dock panes for panels that may be re-created under the same
+    uuid) is purged for entities the replay did not revive."""
 
 
 @dataclasses.dataclass

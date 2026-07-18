@@ -22,7 +22,10 @@ export class InteractionController {
     this.hover = new HoverCursorManager(args.getCanvas, (eventType) =>
       this.scenePointer.getFilter(eventType),
     );
-    this.scenePointer = new ScenePointerController(this.cameraLocks, this.hover);
+    this.scenePointer = new ScenePointerController(
+      this.cameraLocks,
+      this.hover,
+    );
     this.nodeGestures = new NodeGestureController(this.cameraLocks);
   }
 
