@@ -105,12 +105,20 @@ describe("planModifierTransition", () => {
       planModifierTransition("cmd/ctrl", "cmd/ctrl", bindings, "left", true),
     ).toBeNull();
     // Even when nothing is held and nothing changes.
-    expect(planModifierTransition(null, null, bindings, "left", false)).toBeNull();
+    expect(
+      planModifierTransition(null, null, bindings, "left", false),
+    ).toBeNull();
   });
 
   it("ends the old segment and starts a new one between two bound combos", () => {
     expect(
-      planModifierTransition("cmd/ctrl", "cmd/ctrl+shift", bindings, "left", true),
+      planModifierTransition(
+        "cmd/ctrl",
+        "cmd/ctrl+shift",
+        bindings,
+        "left",
+        true,
+      ),
     ).toEqual({ emitEnd: true, emitStart: true });
   });
 
