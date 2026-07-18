@@ -1915,8 +1915,19 @@ synchronized between all connected clients. When a GUI element is added via
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">GuiTabGroupHandle</span></span><a class="reference internal" href="../../../_modules/viser/_gui_handles/#GuiTabGroupHandle"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.GuiTabGroupHandle" title="Link to this definition">¶</a></dt>
 <dd><p>Handle for a tab group. Call <a class="reference internal" href="#viser.GuiTabGroupHandle.add_tab" title="viser.GuiTabGroupHandle.add_tab"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_tab()</span></code></a> to add a tab.</p>
 <dl class="py method">
+<dt class="sig sig-object py" id="viser.GuiTabGroupHandle.remove">
+<span class="sig-name descname"><span class="pre">remove</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../../../_modules/viser/_gui_handles/#GuiTabGroupHandle.remove"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.GuiTabGroupHandle.remove" title="Link to this definition">¶</a></dt>
+<dd><p>Remove this tab group and all contained GUI elements.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="viser.GuiTabGroupHandle.add_tab">
-<span class="sig-name descname"><span class="pre">add_tab</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">label</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">icon</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">IconName</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#viser.GuiTabHandle" title="viser._gui_handles.GuiTabHandle"><span class="pre">GuiTabHandle</span></a></span></span><a class="reference internal" href="../../../_modules/viser/_gui_handles/#GuiTabGroupHandle.add_tab"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.GuiTabGroupHandle.add_tab" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">add_tab</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">label</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">icon</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">IconName</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#viser.GuiTabHandle" title="viser._gui_handles.GuiTabHandle"><span class="pre">GuiTabHandle</span></a></span></span><a class="headerlink" href="#viser.GuiTabGroupHandle.add_tab" title="Link to this definition">¶</a></dt>
 <dd><p>Add a tab. Returns a handle we can use to add GUI elements to it.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
@@ -1927,17 +1938,6 @@ synchronized between all connected clients. When a GUI element is added via
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
 <dd class="field-even"><p><a class="reference internal" href="#viser.GuiTabHandle" title="viser._gui_handles.GuiTabHandle"><em>GuiTabHandle</em></a></p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="viser.GuiTabGroupHandle.remove">
-<span class="sig-name descname"><span class="pre">remove</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../../../_modules/viser/_gui_handles/#GuiTabGroupHandle.remove"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.GuiTabGroupHandle.remove" title="Link to this definition">¶</a></dt>
-<dd><p>Remove this tab group and all contained GUI elements.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>None</p>
 </dd>
 </dl>
 </dd></dl>
@@ -2544,6 +2544,452 @@ Used when height is None.</p>
 </dd></dl>
 
 <dl class="py class">
+<dt class="sig sig-object py" id="viser.MainPanelHandle">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">MainPanelHandle</span></span><a class="reference internal" href="../../../_modules/viser/_gui_handles/#MainPanelHandle"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.MainPanelHandle" title="Link to this definition">¶</a></dt>
+<dd><p>Handle for the main control panel. Returned by <a class="reference internal" href="../../core/gui_api/#viser.GuiApi.main_panel" title="viser.GuiApi.main_panel"><code class="xref py py-attr docutils literal notranslate"><span class="pre">GuiApi.main_panel</span></code></a>.</p>
+<p>Supports the same placement / sizing / minimize commands as
+<a class="reference internal" href="#viser.PanelHandle" title="viser.PanelHandle"><code class="xref py py-class docutils literal notranslate"><span class="pre">PanelHandle</span></code></a>, but nothing else from it: the main panel has no tabs
+(its content is the inline GUI tree), no <code class="docutils literal notranslate"><span class="pre">visible</span></code> property, and cannot
+be removed. Because the control panel renders on every client, it is a
+legal anchor for other panels’ <code class="docutils literal notranslate"><span class="pre">dock_*</span></code> commands from any scope.</p>
+<p>A fresh handle is returned on each access; placement state is keyed off the
+control panel’s fixed uuid, so handles are interchangeable.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Panels are a new API surface; method names and placement semantics may
+still evolve in upcoming releases.</p>
+</div>
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.MainPanelHandle.dock_above">
+<span class="sig-name descname"><span class="pre">dock_above</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">anchor</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#viser.PanelHandle" title="viser._gui_handles.PanelHandle"><span class="pre">PanelHandle</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="#viser.MainPanelHandle" title="viser._gui_handles.MainPanelHandle"><span class="pre">MainPanelHandle</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.MainPanelHandle.dock_above" title="Link to this definition">¶</a></dt>
+<dd><p>Stack this panel directly above another panel (a column split).</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">anchor</span></code> must itself be DOCKED (a column split needs a docked
+neighbor to split against). If the anchor is floating or not yet placed,
+this falls back to docking on the right edge (with a warning); dock the
+anchor first.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>anchor</strong> (<a class="reference internal" href="#viser.PanelHandle" title="viser._gui_handles.PanelHandle"><em>PanelHandle</em></a><em> | </em><a class="reference internal" href="#viser.MainPanelHandle" title="viser._gui_handles.MainPanelHandle"><em>MainPanelHandle</em></a>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.MainPanelHandle.dock_below">
+<span class="sig-name descname"><span class="pre">dock_below</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">anchor</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#viser.PanelHandle" title="viser._gui_handles.PanelHandle"><span class="pre">PanelHandle</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="#viser.MainPanelHandle" title="viser._gui_handles.MainPanelHandle"><span class="pre">MainPanelHandle</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.MainPanelHandle.dock_below" title="Link to this definition">¶</a></dt>
+<dd><p>Stack this panel directly below another panel (a column split).</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">anchor</span></code> must itself be DOCKED (a column split needs a docked
+neighbor to split against). If the anchor is floating or not yet placed,
+this falls back to docking on the right edge (with a warning); dock the
+anchor first.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>anchor</strong> (<a class="reference internal" href="#viser.PanelHandle" title="viser._gui_handles.PanelHandle"><em>PanelHandle</em></a><em> | </em><a class="reference internal" href="#viser.MainPanelHandle" title="viser._gui_handles.MainPanelHandle"><em>MainPanelHandle</em></a>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.MainPanelHandle.dock_left">
+<span class="sig-name descname"><span class="pre">dock_left</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.MainPanelHandle.dock_left" title="Link to this definition">¶</a></dt>
+<dd><p>Dock this panel to the left viewport edge.</p>
+<p>Each new left-dock is inserted at the innermost position, so several
+panels docked to the left appear in call order from the edge inward.
+Calling again repositions an already-placed panel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.MainPanelHandle.dock_right">
+<span class="sig-name descname"><span class="pre">dock_right</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.MainPanelHandle.dock_right" title="Link to this definition">¶</a></dt>
+<dd><p>Dock this panel to the right viewport edge.</p>
+<p>Each new right-dock is inserted at the innermost position, so several
+panels docked to the right appear in call order from the edge inward.
+Calling again repositions an already-placed panel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.MainPanelHandle.expand">
+<span class="sig-name descname"><span class="pre">expand</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.MainPanelHandle.expand" title="Link to this definition">¶</a></dt>
+<dd><p>Expand (un-minimize) the panel, the inverse of <a class="reference internal" href="#viser.MainPanelHandle.minimize" title="viser.MainPanelHandle.minimize"><code class="xref py py-meth docutils literal notranslate"><span class="pre">minimize()</span></code></a>.</p>
+<p>Like <a class="reference internal" href="#viser.MainPanelHandle.minimize" title="viser.MainPanelHandle.minimize"><code class="xref py py-meth docutils literal notranslate"><span class="pre">minimize()</span></code></a> this acts at container scope – expanding a
+panel reveals its whole stack (and clears a docked column’s rail) –
+and is imperative: it always expands, even if the user minimized the
+panel in the browser. Replayed to clients that connect later.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.MainPanelHandle.float">
+<span class="sig-name descname"><span class="pre">float</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">x</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">width</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">height</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.MainPanelHandle.float" title="Link to this definition">¶</a></dt>
+<dd><p>Float this panel at an explicit position and size, in CSS pixels.</p>
+<p><code class="docutils literal notranslate"><span class="pre">x</span></code> / <code class="docutils literal notranslate"><span class="pre">y</span></code> are measured relative to the <strong>viewport</strong> – the canvas area
+inside any docked panels:</p>
+<ul class="simple">
+<li><p>A non-negative value is a gap from the <strong>left</strong> / <strong>top</strong>:
+<code class="docutils literal notranslate"><span class="pre">float(x=40)</span></code> lands 40px from the canvas left edge (clear of a
+left-docked panel, not under it).</p></li>
+<li><p>A <strong>negative</strong> value is a gap from the <strong>right</strong> / <strong>bottom</strong>:
+<code class="docutils literal notranslate"><span class="pre">float(x=-15)</span></code> puts the panel’s right edge 15px from the canvas right
+edge. So <code class="docutils literal notranslate"><span class="pre">float(x=-15,</span> <span class="pre">y=15)</span></code> is the top-right corner, and
+<code class="docutils literal notranslate"><span class="pre">float(x=-15,</span> <span class="pre">y=-15)</span></code> the bottom-right.</p></li>
+</ul>
+<p>The panel re-resolves against these edges as the canvas changes (a dock
+added/removed, the window resized), so an edge-anchored panel stays put.
+Any argument left as <code class="docutils literal notranslate"><span class="pre">None</span></code> uses a client-chosen default (top-left);
+<code class="docutils literal notranslate"><span class="pre">width</span></code> / <code class="docutils literal notranslate"><span class="pre">height</span></code> set the floating window size.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>y</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>width</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>height</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.MainPanelHandle.minimize">
+<span class="sig-name descname"><span class="pre">minimize</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.MainPanelHandle.minimize" title="Link to this definition">¶</a></dt>
+<dd><p>Minimize the panel (collapse it to a bar / rail strip).</p>
+<p>Collapse is applied to the panel’s <em>container</em> – its floating window
+or its docked column – so panels stacked together minimize together,
+exactly like the on-screen minimize control. Imperative, like the
+<code class="docutils literal notranslate"><span class="pre">dock_*</span></code> / <a class="reference internal" href="#viser.MainPanelHandle.float" title="viser.MainPanelHandle.float"><code class="xref py py-meth docutils literal notranslate"><span class="pre">float()</span></code></a> commands: it always minimizes, even if the
+user expanded the panel in the browser. Replayed to clients that
+connect later. On the mobile bottom sheet (where panels render as
+sections, not windows) this collapses the panel’s section.</p>
+<p>TODO: add a matching imperative collapse/expand method for folders
+(<a class="reference internal" href="../../core/gui_api/#viser.GuiApi.add_folder" title="viser.GuiApi.add_folder"><code class="xref py py-meth docutils literal notranslate"><span class="pre">GuiApi.add_folder()</span></code></a>), which today only has the
+<code class="docutils literal notranslate"><span class="pre">expand_by_default</span></code> creation kwarg.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.MainPanelHandle.set_height">
+<span class="sig-name descname"><span class="pre">set_height</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">height</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.MainPanelHandle.set_height" title="Link to this definition">¶</a></dt>
+<dd><p>Set the panel height in pixels.</p>
+<p>Applies only to <strong>floating</strong> panels (sets the window height). A docked
+panel – whether solo or stacked via <a class="reference internal" href="#viser.MainPanelHandle.dock_above" title="viser.MainPanelHandle.dock_above"><code class="xref py py-meth docutils literal notranslate"><span class="pre">dock_above()</span></code></a> /
+<a class="reference internal" href="#viser.MainPanelHandle.dock_below" title="viser.MainPanelHandle.dock_below"><code class="xref py py-meth docutils literal notranslate"><span class="pre">dock_below()</span></code></a> – sizes to its split weights, so <code class="docutils literal notranslate"><span class="pre">set_height</span></code> has no
+effect there.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>height</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.MainPanelHandle.set_width">
+<span class="sig-name descname"><span class="pre">set_width</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">width</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.MainPanelHandle.set_width" title="Link to this definition">¶</a></dt>
+<dd><p>Set the panel width in pixels (region width when docked, window width
+when floating).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>width</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.PanelHandle">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">PanelHandle</span></span><a class="reference internal" href="../../../_modules/viser/_gui_handles/#PanelHandle"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.PanelHandle" title="Link to this definition">¶</a></dt>
+<dd><p>Handle for a standalone panel: a dockable / floating GUI container that
+lives outside the main control panel.</p>
+<p>Create with <a class="reference internal" href="../../core/gui_api/#viser.GuiApi.add_panel" title="viser.GuiApi.add_panel"><code class="xref py py-meth docutils literal notranslate"><span class="pre">GuiApi.add_panel()</span></code></a>. Add content with <a class="reference internal" href="#viser.PanelHandle.add_tab" title="viser.PanelHandle.add_tab"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_tab()</span></code></a>, and
+place it with the imperative <code class="docutils literal notranslate"><span class="pre">dock_*</span></code> / <a class="reference internal" href="#viser.PanelHandle.float" title="viser.PanelHandle.float"><code class="xref py py-meth docutils literal notranslate"><span class="pre">float()</span></code></a> commands. A panel is a
+dedicated top-level entity (like a modal) – it is NOT part of the inline GUI
+tree – that carries its own tabs; a single-tab panel renders as a plain
+header.</p>
+<p>Placement, sizing, and collapse are <strong>imperative commands, not synced
+state</strong>: they apply to connected clients and replay to clients that connect
+later, but the current layout is never read back from clients. There are no
+readable <code class="docutils literal notranslate"><span class="pre">.width</span></code> / position / minimized properties, and a user dragging
+or minimizing the panel afterward wins until the next explicit command.
+(This is why sizing is <code class="docutils literal notranslate"><span class="pre">set_width()</span></code> rather than a <code class="docutils literal notranslate"><span class="pre">.width</span></code> property.)
+<a class="reference internal" href="#viser.PanelHandle.minimize" title="viser.PanelHandle.minimize"><code class="xref py py-meth docutils literal notranslate"><span class="pre">minimize()</span></code></a> / <a class="reference internal" href="#viser.PanelHandle.expand" title="viser.PanelHandle.expand"><code class="xref py py-meth docutils literal notranslate"><span class="pre">expand()</span></code></a> act on the panel’s <em>container</em> – its
+floating window or its docked column – so panels stacked together
+minimize together, exactly like the on-screen minimize control.</p>
+<p>The server owns a panel’s existence: users can rearrange, drag, minimize, and
+resize a panel, but cannot close it from the UI. A panel disappears only when
+<a class="reference internal" href="#viser.PanelHandle.remove" title="viser.PanelHandle.remove"><code class="xref py py-meth docutils literal notranslate"><span class="pre">remove()</span></code></a> is called.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Panels are a new API surface; method names and placement semantics may
+still evolve in upcoming releases.</p>
+</div>
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.PanelHandle.add_tab">
+<span class="sig-name descname"><span class="pre">add_tab</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">label</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">icon</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">IconName</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#viser.GuiTabHandle" title="viser._gui_handles.GuiTabHandle"><span class="pre">GuiTabHandle</span></a></span></span><a class="reference internal" href="../../../_modules/viser/_gui_handles/#PanelHandle.add_tab"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.PanelHandle.add_tab" title="Link to this definition">¶</a></dt>
+<dd><p>Add a tab to the panel, returning a handle to populate it as a context.</p>
+<p>A single-tab panel renders as a plain header; multiple tabs render as a
+tab strip. Raises if the panel has been removed (the shared
+<code class="xref py py-class docutils literal notranslate"><span class="pre">_TabContainerMixin</span></code> guard).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>label</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+<li><p><strong>icon</strong> (<em>IconName</em><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#viser.GuiTabHandle" title="viser._gui_handles.GuiTabHandle"><em>GuiTabHandle</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.PanelHandle.remove">
+<span class="sig-name descname"><span class="pre">remove</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../../../_modules/viser/_gui_handles/#PanelHandle.remove"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.PanelHandle.remove" title="Link to this definition">¶</a></dt>
+<dd><p>Permanently remove this panel and all its tabs / contained elements.</p>
+<p>This is the only way a panel disappears – there is no UI close button
+(see <a class="reference internal" href="#viser.PanelHandle" title="viser.PanelHandle"><code class="xref py py-class docutils literal notranslate"><span class="pre">PanelHandle</span></code></a>).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.PanelHandle.dock_above">
+<span class="sig-name descname"><span class="pre">dock_above</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">anchor</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#viser.PanelHandle" title="viser._gui_handles.PanelHandle"><span class="pre">PanelHandle</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="#viser.MainPanelHandle" title="viser._gui_handles.MainPanelHandle"><span class="pre">MainPanelHandle</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.PanelHandle.dock_above" title="Link to this definition">¶</a></dt>
+<dd><p>Stack this panel directly above another panel (a column split).</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">anchor</span></code> must itself be DOCKED (a column split needs a docked
+neighbor to split against). If the anchor is floating or not yet placed,
+this falls back to docking on the right edge (with a warning); dock the
+anchor first.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>anchor</strong> (<a class="reference internal" href="#viser.PanelHandle" title="viser._gui_handles.PanelHandle"><em>PanelHandle</em></a><em> | </em><a class="reference internal" href="#viser.MainPanelHandle" title="viser._gui_handles.MainPanelHandle"><em>MainPanelHandle</em></a>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.PanelHandle.dock_below">
+<span class="sig-name descname"><span class="pre">dock_below</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">anchor</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#viser.PanelHandle" title="viser._gui_handles.PanelHandle"><span class="pre">PanelHandle</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="#viser.MainPanelHandle" title="viser._gui_handles.MainPanelHandle"><span class="pre">MainPanelHandle</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.PanelHandle.dock_below" title="Link to this definition">¶</a></dt>
+<dd><p>Stack this panel directly below another panel (a column split).</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">anchor</span></code> must itself be DOCKED (a column split needs a docked
+neighbor to split against). If the anchor is floating or not yet placed,
+this falls back to docking on the right edge (with a warning); dock the
+anchor first.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>anchor</strong> (<a class="reference internal" href="#viser.PanelHandle" title="viser._gui_handles.PanelHandle"><em>PanelHandle</em></a><em> | </em><a class="reference internal" href="#viser.MainPanelHandle" title="viser._gui_handles.MainPanelHandle"><em>MainPanelHandle</em></a>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.PanelHandle.dock_left">
+<span class="sig-name descname"><span class="pre">dock_left</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.PanelHandle.dock_left" title="Link to this definition">¶</a></dt>
+<dd><p>Dock this panel to the left viewport edge.</p>
+<p>Each new left-dock is inserted at the innermost position, so several
+panels docked to the left appear in call order from the edge inward.
+Calling again repositions an already-placed panel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.PanelHandle.dock_right">
+<span class="sig-name descname"><span class="pre">dock_right</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.PanelHandle.dock_right" title="Link to this definition">¶</a></dt>
+<dd><p>Dock this panel to the right viewport edge.</p>
+<p>Each new right-dock is inserted at the innermost position, so several
+panels docked to the right appear in call order from the edge inward.
+Calling again repositions an already-placed panel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.PanelHandle.expand">
+<span class="sig-name descname"><span class="pre">expand</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.PanelHandle.expand" title="Link to this definition">¶</a></dt>
+<dd><p>Expand (un-minimize) the panel, the inverse of <a class="reference internal" href="#viser.PanelHandle.minimize" title="viser.PanelHandle.minimize"><code class="xref py py-meth docutils literal notranslate"><span class="pre">minimize()</span></code></a>.</p>
+<p>Like <a class="reference internal" href="#viser.PanelHandle.minimize" title="viser.PanelHandle.minimize"><code class="xref py py-meth docutils literal notranslate"><span class="pre">minimize()</span></code></a> this acts at container scope – expanding a
+panel reveals its whole stack (and clears a docked column’s rail) –
+and is imperative: it always expands, even if the user minimized the
+panel in the browser. Replayed to clients that connect later.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.PanelHandle.float">
+<span class="sig-name descname"><span class="pre">float</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">x</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">width</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">height</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.PanelHandle.float" title="Link to this definition">¶</a></dt>
+<dd><p>Float this panel at an explicit position and size, in CSS pixels.</p>
+<p><code class="docutils literal notranslate"><span class="pre">x</span></code> / <code class="docutils literal notranslate"><span class="pre">y</span></code> are measured relative to the <strong>viewport</strong> – the canvas area
+inside any docked panels:</p>
+<ul class="simple">
+<li><p>A non-negative value is a gap from the <strong>left</strong> / <strong>top</strong>:
+<code class="docutils literal notranslate"><span class="pre">float(x=40)</span></code> lands 40px from the canvas left edge (clear of a
+left-docked panel, not under it).</p></li>
+<li><p>A <strong>negative</strong> value is a gap from the <strong>right</strong> / <strong>bottom</strong>:
+<code class="docutils literal notranslate"><span class="pre">float(x=-15)</span></code> puts the panel’s right edge 15px from the canvas right
+edge. So <code class="docutils literal notranslate"><span class="pre">float(x=-15,</span> <span class="pre">y=15)</span></code> is the top-right corner, and
+<code class="docutils literal notranslate"><span class="pre">float(x=-15,</span> <span class="pre">y=-15)</span></code> the bottom-right.</p></li>
+</ul>
+<p>The panel re-resolves against these edges as the canvas changes (a dock
+added/removed, the window resized), so an edge-anchored panel stays put.
+Any argument left as <code class="docutils literal notranslate"><span class="pre">None</span></code> uses a client-chosen default (top-left);
+<code class="docutils literal notranslate"><span class="pre">width</span></code> / <code class="docutils literal notranslate"><span class="pre">height</span></code> set the floating window size.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>y</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>width</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>height</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.PanelHandle.minimize">
+<span class="sig-name descname"><span class="pre">minimize</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.PanelHandle.minimize" title="Link to this definition">¶</a></dt>
+<dd><p>Minimize the panel (collapse it to a bar / rail strip).</p>
+<p>Collapse is applied to the panel’s <em>container</em> – its floating window
+or its docked column – so panels stacked together minimize together,
+exactly like the on-screen minimize control. Imperative, like the
+<code class="docutils literal notranslate"><span class="pre">dock_*</span></code> / <a class="reference internal" href="#viser.PanelHandle.float" title="viser.PanelHandle.float"><code class="xref py py-meth docutils literal notranslate"><span class="pre">float()</span></code></a> commands: it always minimizes, even if the
+user expanded the panel in the browser. Replayed to clients that
+connect later. On the mobile bottom sheet (where panels render as
+sections, not windows) this collapses the panel’s section.</p>
+<p>TODO: add a matching imperative collapse/expand method for folders
+(<a class="reference internal" href="../../core/gui_api/#viser.GuiApi.add_folder" title="viser.GuiApi.add_folder"><code class="xref py py-meth docutils literal notranslate"><span class="pre">GuiApi.add_folder()</span></code></a>), which today only has the
+<code class="docutils literal notranslate"><span class="pre">expand_by_default</span></code> creation kwarg.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.PanelHandle.set_height">
+<span class="sig-name descname"><span class="pre">set_height</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">height</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.PanelHandle.set_height" title="Link to this definition">¶</a></dt>
+<dd><p>Set the panel height in pixels.</p>
+<p>Applies only to <strong>floating</strong> panels (sets the window height). A docked
+panel – whether solo or stacked via <a class="reference internal" href="#viser.PanelHandle.dock_above" title="viser.PanelHandle.dock_above"><code class="xref py py-meth docutils literal notranslate"><span class="pre">dock_above()</span></code></a> /
+<a class="reference internal" href="#viser.PanelHandle.dock_below" title="viser.PanelHandle.dock_below"><code class="xref py py-meth docutils literal notranslate"><span class="pre">dock_below()</span></code></a> – sizes to its split weights, so <code class="docutils literal notranslate"><span class="pre">set_height</span></code> has no
+effect there.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>height</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.PanelHandle.set_width">
+<span class="sig-name descname"><span class="pre">set_width</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">width</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#viser.PanelHandle.set_width" title="Link to this definition">¶</a></dt>
+<dd><p>Set the panel width in pixels (region width when docked, window width
+when floating).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>width</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.PanelHandle.order">
+<span class="sig-name descname"><span class="pre">order</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#viser.PanelHandle.order" title="Link to this definition">¶</a></dt>
+<dd><p>Order value for arranging panels.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.PanelHandle.visible">
+<span class="sig-name descname"><span class="pre">visible</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><a class="headerlink" href="#viser.PanelHandle.visible" title="Link to this definition">¶</a></dt>
+<dd><p>when False the panel renders nothing (its
+panes are removed from the dock layout) without being destroyed.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Visibility state of the panel</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py data">
+<dt class="sig sig-object py" id="viser.PlaceableHandle">
+<span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">PlaceableHandle</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'PanelHandle</span> <span class="pre">|</span> <span class="pre">MainPanelHandle'</span></em><a class="headerlink" href="#viser.PlaceableHandle" title="Link to this definition">¶</a></dt>
+<dd><p>str(object=’’) -&gt; str
+str(bytes_or_buffer[, encoding[, errors]]) -&gt; str</p>
+<p>Create a new string object from the given object. If encoding or
+errors is specified, then the object must expose a data buffer
+that will be decoded using the given encoding and error handler.
+Otherwise, returns the result of object.__str__() (if defined)
+or repr(object).
+encoding defaults to sys.getdefaultencoding().
+errors defaults to ‘strict’.</p>
+</dd></dl>
+
+<dl class="py class">
 <dt class="sig sig-object py" id="viser.UploadedFile">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">UploadedFile</span></span><a class="reference internal" href="../../../_modules/viser/_gui_handles/#UploadedFile"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.UploadedFile" title="Link to this definition">¶</a></dt>
 <dd><p>Result of a file upload.</p>
@@ -2840,8 +3286,8 @@ Used when height is None.</p>
 </ul>
 </li>
 <li><a class="reference internal" href="#viser.GuiTabGroupHandle"><code class="docutils literal notranslate"><span class="pre">GuiTabGroupHandle</span></code></a><ul>
-<li><a class="reference internal" href="#viser.GuiTabGroupHandle.add_tab"><code class="docutils literal notranslate"><span class="pre">GuiTabGroupHandle.add_tab()</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiTabGroupHandle.remove"><code class="docutils literal notranslate"><span class="pre">GuiTabGroupHandle.remove()</span></code></a></li>
+<li><a class="reference internal" href="#viser.GuiTabGroupHandle.add_tab"><code class="docutils literal notranslate"><span class="pre">GuiTabGroupHandle.add_tab()</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiTabGroupHandle.order"><code class="docutils literal notranslate"><span class="pre">GuiTabGroupHandle.order</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiTabGroupHandle.visible"><code class="docutils literal notranslate"><span class="pre">GuiTabGroupHandle.visible</span></code></a></li>
 </ul>
@@ -2934,6 +3380,35 @@ Used when height is None.</p>
 <li><a class="reference internal" href="#viser.GuiVector3Handle.precision"><code class="docutils literal notranslate"><span class="pre">GuiVector3Handle.precision</span></code></a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#viser.MainPanelHandle"><code class="docutils literal notranslate"><span class="pre">MainPanelHandle</span></code></a><ul>
+<li><a class="reference internal" href="#viser.MainPanelHandle.dock_above"><code class="docutils literal notranslate"><span class="pre">MainPanelHandle.dock_above()</span></code></a></li>
+<li><a class="reference internal" href="#viser.MainPanelHandle.dock_below"><code class="docutils literal notranslate"><span class="pre">MainPanelHandle.dock_below()</span></code></a></li>
+<li><a class="reference internal" href="#viser.MainPanelHandle.dock_left"><code class="docutils literal notranslate"><span class="pre">MainPanelHandle.dock_left()</span></code></a></li>
+<li><a class="reference internal" href="#viser.MainPanelHandle.dock_right"><code class="docutils literal notranslate"><span class="pre">MainPanelHandle.dock_right()</span></code></a></li>
+<li><a class="reference internal" href="#viser.MainPanelHandle.expand"><code class="docutils literal notranslate"><span class="pre">MainPanelHandle.expand()</span></code></a></li>
+<li><a class="reference internal" href="#viser.MainPanelHandle.float"><code class="docutils literal notranslate"><span class="pre">MainPanelHandle.float()</span></code></a></li>
+<li><a class="reference internal" href="#viser.MainPanelHandle.minimize"><code class="docutils literal notranslate"><span class="pre">MainPanelHandle.minimize()</span></code></a></li>
+<li><a class="reference internal" href="#viser.MainPanelHandle.set_height"><code class="docutils literal notranslate"><span class="pre">MainPanelHandle.set_height()</span></code></a></li>
+<li><a class="reference internal" href="#viser.MainPanelHandle.set_width"><code class="docutils literal notranslate"><span class="pre">MainPanelHandle.set_width()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.PanelHandle"><code class="docutils literal notranslate"><span class="pre">PanelHandle</span></code></a><ul>
+<li><a class="reference internal" href="#viser.PanelHandle.add_tab"><code class="docutils literal notranslate"><span class="pre">PanelHandle.add_tab()</span></code></a></li>
+<li><a class="reference internal" href="#viser.PanelHandle.remove"><code class="docutils literal notranslate"><span class="pre">PanelHandle.remove()</span></code></a></li>
+<li><a class="reference internal" href="#viser.PanelHandle.dock_above"><code class="docutils literal notranslate"><span class="pre">PanelHandle.dock_above()</span></code></a></li>
+<li><a class="reference internal" href="#viser.PanelHandle.dock_below"><code class="docutils literal notranslate"><span class="pre">PanelHandle.dock_below()</span></code></a></li>
+<li><a class="reference internal" href="#viser.PanelHandle.dock_left"><code class="docutils literal notranslate"><span class="pre">PanelHandle.dock_left()</span></code></a></li>
+<li><a class="reference internal" href="#viser.PanelHandle.dock_right"><code class="docutils literal notranslate"><span class="pre">PanelHandle.dock_right()</span></code></a></li>
+<li><a class="reference internal" href="#viser.PanelHandle.expand"><code class="docutils literal notranslate"><span class="pre">PanelHandle.expand()</span></code></a></li>
+<li><a class="reference internal" href="#viser.PanelHandle.float"><code class="docutils literal notranslate"><span class="pre">PanelHandle.float()</span></code></a></li>
+<li><a class="reference internal" href="#viser.PanelHandle.minimize"><code class="docutils literal notranslate"><span class="pre">PanelHandle.minimize()</span></code></a></li>
+<li><a class="reference internal" href="#viser.PanelHandle.set_height"><code class="docutils literal notranslate"><span class="pre">PanelHandle.set_height()</span></code></a></li>
+<li><a class="reference internal" href="#viser.PanelHandle.set_width"><code class="docutils literal notranslate"><span class="pre">PanelHandle.set_width()</span></code></a></li>
+<li><a class="reference internal" href="#viser.PanelHandle.order"><code class="docutils literal notranslate"><span class="pre">PanelHandle.order</span></code></a></li>
+<li><a class="reference internal" href="#viser.PanelHandle.visible"><code class="docutils literal notranslate"><span class="pre">PanelHandle.visible</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.PlaceableHandle"><code class="docutils literal notranslate"><span class="pre">PlaceableHandle</span></code></a></li>
 <li><a class="reference internal" href="#viser.UploadedFile"><code class="docutils literal notranslate"><span class="pre">UploadedFile</span></code></a><ul>
 <li><a class="reference internal" href="#viser.UploadedFile.name"><code class="docutils literal notranslate"><span class="pre">UploadedFile.name</span></code></a></li>
 <li><a class="reference internal" href="#viser.UploadedFile.content"><code class="docutils literal notranslate"><span class="pre">UploadedFile.content</span></code></a></li>

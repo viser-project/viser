@@ -530,7 +530,10 @@ command.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="viser.GuiApi.add_folder">
 <span class="sig-name descname"><span class="pre">add_folder</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">label</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">order</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expand_by_default</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">visible</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="../../handles/gui_handles/#viser.GuiFolderHandle" title="viser._gui_handles.GuiFolderHandle"><span class="pre">GuiFolderHandle</span></a></span></span><a class="reference internal" href="../../../_modules/viser/_gui_api/#GuiApi.add_folder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.GuiApi.add_folder" title="Link to this definition">¶</a></dt>
-<dd><p>Add a folder, and return a handle that can be used to populate it.</p>
+<dd><p>Add a folder: a single <strong>inline</strong> collapsible section. Return a handle
+that can be used to populate it.</p>
+<p>For inline <em>tabs</em> use <a class="reference internal" href="#viser.GuiApi.add_tab_group" title="viser.GuiApi.add_tab_group"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_tab_group()</span></code></a>; for content in a <em>movable</em>
+window (dockable / floating) use <a class="reference internal" href="#viser.GuiApi.add_panel" title="viser.GuiApi.add_panel"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_panel()</span></code></a>.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
@@ -601,7 +604,11 @@ a handle that can be used to populate it.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="viser.GuiApi.add_tab_group">
 <span class="sig-name descname"><span class="pre">add_tab_group</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">order</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">visible</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="../../handles/gui_handles/#viser.GuiTabGroupHandle" title="viser._gui_handles.GuiTabGroupHandle"><span class="pre">GuiTabGroupHandle</span></a></span></span><a class="reference internal" href="../../../_modules/viser/_gui_api/#GuiApi.add_tab_group"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.GuiApi.add_tab_group" title="Link to this definition">¶</a></dt>
-<dd><p>Add a tab group.</p>
+<dd><p>Add a tab group: <strong>inline</strong> tabs that stay put where they are added
+(in the control panel or a folder).</p>
+<p>For tabs in a <em>movable</em> window the user can dock or float, use
+<a class="reference internal" href="#viser.GuiApi.add_panel" title="viser.GuiApi.add_panel"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_panel()</span></code></a> instead; for a single inline collapsible section, use
+<a class="reference internal" href="#viser.GuiApi.add_folder" title="viser.GuiApi.add_folder"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_folder()</span></code></a>.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
@@ -616,6 +623,69 @@ a handle that can be used to populate it.</p>
 <dd class="field-odd"><p><a class="reference internal" href="../../handles/gui_handles/#viser.GuiTabGroupHandle" title="viser._gui_handles.GuiTabGroupHandle"><em>GuiTabGroupHandle</em></a></p>
 </dd>
 </dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.GuiApi.add_panel">
+<span class="sig-name descname"><span class="pre">add_panel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">order</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">visible</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="../../handles/gui_handles/#viser.PanelHandle" title="viser._gui_handles.PanelHandle"><span class="pre">PanelHandle</span></a></span></span><a class="reference internal" href="../../../_modules/viser/_gui_api/#GuiApi.add_panel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.GuiApi.add_panel" title="Link to this definition">¶</a></dt>
+<dd><p>Add a standalone panel: a <strong>movable</strong> window (dockable / floating)
+that lives outside the main control panel. A panel is the <em>container</em>;
+its tabs (added with <a class="reference internal" href="../../handles/gui_handles/#viser.PanelHandle.add_tab" title="viser.PanelHandle.add_tab"><code class="xref py py-meth docutils literal notranslate"><span class="pre">PanelHandle.add_tab()</span></code></a>) hold the content.</p>
+<p>Choosing a container: use <a class="reference internal" href="#viser.GuiApi.add_folder" title="viser.GuiApi.add_folder"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_folder()</span></code></a> for an inline collapsible
+section, <a class="reference internal" href="#viser.GuiApi.add_tab_group" title="viser.GuiApi.add_tab_group"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_tab_group()</span></code></a> for inline tabs that stay put inside the
+control panel, and <code class="docutils literal notranslate"><span class="pre">add_panel</span></code> for tabs in a window the user can move,
+dock, or float. (A panel is essentially a tab group you can place.)</p>
+<p>A panel is a top-level entity (like <a class="reference internal" href="#viser.GuiApi.add_modal" title="viser.GuiApi.add_modal"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_modal()</span></code></a>): it is not placed
+in the current container context. Add content with
+<a class="reference internal" href="../../handles/gui_handles/#viser.PanelHandle.add_tab" title="viser.PanelHandle.add_tab"><code class="xref py py-meth docutils literal notranslate"><span class="pre">PanelHandle.add_tab()</span></code></a>, place it with the imperative <code class="docutils literal notranslate"><span class="pre">dock_*</span></code> /
+<a class="reference internal" href="../../handles/gui_handles/#viser.PanelHandle.float" title="viser.PanelHandle.float"><code class="xref py py-meth docutils literal notranslate"><span class="pre">PanelHandle.float()</span></code></a> commands, and remove it with
+<a class="reference internal" href="../../handles/gui_handles/#viser.PanelHandle.remove" title="viser.PanelHandle.remove"><code class="xref py py-meth docutils literal notranslate"><span class="pre">PanelHandle.remove()</span></code></a> (there is no UI close button). See also
+<a class="reference internal" href="#viser.GuiApi.main_panel" title="viser.GuiApi.main_panel"><code class="xref py py-attr docutils literal notranslate"><span class="pre">main_panel</span></code></a> to place the main control panel.</p>
+<p>Panels start expanded – except on the mobile bottom sheet, where
+panels render as sections that start collapsed (one tap opens the
+panel; the sheet is wayfinding chrome). <a class="reference internal" href="../../handles/gui_handles/#viser.PanelHandle.minimize" title="viser.PanelHandle.minimize"><code class="xref py py-meth docutils literal notranslate"><span class="pre">PanelHandle.minimize()</span></code></a> /
+<a class="reference internal" href="../../handles/gui_handles/#viser.PanelHandle.expand" title="viser.PanelHandle.expand"><code class="xref py py-meth docutils literal notranslate"><span class="pre">PanelHandle.expand()</span></code></a> collapse or reveal them imperatively,
+applied to the panel’s containing window or docked column like the
+on-screen minimize control.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>order</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em> | </em><em>None</em>) – Optional ordering, smallest values will be displayed first.
+Used for the mobile bottom sheet’s section order;
+docked/floating placement is set with the <code class="docutils literal notranslate"><span class="pre">dock_*</span></code> /
+<code class="docutils literal notranslate"><span class="pre">float</span></code> commands, not <code class="docutils literal notranslate"><span class="pre">order</span></code>.</p></li>
+<li><p><strong>visible</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – Whether the panel is visible.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A handle used to add tabs to and place the panel.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="../../handles/gui_handles/#viser.PanelHandle" title="viser._gui_handles.PanelHandle"><em>PanelHandle</em></a></p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">panel</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_panel</span><span class="p">()</span>
+<span class="k">with</span> <span class="n">panel</span><span class="o">.</span><span class="n">add_tab</span><span class="p">(</span><span class="s2">&quot;Stats&quot;</span><span class="p">,</span> <span class="n">viser</span><span class="o">.</span><span class="n">Icon</span><span class="o">.</span><span class="n">CHART_BAR</span><span class="p">):</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_number</span><span class="p">(</span><span class="s2">&quot;Counter&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">disabled</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">panel</span><span class="o">.</span><span class="n">dock_right</span><span class="p">()</span>
+<span class="n">panel</span><span class="o">.</span><span class="n">set_width</span><span class="p">(</span><span class="mi">320</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="viser.GuiApi.main_panel">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">main_panel</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="../../handles/gui_handles/#viser.MainPanelHandle" title="viser._gui_handles.MainPanelHandle"><span class="pre">MainPanelHandle</span></a></em><a class="headerlink" href="#viser.GuiApi.main_panel" title="Link to this definition">¶</a></dt>
+<dd><p>Handle for the main control panel.</p>
+<p>Supports the same placement / sizing / minimize commands as a standalone
+panel (see <a class="reference internal" href="../../handles/gui_handles/#viser.MainPanelHandle" title="viser.MainPanelHandle"><code class="xref py py-class docutils literal notranslate"><span class="pre">MainPanelHandle</span></code></a> and <a class="reference internal" href="#viser.GuiApi.add_panel" title="viser.GuiApi.add_panel"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_panel()</span></code></a>). It can be a
+dock anchor for <a class="reference internal" href="../../handles/gui_handles/#viser.PanelHandle.dock_above" title="viser.PanelHandle.dock_above"><code class="xref py py-meth docutils literal notranslate"><span class="pre">PanelHandle.dock_above()</span></code></a> / <code class="xref py py-meth docutils literal notranslate"><span class="pre">dock_below()</span></code> from
+any scope, but ONLY while it is itself docked (e.g. after
+<code class="docutils literal notranslate"><span class="pre">main_panel.dock_left()</span></code>); the control panel floats by default, and
+splitting against a floating anchor falls back to a right-edge dock. A
+fresh handle is returned on each access. This is the supported replacement
+for the deprecated <code class="docutils literal notranslate"><span class="pre">configure_theme(control_layout=...)</span></code>.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -1245,6 +1315,8 @@ match (matplotlib convention), so <code class="docutils literal notranslate"><sp
 <li><a class="reference internal" href="#viser.GuiApi.add_form"><code class="docutils literal notranslate"><span class="pre">GuiApi.add_form()</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiApi.add_modal"><code class="docutils literal notranslate"><span class="pre">GuiApi.add_modal()</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiApi.add_tab_group"><code class="docutils literal notranslate"><span class="pre">GuiApi.add_tab_group()</span></code></a></li>
+<li><a class="reference internal" href="#viser.GuiApi.add_panel"><code class="docutils literal notranslate"><span class="pre">GuiApi.add_panel()</span></code></a></li>
+<li><a class="reference internal" href="#viser.GuiApi.main_panel"><code class="docutils literal notranslate"><span class="pre">GuiApi.main_panel</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiApi.add_markdown"><code class="docutils literal notranslate"><span class="pre">GuiApi.add_markdown()</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiApi.add_html"><code class="docutils literal notranslate"><span class="pre">GuiApi.add_html()</span></code></a></li>
 <li><a class="reference internal" href="#viser.GuiApi.add_divider"><code class="docutils literal notranslate"><span class="pre">GuiApi.add_divider()</span></code></a></li>

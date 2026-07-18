@@ -433,6 +433,8 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">asyncio</span><span class="w"> </span><span class="kn">import</span> <span class="n">AbstractEventLoop</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mapping</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">concurrent.futures</span><span class="w"> </span><span class="kn">import</span> <span class="n">ThreadPoolExecutor</span>
@@ -463,6 +465,7 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">_messages</span><span class="p">,</span> <span class="n">uplot</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">._gui_handles</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">CONTROL_PANEL_ID</span><span class="p">,</span>
     <span class="n">CommandEvent</span><span class="p">,</span>
     <span class="n">CommandHandle</span><span class="p">,</span>
     <span class="n">GuiButtonGroupHandle</span><span class="p">,</span>
@@ -492,6 +495,8 @@
     <span class="n">GuiUplotHandle</span><span class="p">,</span>
     <span class="n">GuiVector2Handle</span><span class="p">,</span>
     <span class="n">GuiVector3Handle</span><span class="p">,</span>
+    <span class="n">MainPanelHandle</span><span class="p">,</span>
+    <span class="n">PanelHandle</span><span class="p">,</span>
     <span class="n">SupportsRemoveProtocol</span><span class="p">,</span>
     <span class="n">UploadedFile</span><span class="p">,</span>
     <span class="n">_colors_to_int_tuple</span><span class="p">,</span>
@@ -688,6 +693,31 @@
             <span class="s2">&quot;root&quot;</span><span class="p">:</span> <span class="n">_RootGuiContainer</span><span class="p">({})</span>
         <span class="p">}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_modal_handle_from_uuid</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">GuiModalHandle</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_panel_handle_from_uuid</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">PanelHandle</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="c1"># Layout-update counter, bumped on every placement command (any panel)</span>
+        <span class="c1"># and stamped onto the placement message (see</span>
+        <span class="c1"># _PlacementMixin._queue_placement / GuiSetPanelPositionMessage.counter).</span>
+        <span class="c1"># Lets the client ignore replayed placement for a panel the user has</span>
+        <span class="c1"># rearranged. GLOBAL across panels within this GuiApi (D50): collapse</span>
+        <span class="c1"># is container-scoped, so when stacked panels&#39; collapse axes conflict,</span>
+        <span class="c1"># a late joiner must replay them in COMMAND order -- per-panel counters</span>
+        <span class="c1"># cannot order commands across panels that share a container.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_layout_counter</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="c1"># Guards the counter&#39;s read-modify-write so concurrent placement calls</span>
+        <span class="c1"># from different threads can&#39;t stamp duplicate counters.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_layout_update_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+        <span class="c1"># Serializes placement commands against panel removal: the removed</span>
+        <span class="c1"># check + placement enqueue and remove()&#39;s tombstone + purge must not</span>
+        <span class="c1"># interleave, or a racing dock_left() could re-enqueue a placement</span>
+        <span class="c1"># update for a just-removed panel (immortal buffer residue).</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_panel_lifecycle_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+        <span class="c1"># Random id identifying THIS GuiApi instance (fresh per server process,</span>
+        <span class="c1"># and distinct for each client-scoped `client.gui`). Stamped on every</span>
+        <span class="c1"># placement message alongside the counter: counters are only comparable</span>
+        <span class="c1"># within one run/scope, so the client treats a placement whose run_id</span>
+        <span class="c1"># differs from the last applied as a fresh, deliberate command (a</span>
+        <span class="c1"># restarted server&#39;s counter restart would otherwise read as stale).</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_layout_run_id</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="o">.</span><span class="n">hex</span><span class="p">[:</span><span class="mi">8</span><span class="p">]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_command_handle_from_uuid</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">CommandHandle</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_current_file_upload_states</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_FileUploadState</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
 
@@ -990,6 +1020,16 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Set container ID associated with the current thread.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_target_container_from_thread_id</span><span class="p">[</span><span class="n">threading</span><span class="o">.</span><span class="n">get_ident</span><span class="p">()]</span> <span class="o">=</span> <span class="n">container_uuid</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_next_layout_counter</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Bump and return the layout-update counter. THE single home of the</span>
+<span class="sd">        lock-guarded read-modify-write (used by every placement command and by</span>
+<span class="sd">        reset), so concurrent calls can&#39;t stamp duplicate counters. Global</span>
+<span class="sd">        across panels (D50): the client replays conflicting container-scoped</span>
+<span class="sd">        collapse axes in counter order.&quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_layout_update_lock</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_layout_counter</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_layout_counter</span>
+
 <div class="viewcode-block" id="GuiApi.reset">
 <a class="viewcode-back" href="../../../api/core/gui_api/#viser.GuiApi.reset">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -999,8 +1039,63 @@
             <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">root_container</span><span class="o">.</span><span class="n">_children</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
         <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">_modal_handle_from_uuid</span><span class="p">:</span>
             <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_modal_handle_from_uuid</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="c1"># Panels are top-level entities (not under `root`), so drain them</span>
+        <span class="c1"># explicitly -- otherwise they leak and replay to late joiners.</span>
+        <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">_panel_handle_from_uuid</span><span class="p">:</span>
+            <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_panel_handle_from_uuid</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
         <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">_command_handle_from_uuid</span><span class="p">:</span>
-            <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_command_handle_from_uuid</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span></div>
+            <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_command_handle_from_uuid</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+
+        <span class="c1"># Reset any server-authored main-panel placement (from `main_panel`</span>
+        <span class="c1"># commands or the deprecated `control_layout`) back to the default. The</span>
+        <span class="c1"># per-axis placement messages persist in the broadcast buffer and replay</span>
+        <span class="c1"># to clients that connect after the reset; sending the defaults here</span>
+        <span class="c1"># coalesces over the stale ones (same redundancy key per message type) so</span>
+        <span class="c1"># late joiners -- and connected clients -- get the default control panel</span>
+        <span class="c1"># (a top-right float) instead of a layout the user never asked</span>
+        <span class="c1"># for. Placement is write-only, so we just send; there&#39;s no state to read.</span>
+        <span class="c1"># Bump the main panel&#39;s layout counter once and stamp it on all three</span>
+        <span class="c1"># reset messages, so a connected client that had rearranged the control</span>
+        <span class="c1"># panel still sees this deliberate reset (counter increment beats its</span>
+        <span class="c1"># last-applied), while a normal reconnect replay -- same counter -- is</span>
+        <span class="c1"># ignored. (None width/height clears any override -&gt; default/theme.)</span>
+        <span class="n">reset_counter</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_next_layout_counter</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+            <span class="n">_messages</span><span class="o">.</span><span class="n">GuiSetPanelPositionMessage</span><span class="p">(</span>
+                <span class="n">CONTROL_PANEL_ID</span><span class="p">,</span>
+                <span class="p">{</span><span class="s2">&quot;kind&quot;</span><span class="p">:</span> <span class="s2">&quot;float&quot;</span><span class="p">,</span> <span class="s2">&quot;x&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;y&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">},</span>
+                <span class="n">counter</span><span class="o">=</span><span class="n">reset_counter</span><span class="p">,</span>
+                <span class="n">run_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_layout_run_id</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+            <span class="n">_messages</span><span class="o">.</span><span class="n">GuiSetPanelWidthMessage</span><span class="p">(</span>
+                <span class="n">CONTROL_PANEL_ID</span><span class="p">,</span>
+                <span class="kc">None</span><span class="p">,</span>
+                <span class="n">counter</span><span class="o">=</span><span class="n">reset_counter</span><span class="p">,</span>
+                <span class="n">run_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_layout_run_id</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+            <span class="n">_messages</span><span class="o">.</span><span class="n">GuiSetPanelHeightMessage</span><span class="p">(</span>
+                <span class="n">CONTROL_PANEL_ID</span><span class="p">,</span>
+                <span class="kc">None</span><span class="p">,</span>
+                <span class="n">counter</span><span class="o">=</span><span class="n">reset_counter</span><span class="p">,</span>
+                <span class="n">run_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_layout_run_id</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="c1"># Collapsed is the fourth independent axis with its own redundancy</span>
+        <span class="c1"># slot: without this, a prior `main_panel.minimize()` survives the</span>
+        <span class="c1"># reset in the buffer and late joiners replay a minimized &quot;default&quot;</span>
+        <span class="c1"># control panel.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+            <span class="n">_messages</span><span class="o">.</span><span class="n">GuiSetPanelCollapsedMessage</span><span class="p">(</span>
+                <span class="n">CONTROL_PANEL_ID</span><span class="p">,</span>
+                <span class="kc">False</span><span class="p">,</span>
+                <span class="n">counter</span><span class="o">=</span><span class="n">reset_counter</span><span class="p">,</span>
+                <span class="n">run_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_layout_run_id</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="GuiApi.set_panel_label">
@@ -1040,6 +1135,23 @@
 <span class="sd">            show_share_button: A boolean indicating if the share button should be displayed.</span>
 <span class="sd">            brand_color: An optional tuple of integers (RGB) representing the brand color.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c1"># `control_layout` is soft-deprecated in favor of `main_panel` placement.</span>
+        <span class="c1"># &quot;collapsible&quot;/&quot;fixed&quot; both map to docking the control panel to the</span>
+        <span class="c1"># right edge; the dock system makes every docked panel user-collapsible,</span>
+        <span class="c1"># so the old fixed/collapsible distinction no longer applies. We send</span>
+        <span class="c1"># &quot;floating&quot; to the client (the dock surface) and issue the dock command.</span>
+        <span class="k">if</span> <span class="n">control_layout</span> <span class="o">!=</span> <span class="s2">&quot;floating&quot;</span><span class="p">:</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                <span class="s2">&quot;`control_layout` is deprecated; use `main_panel` placement&quot;</span>
+                <span class="s2">&quot; instead, e.g. `server.gui.main_panel.dock_right()`. Both&quot;</span>
+                <span class="s1">&#39; &quot;collapsible&quot; and &quot;fixed&quot; now dock the control panel to the&#39;</span>
+                <span class="s2">&quot; right edge.&quot;</span><span class="p">,</span>
+                <span class="ne">DeprecationWarning</span><span class="p">,</span>
+                <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">main_panel</span><span class="o">.</span><span class="n">dock_right</span><span class="p">()</span>
+            <span class="n">control_layout</span> <span class="o">=</span> <span class="s2">&quot;floating&quot;</span>
 
         <span class="n">colors_cast</span><span class="p">:</span> <span class="n">LengthTenStrTuple</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 
@@ -1180,7 +1292,11 @@
         <span class="n">expand_by_default</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">visible</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GuiFolderHandle</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add a folder, and return a handle that can be used to populate it.</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add a folder: a single **inline** collapsible section. Return a handle</span>
+<span class="sd">        that can be used to populate it.</span>
+
+<span class="sd">        For inline *tabs* use :meth:`add_tab_group`; for content in a *movable*</span>
+<span class="sd">        window (dockable / floating) use :meth:`add_panel`.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            label: Label to display on the folder. If ``None``, the folder is</span>
@@ -1194,6 +1310,8 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            A handle that can be used as a context to populate the folder.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># TODO: consider an imperative collapse/expand method on the folder</span>
+        <span class="c1"># handle; today only the `expand_by_default` creation kwarg exists.</span>
         <span class="n">folder_container_id</span> <span class="o">=</span> <span class="n">_make_uuid</span><span class="p">()</span>
         <span class="n">order</span> <span class="o">=</span> <span class="n">_apply_default_order</span><span class="p">(</span><span class="n">order</span><span class="p">)</span>
         <span class="n">props</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">GuiFolderProps</span><span class="p">(</span>
@@ -1338,7 +1456,12 @@
         <span class="n">order</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">visible</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GuiTabGroupHandle</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add a tab group.</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add a tab group: **inline** tabs that stay put where they are added</span>
+<span class="sd">        (in the control panel or a folder).</span>
+
+<span class="sd">        For tabs in a *movable* window the user can dock or float, use</span>
+<span class="sd">        :meth:`add_panel` instead; for a single inline collapsible section, use</span>
+<span class="sd">        :meth:`add_folder`.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            order: Optional ordering, smallest values will be displayed first.</span>
@@ -1372,6 +1495,96 @@
             <span class="p">)</span>
         <span class="p">)</span></div>
 
+
+<div class="viewcode-block" id="GuiApi.add_panel">
+<a class="viewcode-back" href="../../../api/core/gui_api/#viser.GuiApi.add_panel">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_panel</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">order</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">visible</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PanelHandle</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add a standalone panel: a **movable** window (dockable / floating)</span>
+<span class="sd">        that lives outside the main control panel. A panel is the *container*;</span>
+<span class="sd">        its tabs (added with :meth:`PanelHandle.add_tab`) hold the content.</span>
+
+<span class="sd">        Choosing a container: use :meth:`add_folder` for an inline collapsible</span>
+<span class="sd">        section, :meth:`add_tab_group` for inline tabs that stay put inside the</span>
+<span class="sd">        control panel, and ``add_panel`` for tabs in a window the user can move,</span>
+<span class="sd">        dock, or float. (A panel is essentially a tab group you can place.)</span>
+
+<span class="sd">        A panel is a top-level entity (like :meth:`add_modal`): it is not placed</span>
+<span class="sd">        in the current container context. Add content with</span>
+<span class="sd">        :meth:`PanelHandle.add_tab`, place it with the imperative ``dock_*`` /</span>
+<span class="sd">        :meth:`PanelHandle.float` commands, and remove it with</span>
+<span class="sd">        :meth:`PanelHandle.remove` (there is no UI close button). See also</span>
+<span class="sd">        :attr:`main_panel` to place the main control panel.</span>
+
+<span class="sd">        Panels start expanded -- except on the mobile bottom sheet, where</span>
+<span class="sd">        panels render as sections that start collapsed (one tap opens the</span>
+<span class="sd">        panel; the sheet is wayfinding chrome). :meth:`PanelHandle.minimize` /</span>
+<span class="sd">        :meth:`PanelHandle.expand` collapse or reveal them imperatively,</span>
+<span class="sd">        applied to the panel&#39;s containing window or docked column like the</span>
+<span class="sd">        on-screen minimize control.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            order: Optional ordering, smallest values will be displayed first.</span>
+<span class="sd">                Used for the mobile bottom sheet&#39;s section order;</span>
+<span class="sd">                docked/floating placement is set with the ``dock_*`` /</span>
+<span class="sd">                ``float`` commands, not ``order``.</span>
+<span class="sd">            visible: Whether the panel is visible.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            A handle used to add tabs to and place the panel.</span>
+
+<span class="sd">        Example::</span>
+
+<span class="sd">            panel = server.gui.add_panel()</span>
+<span class="sd">            with panel.add_tab(&quot;Stats&quot;, viser.Icon.CHART_BAR):</span>
+<span class="sd">                server.gui.add_number(&quot;Counter&quot;, 0, disabled=True)</span>
+<span class="sd">            panel.dock_right()</span>
+<span class="sd">            panel.set_width(320)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">panel_id</span> <span class="o">=</span> <span class="n">_make_uuid</span><span class="p">()</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">GuiPanelMessage</span><span class="p">(</span>
+            <span class="n">uuid</span><span class="o">=</span><span class="n">panel_id</span><span class="p">,</span>
+            <span class="n">props</span><span class="o">=</span><span class="n">_messages</span><span class="o">.</span><span class="n">GuiPanelProps</span><span class="p">(</span>
+                <span class="n">order</span><span class="o">=</span><span class="n">_apply_default_order</span><span class="p">(</span><span class="n">order</span><span class="p">),</span>
+                <span class="n">_tab_labels</span><span class="o">=</span><span class="p">(),</span>
+                <span class="n">visible</span><span class="o">=</span><span class="n">visible</span><span class="p">,</span>
+                <span class="n">_tab_icons_html</span><span class="o">=</span><span class="p">(),</span>
+                <span class="n">_tab_container_ids</span><span class="o">=</span><span class="p">(),</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">PanelHandle</span><span class="p">(</span>
+            <span class="n">_GuiHandleState</span><span class="p">(</span>
+                <span class="n">message</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span>
+                <span class="bp">self</span><span class="p">,</span>
+                <span class="n">value</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                <span class="n">props</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">props</span><span class="p">,</span>
+                <span class="c1"># A panel is a top-level entity (not nested in a container); it</span>
+                <span class="c1"># registers itself in `_panel_handle_from_uuid`. The</span>
+                <span class="c1"># parent_container_id is unused for panels, but the handle state</span>
+                <span class="c1"># requires one -- &quot;root&quot; is a harmless placeholder.</span>
+                <span class="n">parent_container_id</span><span class="o">=</span><span class="s2">&quot;root&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">)</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">main_panel</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MainPanelHandle</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Handle for the main control panel.</span>
+
+<span class="sd">        Supports the same placement / sizing / minimize commands as a standalone</span>
+<span class="sd">        panel (see :class:`MainPanelHandle` and :meth:`add_panel`). It can be a</span>
+<span class="sd">        dock anchor for :meth:`PanelHandle.dock_above` / :meth:`dock_below` from</span>
+<span class="sd">        any scope, but ONLY while it is itself docked (e.g. after</span>
+<span class="sd">        ``main_panel.dock_left()``); the control panel floats by default, and</span>
+<span class="sd">        splitting against a floating anchor falls back to a right-edge dock. A</span>
+<span class="sd">        fresh handle is returned on each access. This is the supported replacement</span>
+<span class="sd">        for the deprecated ``configure_theme(control_layout=...)``.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">MainPanelHandle</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
 
 <div class="viewcode-block" id="GuiApi.add_markdown">
 <a class="viewcode-back" href="../../../api/core/gui_api/#viser.GuiApi.add_markdown">[docs]</a>

@@ -734,6 +734,21 @@ required in the future.</p></li>
 </dd>
 </dl>
 <dl class="py method">
+<dt class="sig sig-object py" id="viser.infra.WebsockServer.disconnect_all_clients">
+<span class="sig-name descname"><span class="pre">disconnect_all_clients</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../../../_modules/viser/infra/_infra/#WebsockServer.disconnect_all_clients"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.infra.WebsockServer.disconnect_all_clients" title="Link to this definition">¶</a></dt>
+<dd><p>Forcibly close every live client connection. The server keeps
+running; clients auto-reconnect and replay. This is the supported way
+to exercise the reconnect path (e.g. from tests): a network-level drop
+cannot be scripted from the browser side – Playwright’s <cite>set_offline</cite>
+does not close already-established localhost websockets.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="viser.infra.WebsockServer.start">
 <span class="sig-name descname"><span class="pre">start</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../../../_modules/viser/infra/_infra/#WebsockServer.start"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.infra.WebsockServer.start" title="Link to this definition">¶</a></dt>
 <dd><p>Start the server.</p>
@@ -1121,6 +1136,7 @@ TypeScript annotation corresponding to a dataclass field.</p>
 </ul>
 </li>
 <li><a class="reference internal" href="#viser.infra.WebsockServer"><code class="docutils literal notranslate"><span class="pre">WebsockServer</span></code></a><ul>
+<li><a class="reference internal" href="#viser.infra.WebsockServer.disconnect_all_clients"><code class="docutils literal notranslate"><span class="pre">WebsockServer.disconnect_all_clients()</span></code></a></li>
 <li><a class="reference internal" href="#viser.infra.WebsockServer.start"><code class="docutils literal notranslate"><span class="pre">WebsockServer.start()</span></code></a></li>
 <li><a class="reference internal" href="#viser.infra.WebsockServer.stop"><code class="docutils literal notranslate"><span class="pre">WebsockServer.stop()</span></code></a></li>
 <li><a class="reference internal" href="#viser.infra.WebsockServer.on_client_connect"><code class="docutils literal notranslate"><span class="pre">WebsockServer.on_client_connect()</span></code></a></li>
