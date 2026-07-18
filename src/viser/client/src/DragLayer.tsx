@@ -347,12 +347,18 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
         if (activeDragRef.current !== null) return false;
         if (!anyBindingMatches(bindings, input)) return false;
 
-        // The gate above validates the POINTERDOWN input (the combo that
-        // made this gesture a drag candidate). The opening segment is
-        // attributed to the PROMOTION-TIME modifier, which may differ --
-        // and may be unbound, in which case the drag begins dormant and
-        // the key/pointermove listeners below pick up the next switch.
-        const opening = planDragStart(input, promotionModifier, bindings);
+        // The gate above validates the POINTERDOWN input against the
+        // POINTERDOWN bindings (the combo that made this gesture a drag
+        // candidate). The opening segment is instead attributed to the
+        // PROMOTION-TIME modifier, planned against the LIVE bindings --
+        // both may have changed inside the pointerdown->promotion window
+        // (a binding-clear cancels the candidate before promotion, but a
+        // partial edit doesn't). An unbound promotion-time combo begins
+        // the drag dormant; the key/pointermove listeners below pick up
+        // the next switch.
+        const liveBindings =
+          viewer.useSceneTree.get(nodeName)?.dragBindings ?? [];
+        const opening = planDragStart(input, promotionModifier, liveBindings);
 
         // Convert the raycast hit point to world coords. The frame of
         // ``eventPoint`` depends on which raycast produced it:
