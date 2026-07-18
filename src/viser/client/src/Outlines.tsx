@@ -61,19 +61,17 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
     const oldGeometry = React.useRef<THREE.BufferGeometry>();
     const oldPosition = React.useRef<THREE.BufferAttribute>();
     const oldPositionVersion = React.useRef(-1);
-    // Whether the CURRENT outline mesh's geometry is an owned creased clone
-    // (built with a nonzero angle) vs the parent's shared geometry. Every
-    // dispose decision must read this recorded flag -- gating on the current
-    // `angle` prop is wrong on angle flips: PI->0 would leak the old clone,
-    // and 0->PI would dispose the parent's live shared geometry.
-    const ownsGeometry = React.useRef(false);
-    // The live outline mesh, recorded at build time. The unmount cleanup
-    // cannot re-derive it from localRef: React detaches the ref (-> null)
-    // during the deletion phase BEFORE passive cleanups run, so a
+    // The creased clone WE own for the current outline mesh, or null when the
+    // mesh shares the parent's geometry. Recording the disposable resource
+    // itself is what makes every dispose site correct by construction: gating
+    // on the current `angle` prop was the original bug (PI->0 leaked the old
+    // clone, 0->PI disposed the parent's live shared geometry), and the
+    // unmount cleanup cannot re-derive the mesh from localRef -- React
+    // detaches the ref (-> null) before passive cleanups run, so a
     // `localRef.current.children[0]` lookup there is always null and the
-    // dispose would silently never happen (leaking the creased clone once per
+    // dispose would silently never happen (leaking the clone once per
     // unmount -- every hover cycle for unmountOnHide gizmos).
-    const outlineMeshRef = React.useRef<THREE.Mesh | null>(null);
+    const ownedGeometryRef = React.useRef<THREE.BufferGeometry | null>(null);
     React.useLayoutEffect(() => {
       const group = localRef.current;
       if (!group) return;
@@ -105,11 +103,12 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
           oldPosition.current = position;
           oldPositionVersion.current = position?.version ?? -1;
 
-          // Remove old mesh. Dispose its geometry only if WE cloned it
-          // (recorded when the old mesh was built; see ownsGeometry above).
+          // Remove the old mesh, freeing the creased clone if we own one
+          // (never the parent's shared geometry; see ownedGeometryRef above).
           let mesh = group.children[0] as any;
           if (mesh) {
-            if (ownsGeometry.current) mesh.geometry.dispose();
+            ownedGeometryRef.current?.dispose();
+            ownedGeometryRef.current = null;
             group.remove(mesh);
           }
 
@@ -134,8 +133,7 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
           mesh.geometry = angle
             ? toCreasedNormals(parent.geometry, angle)
             : parent.geometry;
-          ownsGeometry.current = angle !== 0;
-          outlineMeshRef.current = mesh;
+          ownedGeometryRef.current = angle !== 0 ? mesh.geometry : null;
         }
       }
     });
@@ -166,14 +164,13 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
 
     React.useEffect(() => {
       return () => {
-        // Dispose everything on unmount. Both reads go through refs recorded
-        // at build time (see outlineMeshRef/ownsGeometry above): localRef is
-        // already null here, and the first-render `angle` closure capture is
-        // stale on flips.
+        // Dispose everything on unmount, reading only what was recorded at
+        // build time (see ownedGeometryRef above): localRef is already null
+        // here, and the first-render `angle` closure capture is stale on
+        // flips.
         material.dispose();
-        const mesh = outlineMeshRef.current;
-        if (mesh !== null && ownsGeometry.current) mesh.geometry.dispose();
-        outlineMeshRef.current = null;
+        ownedGeometryRef.current?.dispose();
+        ownedGeometryRef.current = null;
       };
     }, []);
 
