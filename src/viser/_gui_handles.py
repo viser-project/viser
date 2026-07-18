@@ -1277,13 +1277,14 @@ class PanelHandle(
                 GuiPanelRemoveMessage(self._impl.uuid)
             )
         # Only the tombstone winner reaches here, so the pop and tab drain run
-        # exactly once. `.pop(..., None)` is belt-and-suspenders. The drain
-        # runs AFTER the tombstone and OUTSIDE the lock (a plain,
-        # non-reentrant Lock): each tab.remove() writes back to this panel's
-        # tab tuples, which _rebuild_tab_props now skips for a removed panel
-        # (props_setattr would reject the write; the client drops the whole
-        # entity via the remove message anyway).
-        gui_api._panel_handle_from_uuid.pop(self._impl.uuid, None)
+        # exactly once -- a strict pop() raises if that invariant ever breaks,
+        # which beats hiding the breakage. The drain runs AFTER the tombstone
+        # and OUTSIDE the lock (a plain, non-reentrant Lock): each
+        # tab.remove() writes back to this panel's tab tuples, which
+        # _rebuild_tab_props skips for a removed panel (props_setattr would
+        # reject the write; the client drops the whole entity via the remove
+        # message anyway).
+        gui_api._panel_handle_from_uuid.pop(self._impl.uuid)
         for tab in tuple(self._tab_handles):
             tab.remove()
 

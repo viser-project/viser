@@ -146,10 +146,8 @@ export const SkinnedMesh = React.forwardRef<
     // so throwing here would skip the remaining subscribers and gl.render.
     const state = viewerMutable.skinnedMeshState[message.name];
     if (state === undefined) return;
-    // Identity guard for same-tick delete + re-add of the same name: only the
-    // instance whose init effect claimed THIS entry may touch it (see
-    // ownedEntryRef). A pending-unmount instance fails this check even when
-    // the replacement skeleton's bone count matches its own.
+    // Only the instance whose init effect claimed THIS entry may touch it
+    // (see ownedEntryRef above for the same-name delete + re-add race).
     if (state !== ownedEntryRef.current) return;
     const bones = bonesRef.current;
     // Belt over the identity guard: never index poses beyond our bones (a
