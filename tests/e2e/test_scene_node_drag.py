@@ -528,14 +528,23 @@ def test_scene_node_drag_modifier_release_before_button(
     """Releasing the modifier a beat before the mouse button must not fire
     a degenerate segment on the combo left behind.
 
-    With both a bare binding (no modifier) and ``cmd/ctrl`` registered,
-    ending a Ctrl-drag "modifier first, button second" (the natural
-    order) switches to the bare combo for the few milliseconds before
-    release. A switch-created segment's ``start`` is deferred
-    (``SWITCH_START_DELAY_MS``) and discarded when the button comes up
-    inside the window -- so the bare callback sees NOTHING, and the ctrl
-    callback sees one clean pair. A follow-up bare drag proves the bare
-    binding itself is live (the zero above isn't vacuous)."""
+    With both a bare binding (no modifier) and ``cmd/ctrl`` registered, a
+    Ctrl keyup mid-drag switches to the bare combo -- but the
+    switch-created segment's ``start`` is deferred
+    (``SWITCH_START_DELAY_MS``) and discarded if the button comes up
+    inside the window. Two gestures pin both halves:
+
+    A. CONFIRM: Ctrl keyup with the button HELD. The ctrl segment ends on
+       the keyup (asserted before any release), and the pending bare
+       start fires on the deferral timer -- proving the keyup really
+       creates a pending segment (gesture B's zero isn't vacuous: the
+       identical keyup, un-released, produces a bare segment).
+    B. DISCARD: Ctrl keyup + pointerup dispatched in the SAME JS task
+       (both listeners are window-level, so synthetic events reach them;
+       the same-task dispatch makes the sub-window gap deterministic --
+       real key/mouse calls race the 100ms timer on slow CI). The keyup
+       schedules the pending bare start; the pointerup discards it before
+       any timer can fire. Bare must not budge."""
     viser_server.initial_camera.position = (0.0, 0.0, 4.0)
     viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
 
@@ -585,41 +594,87 @@ def test_scene_node_drag_modifier_release_before_button(
 
     (start_x, start_y), (end_x, end_y) = _get_canvas_drag_points(page)
 
-    # Ctrl-drag, then end it modifier-first: keyup immediately followed by
-    # mouse-up, well inside the deferral window.
+    # Record the mouse pointerId for gesture B's same-task synthetic
+    # release (handleWindowPointerUp filters on it).
+    page.evaluate(
+        """() => { window.__pid = null;
+             window.addEventListener('pointermove',
+               (e) => { window.__pid = e.pointerId; }, true); }"""
+    )
+
+    # --- Gesture A (CONFIRM): Ctrl keyup with the button HELD.
     page.keyboard.down("Control")
     page.mouse.move(start_x, start_y)
     page.mouse.down()
     page.mouse.move(end_x, end_y, steps=8)
     assert ctrl_started.wait(timeout=5.0), "cmd/ctrl segment didn't start"
     page.keyboard.up("Control")
+    # The ctrl end comes from the KEYUP -- asserted before any release.
+    assert ctrl_ended.wait(timeout=5.0), (
+        "cmd/ctrl segment didn't end on keyup (button still held)"
+    )
+    # The keyup scheduled a pending bare start; held stationary past the
+    # deferral window, the timer confirms it.
+    assert bare_started.wait(timeout=5.0), (
+        "held past the deferral window, the pending bare start should have "
+        "fired on the timer"
+    )
     page.mouse.up()
-    assert ctrl_ended.wait(timeout=5.0), "cmd/ctrl segment didn't end"
-
-    # Give any (buggy) deferred bare start ample time to fire, then pin:
-    # the bare binding saw nothing, the ctrl binding saw one clean pair.
-    page.wait_for_timeout(600)
+    assert bare_ended.wait(timeout=5.0), "bare segment didn't end on release"
     with lock:
-        assert bare_starts[0] == 0 and bare_ends[0] == 0, (
-            "modifier-first release fired a degenerate segment on the bare "
-            f"binding: {bare_starts[0]} starts, {bare_ends[0]} ends"
-        )
         assert ctrl_starts[0] == 1 and ctrl_ends[0] == 1, (
             ctrl_starts[0],
             ctrl_ends[0],
         )
-
-    # Positive control: a plain unmodified drag drives the bare binding.
-    page.mouse.move(start_x, start_y)
-    page.mouse.down()
-    page.mouse.move(end_x, end_y, steps=8)
-    assert bare_started.wait(timeout=5.0), "bare segment didn't start"
-    page.mouse.up()
-    assert bare_ended.wait(timeout=5.0), "bare segment didn't end"
-    with lock:
         assert bare_starts[0] == 1 and bare_ends[0] == 1, (
             bare_starts[0],
             bare_ends[0],
+        )
+
+    # --- Gesture B (DISCARD): the identical keyup, but the button comes
+    # up in the SAME JS task -- inside the window, deterministically.
+    page.keyboard.down("Control")
+    page.mouse.move(start_x, start_y)
+    page.mouse.down()
+    page.mouse.move(end_x, end_y, steps=8)
+    for _ in range(50):
+        with lock:
+            if ctrl_starts[0] == 2:
+                break
+        page.wait_for_timeout(100)
+    with lock:
+        assert ctrl_starts[0] == 2, "second cmd/ctrl segment didn't start"
+    pid = page.evaluate("() => window.__pid")
+    assert pid is not None, "pointer id not observed"
+    page.evaluate(
+        """([x, y, pid]) => {
+          window.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+          window.dispatchEvent(new PointerEvent('pointerup', {
+            bubbles: true, clientX: x, clientY: y, button: 0,
+            pointerId: pid, pointerType: 'mouse', isPrimary: true }));
+        }""",
+        [end_x, end_y, pid],
+    )
+    # Reset the real input state (the drag already ended; both no-op).
+    page.mouse.up()
+    page.keyboard.up("Control")
+
+    for _ in range(50):
+        with lock:
+            if ctrl_ends[0] == 2:
+                break
+        page.wait_for_timeout(100)
+    # Ample time for any (buggy) surviving pending start to fire.
+    page.wait_for_timeout(600)
+    with lock:
+        assert ctrl_starts[0] == 2 and ctrl_ends[0] == 2, (
+            ctrl_starts[0],
+            ctrl_ends[0],
+        )
+        assert bare_starts[0] == 1 and bare_ends[0] == 1, (
+            "modifier-first release fired a degenerate segment on the bare "
+            f"binding: {bare_starts[0]} starts, {bare_ends[0]} ends "
+            "(expected the gesture-A pair only)"
         )
 
 

@@ -474,8 +474,10 @@ class SceneNodeDragEvent(Generic[TSceneNodeHandle]):
     target: TSceneNodeHandle
     """Scene node that is being dragged."""
     phase: DragPhase
-    """Drag lifecycle phase: ``"start"`` at press, ``"update"`` on
-    every throttled pointermove (~20Hz), ``"end"`` at release.
+    """Drag lifecycle phase: ``"start"`` once a press is confirmed as a
+    drag (the pointer travels past a small motion threshold -- a
+    stationary press/release fires nothing), ``"update"`` on every
+    throttled pointermove (~20Hz), ``"end"`` at release.
 
     A gesture is partitioned into one *segment* per held modifier-combo.
     Each segment fires exactly one ``"start"``, zero or more
@@ -621,7 +623,9 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
     ) -> Any:
         """Attach a callback for the full drag lifecycle.
 
-        Fires once with ``event.phase == "start"`` at press, zero or
+        Fires once with ``event.phase == "start"`` when a press is
+        confirmed as a drag (the pointer travels past a small motion
+        threshold; a stationary press/release fires nothing), zero or
         more times with ``"update"`` (throttled pointermove), and once
         with ``"end"`` at release. ``end`` fires even on cancellation
         paths (window blur, pointer cancel, node removed mid-drag) so
