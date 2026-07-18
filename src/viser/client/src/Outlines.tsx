@@ -61,6 +61,12 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
     const oldGeometry = React.useRef<THREE.BufferGeometry>();
     const oldPosition = React.useRef<THREE.BufferAttribute>();
     const oldPositionVersion = React.useRef(-1);
+    // Whether the CURRENT outline mesh's geometry is an owned creased clone
+    // (built with a nonzero angle) vs the parent's shared geometry. Every
+    // dispose decision must read this recorded flag -- gating on the current
+    // `angle` prop is wrong on angle flips: PI->0 would leak the old clone,
+    // and 0->PI would dispose the parent's live shared geometry.
+    const ownsGeometry = React.useRef(false);
     React.useLayoutEffect(() => {
       const group = localRef.current;
       if (!group) return;
@@ -92,10 +98,11 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
           oldPosition.current = position;
           oldPositionVersion.current = position?.version ?? -1;
 
-          // Remove old mesh.
+          // Remove old mesh. Dispose its geometry only if WE cloned it
+          // (recorded when the old mesh was built; see ownsGeometry above).
           let mesh = group.children[0] as any;
           if (mesh) {
-            if (angle) mesh.geometry.dispose();
+            if (ownsGeometry.current) mesh.geometry.dispose();
             group.remove(mesh);
           }
 
@@ -120,6 +127,7 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
           mesh.geometry = angle
             ? toCreasedNormals(parent.geometry, angle)
             : parent.geometry;
+          ownsGeometry.current = angle !== 0;
         }
       }
     });
@@ -161,8 +169,11 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
           THREE.Material
         >;
         if (mesh) {
-          // Dispose the geometry if it was cloned via toCreasedNormals.
-          if (angle) mesh.geometry.dispose();
+          // Dispose the geometry only if it was cloned via toCreasedNormals.
+          // Read the ref, not `angle`: this []-deps cleanup closure captures
+          // the FIRST-render angle, which can differ from the angle the
+          // current mesh was actually built with.
+          if (ownsGeometry.current) mesh.geometry.dispose();
           group.remove(mesh);
         }
       };

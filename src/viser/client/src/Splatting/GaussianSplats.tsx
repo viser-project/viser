@@ -372,19 +372,30 @@ function SplatRendererImpl() {
             merged.gaussianBuffer,
             merged.groupIndices,
           );
-        } else {
-          const sorter = new (await SorterModulePromise).Sorter(
+          return;
+        }
+        // Await the module BEFORE constructing, so bailing out below never
+        // orphans a live Sorter (embind objects are only freed by an explicit
+        // .delete(); GC does not reclaim their WASM-heap allocations).
+        const module = await SorterModulePromise;
+        // The component may have unmounted while the module was loading.
+        if (sorterDisposedRef.current) return;
+        if (SorterRef.current) {
+          // Multiple buffer updates raced past the await; an earlier
+          // continuation already constructed the Sorter. Same-promise
+          // continuations resume in registration order, so we're the newer
+          // buffer version: push our data into the live instance instead of
+          // constructing (and leaking) a second one.
+          SorterRef.current.setBuffer(
             merged.gaussianBuffer,
             merged.groupIndices,
           );
-          // The component may have unmounted while the module was loading; if
-          // so, free the just-created Sorter instead of orphaning it.
-          if (sorterDisposedRef.current) {
-            sorter.delete();
-            return;
-          }
-          SorterRef.current = sorter;
+          return;
         }
+        SorterRef.current = new module.Sorter(
+          merged.gaussianBuffer,
+          merged.groupIndices,
+        );
       })();
     }
   }, [merged.gaussianBuffer, merged.groupIndices]);

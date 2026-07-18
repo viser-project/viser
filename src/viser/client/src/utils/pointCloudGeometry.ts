@@ -25,5 +25,20 @@ export function syncPointCloudGeometry(
     console.error(`Invalid color buffer length, got ${colors.length}`);
   }
 
+  // Per-point -> uniform color transition: drop the stale per-point 'color'
+  // attribute. three.js re-uploads every registered attribute regardless of
+  // whether the material samples it, so leaving it registered costs bandwidth
+  // every render (and serves stale data if per-point colors come back at a
+  // matching length). Dispose BEFORE deleting: three only frees an
+  // attribute's GL buffer via the geometry 'dispose' event, which walks the
+  // attributes still present on the geometry -- deleteAttribute alone would
+  // strand the GL buffer until the JS GC happens to reclaim the wrapper. The
+  // surviving position attribute is re-uploaded into a fresh buffer on the
+  // next render (same one-time cost as any realloc; this transition is rare).
+  if (attributes.color === undefined && geometry.hasAttribute("color")) {
+    geometry.dispose();
+    geometry.deleteAttribute("color");
+  }
+
   syncBufferGeometry(geometry, attributes);
 }

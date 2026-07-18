@@ -100,8 +100,11 @@ export const SkinnedMesh = React.forwardRef<
 
   // Clean up geometry and skeleton when they change (they're created together).
   React.useEffect(() => {
+    // The state entry can be deleted while this component is still mounted
+    // (subtree-prefix removal in MessageHandler, reconnect clearing in
+    // WebsocketInterface), so guard reads like the bone-message handlers do.
     const state = viewerMutable.skinnedMeshState[message.name];
-    state.initialized = false;
+    if (state !== undefined) state.initialized = false;
     // The bones for this skeleton (added to the parent node imperatively in
     // useFrame below). Captured here so the cleanup can remove exactly these on
     // a skeleton change / unmount -- otherwise a re-added skinned mesh leaks its
@@ -125,7 +128,13 @@ export const SkinnedMesh = React.forwardRef<
 
   // Update bone transforms for animation.
   useFrame(() => {
+    // The state entry can be deleted before our unmount commits: subtree
+    // removal and reconnect clearing both run in the message handler's
+    // useFrame (priority -100000) earlier in the same rAF tick, while this
+    // subscriber is still registered. R3F's subscriber loop has no try/catch,
+    // so throwing here would skip the remaining subscribers and gl.render.
     const state = viewerMutable.skinnedMeshState[message.name];
+    if (state === undefined) return;
     const bones = bonesRef.current;
     if (skeleton !== undefined && bones !== undefined) {
       if (!state.initialized) {

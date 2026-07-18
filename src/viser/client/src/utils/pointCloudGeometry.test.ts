@@ -51,4 +51,94 @@ describe("syncPointCloudGeometry", () => {
     syncPointCloudGeometry(geom, new Uint16Array(6), new Uint8Array(6)); // float16
     expect(geom.getAttribute("position")).not.toBe(pos1);
   });
+
+  // Regression: switching per-point colors -> uniform (3-length) colors must
+  // remove the stale N-length 'color' attribute. three.js re-uploads every
+  // registered attribute regardless of whether the material samples it, so a
+  // leftover attribute costs bandwidth every render and serves stale data if
+  // per-point colors come back at a matching length.
+  describe("per-point -> uniform color transition", () => {
+    // Minimal model of three's WebGLAttributes + WebGLGeometries.onGeometryDispose
+    // (same shape as the one in bufferGeometrySync.test.ts): buffers are freed
+    // ONLY via the geometry 'dispose' event, and only for attributes still
+    // present on the geometry when it fires.
+    function makeFakeRenderer(geometry: THREE.BufferGeometry) {
+      const uploaded = new Map<object, { size: number; version: number }>();
+      let deleteBufferCalls = 0;
+      geometry.addEventListener("dispose", () => {
+        for (const name in geometry.attributes) {
+          const attr = geometry.attributes[name];
+          if (uploaded.has(attr)) {
+            uploaded.delete(attr);
+            deleteBufferCalls++;
+          }
+        }
+      });
+      return {
+        render() {
+          for (const name in geometry.attributes) {
+            const attr = geometry.attributes[name] as THREE.BufferAttribute;
+            const cached = uploaded.get(attr);
+            if (cached === undefined) {
+              uploaded.set(attr, {
+                size: attr.array.byteLength,
+                version: attr.version,
+              });
+            } else if (cached.version < attr.version) {
+              if (cached.size !== attr.array.byteLength) {
+                throw new Error(
+                  "THREE.WebGLAttributes: Resizing buffer attributes is not supported.",
+                );
+              }
+              cached.version = attr.version;
+            }
+          }
+        },
+        liveBufferCount: () => uploaded.size,
+        deleteBufferCalls: () => deleteBufferCalls,
+      };
+    }
+
+    it("removes the stale color attribute (same point count)", () => {
+      const geom = new THREE.BufferGeometry();
+      const gpu = makeFakeRenderer(geom);
+
+      // Per-point colors: both attributes registered and uploaded.
+      syncPointCloudGeometry(geom, new Float32Array(6), new Uint8Array(6));
+      gpu.render();
+      expect(geom.hasAttribute("color")).toBe(true);
+      expect(gpu.liveBufferCount()).toBe(2);
+
+      // Uniform color, same point count.
+      syncPointCloudGeometry(geom, new Float32Array(6), new Uint8Array(3));
+      expect(geom.hasAttribute("color")).toBe(false);
+      expect(() => gpu.render()).not.toThrow();
+      // Dispose fired BEFORE deleteAttribute, so the color GL buffer was
+      // deterministically freed (not stranded until GC); position was then
+      // re-uploaded into a fresh buffer.
+      expect(gpu.deleteBufferCalls()).toBe(2);
+      expect(gpu.liveBufferCount()).toBe(1); // position only
+    });
+
+    it("removes the stale color attribute (point count also changed)", () => {
+      const geom = new THREE.BufferGeometry();
+      syncPointCloudGeometry(
+        geom,
+        new Float32Array(3000),
+        new Uint8Array(3000),
+      );
+      syncPointCloudGeometry(geom, new Float32Array(900), new Uint8Array(3));
+      expect(geom.hasAttribute("color")).toBe(false);
+      expect(geom.getAttribute("position").count).toBe(300);
+    });
+
+    it("re-adds the color attribute when per-point colors return", () => {
+      const geom = new THREE.BufferGeometry();
+      syncPointCloudGeometry(geom, new Float32Array(6), new Uint8Array(3));
+      expect(geom.hasAttribute("color")).toBe(false);
+      syncPointCloudGeometry(geom, new Float32Array(6), new Uint8Array(6));
+      expect(geom.hasAttribute("color")).toBe(true);
+      expect(geom.getAttribute("color").count).toBe(2);
+    });
+  });
 });
