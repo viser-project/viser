@@ -1,19 +1,26 @@
 import { globalStyle, style } from "@vanilla-extract/css";
 
+import { DOCK_ANIM_MS, MIN_PANEL_WIDTH_PX } from "./types";
+
+/** The one dock animation clock, as a CSS duration. */
+const DOCK_ANIM = `${DOCK_ANIM_MS}ms`;
+
 /** Marker class for a panel body's ScrollArea. */
 export const dockBodyScroll = style({});
 
-// Pin the ScrollArea's content wrapper to the viewport width. Mantine's
-// default (min-width: min-content) lets fixed-pixel content -- e.g. a plot
-// canvas that sizes itself from a measure of this very wrapper -- ratchet the
-// wrapper wider in a measure->resize feedback loop, churning the content
-// width on every panel/container resize. (The `styles` prop can't express
-// this: it applies inline styles, and the wrapper div is an unnamed Radix
-// child of the viewport.)
+// Size the ScrollArea's content wrapper to `max(100%, MIN_PANEL_WIDTH_PX)`:
+// it fills the viewport when the panel is at least the content minimum, but
+// holds that minimum and overflows (the viewport then shows a horizontal
+// scrollbar) once the region is dragged narrower -- the panel body never
+// squeezes below MIN_PANEL_WIDTH_PX. The floor is a fixed pixel constant, not
+// Mantine's default `min-content`: min-content lets fixed-pixel content -- e.g.
+// a plot canvas that sizes itself from a measure of this very wrapper -- ratchet
+// the wrapper wider in a measure->resize feedback loop; a constant floor keeps
+// the measured width stable. (The `styles` prop can't express this: it applies
+// inline styles, and the wrapper div is an unnamed Radix child of the viewport.)
 globalStyle(`${dockBodyScroll} .mantine-ScrollArea-viewport > div`, {
   display: "block",
-  minWidth: "100%",
-  maxWidth: "100%",
+  minWidth: `max(100%, ${MIN_PANEL_WIDTH_PX}px)`,
 });
 
 /** Grip bar background: one step lighter than --mantine-color-default-border
@@ -27,8 +34,96 @@ globalStyle(`:where([data-mantine-color-scheme="dark"]) ${gripBarBg}`, {
   backgroundColor: "var(--mantine-color-dark-5)",
 });
 
+/** Minimize/expand motion (P4; mechanism D34): pure presentation. The model
+ * commits instantly; this class only eases the cell/column wrappers' flex
+ * properties between their committed values. Three off-switches keep it
+ * honest: prefers-reduced-motion (instant), an ancestor's
+ * [data-dock-resizing] (divider drags write weights per frame -- easing
+ * would rubber-band the cells behind the cursor), and nothing else -- no
+ * timers, no transition-gated logic anywhere. */
+export const collapseAnim = style({
+  transition: `flex-grow ${DOCK_ANIM} ease, flex-basis ${DOCK_ANIM} ease, min-height ${DOCK_ANIM} ease`,
+  "@media": {
+    "(prefers-reduced-motion: reduce)": {
+      transition: "none",
+    },
+  },
+  selectors: {
+    "[data-dock-resizing] &": {
+      transition: "none",
+    },
+  },
+});
+
+/** D34 sibling of collapseAnim for the docked REGION container: railing /
+ * expanding a region swaps its content for the 36px rail, and this eases the
+ * container's width between the committed values (the canvas insets commit
+ * instantly -- motion is pure presentation). Same off-switches: reduced
+ * motion, and an ancestor's [data-dock-resizing] (the region resizer writes
+ * widths per frame; easing would lag the cursor). */
+export const regionWidthAnim = style({
+  transition: `width ${DOCK_ANIM} ease`,
+  "@media": {
+    "(prefers-reduced-motion: reduce)": {
+      transition: "none",
+    },
+  },
+  selectors: {
+    "[data-dock-resizing] &": {
+      transition: "none",
+    },
+  },
+});
+
+/** D34 sibling of regionWidthAnim for the canvas wrapper: rail collapse /
+ * expand changes the canvas insets in one commit, and this eases the
+ * wrapper's left/right between the committed values so the canvas tracks
+ * the region edge's own ease instead of jumping (user-adjudicated). Same
+ * off-switches: reduced motion, and the dock root's [data-dock-resizing]
+ * (region-resize drags write insets per frame; easing would lag the
+ * cursor). */
+export const canvasInsetAnim = style({
+  transition: `left ${DOCK_ANIM} ease, right ${DOCK_ANIM} ease`,
+  "@media": {
+    "(prefers-reduced-motion: reduce)": {
+      transition: "none",
+    },
+  },
+  selectors: {
+    "[data-dock-resizing] &": {
+      transition: "none",
+    },
+  },
+});
+
+/** D34 sibling of collapseAnim for a floating window's collapse: eases the
+ * window's height between committed values. Both endpoints are numeric for a
+ * pinned window (px pinned height <-> the collapsed bars' calc() sum), so
+ * the round-trip eases; an auto-height window's expanded height is `auto`,
+ * which CSS cannot interpolate -- that transition is instant (documented
+ * gap: an honest auto endpoint would need a DOM measure, and motion may
+ * never gate on measurement, P4). */
+export const windowCollapseAnim = style({
+  transition: `height ${DOCK_ANIM} ease`,
+  "@media": {
+    "(prefers-reduced-motion: reduce)": {
+      transition: "none",
+    },
+  },
+  selectors: {
+    "[data-dock-resizing] &": {
+      transition: "none",
+    },
+    // The window's own grip resizes write height per frame; the attribute
+    // goes on the Paper itself (no dock-level ancestor flag exists there).
+    "&[data-dock-resizing]": {
+      transition: "none",
+    },
+  },
+});
+
 /** Visible keyboard-focus ring for the dock's focusable non-native controls
- * (tabs, minimize/expand buttons). Drawn INSIDE the element (negative offset)
+ * (tabs, minimize/expand buttons). Drawn inside the element (negative offset)
  * so overflow:hidden ancestors -- tab strips, grip bars -- can't clip it. Only
  * on :focus-visible, so pointer clicks don't flash a ring. */
 export const focusRing = style({
@@ -44,11 +139,32 @@ export const focusRing = style({
  * original FloatingPanel's `<Divider />` exactly: gray-3 in light mode (one
  * step LIGHTER than --mantine-color-default-border) and dark-4 in dark mode. */
 export const headerRule = style({});
-globalStyle(
-  `:where([data-mantine-color-scheme="light"]) ${headerRule}`,
-  { borderBottom: "1px solid var(--mantine-color-gray-3)" },
-);
-globalStyle(
-  `:where([data-mantine-color-scheme="dark"]) ${headerRule}`,
-  { borderBottom: "1px solid var(--mantine-color-dark-4)" },
-);
+globalStyle(`:where([data-mantine-color-scheme="light"]) ${headerRule}`, {
+  borderBottom: "1px solid var(--mantine-color-gray-3)",
+});
+globalStyle(`:where([data-mantine-color-scheme="dark"]) ${headerRule}`, {
+  borderBottom: "1px solid var(--mantine-color-dark-4)",
+});
+
+/** Top rule above a DOCKED+STACKED unmergeable header. Same gray as headerRule
+ * (gray-3 light / dark-4 dark), just on the top edge, so it matches the bottom
+ * rule between docked panels. */
+export const headerRuleTop = style({});
+globalStyle(`:where([data-mantine-color-scheme="light"]) ${headerRuleTop}`, {
+  borderTop: "1px solid var(--mantine-color-gray-3)",
+});
+globalStyle(`:where([data-mantine-color-scheme="dark"]) ${headerRuleTop}`, {
+  borderTop: "1px solid var(--mantine-color-dark-4)",
+});
+
+/** Wayfinding text -- the one style for every minimized-surface label (bar
+ * segments, spine rows): theme text at chrome emphasis. Spec P3 ("chrome is
+ * quiet") + P13 (labels are the header's tabs, restyled). Sizing (0.85em)
+ * matches the expanded tab strip so minimized labels are literal cousins of
+ * tabs, not a second typography. */
+export const wayfindingText = style({
+  color: "var(--mantine-color-dimmed)",
+  opacity: 0.85,
+  fontWeight: 500,
+  fontSize: "0.85em",
+});

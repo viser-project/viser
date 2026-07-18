@@ -6,10 +6,7 @@ import {
   type KeyModifier,
 } from "../dragUtils";
 import { CameraLockManager } from "./cameraLock";
-import {
-  HoverCursorManager,
-  type ScenePointerEventType,
-} from "./hoverSet";
+import { HoverCursorManager, type ScenePointerEventType } from "./hoverSet";
 
 export type { ScenePointerEventType } from "./hoverSet";
 
@@ -52,7 +49,10 @@ const IDLE: CanvasGesture = { kind: "idle" };
 
 export class ScenePointerController {
   private gesture: CanvasGesture = IDLE;
-  private readonly filters = new Map<ScenePointerEventType, (KeyModifier | null)[]>();
+  private readonly filters = new Map<
+    ScenePointerEventType,
+    (KeyModifier | null)[]
+  >();
   /** Cleanup for window-level pointerup/pointercancel listeners
    * installed while a gesture is engaged. Null when idle. The
    * listeners catch releases that happen off the canvas -- a
@@ -84,7 +84,9 @@ export class ScenePointerController {
       this.cancelPointer(event.pointerId);
     };
     window.addEventListener("pointerup", onPointerUp, { passive: true });
-    window.addEventListener("pointercancel", onPointerCancel, { passive: true });
+    window.addEventListener("pointercancel", onPointerCancel, {
+      passive: true,
+    });
     this.windowListenerCleanup = () => {
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerCancel);
@@ -178,7 +180,10 @@ export class ScenePointerController {
   /** Returns true when the rect-select overlay should repaint. */
   onPointerMove(args: { pointerId: number; xy: [number, number] }): boolean {
     const g = this.gesture;
-    if (g.kind !== "scene-pointer-candidate" && g.kind !== "scene-rect-select") {
+    if (
+      g.kind !== "scene-pointer-candidate" &&
+      g.kind !== "scene-rect-select"
+    ) {
       return false;
     }
     if (g.pointerId !== args.pointerId) return false;

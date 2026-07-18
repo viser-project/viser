@@ -135,10 +135,7 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
   const projectToOpenCvScreen = React.useCallback(
     (pointWorld: THREE.Vector3): [number, number] => {
       screenProjScratch.copy(pointWorld).project(camera);
-      return [
-        (screenProjScratch.x + 1) * 0.5,
-        (1 - screenProjScratch.y) * 0.5,
-      ];
+      return [(screenProjScratch.x + 1) * 0.5, (1 - screenProjScratch.y) * 0.5];
     },
     [camera, screenProjScratch],
   );
@@ -147,10 +144,7 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
   // local frame, transformed by the current instance-to-world matrix.
   // Returns ``null`` if the batched pose is unavailable.
   const computeStartWorld = React.useCallback(
-    (
-      activeDrag: ActiveDragState,
-      out: THREE.Vector3,
-    ): THREE.Vector3 | null => {
+    (activeDrag: ActiveDragState, out: THREE.Vector3): THREE.Vector3 | null => {
       const m = computeInstanceWorldMatrix(
         viewer,
         activeDrag.nodeName,
@@ -326,12 +320,7 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
         activeDrag.releaseCameraLock();
       }
     },
-    [
-      dragArrow,
-      flushDragsThrottled,
-      sendDragMessage,
-      updateActiveDragEnd,
-    ],
+    [dragArrow, flushDragsThrottled, sendDragMessage, updateActiveDragEnd],
   );
 
   const api = React.useMemo<DragLayerApi>(
@@ -363,7 +352,10 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
         //     world coords already.
         const node = viewer.useSceneTree.get(nodeName);
         const startWorld = eventPoint.clone();
-        if (node !== undefined && isInstancedMesh2VendoredMessage(node.message)) {
+        if (
+          node !== undefined &&
+          isInstancedMesh2VendoredMessage(node.message)
+        ) {
           targetObj.updateWorldMatrix(true, false);
           const [sx, sy, sz] = normalizeScale(node.message.props.scale);
           startWorld.applyMatrix4(

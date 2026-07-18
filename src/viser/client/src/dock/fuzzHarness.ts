@@ -1,0 +1,874 @@
+// Shared harness for the layoutOps invariant fuzz suite. The suite is
+// split across three *.fuzz*.test.ts files so vitest parallelizes it
+// (one monolithic file made the fuzzer the whole gate's critical path:
+// ~20s serial while every other suite finished in ~3s combined).
+// Fixtures, op table, invariant checking, and shrink live here.
+
+// Adversarial invariant fuzzing for the pure layout ops.
+//
+// Goal: BREAK things. We apply long random sequences of ops from varied
+// starting layouts and assert a battery of structural invariants after EVERY
+// step. A seeded PRNG makes any failure reproducible; on failure we shrink to a
+// minimal op sequence and print it.
+//
+// Confirmed bugs are captured as `it(..., () => {...})` wrapped so the suite
+// stays green: a deterministic repro is asserted with the CURRENT (buggy)
+// behavior and tagged `BUG:` so it's easy to find. The fuzzer's invariant set
+// is tightened to skip the known-bug shapes so it keeps finding NEW issues.
+
+import {
+  DockColumn,
+  DockEdge,
+  DockLayout,
+  DockLeaf,
+  DockRegion,
+  DropRegion,
+  GroupId,
+  NodeId,
+  NonEmpty,
+  emptyLayout,
+} from "./types";
+import { invariantViolations } from "./layoutInvariants";
+import { planRegion, plannedReservedWidth } from "./regionPlan";
+import { regionWidthsOf } from "./types";
+import { reconcileRegionWidths } from "./widthReconciliation";
+import {
+  dockToEdge,
+  dockToRegionEdge,
+  dropOnDockedLeaf,
+  insertTabsInto,
+  mergeGroupsInto,
+  floatGroup,
+  floatColumn,
+  isColumnMinimized,
+  isMultiLeafColumn,
+  tearOutPane,
+  snapToWindowStack,
+  reorderTab,
+  toggleCollapsed,
+  moveWindow,
+  resizeWindow,
+  resizeWindowHeight,
+  bringToFront,
+  setActiveTab,
+  setNodeWeights,
+  setRegionWidth,
+  minimizeStack,
+  setColumnRailed,
+  expandStack,
+  stackGroupIdsOf,
+} from "./layoutOps";
+import {
+  mulberry32,
+  nid,
+  leaf,
+  row as rowS,
+  col as colS,
+  group as grp,
+  floatingWindow,
+  toRegion,
+  shapeOf,
+} from "./testUtils";
+
+type Rng = () => number;
+const pick = <T>(rng: Rng, arr: readonly T[]): T =>
+  arr[Math.floor(rng() * arr.length)];
+const int = (rng: Rng, lo: number, hi: number) =>
+  lo + Math.floor(rng() * (hi - lo + 1));
+
+// ---------------------------------------------------------------------------
+// Layout walking helpers (flat model: region -> columns -> leaves).
+// ---------------------------------------------------------------------------
+function leaves(region: DockRegion | null): DockLeaf[] {
+  if (region === null) return [];
+  return region.columns.flatMap((c) => c.leaves);
+}
+
+// THE INVARIANTS live in production (layoutInvariants.ts) so applyOp asserts the
+// exact same definition on every commit in dev -- this fuzzer and the live app
+// agree on "what valid means".
+
+/** Multiset of all panel ids across all groups (for the conservation check). */
+function allPanels(layout: DockLayout): string[] {
+  return Object.values(layout.groups)
+    .flatMap((g) => g.paneIds)
+    .sort();
+}
+
+/** GEOMETRIC invariants: the structural checks above prove the tree is valid,
+ * but not that it RENDERS coherently. regionPlan is THE source of truth every
+ * width consumer derives from, so we run it on every docked region and assert
+ * its output is internally consistent and finite -- and, critically, that EVERY
+ * row band (not just the representative width-row regionPlan picks) classifies
+ * coherently. The multi-band feature's fragility lives precisely here: the
+ * width model is computed from one row, so a sibling band that can't be planned
+ * is exactly the class of bug the structural invariants miss. */
+function geometricViolations(layout: DockLayout): string[] {
+  const v: string[] = [];
+  const widths = regionWidthsOf(layout);
+  const finite = (n: number) => Number.isFinite(n);
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const region = layout.docked[edge];
+    if (region === null) continue;
+    const plan = planRegion(region);
+    // Plan internal consistency. (API-shape update with the always-px
+    // weights migration: the plan's singleColumn field and the packed
+    // override in plannedReservedWidth are gone -- reserved width is
+    // uniform for every region shape, packed included.)
+    if (!finite(plan.chromePx) || plan.chromePx < 0)
+      v.push(`${edge}: bad chromePx ${plan.chromePx}`);
+    // The derived width must be finite and sane.
+    {
+      const reserved = plannedReservedWidth(plan, widths[edge]);
+      if (!finite(reserved) || reserved < 0)
+        v.push(`${edge}: bad reserved width ${reserved}`);
+    }
+    // Column coherence: isColumnMinimized must be total over the columns.
+    {
+      const stripCount = region.columns.filter((c) =>
+        isColumnMinimized(c),
+      ).length;
+      if (stripCount < 0 || stripCount > region.columns.length)
+        v.push(`${edge}: bad strip count ${stripCount}`);
+    }
+  }
+  return v;
+}
+
+// ---------------------------------------------------------------------------
+// Starting layouts (id-stable, since we mostly drive ops by querying live ids).
+// ---------------------------------------------------------------------------
+export function startingLayouts(): { name: string; make: () => DockLayout }[] {
+  return [
+    {
+      name: "single docked leaf",
+      make: () => {
+        const l = emptyLayout();
+        l.groups = { a: grp("a", 2) };
+        l.docked.left = toRegion(leaf("a"));
+        return l;
+      },
+    },
+    {
+      name: "side-by-side row",
+      make: () => {
+        const l = emptyLayout();
+        l.groups = { a: grp("a", 1), b: grp("b", 3), c: grp("c", 1) };
+        l.docked.left = toRegion(rowS([leaf("a"), leaf("b"), leaf("c")]));
+        return l;
+      },
+    },
+    {
+      name: "vertical stack",
+      make: () => {
+        const l = emptyLayout();
+        l.groups = { a: grp("a", 1), b: grp("b", 1) };
+        l.docked.left = toRegion(colS([leaf("a"), leaf("b")]));
+        return l;
+      },
+    },
+    {
+      name: "nested both edges + floating",
+      make: () => {
+        const l = emptyLayout();
+        l.groups = {
+          a: grp("a", 2),
+          b: grp("b", 1),
+          c: grp("c", 1),
+          d: grp("d", 4),
+          e: grp("e", 1),
+          f: grp("f", 1),
+        };
+        l.docked.left = toRegion(
+          rowS([leaf("a"), colS([leaf("b"), leaf("c")])]),
+        );
+        l.docked.right = toRegion(colS([leaf("d"), leaf("e")]));
+        l.floating = [
+          floatingWindow({ id: "wf", x: 50, y: 50, width: 280, stack: ["f"] }),
+        ];
+        return l;
+      },
+    },
+    {
+      // TWO row bands stacked vertically: a full-width band above a
+      // side-by-side band. This is the multi-band shape the 4th level exists
+      // for ("dock a band above ALL columns"). Starting here -- rather than
+      // hoping random ops build it -- forces the multi-band render/width paths
+      // (regionPlan's representative-row pick, per-band strip classification)
+      // from step 0.
+      name: "two row bands",
+      make: () => {
+        const l = emptyLayout();
+        l.groups = {
+          a: grp("a", 1),
+          b: grp("b", 2),
+          c: grp("c", 1),
+          d: grp("d", 1),
+        };
+        // D46 shape: three side-by-side columns -- [a,b stack? no --
+        // (a) alone, (b), (c,d) stack] exercising multi-column + multi-leaf.
+        l.docked.left = toRegion(
+          rowS([colS([leaf("a"), leaf("b")]), leaf("c"), colS([leaf("d")])]),
+        );
+        return l;
+      },
+    },
+    {
+      // THREE bands, one column RAILED (D38's docked collapsed form), plus a
+      // second edge -- the worst-case multi-band geometry: a railed strip
+      // beside expanded siblings, exercising the band-height flex rule and
+      // the container collapse stores.
+      name: "three bands w/ railed column + right edge",
+      make: () => {
+        const l = emptyLayout();
+        l.groups = {
+          a: grp("a", 1),
+          b: grp("b", 1),
+          c: grp("c", 1),
+          d: grp("d", 1),
+          e: grp("e", 2),
+        };
+        const railedB = colS([leaf("b")]);
+        if (railedB.kind === "col") railedB.column.railed = true;
+        l.docked.left = toRegion(
+          rowS([leaf("a"), railedB, colS([leaf("c"), leaf("d")])]),
+        );
+        l.docked.right = toRegion(rowS([leaf("e")]));
+        return l;
+      },
+    },
+    {
+      // A packed (fully railed) region + a collapsed floating window: the
+      // two container-collapse stores the fuzzer previously never started
+      // from. Ops must keep the railed flags coherent and maintain the
+      // collapsed window's identity transfers (docking it rails the
+      // landing scope).
+      name: "region-railed stack + collapsed float",
+      make: () => {
+        const l = emptyLayout();
+        l.groups = { a: grp("a", 2), b: grp("b", 1), c: grp("c", 1) };
+        l.docked.left = toRegion(rowS([leaf("a"), leaf("b")]));
+        // Packed rail (D44/D46): every column railed.
+        for (const c of l.docked.left!.columns) c.railed = true;
+        l.floating = [
+          floatingWindow({
+            id: "wc",
+            x: 80,
+            y: 80,
+            width: 260,
+            stack: ["c"],
+            collapsed: true,
+          }),
+        ];
+        return l;
+      },
+    },
+    {
+      name: "all floating, one multi-stack",
+      make: () => {
+        const l = emptyLayout();
+        l.groups = { a: grp("a", 1), b: grp("b", 2), c: grp("c", 1) };
+        l.floating = [
+          floatingWindow({
+            id: "w1",
+            x: 10,
+            y: 10,
+            width: 250,
+            stack: ["a", "b"],
+          }),
+          floatingWindow({ id: "w2", x: 300, y: 40, width: 250, stack: ["c"] }),
+        ];
+        return l;
+      },
+    },
+    {
+      // Includes a dockable AREA (an inline tab group's backing group, referenced
+      // only via `areas`) alongside a docked column + a float. Random ops then run
+      // WITH an area present, exercising the area branches (detachInPlace /
+      // removePaneInPlace area guards, the area-aware invariant exemptions) that
+      // the area-less fixtures never reach.
+      name: "area + docked + float",
+      make: () => {
+        const l = emptyLayout();
+        l.groups = {
+          area: grp("area", 2), // backs the area; referenced via l.areas only
+          d: grp("d", 1),
+          e: grp("e", 1),
+          f: grp("f", 1),
+        };
+        l.docked.left = toRegion(colS([leaf("d"), leaf("e")]));
+        l.floating = [
+          floatingWindow({ id: "wf", x: 60, y: 60, width: 260, stack: ["f"] }),
+        ];
+        l.areas = { "area-1": { group: "area" } };
+        return l;
+      },
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Op driver. Each op is described so we can (a) apply it and (b) re-derive its
+// arguments from the *current* layout (so args stay valid as structure changes),
+// and (c) record a human-readable repro line.
+// ---------------------------------------------------------------------------
+type OpName =
+  | "dockToEdge"
+  | "dockToRegionEdge"
+  | "dropOnDockedLeaf"
+  | "insertTabsInto"
+  | "mergeGroupsInto"
+  | "floatGroup"
+  | "floatColumn"
+  | "tearOutPane"
+  | "snapToWindowStack"
+  | "reorderTab"
+  | "toggleCollapsed"
+  | "moveWindow"
+  | "resizeWindow"
+  | "resizeWindowHeight"
+  | "bringToFront"
+  | "setActiveTab"
+  | "setNodeWeights"
+  | "setRegionWidth"
+  | "minimizeStack"
+  | "expandStack"
+  | "setColumnRailed";
+
+interface AppliedOp {
+  desc: string;
+  apply: (l: DockLayout) => DockLayout;
+}
+
+function allGroupIds(l: DockLayout): GroupId[] {
+  return Object.keys(l.groups);
+}
+/** Pick 1-3 distinct group ids (to exercise multi-group dragged stacks). */
+function pickGroups(rng: Rng, groups: GroupId[]): GroupId[] {
+  const n = Math.min(groups.length, int(rng, 1, 3));
+  const pool = [...groups];
+  const out: GroupId[] = [];
+  for (let i = 0; i < n; i++)
+    out.push(pool.splice(Math.floor(rng() * pool.length), 1)[0]);
+  return out;
+}
+function allDockedLeafTargets(
+  l: DockLayout,
+): { edge: DockEdge; nodeId: NodeId; group: GroupId }[] {
+  const out: { edge: DockEdge; nodeId: NodeId; group: GroupId }[] = [];
+  for (const edge of ["left", "right"] as DockEdge[])
+    for (const lf of leaves(l.docked[edge]))
+      out.push({ edge, nodeId: lf.id, group: lf.group });
+  return out;
+}
+
+/** All floatable multi-leaf columns (>=2 leaves) across the docked edges, for
+ * the floatColumn op (floats a whole column as one stacked window). */
+function allPureColumnTargets(
+  l: DockLayout,
+): { edge: DockEdge; nodeId: NodeId }[] {
+  const out: { edge: DockEdge; nodeId: NodeId }[] = [];
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const region = l.docked[edge];
+    if (region === null) continue;
+    for (const c of region.columns)
+      if (isMultiLeafColumn(c)) out.push({ edge, nodeId: c.id });
+  }
+  return out;
+}
+
+/** Choose a random op valid for the current layout; null if none applicable. */
+function chooseOp(rng: Rng, l: DockLayout): AppliedOp | null {
+  const groups = allGroupIds(l);
+  if (groups.length === 0) return null;
+  const edges: DockEdge[] = ["left", "right"];
+  const regions: DropRegion[] = ["center", "top", "bottom", "left", "right"];
+  const sides = ["top", "bottom", "left", "right"] as const;
+  const ops: OpName[] = [
+    "dockToEdge",
+    "dockToRegionEdge",
+    "dropOnDockedLeaf",
+    "insertTabsInto",
+    "mergeGroupsInto",
+    "floatGroup",
+    "floatColumn",
+    "tearOutPane",
+    "snapToWindowStack",
+    "reorderTab",
+    "toggleCollapsed",
+    "moveWindow",
+    "resizeWindow",
+    "resizeWindowHeight",
+    "bringToFront",
+    "setActiveTab",
+    "setNodeWeights",
+    "setRegionWidth",
+    "minimizeStack",
+    "expandStack",
+    "setColumnRailed",
+  ];
+  // Try ops in random order until one is applicable.
+  const order = [...ops].sort(() => rng() - 0.5);
+  for (const op of order) {
+    const a = buildOp(rng, l, op, { groups, edges, regions, sides });
+    if (a !== null) return a;
+  }
+  return null;
+}
+
+function buildOp(
+  rng: Rng,
+  l: DockLayout,
+  op: OpName,
+  ctx: {
+    groups: GroupId[];
+    edges: DockEdge[];
+    regions: DropRegion[];
+    sides: readonly ("top" | "bottom" | "left" | "right")[];
+  },
+): AppliedOp | null {
+  const { groups, edges, regions } = ctx;
+  const g = () => pick(rng, groups);
+  switch (op) {
+    case "dockToEdge": {
+      const gs = pickGroups(rng, groups);
+      const edge = pick(rng, edges);
+      return {
+        desc: `dockToEdge([${gs}], ${edge})`,
+        apply: (x) => dockToEdge(x, gs, edge),
+      };
+    }
+    case "dockToRegionEdge": {
+      const gs = pickGroups(rng, groups);
+      const edge = pick(rng, edges);
+      const side = pick(rng, ["left", "right"] as const);
+      const useW = rng() < 0.5;
+      const weights = useW
+        ? { existing: int(rng, 1, 5), dragged: int(rng, 1, 5) }
+        : undefined;
+      return {
+        desc: `dockToRegionEdge([${gs}], ${edge}, ${side}, ${JSON.stringify(weights)})`,
+        apply: (x) => dockToRegionEdge(x, gs, edge, side, weights),
+      };
+    }
+    case "dropOnDockedLeaf": {
+      const targets = allDockedLeafTargets(l);
+      if (targets.length === 0) return null;
+      const t = pick(rng, targets);
+      const gs = pickGroups(rng, groups);
+      const region = pick(rng, regions);
+      // BUG #2 is FIXED: a non-center self-drop (dragged set includes the target
+      // leaf's group) is now a safe no-op. We deliberately DO exercise this
+      // shape to confirm it never loses a panel.
+      return {
+        desc: `dropOnDockedLeaf([${gs}], ${t.edge}, ${t.nodeId}, ${region})`,
+        apply: (x) => dropOnDockedLeaf(x, gs, t.edge, t.nodeId, region),
+      };
+    }
+    case "insertTabsInto": {
+      if (groups.length < 2) return null;
+      const target = g();
+      const srcs = pickGroups(
+        rng,
+        groups.filter((x) => x !== target),
+      );
+      if (srcs.length === 0) return null;
+      const idx = int(rng, -2, 6);
+      return {
+        desc: `insertTabsInto(${target}, [${srcs}], ${idx})`,
+        apply: (x) => insertTabsInto(x, target, srcs, idx),
+      };
+    }
+    case "mergeGroupsInto": {
+      if (groups.length < 2) return null;
+      const target = g();
+      const srcs = pickGroups(
+        rng,
+        groups.filter((x) => x !== target),
+      );
+      if (srcs.length === 0) return null;
+      return {
+        desc: `mergeGroupsInto(${target}, [${srcs}])`,
+        apply: (x) => mergeGroupsInto(x, target, srcs),
+      };
+    }
+    case "floatGroup": {
+      const grp = g();
+      return {
+        desc: `floatGroup(${grp}, ...)`,
+        apply: (x) =>
+          floatGroup(
+            x,
+            grp,
+            int(rng, 0, 500),
+            int(rng, 0, 500),
+            int(rng, 220, 400),
+          ).layout,
+      };
+    }
+    case "floatColumn": {
+      const cols = allPureColumnTargets(l);
+      if (cols.length === 0) return null;
+      const c = pick(rng, cols);
+      return {
+        desc: `floatColumn(${c.edge}, ${c.nodeId}, ...)`,
+        apply: (x) =>
+          floatColumn(
+            x,
+            c.edge,
+            c.nodeId,
+            int(rng, 0, 500),
+            int(rng, 0, 500),
+            int(rng, 220, 400),
+            int(rng, 120, 500),
+          ).layout,
+      };
+    }
+    case "tearOutPane": {
+      const grp = g();
+      const group = l.groups[grp];
+      if (group === undefined) return null;
+      const panel = pick(rng, group.paneIds);
+      return {
+        desc: `tearOutPane(${grp}, ${panel}, ...)`,
+        apply: (x) =>
+          tearOutPane(x, grp, panel, int(rng, 0, 500), int(rng, 0, 500), 260)
+            .layout,
+      };
+    }
+    case "snapToWindowStack": {
+      if (l.floating.length === 0) return null;
+      const w = pick(rng, l.floating);
+      const gs = pickGroups(rng, groups);
+      // BUG #1 is FIXED: snapping a window's entire stack back into itself is now
+      // a safe no-op (the op re-finds the target after detach and aborts if it
+      // was consumed). We deliberately DO exercise this shape now.
+      const idx = rng() < 0.5 ? undefined : int(rng, -2, 6);
+      return {
+        desc: `snapToWindowStack([${gs}], ${w.id}, ${idx})`,
+        apply: (x) => snapToWindowStack(x, gs, w.id, idx),
+      };
+    }
+    case "reorderTab": {
+      const grp = g();
+      const group = l.groups[grp];
+      if (group === undefined) return null;
+      const panel = pick(rng, group.paneIds);
+      const idx = int(rng, -2, group.paneIds.length + 2);
+      return {
+        desc: `reorderTab(${grp}, ${panel}, ${idx})`,
+        apply: (x) => reorderTab(x, grp, panel, idx),
+      };
+    }
+    case "toggleCollapsed": {
+      const grp = g();
+      return {
+        desc: `toggleCollapsed(${grp})`,
+        apply: (x) => toggleCollapsed(x, grp),
+      };
+    }
+    case "moveWindow": {
+      if (l.floating.length === 0) return null;
+      const w = pick(rng, l.floating);
+      return {
+        desc: `moveWindow(${w.id}, ...)`,
+        apply: (x) =>
+          moveWindow(x, w.id, int(rng, -100, 800), int(rng, -100, 800)),
+      };
+    }
+    case "resizeWindow": {
+      if (l.floating.length === 0) return null;
+      const w = pick(rng, l.floating);
+      const useX = rng() < 0.5;
+      return {
+        desc: `resizeWindow(${w.id}, ...)`,
+        apply: (x) =>
+          resizeWindow(
+            x,
+            w.id,
+            int(rng, 220, 500),
+            useX ? int(rng, 0, 400) : undefined,
+          ),
+      };
+    }
+    case "resizeWindowHeight": {
+      if (l.floating.length === 0) return null;
+      const w = pick(rng, l.floating);
+      return {
+        desc: `resizeWindowHeight(${w.id}, ...)`,
+        apply: (x) => resizeWindowHeight(x, w.id, int(rng, 100, 700)),
+      };
+    }
+    case "bringToFront": {
+      if (l.floating.length === 0) return null;
+      const w = pick(rng, l.floating);
+      return {
+        desc: `bringToFront(${w.id})`,
+        apply: (x) => bringToFront(x, w.id),
+      };
+    }
+    case "setActiveTab": {
+      const grp = g();
+      const group = l.groups[grp];
+      if (group === undefined) return null;
+      const panel = pick(rng, group.paneIds);
+      return {
+        desc: `setActiveTab(${grp}, ${panel})`,
+        apply: (x) => setActiveTab(x, grp, panel),
+      };
+    }
+    case "setNodeWeights": {
+      // Pick a docked edge and randomize weights of a random subset of its
+      // nodes (rows, columns, AND leaves) -- the multi-level resize write path.
+      const edgesWithRegion = edges.filter((e) => l.docked[e] !== null);
+      if (edgesWithRegion.length === 0) return null;
+      const edge = pick(rng, edgesWithRegion);
+      const region = l.docked[edge]!;
+      const ids: NodeId[] = [];
+      for (const c of region.columns) {
+        ids.push(c.id);
+        for (const lf of c.leaves) ids.push(lf.id);
+      }
+      const weightsById: Record<NodeId, number> = {};
+      for (const id of ids) if (rng() < 0.6) weightsById[id] = int(rng, 1, 6);
+      return {
+        desc: `setNodeWeights(${edge}, ${JSON.stringify(weightsById)})`,
+        apply: (x) => setNodeWeights(x, edge, weightsById),
+      };
+    }
+    case "setRegionWidth": {
+      const edgesWithRegion = edges.filter((e) => l.docked[e] !== null);
+      if (edgesWithRegion.length === 0) return null;
+      const edge = pick(rng, edgesWithRegion);
+      const px = int(rng, 40, 600);
+      return {
+        desc: `setRegionWidth(${edge}, ${px})`,
+        apply: (x) => setRegionWidth(x, edge, px),
+      };
+    }
+    case "minimizeStack": {
+      const grp = g();
+      const stack = stackGroupIdsOf(l, grp);
+      return {
+        desc: `minimizeStack([${stack}])`,
+        apply: (x) => minimizeStack(x, stack),
+      };
+    }
+    case "expandStack": {
+      const grp = g();
+      const stack = stackGroupIdsOf(l, grp);
+      return {
+        desc: `expandStack([${stack}])`,
+        apply: (x) => expandStack(x, stack),
+      };
+    }
+    case "setColumnRailed": {
+      // Directly flip a random docked column's rail flag (the op the gated
+      // toggle path routes through -- exercised here so the sole-column
+      // store-migration branch is fuzzed, not just the toggle wrapper).
+      const edgesWithRegion = edges.filter((e) => l.docked[e] !== null);
+      if (edgesWithRegion.length === 0) return null;
+      const edge = pick(rng, edgesWithRegion);
+      const cols: NodeId[] = [];
+      for (const c of l.docked[edge]!.columns) cols.push(c.id);
+      if (cols.length === 0) return null;
+      const columnId = pick(rng, cols);
+      const on = rng() < 0.7;
+      return {
+        desc: `setColumnRailed(${edge}, ${columnId}, ${on})`,
+        apply: (x) => setColumnRailed(x, edge, columnId, on),
+      };
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The runner: applies a recorded op-builder sequence deterministically from a
+// seed, checking invariants + input-immutability after every step. Returns the
+// first failure (step index, op desc, violations) or null.
+// ---------------------------------------------------------------------------
+interface RunFailure {
+  step: number;
+  desc: string;
+  violations: string[];
+  mutatedInput: boolean;
+  threw: string | null;
+}
+
+export function runSequence(
+  startMake: () => DockLayout,
+  seed: number,
+  steps: number,
+  stopAt = Infinity,
+): { failure: RunFailure | null; descs: string[] } {
+  const rng = mulberry32(seed);
+  let layout = startMake();
+  // Establish the D40 width semantic the way a wholesale injection
+  // (api.replace) does -- a structural reconcile from an empty dock
+  // px-ifies the column weights and sets regionWidth to the rendered
+  // content need, so invariant #12 holds before the first op. (No
+  // canonicalization exists under D46 -- one structure per picture holds
+  // by types.)
+  reconcileRegionWidths(
+    { ...layout, docked: { left: null, right: null } },
+    layout,
+  );
+  const descs: string[] = [];
+  // Panel-conservation baseline: no op should ever create or destroy a panel.
+  const startPanels = JSON.stringify(allPanels(layout));
+  // Sanity: the starting layout itself must be healthy (structurally AND
+  // geometrically -- a multi-band fixture that can't be planned should fail
+  // here, before any op runs).
+  const startV = [
+    ...invariantViolations(layout),
+    ...geometricViolations(layout),
+  ];
+  if (startV.length > 0)
+    return {
+      failure: {
+        step: -1,
+        desc: "<start>",
+        violations: startV,
+        mutatedInput: false,
+        threw: null,
+      },
+      descs,
+    };
+
+  for (let i = 0; i < steps && i < stopAt; i++) {
+    const op = chooseOp(rng, layout);
+    if (op === null) break;
+    descs.push(op.desc);
+    const before = layout;
+    const beforeSnapshot = structuredClone(before);
+    let next: DockLayout;
+    // Always null here: the throwing path returns from the catch below, so by
+    // the time we build the failure object this op did not throw.
+    const threw: string | null = null;
+    try {
+      next = op.apply(before);
+    } catch (err) {
+      return {
+        failure: {
+          step: i,
+          desc: op.desc,
+          violations: [],
+          mutatedInput: false,
+          threw: String(err),
+        },
+        descs,
+      };
+    }
+    const violations: string[] = [];
+    // P14 guardrail (successor to the deleted structureSignature gate):
+    // WEIGHT-ONLY ops must never restructure -- a per-frame divider commit
+    // that restructured would invalidate the node ids the drag is writing.
+    if (
+      (op.desc.startsWith("setNodeWeights") ||
+        op.desc.startsWith("setRegionWidth")) &&
+      next !== before &&
+      JSON.stringify([
+        shapeOf(next.docked.left),
+        shapeOf(next.docked.right),
+      ]) !==
+        JSON.stringify([
+          shapeOf(before.docked.left),
+          shapeOf(before.docked.right),
+        ])
+    ) {
+      violations.push(`weight-only op restructured: ${op.desc}`);
+    }
+    // Production pipeline, width leg: applyOp reconciles region widths on
+    // every commit (the only regionWidth writer) -- the D40 rendered-need
+    // invariant (#12) is maintained here by construction, so the fuzzer
+    // must run it too or every committed width would be stale.
+    if (next !== before) reconcileRegionWidths(before, next);
+    // Input immutability: the argument object must be unchanged.
+    const mutatedInput =
+      JSON.stringify(before) !== JSON.stringify(beforeSnapshot);
+    violations.push(...invariantViolations(next), ...geometricViolations(next));
+    // Panel conservation: the multiset of panel ids must be invariant.
+    if (JSON.stringify(allPanels(next)) !== startPanels) {
+      violations.push(
+        `panel set changed: ${startPanels} -> ${JSON.stringify(allPanels(next))}`,
+      );
+    }
+    if (violations.length > 0 || mutatedInput) {
+      return {
+        failure: { step: i, desc: op.desc, violations, mutatedInput, threw },
+        descs,
+      };
+    }
+    layout = next;
+  }
+  return { failure: null, descs };
+}
+
+// ---------------------------------------------------------------------------
+// Tests: run many seeds across all starting layouts.
+// ---------------------------------------------------------------------------
+/** Build a randomized but VALID starting layout from a seed: N single-panel
+ * (occasionally multi-panel) groups distributed across a random docked tree on
+ * each edge plus some floating windows. Used to widen the starting-state space
+ * beyond the hand-written fixtures. */
+export function randomStart(seed: number): DockLayout {
+  const rng = mulberry32(seed);
+  const l = emptyLayout();
+  const total = int(rng, 3, 9);
+  const names = Array.from({ length: total }, (_, i) => `g${i}`);
+  for (const n of names) l.groups[n] = grp(n, int(rng, 1, 3));
+  // Partition groups into: leftTree, rightTree, floating windows.
+  const buckets: GroupId[][] = [[], [], []];
+  for (const n of names) buckets[int(rng, 0, 2)].push(n);
+
+  // Build a random VALID region in the fixed 4-level shape. The groups are
+  // partitioned into 1-3 ROW BANDS (the 4th level: full-width stacked bands);
+  // each band's groups are partitioned into columns; each column stacks 1-3
+  // leaves. Generating multiple bands -- not just one -- means the randomized
+  // starts exercise the multi-band render/width paths from the first step,
+  // matching the hand-written multi-band fixtures.
+  const buildColumns = (gs: GroupId[]): NonEmpty<DockColumn> => {
+    const columns: DockColumn[] = [];
+    let i = 0;
+    while (i < gs.length) {
+      const take = int(rng, 1, Math.min(3, gs.length - i));
+      const slice = gs.slice(i, i + take);
+      i += take;
+      columns.push({
+        id: nid(),
+        weight: int(rng, 1, 4),
+        leaves: slice.map((g) => ({
+          id: nid(),
+          group: g,
+          weight: int(rng, 1, 4),
+        })) as NonEmpty<DockLeaf>,
+      });
+    }
+    return columns as NonEmpty<DockColumn>;
+  };
+  const buildTree = (gs: GroupId[]): DockRegion | null => {
+    if (gs.length === 0) return null;
+    // D46: a region is one columns list -- partition the groups directly.
+    return { columns: buildColumns(gs) };
+  };
+
+  l.docked.left = buildTree(buckets[0]);
+  l.docked.right = buildTree(buckets[1]);
+  // Floating: chunk the third bucket into 1-3-group windows.
+  let wi = 0;
+  let rest = buckets[2];
+  while (rest.length > 0) {
+    const take = int(rng, 1, Math.min(3, rest.length));
+    l.floating.push(
+      floatingWindow({
+        id: `rw${wi++}`,
+        x: int(rng, 0, 600),
+        y: int(rng, 0, 600),
+        width: int(rng, 220, 400),
+        stack: rest.slice(0, take),
+      }),
+    );
+    rest = rest.slice(take);
+  }
+  return l;
+}

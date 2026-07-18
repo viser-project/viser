@@ -83,11 +83,7 @@ export function makeThrottledMessageSender(
 /** Type guard for threejs textures. Meant to be used with `scene.background`. */
 export function isTexture(
   background:
-    | THREE.Color
-    | THREE.Texture
-    | THREE.CubeTexture
-    | null
-    | undefined,
+    THREE.Color | THREE.Texture | THREE.CubeTexture | null | undefined,
 ): background is THREE.Texture {
   return (
     background !== null &&

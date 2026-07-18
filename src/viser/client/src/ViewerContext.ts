@@ -31,6 +31,14 @@ export type ViewerMutable = {
   sendMessage: (message: Message) => void;
   sendCamera: (() => void) | null;
   resetCameraPose: ((animate: boolean) => void) | null;
+  // Synchronously resize the R3F renderer + camera to a given CSS size (and
+  // repaint that frame). Set by SceneContextSetter once the renderer exists.
+  // Called from the dock's region-width drag so the GL backbuffer tracks the
+  // panel edge on the SAME tick instead of trailing R3F's async ResizeObserver.
+  // The caller passes the AUTHORITATIVE size it just computed -- reading the
+  // canvas's clientWidth here instead would lag, because the new CSS inset isn't
+  // reliably reflowed yet at this point in the drag frame. Null until mount.
+  syncCanvasSize: ((width: number, height: number) => void) | null;
 
   // DOM/Three.js references.
   canvas: HTMLCanvasElement | null;

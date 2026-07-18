@@ -81,7 +81,10 @@ export function WebsocketMessageProducer() {
         };
       } else if (data.type === "closed") {
         isConnected = false;
-        resetGui();
+        // Deliberately do NOT resetGui() here: keep the last-known GUI + panels
+        // rendered (frozen + dimmed via the disconnected overlay) instead of
+        // wiping them, so a brief disconnect isn't jarring. The fresh server
+        // state is reset+replayed on reconnect (the "connected" branch above).
         updateRetryInterval();
         viewerMutable.sendMessage = (message) => {
           console.log(

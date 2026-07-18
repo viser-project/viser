@@ -1,11 +1,26 @@
 // @ts-nocheck
-import { Intersection, Matrix4, Mesh, Ray, Raycaster, Sphere, Vector3 } from 'three';
-import { InstancedMesh2 } from '../InstancedMesh2.js';
+import {
+  Intersection,
+  Matrix4,
+  Mesh,
+  Ray,
+  Raycaster,
+  Sphere,
+  Vector3,
+} from "three";
+import { InstancedMesh2 } from "../InstancedMesh2.js";
 
-declare module '../InstancedMesh2.js' {
+declare module "../InstancedMesh2.js" {
   interface InstancedMesh2 {
-    /** @internal */ raycastInstances(raycaster: Raycaster, result: Intersection[]): void;
-    /** @internal */ checkObjectIntersection(raycaster: Raycaster, objectIndex: number, result: Intersection[]): void;
+    /** @internal */ raycastInstances(
+      raycaster: Raycaster,
+      result: Intersection[],
+    ): void;
+    /** @internal */ checkObjectIntersection(
+      raycaster: Raycaster,
+      objectIndex: number,
+      result: Intersection[],
+    ): void;
   }
 }
 
@@ -18,7 +33,13 @@ const _invMatrixWorld = new Matrix4();
 const _sphere = new Sphere();
 
 InstancedMesh2.prototype.raycast = function (raycaster, result) {
-  if (this._parentLOD || !this.material || this._instancesArrayCount === 0 || !this.instanceIndex) return;
+  if (
+    this._parentLOD ||
+    !this.material ||
+    this._instancesArrayCount === 0 ||
+    !this.instanceIndex
+  )
+    return;
 
   _mesh.geometry = this._geometry;
   _mesh.material = this.material;
@@ -46,7 +67,9 @@ InstancedMesh2.prototype.raycast = function (raycaster, result) {
 
 InstancedMesh2.prototype.raycastInstances = function (raycaster, result) {
   if (this.bvh) {
-    this.bvh.raycast(raycaster, (instanceId) => this.checkObjectIntersection(raycaster, instanceId, result));
+    this.bvh.raycast(raycaster, (instanceId) =>
+      this.checkObjectIntersection(raycaster, instanceId, result),
+    );
     // TODO test with three-mesh-bvh
   } else {
     if (this.boundingSphere === null) this.computeBoundingSphere();
@@ -54,7 +77,8 @@ InstancedMesh2.prototype.raycastInstances = function (raycaster, result) {
     if (!raycaster.ray.intersectsSphere(_sphere)) return;
 
     const instancesToCheck = this.instanceIndex.array; // TODO this is unsorted and it's slower to iterate. If raycastFrustum is false, don't use it.
-    const raycastFrustum = this.raycastOnlyFrustum && this._perObjectFrustumCulled;
+    const raycastFrustum =
+      this.raycastOnlyFrustum && this._perObjectFrustumCulled;
     const checkCount = raycastFrustum ? this.count : this._instancesArrayCount;
 
     for (let i = 0; i < checkCount; i++) {
@@ -63,9 +87,17 @@ InstancedMesh2.prototype.raycastInstances = function (raycaster, result) {
   }
 };
 
-InstancedMesh2.prototype.checkObjectIntersection = function (raycaster, objectIndex, result) {
+InstancedMesh2.prototype.checkObjectIntersection = function (
+  raycaster,
+  objectIndex,
+  result,
+) {
   // TODO check objectIndex > this._instancesArrayCount is necessary
-  if (objectIndex > this._instancesArrayCount || !this.getActiveAndVisibilityAt(objectIndex)) return;
+  if (
+    objectIndex > this._instancesArrayCount ||
+    !this.getActiveAndVisibilityAt(objectIndex)
+  )
+    return;
 
   this.getMatrixAt(objectIndex, _mesh.matrixWorld);
 

@@ -10,16 +10,18 @@ import { htmlIconWrapper, tabGroupWrap } from "./ComponentStyles.css";
 
 export default function TabGroupComponent(message: GuiTabGroupMessage) {
   // Inside the dock surface (the floating control-panel layout), a tab group
-  // renders as a nested DOCKABLE area: its tabs are real dock panels that can
+  // renders as a nested DOCKABLE area: its tabs are real dock panes that can
   // be dragged out to float, dock, or merge anywhere -- and dragged back in.
-  // Everywhere else (sidebar/mobile layouts, modals -- which mount outside the
-  // dock surface) it renders as plain tabs, exactly as before.
+  // Everywhere else (mobile bottom sheet, static export, modals -- which mount
+  // outside the dock surface) it renders as plain tabs, exactly as before.
   const dock = React.useContext(DockContext);
   const guiDock = React.useContext(GuiDockContext);
-  if (dock !== null && guiDock !== null) {
+  const inDockSurface = dock !== null && guiDock !== null;
+
+  if (inDockSurface) {
     return <DockableTabGroup {...message} />;
   }
-  return <PlainTabGroup {...message} />;
+  return <PlainTabGroup {...message.props} />;
 }
 
 function DockableTabGroup({
@@ -39,16 +41,16 @@ function DockableTabGroup({
 
   // Place the tabs into the area once their specs are registered (one render
   // after registration -- placing earlier would race the registry
-  // reconciliation, which removes spec-less panels). Panels the user dragged
-  // out of the area are left where they are (addPanelToArea no-ops); the rest
+  // reconciliation, which removes spec-less panes). Panels the user dragged
+  // out of the area are left where they are (addPaneToArea no-ops); the rest
   // follow the server's tab order.
-  const ready = tab_container_ids.every(
-    (cid) => dock.panels[cid] !== undefined,
-  );
+  const ready = tab_container_ids.every((cid) => dock.panes[cid] !== undefined);
   const orderKey = tab_container_ids.join("\n");
   React.useEffect(() => {
     if (!ready) return;
-    tab_container_ids.forEach((cid, i) => dock.api.addPanelToArea(areaId, cid, i));
+    tab_container_ids.forEach((cid, i) =>
+      dock.api.addPaneToArea(areaId, cid, i),
+    );
     dock.api.apply((layout) =>
       layoutOps.setAreaTabOrder(layout, areaId, tab_container_ids),
     );
@@ -63,33 +65,42 @@ function DockableTabGroup({
   );
 }
 
-function PlainTabGroup({
-  props: {
-    _tab_labels: tab_labels,
-    _tab_icons_html: tab_icons_html,
-    _tab_container_ids: tab_container_ids,
-    visible,
-  },
-}: GuiTabGroupMessage) {
-  const { GuiContainer } = React.useContext(GuiComponentContext)!;
+/** The fields PlainTabGroup needs -- shared by inline tab groups and standalone
+ * panels (which carry the same tab triple). */
+export interface PlainTabGroupProps {
+  _tab_labels: string[];
+  _tab_icons_html: (string | null)[];
+  _tab_container_ids: string[];
+  visible: boolean;
+}
 
-  // Identify each tab by its stable container UUID rather than its array index.
-  // Tabs can be added/removed at runtime; index-based values would shift the
-  // selection -> content mapping, leaving the active tab unselected (or showing
-  // the wrong content) after a sibling tab is removed.
-  //
-  // We track the selection ourselves (controlled) so that removing a *non*
-  // active tab keeps the active tab selected, and removing the active tab
-  // falls back to the first remaining tab -- the selection always points at a
-  // tab that still exists.
-  const [activeTab, setActiveTab] = React.useState<string | null>(
-    tab_container_ids[0] ?? null,
-  );
+/** Controlled tab selection over a mutable container-id list. Tabs are
+ * identified by stable container UUID rather than array index (tabs can be
+ * added/removed at runtime; index-based values would shift the selection ->
+ * content mapping). Removing a non-active tab keeps the active one selected;
+ * removing the active tab falls back to the first remaining -- the selection
+ * always points at a tab that still exists. Shared by PlainTabGroup and the
+ * mobile panel sections (ControlPanel). */
+export function useStableTabSelection(
+  ids: string[],
+): [string | null, (v: string | null) => void] {
+  const [active, setActive] = React.useState<string | null>(ids[0] ?? null);
   React.useEffect(() => {
-    if (activeTab === null || !tab_container_ids.includes(activeTab)) {
-      setActiveTab(tab_container_ids[0] ?? null);
+    if (active === null || !ids.includes(active)) {
+      setActive(ids[0] ?? null);
     }
-  }, [tab_container_ids, activeTab]);
+  }, [ids, active]);
+  return [active, setActive];
+}
+
+export function PlainTabGroup({
+  _tab_labels: tab_labels,
+  _tab_icons_html: tab_icons_html,
+  _tab_container_ids: tab_container_ids,
+  visible,
+}: PlainTabGroupProps) {
+  const { GuiContainer } = React.useContext(GuiComponentContext)!;
+  const [activeTab, setActiveTab] = useStableTabSelection(tab_container_ids);
 
   if (!visible) return null;
   return (

@@ -115,7 +115,11 @@ function useFileUpload({
       message: isDone ? (
         "File uploaded successfully."
       ) : (
-        <Progress size="sm" transitionDuration={10} value={100 * progressValue} />
+        <Progress
+          size="sm"
+          transitionDuration={10}
+          value={100 * progressValue}
+        />
       ),
       autoClose: isDone,
       withCloseButton: isDone,

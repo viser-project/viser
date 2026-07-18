@@ -133,9 +133,11 @@ function registerUplotTestpoint(uuid: string, chart: uPlot): void {
   reg[uuid] = { chart, createCount: (prev?.createCount ?? 0) + 1 };
 }
 function unregisterUplotTestpoint(uuid: string): void {
-  const reg = (window as unknown as {
-    __viserTestpoints?: { uplots?: Record<string, UplotTestpoint> };
-  }).__viserTestpoints?.uplots;
+  const reg = (
+    window as unknown as {
+      __viserTestpoints?: { uplots?: Record<string, UplotTestpoint> };
+    }
+  ).__viserTestpoints?.uplots;
   if (reg) delete reg[uuid];
 }
 
@@ -239,7 +241,12 @@ function PlotComponent({
       legend: (props.legend as any) || undefined,
       focus: props.focus || undefined,
       // Set tighter default padding [top, right, bottom, left].
-      padding: (props.padding ?? [0, 24, 0, 0]) as [number, number, number, number],
+      padding: (props.padding ?? [0, 24, 0, 0]) as [
+        number,
+        number,
+        number,
+        number,
+      ],
     };
   }, [
     containerWidth,
@@ -280,8 +287,7 @@ function PlotComponent({
     // uPlot wraps `sc.auto` via `fnOrSelf` at init, so it is always a
     // callable here — `=== false` would never match.
     const autoFn = xScale.auto as
-      | boolean
-      | ((u: uPlot, viaAutoScaleX: boolean) => boolean);
+      boolean | ((u: uPlot, viaAutoScaleX: boolean) => boolean);
     const isAuto =
       typeof autoFn === "function" ? autoFn(plotObj, false) : autoFn;
     if (isAuto === false) return;

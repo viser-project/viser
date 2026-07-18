@@ -54,5 +54,11 @@ GUI Handles
 
 .. autoclass:: viser.GuiVector3Handle
 
+.. autoclass:: viser.MainPanelHandle
+
+.. autoclass:: viser.PanelHandle
+
+.. autodata:: viser.PlaceableHandle
+
 .. autoclass:: viser.UploadedFile
 
