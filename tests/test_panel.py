@@ -9,6 +9,7 @@ raises as specified.
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import warnings
 from typing import Any
@@ -393,8 +394,17 @@ def test_client_scoped_reset_does_not_touch_main_panel_placement() -> None:
 
         # Synthetic in-process client connection: no websocket needed, we only
         # inspect the outgoing per-client message buffer (mirrors how
-        # WebsockServer constructs the per-client state).
-        buffer = AsyncMessageBuffer(server._event_loop, persistent_messages=False)
+        # WebsockServer constructs the per-client state). Constructed ON the
+        # server's loop thread: AsyncMessageBuffer's asyncio.Event fields bind
+        # to the current event loop at construction on Python <= 3.9, and this
+        # test thread has none (production buffers are always built inside the
+        # loop, so only the test needs the hop).
+        async def _make_buffer() -> AsyncMessageBuffer:
+            return AsyncMessageBuffer(server._event_loop, persistent_messages=False)
+
+        buffer = asyncio.run_coroutine_threadsafe(
+            _make_buffer(), server._event_loop
+        ).result(timeout=5.0)
         conn = WebsockClientConnection(
             0, _ClientHandleState(buffer, server._event_loop)
         )
