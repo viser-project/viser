@@ -44,10 +44,11 @@ def cv2_imencode_with_fallback(
 
     # OpenCV is available!
     if channel_ordering == "rgb":
-        # Convert to BGR if needed.
-        image = image[
-            :, :, np.array((2, 1, 0, 3) if image.shape[-1] == 4 else (2, 1, 0))
-        ]
+        # Convert to BGR.
+        image = cv2.cvtColor(
+            image,
+            cv2.COLOR_RGBA2BGRA if image.shape[-1] == 4 else cv2.COLOR_RGB2BGR,
+        )
     if format == "png":
         success, encoded_image = cv2.imencode(".png", image)
     elif format == "jpeg":

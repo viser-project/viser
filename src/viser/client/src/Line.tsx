@@ -58,9 +58,10 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
         const geom = segments ? new LineSegmentsGeometry() : new LineGeometry();
         geom.setPositions(points);
         if (vertexColors) {
-          const normalizedColors = new Float32Array(vertexColors).map(
-            (c) => c / 255,
-          );
+          const normalizedColors = new Float32Array(vertexColors.length);
+          for (let i = 0; i < vertexColors.length; i++) {
+            normalizedColors[i] = vertexColors[i] / 255;
+          }
           geom.setColors(normalizedColors, 3);
         }
         return geom;

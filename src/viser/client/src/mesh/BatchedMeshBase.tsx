@@ -362,8 +362,10 @@ export const BatchedMeshBase = React.forwardRef<
       return;
     }
 
+    // Reuse one Color across instances; setColorAt copies out of it.
+    const color = new THREE.Color();
     for (let i = 0; i < mesh.instancesCount; i++) {
-      const color = new THREE.Color(
+      color.setRGB(
         props.batched_colors[i * 3] / 255,
         props.batched_colors[i * 3 + 1] / 255,
         props.batched_colors[i * 3 + 2] / 255,

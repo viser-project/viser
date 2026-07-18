@@ -197,3 +197,88 @@ describe("syncBufferGeometry", () => {
     });
   });
 });
+
+/**
+ * Regression test for the BasicMesh in-place geometry path: computeVertexNormals
+ * owns the 'normal' attribute and reuses it WITHOUT a size check, while
+ * syncBufferGeometry's realloc (dispose) does not detach attributes. So after a
+ * vertex-count change the stale, wrong-sized normal must be dropped, or normals
+ * end up mismatched with positions (corrupted lighting).
+ */
+describe("BasicMesh normal-attribute sync on vertex-count change", () => {
+  // Mirrors the exact sequence in BasicMesh.tsx.
+  function syncLikeBasicMesh(
+    geometry: THREE.BufferGeometry,
+    vertices: Float32Array,
+    faces: Uint32Array,
+  ) {
+    const reallocated = syncBufferGeometry(
+      geometry,
+      { position: { array: vertices, itemSize: 3 } },
+      faces,
+    );
+    if (reallocated) geometry.deleteAttribute("normal");
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
+  }
+
+  it("keeps normal.count == position.count after the vertex count grows", () => {
+    const geom = new THREE.BufferGeometry();
+    // 3 vertices, 1 face.
+    syncLikeBasicMesh(
+      geom,
+      new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+      new Uint32Array([0, 1, 2]),
+    );
+    expect(geom.getAttribute("normal").count).toBe(3);
+
+    // Grow to 6 vertices, 2 faces (the realloc path).
+    syncLikeBasicMesh(
+      geom,
+      new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 2, 0, 0, 0, 2, 0]),
+      new Uint32Array([0, 1, 2, 3, 4, 5]),
+    );
+    const pos = geom.getAttribute("position");
+    const normal = geom.getAttribute("normal");
+    expect(pos.count).toBe(6);
+    expect(normal.count).toBe(pos.count);
+    // Normals for the new vertices must be real (not NaN / unwritten).
+    for (let i = 0; i < normal.count; i++) {
+      expect(Number.isFinite(normal.getX(i))).toBe(true);
+      expect(Number.isFinite(normal.getY(i))).toBe(true);
+      expect(Number.isFinite(normal.getZ(i))).toBe(true);
+    }
+  });
+
+  it("(control) reusing a stale normal without the drop mismatches counts", () => {
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute(
+      "position",
+      new THREE.BufferAttribute(
+        new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+        3,
+      ),
+    );
+    geom.setIndex(new THREE.BufferAttribute(new Uint32Array([0, 1, 2]), 1));
+    geom.computeVertexNormals();
+    expect(geom.getAttribute("normal").count).toBe(3);
+
+    // Realloc position to 6 verts but DO NOT drop normal (the bug).
+    syncBufferGeometry(
+      geom,
+      {
+        position: {
+          array: new Float32Array([
+            0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 2, 0, 0, 0, 2, 0,
+          ]),
+          itemSize: 3,
+        },
+      },
+      new Uint32Array([0, 1, 2, 3, 4, 5]),
+    );
+    geom.computeVertexNormals();
+    // Stale normal kept its old length -> mismatch (this is what the fix avoids).
+    expect(geom.getAttribute("normal").count).toBe(3);
+    expect(geom.getAttribute("position").count).toBe(6);
+  });
+});

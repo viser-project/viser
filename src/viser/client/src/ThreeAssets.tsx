@@ -139,6 +139,16 @@ export const PointCloud = React.forwardRef<
     return () => material.dispose();
   }, [material]);
 
+  // Reused by the point-size useFrame below.
+  const rendererSizeRef = React.useRef(new THREE.Vector2());
+  const lastScaleInputsRef = React.useRef({
+    fov: -1,
+    height: -1,
+    pixelRatio: -1,
+    pointSize: -1,
+    scaleFactor: -1,
+  });
+
   // Update material properties with point_ball_norm.
   React.useEffect(() => {
     material.uniforms.scale.value = 10.0;
@@ -151,6 +161,10 @@ export const PointCloud = React.forwardRef<
     }[props.point_shape];
     material.uniforms.point_shading_enabled.value =
       props.point_shading === "gradient" ? 1.0 : 0.0;
+    // The scale uniform was just reset to a placeholder (and `material` may be
+    // freshly recreated); invalidate the cache so the useFrame below recomputes
+    // the real scale on the next frame.
+    lastScaleInputsRef.current.fov = NaN;
   }, [props.point_shape, props.point_shading, material]);
 
   // Compute a scalar scale factor for point size. For non-uniform scale,
@@ -158,21 +172,39 @@ export const PointCloud = React.forwardRef<
   const s = normalizeScale(props.scale);
   const pointScaleFactor = Math.cbrt(s[0] * s[1] * s[2]);
 
-  const rendererSize = new THREE.Vector2();
+  // Recompute the point-size uniform only when one of its inputs (fov, viewport
+  // height, pixel ratio, point_size x scale) actually changes; this runs every
+  // frame for every point cloud in the scene.
   useFrame(() => {
+    const three = getThreeState();
+    const fov = (three.camera as THREE.PerspectiveCamera).fov;
+    const height = three.gl.getSize(rendererSizeRef.current).height;
+    const pixelRatio = three.gl.getPixelRatio();
+    const last = lastScaleInputsRef.current;
+    if (
+      fov === last.fov &&
+      height === last.height &&
+      pixelRatio === last.pixelRatio &&
+      props.point_size === last.pointSize &&
+      pointScaleFactor === last.scaleFactor
+    ) {
+      return;
+    }
+    last.fov = fov;
+    last.height = height;
+    last.pixelRatio = pixelRatio;
+    last.pointSize = props.point_size;
+    last.scaleFactor = pointScaleFactor;
+
     // Match point scale to behavior of THREE.PointsMaterial().
     // point px height / actual height = point meters height / frustum meters height
     // frustum meters height = math.tan(fov / 2.0) * z
     // point px height = (point meters height / math.tan(fov / 2.0) * actual height)  / z
     material.uniforms.scale.value =
       ((props.point_size * pointScaleFactor) /
-        Math.tan(
-          (((getThreeState().camera as THREE.PerspectiveCamera).fov / 180.0) *
-            Math.PI) /
-            2.0,
-        )) *
-      getThreeState().gl.getSize(rendererSize).height *
-      getThreeState().gl.getPixelRatio();
+        Math.tan(((fov / 180.0) * Math.PI) / 2.0)) *
+      height *
+      pixelRatio;
   });
   return (
     <group ref={ref}>
