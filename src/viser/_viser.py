@@ -178,7 +178,7 @@ class CameraHandle:
             # so a mismatch would make assigning the client-side default a silent
             # no-op. Pinned by tests/test_initial_camera_defaults.py.
             min_orbit_distance=0.01,
-            max_orbit_distance=1e6,
+            max_orbit_distance=1e4,
             look_at=np.zeros(3),
             up_direction=np.zeros(3),
             update_timestamp=0.0,
@@ -348,7 +348,7 @@ class CameraHandle:
     def max_orbit_distance(self) -> float:
         """How far the camera may be dollied out from its orbit (look-at) point.
         Distinct from :attr:`far`, which clips rendering rather than camera
-        travel. Defaults to 1e6. Synchronized automatically when assigned.
+        travel. Defaults to 1e4. Synchronized automatically when assigned.
 
         Dolly is multiplicative per wheel event, so a very large maximum means a long
         scroll — a trackpad's inertial tail, for instance — can walk the camera out to
