@@ -67,6 +67,13 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
     // `angle` prop is wrong on angle flips: PI->0 would leak the old clone,
     // and 0->PI would dispose the parent's live shared geometry.
     const ownsGeometry = React.useRef(false);
+    // The live outline mesh, recorded at build time. The unmount cleanup
+    // cannot re-derive it from localRef: React detaches the ref (-> null)
+    // during the deletion phase BEFORE passive cleanups run, so a
+    // `localRef.current.children[0]` lookup there is always null and the
+    // dispose would silently never happen (leaking the creased clone once per
+    // unmount -- every hover cycle for unmountOnHide gizmos).
+    const outlineMeshRef = React.useRef<THREE.Mesh | null>(null);
     React.useLayoutEffect(() => {
       const group = localRef.current;
       if (!group) return;
@@ -128,6 +135,7 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
             ? toCreasedNormals(parent.geometry, angle)
             : parent.geometry;
           ownsGeometry.current = angle !== 0;
+          outlineMeshRef.current = mesh;
         }
       }
     });
@@ -158,24 +166,14 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
 
     React.useEffect(() => {
       return () => {
-        // Dispose everything on unmount.
+        // Dispose everything on unmount. Both reads go through refs recorded
+        // at build time (see outlineMeshRef/ownsGeometry above): localRef is
+        // already null here, and the first-render `angle` closure capture is
+        // stale on flips.
         material.dispose();
-
-        const group = localRef.current;
-        if (!group) return;
-
-        const mesh = group.children[0] as THREE.Mesh<
-          THREE.BufferGeometry,
-          THREE.Material
-        >;
-        if (mesh) {
-          // Dispose the geometry only if it was cloned via toCreasedNormals.
-          // Read the ref, not `angle`: this []-deps cleanup closure captures
-          // the FIRST-render angle, which can differ from the angle the
-          // current mesh was actually built with.
-          if (ownsGeometry.current) mesh.geometry.dispose();
-          group.remove(mesh);
-        }
+        const mesh = outlineMeshRef.current;
+        if (mesh !== null && ownsGeometry.current) mesh.geometry.dispose();
+        outlineMeshRef.current = null;
       };
     }, []);
 

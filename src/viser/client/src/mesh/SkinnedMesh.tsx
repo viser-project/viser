@@ -136,6 +136,12 @@ export const SkinnedMesh = React.forwardRef<
     const state = viewerMutable.skinnedMeshState[message.name];
     if (state === undefined) return;
     const bones = bonesRef.current;
+    // A same-tick delete + re-add (subtree removal or reconnect replay, then a
+    // SkinnedMeshMessage for the same name) can swap in an entry for a REBUILT
+    // skeleton with a different bone count while this instance's unmount is
+    // still pending. Initializing or posing OUR bones against that entry would
+    // index poses out of bounds -- the remounted instance owns the new entry.
+    if (state.poses.length !== (bones?.length ?? 0)) return;
     if (skeleton !== undefined && bones !== undefined) {
       if (!state.initialized) {
         const parentNode = viewerMutable.nodeRefFromName[message.name];
