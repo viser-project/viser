@@ -207,7 +207,7 @@ def _validate_batched_transforms(
     assert batched_wxyzs.shape == (count, 4)
     assert batched_positions.shape == (count, 3)
     if batched_scales is not None:
-        batched_scales = np.asarray(batched_scales).astype(np.float32)
+        batched_scales = np.asarray(batched_scales, dtype=np.float32)
         assert batched_scales.shape in ((count,), (count, 3))
     return batched_wxyzs, batched_positions, batched_scales, count
 
@@ -1104,7 +1104,7 @@ class SceneApi:
         message = _messages.CatmullRomSplineMessage(
             name,
             _messages.CatmullRomSplineProps(
-                points=np.asarray(points).astype(np.float32),
+                points=np.asarray(points, dtype=np.float32),
                 curve_type=curve_type,
                 tension=tension,
                 closed=closed,
@@ -1240,8 +1240,8 @@ class SceneApi:
         message = _messages.CubicBezierSplineMessage(
             name,
             _messages.CubicBezierSplineProps(
-                points=np.asarray(points).astype(np.float32),
-                control_points=np.asarray(control_points).astype(np.float32),
+                points=np.asarray(points, dtype=np.float32),
+                control_points=np.asarray(control_points, dtype=np.float32),
                 line_width=line_width,
                 color=_encode_rgb(color),
                 segments=segments,
@@ -1445,8 +1445,8 @@ class SceneApi:
         )
 
         props = _messages.BatchedAxesProps(
-            batched_wxyzs=batched_wxyzs.astype(np.float32),
-            batched_positions=batched_positions.astype(np.float32),
+            batched_wxyzs=np.asarray(batched_wxyzs, dtype=np.float32),
+            batched_positions=np.asarray(batched_positions, dtype=np.float32),
             batched_scales=batched_scales,
             axes_length=axes_length,
             axes_radius=axes_radius,
@@ -1759,8 +1759,8 @@ class SceneApi:
         message = _messages.SkinnedMeshMessage(
             name=name,
             props=_messages.SkinnedMeshProps(
-                vertices=vertices.astype(np.float32),
-                faces=faces.astype(np.uint32),
+                vertices=np.asarray(vertices, dtype=np.float32),
+                faces=np.asarray(faces, dtype=np.uint32),
                 color=_encode_rgb(color),
                 wireframe=wireframe,
                 opacity=opacity,
@@ -1768,10 +1768,10 @@ class SceneApi:
                 side=side,
                 material=material,
                 scale=scale,
-                bone_wxyzs=bone_wxyzs.astype(np.float32),
-                bone_positions=bone_positions.astype(np.float32),
+                bone_wxyzs=np.asarray(bone_wxyzs, dtype=np.float32),
+                bone_positions=np.asarray(bone_positions, dtype=np.float32),
                 skin_indices=top_skin_indices.astype(np.uint16),
-                skin_weights=top_skin_weights.astype(np.float32),
+                skin_weights=np.asarray(top_skin_weights, dtype=np.float32),
                 cast_shadow=cast_shadow,
                 receive_shadow=receive_shadow,
             ),
@@ -1847,8 +1847,8 @@ class SceneApi:
         message = _messages.MeshMessage(
             name=name,
             props=_messages.MeshProps(
-                vertices=vertices.astype(np.float32),
-                faces=faces.astype(np.uint32),
+                vertices=np.asarray(vertices, dtype=np.float32),
+                faces=np.asarray(faces, dtype=np.uint32),
                 color=_encode_rgb(color),
                 wireframe=wireframe,
                 opacity=opacity,
@@ -1985,7 +1985,7 @@ class SceneApi:
 
         # Handle batched opacities.
         if batched_opacities is not None:
-            batched_opacities = np.asarray(batched_opacities).astype(np.float32)
+            batched_opacities = np.asarray(batched_opacities, dtype=np.float32)
             assert batched_opacities.shape == (num_instances,)
 
         # Handle batched colors.
@@ -2003,10 +2003,10 @@ class SceneApi:
         message = _messages.BatchedMeshesMessage(
             name=name,
             props=_messages.BatchedMeshesProps(
-                vertices=vertices.astype(np.float32),
-                faces=faces.astype(np.uint32),
-                batched_wxyzs=batched_wxyzs.astype(np.float32),
-                batched_positions=batched_positions.astype(np.float32),
+                vertices=np.asarray(vertices, dtype=np.float32),
+                faces=np.asarray(faces, dtype=np.uint32),
+                batched_wxyzs=np.asarray(batched_wxyzs, dtype=np.float32),
+                batched_positions=np.asarray(batched_positions, dtype=np.float32),
                 batched_scales=batched_scales,
                 batched_colors=batched_colors_array,
                 wireframe=wireframe,
@@ -2079,8 +2079,8 @@ class SceneApi:
                 name=name,
                 props=_messages.BatchedGlbProps(
                     glb_data=glb_data,
-                    batched_wxyzs=batched_wxyzs.astype(np.float32),
-                    batched_positions=batched_positions.astype(np.float32),
+                    batched_wxyzs=np.asarray(batched_wxyzs, dtype=np.float32),
+                    batched_positions=np.asarray(batched_positions, dtype=np.float32),
                     batched_scales=batched_scales,
                     lod=lod,
                     cast_shadow=cast_shadow,
@@ -2145,8 +2145,8 @@ class SceneApi:
             name=name,
             props=_messages.BatchedGlbProps(
                 glb_data=glb_data,
-                batched_wxyzs=batched_wxyzs.astype(np.float32),
-                batched_positions=batched_positions.astype(np.float32),
+                batched_wxyzs=np.asarray(batched_wxyzs, dtype=np.float32),
+                batched_positions=np.asarray(batched_positions, dtype=np.float32),
                 batched_scales=batched_scales,
                 lod=lod,
                 cast_shadow=cast_shadow,
@@ -2206,12 +2206,14 @@ class SceneApi:
             [
                 # First texelFetch.
                 # - xyz (96 bits): centers.
-                centers.astype(np.float32).view(np.uint8),
+                np.ascontiguousarray(centers, dtype=np.float32).view(np.uint8),
                 # - w (32 bits): this is reserved for use by the renderer.
                 np.zeros((num_gaussians, 4), dtype=np.uint8),
                 # Second texelFetch.
                 # - xyz (96 bits): upper-triangular terms of covariance.
-                cov_triu.astype(np.float16).copy().view(np.uint8),
+                # ascontiguousarray: .view() requires a contiguous array, and
+                # cov_triu is non-contiguous from the advanced indexing above.
+                np.ascontiguousarray(cov_triu, dtype=np.float16).view(np.uint8),
                 # - w (32 bits): rgba.
                 colors_to_uint8(rgbs),
                 colors_to_uint8(opacities),

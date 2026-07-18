@@ -1134,6 +1134,8 @@ function BackgroundImage() {
   const { mutable } = React.useContext(ViewerContext)!;
   mutable.current.backgroundMaterial = backgroundMaterial;
   const backgroundMesh = React.useRef<THREE.Mesh>(null);
+  // Reused every frame to avoid a per-frame Vector3 allocation in the loop.
+  const lookdirRef = React.useRef(new THREE.Vector3());
 
   // Update position and rotation in render loop.
   useFrame(({ camera }) => {
@@ -1147,7 +1149,7 @@ function BackgroundImage() {
     const mesh = backgroundMesh.current!;
 
     // Position behind camera.
-    const lookdir = camera.getWorldDirection(new THREE.Vector3());
+    const lookdir = camera.getWorldDirection(lookdirRef.current);
     mesh.position.copy(camera.position).addScaledVector(lookdir, 1.0);
     mesh.quaternion.copy(camera.quaternion);
 
