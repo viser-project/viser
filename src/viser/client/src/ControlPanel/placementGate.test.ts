@@ -162,20 +162,27 @@ describe("gatePlacement", () => {
     expect(g.placement.height).toBeUndefined();
   });
 
-  it("a FRESH width/height clear (stored value null) survives as null", () => {
-    // gui.reset() sends width/height None ("clear the override"); the gate
-    // must pass the null VALUE through as a command, not conflate it with a
-    // gated-off axis -- the regression that left reset windows pinned forever.
-    const g = gatePlacement(
-      entry({ height: { value: null, counter: 3, runId: RUN_A } }),
-      undefined,
-      true,
-    );
-    expect(g.anyFresh).toBe(true);
-    expect(g.placement.height).toBeNull(); // fresh clear -> revert to auto
-    expect(g.placement.width).toBeUndefined(); // absent axis -> untouched
-    expect(g.applied).toEqual({ height: { [RUN_A]: 3 } });
-  });
+  // gui.reset() sends width/height None ("clear the override"); the gate must
+  // pass the null VALUE through as a command, not conflate it with a
+  // gated-off axis -- the `?? null` regression left reset windows pinned
+  // forever. Table-driven over BOTH axes so neither can silently regress.
+  it.each([
+    { axis: "height" as const, other: "width" as const },
+    { axis: "width" as const, other: "height" as const },
+  ])(
+    "a FRESH $axis clear (stored value null) survives as null",
+    ({ axis, other }) => {
+      const g = gatePlacement(
+        entry({ [axis]: { value: null, counter: 3, runId: RUN_A } }),
+        undefined,
+        true,
+      );
+      expect(g.anyFresh).toBe(true);
+      expect(g.placement[axis]).toBeNull(); // fresh clear -> revert to default
+      expect(g.placement[other]).toBeUndefined(); // absent axis -> untouched
+      expect(g.applied).toEqual({ [axis]: { [RUN_A]: 3 } });
+    },
+  );
 });
 
 // The gate -> applyPanelPlacement chain as the placement coordinator drives it

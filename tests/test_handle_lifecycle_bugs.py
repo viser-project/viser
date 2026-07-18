@@ -321,10 +321,16 @@ def test_rgb_value_normalizes_floats() -> None:
         # wild value (e.g. a float 255.0 must not become 65025) -- AND float
         # channels > 1.0 warn: pre-1.1.0 float [0, 255] inputs passed through
         # unchanged, so old code silently clamping to white needs a signpost.
-        with pytest.warns(UserWarning, match=r"\[0, 1\]"):
+        with pytest.warns(UserWarning, match=r"\[0, 1\]") as record:
             assert server.gui.add_rgb("e", (255.0, 1.2, -0.1)).value == (255, 255, 0)  # type: ignore[arg-type]
-        with pytest.warns(UserWarning, match=r"\[0, 1\]"):
+        # The warning must point at USER code (this file), not at viser
+        # internals or the deprecated_positional_shim wrapper -- each call
+        # path threads its own warn_stacklevel and a wrong depth silently
+        # blames the wrong frame.
+        assert record[0].filename == __file__
+        with pytest.warns(UserWarning, match=r"\[0, 1\]") as record:
             rgb.value = np.array([2.0, -5.0, 0.5])
+        assert record[0].filename == __file__
         assert rgb.value == (255, 0, 127)
         # In-range floats stay silent.
         with warnings.catch_warnings():

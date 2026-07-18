@@ -10,8 +10,8 @@ import {
   useThree,
   ThreeElement,
 } from "@react-three/fiber";
-import { toCreasedNormals } from "three-stdlib";
 import { OutlinesMaterial } from "./OutlinesMaterial";
+import { buildOutlineGeometry } from "./utils/outlineGeometry";
 
 type OutlinesProps = ThreeElement<typeof THREE.Group> & {
   /** Outline color, default: black */
@@ -103,14 +103,15 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
           oldPosition.current = position;
           oldPositionVersion.current = position?.version ?? -1;
 
-          // Remove the old mesh, freeing the creased clone if we own one
-          // (never the parent's shared geometry; see ownedGeometryRef above).
+          // Free the creased copy if we own one (never the parent's shared
+          // geometry; see ownedGeometryRef above) -- unconditionally, not
+          // gated on the child still being attached: the group is exposed via
+          // the forwarded ref, so an externally-removed child must not strand
+          // the owned geometry.
+          ownedGeometryRef.current?.dispose();
+          ownedGeometryRef.current = null;
           let mesh = group.children[0] as any;
-          if (mesh) {
-            ownedGeometryRef.current?.dispose();
-            ownedGeometryRef.current = null;
-            group.remove(mesh);
-          }
+          if (mesh) group.remove(mesh);
 
           if (parent.skeleton) {
             mesh = new THREE.SkinnedMesh();
@@ -130,10 +131,9 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
             mesh.material = material;
             group.add(mesh);
           }
-          mesh.geometry = angle
-            ? toCreasedNormals(parent.geometry, angle)
-            : parent.geometry;
-          ownedGeometryRef.current = angle !== 0 ? mesh.geometry : null;
+          const built = buildOutlineGeometry(parent.geometry, angle);
+          mesh.geometry = built.geometry;
+          ownedGeometryRef.current = built.owned ? built.geometry : null;
         }
       }
     });

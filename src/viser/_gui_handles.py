@@ -367,7 +367,7 @@ class GuiMultiSliderHandle(
     """
 
 
-def _colors_to_int_tuple(value: Any, *, warn_stacklevel: int = 3) -> tuple[int, ...]:
+def _colors_to_int_tuple(value: Any, *, warn_stacklevel: int) -> tuple[int, ...]:
     """Coerce an RGB/RGBA color to an int tuple in [0, 255].
 
     Integer channels are taken as absolute [0, 255]; float channels are
@@ -380,8 +380,11 @@ def _colors_to_int_tuple(value: Any, *, warn_stacklevel: int = 3) -> tuple[int, 
     Float channels > 1.0 emit a warning: before viser 1.1.0 they were passed
     through unchanged (a float ``100.0`` behaved like the int ``100``), so old
     code passing float [0, 255] colors now silently clamps to white without
-    it. ``warn_stacklevel`` should point the warning at user code; the default
-    fits the direct ``add_rgb(initial_value=...)`` call sites."""
+    it. ``warn_stacklevel`` must point the warning at USER code, and every call
+    path has a different depth (required, no default, so a new call site has to
+    count its own frames): ``add_rgb``/``add_rgba`` need 4 -- user ->
+    deprecated_positional_shim wrapper -> add_rgb* -> here -- and the ``.value``
+    assignment path needs 5."""
     if isinstance(value, np.ndarray):
         assert value.ndim == 1, f"Expected a 1D color, got shape {value.shape}."
     if any(not np.issubdtype(type(v), np.integer) and v > 1.0 for v in value):

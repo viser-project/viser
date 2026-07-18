@@ -637,7 +637,7 @@ class GuiApi:
         # late joiners -- and connected clients -- get the default control panel
         # (a top-right float) instead of a layout the user never asked
         # for. Placement is write-only, so we just send; there's no state to read.
-        # Bump the main panel's layout counter once and stamp it on all three
+        # Bump the main panel's layout counter once and stamp it on all four
         # reset messages, so a connected client that had rearranged the control
         # panel still sees this deliberate reset (counter increment beats its
         # last-applied), while a normal reconnect replay -- same counter -- is
@@ -2349,7 +2349,12 @@ class GuiApi:
             A handle that can be used to interact with the GUI element.
         """
 
-        value = cast("tuple[int, int, int]", _colors_to_int_tuple(initial_value))
+        value = cast(
+            "tuple[int, int, int]",
+            # warn_stacklevel: user -> deprecated_positional_shim wrapper ->
+            # add_rgb -> _colors_to_int_tuple.
+            _colors_to_int_tuple(initial_value, warn_stacklevel=4),
+        )
         uuid = _make_uuid()
         order = _apply_default_order(order)
         return GuiRgbHandle(
@@ -2397,7 +2402,12 @@ class GuiApi:
         Returns:
             A handle that can be used to interact with the GUI element.
         """
-        value = cast("tuple[int, int, int, int]", _colors_to_int_tuple(initial_value))
+        value = cast(
+            "tuple[int, int, int, int]",
+            # warn_stacklevel: user -> deprecated_positional_shim wrapper ->
+            # add_rgba -> _colors_to_int_tuple.
+            _colors_to_int_tuple(initial_value, warn_stacklevel=4),
+        )
         uuid = _make_uuid()
         order = _apply_default_order(order)
         return GuiRgbaHandle(
