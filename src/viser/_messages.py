@@ -1298,22 +1298,24 @@ class SetCameraFovMessage(Message, include_in_scene_serialization=True):
 
 
 @dataclasses.dataclass
-class SetCameraMinDistanceMessage(Message, include_in_scene_serialization=True):
-    """Server -> client message to set how close the camera may be dollied in.
+class SetCameraMinOrbitDistanceMessage(Message, include_in_scene_serialization=True):
+    """Server -> client message to set how close the camera may be dollied in
+    to its orbit (look-at) point.
 
     A constraint rather than a pose, so unlike the camera position/look-at messages
     there is no `initial` flag: URL parameters override where the camera *is*, not how
     far it is allowed to travel.
     """
 
-    min_distance: float
+    min_orbit_distance: float
 
 
 @dataclasses.dataclass
-class SetCameraMaxDistanceMessage(Message, include_in_scene_serialization=True):
-    """Server -> client message to set how far the camera may be dollied out."""
+class SetCameraMaxOrbitDistanceMessage(Message, include_in_scene_serialization=True):
+    """Server -> client message to set how far the camera may be dollied out
+    from its orbit (look-at) point."""
 
-    max_distance: float
+    max_orbit_distance: float
 
 
 @dataclasses.dataclass

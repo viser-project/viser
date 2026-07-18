@@ -559,20 +559,23 @@ function useMessageHandler() {
         camera.updateProjectionMatrix();
         return;
       }
-      case "SetCameraMinDistanceMessage": {
-        const controls = viewerMutable.cameraControl;
-        if (controls === null) return;
-        controls.minDistance = message.min_distance;
+      case "SetCameraMinOrbitDistanceMessage": {
+        const cameraControls = viewerMutable.cameraControl!;
+        cameraControls.minDistance = message.min_orbit_distance;
+        // camera-controls only enforces the bound on the next dolly, so a camera
+        // already parked inside the new limit would stay there. Push it out now.
+        if (cameraControls.distance < message.min_orbit_distance) {
+          cameraControls.dollyTo(message.min_orbit_distance, true);
+        }
         return;
       }
-      case "SetCameraMaxDistanceMessage": {
-        const controls = viewerMutable.cameraControl;
-        if (controls === null) return;
-        controls.maxDistance = message.max_distance;
+      case "SetCameraMaxOrbitDistanceMessage": {
+        const cameraControls = viewerMutable.cameraControl!;
+        cameraControls.maxDistance = message.max_orbit_distance;
         // camera-controls only enforces the bound on the next dolly, so a camera
         // already parked beyond the new limit would stay there. Pull it in now.
-        if (controls.distance > message.max_distance) {
-          controls.dollyTo(message.max_distance, true);
+        if (cameraControls.distance > message.max_orbit_distance) {
+          cameraControls.dollyTo(message.max_orbit_distance, true);
         }
         return;
       }

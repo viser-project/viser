@@ -660,11 +660,14 @@ export function SynchronizedCameraControls() {
       <CameraControls
         ref={setCameraControlRef}
         minDistance={0.01}
-        // Dolly is multiplicative per wheel event, so leaving the maximum at the
-        // camera-controls default of Infinity lets a long scroll walk the camera out
-        // without bound. Stated explicitly here to mirror minDistance; the server can
-        // override it via `client.camera.max_distance`.
-        maxDistance={Infinity}
+        // Dolly is multiplicative per wheel event, so the camera-controls default of
+        // Infinity lets a long scroll walk the camera out without bound. 1e6 is far
+        // beyond the default far plane (1000), so nothing visible is given up. The
+        // server can override via `client.camera.max_orbit_distance`; these defaults
+        // must match the Python ones in _viser.py (pinned by
+        // tests/test_initial_camera_defaults.py — the server-side setters no-op when
+        // assigning what it believes is already set).
+        maxDistance={1e6}
         dollySpeed={0.3}
         smoothTime={0.05}
         draggingSmoothTime={0.0}

@@ -151,8 +151,8 @@ class _CameraHandleState:
     image_width: int
     near: float
     far: float
-    min_distance: float
-    max_distance: float
+    min_orbit_distance: float
+    max_orbit_distance: float
     look_at: npt.NDArray[np.float64]
     up_direction: npt.NDArray[np.float64]
     update_timestamp: float
@@ -173,10 +173,12 @@ class CameraHandle:
             image_width=0,
             near=0.01,
             far=1000.0,
-            # Defaults match the client's <CameraControls> props exactly, so behaviour
-            # is unchanged unless a user opts in.
-            min_distance=0.01,
-            max_distance=float("inf"),
+            # Defaults must match the client's <CameraControls> props exactly:
+            # the setters early-return when the new value equals the value here,
+            # so a mismatch would make assigning the client-side default a silent
+            # no-op. Pinned by tests/test_initial_camera_defaults.py.
+            min_orbit_distance=0.01,
+            max_orbit_distance=1e6,
             look_at=np.zeros(3),
             up_direction=np.zeros(3),
             update_timestamp=0.0,
@@ -325,43 +327,44 @@ class CameraHandle:
         )
 
     @property
-    def min_distance(self) -> float:
-        """How close the camera may be dollied in to its look-at point.
-        Synchronized automatically when assigned."""
+    def min_orbit_distance(self) -> float:
+        """How close the camera may be dollied in to its orbit (look-at) point.
+        Distinct from :attr:`near`, which clips rendering rather than camera
+        travel. Synchronized automatically when assigned."""
         assert self._state.update_timestamp != 0.0
-        return self._state.min_distance
+        return self._state.min_orbit_distance
 
-    @min_distance.setter
-    def min_distance(self, min_distance: float) -> None:
-        if np.allclose(self._state.min_distance, min_distance):
+    @min_orbit_distance.setter
+    def min_orbit_distance(self, min_orbit_distance: float) -> None:
+        if np.allclose(self._state.min_orbit_distance, min_orbit_distance):
             return
-        self._state.min_distance = min_distance
+        self._state.min_orbit_distance = min_orbit_distance
         self._state.update_timestamp = time.time()
         self._state.client._websock_connection.queue_message(
-            _messages.SetCameraMinDistanceMessage(min_distance)
+            _messages.SetCameraMinOrbitDistanceMessage(min_orbit_distance)
         )
 
     @property
-    def max_distance(self) -> float:
-        """How far the camera may be dollied out from its look-at point. Defaults to
-        infinity, matching the underlying camera controls. Synchronized automatically
-        when assigned.
+    def max_orbit_distance(self) -> float:
+        """How far the camera may be dollied out from its orbit (look-at) point.
+        Distinct from :attr:`far`, which clips rendering rather than camera
+        travel. Defaults to 1e6. Synchronized automatically when assigned.
 
-        Dolly is multiplicative per wheel event, so an unbounded maximum means a long
+        Dolly is multiplicative per wheel event, so a very large maximum means a long
         scroll — a trackpad's inertial tail, for instance — can walk the camera out to
-        a distance where the scene is no longer visible or numerically well-behaved.
-        Set this to keep zoom-out inside the scene's scale."""
+        a distance where the scene is no longer visible. Set this to keep zoom-out
+        inside the scene's scale."""
         assert self._state.update_timestamp != 0.0
-        return self._state.max_distance
+        return self._state.max_orbit_distance
 
-    @max_distance.setter
-    def max_distance(self, max_distance: float) -> None:
-        if np.allclose(self._state.max_distance, max_distance):
+    @max_orbit_distance.setter
+    def max_orbit_distance(self, max_orbit_distance: float) -> None:
+        if np.allclose(self._state.max_orbit_distance, max_orbit_distance):
             return
-        self._state.max_distance = max_distance
+        self._state.max_orbit_distance = max_orbit_distance
         self._state.update_timestamp = time.time()
         self._state.client._websock_connection.queue_message(
-            _messages.SetCameraMaxDistanceMessage(max_distance)
+            _messages.SetCameraMaxOrbitDistanceMessage(max_orbit_distance)
         )
 
     @property
@@ -862,8 +865,8 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                     # client reports back, so they have to survive this rebuild —
                     # otherwise every incoming camera message would silently reset
                     # them. Carried over like camera_cb.
-                    min_distance=client.camera._state.min_distance,
-                    max_distance=client.camera._state.max_distance,
+                    min_orbit_distance=client.camera._state.min_orbit_distance,
+                    max_orbit_distance=client.camera._state.max_orbit_distance,
                     look_at=np.array(message.look_at),
                     up_direction=np.array(message.up_direction),
                     update_timestamp=time.time(),

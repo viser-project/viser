@@ -116,3 +116,38 @@ def test_initial_camera_defaults_match():
     assert_close("fov", py_defaults["fov"], ts_defaults["fov"])
     assert_close("near", py_defaults["near"], ts_defaults["near"])
     assert_close("far", py_defaults["far"], ts_defaults["far"])
+
+
+def test_orbit_distance_defaults_match():
+    """Verify that CameraHandle's orbit-distance defaults match the
+    <CameraControls> props in CameraControls.tsx.
+
+    This parity is load-bearing, not cosmetic: the `min_orbit_distance` /
+    `max_orbit_distance` setters early-return when the assigned value equals the
+    Python-side default, so if the client's actual default drifted from Python's,
+    assigning the client-side default from Python would be a silent no-op.
+    """
+    from viser._viser import CameraHandle
+
+    handle = CameraHandle(None)  # type: ignore[arg-type]
+    py_min = handle._state.min_orbit_distance
+    py_max = handle._state.max_orbit_distance
+
+    repo_root = Path(__file__).parent.parent
+    ts_path = repo_root / "src" / "viser" / "client" / "src" / "CameraControls.tsx"
+    ts_content = ts_path.read_text()
+
+    def parse_prop(name: str) -> float:
+        matches = re.findall(rf"{name}=\{{([\d.e+-]+)\}}", ts_content)
+        assert len(matches) == 1, (
+            f"Expected exactly one {name}={{...}} prop in CameraControls.tsx, "
+            f"found {len(matches)}"
+        )
+        return float(matches[0])
+
+    assert math.isclose(py_min, parse_prop("minDistance"), rel_tol=1e-9), (
+        f"min orbit distance mismatch: Python={py_min}, TypeScript prop differs"
+    )
+    assert math.isclose(py_max, parse_prop("maxDistance"), rel_tol=1e-9), (
+        f"max orbit distance mismatch: Python={py_max}, TypeScript prop differs"
+    )
