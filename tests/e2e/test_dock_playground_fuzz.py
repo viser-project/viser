@@ -24,7 +24,13 @@ import random
 import pytest
 from playwright.sync_api import Page  # noqa: E402
 
-from .dock_helpers import PLAYGROUND_PATH, collect_errors, drag, real_errors
+from .dock_helpers import (
+    OPEN_READY_TIMEOUT_MS,
+    PLAYGROUND_PATH,
+    collect_errors,
+    drag,
+    real_errors,
+)
 from .dock_helpers import open_playground as _open
 
 
@@ -102,10 +108,14 @@ def test_random_drags_never_throw_or_strand_windows(
     page.set_viewport_size({"width": vw, "height": vh})
     errors = collect_errors(page)
     try:
-        page.goto(f"http://localhost:{vite_server}{PLAYGROUND_PATH}")
+        page.goto(
+            f"http://localhost:{vite_server}{PLAYGROUND_PATH}",
+            timeout=OPEN_READY_TIMEOUT_MS,
+        )
         page.wait_for_function(
             "() => document.querySelector('[data-dock-group]') !== null",
             polling=50,
+            timeout=OPEN_READY_TIMEOUT_MS,
         )
         rng = random.Random(seed)
 
@@ -175,10 +185,14 @@ def test_random_drags_multicolumn_seed_conserve_and_no_errors(
     page.set_viewport_size({"width": vw, "height": vh})
     errors = collect_errors(page)
     try:
-        page.goto(f"http://localhost:{vite_server}{PLAYGROUND_PATH}")
+        page.goto(
+            f"http://localhost:{vite_server}{PLAYGROUND_PATH}",
+            timeout=OPEN_READY_TIMEOUT_MS,
+        )
         page.wait_for_function(
             "() => document.querySelector('[data-dock-group]') !== null",
             polling=50,
+            timeout=OPEN_READY_TIMEOUT_MS,
         )
         # Right edge: [controls(railed) | inspector+console stack]; a
         # floating `scene` to drag around. (scene is a non-area, mergeable

@@ -12,9 +12,18 @@ from __future__ import annotations
 import itertools
 from typing import Any, Mapping, Sequence
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page
 
 PLAYGROUND_PATH = "/dock_test.html"
+
+# Page-open readiness is a liveness wait, not an assertion: a generous timeout
+# costs nothing when the worker is healthy (the poll returns as soon as the
+# dock mounts, normally well under a second) but rides out CI worker stalls.
+# 2026-07-18 on main: a starved runner served page loads slower than the stock
+# 30s timeout for ~8 minutes, failing 16 consecutive tests at this wait on one
+# xdist worker before recovering on its own.
+OPEN_READY_TIMEOUT_MS = 60_000
 
 # Python mirrors of the dock's TS layout constants (src/viser/client/src/dock/):
 MIN_PANEL_WIDTH_PX = 220  # types.ts
@@ -24,22 +33,43 @@ CONTENT_SNAP_BAND_PX = 12  # types.ts (D56 detent band)
 
 
 def open_playground(dock_context, port: int, w: int = 1280, h: int = 800) -> Page:
-    """New page on the shared context, sized and navigated to the playground."""
-    pg = dock_context.new_page()
-    pg.set_viewport_size({"width": w, "height": h})
-    pg.goto(f"http://localhost:{port}{PLAYGROUND_PATH}")
-    # Timer-polled readiness instead of wait_for_selector: selector waits poll
-    # on rAF internally (no polling override exists), and throttled/stalled
-    # rAF in headless Chromium turns them into multi-second stalls. Explicit
-    # polling here keeps the helper fast even outside the pytest conftest
-    # (which patches wait_for_function's default for the suite).
-    pg.wait_for_function(
-        """() =>
-            document.querySelector('[data-dock-group]') !== null &&
-            document.querySelector('[data-dock-area="area-scene"]') !== null""",
-        polling=50,
-    )
-    return pg
+    """New page on the shared context, sized and navigated to the playground.
+
+    Retries once on a fresh page: waiting longer cannot rescue a page whose
+    module-graph fetch got stuck, but a second page reuses the context's warm
+    HTTP cache, so the retry is cheap.
+    """
+    last_err: Exception | None = None
+    for _ in range(2):
+        pg = dock_context.new_page()
+        pg.set_viewport_size({"width": w, "height": h})
+        try:
+            pg.goto(
+                f"http://localhost:{port}{PLAYGROUND_PATH}",
+                timeout=OPEN_READY_TIMEOUT_MS,
+            )
+            # Timer-polled readiness instead of wait_for_selector: selector waits
+            # poll on rAF internally (no polling override exists), and
+            # throttled/stalled rAF in headless Chromium turns them into
+            # multi-second stalls. Explicit polling here keeps the helper fast
+            # even outside the pytest conftest (which patches
+            # wait_for_function's default for the suite).
+            pg.wait_for_function(
+                """() =>
+                    document.querySelector('[data-dock-group]') !== null &&
+                    document.querySelector('[data-dock-area="area-scene"]') !== null""",
+                polling=50,
+                timeout=OPEN_READY_TIMEOUT_MS,
+            )
+            return pg
+        except PlaywrightError as err:
+            last_err = err
+            try:
+                pg.close()
+            except PlaywrightError:
+                pass
+    assert last_err is not None
+    raise last_err
 
 
 def drag(
