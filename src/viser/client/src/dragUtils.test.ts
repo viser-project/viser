@@ -7,6 +7,8 @@ import {
   anyBindingMatches,
   hasCmdCtrl,
   motionExceedsThreshold,
+  planDragStart,
+  planModifierTransition,
   MOTION_THRESHOLD_PX,
 } from "./dragUtils";
 
@@ -88,6 +90,97 @@ describe("hasCmdCtrl", () => {
     expect(hasCmdCtrl("cmd/ctrl+shift")).toBe(true);
     expect(hasCmdCtrl("alt")).toBe(false);
     expect(hasCmdCtrl(null)).toBe(false);
+  });
+});
+
+describe("planModifierTransition", () => {
+  // mjviser-style setup: two bound combos on the left button, used to
+  // switch the drag plane mid-gesture.
+  const bindings = [
+    { button: "left" as const, modifier: "cmd/ctrl" as const },
+    { button: "left" as const, modifier: "cmd/ctrl+shift" as const },
+  ];
+
+  it("is a no-op when the modifier is unchanged", () => {
+    expect(
+      planModifierTransition("cmd/ctrl", "cmd/ctrl", bindings, "left", true),
+    ).toBeNull();
+    // Even when nothing is held and nothing changes.
+    expect(
+      planModifierTransition(null, null, bindings, "left", false),
+    ).toBeNull();
+  });
+
+  it("ends the old segment and starts a new one between two bound combos", () => {
+    expect(
+      planModifierTransition(
+        "cmd/ctrl",
+        "cmd/ctrl+shift",
+        bindings,
+        "left",
+        true,
+      ),
+    ).toEqual({ emitEnd: true, emitStart: true });
+  });
+
+  it("ends the segment and goes dormant when the new combo is unbound", () => {
+    // ctrl is bound, shift-only is not -- releasing ctrl mid-drag drops
+    // into a dormant gap rather than starting a spurious segment.
+    expect(
+      planModifierTransition("cmd/ctrl", "shift", bindings, "left", true),
+    ).toEqual({ emitEnd: true, emitStart: false });
+  });
+
+  it("starts a fresh segment when re-entering a bound combo from dormant", () => {
+    // Already dormant (segmentActive=false): no end to emit, just the
+    // new start.
+    expect(
+      planModifierTransition("shift", "cmd/ctrl", bindings, "left", false),
+    ).toEqual({ emitEnd: false, emitStart: true });
+  });
+
+  it("stays dormant when moving between two unbound combos", () => {
+    expect(
+      planModifierTransition("shift", "alt", bindings, "left", false),
+    ).toEqual({ emitEnd: false, emitStart: false });
+  });
+
+  it("respects the button when matching the new combo", () => {
+    // The same modifier on a button with no binding is unbound.
+    expect(
+      planModifierTransition(null, "cmd/ctrl", bindings, "right", false),
+    ).toEqual({ emitEnd: false, emitStart: false });
+  });
+});
+
+describe("planDragStart", () => {
+  const bindings = [
+    { button: "left" as const, modifier: "cmd/ctrl" as const },
+    { button: "left" as const, modifier: "cmd/ctrl+shift" as const },
+  ];
+  const down = { button: "left" as const, modifier: "cmd/ctrl" as const };
+
+  it("keeps the pointerdown input when the modifier is unchanged", () => {
+    const plan = planDragStart(down, "cmd/ctrl", bindings);
+    expect(plan.input).toBe(down); // same reference -- no realloc
+    expect(plan.emitStart).toBe(true);
+  });
+
+  it("attributes the opening segment to the promotion-time modifier", () => {
+    // Shift added inside the pointerdown->promotion window: the opening
+    // start carries cmd/ctrl+shift, never a stale cmd/ctrl.
+    const plan = planDragStart(down, "cmd/ctrl+shift", bindings);
+    expect(plan.input).toEqual({ button: "left", modifier: "cmd/ctrl+shift" });
+    expect(plan.emitStart).toBe(true);
+  });
+
+  it("begins dormant when the promotion-time combo is unbound", () => {
+    // Ctrl released before the threshold crossing: no segment starts (no
+    // degenerate stale-modifier start/end pair), but the drag itself
+    // begins -- a later switch back to a bound combo resumes it.
+    const plan = planDragStart(down, null, bindings);
+    expect(plan.input).toEqual({ button: "left", modifier: null });
+    expect(plan.emitStart).toBe(false);
   });
 });
 

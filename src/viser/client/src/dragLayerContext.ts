@@ -6,7 +6,7 @@
 
 import React from "react";
 import * as THREE from "three";
-import { DragBinding, DragInput } from "./dragUtils";
+import { DragBinding, DragInput, KeyModifier } from "./dragUtils";
 
 export type BeginDragArgs = {
   nodeName: string;
@@ -21,6 +21,13 @@ export type BeginDragArgs = {
   pointerId: number;
   input: DragInput;
   bindings: DragBinding[];
+  /** Modifier held at promotion time (the threshold-crossing
+   * pointermove). May differ from ``input.modifier``, which was sampled
+   * at pointerdown: DragLayer's key listeners only install at promotion,
+   * so a change inside the pointerdown-to-promotion window is only
+   * visible through this value. The opening segment is attributed to
+   * this combo (dormant when it's unbound). */
+  promotionModifier: KeyModifier | null;
 };
 
 export interface DragLayerApi {

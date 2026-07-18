@@ -205,6 +205,591 @@ def test_scene_node_drag_callbacks(
         assert event.modifier == "cmd/ctrl", event.modifier
 
 
+def test_scene_node_drag_modifier_switch_mid_drag(
+    page: Page,
+    viser_server: viser.ViserServer,
+) -> None:
+    """Changing the held modifier mid-drag ends the current segment and
+    starts a new one under the new combo, routing each segment to the
+    callback bound to it. Holding Ctrl, dragging, then adding Shift while
+    still dragging should: end the ``cmd/ctrl`` segment, then run a full
+    ``cmd/ctrl+shift`` segment -- all within one physical button press."""
+    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
+
+    ctrl_started = threading.Event()
+    ctrl_ended = threading.Event()
+    ctrl_shift_started = threading.Event()
+    ctrl_shift_ended = threading.Event()
+
+    box = viser_server.scene.add_box(
+        "/switch_box",
+        dimensions=(4.0, 4.0, 0.2),
+        color=(200, 100, 255),
+    )
+
+    # The server routes each segment to the callback bound to its combo,
+    # so a fired event is itself proof the segment carried that modifier.
+    _on_drag_phase(box, "start", "left", modifier="cmd/ctrl")(
+        lambda _: ctrl_started.set()
+    )
+    _on_drag_phase(box, "end", "left", modifier="cmd/ctrl")(lambda _: ctrl_ended.set())
+    _on_drag_phase(box, "start", "left", modifier="cmd/ctrl+shift")(
+        lambda _: ctrl_shift_started.set()
+    )
+    _on_drag_phase(box, "end", "left", modifier="cmd/ctrl+shift")(
+        lambda _: ctrl_shift_ended.set()
+    )
+
+    wait_for_connection(page, viser_server.get_port())
+    wait_for_scene_node(page, "/switch_box")
+
+    (start_x, start_y), (end_x, end_y) = _get_canvas_drag_points(page)
+    mid_x = (start_x + end_x) / 2
+    mid_y = (start_y + end_y) / 2
+
+    # cmd/ctrl segment: press and drag halfway.
+    page.keyboard.down("Control")
+    page.mouse.move(start_x, start_y)
+    page.mouse.down()
+    page.mouse.move(mid_x, mid_y, steps=8)
+    assert ctrl_started.wait(timeout=5.0), "cmd/ctrl segment didn't start"
+
+    # Add Shift mid-drag -- the keydown alone (no further motion) ends the
+    # cmd/ctrl segment and starts the cmd/ctrl+shift one. Asserting
+    # ctrl_ended *before* mouse-up is the crux: it proves the segment
+    # ended from the modifier switch, not from the release.
+    page.keyboard.down("Shift")
+    assert ctrl_ended.wait(timeout=5.0), "cmd/ctrl segment didn't end on modifier add"
+    assert ctrl_shift_started.wait(timeout=5.0), (
+        "cmd/ctrl+shift segment didn't start when Shift was added mid-drag"
+    )
+
+    # Keep dragging under the new combo, then release.
+    page.mouse.move(end_x, end_y, steps=8)
+    page.mouse.up()
+    page.keyboard.up("Shift")
+    page.keyboard.up("Control")
+    assert ctrl_shift_ended.wait(timeout=5.0), (
+        "cmd/ctrl+shift segment didn't end on release"
+    )
+
+
+def test_scene_node_drag_dormant_then_resume(
+    page: Page,
+    viser_server: viser.ViserServer,
+) -> None:
+    """Switching to an UNBOUND modifier combo mid-drag suspends the gesture
+    (dormant) rather than ending it: the active segment's ``end`` fires, but
+    the physical drag stays alive and a *new* segment starts when a bound
+    combo is re-entered -- all within one button press.
+
+    Only ``cmd/ctrl`` is bound, so adding Shift lands in a dormant gap. The
+    crux is the resume: if pressing Shift had torn the drag down, releasing
+    it could NOT produce a second ``cmd/ctrl`` start without a fresh
+    mouse-down. Both transitions here are driven by key events with the
+    pointer stationary, so this also exercises the keydown/keyup path."""
+    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
+
+    starts = [0]
+    ends = [0]
+    first_start = threading.Event()
+    first_end = threading.Event()
+    resumed_start = threading.Event()
+    second_end = threading.Event()
+    lock = threading.Lock()
+
+    box = viser_server.scene.add_box(
+        "/dormant_box",
+        dimensions=(4.0, 4.0, 0.2),
+        color=(120, 220, 160),
+    )
+
+    def _on_start(_event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            starts[0] += 1
+            n = starts[0]
+        (first_start if n == 1 else resumed_start).set()
+
+    def _on_end(_event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            ends[0] += 1
+            n = ends[0]
+        (first_end if n == 1 else second_end).set()
+
+    _on_drag_phase(box, "start", "left", modifier="cmd/ctrl")(_on_start)
+    _on_drag_phase(box, "end", "left", modifier="cmd/ctrl")(_on_end)
+
+    wait_for_connection(page, viser_server.get_port())
+    wait_for_scene_node(page, "/dormant_box")
+
+    (start_x, start_y), (end_x, end_y) = _get_canvas_drag_points(page)
+    mid_x = (start_x + end_x) / 2
+    mid_y = (start_y + end_y) / 2
+
+    # cmd/ctrl segment: press and drag partway.
+    page.keyboard.down("Control")
+    page.mouse.move(start_x, start_y)
+    page.mouse.down()
+    page.mouse.move(mid_x, mid_y, steps=8)
+    assert first_start.wait(timeout=5.0), "cmd/ctrl segment didn't start"
+
+    # Add Shift (cmd/ctrl+shift is unbound) -> dormant. The active segment
+    # ends now, BEFORE any release -- proving the switch, not the mouse-up,
+    # ended it.
+    page.keyboard.down("Shift")
+    assert first_end.wait(timeout=5.0), "segment didn't end when going dormant"
+    with lock:
+        assert ends[0] == 1 and starts[0] == 1, (starts[0], ends[0])
+
+    # Drag while dormant -- no segment is active, so nothing should fire.
+    page.mouse.move(end_x, end_y, steps=8)
+
+    # Release Shift -> back to the bound cmd/ctrl combo -> RESUME with a
+    # fresh segment, even though the pointer is stationary and the button
+    # was never released.
+    page.keyboard.up("Shift")
+    assert resumed_start.wait(timeout=5.0), (
+        "drag did not resume on re-entering cmd/ctrl -- dormant was treated "
+        "as a full teardown instead of a suspend"
+    )
+
+    page.mouse.up()
+    page.keyboard.up("Control")
+    assert second_end.wait(timeout=5.0), "resumed segment didn't end on release"
+
+    # Exactly two clean segments, no churn from the dormant gap.
+    with lock:
+        assert starts[0] == 2, starts[0]
+        assert ends[0] == 2, ends[0]
+
+
+def test_scene_node_drag_modifier_change_before_promotion(
+    page: Page,
+    viser_server: viser.ViserServer,
+) -> None:
+    """A modifier change inside the pointerdown->promotion window is honored.
+
+    The drag candidate samples its modifier at pointerdown, but the drag
+    only *promotes* at the motion threshold -- and the drag layer's key
+    listeners install at promotion. Releasing Ctrl in that window used to
+    be invisible: the promoted drag opened a stale ``cmd/ctrl`` segment
+    (start + end) even though no modifier was held for any of the actual
+    motion.
+
+    Now the opening segment is attributed to the promotion-time modifier:
+    with Ctrl released before the threshold crossing, the drag begins
+    DORMANT -- no start fires -- and re-pressing Ctrl mid-gesture resumes
+    it with a properly-attributed segment (proving the gesture began as a
+    live drag rather than being dropped)."""
+    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
+
+    starts = [0]
+    ends = [0]
+    started = threading.Event()
+    ended = threading.Event()
+    lock = threading.Lock()
+
+    box = viser_server.scene.add_box(
+        "/prepromo_box",
+        dimensions=(4.0, 4.0, 0.2),
+        color=(255, 180, 90),
+    )
+
+    def _on_start(_event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            starts[0] += 1
+        started.set()
+
+    def _on_end(_event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            ends[0] += 1
+        ended.set()
+
+    _on_drag_phase(box, "start", "left", modifier="cmd/ctrl")(_on_start)
+    _on_drag_phase(box, "end", "left", modifier="cmd/ctrl")(_on_end)
+
+    wait_for_connection(page, viser_server.get_port())
+    wait_for_scene_node(page, "/prepromo_box")
+
+    (start_x, start_y), (end_x, end_y) = _get_canvas_drag_points(page)
+
+    # Pointerdown under the bound combo, then release Ctrl BEFORE any
+    # motion -- the change lands inside the promotion blind spot.
+    page.keyboard.down("Control")
+    page.mouse.move(start_x, start_y)
+    page.mouse.down()
+    page.keyboard.up("Control")
+
+    # Cross the threshold and keep dragging with nothing held. The drag
+    # must begin dormant: no stale cmd/ctrl start (the old bug fired a
+    # degenerate start/end pair here).
+    page.mouse.move(end_x, end_y, steps=12)
+    assert not started.wait(timeout=1.0), (
+        "a cmd/ctrl segment started even though Ctrl was released before "
+        "the promotion threshold (stale pointerdown modifier)"
+    )
+
+    # Re-press Ctrl with the button still down: the dormant drag resumes
+    # with a real cmd/ctrl segment -- distinguishing "began dormant" from
+    # "never began at all".
+    page.keyboard.down("Control")
+    assert started.wait(timeout=5.0), (
+        "re-pressing the bound modifier mid-gesture did not resume the "
+        "dormant drag -- was the pre-promotion gesture dropped entirely?"
+    )
+
+    page.mouse.up()
+    page.keyboard.up("Control")
+    assert ended.wait(timeout=5.0), "resumed segment didn't end on release"
+    with lock:
+        assert starts[0] == 1 and ends[0] == 1, (starts[0], ends[0])
+
+
+def test_scene_node_drag_binding_added_mid_drag(
+    page: Page,
+    viser_server: viser.ViserServer,
+) -> None:
+    """A binding registered while a drag is in progress takes effect at the
+    next modifier switch.
+
+    Bindings are read live at each switch (not snapshotted at drag
+    start): registering a ``cmd/ctrl+shift`` callback mid-``cmd/ctrl``-drag
+    and then pressing Shift must end the cmd/ctrl segment and START a
+    cmd/ctrl+shift one. With a drag-start snapshot, the switch would land
+    in a dormant gap and the new callback would never fire without a fresh
+    mouse-down."""
+    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
+
+    ctrl_started = threading.Event()
+    ctrl_ended = threading.Event()
+    ctrl_shift_started = threading.Event()
+    ctrl_shift_ended = threading.Event()
+
+    box = viser_server.scene.add_box(
+        "/live_bindings_box",
+        dimensions=(4.0, 4.0, 0.2),
+        color=(90, 180, 255),
+    )
+
+    _on_drag_phase(box, "start", "left", modifier="cmd/ctrl")(
+        lambda _: ctrl_started.set()
+    )
+    _on_drag_phase(box, "end", "left", modifier="cmd/ctrl")(lambda _: ctrl_ended.set())
+
+    wait_for_connection(page, viser_server.get_port())
+    wait_for_scene_node(page, "/live_bindings_box")
+
+    (start_x, start_y), (end_x, end_y) = _get_canvas_drag_points(page)
+    mid_x = (start_x + end_x) / 2
+    mid_y = (start_y + end_y) / 2
+
+    # cmd/ctrl segment: press and drag partway.
+    page.keyboard.down("Control")
+    page.mouse.move(start_x, start_y)
+    page.mouse.down()
+    page.mouse.move(mid_x, mid_y, steps=8)
+    assert ctrl_started.wait(timeout=5.0), "cmd/ctrl segment didn't start"
+
+    # Register the cmd/ctrl+shift binding MID-DRAG, and give the update
+    # message a beat to reach the client.
+    _on_drag_phase(box, "start", "left", modifier="cmd/ctrl+shift")(
+        lambda _: ctrl_shift_started.set()
+    )
+    _on_drag_phase(box, "end", "left", modifier="cmd/ctrl+shift")(
+        lambda _: ctrl_shift_ended.set()
+    )
+    page.wait_for_timeout(500)
+
+    # Shift lands the switch on the freshly-registered combo.
+    page.keyboard.down("Shift")
+    assert ctrl_ended.wait(timeout=5.0), "cmd/ctrl segment didn't end on switch"
+    assert ctrl_shift_started.wait(timeout=5.0), (
+        "the mid-drag-registered cmd/ctrl+shift binding didn't own the new "
+        "segment -- bindings were snapshotted at drag start instead of read live"
+    )
+
+    page.mouse.move(end_x, end_y, steps=8)
+    page.mouse.up()
+    page.keyboard.up("Shift")
+    page.keyboard.up("Control")
+    assert ctrl_shift_ended.wait(timeout=5.0), (
+        "cmd/ctrl+shift segment didn't end on release"
+    )
+
+
+def test_scene_node_drag_modifier_release_before_button(
+    page: Page,
+    viser_server: viser.ViserServer,
+) -> None:
+    """Releasing the modifier a beat before the mouse button must not fire
+    a degenerate segment on the combo left behind.
+
+    With both a bare binding (no modifier) and ``cmd/ctrl`` registered, a
+    Ctrl keyup mid-drag switches to the bare combo -- but the
+    switch-created segment's ``start`` is deferred
+    (``SWITCH_START_DELAY_MS``) and discarded if the button comes up
+    inside the window. Two gestures pin both halves:
+
+    A. CONFIRM: Ctrl keyup with the button HELD. The ctrl segment ends on
+       the keyup (asserted before any release), and the pending bare
+       start fires on the deferral timer -- proving the keyup really
+       creates a pending segment (gesture B's zero isn't vacuous: the
+       identical keyup, un-released, produces a bare segment).
+    B. DISCARD: Ctrl keyup + pointerup dispatched in the SAME JS task
+       (both listeners are window-level, so synthetic events reach them;
+       the same-task dispatch makes the sub-window gap deterministic --
+       real key/mouse calls race the 100ms timer on slow CI). The keyup
+       schedules the pending bare start; the pointerup discards it before
+       any timer can fire. Bare must not budge."""
+    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
+
+    bare_starts = [0]
+    bare_ends = [0]
+    ctrl_starts = [0]
+    ctrl_ends = [0]
+    lock = threading.Lock()
+    ctrl_started = threading.Event()
+    ctrl_ended = threading.Event()
+    bare_started = threading.Event()
+    bare_ended = threading.Event()
+
+    box = viser_server.scene.add_box(
+        "/release_order_box",
+        dimensions=(4.0, 4.0, 0.2),
+        color=(240, 120, 120),
+    )
+
+    def _bare_start(_event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            bare_starts[0] += 1
+        bare_started.set()
+
+    def _bare_end(_event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            bare_ends[0] += 1
+        bare_ended.set()
+
+    def _ctrl_start(_event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            ctrl_starts[0] += 1
+        ctrl_started.set()
+
+    def _ctrl_end(_event: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            ctrl_ends[0] += 1
+        ctrl_ended.set()
+
+    _on_drag_phase(box, "start", "left")(_bare_start)
+    _on_drag_phase(box, "end", "left")(_bare_end)
+    _on_drag_phase(box, "start", "left", modifier="cmd/ctrl")(_ctrl_start)
+    _on_drag_phase(box, "end", "left", modifier="cmd/ctrl")(_ctrl_end)
+
+    wait_for_connection(page, viser_server.get_port())
+    wait_for_scene_node(page, "/release_order_box")
+
+    (start_x, start_y), (end_x, end_y) = _get_canvas_drag_points(page)
+
+    # Record the mouse pointerId for gesture B's same-task synthetic
+    # release (handleWindowPointerUp filters on it).
+    page.evaluate(
+        """() => { window.__pid = null;
+             window.addEventListener('pointermove',
+               (e) => { window.__pid = e.pointerId; }, true); }"""
+    )
+
+    # --- Gesture A (CONFIRM): Ctrl keyup with the button HELD.
+    page.keyboard.down("Control")
+    page.mouse.move(start_x, start_y)
+    page.mouse.down()
+    page.mouse.move(end_x, end_y, steps=8)
+    assert ctrl_started.wait(timeout=5.0), "cmd/ctrl segment didn't start"
+    page.keyboard.up("Control")
+    # The ctrl end comes from the KEYUP -- asserted before any release.
+    assert ctrl_ended.wait(timeout=5.0), (
+        "cmd/ctrl segment didn't end on keyup (button still held)"
+    )
+    # The keyup scheduled a pending bare start; held stationary past the
+    # deferral window, the timer confirms it.
+    assert bare_started.wait(timeout=5.0), (
+        "held past the deferral window, the pending bare start should have "
+        "fired on the timer"
+    )
+    page.mouse.up()
+    assert bare_ended.wait(timeout=5.0), "bare segment didn't end on release"
+    with lock:
+        assert ctrl_starts[0] == 1 and ctrl_ends[0] == 1, (
+            ctrl_starts[0],
+            ctrl_ends[0],
+        )
+        assert bare_starts[0] == 1 and bare_ends[0] == 1, (
+            bare_starts[0],
+            bare_ends[0],
+        )
+
+    # --- Gesture B (DISCARD): the identical keyup, but the button comes
+    # up in the SAME JS task -- inside the window, deterministically.
+    page.keyboard.down("Control")
+    page.mouse.move(start_x, start_y)
+    page.mouse.down()
+    page.mouse.move(end_x, end_y, steps=8)
+    for _ in range(50):
+        with lock:
+            if ctrl_starts[0] == 2:
+                break
+        page.wait_for_timeout(100)
+    with lock:
+        assert ctrl_starts[0] == 2, "second cmd/ctrl segment didn't start"
+    pid = page.evaluate("() => window.__pid")
+    assert pid is not None, "pointer id not observed"
+    page.evaluate(
+        """([x, y, pid]) => {
+          window.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+          window.dispatchEvent(new PointerEvent('pointerup', {
+            bubbles: true, clientX: x, clientY: y, button: 0,
+            pointerId: pid, pointerType: 'mouse', isPrimary: true }));
+        }""",
+        [end_x, end_y, pid],
+    )
+    # Reset the real input state (the drag already ended; both no-op).
+    page.mouse.up()
+    page.keyboard.up("Control")
+
+    for _ in range(50):
+        with lock:
+            if ctrl_ends[0] == 2:
+                break
+        page.wait_for_timeout(100)
+    # Ample time for any (buggy) surviving pending start to fire.
+    page.wait_for_timeout(600)
+    with lock:
+        assert ctrl_starts[0] == 2 and ctrl_ends[0] == 2, (
+            ctrl_starts[0],
+            ctrl_ends[0],
+        )
+        assert bare_starts[0] == 1 and bare_ends[0] == 1, (
+            "modifier-first release fired a degenerate segment on the bare "
+            f"binding: {bare_starts[0]} starts, {bare_ends[0]} ends "
+            "(expected the gesture-A pair only)"
+        )
+
+
+def test_scene_node_drag_many_stages_one_drag(
+    page: Page,
+    viser_server: viser.ViserServer,
+) -> None:
+    """A single drag that cycles through several segments AND a dormant gap:
+    cmd/ctrl -> cmd/ctrl+shift -> (dormant) -> cmd/ctrl+shift -> cmd/ctrl,
+    all within one button press. Both combos are entered twice, with an
+    unbound (dormant) interval in the middle, exercising repeated switching,
+    re-entry, and resume-after-dormant in one gesture. Each callback must
+    see exactly two clean start...end pairs."""
+    viser_server.initial_camera.position = (0.0, 0.0, 4.0)
+    viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
+
+    ctrl_starts = [0]
+    ctrl_ends = [0]
+    cs_starts = [0]
+    cs_ends = [0]
+    lock = threading.Lock()
+    # One event per milestone we gate the gesture on.
+    ev = {
+        k: threading.Event() for k in ("cs_s1", "cs_e1", "cs_s2", "ctrl_s2", "ctrl_e2")
+    }
+
+    box = viser_server.scene.add_box(
+        "/many_stage_box",
+        dimensions=(4.0, 4.0, 0.2),
+        color=(160, 140, 240),
+    )
+
+    # Async callbacks are awaited in dispatch order on the event loop, so
+    # the counters settle deterministically (sync callbacks fire-and-forget
+    # on a thread pool and would race the final count assertions -- step 4
+    # below fires two callbacks at once).
+    async def _ctrl_start(_e: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            ctrl_starts[0] += 1
+            n = ctrl_starts[0]
+        if n == 2:
+            ev["ctrl_s2"].set()
+
+    async def _ctrl_end(_e: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            ctrl_ends[0] += 1
+            n = ctrl_ends[0]
+        if n == 2:
+            ev["ctrl_e2"].set()
+
+    async def _cs_start(_e: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            cs_starts[0] += 1
+            n = cs_starts[0]
+        ev["cs_s1" if n == 1 else "cs_s2"].set()
+
+    async def _cs_end(_e: viser.SceneNodeDragEvent[viser.BoxHandle]) -> None:
+        with lock:
+            cs_ends[0] += 1
+            n = cs_ends[0]
+        if n == 1:
+            ev["cs_e1"].set()
+
+    _on_drag_phase(box, "start", "left", modifier="cmd/ctrl")(_ctrl_start)
+    _on_drag_phase(box, "end", "left", modifier="cmd/ctrl")(_ctrl_end)
+    _on_drag_phase(box, "start", "left", modifier="cmd/ctrl+shift")(_cs_start)
+    _on_drag_phase(box, "end", "left", modifier="cmd/ctrl+shift")(_cs_end)
+
+    wait_for_connection(page, viser_server.get_port())
+    wait_for_scene_node(page, "/many_stage_box")
+
+    (start_x, start_y), (end_x, end_y) = _get_canvas_drag_points(page)
+    q_x = start_x + (end_x - start_x) / 3
+    q_y = start_y + (end_y - start_y) / 3
+
+    # Segment 1: cmd/ctrl.
+    page.keyboard.down("Control")
+    page.mouse.move(start_x, start_y)
+    page.mouse.down()
+    page.mouse.move(q_x, q_y, steps=6)
+
+    # Segment 2: add Shift -> cmd/ctrl+shift (bound).
+    page.keyboard.down("Shift")
+    assert ev["cs_s1"].wait(timeout=5.0), "cmd/ctrl+shift didn't start on Shift add"
+
+    # Dormant: release Ctrl -> shift-only (unbound). cmd/ctrl+shift ends.
+    page.keyboard.up("Control")
+    assert ev["cs_e1"].wait(timeout=5.0), "cmd/ctrl+shift didn't end going dormant"
+
+    # Drag while dormant (nothing should fire).
+    page.mouse.move(end_x, end_y, steps=6)
+
+    # Resume: press Ctrl -> cmd/ctrl+shift again (bound).
+    page.keyboard.down("Control")
+    assert ev["cs_s2"].wait(timeout=5.0), "cmd/ctrl+shift didn't resume after dormant"
+
+    # Segment 4: release Shift -> back to cmd/ctrl (bound).
+    page.keyboard.up("Shift")
+    assert ev["ctrl_s2"].wait(timeout=5.0), "cmd/ctrl didn't restart on Shift release"
+
+    # Release.
+    page.mouse.up()
+    page.keyboard.up("Control")
+    assert ev["ctrl_e2"].wait(timeout=5.0), (
+        "final cmd/ctrl segment didn't end on release"
+    )
+
+    # Exactly two clean segments per combo across the whole gesture.
+    with lock:
+        assert ctrl_starts[0] == 2, ctrl_starts[0]
+        assert ctrl_ends[0] == 2, ctrl_ends[0]
+        assert cs_starts[0] == 2, cs_starts[0]
+        assert cs_ends[0] == 2, cs_ends[0]
+
+
 def test_scene_node_drag_filter_rejects_wrong_modifier(
     page: Page,
     viser_server: viser.ViserServer,
