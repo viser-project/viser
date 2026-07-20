@@ -193,11 +193,11 @@ export function DockManager({
   // at 0, so `commit` can tell a user rearrangement from a programmatic one --
   // which drives the "user touched this panel" flag for layout persistence.
   const programmaticDepth = React.useRef(0);
-  // Count of USER gestures that changed collapse-or-placement intent, plus
-  // the key the count is derived from. Read through
-  // api.getUserArrangementCount; see its doc in DockContext.
-  const userArrangementCount = React.useRef(0);
-  const lastIntentKey = React.useRef<string | null>(null);
+  // Per-pane user-arrangement stamps + the signature baseline they diff
+  // against. Read through api.getPaneArrangementStamp; see DockContext.
+  const paneStamps = React.useRef(new Map<PaneId, number>());
+  const paneStampCounter = React.useRef(0);
+  const lastPaneSigs = React.useRef(new Map<PaneId, string>());
   // Production keeps a RATE-LIMITED invariant tripwire (dev checks EVERY
   // commit, including per-frame gesture commits): layouts are partly
   // SERVER-driven, so a malformed op sequence from server state can ship a
@@ -235,17 +235,29 @@ export function DockManager({
     layoutRef.current = next;
     setLayout(next);
     const programmatic = programmaticDepth.current > 0;
-    // Monotonic counter of user gestures that CHANGED collapse-or-placement
-    // intent (api.getUserArrangementCount). Keyed on collapseIntentKey, not
-    // on "any user commit": per-frame resize commits, tab activation, window
-    // moves and z-order raises are user actions that cannot contend with a
-    // deferred collapse, and counting them would make a sync layer discard
-    // legitimate server commands. The key is refreshed on EVERY commit, so a
-    // programmatic change is the new baseline rather than a phantom diff.
-    const key = ops.collapseIntentKey(next);
-    if (!programmatic && key !== lastIntentKey.current)
-      userArrangementCount.current += 1;
-    lastIntentKey.current = key;
+    // Per-PANE arrangement stamps (api.getPaneArrangementStamp): a USER
+    // commit that changes a pane's container signature -- its container's
+    // collapse flag, or which container holds it -- stamps that pane with a
+    // fresh monotonic value. Scoped per pane, so a sync layer holding a
+    // deferred command for panel A drops it only when the user touched A's
+    // OWN container (a global signal discarded legitimate commands on any
+    // unrelated gesture); refreshed against EVERY commit, so programmatic
+    // changes are the new baseline rather than a phantom diff, and blind to
+    // geometry/tab-activation, which cannot contend with a collapse axis.
+    const sigs = ops.paneContainerSignatures(next);
+    if (!programmatic) {
+      for (const [paneId, sig] of sigs) {
+        if (lastPaneSigs.current.get(paneId) !== sig)
+          paneStamps.current.set(paneId, ++paneStampCounter.current);
+      }
+      for (const paneId of lastPaneSigs.current.keys()) {
+        // A pane REMOVED from every container by a user gesture also counts
+        // as touched (e.g. its window was merged away).
+        if (!sigs.has(paneId))
+          paneStamps.current.set(paneId, ++paneStampCounter.current);
+      }
+    }
+    lastPaneSigs.current = sigs;
     onCommitRef.current?.(prev, next, programmatic);
   }, []);
 
@@ -327,7 +339,12 @@ export function DockManager({
         runProgrammatic(() =>
           applyOp(ops.addPaneToArea(layoutRef.current, areaId, paneId, index)),
         ),
-      getUserArrangementCount: () => userArrangementCount.current,
+      getPaneArrangementStamp: (paneIds: readonly PaneId[]) => {
+        let max = 0;
+        for (const p of paneIds)
+          max = Math.max(max, paneStamps.current.get(p) ?? 0);
+        return max;
+      },
     }),
     [applyOp, runProgrammatic],
   );

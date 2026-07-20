@@ -216,32 +216,38 @@ export function nodeAllMinimized(layout: DockLayout, nodeId: NodeId): boolean {
   return false;
 }
 
-/** A compact key over everything a DEFERRED server collapse could conflict
- * with: every container's collapse flag (D38 -- window collapsed, column
- * railed) and where each group lives (a group moved to another container
- * makes a queued collapse target the wrong one). Deliberately blind to
+/** Per-PANE container signature: which container (window / column) holds the
+ * pane's group, and that container's collapse flag (D38). A deferred server
+ * collapse for a panel conflicts with a user gesture exactly when one of the
+ * panel's OWN panes' signatures changed -- its container collapsed/expanded,
+ * or the pane moved to another container. Scoped per pane so an unrelated
+ * panel's gesture can never invalidate a queued command (a global key did,
+ * silently discarding legitimate commands), and deliberately blind to
  * geometry -- widths, heights, window positions, z-order -- and to tab
- * activation: those are user actions that do NOT contend with a collapse
- * axis, and treating them as conflicts would silently discard legitimate
- * server commands. Compared between commits, never stored. */
-export function collapseIntentKey(layout: DockLayout): string {
-  const parts: string[] = [];
+ * activation, which cannot contend with a collapse axis. */
+export function paneContainerSignatures(
+  layout: DockLayout,
+): Map<PaneId, string> {
+  const sigs = new Map<PaneId, string>();
+  const groupSig = new Map<GroupId, string>();
   for (const win of layout.floating) {
-    parts.push(
-      `w:${win.id}:${win.collapsed === true ? 1 : 0}:${win.stack.join(",")}`,
-    );
+    const sig = `w:${win.id}:${win.collapsed === true ? 1 : 0}`;
+    for (const g of win.stack) groupSig.set(g, sig);
   }
   for (const edge of ["left", "right"] as DockEdge[]) {
     const region = layout.docked[edge];
     if (region === null) continue;
     for (const column of region.columns) {
-      parts.push(
-        `c:${edge}:${column.id}:${column.railed === true ? 1 : 0}:` +
-          column.leaves.map((l) => l.group).join(","),
-      );
+      const sig = `c:${edge}:${column.id}:${column.railed === true ? 1 : 0}`;
+      for (const leaf of column.leaves) groupSig.set(leaf.group, sig);
     }
   }
-  return parts.join("|");
+  for (const [gid, group] of Object.entries(layout.groups)) {
+    const sig = groupSig.get(gid);
+    if (sig === undefined) continue;
+    for (const paneId of group.paneIds) sigs.set(paneId, sig);
+  }
+  return sigs;
 }
 
 /** True when a floating window is minimized: its one container flag (D38).
@@ -2142,10 +2148,16 @@ function reconcileMembershipInPlace(
 
 /** Ensure this panel's panes live together in a single group, returning that
  * group's id. Creates the group (expanded) if the panes aren't placed yet; if
- * they're already grouped, reuses it and reconciles membership. */
+ * they're already grouped, reuses it -- and re-gathers scattered panes into it
+ * only when `regather` is set. Regathering is POSITION-command behavior ("put
+ * the panel THERE" re-assembles it, D52); a size/collapse-only bundle must
+ * not relocate panes the user tore out (spec 8: the axes are independent --
+ * a set_width can never disturb the position axis, and un-tearing a tab IS a
+ * position disturbance). */
 function ensurePanelGroup(
   draft: DockLayout,
   paneIds: PaneId[],
+  regather: boolean,
 ): GroupId | null {
   const nePaneIds = asNonEmpty(paneIds);
   if (nePaneIds === null) return null;
@@ -2154,7 +2166,7 @@ function ensurePanelGroup(
     const group = makeGroup(nePaneIds);
     draft.groups[group.id] = group;
     groupId = group.id;
-  } else {
+  } else if (regather) {
     applyMembership(draft, groupId, paneIds);
   }
   return groupId;
@@ -2263,7 +2275,14 @@ export function applyPanelPlacement(
   // guard at the end: a group we created must not outlive the op unattached).
   const groupExistedBefore = panelGroupOf(layout, paneIds) !== null;
   let draft = clone(layout);
-  const groupId = ensurePanelGroup(draft, paneIds);
+  const groupId = ensurePanelGroup(
+    draft,
+    paneIds,
+    // Only a POSITION command re-assembles the panel's panes (D52); a
+    // size/collapse-only bundle resolves the existing group as-is, leaving
+    // panes the user tore into other groups/windows where they are.
+    placement.position !== null,
+  );
   if (groupId === null) return layout;
 
   // Float a group at the given requested coords: record them on the window (so
