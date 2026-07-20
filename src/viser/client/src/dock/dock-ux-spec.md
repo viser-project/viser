@@ -647,7 +647,12 @@ constants in `hitTest.ts`; changing one is a spec change.
   COLUMN beside this cell's column, on that side (D46) — the canonical
   seam insert of §5.1 item 3 (D55): the left band is seam k, the right
   band seam k+1 of the cell's column k, with the one region-tall seam
-  line (P1) shared with the region bands and divider gaps.
+  line (P1) shared with the region bands and divider gaps. The side
+  bands outrank the top/bottom split bands (D57): they run the FULL
+  content height, corners included, on every target — merge-suppressed
+  ones too. The outermost column's outer band additionally reaches
+  through the D54 edge gutter to the screen edge (D57): flush-slams
+  dock a new outermost column rather than dying in the gutter.
 - Content bottom band (25%, ≤100px): split below this cell, within its
   column. There is NO content-top band (D48): the strip and everything
   below it down to the bottom band merges, so overshooting the strip
@@ -1406,6 +1411,18 @@ consuming paragraphs.
   scope: no semantic width target exists (panel width is a reading
   preference, not a natural size), so a width detent would be
   meaningless stickiness. Full statement in §6.
+- **D57** — content side bands outrank the top/bottom split bands
+  (user-adjudicated): hovering a docked cell's left/right edge means
+  "dock beside", at any height — the corners belong to the side
+  intent. Before this, the vertical bands were checked first and ate
+  the corners; worst on merge-suppressed targets, whose extra top band
+  (the pre-D48 keep) pushed the side band's start a full band lower
+  than on ordinary panels — the control panel's edges felt different
+  from everyone else's. Also: the region's outer edge gutter (D54)
+  belongs to the outermost column's side band — the scanner extends
+  that column's hit rect to the container edge, so a drop slammed
+  flush against the screen resolves to the outermost column insert
+  instead of dying in the 2px gutter (P5).
 
 Retired — one line per ID; the pointer is where any surviving content
 lives:

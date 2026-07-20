@@ -54,6 +54,7 @@ import {
   NodeId,
   PaneId,
   PaneRegistry,
+  REGION_EDGE_GAP_PX,
   regionWidthsOf,
   WindowId,
 } from "./types";
@@ -523,6 +524,34 @@ export function useDragController(deps: DragControllerDeps) {
         // scrolled-out strip must not offer tab insertions, and a partly
         // scrolled one only where it paints.
         clipChromeTo(g, contentBox);
+      }
+      // Outer-gutter reach: the region's D54 edge gutter (and any sub-pixel
+      // slack) sits between the outermost column and the screen edge, so a
+      // pointer flush against the screen hit NO target -- a dead sliver
+      // exactly where "dock a new outermost column" slams naturally (user
+      // report; P5: chrome must not be a hole). Extend the outermost
+      // column's HIT rect to the container edge; `rect` stays put, so rx>1
+      // resolves to the outer side band's columnInsert with its normal
+      // on-screen hint. Only leaves within the gutter's width of the edge
+      // qualify (columns are >=96px wide, so only the outermost can).
+      const hr = g.hitRect ?? g.rect;
+      if (edge === "right" && cbox.right - hr.right <= REGION_EDGE_GAP_PX + 6) {
+        g.hitRect = new DOMRect(
+          hr.left,
+          hr.top,
+          cbox.right - hr.left,
+          hr.height,
+        );
+      } else if (
+        edge === "left" &&
+        hr.left - cbox.left <= REGION_EDGE_GAP_PX + 6
+      ) {
+        g.hitRect = new DOMRect(
+          cbox.left,
+          hr.top,
+          hr.right - cbox.left,
+          hr.height,
+        );
       }
       targets.groups.push(g);
     });

@@ -1161,6 +1161,16 @@ export function hitTest(
     // these paths (the strip insert is suppressed too, so there is
     // nothing below the grip bar to aim at).
     const mergeSuppressed = gt.unmergeable || draggingUnmergeable;
+    // Side bands FIRST (D57): hovering the left/right edge means "dock
+    // beside", full height -- the corners belong to the side intent, not to
+    // the top/bottom splits. Checked before the vertical bands, or the
+    // corners resolve vertically and the side band's usable run shrinks;
+    // worst on merge-suppressed targets, whose extra top band ate the whole
+    // upper corner (user report: docking beside the control panel only
+    // worked near the vertical middle, unlike every other panel).
+    if (rx < hBand) return sideColumnInsert(g.ctx.edge, g.ctx.nodeId, "left");
+    if (rx > 1 - hBand)
+      return sideColumnInsert(g.ctx.edge, g.ctx.nodeId, "right");
     const region: "top" | "bottom" | null =
       mergeSuppressed && ry < vBand ? "top" : ry > 1 - vBand ? "bottom" : null;
     if (region !== null) {
@@ -1174,10 +1184,6 @@ export function hitTest(
         hint: splitLine(region),
       };
     }
-    // Side bands: a full-height column at the adjacent seam (D55).
-    if (rx < hBand) return sideColumnInsert(g.ctx.edge, g.ctx.nodeId, "left");
-    if (rx > 1 - hBand)
-      return sideColumnInsert(g.ctx.edge, g.ctx.nodeId, "right");
   } else if (ry > 1 - vBand) {
     return {
       result: {

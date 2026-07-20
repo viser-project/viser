@@ -658,3 +658,119 @@ def test_split_above_line_sits_below_the_column_handle(
             )
     finally:
         page.close()
+
+
+# ===========================================================================
+# D57: content side bands outrank the top/bottom split bands -- hovering a
+# docked cell's left/right edge means "dock beside" at ANY height, corners
+# included, and merge-suppressed (unmergeable) targets behave exactly like
+# ordinary ones. Regression: the vertical bands were checked first, so the
+# corners resolved to above/below -- worst on the unmergeable control panel,
+# whose extra top band pushed the side band's start a full band lower than
+# on other panels (user report: "docking left of it only works near the
+# vertical middle").
+# ===========================================================================
+def test_side_band_wins_corners_for_unmergeable_and_mergeable(
+    dock_context, vite_server: int
+) -> None:
+    from .dock_helpers import columns as _columns
+
+    for pane in ("monitor", "console"):
+        page = _open(dock_context, vite_server, 1400, 700)
+        try:
+            _set_layout(
+                page,
+                _dock_layout(
+                    docked_right=_columns(pane),
+                    floating=[_window("history", x=80, y=300, width=220)],
+                ),
+            )
+            box = page.eval_on_selector(
+                f'[data-dock-group="t-{pane}"]',
+                "e => { const r = e.getBoundingClientRect();"
+                " return { x: r.x, y: r.y, h: r.height }; }",
+            )
+            strip_bottom = page.eval_on_selector(
+                f'[data-dock-group="t-{pane}"]',
+                """e => { const s = e.querySelector('[data-dock-strip]');
+                    const hdr = e.querySelector('[data-dock-header]');
+                    const el = s ?? hdr ?? e;
+                    return el.getBoundingClientRect().bottom; }""",
+            )
+            start = page.eval_on_selector(
+                '[data-floating-window="t-w-history"] [data-dock-griphandle]',
+                "e => { const r = e.getBoundingClientRect();"
+                " return [r.x + r.width / 2, r.y + r.height / 2]; }",
+            )
+            page.mouse.move(*start)
+            page.mouse.down()
+            page.mouse.move(start[0] + 8, start[1] + 8, steps=2)
+            x = box["x"] + 10  # well inside the left side band
+            bottom = box["y"] + box["h"]
+            # Sample the side band just below the chrome, at mid-height, and
+            # deep in the bottom corner: every one must be the region-tall
+            # column-insert line (height >> panel width), never a horizontal
+            # split line.
+            for y in (strip_bottom + 30, (strip_bottom + bottom) / 2, bottom - 12):
+                page.mouse.move(x, y, steps=2)
+                page.wait_for_timeout(60)
+                hint = page.evaluate(
+                    """() => {
+                    const el = document.querySelector('[data-dock-hint]');
+                    if (el === null) return null;
+                    return { v: el.getAttribute('data-dock-hint'),
+                             w: parseFloat(el.style.width),
+                             h: parseFloat(el.style.height) }; }"""
+                )
+                assert hint is not None and hint["v"] == "line", (
+                    f"{pane}: no line hint in the side band at y={y}: {hint}"
+                )
+                assert hint["h"] > hint["w"], (
+                    f"{pane}: expected the region-tall column-insert line in "
+                    f"the side band at y={y}, got a horizontal split "
+                    f"line {hint}"
+                )
+            page.keyboard.press("Escape")
+            page.mouse.up()
+        finally:
+            page.close()
+
+
+# ===========================================================================
+# D57: the outer edge gutter reaches the screen edge -- a drop slammed flush
+# against the screen (x = viewport-1) docks a new outermost column instead of
+# finding no target (user report: "if I move my mouse too far to the right,
+# the dropzone doesn't work").
+# ===========================================================================
+def test_flush_screen_edge_docks_outermost_column(
+    dock_context, vite_server: int
+) -> None:
+    from .dock_helpers import columns as _columns
+
+    page = _open(dock_context, vite_server, 1400, 700)
+    try:
+        _set_layout(
+            page,
+            _dock_layout(
+                docked_right=_columns("console"),
+                floating=[_window("history", x=80, y=300, width=220)],
+            ),
+        )
+        start = page.eval_on_selector(
+            '[data-floating-window="t-w-history"] [data-dock-griphandle]',
+            "e => { const r = e.getBoundingClientRect();"
+            " return [r.x + r.width / 2, r.y + r.height / 2]; }",
+        )
+        # Drag flush against the right screen edge at mid-height and DROP.
+        _drag_group(page, "t-history", (1399, 350))
+        lay = _layout(page)
+        cols = lay["docked"]["right"]["columns"]
+        pane_order = [
+            lay["groups"][c["leaves"][0]["group"]]["paneIds"][0] for c in cols
+        ]
+        assert pane_order == ["console", "history"], (
+            f"expected the flush-edge drop to dock history as the NEW "
+            f"OUTERMOST column, got {pane_order}"
+        )
+    finally:
+        page.close()
