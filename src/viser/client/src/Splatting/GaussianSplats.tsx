@@ -483,6 +483,14 @@ function SplatRendererImpl() {
       const groupsMovedWrtCam = !meshProps.rowMajorT_camera_groups.every(
         (v, i) => v === prevRowMajorT_camera_groups[i],
       );
+      // Snapshot the RAW transforms as the change-detection baseline BEFORE
+      // the visibility mask below overwrites hidden groups with 1e10:
+      // saving the MASKED array made the freshly-written real transform
+      // differ from prev on every frame while any group was hidden -- a
+      // full O(N) re-sort plus a GPU texture upload at refresh rate with a
+      // stationary camera.
+      if (groupsMovedWrtCam)
+        prevRowMajorT_camera_groups.set(meshProps.rowMajorT_camera_groups);
 
       if (groupsMovedWrtCam) {
         // Gaussians need to be re-sorted.
@@ -507,7 +515,6 @@ function SplatRendererImpl() {
             meshProps.rowMajorT_camera_groups[i * 12 + 11] = 1e10;
           }
         }
-        prevRowMajorT_camera_groups.set(meshProps.rowMajorT_camera_groups);
         meshProps.textureT_camera_groups.needsUpdate = true;
       }
 

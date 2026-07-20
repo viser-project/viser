@@ -62,8 +62,7 @@ export type SorterWorkerIncoming =
     .then((response) => response.arrayBuffer())
     .then((wasmBinary) => MakeSorterModuleFactory({ wasmBinary }));
 
-  self.onmessage = async (e) => {
-    const data = e.data as SorterWorkerIncoming;
+  const handleMessage = async (data: SorterWorkerIncoming) => {
     if ("setBuffer" in data) {
       // Instantiate sorter with buffers populated.
       sorter = new (await SorterModulePromise).Sorter(
@@ -87,5 +86,19 @@ export type SorterWorkerIncoming =
       // Done!
       self.close();
     }
+  };
+
+  // Serialize handling in ARRIVAL order: the setBuffer branch awaits the
+  // WASM module, and the browser does not await async onmessage handlers --
+  // so an updateBuffer dispatched while that await was pending saw
+  // `sorter === null` and was silently dropped, leaving the worker sorting
+  // V1's centers while the renderer displayed V2's texture (same-size
+  // results pass the main thread's length check, so the mismatch never
+  // healed). Chaining guarantees updateBuffer runs after setBuffer
+  // completes; errors are surfaced rather than wedging the chain.
+  let chain: Promise<void> = Promise.resolve();
+  self.onmessage = (e) => {
+    const data = e.data as SorterWorkerIncoming;
+    chain = chain.then(() => handleMessage(data)).catch(console.error);
   };
 }

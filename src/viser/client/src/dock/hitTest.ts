@@ -930,12 +930,20 @@ export function hitTest(
     // Top/bottom edge bands: rail cells keep thin 8px stack-above/below
     // zones; a floating bar (the only bar form, D32/D38) gets the wider
     // min(10px, height/3) snap band (spec 5.4).
+    // P11: every distinct zone is >=8px, and an undersized zone is REMOVED,
+    // not shrunk. A clipped remnant (a bar half-out of the container, a rail
+    // row half-scrolled away) can be as short as 8px; dividing that into
+    // thirds made three ~3px zones. Below 24px the top/bottom bands are
+    // dropped entirely -- the whole remnant is insert/merge, the one intent
+    // that degrades gracefully.
     const edgeBand =
-      g.bar === true
-        ? Math.min(BAR_SNAP_BAND_PX, r.height / 3)
-        : Math.min(MINIMIZED_EDGE_BAND_PX, r.height / 3);
-    const inTopEdge = clientY < r.top + edgeBand;
-    const inBottomEdge = clientY > r.bottom - edgeBand;
+      r.height < 3 * MINIMIZED_EDGE_BAND_PX
+        ? 0
+        : g.bar === true
+          ? Math.min(BAR_SNAP_BAND_PX, r.height / 3)
+          : Math.min(MINIMIZED_EDGE_BAND_PX, r.height / 3);
+    const inTopEdge = edgeBand > 0 && clientY < r.top + edgeBand;
+    const inBottomEdge = edgeBand > 0 && clientY > r.bottom - edgeBand;
     // Tab insertion matches the segment's orientation: rail cells stack rows
     // vertically (Y-based, horizontal line); bars lay labels out
     // horizontally (2D nearest-tab, vertical line) -- spec D9.
