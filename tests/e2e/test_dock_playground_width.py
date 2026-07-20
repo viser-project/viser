@@ -346,10 +346,13 @@ def test_reserved_divider_resizes_with_railed_column(page: Page) -> None:
 
 
 # ===========================================================================
-# CHARACTERIZATION: a sole panel docked to an empty edge adopts the region width
-# (its prior float width is NOT preserved). Documented as acceptable.
+# A sole panel docked to an empty edge keeps its float width (D3: the
+# newcomer's width IS the dragged window's width -- empty edge included).
+# Supersedes the old characterization ("adopts the region default,
+# documented as acceptable"): the never-docked edge's synthesized 300px
+# default used to shadow the window-width path in width reconciliation.
 # ===========================================================================
-def test_sole_dock_adopts_region_width_not_float_width(page: Page) -> None:
+def test_sole_dock_keeps_float_width(page: Page) -> None:
     # Arrange: a single floating panel; the widen + dock gestures follow.
     f = "t-controls"
     set_layout(page, dock_layout(floating=[window("controls", x=400, y=150)]))
@@ -369,10 +372,9 @@ def test_sole_dock_adopts_region_width_not_float_width(page: Page) -> None:
         pytest.skip("dock did not take this run")
     docked_w = _width(page, f)
 
-    # ACCEPTABLE: a sole docked column fills the region (~default), so the wide
-    # float width is intentionally NOT carried into the dock.
-    assert docked_w < float_w - 40, (
-        f"expected sole-dock to adopt the (narrower) region width; "
+    # The widened float width carries into the sole docked column (D3).
+    assert abs(docked_w - float_w) <= 12, (
+        f"expected the sole dock to keep the float's width; "
         f"float={float_w} docked={docked_w}"
     )
 

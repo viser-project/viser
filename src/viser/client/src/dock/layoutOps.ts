@@ -320,9 +320,33 @@ export function resizeRegionColumns(
     }
     if (correction === 0) break;
     const freeShare = share.reduce((s, w, i) => s + (frozen[i] ? 0 : w), 0);
-    if (freeShare === 0) break; // all clamped; target within bounds => done.
+    if (freeShare === 0) break; // all clamped; leftover handled below.
     for (let i = 0; i < n; i++) {
       if (!frozen[i]) widths[i] += (correction * share[i]) / freeShare;
+    }
+  }
+  // Mixed finite bounds can strand a leftover: freezing above is permanent,
+  // so a pass that clamps columns in OPPOSITE directions (some up to a min,
+  // some down to a max) can end with every column frozen while the sum is
+  // off target -- even though a column frozen at its min still has room to
+  // grow. Hand the leftover to the columns with room in the needed
+  // direction, proportional to that room; the target is inside
+  // [sumMin, sumMax], so enough room always exists. Capping each column's
+  // take at its room means no re-clamping is needed. (Unreachable in the
+  // production regime -- all callers pass Infinity maxes, where the loop
+  // above already lands on target -- but the contract holds for any caller.)
+  for (let pass = 0; pass < n; pass++) {
+    const leftover = target - widths.reduce((a, b) => a + b, 0);
+    if (Math.abs(leftover) < 1e-6) break;
+    const room = widths.map((w, i) =>
+      leftover > 0 ? maxWidths[i] - w : w - minWidths[i],
+    );
+    const roomTotal = room.reduce((s, r) => s + Math.max(r, 0), 0);
+    if (roomTotal <= 0) break;
+    const take = Math.min(Math.abs(leftover), roomTotal);
+    for (let i = 0; i < n; i++) {
+      if (room[i] > 0)
+        widths[i] += Math.sign(leftover) * ((take * room[i]) / roomTotal);
     }
   }
   return widths;

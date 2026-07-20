@@ -1012,10 +1012,15 @@ Behaviors that MUST hold (each is or should be pinned by a test):
    WEIGHT (always-px, D40), never in regionWidth.
 6. A pinned-height window expands from minimized at its pinned height.
 7. The last panel leaving an edge nulls the region; the next dock
-   recreates it at the remembered width (P8). The memory is the edge's
-   preserved regionWidth when the region left expanded; a region that
-   left PACKED remembers only its strip run, so the recreate takes the
-   docked window's own width (which carried the restore px out).
+   recreates it at the remembered width (P8) — carried by the WINDOW
+   itself: undocking floats the panel at its measured docked width, and
+   a drag-dock takes the window's width (D3, empty edge included — a
+   float the user resized in between docks at the NEWER width, and a
+   never-docked edge's synthesized default never masquerades as a
+   memory). The edge's preserved regionWidth is the fallback for docks
+   with NO source window (server-built layouts); a region that left
+   PACKED remembers only its strip run, so the window's carried restore
+   px is the only truth there regardless.
 8. An emptied-then-revived docked panel reappears (no orphan group).
 9. Same-batch and reversed-order anchor splits both resolve (no race, no
    hang); never-dockable anchors fall back (§8).

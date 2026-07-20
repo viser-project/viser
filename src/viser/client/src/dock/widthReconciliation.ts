@@ -66,13 +66,21 @@ import {
  * (injected/server-built layouts) take the region default as their restore
  * width, railed or not. */
 function newColumnPx(col: DockColumn, prev: DockLayout): number {
+  return (
+    sourceWindowPx(col, prev) ?? Math.max(DEFAULT_REGION_PX, minRegionWidth())
+  );
+}
+
+/** The dragged source window's width for a column whose groups came from one
+ * (min-floored), or null when the column has no source window. */
+function sourceWindowPx(col: DockColumn, prev: DockLayout): number | null {
   const groups = new Set(collectLeafGroups(col));
   for (const win of prev.floating) {
     if (win.stack.some((g) => groups.has(g))) {
       return Math.max(win.width, minRegionWidth());
     }
   }
-  return Math.max(DEFAULT_REGION_PX, minRegionWidth());
+  return null;
 }
 
 /** The width row's rendered need: expanded columns at their pixel weights,
@@ -196,11 +204,25 @@ export function reconcileRegionWidths(
       if (prevCols.length === 0 && c.weight >= minRegionWidth()) {
         return c.weight;
       }
-      // Otherwise (a fresh flex-share column) the edge's preserved
+      // A newcomer with a SOURCE WINDOW brings its own width (D3: "the
+      // newcomer's width IS the dragged window's width" -- every drag-dock
+      // path floats first), empty edge included. Checked BEFORE the edge's
+      // preserved regionWidth: a never-docked edge carries a synthesized
+      // 300px default (regionWidthsOf materializes it on every commit),
+      // indistinguishable from a real memory -- so preferring the memory
+      // made docking a resized float onto an empty edge silently reset it
+      // to 300. The P8 "recreate at the remembered width" round-trip
+      // (edge case 7) still holds through the window itself: undocking
+      // floats the panel at its measured docked width, so the re-dock's
+      // window width IS the remembered width unless the user deliberately
+      // resized the float in between -- then the newer intent wins.
+      const fromWindow = sourceWindowPx(c, prev);
+      if (fromWindow !== null) return fromWindow;
+      // No source window (server-built / injected): the edge's preserved
       // regionWidth is this content's width -- the P8 "recreate at the
       // remembered width" round-trip -- as long as that memory is a real
       // content width, not a packed region's 36px strip run (then the
-      // newcomer's own window width / the default below is the truth).
+      // default below is the truth).
       if (
         prevCols.length === 0 &&
         nextCols.length === 1 &&
@@ -208,9 +230,9 @@ export function reconcileRegionWidths(
       ) {
         return nextRW[edge];
       }
-      // New column joining existing content: the newcomer's own width when
-      // it came from a floating window (D3), else the region default --
-      // stored as the restore width even when it lands railed (D40).
+      // New column joining existing content, no source window: the region
+      // default -- stored as the restore width even when it lands railed
+      // (D40).
       return newColumnPx(c, prev);
     });
     // Set the columns' weights to their pixel widths so each renders at

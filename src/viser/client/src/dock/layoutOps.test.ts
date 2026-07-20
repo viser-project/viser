@@ -2109,6 +2109,35 @@ describe("(9) resizeRegionColumns", () => {
     expect(w2[0] + w2[1]).toBeCloseTo(1200);
   });
 
+  it("sums to the clamped target under mixed finite bounds", () => {
+    // regression: opposite-direction clamps (one column pulled UP to its
+    // min, another pushed DOWN to its max) froze every column with the sum
+    // stranded off target, violating the documented postcondition. The
+    // leftover phase hands the difference to columns with room. (Not
+    // reachable from production callers -- they pass Infinity maxes -- but
+    // the exported contract must hold for any caller.)
+    const cases: [number[], number[], number[], number][] = [
+      // From fuzz: proportional shares put col0 below its min and col1
+      // above its max simultaneously.
+      [[7.11, 230.84], [87.43, 8.31], [376.41, 282.51], 357.72],
+      // Target below sumMin: result must sum to sumMin exactly.
+      [[302.17, 102.38], [23.55, 91.5], [68.92, 365.4], 28.17],
+      // Target above sumMax with a finite max mix.
+      [[207.46, 15.21], [65.28, 115.61], [118.42, 352.14], 1480.67],
+    ];
+    for (const [init, mins, maxs, target] of cases) {
+      const w = resizeRegionColumns(init, mins, maxs, target);
+      const sumMin = mins.reduce((a, b) => a + b, 0);
+      const sumMax = maxs.reduce((a, b) => a + b, 0);
+      const clamped = Math.min(Math.max(target, sumMin), sumMax);
+      expect(w.reduce((a, b) => a + b, 0)).toBeCloseTo(clamped, 3);
+      w.forEach((x, i) => {
+        expect(x).toBeGreaterThanOrEqual(mins[i] - 1e-6);
+        expect(x).toBeLessThanOrEqual(maxs[i] + 1e-6);
+      });
+    }
+  });
+
   it("cascades: redistribution can push a second column to its limit", () => {
     // Shrink hard: middle hits min first, then the small-ish first column
     // also bottoms out; the wide last column absorbs the rest.
