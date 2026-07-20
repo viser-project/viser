@@ -328,6 +328,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../../../examples/gui/uplot/">uPlot integration</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../../examples/gui/plots_as_images/">Plots as images</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../../examples/gui/commands/">Commands</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../examples/gui/panels/">Standalone panels</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../../examples/interaction/">User Interaction</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of User Interaction</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
@@ -813,7 +814,14 @@
     <span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;`backlog_done_message`, when given, is sent to each (re)connecting</span>
 <span class="sd">        client exactly once, immediately after the broadcast buffer&#39;s replay</span>
-<span class="sd">        backlog -- an explicit end-of-replay marker (never buffered).&quot;&quot;&quot;</span>
+<span class="sd">        backlog -- an explicit end-of-replay marker (never buffered).</span>
+
+<span class="sd">        Servers serving viser&#39;s stock client build MUST pass viser&#39;s</span>
+<span class="sd">        ``ReplayDoneMessage`` here: the client enters a reconnect/replay phase</span>
+<span class="sd">        on every (re)connect and leaves it only when this marker arrives, so</span>
+<span class="sd">        with the ``None`` default it never exits that phase (degraded panel</span>
+<span class="sd">        behavior). ``ViserServer`` does this automatically; it only needs</span>
+<span class="sd">        attention when building directly on ``viser.infra.WebsockServer``.&quot;&quot;&quot;</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 
         <span class="c1"># Track connected clients.</span>

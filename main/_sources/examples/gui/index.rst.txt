@@ -17,3 +17,4 @@ Examples demonstrating interactive GUI elements.
    uplot
    plots_as_images
    commands
+   panels

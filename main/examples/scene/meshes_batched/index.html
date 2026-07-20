@@ -329,6 +329,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../gui/uplot/">uPlot integration</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../gui/plots_as_images/">Plots as images</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../gui/commands/">Commands</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../gui/panels/">Standalone panels</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../interaction/">User Interaction</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of User Interaction</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
@@ -768,11 +769,11 @@ For working with trimesh objects, see <a class="reference internal" href="../../
 <span class="linenos">301</span>        <span class="c1"># Update mesh properties.</span>
 <span class="linenos">302</span>        <span class="k">with</span> <span class="n">server</span><span class="o">.</span><span class="n">atomic</span><span class="p">():</span>
 <span class="linenos">303</span>            <span class="n">mesh_handle</span><span class="o">.</span><span class="n">batched_positions</span> <span class="o">=</span> <span class="n">positions</span>
-<span class="linenos">304</span>            <span class="n">mesh_handle</span><span class="o">.</span><span class="n">batched_scales</span> <span class="o">=</span> <span class="n">scales</span>
+<span class="linenos">304</span>            <span class="n">mesh_handle</span><span class="o">.</span><span class="n">batched_scales</span> <span class="o">=</span> <span class="n">scales</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
 <span class="linenos">305</span>            <span class="n">mesh_handle</span><span class="o">.</span><span class="n">batched_colors</span> <span class="o">=</span> <span class="n">colors</span>
 <span class="linenos">306</span>
 <span class="linenos">307</span>            <span class="n">axes_handle</span><span class="o">.</span><span class="n">batched_positions</span> <span class="o">=</span> <span class="n">positions</span>
-<span class="linenos">308</span>            <span class="n">axes_handle</span><span class="o">.</span><span class="n">batched_scales</span> <span class="o">=</span> <span class="n">scales</span>
+<span class="linenos">308</span>            <span class="n">axes_handle</span><span class="o">.</span><span class="n">batched_scales</span> <span class="o">=</span> <span class="n">scales</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
 <span class="linenos">309</span>
 <span class="linenos">310</span>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="mf">60.0</span><span class="p">)</span>
 <span class="linenos">311</span>

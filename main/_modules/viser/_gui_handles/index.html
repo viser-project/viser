@@ -328,6 +328,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../../examples/gui/uplot/">uPlot integration</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../examples/gui/plots_as_images/">Plots as images</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../examples/gui/commands/">Commands</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../examples/gui/panels/">Standalone panels</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../examples/interaction/">User Interaction</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of User Interaction</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
@@ -637,10 +638,23 @@
             <span class="c1"># Preserve each element&#39;s expected Python type -- float for vectors,</span>
             <span class="c1"># int for colors. A blanket `float(...)` would turn an int tuple into</span>
             <span class="c1"># floats, and the `tuple(...)` cast below does not restore types.</span>
+            <span class="c1">#</span>
+            <span class="c1"># When the target type is int (bool excluded) and the incoming</span>
+            <span class="c1"># element is a float, ROUND instead of casting: `int(2.9)`</span>
+            <span class="c1"># truncates toward zero, which silently corrupts values that were</span>
+            <span class="c1"># meant to be near-integers. We use the round() builtin, which is</span>
+            <span class="c1"># round-half-even (&quot;banker&#39;s rounding&quot;: 0.5 -&gt; 0, 1.5 -&gt; 2) --</span>
+            <span class="c1"># exact .5 inputs are rare for this path and half-even is the</span>
+            <span class="c1"># documented Python convention.</span>
             <span class="n">elems</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
             <span class="n">current</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">value</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">current</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">current</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">elems</span><span class="p">):</span>
-                <span class="n">value</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">c</span><span class="p">)(</span><span class="n">e</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span><span class="p">,</span> <span class="n">e</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">current</span><span class="p">,</span> <span class="n">elems</span><span class="p">))</span>  <span class="c1"># type: ignore</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+                    <span class="nb">type</span><span class="p">(</span><span class="n">c</span><span class="p">)(</span><span class="nb">round</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+                    <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">int</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span>
+                    <span class="k">else</span> <span class="nb">type</span><span class="p">(</span><span class="n">c</span><span class="p">)(</span><span class="n">e</span><span class="p">)</span>
+                    <span class="k">for</span> <span class="n">c</span><span class="p">,</span> <span class="n">e</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">current</span><span class="p">,</span> <span class="n">elems</span><span class="p">)</span>
+                <span class="p">)</span>  <span class="c1"># type: ignore</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">value</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">elems</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
 
@@ -804,7 +818,7 @@
 
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_colors_to_int_tuple</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_colors_to_int_tuple</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">warn_stacklevel</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Coerce an RGB/RGBA color to an int tuple in [0, 255].</span>
 
 <span class="sd">    Integer channels are taken as absolute [0, 255]; float channels are</span>
@@ -812,9 +826,25 @@
 <span class="sd">    255 (white) but ``1`` -&gt; 1. The result is clamped to [0, 255] -- matching</span>
 <span class="sd">    ``colors_to_uint8`` -- so out-of-range inputs (e.g. a float ``255.0`` or a</span>
 <span class="sd">    negative value) degrade gracefully instead of producing a wild value.</span>
-<span class="sd">    Generalized to any channel count (RGB and RGBA).&quot;&quot;&quot;</span>
+<span class="sd">    Generalized to any channel count (RGB and RGBA).</span>
+
+<span class="sd">    Float channels &gt; 1.0 emit a warning: before viser 1.1.0 they were passed</span>
+<span class="sd">    through unchanged (a float ``100.0`` behaved like the int ``100``), so old</span>
+<span class="sd">    code passing float [0, 255] colors now silently clamps to white without</span>
+<span class="sd">    it. ``warn_stacklevel`` must point the warning at USER code, and every call</span>
+<span class="sd">    path has a different depth (required, no default, so a new call site has to</span>
+<span class="sd">    count its own frames): ``add_rgb``/``add_rgba`` need 4 -- user -&gt;</span>
+<span class="sd">    deprecated_positional_shim wrapper -&gt; add_rgb* -&gt; here -- and the ``.value``</span>
+<span class="sd">    assignment path needs 5.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
         <span class="k">assert</span> <span class="n">value</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Expected a 1D color, got shape </span><span class="si">{</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">.&quot;</span>
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">issubdtype</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">v</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">integer</span><span class="p">)</span> <span class="ow">and</span> <span class="n">v</span> <span class="o">&gt;</span> <span class="mf">1.0</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">value</span><span class="p">):</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="s2">&quot;Float color channels are interpreted on [0, 1] and scaled to &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;[0, 255]; values &gt; 1.0 are clamped to 255 (got </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="si">!r}</span><span class="s2">). &quot;</span>
+            <span class="s2">&quot;Use ints for absolute [0, 255] channels.&quot;</span><span class="p">,</span>
+            <span class="n">stacklevel</span><span class="o">=</span><span class="n">warn_stacklevel</span><span class="p">,</span>
+        <span class="p">)</span>
     <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span>
         <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">issubdtype</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">v</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">integer</span><span class="p">)</span> <span class="k">else</span> <span class="nb">int</span><span class="p">(</span><span class="n">v</span> <span class="o">*</span> <span class="mi">255</span><span class="p">)))</span>
         <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">value</span>
@@ -837,7 +867,11 @@
         <span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
         <span class="c1"># Float channels are [0, 1] (scaled to [0, 255]); int channels absolute.</span>
-        <span class="k">return</span> <span class="n">cast</span><span class="p">(</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">_colors_to_int_tuple</span><span class="p">(</span><span class="n">value</span><span class="p">))</span></div>
+        <span class="c1"># warn_stacklevel: user assignment -&gt; props_setattr -&gt; value.fset -&gt;</span>
+        <span class="c1"># this method -&gt; _colors_to_int_tuple = 5 frames.</span>
+        <span class="k">return</span> <span class="n">cast</span><span class="p">(</span>
+            <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">_colors_to_int_tuple</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">warn_stacklevel</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+        <span class="p">)</span></div>
 
 
 
@@ -857,7 +891,11 @@
         <span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
         <span class="c1"># Float channels are [0, 1] (scaled to [0, 255]); int channels absolute.</span>
-        <span class="k">return</span> <span class="n">cast</span><span class="p">(</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">_colors_to_int_tuple</span><span class="p">(</span><span class="n">value</span><span class="p">))</span></div>
+        <span class="c1"># warn_stacklevel: user assignment -&gt; props_setattr -&gt; value.fset -&gt;</span>
+        <span class="c1"># this method -&gt; _colors_to_int_tuple = 5 frames.</span>
+        <span class="k">return</span> <span class="n">cast</span><span class="p">(</span>
+            <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">_colors_to_int_tuple</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">warn_stacklevel</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+        <span class="p">)</span></div>
 
 
 
@@ -1210,6 +1248,14 @@
 <span class="sd">        source of truth for a tab&#39;s id/label/icon. Every mutation (add, remove,</span>
 <span class="sd">        icon change) rebuilds through here, so the parallel tuples can never</span>
 <span class="sd">        desync in length or order.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
+            <span class="c1"># Tear-down path: PanelHandle.remove() tombstones BEFORE draining</span>
+            <span class="c1"># its tabs (the tombstone must be an atomic check-and-set against</span>
+            <span class="c1"># concurrent removers), so the drain&#39;s write-backs land here after</span>
+            <span class="c1"># removal. Skip the wire write-back: props_setattr would</span>
+            <span class="c1"># (correctly) reject a props write on a removed handle, and the</span>
+            <span class="c1"># client drops the whole entity via its remove message anyway.</span>
+            <span class="k">return</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tab_container_ids</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">h</span><span class="o">.</span><span class="n">_id</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tab_handles</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tab_labels</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">h</span><span class="o">.</span><span class="n">_label</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tab_handles</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tab_icons_html</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
@@ -1401,7 +1447,9 @@
 <span class="sd">        removed (the main panel); `PanelHandle` overrides it.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="kc">False</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_queue_placement</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">_PlacementMessage</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_queue_placement</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">_PlacementMessage</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">anchor</span><span class="p">:</span> <span class="n">PanelHandle</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">api</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_placement_gui_api</span>
         <span class="c1"># The removed check and the enqueue are ONE atomic step under the</span>
         <span class="c1"># lifecycle lock: a `remove()` on another thread otherwise slips</span>
@@ -1414,6 +1462,15 @@
             <span class="c1"># dead uuid.</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_placement_removed</span><span class="p">():</span>
                 <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Cannot place a removed </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+            <span class="c1"># Re-check the anchor (dock_above/dock_below) under the SAME lock:</span>
+            <span class="c1"># `_resolve_anchor_uuid` runs before this lock is taken, so an</span>
+            <span class="c1"># `anchor.remove()` on another thread -- whose tombstone is set</span>
+            <span class="c1"># under this lock; the anchor shares our GuiApi per the scope</span>
+            <span class="c1"># check -- could otherwise slip between that check and this</span>
+            <span class="c1"># enqueue, persisting a split placement that references a dead</span>
+            <span class="c1"># anchor uuid. Same error the sequential path promises.</span>
+            <span class="k">if</span> <span class="n">anchor</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">anchor</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Cannot dock relative to a removed panel.&quot;</span><span class="p">)</span>
             <span class="c1"># Stamp the layout-update counter (bumped on EVERY placement</span>
             <span class="c1"># command, global across panels -- D50: conflicting container-</span>
             <span class="c1"># scoped collapse axes replay in counter order) and this GuiApi&#39;s</span>
@@ -1430,12 +1487,16 @@
             <span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span><span class="n">stamped</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_set_position</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">position</span><span class="p">:</span> <span class="n">EdgePlacement</span> <span class="o">|</span> <span class="n">SplitPlacement</span> <span class="o">|</span> <span class="n">FloatPlacement</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">position</span><span class="p">:</span> <span class="n">EdgePlacement</span> <span class="o">|</span> <span class="n">SplitPlacement</span> <span class="o">|</span> <span class="n">FloatPlacement</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">anchor</span><span class="p">:</span> <span class="n">PanelHandle</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_queue_placement</span><span class="p">(</span>
             <span class="n">GuiSetPanelPositionMessage</span><span class="p">(</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_placement_uuid</span><span class="p">,</span> <span class="n">position</span><span class="p">,</span> <span class="n">counter</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">run_id</span><span class="o">=</span><span class="s2">&quot;&quot;</span>
-            <span class="p">)</span>
+            <span class="p">),</span>
+            <span class="n">anchor</span><span class="o">=</span><span class="n">anchor</span><span class="p">,</span>
         <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_anchor_uuid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">anchor</span><span class="p">:</span> <span class="n">PlaceableHandle</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
@@ -1496,7 +1557,10 @@
                 <span class="s2">&quot;kind&quot;</span><span class="p">:</span> <span class="s2">&quot;split&quot;</span><span class="p">,</span>
                 <span class="s2">&quot;anchor_uuid&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_anchor_uuid</span><span class="p">(</span><span class="n">anchor</span><span class="p">),</span>
                 <span class="s2">&quot;side&quot;</span><span class="p">:</span> <span class="s2">&quot;above&quot;</span><span class="p">,</span>
-            <span class="p">}</span>
+            <span class="p">},</span>
+            <span class="c1"># Re-validated under the lifecycle lock (see _queue_placement);</span>
+            <span class="c1"># main_panel needs no removed-check (it cannot be removed).</span>
+            <span class="n">anchor</span><span class="o">=</span><span class="n">anchor</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">anchor</span><span class="p">,</span> <span class="n">PanelHandle</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
         <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">dock_below</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">anchor</span><span class="p">:</span> <span class="n">PlaceableHandle</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -1511,7 +1575,10 @@
                 <span class="s2">&quot;kind&quot;</span><span class="p">:</span> <span class="s2">&quot;split&quot;</span><span class="p">,</span>
                 <span class="s2">&quot;anchor_uuid&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_anchor_uuid</span><span class="p">(</span><span class="n">anchor</span><span class="p">),</span>
                 <span class="s2">&quot;side&quot;</span><span class="p">:</span> <span class="s2">&quot;below&quot;</span><span class="p">,</span>
-            <span class="p">}</span>
+            <span class="p">},</span>
+            <span class="c1"># Re-validated under the lifecycle lock (see _queue_placement);</span>
+            <span class="c1"># main_panel needs no removed-check (it cannot be removed).</span>
+            <span class="n">anchor</span><span class="o">=</span><span class="n">anchor</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">anchor</span><span class="p">,</span> <span class="n">PanelHandle</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
         <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">float</span><span class="p">(</span>
@@ -1700,28 +1767,38 @@
 
 <span class="sd">        This is the only way a panel disappears -- there is no UI close button</span>
 <span class="sd">        (see :class:`PanelHandle`).&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
-            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="s2">&quot;Attempted to remove an already removed PanelHandle.&quot;</span><span class="p">,</span>
-                <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-            <span class="p">)</span>
-            <span class="k">return</span>
-        <span class="c1"># Remove tabs first: each tab.remove() writes back to this panel&#39;s tab</span>
-        <span class="c1"># tuples, which the removed-guard in props_setattr would reject once the</span>
-        <span class="c1"># panel is marked removed (mirrors GuiTabGroupHandle.remove).</span>
-        <span class="k">for</span> <span class="n">tab</span> <span class="ow">in</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tab_handles</span><span class="p">):</span>
-            <span class="n">tab</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
         <span class="n">gui_api</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">gui_api</span>
-        <span class="c1"># Tombstone + remove-message (whose buffer push purges the panel&#39;s</span>
-        <span class="c1"># placement updates) as ONE atomic step under the lifecycle lock, so a</span>
-        <span class="c1"># concurrent placement command can&#39;t slip between the removed check</span>
-        <span class="c1"># and its enqueue (see _queue_placement).</span>
+        <span class="c1"># Tombstone CHECK-AND-SET + remove-message (whose buffer push purges</span>
+        <span class="c1"># the panel&#39;s placement updates) as ONE atomic step under the</span>
+        <span class="c1"># lifecycle lock. This serves two races:</span>
+        <span class="c1"># - a concurrent placement command can&#39;t slip between the removed</span>
+        <span class="c1">#   check and its enqueue (see _queue_placement);</span>
+        <span class="c1"># - two concurrent remove() calls (or remove() racing gui.reset()&#39;s</span>
+        <span class="c1">#   drain) resolve to exactly one winner -- checking `removed` before</span>
+        <span class="c1">#   taking the lock let both pass, queue duplicate remove messages,</span>
+        <span class="c1">#   and double-pop the registry (KeyError, aborting reset mid-drain).</span>
         <span class="k">with</span> <span class="n">gui_api</span><span class="o">.</span><span class="n">_panel_lifecycle_lock</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
+                <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                    <span class="s2">&quot;Attempted to remove an already removed PanelHandle.&quot;</span><span class="p">,</span>
+                    <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">return</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="n">gui_api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
                 <span class="n">GuiPanelRemoveMessage</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
             <span class="p">)</span>
-        <span class="n">gui_api</span><span class="o">.</span><span class="n">_panel_handle_from_uuid</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span></div>
+        <span class="c1"># Only the tombstone winner reaches here, so the pop and tab drain run</span>
+        <span class="c1"># exactly once -- a strict pop() raises if that invariant ever breaks,</span>
+        <span class="c1"># which beats hiding the breakage. The drain runs AFTER the tombstone</span>
+        <span class="c1"># and OUTSIDE the lock (a plain, non-reentrant Lock): each</span>
+        <span class="c1"># tab.remove() writes back to this panel&#39;s tab tuples, which</span>
+        <span class="c1"># _rebuild_tab_props skips for a removed panel (props_setattr would</span>
+        <span class="c1"># reject the write; the client drops the whole entity via the remove</span>
+        <span class="c1"># message anyway).</span>
+        <span class="n">gui_api</span><span class="o">.</span><span class="n">_panel_handle_from_uuid</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">tab</span> <span class="ow">in</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tab_handles</span><span class="p">):</span>
+            <span class="n">tab</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span></div>
 </div>
 
 
