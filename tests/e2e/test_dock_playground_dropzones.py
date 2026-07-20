@@ -408,6 +408,75 @@ def test_seam_leaf_insert_has_real_height(dock_context, vite_server: int) -> Non
 
 
 # ===========================================================================
+# In a MULTI-COLUMN region, the per-column parent handle band must not be a
+# no-drop hole (P5): a drag over it resolves to "split above the first cell"
+# of that column. Regression: the column-scroll clip used to clamp away the
+# first cell's deliberate upward extension over the handle, so the pointer
+# there produced no target and no hint.
+# ===========================================================================
+def test_column_handle_band_splits_above_first_cell(
+    dock_context, vite_server: int
+) -> None:
+    from .dock_helpers import columns as _columns
+
+    page = _open(dock_context, vite_server, 1400, 800)
+    try:
+        _set_layout(
+            page,
+            _dock_layout(
+                docked_right=_columns("console", "inspector"),
+                floating=[_window("controls", x=60, y=40, width=240)],
+            ),
+        )
+        handle = page.eval_on_selector(
+            "[data-dock-column-handle]",
+            "e => { const r = e.getBoundingClientRect();"
+            " return { cx: r.x + r.width / 2, cy: r.y + r.height / 2 }; }",
+        )
+        start = page.eval_on_selector(
+            '[data-floating-window="t-w-controls"] [data-dock-griphandle]',
+            "e => { const r = e.getBoundingClientRect();"
+            " return [r.x + r.width / 2, r.y + r.height / 2]; }",
+        )
+        page.mouse.move(*start)
+        page.mouse.down()
+        page.mouse.move(start[0] + 8, start[1] + 8, steps=2)
+        page.mouse.move(handle["cx"], handle["cy"], steps=4)
+        page.wait_for_timeout(100)
+        hint = page.evaluate(
+            """() => {
+            const el = document.querySelector('[data-dock-hint]');
+            if (el === null) return null;
+            return { variant: el.getAttribute('data-dock-hint') };
+        }"""
+        )
+        assert hint is not None and hint["variant"] == "line", (
+            f"expected a split-above line over the column handle band, got {hint}"
+        )
+        # Release there: the panel stacks above the first cell of THAT column.
+        page.mouse.up()
+        page.wait_for_timeout(200)
+        lay = _layout(page)
+        cols = lay["docked"]["right"]["columns"]
+        target_col = next(
+            c
+            for c in cols
+            if any(
+                lay["groups"][leaf["group"]]["paneIds"] == ["controls"]
+                for leaf in c["leaves"]
+            )
+        )
+        pane_order = [
+            lay["groups"][leaf["group"]]["paneIds"][0] for leaf in target_col["leaves"]
+        ]
+        assert pane_order[0] == "controls" and len(pane_order) == 2, (
+            f"expected controls stacked above the column's first cell, got {pane_order}"
+        )
+    finally:
+        page.close()
+
+
+# ===========================================================================
 # Drop zones over a floating window whose content is taller than the container
 # use the VISUAL (clipped) height, not the content height. An auto-height
 # window may legally overflow the container bottom (the corner clamp keeps

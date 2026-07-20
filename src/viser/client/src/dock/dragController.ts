@@ -393,11 +393,27 @@ export function useDragController(deps: DragControllerDeps) {
           g.rect = new DOMRect(g.rect.left, top, g.rect.width, bottom - top);
         }
       } else {
-        // Expanded columns: the parent-handle run above the first cell is
-        // region-owned chrome that must not be a no-drop hole (P5; the old
-        // top region band died with D46). Extend the column's first leaf
-        // up to the column box -- the pointer there resolves to that
-        // cell's above zone (split above the first cell: honest, P1).
+        // Expanded columns. First clip to the column's scroll box: with
+        // overflowY auto a squeezed, scrolled column reports leaf rects
+        // extending past its visible box, and hitTest's last-match rule
+        // would pick the invisible scrolled-out leaf over the visible one
+        // under the pointer (P1). (Rail cells never sit in a
+        // [data-dock-scroll]; their clamp is the rail-root branch above.)
+        const scrollEl = leaf.closest("[data-dock-scroll]");
+        if (scrollEl !== null) {
+          const sr = scrollEl.getBoundingClientRect();
+          const top = Math.max(g.rect.top, sr.top);
+          const bottom = Math.min(g.rect.bottom, sr.bottom);
+          if (bottom - top < 8) return; // fully scrolled out: not a target
+          g.rect = new DOMRect(g.rect.left, top, g.rect.width, bottom - top);
+        }
+        // THEN extend the first leaf up over the parent-handle run: that
+        // chrome is region-owned but must not be a no-drop hole (P5; the
+        // old top region band died with D46) -- the pointer there resolves
+        // to this cell's above zone (split above the first cell: honest,
+        // P1). Ordered after the scroll clip, which clamps to the scroll
+        // box and would otherwise undo this deliberate extension (the
+        // handle sits ABOVE the scroll box), re-opening the hole.
         const columnEl = leaf.closest("[data-dock-column]");
         if (columnEl !== null) {
           const cells = columnEl.querySelectorAll("[data-dock-leaf]");
@@ -413,25 +429,10 @@ export function useDragController(deps: DragControllerDeps) {
             }
           }
         }
-      }
-      // Clip to the column's scroll box: with overflowY auto a squeezed,
-      // scrolled column reports leaf rects extending past its visible box,
-      // and hitTest's last-match rule would pick the invisible scrolled-out
-      // leaf over the visible one under the pointer (P1).
-      const scrollEl = leaf.closest("[data-dock-scroll]");
-      if (scrollEl !== null) {
-        const sr = scrollEl.getBoundingClientRect();
-        const top = Math.max(g.rect.top, sr.top);
-        const bottom = Math.min(g.rect.bottom, sr.bottom);
-        if (bottom - top < 8) return; // fully scrolled out: not a target
-        const clipped = new DOMRect(
-          g.rect.left,
-          top,
-          g.rect.width,
-          bottom - top,
-        );
-        g.rect = clipped;
-        g.hitRect = clipped;
+        // One hit surface: keep hitRect in lockstep with the final rect
+        // (the clip used to write both; the extension must be part of the
+        // hittable box or the handle band still misses).
+        g.hitRect = g.rect;
       }
       targets.groups.push(g);
     });
@@ -672,6 +673,12 @@ export function useDragController(deps: DragControllerDeps) {
             container.querySelector<HTMLElement>(
               `[data-floating-window="${windowId}"]`,
             ) ?? el;
+          // Re-apply the drag styling the original node got at drag start
+          // (teardown resets these on whatever `el` points at then): without
+          // this the recreated window rides undimmed for the rest of the
+          // drag, occluding the drop target beneath it.
+          el.style.willChange = "transform";
+          el.style.opacity = "0.6";
         }
         // A mid-drag layout change may have moved the dragged window's
         // resting position (e.g. a server update). The transform is relative

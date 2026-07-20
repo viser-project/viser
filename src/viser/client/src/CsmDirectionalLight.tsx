@@ -56,6 +56,13 @@ class CSMProxy {
     if (this.instance) {
       // Make sure to call remove() to clean up all lights from the scene.
       this.instance.remove();
+      // CSM.dispose() only strips its shader injections; it never frees the
+      // cascade lights' shadow-map render targets. Without this, every
+      // shadow toggle (which remounts CsmDirectionalLight via its key)
+      // leaks one WebGLRenderTarget per cascade.
+      for (const light of this.instance.lights) {
+        light.dispose();
+      }
       this.instance.dispose();
       this.instance = undefined;
 
