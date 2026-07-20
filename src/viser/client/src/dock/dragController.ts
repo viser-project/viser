@@ -302,7 +302,19 @@ export function useDragController(deps: DragControllerDeps) {
      * treated as gone (tabs are hit by nearest-distance, not containment, so
      * unlike the 8px zone floor there is no minimum useful size). */
     const clipChromeTo = (t: GroupTarget, box: DOMRect): void => {
-      if (t.stripRect !== null) t.stripRect = clipRect(t.stripRect, box, 1);
+      if (t.stripRect !== null) {
+        // A strip clipped to nothing keeps a DEGENERATE boundary at the top
+        // of the visible box rather than becoming null. hitTest reads
+        // `clientY < strip.top` as "above the strip -> split above this
+        // cell"; with a null strip that whole branch is skipped and the
+        // pointer falls through to the content rules, so a scrolled-out
+        // cell's parent-handle band silently became a MERGE target ("add a
+        // tab here") instead of the honest split (P1). Zero height, so it
+        // never claims a tab-insert row of its own.
+        t.stripRect =
+          clipRect(t.stripRect, box, 1) ??
+          new DOMRect(t.rect.left, box.top, t.rect.width, 0);
+      }
       t.tabs = t.tabs.flatMap((tab) => {
         const rect = clipRect(tab.rect, box, 1);
         return rect === null ? [] : [{ ...tab, rect }];
@@ -425,6 +437,15 @@ export function useDragController(deps: DragControllerDeps) {
             ? rr.bottom
             : Math.min(g.rect.bottom, rr.bottom);
         if (bottom - top < 8) return; // fully overflowed/scrolled out.
+        // Spine rows clip to the rail's VISIBLE box before the last cell's
+        // tail extension below, so a scrolled-out row is never the nearest
+        // vertical insertion target and its line never paints outside the
+        // rail (the rotated analog of the expanded strip's clip).
+        clipChromeTo(
+          g,
+          clipRect(g.rect, rr, 1) ??
+            new DOMRect(g.rect.left, rr.top, g.rect.width, 0),
+        );
         if (top !== g.rect.top || bottom !== g.rect.bottom) {
           g.rect = new DOMRect(g.rect.left, top, g.rect.width, bottom - top);
         }
@@ -447,7 +468,7 @@ export function useDragController(deps: DragControllerDeps) {
         const scrollEl = leaf.closest("[data-dock-scroll]");
         let top = g.rect.top;
         let bottom = g.rect.bottom;
-        let contentBox: DOMRect | null = g.rect;
+        let contentBox: DOMRect = g.rect;
         if (scrollEl !== null) {
           const sr = scrollEl.getBoundingClientRect();
           top = Math.max(top, sr.top);
@@ -460,7 +481,13 @@ export function useDragController(deps: DragControllerDeps) {
             // dropping the target here would re-open the P5 hole for a column
             // scrolled past its first cell.
             if (!isFirstCell) return;
-            contentBox = null;
+            // Zero-height content box AT THE SCROLL BOX'S TOP: the band the
+            // cell keeps runs from the column top down to here, so this is
+            // where its (scrolled-away) strip logically begins -- and
+            // clipChromeTo anchors the degenerate strip boundary to it, which
+            // is what makes the band read as "above the strip" (split above)
+            // rather than falling through to the content rules (merge).
+            contentBox = new DOMRect(g.rect.left, sr.top, g.rect.width, 0);
             top = sr.top;
             bottom = sr.top;
           } else {
@@ -488,7 +515,7 @@ export function useDragController(deps: DragControllerDeps) {
         // Strip/tabs live in the CONTENT box, never the handle band: a
         // scrolled-out strip must not offer tab insertions, and a partly
         // scrolled one only where it paints.
-        clipChromeTo(g, contentBox ?? new DOMRect(g.rect.left, top, 0, 0));
+        clipChromeTo(g, contentBox);
       }
       targets.groups.push(g);
     });
@@ -537,7 +564,22 @@ export function useDragController(deps: DragControllerDeps) {
           // height instead of visual height -- with the snap-below band
           // and its hint line painted off-screen. A cell whose visible
           // remnant is sub-8px is not a target at all.
-          const cellRect = clipToContainer(g.rect);
+          // Clip to the container AND, for a fixed-height window whose stack
+          // is too short for its cells, to that stack's scroll viewport: a
+          // cell scrolled under the window header renders nothing, so it must
+          // not stay a drop target (P1) -- the floating analog of the docked
+          // column's scroll clip.
+          const stackScrollEl = groupEl.closest("[data-dock-scroll]");
+          const cellRect =
+            stackScrollEl === null
+              ? clipToContainer(g.rect)
+              : clipToContainer(g.rect) === null
+                ? null
+                : clipRect(
+                    clipToContainer(g.rect)!,
+                    stackScrollEl.getBoundingClientRect(),
+                    8,
+                  );
           if (cellRect === null) return;
           g.rect = cellRect;
           clipChromeTo(g, cellRect);

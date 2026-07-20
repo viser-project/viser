@@ -11,8 +11,6 @@ import { dragGesture } from "./gestures";
 import {
   cappedWindowHeight,
   cascadeResize,
-  expandStack,
-  minimizeStack,
   windowAllMinimized,
 } from "./layoutOps";
 import { StackHandleBar } from "./handles";
@@ -100,10 +98,12 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
   // (multi-group windows; a single-group window's grip bar toggle sets the
   // same flag). Plain collapse/expand of the window -- the old "minimize
   // all / expand all" pair is simply this toggle.
+  // A USER gesture, so it commits through the dock's user path (NOT
+  // api.apply, which raises the programmatic flag and hid this collapse from
+  // ownership arbitration -- a stale server command could then re-flip it,
+  // violating P6).
   const toggleWindowCollapsed = () =>
-    dock.api.apply((l) =>
-      collapsed ? expandStack(l, win.stack) : minimizeStack(l, win.stack),
-    );
+    dock.setStackCollapsed(win.stack, !collapsed);
   // The pinned px height, or undefined when the window auto-sizes to content.
   // flex-grow sums < 1 distribute only that FRACTION of free space;
   // stackWeights from floatRegion carving are fractional, so
@@ -629,6 +629,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
 
           <Box
             ref={stackRef}
+            {...(fixedHeight ? { "data-dock-scroll": "" } : {})}
             style={{
               // Collapsed multi-group window: rule off the window header from
               // the first bar -- every other bar boundary draws a divider, and
@@ -664,7 +665,10 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                     // If the pinned height is too short to fit every cell at its
                     // min-content (e.g. a 3-panel stack squeezed very short), the
                     // stack SCROLLS rather than letting cells collapse below their
-                    // headers and overlap each other.
+                    // headers and overlap each other. Marked data-dock-scroll
+                    // (like a squeezed docked column) so the drop-target scan
+                    // clips cells and their chrome to the visible viewport --
+                    // a scrolled-out cell must not stay a target (P1).
                     overflowY: "auto",
                   }
                 : {}),

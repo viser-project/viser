@@ -725,11 +725,25 @@ def test_column_handle_band_survives_scrolled_out_first_cell(
             return el === null ? null : el.getAttribute('data-dock-hint');
         }"""
         )
-        pg.keyboard.press("Escape")
         pg.mouse.up()
-        assert hint is not None, (
-            "the column handle band must stay droppable when the first cell "
-            "is scrolled out (P5: no no-drop holes)"
+        pg.wait_for_timeout(250)
+        assert hint == "line", (
+            "the column handle band must resolve to a SPLIT-ABOVE line when "
+            "the first cell is scrolled out (P5: no no-drop holes; a merge "
+            "hint would mean the band silently became 'add a tab here'), "
+            f"got {hint!r}"
+        )
+        # ...and the drop actually lands ABOVE the column's first cell.
+        order = pg.evaluate(
+            """() => {
+            const l = window.__dockLayout;
+            const col = l.docked.right.columns[0];
+            return col.leaves.map(
+                (lf) => l.groups[lf.group].paneIds[0]);
+        }"""
+        )
+        assert order[0] == "history", (
+            f"expected the dropped panel above the column's first cell, got {order}"
         )
     finally:
         pg.close()

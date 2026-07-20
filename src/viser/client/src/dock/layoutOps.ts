@@ -216,6 +216,34 @@ export function nodeAllMinimized(layout: DockLayout, nodeId: NodeId): boolean {
   return false;
 }
 
+/** A compact key over everything a DEFERRED server collapse could conflict
+ * with: every container's collapse flag (D38 -- window collapsed, column
+ * railed) and where each group lives (a group moved to another container
+ * makes a queued collapse target the wrong one). Deliberately blind to
+ * geometry -- widths, heights, window positions, z-order -- and to tab
+ * activation: those are user actions that do NOT contend with a collapse
+ * axis, and treating them as conflicts would silently discard legitimate
+ * server commands. Compared between commits, never stored. */
+export function collapseIntentKey(layout: DockLayout): string {
+  const parts: string[] = [];
+  for (const win of layout.floating) {
+    parts.push(
+      `w:${win.id}:${win.collapsed === true ? 1 : 0}:${win.stack.join(",")}`,
+    );
+  }
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const region = layout.docked[edge];
+    if (region === null) continue;
+    for (const column of region.columns) {
+      parts.push(
+        `c:${edge}:${column.id}:${column.railed === true ? 1 : 0}:` +
+          column.leaves.map((l) => l.group).join(","),
+      );
+    }
+  }
+  return parts.join("|");
+}
+
 /** True when a floating window is minimized: its one container flag (D38).
  * (Name kept from the per-group era so call sites read unchanged; "all
  * minimized" and "minimized" are the same thing now.) */

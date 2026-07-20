@@ -298,7 +298,7 @@ export function usePlacementCoordinator(
             counter: entry.collapsed.counter,
             runId: entry.collapsed.runId,
             seq: ++collapseSeq.current,
-            userCommits: dock.api.getUserCommitCount(),
+            userCommits: dock.api.getUserArrangementCount(),
           });
         dock.api.apply((l: DockLayout) =>
           ops.applyPanelPlacement(
@@ -355,7 +355,7 @@ export function usePlacementCoordinator(
       pendingCollapse.current.clear();
       for (const c of orderCollapseDrain(
         queued,
-        dock.api.getUserCommitCount(),
+        dock.api.getUserArrangementCount(),
       )) {
         dock.api.apply((l: DockLayout) =>
           ops.applyPanelPlacement(

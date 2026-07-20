@@ -10,7 +10,7 @@ export interface QueuedCollapse {
   runId: string;
   /** Monotonic queue order, refreshed whenever an entry is replaced. */
   seq: number;
-  /** api.getUserCommitCount when queued. */
+  /** api.getUserArrangementCount when queued. */
   userCommits: number;
 }
 

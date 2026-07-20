@@ -29,13 +29,18 @@ export interface DockApi {
   /** Add a not-yet-placed pane to an area's tabs (creates the area if
    * needed). No-op if the pane is already placed anywhere. */
   addPaneToArea: (areaId: AreaId, paneId: PaneId, index?: number) => void;
-  /** How many USER commits (gestures -- anything not run through the
-   * manager's programmatic wrapper) have landed this session. Monotonic, read
-   * from a ref, so it never re-renders anyone. A sync layer that must DEFER an
+  /** How many USER gestures have changed COLLAPSE-OR-PLACEMENT intent this
+   * session -- container collapse flags and which container each group lives
+   * in (see layoutOps.collapseIntentKey). Monotonic, read from a ref, so it
+   * never re-renders anyone. A sync layer that must DEFER a collapse
    * application samples this when it queues and re-checks before it applies:
-   * an advanced count means the user rearranged in between, and P6 says the
-   * user's arrangement stands until the server re-asserts by SENDING. */
-  getUserCommitCount: () => number;
+   * an advanced count means the user changed something the queued command
+   * would contend with, and P6 says the user's arrangement stands until the
+   * server re-asserts by SENDING. Geometry-only gestures (resize, move,
+   * z-order) and tab activation deliberately do NOT count -- they cannot
+   * conflict with a collapse axis, and counting them would discard
+   * legitimate server commands. */
+  getUserArrangementCount: () => number;
 }
 
 export interface DockContextValue {
@@ -107,6 +112,12 @@ export interface DockContextValue {
   /** Toggle the collapse flag of the group's container (D38) -- driven only
    * from a single-group floating window's chrome (D32). */
   toggleCollapsed: (groupId: GroupId) => void;
+  /** Collapse/expand a whole floating stack -- the window header's toggle
+   * (D38's one flag, both directions). A USER commit like railColumn and
+   * collapseRegion: routing it through `api.apply` would mark the gesture
+   * PROGRAMMATIC, so ownership arbitration would never learn the user
+   * collapsed the window and a stale server command could re-flip it (P6). */
+  setStackCollapsed: (stack: GroupId[], collapsed: boolean) => void;
   /** Rail every column of a docked edge (the region chevron; the packed
    * reading is derived, D44/D46). Collapse-only: expansion is granular via
    * each strip's own header. A user commit (not runProgrammatic), so

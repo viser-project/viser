@@ -193,9 +193,11 @@ export function DockManager({
   // at 0, so `commit` can tell a user rearrangement from a programmatic one --
   // which drives the "user touched this panel" flag for layout persistence.
   const programmaticDepth = React.useRef(0);
-  // Count of commits made OUTSIDE runProgrammatic (i.e. user gestures). Read
-  // through api.getUserCommitCount; see its doc in DockContext.
-  const userCommitCount = React.useRef(0);
+  // Count of USER gestures that changed collapse-or-placement intent, plus
+  // the key the count is derived from. Read through
+  // api.getUserArrangementCount; see its doc in DockContext.
+  const userArrangementCount = React.useRef(0);
+  const lastIntentKey = React.useRef<string | null>(null);
   // Production keeps a RATE-LIMITED invariant tripwire (dev checks EVERY
   // commit, including per-frame gesture commits): layouts are partly
   // SERVER-driven, so a malformed op sequence from server state can ship a
@@ -233,10 +235,17 @@ export function DockManager({
     layoutRef.current = next;
     setLayout(next);
     const programmatic = programmaticDepth.current > 0;
-    // Monotonic user-gesture counter (api.getUserCommitCount): lets a sync
-    // layer tell whether the user rearranged anything between queuing a
-    // deferred application and actually applying it.
-    if (!programmatic) userCommitCount.current += 1;
+    // Monotonic counter of user gestures that CHANGED collapse-or-placement
+    // intent (api.getUserArrangementCount). Keyed on collapseIntentKey, not
+    // on "any user commit": per-frame resize commits, tab activation, window
+    // moves and z-order raises are user actions that cannot contend with a
+    // deferred collapse, and counting them would make a sync layer discard
+    // legitimate server commands. The key is refreshed on EVERY commit, so a
+    // programmatic change is the new baseline rather than a phantom diff.
+    const key = ops.collapseIntentKey(next);
+    if (!programmatic && key !== lastIntentKey.current)
+      userArrangementCount.current += 1;
+    lastIntentKey.current = key;
     onCommitRef.current?.(prev, next, programmatic);
   }, []);
 
@@ -318,7 +327,7 @@ export function DockManager({
         runProgrammatic(() =>
           applyOp(ops.addPaneToArea(layoutRef.current, areaId, paneId, index)),
         ),
-      getUserCommitCount: () => userCommitCount.current,
+      getUserArrangementCount: () => userArrangementCount.current,
     }),
     [applyOp, runProgrammatic],
   );
@@ -385,6 +394,20 @@ export function DockManager({
       // the user railed/expanded the column, or a stale server placement
       // could silently re-flip it (P6).
       applyOp(ops.setColumnRailed(layoutRef.current, edge, columnId, on));
+    },
+    [applyOp],
+  );
+  const setStackCollapsed = React.useCallback(
+    (stack: GroupId[], collapsed: boolean) => {
+      // A USER op (like railColumn / collapseRegion): the window header's
+      // collapse toggle. Previously this ran through the context's
+      // api.apply, which raises the programmatic flag -- so the gesture was
+      // invisible to ownership arbitration (P6).
+      applyOp(
+        collapsed
+          ? ops.minimizeStack(layoutRef.current, stack)
+          : ops.expandStack(layoutRef.current, stack),
+      );
     },
     [applyOp],
   );
@@ -521,6 +544,7 @@ export function DockManager({
       expandToTab,
       expandStackOf,
       toggleCollapsed,
+      setStackCollapsed,
       collapseRegion,
       railColumn,
       draggingGroupId,
