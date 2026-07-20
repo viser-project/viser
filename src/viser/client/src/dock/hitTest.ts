@@ -101,6 +101,15 @@ export type GroupContext =
 export interface GroupTarget {
   groupId: GroupId;
   rect: DOMRect;
+  /** The cell's TRUE top when `rect` was extended upward over parent chrome
+   * (a column's own handle bar, D27). The extension exists so that chrome is
+   * not a no-drop hole (P5), but a split-above LANDS below it -- the new cell
+   * goes inside the column, under the handle that moves the whole column. So
+   * the hint line must draw here, not at the extended rect's top, or it
+   * claims the handle's own pixels (P1: the hint shows exactly what lands).
+   * Mirrors the rail branch, which anchors its stack-below line at the
+   * spine's true content bottom rather than the extended rect's. */
+  contentTop?: number;
   /** Optional smaller rect used for hit detection only (which target the pointer
    * is over), while `rect` still drives the visual hint. Lets a full-bleed area
    * keep a full-width merge highlight while leaving an inset frame around it that
@@ -819,7 +828,10 @@ export function hitTest(
     // a line on a flush edge stays visible.
     const seam =
       gt.ctx.kind === "docked" ? dockedSeamSibling(gt, region) : null;
-    const edgeY = region === "top" ? r.top : r.bottom;
+    // `contentTop` is the honest landing seam when the rect was extended up
+    // over a column's parent handle (see its doc): the split lands BELOW
+    // that chrome, so the line draws there.
+    const edgeY = region === "top" ? (gt.contentTop ?? r.top) : r.bottom;
     const raw = (seam !== null ? seam.gapCenter : edgeY) - t / 2;
     const top = clamp(raw, crect.top, crect.top + crect.height - t);
     return rel({ left: r.left, top, width: r.width, height: t }, "line");

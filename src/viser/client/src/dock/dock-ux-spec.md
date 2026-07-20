@@ -631,8 +631,16 @@ constants in `hitTest.ts`; changing one is a spec change.
   the parent-handle run above it (the scanner extends its drop rect to
   the column top): the parent handle is a GRIP, and D48 gives grips the
   above-claim, so a slam to the top of an occupied dock splits above
-  the top cell. (Rails differ, D53: their header is dominated by the
-  `+`/chevron CONTROLS and claims nothing.)
+  the top cell. The extension moves the hit ZONE only: the hint LINE
+  draws at the cell's own top — the seam where the new cell actually
+  lands, below the handle — never at the extended rect's top, which
+  would claim the handle's own pixels (P1; the same rule as the rail's
+  stack-below line, anchored at the spine's true content bottom). The
+  difference is invisible in a single-column region, whose handle is
+  the REGION's and sits outside the column box, but a multi-column
+  region draws a handle per column (D27), and there the line was
+  landing a full handle-height too high. (Rails differ, D53: their
+  header is dominated by the `+`/chevron CONTROLS and claims nothing.)
 - Over the tab strip: insert at that tab position (2D nearest-tab, works
   with wrapped rows).
 - Content side bands (30% of width, ≤120px): insert a NEW FULL-HEIGHT

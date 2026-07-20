@@ -581,3 +581,80 @@ def test_tall_window_drop_zones_use_visual_height(
             page.mouse.up()
     finally:
         page.close()
+
+
+# ===========================================================================
+# The split-above hint LINE lands at the honest seam -- below the column's own
+# parent handle (D27), where the new cell actually goes -- not at the top of
+# that handle. The hit ZONE still covers the handle band (P5: no no-drop
+# hole), but the line is honest (P1). Regression: a multi-column region draws
+# a per-column handle, and the first cell's hit-zone extension over it was
+# also moving the line, so "drop above the innermost column" pointed at the
+# handle's own top edge instead of the landing seam -- unlike the visually
+# identical single-column case.
+# ===========================================================================
+def test_split_above_line_sits_below_the_column_handle(
+    dock_context, vite_server: int
+) -> None:
+    from .dock_helpers import columns as _columns
+
+    page = _open(dock_context, vite_server, 1400, 700)
+    try:
+        _set_layout(
+            page,
+            _dock_layout(
+                docked_right=_columns("console", "inspector"),
+                floating=[_window("history", x=80, y=300, width=220)],
+            ),
+        )
+        geo = page.evaluate(
+            """() => [...document.querySelectorAll('[data-dock-column]')]
+                .map((c) => {
+                    const h = c.querySelector('[data-dock-column-handle]');
+                    const leaf = c.querySelector('[data-dock-leaf]');
+                    const cr = c.getBoundingClientRect();
+                    const hr = h.getBoundingClientRect();
+                    const lr = leaf.getBoundingClientRect();
+                    return { x: cr.x, cx: cr.x + cr.width / 2,
+                             handleTop: hr.top, handleMid: hr.y + hr.height / 2,
+                             leafTop: lr.top };
+                }).sort((a, b) => a.x - b.x)"""
+        )
+        assert len(geo) == 2, f"expected a 2-column region, got {geo}"
+
+        start = page.eval_on_selector(
+            '[data-floating-window="t-w-history"] [data-dock-griphandle]',
+            "e => { const r = e.getBoundingClientRect();"
+            " return [r.x + r.width / 2, r.y + r.height / 2]; }",
+        )
+        for i, col in enumerate(geo):
+            page.mouse.move(*start)
+            page.mouse.down()
+            page.mouse.move(start[0] + 8, start[1] + 8, steps=2)
+            page.mouse.move(col["cx"], col["handleMid"], steps=4)
+            page.wait_for_timeout(90)
+            hint = page.evaluate(
+                """() => {
+                const el = document.querySelector('[data-dock-hint]');
+                if (el === null) return null;
+                return { variant: el.getAttribute('data-dock-hint'),
+                         top: parseFloat(el.style.top) };
+            }"""
+            )
+            page.keyboard.press("Escape")
+            page.mouse.up()
+            page.wait_for_timeout(120)
+            assert hint is not None and hint["variant"] == "line", (
+                f"column {i}: the handle band must stay droppable, got {hint}"
+            )
+            # The line sits at the leaf's top (the landing seam), NOT at the
+            # column handle's top. The hint element is container-relative and
+            # a couple of px tall, so allow a small tolerance.
+            assert abs(hint["top"] - col["leafTop"]) <= 4, (
+                f"column {i}: split-above line at {hint['top']}, expected the "
+                f"landing seam ~{col['leafTop']} (handle top is "
+                f"{col['handleTop']} -- drawing there claims the column "
+                f"handle's own pixels)"
+            )
+    finally:
+        page.close()

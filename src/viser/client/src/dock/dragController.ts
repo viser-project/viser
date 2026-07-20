@@ -504,7 +504,14 @@ export function useDragController(deps: DragControllerDeps) {
         // undo this deliberate extension (the handle sits ABOVE that box).
         if (isFirstCell) {
           const cr = columnEl.getBoundingClientRect();
-          if (cr.top < top) top = cr.top;
+          if (cr.top < top) {
+            // Remember where the cell really starts: the split-above LANDS
+            // below the column's handle bar, so the hint line must draw at
+            // this seam even though the hit zone covers the chrome (P5 vs
+            // P1 -- the zone is generous, the line is honest).
+            g.contentTop = top;
+            top = cr.top;
+          }
         }
         if (bottom - top < 8) return; // no usable band (P11)
         g.rect = new DOMRect(g.rect.left, top, g.rect.width, bottom - top);
