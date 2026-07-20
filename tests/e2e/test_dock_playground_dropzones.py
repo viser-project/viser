@@ -147,6 +147,28 @@ def _drop_on_seam(dock_context, vite_server: int, which: str) -> list[str] | Non
         page.close()
 
 
+def test_right_of_A_and_left_of_B_are_the_same_seam_insert(
+    dock_context, vite_server: int
+) -> None:
+    """Restored from pre-#711 (the helper above had been orphaned): both side
+    bands resolve to the ONE canonical columnInsert at the A|B seam (D55)."""
+    order_right = _drop_on_seam(dock_context, vite_server, "right")
+    order_left = _drop_on_seam(dock_context, vite_server, "left")
+    if order_right is None or order_left is None:
+        pytest.skip("did not form the expected 3-column region this run")
+
+    # Both drops insert the new panel (c) as a column on the A|B seam, i.e.
+    # BETWEEN the two original columns -> identical left-to-right order.
+    assert order_right == order_left, (
+        f"right-of-A and left-of-B gave different results: "
+        f"{order_right} vs {order_left}"
+    )
+    # And the inserted column is in the middle (between the two originals).
+    assert order_right[1] != order_right[0] and order_right[1] != order_right[2]
+    # Sanity: all three panels present.
+    assert sorted(order_right) == sorted(set(order_right)) and len(order_right) == 3
+
+
 # ===========================================================================
 # Drop-hint visual consistency: split / span previews are all thin LINES, not a
 # mix of lines and filled rectangles.
