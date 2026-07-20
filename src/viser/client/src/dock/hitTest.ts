@@ -111,7 +111,15 @@ export interface GroupTarget {
    * DropTargets.windows for the owning-window mask. */
   winId?: string;
   stripRect: DOMRect | null;
-  tabs: { paneId: PaneId; rect: DOMRect }[];
+  /** The group's tab handles, for insertion hit-testing. `rect` is CLIPPED to
+   * the tab's visible box (a strip can be cut off by the container edge or a
+   * scrolled column), and fully-invisible tabs are omitted -- so an insertion
+   * line never paints outside the dock and a hidden tab is never the nearest
+   * target. `index` is therefore the tab's position in the GROUP's paneIds,
+   * carried explicitly because omissions break array-position indexing. It is
+   * optional only as a shorthand for callers that never filter (test literals
+   * build tabs in model order); omitted, the array position is used. */
+  tabs: { paneId: PaneId; rect: DOMRect; index?: number }[];
   ctx: GroupContext;
   /** True when the group is minimized (only its handle shows). Such a target
    * has no content area, so its whole bar is treated as a 5-way drop zone.
@@ -195,7 +203,11 @@ const hitsTarget = (t: GroupTarget, x: number, y: number): boolean => {
  * multiple rows. Returns the insert index plus the insertion line's geometry
  * (in client coords), anchored to the matched tab's own row. */
 export const tabInsertion = (
-  tabs: { rect: DOMRect }[],
+  // `index` (the tab's position in the model's pane list) is optional: the
+  // in-strip reorder path passes a filtered "other tabs" array whose array
+  // positions ARE the insertion positions it wants. Drop-target arrays carry
+  // it, because they omit invisible/clipped tabs.
+  tabs: { rect: DOMRect; index?: number }[],
   x: number,
   y: number,
 ): {
@@ -237,8 +249,9 @@ export const tabInsertion = (
     );
     if (isRowLeftmost) lineLeft = r.left + 3;
   }
+  const modelIndex = tabs[best].index ?? best;
   return {
-    index: after ? best + 1 : best,
+    index: after ? modelIndex + 1 : modelIndex,
     lineLeft,
     lineTop: r.top + (r.height - lineHeight) / 2,
     lineHeight,
@@ -251,7 +264,7 @@ export const tabInsertion = (
  * land at a specific position in a minimized tab set, mirroring how dropping
  * between expanded horizontal tabs works. */
 const verticalTabInsertion = (
-  tabs: { rect: DOMRect }[],
+  tabs: { rect: DOMRect; index?: number }[],
   y: number,
 ): {
   index: number;
@@ -276,8 +289,9 @@ const verticalTabInsertion = (
   // Inset the horizontal line from both strip edges so it reads as an insertion
   // marker, not a full-width rule hugging the ~36px strip's borders (mirrors the
   // horizontal path, which nudges its line in from the leftmost tab edge).
+  const modelIndex = tabs[best].index ?? best;
   return {
-    index: after ? best + 1 : best,
+    index: after ? modelIndex + 1 : modelIndex,
     lineLeft: r.left + INSERT_LINE_INSET_PX,
     lineTop: after ? r.bottom : r.top,
     lineWidth: Math.max(2, r.width - 2 * INSERT_LINE_INSET_PX),

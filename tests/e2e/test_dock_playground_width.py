@@ -651,3 +651,85 @@ def test_region_resizer_works_with_railed_columns(page: Page) -> None:
         f"dragging the resizer must widen the region via regionWidth: "
         f"{before} -> {after}"
     )
+
+
+# ===========================================================================
+# A multi-column region's per-column parent handle is never a no-drop hole
+# (P5) -- including when the column is SQUEEZED and SCROLLED past its first
+# cell, so that cell has nothing visible left inside the scroll box. The
+# handle band sits above the scroll box and never scrolls, and only the first
+# cell can claim it; dropping the target there would re-open the hole.
+# ===========================================================================
+def test_column_handle_band_survives_scrolled_out_first_cell(
+    dock_context, vite_server: int
+) -> None:
+    # Short viewport + enough stacked cells that their MIN_CELL_HEIGHT_PX
+    # floors overflow the column, so it scrolls -- and by enough that
+    # scrolling to the bottom pushes the whole first cell out of view
+    # (max scrollTop = 6*50 - ~220 available > the 50px first cell).
+    pg = open_playground(dock_context, vite_server, 1400, 240)
+    try:
+        set_layout(
+            pg,
+            dock_layout(
+                docked_right=columns(
+                    stack(
+                        "controls",
+                        "inspector",
+                        "console",
+                        "scene",
+                        "layers",
+                        "props",
+                    ),
+                    # A second column is what makes the region render
+                    # per-column parent handles (D27).
+                    "monitor",
+                ),
+                floating=[window("history", x=80, y=40, width=200)],
+            ),
+        )
+        scrolled = pg.evaluate(
+            """() => {
+            const sc = document.querySelector('[data-dock-scroll]');
+            if (sc === null) return null;
+            sc.scrollTop = sc.scrollHeight;  // past the first cell
+            const first = sc.querySelector('[data-dock-leaf]');
+            const fr = first.getBoundingClientRect();
+            const sr = sc.getBoundingClientRect();
+            const handle = document.querySelector('[data-dock-column-handle]');
+            const hr = handle === null ? null : handle.getBoundingClientRect();
+            return { visible: Math.min(fr.bottom, sr.bottom)
+                            - Math.max(fr.top, sr.top),
+                     handle: hr === null ? null
+                        : { cx: hr.x + hr.width / 2, cy: hr.y + hr.height / 2 } };
+        }"""
+        )
+        if scrolled is None or scrolled["handle"] is None:
+            pytest.skip("no scrolling column / column handle this run")
+        if scrolled["visible"] >= 8:
+            pytest.skip("first cell did not scroll fully out this run")
+
+        start = pg.eval_on_selector(
+            '[data-floating-window="t-w-history"] [data-dock-griphandle]',
+            "e => { const r = e.getBoundingClientRect();"
+            " return [r.x + r.width / 2, r.y + r.height / 2]; }",
+        )
+        pg.mouse.move(*start)
+        pg.mouse.down()
+        pg.mouse.move(start[0] + 8, start[1] + 8, steps=2)
+        pg.mouse.move(scrolled["handle"]["cx"], scrolled["handle"]["cy"], steps=4)
+        pg.wait_for_timeout(100)
+        hint = pg.evaluate(
+            """() => {
+            const el = document.querySelector('[data-dock-hint]');
+            return el === null ? null : el.getAttribute('data-dock-hint');
+        }"""
+        )
+        pg.keyboard.press("Escape")
+        pg.mouse.up()
+        assert hint is not None, (
+            "the column handle band must stay droppable when the first cell "
+            "is scrolled out (P5: no no-drop holes)"
+        )
+    finally:
+        pg.close()

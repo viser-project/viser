@@ -29,6 +29,13 @@ export interface DockApi {
   /** Add a not-yet-placed pane to an area's tabs (creates the area if
    * needed). No-op if the pane is already placed anywhere. */
   addPaneToArea: (areaId: AreaId, paneId: PaneId, index?: number) => void;
+  /** How many USER commits (gestures -- anything not run through the
+   * manager's programmatic wrapper) have landed this session. Monotonic, read
+   * from a ref, so it never re-renders anyone. A sync layer that must DEFER an
+   * application samples this when it queues and re-checks before it applies:
+   * an advanced count means the user rearranged in between, and P6 says the
+   * user's arrangement stands until the server re-asserts by SENDING. */
+  getUserCommitCount: () => number;
 }
 
 export interface DockContextValue {

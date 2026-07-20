@@ -217,7 +217,12 @@ export function useDragController(deps: DragControllerDeps) {
       ctx: GroupContext,
     ): GroupTarget => {
       const stripEl = scopeEl.querySelector(`[data-dock-strip="${groupId}"]`);
-      const tabs: { paneId: PaneId; rect: DOMRect }[] = [];
+      const tabs: { paneId: PaneId; rect: DOMRect; index: number }[] = [];
+      // The model's pane order; a tab's index comes from HERE, not from its
+      // position in the collected array, which omits invisible and clipped
+      // tabs (an omission would otherwise shift every later tab's insertion
+      // index by one).
+      const paneOrder = layoutRef.current.groups[groupId]?.paneIds ?? [];
       scopeEl.querySelectorAll("[data-dock-tab]").forEach((t) => {
         // Skip tabs that belong to a nested group (their nearest group ancestor
         // isn't ours).
@@ -226,8 +231,16 @@ export function useDragController(deps: DragControllerDeps) {
         // badge): an invisible element must not be an insertion target (P1).
         if (getComputedStyle(t).visibility === "hidden") return;
         const paneId = t.getAttribute("data-dock-tab");
-        if (paneId !== null)
-          tabs.push({ paneId, rect: t.getBoundingClientRect() });
+        if (paneId === null) return;
+        const index = paneOrder.indexOf(paneId);
+        tabs.push({
+          paneId,
+          rect: t.getBoundingClientRect(),
+          // A tab whose pane isn't in the model (mid-commit DOM) keeps its
+          // DOM position -- the old behavior, and harmless: the op guards
+          // its own bounds.
+          index: index === -1 ? tabs.length : index,
+        });
       });
       return {
         groupId,
@@ -265,13 +278,35 @@ export function useDragController(deps: DragControllerDeps) {
     // below. Targets whose visible remnant is sub-8px are dropped entirely
     // (P11: a zone that can't hold 8px is removed, not shrunk).
     const cbox = container.getBoundingClientRect();
-    const clipToContainer = (r: DOMRect): DOMRect | null => {
-      const left = Math.max(r.left, cbox.left);
-      const top = Math.max(r.top, cbox.top);
-      const right = Math.min(r.right, cbox.right);
-      const bottom = Math.min(r.bottom, cbox.bottom);
-      if (right - left < 8 || bottom - top < 8) return null;
+    const clipRect = (
+      r: DOMRect,
+      box: DOMRect,
+      min: number,
+    ): DOMRect | null => {
+      const left = Math.max(r.left, box.left);
+      const top = Math.max(r.top, box.top);
+      const right = Math.min(r.right, box.right);
+      const bottom = Math.min(r.bottom, box.bottom);
+      if (right - left < min || bottom - top < min) return null;
       return new DOMRect(left, top, right - left, bottom - top);
+    };
+    const clipToContainer = (r: DOMRect): DOMRect | null =>
+      clipRect(r, cbox, 8);
+    /** Clip a target's strip + tab rects to the box its cell is actually
+     * visible in, dropping tabs with nothing left. Zones and hints are then
+     * computed from painted pixels only: without this, an insertion line for
+     * a tab straddling the container edge (or scrolled out of its column)
+     * paints outside the dock, and a fully-hidden tab can still be the
+     * nearest insertion target. Tabs carry explicit model indices, so
+     * dropping them keeps insertion positions correct. A sub-1px sliver is
+     * treated as gone (tabs are hit by nearest-distance, not containment, so
+     * unlike the 8px zone floor there is no minimum useful size). */
+    const clipChromeTo = (t: GroupTarget, box: DOMRect): void => {
+      if (t.stripRect !== null) t.stripRect = clipRect(t.stripRect, box, 1);
+      t.tabs = t.tabs.flatMap((tab) => {
+        const rect = clipRect(tab.rect, box, 1);
+        return rect === null ? [] : [{ ...tab, rect }];
+      });
     };
 
     // Nested dockable areas, collected up front and keyed by host window
@@ -317,6 +352,7 @@ export function useDragController(deps: DragControllerDeps) {
         areaId,
       });
       t.rect = areaRect;
+      clipChromeTo(t, areaRect);
       // Inset the area's hit rect on the left/right/bottom (not the top, which
       // holds its tab strip) so a frame around it falls through to the host
       // panel's own edge zones -- otherwise a full-bleed area (one that fills its
@@ -393,46 +429,66 @@ export function useDragController(deps: DragControllerDeps) {
           g.rect = new DOMRect(g.rect.left, top, g.rect.width, bottom - top);
         }
       } else {
-        // Expanded columns. First clip to the column's scroll box: with
-        // overflowY auto a squeezed, scrolled column reports leaf rects
-        // extending past its visible box, and hitTest's last-match rule
-        // would pick the invisible scrolled-out leaf over the visible one
-        // under the pointer (P1). (Rail cells never sit in a
-        // [data-dock-scroll]; their clamp is the rail-root branch above.)
+        // Expanded columns. Two boxes matter here and they are NOT the same:
+        // the cell's visible content (clipped to the column's scroll box) and
+        // the parent-handle run ABOVE that scroll box, which the first cell
+        // also claims (P5: region-owned chrome must not be a no-drop hole --
+        // the old top region band died with D46; a pointer there resolves to
+        // "split above the first cell", honest per P1).
+        const columnEl = leaf.closest("[data-dock-column]");
+        const isFirstCell =
+          columnEl !== null &&
+          columnEl.querySelectorAll("[data-dock-leaf]")[0] === leaf;
+        // Content box: with overflowY auto a squeezed, scrolled column
+        // reports leaf rects extending past its visible box, and hitTest's
+        // last-match rule would pick the invisible scrolled-out leaf over
+        // the visible one under the pointer (P1). (Rail cells never sit in
+        // a [data-dock-scroll]; their clamp is the rail-root branch above.)
         const scrollEl = leaf.closest("[data-dock-scroll]");
+        let top = g.rect.top;
+        let bottom = g.rect.bottom;
+        let contentBox: DOMRect | null = g.rect;
         if (scrollEl !== null) {
           const sr = scrollEl.getBoundingClientRect();
-          const top = Math.max(g.rect.top, sr.top);
-          const bottom = Math.min(g.rect.bottom, sr.bottom);
-          if (bottom - top < 8) return; // fully scrolled out: not a target
-          g.rect = new DOMRect(g.rect.left, top, g.rect.width, bottom - top);
-        }
-        // THEN extend the first leaf up over the parent-handle run: that
-        // chrome is region-owned but must not be a no-drop hole (P5; the
-        // old top region band died with D46) -- the pointer there resolves
-        // to this cell's above zone (split above the first cell: honest,
-        // P1). Ordered after the scroll clip, which clamps to the scroll
-        // box and would otherwise undo this deliberate extension (the
-        // handle sits ABOVE the scroll box), re-opening the hole.
-        const columnEl = leaf.closest("[data-dock-column]");
-        if (columnEl !== null) {
-          const cells = columnEl.querySelectorAll("[data-dock-leaf]");
-          if (cells[0] === leaf) {
-            const cr = columnEl.getBoundingClientRect();
-            if (cr.top < g.rect.top) {
-              g.rect = new DOMRect(
-                g.rect.left,
-                cr.top,
-                g.rect.width,
-                g.rect.bottom - cr.top,
-              );
-            }
+          top = Math.max(top, sr.top);
+          bottom = Math.min(bottom, sr.bottom);
+          if (bottom - top < 8) {
+            // Nothing of the cell's content is visible. For any cell but the
+            // first that means "not a target". The FIRST cell still owns the
+            // handle band above the scroll box, which never scrolls -- and no
+            // other cell can claim it (they aren't the first child), so
+            // dropping the target here would re-open the P5 hole for a column
+            // scrolled past its first cell.
+            if (!isFirstCell) return;
+            contentBox = null;
+            top = sr.top;
+            bottom = sr.top;
+          } else {
+            contentBox = new DOMRect(
+              g.rect.left,
+              top,
+              g.rect.width,
+              bottom - top,
+            );
           }
         }
+        // Extend the first cell up over the parent-handle run. Ordered AFTER
+        // the scroll clip, which clamps to the scroll box and would otherwise
+        // undo this deliberate extension (the handle sits ABOVE that box).
+        if (isFirstCell) {
+          const cr = columnEl.getBoundingClientRect();
+          if (cr.top < top) top = cr.top;
+        }
+        if (bottom - top < 8) return; // no usable band (P11)
+        g.rect = new DOMRect(g.rect.left, top, g.rect.width, bottom - top);
         // One hit surface: keep hitRect in lockstep with the final rect
         // (the clip used to write both; the extension must be part of the
         // hittable box or the handle band still misses).
         g.hitRect = g.rect;
+        // Strip/tabs live in the CONTENT box, never the handle band: a
+        // scrolled-out strip must not offer tab insertions, and a partly
+        // scrolled one only where it paints.
+        clipChromeTo(g, contentBox ?? new DOMRect(g.rect.left, top, 0, 0));
       }
       targets.groups.push(g);
     });
@@ -484,7 +540,7 @@ export function useDragController(deps: DragControllerDeps) {
           const cellRect = clipToContainer(g.rect);
           if (cellRect === null) return;
           g.rect = cellRect;
-          if (g.stripRect !== null) g.stripRect = clipToContainer(g.stripRect);
+          clipChromeTo(g, cellRect);
           g.winId = win.id;
           targets.groups.push(g);
         }

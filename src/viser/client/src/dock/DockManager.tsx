@@ -193,6 +193,9 @@ export function DockManager({
   // at 0, so `commit` can tell a user rearrangement from a programmatic one --
   // which drives the "user touched this panel" flag for layout persistence.
   const programmaticDepth = React.useRef(0);
+  // Count of commits made OUTSIDE runProgrammatic (i.e. user gestures). Read
+  // through api.getUserCommitCount; see its doc in DockContext.
+  const userCommitCount = React.useRef(0);
   // Production keeps a RATE-LIMITED invariant tripwire (dev checks EVERY
   // commit, including per-frame gesture commits): layouts are partly
   // SERVER-driven, so a malformed op sequence from server state can ship a
@@ -229,7 +232,12 @@ export function DockManager({
     const prev = layoutRef.current;
     layoutRef.current = next;
     setLayout(next);
-    onCommitRef.current?.(prev, next, programmaticDepth.current > 0);
+    const programmatic = programmaticDepth.current > 0;
+    // Monotonic user-gesture counter (api.getUserCommitCount): lets a sync
+    // layer tell whether the user rearranged anything between queuing a
+    // deferred application and actually applying it.
+    if (!programmatic) userCommitCount.current += 1;
+    onCommitRef.current?.(prev, next, programmatic);
   }, []);
 
   const applyOp = React.useCallback(
@@ -310,6 +318,7 @@ export function DockManager({
         runProgrammatic(() =>
           applyOp(ops.addPaneToArea(layoutRef.current, areaId, paneId, index)),
         ),
+      getUserCommitCount: () => userCommitCount.current,
     }),
     [applyOp, runProgrammatic],
   );

@@ -164,6 +164,31 @@ describe("tabInsertion", () => {
     expect(ins.lineLeft).toBe(3);
   });
 
+  it("uses each tab's MODEL index, not its array position", () => {
+    // The collector omits tabs with nothing visible (clipped by the container
+    // edge or scrolled out of their column), so array positions no longer
+    // track the group's pane order. Here tabs 0 and 1 of a 4-tab strip were
+    // omitted; a drop after the first SURVIVING tab must insert at model
+    // index 3, not 1 -- otherwise the pane lands two slots too early.
+    const tabs = [
+      { rect: rect(200, 0, 100, 30), index: 2 },
+      { rect: rect(300, 0, 100, 30), index: 3 },
+    ];
+    expect(tabInsertion(tabs, 280, 15)!.index).toBe(3); // after model tab 2
+    expect(tabInsertion(tabs, 220, 15)!.index).toBe(2); // before model tab 2
+    expect(tabInsertion(tabs, 380, 15)!.index).toBe(4); // append past the end
+  });
+
+  it("falls back to array position when no index is given", () => {
+    // The in-strip reorder path passes a filtered "other tabs" array whose
+    // positions ARE the insertion positions it wants.
+    const tabs = [
+      { rect: rect(0, 0, 100, 30) },
+      { rect: rect(100, 0, 100, 30) },
+    ];
+    expect(tabInsertion(tabs, 180, 15)!.index).toBe(2);
+  });
+
   it("before a NON-leftmost tab keeps the line on the shared edge", () => {
     const tabs = [
       { rect: rect(0, 0, 100, 30) },

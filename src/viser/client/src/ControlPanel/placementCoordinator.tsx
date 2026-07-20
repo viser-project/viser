@@ -32,6 +32,7 @@ import * as ops from "../dock/layoutOps";
 import type { CanvasBounds } from "../dock/layoutOps";
 import { DockLayout } from "../dock/types";
 import { CONTROL_PANEL_ID } from "./controlPanelId";
+import { orderCollapseDrain, type QueuedCollapse } from "./collapseDrain";
 import { gatePlacement } from "./placementGate";
 import type { PanelPlacementState } from "./GuiState";
 
@@ -96,12 +97,8 @@ export function usePlacementCoordinator(
   // case D50 exists to fix). Keyed by panel uuid: the store holds one
   // collapsed axis per panel, and a newer command re-queues via the
   // freshness gate.
-  const pendingCollapse = React.useRef(
-    new Map<
-      string,
-      { tabIds: string[]; collapsed: boolean; counter: number; runId: string }
-    >(),
-  );
+  const pendingCollapse = React.useRef(new Map<string, QueuedCollapse>());
+  const collapseSeq = React.useRef(0);
 
   React.useEffect(() => {
     // A layout reset re-applies every panel's server placement from scratch.
@@ -300,6 +297,8 @@ export function usePlacementCoordinator(
             collapsed: gated.placement.collapsed,
             counter: entry.collapsed.counter,
             runId: entry.collapsed.runId,
+            seq: ++collapseSeq.current,
+            userCommits: dock.api.getUserCommitCount(),
           });
         dock.api.apply((l: DockLayout) =>
           ops.applyPanelPlacement(
@@ -352,33 +351,27 @@ export function usePlacementCoordinator(
     // deferred panel's collapse axis joins the queue on a later pass, and
     // draining early would let a lower-counter axis apply LAST and win.
     if (!positionDeferred && pendingCollapse.current.size > 0) {
-      const queue = [...pendingCollapse.current.values()];
+      const queued = [...pendingCollapse.current.values()];
       pendingCollapse.current.clear();
-      const byRun = new Map<string, typeof queue>();
-      for (const c of queue) {
-        const bucket = byRun.get(c.runId);
-        if (bucket === undefined) byRun.set(c.runId, [c]);
-        else bucket.push(c);
-      }
-      for (const bucket of byRun.values()) {
-        bucket.sort((a, b) => a.counter - b.counter);
-        for (const c of bucket) {
-          dock.api.apply((l: DockLayout) =>
-            ops.applyPanelPlacement(
-              l,
-              c.tabIds,
-              {
-                position: null,
-                collapsed: c.collapsed,
-              },
-              (anchorUuid) => resolveAnchor(anchorUuid),
-              {
-                canvasBounds: canvasBoundsFromMetrics(metrics),
-                floatIfUnplaced: false,
-              },
-            ),
-          );
-        }
+      for (const c of orderCollapseDrain(
+        queued,
+        dock.api.getUserCommitCount(),
+      )) {
+        dock.api.apply((l: DockLayout) =>
+          ops.applyPanelPlacement(
+            l,
+            c.tabIds,
+            {
+              position: null,
+              collapsed: c.collapsed,
+            },
+            (anchorUuid) => resolveAnchor(anchorUuid),
+            {
+              canvasBounds: canvasBoundsFromMetrics(metrics),
+              floatIfUnplaced: false,
+            },
+          ),
+        );
       }
     }
     // `dock.layout` is a dependency ON PURPOSE: it is what turns deferral into
