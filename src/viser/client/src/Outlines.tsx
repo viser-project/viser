@@ -10,8 +10,8 @@ import {
   useThree,
   ThreeElement,
 } from "@react-three/fiber";
-import { toCreasedNormals } from "three-stdlib";
 import { OutlinesMaterial } from "./OutlinesMaterial";
+import { buildOutlineGeometry } from "./utils/outlineGeometry";
 
 type OutlinesProps = ThreeElement<typeof THREE.Group> & {
   /** Outline color, default: black */
@@ -61,6 +61,17 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
     const oldGeometry = React.useRef<THREE.BufferGeometry>();
     const oldPosition = React.useRef<THREE.BufferAttribute>();
     const oldPositionVersion = React.useRef(-1);
+    // The creased clone WE own for the current outline mesh, or null when the
+    // mesh shares the parent's geometry. Recording the disposable resource
+    // itself is what makes every dispose site correct by construction: gating
+    // on the current `angle` prop was the original bug (PI->0 leaked the old
+    // clone, 0->PI disposed the parent's live shared geometry), and the
+    // unmount cleanup cannot re-derive the mesh from localRef -- React
+    // detaches the ref (-> null) before passive cleanups run, so a
+    // `localRef.current.children[0]` lookup there is always null and the
+    // dispose would silently never happen (leaking the clone once per
+    // unmount -- every hover cycle for unmountOnHide gizmos).
+    const ownedGeometryRef = React.useRef<THREE.BufferGeometry | null>(null);
     React.useLayoutEffect(() => {
       const group = localRef.current;
       if (!group) return;
@@ -92,12 +103,15 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
           oldPosition.current = position;
           oldPositionVersion.current = position?.version ?? -1;
 
-          // Remove old mesh.
+          // Free the creased copy if we own one (never the parent's shared
+          // geometry; see ownedGeometryRef above) -- unconditionally, not
+          // gated on the child still being attached: the group is exposed via
+          // the forwarded ref, so an externally-removed child must not strand
+          // the owned geometry.
+          ownedGeometryRef.current?.dispose();
+          ownedGeometryRef.current = null;
           let mesh = group.children[0] as any;
-          if (mesh) {
-            if (angle) mesh.geometry.dispose();
-            group.remove(mesh);
-          }
+          if (mesh) group.remove(mesh);
 
           if (parent.skeleton) {
             mesh = new THREE.SkinnedMesh();
@@ -117,9 +131,9 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
             mesh.material = material;
             group.add(mesh);
           }
-          mesh.geometry = angle
-            ? toCreasedNormals(parent.geometry, angle)
-            : parent.geometry;
+          const built = buildOutlineGeometry(parent.geometry, angle);
+          mesh.geometry = built.geometry;
+          ownedGeometryRef.current = built.owned ? built.geometry : null;
         }
       }
     });
@@ -150,21 +164,13 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
 
     React.useEffect(() => {
       return () => {
-        // Dispose everything on unmount.
+        // Dispose everything on unmount, reading only what was recorded at
+        // build time (see ownedGeometryRef above): localRef is already null
+        // here, and the first-render `angle` closure capture is stale on
+        // flips.
         material.dispose();
-
-        const group = localRef.current;
-        if (!group) return;
-
-        const mesh = group.children[0] as THREE.Mesh<
-          THREE.BufferGeometry,
-          THREE.Material
-        >;
-        if (mesh) {
-          // Dispose the geometry if it was cloned via toCreasedNormals.
-          if (angle) mesh.geometry.dispose();
-          group.remove(mesh);
-        }
+        ownedGeometryRef.current?.dispose();
+        ownedGeometryRef.current = null;
       };
     }, []);
 

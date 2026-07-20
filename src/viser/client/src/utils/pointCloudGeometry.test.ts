@@ -51,4 +51,53 @@ describe("syncPointCloudGeometry", () => {
     syncPointCloudGeometry(geom, new Uint16Array(6), new Uint8Array(6)); // float16
     expect(geom.getAttribute("position")).not.toBe(pos1);
   });
+
+  // Regression: switching per-point colors -> uniform (3-length) colors must
+  // remove the stale N-length 'color' attribute. three.js re-uploads every
+  // registered attribute regardless of whether the material samples it, so a
+  // leftover attribute costs bandwidth every render and serves stale data if
+  // per-point colors come back at a matching length.
+  describe("per-point -> uniform color transition", () => {
+    it("removes the stale color attribute (same point count)", () => {
+      const geom = new THREE.BufferGeometry();
+      syncPointCloudGeometry(geom, new Float32Array(6), new Uint8Array(6));
+      const staleColor = geom.getAttribute("color");
+      expect(staleColor).toBeDefined();
+
+      // three frees GL buffers only via the geometry 'dispose' event, and
+      // only for attributes still registered when it fires -- so dispose must
+      // run BEFORE deleteAttribute or the color buffer is stranded until GC.
+      // A listener pins both facts: it must fire (false if not), and the
+      // stale attribute must still be present when it does.
+      let colorPresentAtDispose = false;
+      geom.addEventListener("dispose", () => {
+        colorPresentAtDispose = geom.getAttribute("color") === staleColor;
+      });
+
+      syncPointCloudGeometry(geom, new Float32Array(6), new Uint8Array(3));
+      expect(colorPresentAtDispose).toBe(true);
+      expect(geom.hasAttribute("color")).toBe(false);
+    });
+
+    it("removes the stale color attribute (point count also changed)", () => {
+      const geom = new THREE.BufferGeometry();
+      syncPointCloudGeometry(
+        geom,
+        new Float32Array(3000),
+        new Uint8Array(3000),
+      );
+      syncPointCloudGeometry(geom, new Float32Array(900), new Uint8Array(3));
+      expect(geom.hasAttribute("color")).toBe(false);
+      expect(geom.getAttribute("position").count).toBe(300);
+    });
+
+    it("re-adds the color attribute when per-point colors return", () => {
+      const geom = new THREE.BufferGeometry();
+      syncPointCloudGeometry(geom, new Float32Array(6), new Uint8Array(3));
+      expect(geom.hasAttribute("color")).toBe(false);
+      syncPointCloudGeometry(geom, new Float32Array(6), new Uint8Array(6));
+      expect(geom.hasAttribute("color")).toBe(true);
+      expect(geom.getAttribute("color").count).toBe(2);
+    });
+  });
 });

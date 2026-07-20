@@ -2,8 +2,9 @@
 
 - **Dock/panel changes require a spec trace.** `src/viser/client/src/dock/dock-ux-spec.md` (it lives next to the code it governs) is
   normative for the dock system; after any behavior change, re-trace the
-  touched claims per its §10 protocol (normative text, gesture table,
-  decision index). Where code and spec disagree, decide on paper first.
+  touched claims per the re-trace protocol in its "How to use it" preamble
+  (normative text, gesture table, decision index). Where code and spec
+  disagree, decide on paper first.
 - **Gates before committing client code** (from `src/viser/client`):
   `npx tsc --noEmit`, `npx eslint src/`, `npx prettier --check src/`,
   `npx vitest run src`.

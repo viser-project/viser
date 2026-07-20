@@ -74,7 +74,8 @@ describe("gatePlacement", () => {
     );
     expect(g.anyFresh).toBe(false);
     expect(g.placement.position).toBeNull();
-    expect(g.placement.width).toBeNull();
+    // Gated-off width is ABSENT (undefined) -- null would be a fresh clear.
+    expect(g.placement.width).toBeUndefined();
   });
 
   it("server re-assert (same run, higher counter) applies", () => {
@@ -150,16 +151,38 @@ describe("gatePlacement", () => {
     expect(g.placement.position).toEqual(DOCK_RIGHT);
   });
 
-  it("no entry at all: nothing fresh, all axes null", () => {
+  it("no entry at all: nothing fresh, every axis absent", () => {
     const g = gatePlacement(undefined, undefined, true);
     expect(g.anyFresh).toBe(false);
-    expect(g.placement).toEqual({
-      position: null,
-      width: null,
-      height: null,
-      collapsed: null,
-    });
+    expect(g.placement.position).toBeNull();
+    expect(g.placement.collapsed).toBeNull();
+    // Width/height are tri-state: absent is undefined, NOT null (null would
+    // read as a fresh clear-to-default command downstream).
+    expect(g.placement.width).toBeUndefined();
+    expect(g.placement.height).toBeUndefined();
   });
+
+  // gui.reset() sends width/height None ("clear the override"); the gate must
+  // pass the null VALUE through as a command, not conflate it with a
+  // gated-off axis -- the `?? null` regression left reset windows pinned
+  // forever. Table-driven over BOTH axes so neither can silently regress.
+  it.each([
+    { axis: "height" as const, other: "width" as const },
+    { axis: "width" as const, other: "height" as const },
+  ])(
+    "a FRESH $axis clear (stored value null) survives as null",
+    ({ axis, other }) => {
+      const g = gatePlacement(
+        entry({ [axis]: { value: null, counter: 3, runId: RUN_A } }),
+        undefined,
+        true,
+      );
+      expect(g.anyFresh).toBe(true);
+      expect(g.placement[axis]).toBeNull(); // fresh clear -> revert to default
+      expect(g.placement[other]).toBeUndefined(); // absent axis -> untouched
+      expect(g.applied).toEqual({ [axis]: { [RUN_A]: 3 } });
+    },
+  );
 });
 
 // The gate -> applyPanelPlacement chain as the placement coordinator drives it

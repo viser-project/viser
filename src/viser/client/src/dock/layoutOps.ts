@@ -859,7 +859,7 @@ export function insertTabsInto(
     delete draft.groups[sourceId];
   }
   if (incoming.length === 0) return layout;
-  const i = Math.max(0, Math.min(target.paneIds.length, index));
+  const i = clampIndex(index, target.paneIds.length);
   target.paneIds = [
     ...target.paneIds.slice(0, i),
     ...incoming,
@@ -1099,8 +1099,7 @@ function movePaneInPlace(
   removePaneInPlace(draft, paneId); // detach first -> no duplication possible
   const dest = draft.groups[destGroupId];
   if (dest === undefined) return;
-  const i = index === undefined ? dest.paneIds.length : index;
-  dest.paneIds.splice(Math.max(0, Math.min(dest.paneIds.length, i)), 0, paneId);
+  dest.paneIds.splice(clampIndex(index, dest.paneIds.length), 0, paneId);
   if (dest.paneIds.length === 1) dest.activeId = paneId;
 }
 
@@ -1413,10 +1412,7 @@ export function snapToWindowStack(
   for (const g of groupIds)
     nextWeights[g] = (meanTarget * shareOf(g)) / meanShare;
   target.stackWeights = nextWeights;
-  const i =
-    index === undefined
-      ? target.stack.length
-      : Math.max(0, Math.min(target.stack.length, index));
+  const i = clampIndex(index, target.stack.length);
   target.stack.splice(i, 0, ...groupIds);
   // Copy (don't alias) the source's height object: sourceHeight is read from the
   // original layout, so assigning it directly would share a reference between the
@@ -1455,7 +1451,7 @@ export function reorderTab(
   const group = layout.groups[groupId];
   if (group === undefined || !group.paneIds.includes(paneId)) return layout;
   const without = group.paneIds.filter((p) => p !== paneId);
-  const clamped = Math.max(0, Math.min(without.length, insertIndex));
+  const clamped = clampIndex(insertIndex, without.length);
   without.splice(clamped, 0, paneId);
   const unchanged =
     without.length === group.paneIds.length &&
@@ -1947,14 +1943,19 @@ export type PanelPosition =
   | { kind: "float"; x: number | null; y: number | null };
 
 /** The placement state the dock applies to a panel: a per-axis bundle the
- * caller assembles from the client-owned placement store. Each field is the
- * latest value the server wrote (or null when never set / gated off). Each
- * axis is independent and applied only when non-null -- a set_width carries no
- * position, so applying width can never re-dock a panel. */
+ * caller assembles from the client-owned placement store. Each axis is
+ * independent and applied only when present -- a set_width carries no
+ * position, so applying width can never re-dock a panel.
+ *
+ * Width/height are tri-state: a number applies that size, `undefined` means
+ * the axis is absent / gated off ("don't touch"), and `null` is a fresh CLEAR
+ * -- the server's width/height `None`, reverting the override to its default
+ * (auto height; default/theme width). Position and collapsed have no clear
+ * form on the wire, so for them `null` simply means "absent". */
 export interface PanelPlacement {
   position: PanelPosition | null;
-  width: number | null;
-  height: number | null;
+  width?: number | null;
+  height?: number | null;
   collapsed: boolean | null;
 }
 
@@ -2157,12 +2158,14 @@ function resolveAnchorLeaf(
  * both standalone panels and the control panel).
  *
  * Each field of `placement` is the latest value the server wrote, and is always
- * applied when present -- there is no before/after gating. Because the three
+ * applied when present -- there is no before/after gating. Because the
  * write-only commands are independent (a set_width carries no position), applying
  * any single field can never re-dock a panel: a position re-docks/re-floats only
  * when `position != null`, and that only happens when the server actually sent a
- * position command. The caller's per-command dedup (appliedPlacementKey) keeps an
- * unrelated re-render from re-applying the same bundle.
+ * position command. A present width/height may also be a CLEAR (null; see the
+ * PanelPlacement tri-state note). The caller's per-command dedup
+ * (appliedPlacementKey) keeps an unrelated re-render from re-applying the same
+ * bundle.
  *
  * Options:
  * - `floatIfUnplaced` (default true): when the placement has no position AND the
@@ -2205,12 +2208,14 @@ export function applyPanelPlacement(
   // position from the current bounds + window size.
   //
   // If the group is already the sole occupant of a floating window, reuse that
-  // window (preserving its id, z-order, and -- when the user has taken manual
-  // control of its position via a drag, i.e. anchor was cleared -- its current
-  // position). This is what makes a later size-only re-placement (set_width /
-  // set_height) update the size without recreating the window or yanking a
-  // user-dragged panel back to its server anchor. A fresh float (group docked or
-  // unplaced) makes a new window as before.
+  // window (preserving its id and z-order, and touching only the size axes
+  // present in this bundle). A fresh float (group docked or unplaced) makes a
+  // new window as before. Note size-only bundles never reach this function --
+  // a no-position bundle only floats a still-UNPLACED group (see the
+  // floatIfUnplaced branch below) -- so every call here carries an explicit
+  // position command, and the position always applies (§8/D52: a fresh command
+  // applies to touched and untouched panels alike; protecting a user-dragged
+  // window from STALE positions is the gate's job, not this function's).
   const floatAtRequested = (reqX: number, reqY: number): void => {
     const loc = findGroupLocation(draft, groupId);
     const reusable =
@@ -2224,10 +2229,11 @@ export function applyPanelPlacement(
       win = reusable;
       // Per-axis contract (§8): a position-only float() must not disturb the
       // size axes. Only axes PRESENT in this bundle touch the reused window --
-      // an absent/gated-off width or height leaves the user's size alone.
-      if (placement.width !== null) win.width = placement.width;
-      if (placement.height !== null)
-        win.height = windowHeight(placement.height);
+      // an absent/gated-off width or height leaves the user's size alone. A
+      // fresh height CLEAR (null) returns the window to auto-height.
+      if (placement.width != null) win.width = placement.width;
+      if (placement.height !== undefined)
+        win.height = windowHeight(placement.height ?? undefined);
     } else {
       const result = floatGroup(
         draft,
@@ -2242,21 +2248,20 @@ export function applyPanelPlacement(
       win = draft.floating.find((w) => w.id === result.windowId);
       if (win === undefined) return;
     }
-    // A user-dragged window (anchor cleared) keeps its position on a size-only
-    // re-placement; otherwise (re)anchor and resolve against the live canvas.
-    const userOwnsPosition = win === reusable && win.anchor === undefined;
-    if (!userOwnsPosition) {
-      win.anchor = { x: reqX, y: reqY };
-      const resolved = resolveRequestedFloatPosition(
-        reqX,
-        reqY,
-        win.width,
-        pinnedPxOf(win.height) ?? 0,
-        bounds,
-      );
-      win.x = resolved.x;
-      win.y = resolved.y;
-    }
+    // A position command means "float HERE": always (re)anchor and resolve
+    // against the live canvas, including for a window the user has dragged
+    // (its anchor was cleared) -- the gate already decided this command is
+    // fresh, and a fresh float(x, y) applies unconditionally (§8/D52).
+    win.anchor = { x: reqX, y: reqY };
+    const resolved = resolveRequestedFloatPosition(
+      reqX,
+      reqY,
+      win.width,
+      pinnedPxOf(win.height) ?? 0,
+      bounds,
+    );
+    win.x = resolved.x;
+    win.y = resolved.y;
   };
 
   const position = placement.position;
@@ -2331,17 +2336,24 @@ export function applyPanelPlacement(
 
   // Size: width is region width when docked / window width when floating; height
   // only applies to a floating window. Neither op relocates the group, so one
-  // location lookup serves both.
-  if (placement.width !== null || placement.height !== null) {
+  // location lookup serves both. A height CLEAR (null) reverts a pinned window
+  // to auto-height; a width clear is a dock-level no-op (there is no stored
+  // "default width" here -- the control panel's theme-default width is applied
+  // by ControlPanelDock's own width effect).
+  if (placement.width != null || placement.height !== undefined) {
     const loc = findGroupLocation(draft, groupId);
-    if (loc?.kind === "docked" && placement.width !== null) {
+    if (loc?.kind === "docked" && placement.width != null) {
       draft = setRegionWidth(draft, loc.edge, placement.width);
     } else if (loc?.kind === "floating") {
-      if (placement.width !== null) {
+      if (placement.width != null) {
         draft = resizeWindow(draft, loc.windowId, placement.width);
       }
-      if (placement.height !== null) {
-        draft = resizeWindowHeight(draft, loc.windowId, placement.height);
+      if (placement.height !== undefined) {
+        draft = resizeWindowHeight(
+          draft,
+          loc.windowId,
+          placement.height ?? undefined,
+        );
       }
     }
   }

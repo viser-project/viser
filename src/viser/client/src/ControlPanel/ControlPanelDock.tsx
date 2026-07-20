@@ -417,11 +417,17 @@ function ControlPanelDockSync({
           pos.x === null &&
           pos.y === null;
         if (!defaultFloat) return placement;
-        const { x, y, width } = topRightGeometry();
+        // Canvas-INDEPENDENT top-right: negative x is the dock's "gap from
+        // the right edge" anchor form, re-resolved against the live canvas on
+        // every resize. topRightGeometry()'s absolute coords would freeze
+        // whatever canvas width existed at apply time -- an early apply
+        // during startup recorded 960px-era coords as a left-relative anchor
+        // and the panel sat mid-canvas once the viewport reached 1280px
+        // (caught by test_floating_panel_default_placement in CI).
         return {
           ...placement,
-          position: { kind: "float", x, y },
-          width: placement.width ?? width,
+          position: { kind: "float", x: -PANEL_PAD_PX, y: PANEL_PAD_PX },
+          width: placement.width ?? topRightGeometry().width,
         };
       },
       [topRightGeometry],

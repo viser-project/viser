@@ -154,7 +154,7 @@ export const HANDLE_BTN_EM = 1.7;
  * divider from the per-side gap is what keeps the flanks equal by
  * construction -- a flat divider constant drifted them apart (3px total
  * meant 1px flanks beside 3px edge gutters). */
-export const DOCK_GAP_PX = 2;
+const DOCK_GAP_PX = 2;
 
 /** Layout footprint of a divider between two panes: a boundary rule with the
  * standard gap on each flank (see DOCK_GAP_PX). */

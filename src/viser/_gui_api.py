@@ -493,13 +493,18 @@ class GuiApi:
         self,
         client_id: ClientId,
         transfer_uuid: str,
-        source_component_uuid: str,
+        # None on the wire for server->client downloads; upload transfers carry
+        # the upload button's uuid, but that handle may have been removed
+        # mid-transfer -- both degrade to the same no-op below.
+        source_component_uuid: str | None,
     ) -> None:
         """Finalize a completed upload by assembling the file contents and
         firing the handle's update callbacks. Shared by the normal multi-part
         path and the zero-byte path (which has no parts)."""
         state = self._current_file_upload_states.pop(transfer_uuid, None)
         if state is None:
+            return
+        if source_component_uuid is None:
             return
 
         handle = self._gui_input_handle_from_uuid.get(source_component_uuid, None)
@@ -533,7 +538,13 @@ class GuiApi:
     ) -> None:
         if message.transfer_uuid not in self._current_file_upload_states:
             return
-        assert message.source_component_uuid in self._gui_input_handle_from_uuid
+        # NOTE: the source component may legitimately be gone from
+        # `_gui_input_handle_from_uuid` here -- `button.remove()` during a
+        # multi-part upload pops it. Keep buffering and acking parts anyway
+        # (asserting would raise in an asyncio task: no ack, and the
+        # `_current_file_upload_states` entry would leak forever); completion
+        # degrades cleanly in `_finish_file_upload`, which pops the transfer
+        # state and then no-ops on the removed/missing handle.
 
         state = self._current_file_upload_states[message.transfer_uuid]
         state["parts"][message.part_index] = message.content
@@ -604,6 +615,8 @@ class GuiApi:
 
     def reset(self) -> None:
         """Reset the GUI."""
+        from ._viser import ViserServer
+
         root_container = self._container_handle_from_uuid["root"]
         while root_container._children:
             next(iter(root_container._children.values())).remove()
@@ -624,11 +637,22 @@ class GuiApi:
         # late joiners -- and connected clients -- get the default control panel
         # (a top-right float) instead of a layout the user never asked
         # for. Placement is write-only, so we just send; there's no state to read.
-        # Bump the main panel's layout counter once and stamp it on all three
+        # Bump the main panel's layout counter once and stamp it on all four
         # reset messages, so a connected client that had rearranged the control
         # panel still sees this deliberate reset (counter increment beats its
         # last-applied), while a normal reconnect replay -- same counter -- is
         # ignored. (None width/height clears any override -> default/theme.)
+        #
+        # SERVER-SCOPED ONLY: a client-scoped `client.gui.reset()` resets the
+        # GUI elements it owns but must NOT touch the main panel's placement.
+        # A client-scoped GuiApi mints its own `_layout_run_id`, so the four
+        # default CONTROL_PANEL_ID messages below would reach the client's
+        # placement gate with an unseen run_id -- which the gate treats as a
+        # fresh, deliberate command -- clobbering server-authored placement
+        # (e.g. undocking a `main_panel.dock_left()` control panel to the
+        # default top-right float, for that one client).
+        if not isinstance(self._owner, ViserServer):
+            return
         reset_counter = self._next_layout_counter()
         self._websock_interface.queue_message(
             _messages.GuiSetPanelPositionMessage(
@@ -2325,7 +2349,12 @@ class GuiApi:
             A handle that can be used to interact with the GUI element.
         """
 
-        value = cast("tuple[int, int, int]", _colors_to_int_tuple(initial_value))
+        value = cast(
+            "tuple[int, int, int]",
+            # warn_stacklevel: user -> deprecated_positional_shim wrapper ->
+            # add_rgb -> _colors_to_int_tuple.
+            _colors_to_int_tuple(initial_value, warn_stacklevel=4),
+        )
         uuid = _make_uuid()
         order = _apply_default_order(order)
         return GuiRgbHandle(
@@ -2373,7 +2402,12 @@ class GuiApi:
         Returns:
             A handle that can be used to interact with the GUI element.
         """
-        value = cast("tuple[int, int, int, int]", _colors_to_int_tuple(initial_value))
+        value = cast(
+            "tuple[int, int, int, int]",
+            # warn_stacklevel: user -> deprecated_positional_shim wrapper ->
+            # add_rgba -> _colors_to_int_tuple.
+            _colors_to_int_tuple(initial_value, warn_stacklevel=4),
+        )
         uuid = _make_uuid()
         order = _apply_default_order(order)
         return GuiRgbaHandle(

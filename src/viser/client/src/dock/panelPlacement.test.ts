@@ -38,8 +38,6 @@ const BOUNDS_1000 = {
 
 const EMPTY: PanelPlacement = {
   position: null,
-  width: null,
-  height: null,
   collapsed: null,
 };
 
@@ -698,7 +696,7 @@ describe("orphan groups are uncommittable from applyPanelPlacement", () => {
     layout = applyPanelPlacement(
       layout,
       ["p"],
-      { position: null, width: 333, height: null, collapsed: null },
+      { position: null, width: 333, collapsed: null },
       () => null,
       { canvasBounds: BOUNDS_1000 },
     );
@@ -807,7 +805,9 @@ describe("placement re-gathers tabs dragged out of the panel", () => {
 
 describe("re-placing an already-floating panel reuses its window", () => {
   const BOUNDS = { width: 1000, height: 800, leftInset: 0, rightInset: 0 };
-  const floatP = (l: DockLayout, height: number | null) =>
+  // An explicit position command (panel.float(x=80, y=80)), optionally with a
+  // size axis -- the bundle shape of a fresh float() call.
+  const floatP = (l: DockLayout, height?: number | null) =>
     applyPanelPlacement(
       l,
       ["p"],
@@ -820,15 +820,27 @@ describe("re-placing an already-floating panel reuses its window", () => {
       () => null,
       { canvasBounds: BOUNDS },
     );
+  // A size-only bundle, as the gate emits for a lone set_height: the position
+  // axis is stale/absent, so the bundle cannot move the panel by construction.
+  const sizeOnly = (l: DockLayout, height: number | null) =>
+    applyPanelPlacement(
+      l,
+      ["p"],
+      { position: null, height, collapsed: null },
+      () => null,
+      {
+        canvasBounds: BOUNDS,
+      },
+    );
 
   it("set_height keeps the SAME window id (no churn) and pins the height", () => {
-    let layout = floatP(emptyLayout(), null);
+    let layout = floatP(emptyLayout());
     expect(layout.floating).toHaveLength(1);
     const id = layout.floating[0].id;
     expect(pinnedPxOf(layout.floating[0].height)).toBeUndefined();
 
-    // set_height(450): same position+width, now a height.
-    layout = floatP(layout, 450);
+    // set_height(450) arrives alone (per-axis message; no position in the bundle).
+    layout = sizeOnly(layout, 450);
     expect(layout.floating).toHaveLength(1);
     expect(layout.floating[0].id).toBe(id); // window reused, not recreated
     expect(pinnedPxOf(layout.floating[0].height)).toBe(450);
@@ -836,32 +848,63 @@ describe("re-placing an already-floating panel reuses its window", () => {
   });
 
   it("a size-only re-placement does NOT move a user-dragged panel", () => {
-    let layout = floatP(emptyLayout(), null);
+    let layout = floatP(emptyLayout());
     const id = layout.floating[0].id;
     // User drags it elsewhere (moveWindow clears the anchor -> user-owned).
     layout = moveWindow(layout, id, 500, 400);
     expect(layout.floating[0].anchor).toBeUndefined();
     expect(layout.floating[0].x).toBe(500);
 
-    // Server set_height re-runs placement (position still float 80,80). The
-    // user's position must be preserved, not yanked back to the anchor.
-    layout = floatP(layout, 450);
+    // A lone set_height carries no position axis, so it cannot yank the
+    // window back to its old server anchor -- by construction.
+    layout = sizeOnly(layout, 450);
     expect(layout.floating[0].id).toBe(id);
     expect(pinnedPxOf(layout.floating[0].height)).toBe(450);
     expect(layout.floating[0].x).toBe(500);
     expect(layout.floating[0].y).toBe(400);
   });
+
+  it("a FRESH float(x, y) moves even a user-dragged window (D52)", () => {
+    let layout = floatP(emptyLayout());
+    const id = layout.floating[0].id;
+    layout = moveWindow(layout, id, 500, 400); // user takes control
+    expect(layout.floating[0].anchor).toBeUndefined();
+
+    // The server re-asserts by SENDING a new float(80, 80); the gate passed
+    // it as fresh, so it applies to touched and untouched panels alike --
+    // regression pin for the old userOwnsPosition guard that swallowed it.
+    layout = floatP(layout);
+    expect(layout.floating[0].id).toBe(id); // window still reused
+    expect(layout.floating[0].x).toBe(80);
+    expect(layout.floating[0].y).toBe(80);
+    expect(layout.floating[0].anchor).toEqual({ x: 80, y: 80 });
+  });
+
+  it("a fresh height CLEAR (null) reverts a pinned window to auto", () => {
+    let layout = floatP(emptyLayout());
+    layout = sizeOnly(layout, 450);
+    expect(pinnedPxOf(layout.floating[0].height)).toBe(450);
+
+    // gui.reset() sends height=None: "clears the override -> auto". null in
+    // the bundle is a command, not an absent axis (that is undefined).
+    layout = sizeOnly(layout, null);
+    expect(pinnedPxOf(layout.floating[0].height)).toBeUndefined();
+
+    // Same through the reuse branch (clear riding a fresh position command).
+    layout = sizeOnly(layout, 450);
+    layout = floatP(layout, null);
+    expect(pinnedPxOf(layout.floating[0].height)).toBeUndefined();
+  });
 });
 
 describe("re-placing an already-DOCKED panel applies the new size", () => {
-  const dockP = (l: DockLayout, width: number | null) =>
+  const dockP = (l: DockLayout, width?: number) =>
     applyPanelPlacement(
       l,
       ["p"],
       {
         position: { kind: "edge", edge: "right" },
         width,
-        height: null,
         collapsed: null,
       },
       () => null,
@@ -871,7 +914,7 @@ describe("re-placing an already-DOCKED panel applies the new size", () => {
     // Regression: re-applying the edge placement used to detach+recreate the
     // leaf, giving it a new node id, so the width reconciler treated it as a new
     // column and reset the width to default -- silently dropping set_width.
-    let layout = dockP(emptyLayout(), null);
+    let layout = dockP(emptyLayout());
     const nodeId = (
       findGroupLocation(layout, findPaneGroup(layout, "p")!) as {
         nodeId: string;

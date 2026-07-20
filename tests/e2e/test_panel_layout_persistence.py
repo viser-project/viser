@@ -196,12 +196,22 @@ def test_set_width_after_user_move_does_not_redock(
         f"set_width re-docked a user-moved panel (stale position re-applied): {after}"
     )
     # The width itself DID apply (to the floating window) -- the gate lets the
-    # fresh axis through while blocking the stale one.
-    width = viser_page.eval_on_selector(
-        "[data-floating-window]",
-        "e => Math.round(e.getBoundingClientRect().width)",
+    # fresh axis through while blocking the stale one. Measure THIS panel's
+    # window via its tab label: a bare [data-floating-window] first-match is
+    # order-fragile (windows render sorted by id, ids are lexicographic
+    # "window-<n>", and the control panel's float is also in the DOM), so it
+    # can silently measure the control panel instead.
+    width = viser_page.evaluate(
+        """() => {
+            const t = [...document.querySelectorAll('[data-dock-tab]')]
+                .find((e) => e.textContent.includes('Persisty'));
+            const w = t && t.closest('[data-floating-window]');
+            return w ? Math.round(w.getBoundingClientRect().width) : null;
+        }"""
     )
-    assert abs(width - 444) <= 2, f"width axis was not applied: {width}"
+    assert width is not None and abs(width - 444) <= 2, (
+        f"width axis was not applied: {width}"
+    )
 
 
 def test_removed_then_readded_panel_does_not_inherit_touched_state(

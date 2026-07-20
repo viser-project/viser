@@ -345,11 +345,11 @@ Code
            # Update mesh properties.
            with server.atomic():
                mesh_handle.batched_positions = positions
-               mesh_handle.batched_scales = scales
+               mesh_handle.batched_scales = scales.astype(np.float32)
                mesh_handle.batched_colors = colors
    
                axes_handle.batched_positions = positions
-               axes_handle.batched_scales = scales
+               axes_handle.batched_scales = scales.astype(np.float32)
    
            time.sleep(1.0 / 60.0)
    

@@ -1789,10 +1789,11 @@ class GuiSetPanelPositionMessage(
     uuid: str
     position: Union[EdgePlacement, SplitPlacement, FloatPlacement]
     counter: int
-    """Per-panel layout-update counter (bumped on EVERY placement call). The
-    client applies a replayed/late placement only if this exceeds the last it
-    applied for the panel -- OR the user hasn't manually moved the panel yet --
-    so a reconnect/re-run doesn't clobber a layout the user rearranged, while the
+    """Layout-update counter (bumped on EVERY placement call): one monotonic
+    counter per GuiApi run, shared across panels (D50). The client applies a
+    replayed/late placement only if this exceeds the last counter it applied
+    for that panel axis -- there is no user-touched arm (D52) -- so a
+    reconnect replay doesn't clobber a layout the user rearranged, while the
     server can still re-assert by calling a placement method again."""
     run_id: str
     """Random id of the GuiApi instance that sent this (fresh per server process

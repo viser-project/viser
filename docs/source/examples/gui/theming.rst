@@ -68,34 +68,47 @@ Code
        show_logo = server.gui.add_checkbox("Show logo", initial_value=True)
        show_share_button = server.gui.add_checkbox("Show share button", initial_value=True)
        brand_color = server.gui.add_rgb("Brand color", (230, 180, 30))
-       control_layout = server.gui.add_dropdown(
-           "Control layout", ("floating", "fixed", "collapsible")
-       )
        control_width = server.gui.add_dropdown(
            "Control width", ("small", "medium", "large"), initial_value="medium"
+       )
+       # Control-panel placement is now done with `main_panel` (the `control_layout`
+       # theme argument is deprecated). Dock the control panel to either edge, or
+       # leave it floating.
+       panel_dock = server.gui.add_dropdown(
+           "Control panel dock", ("floating", "left", "right")
        )
        synchronize = server.gui.add_button("Apply theme", icon=viser.Icon.CHECK)
    
        def synchronize_theme() -> None:
            server.gui.configure_theme(
                titlebar_content=titlebar_theme if titlebar.value else None,
-               control_layout=control_layout.value,
                control_width=control_width.value,
                dark_mode=dark_mode.value,
                show_logo=show_logo.value,
                show_share_button=show_share_button.value,
                brand_color=brand_color.value,
            )
+           if panel_dock.value == "left":
+               server.gui.main_panel.dock_left()
+               dock_code = "server.gui.main_panel.dock_left()"
+           elif panel_dock.value == "right":
+               server.gui.main_panel.dock_right()
+               dock_code = "server.gui.main_panel.dock_right()"
+           else:  # "floating"
+               # Negative coords are gaps from the far edge, so this floats the panel
+               # back to the top-right corner (its original spot).
+               server.gui.main_panel.float(x=-15, y=15)
+               dock_code = "server.gui.main_panel.float(x=-15, y=15)"
            gui_theme_code.content = f"""
                ### Current applied theme
                ```
                server.gui.configure_theme(
                    titlebar_content={"titlebar_content" if titlebar.value else None},
-                   control_layout="{control_layout.value}",
                    control_width="{control_width.value}",
                    dark_mode={dark_mode.value},
                    show_logo={show_logo.value},
                    show_share_button={show_share_button.value},
                    brand_color={brand_color.value},
                )
+               {dock_code}
                ```

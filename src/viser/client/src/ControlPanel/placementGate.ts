@@ -44,8 +44,11 @@ import type {
 import type { PanelPlacement } from "../dock/layoutOps";
 
 export interface GatedPlacement {
-  /** Bundle for applyPanelPlacement: fresh axes carry their value, gated-off or
-   * absent axes are null (= "don't touch this axis"). */
+  /** Bundle for applyPanelPlacement: fresh axes carry their value -- including
+   * a fresh width/height NULL, the server's explicit "clear the override"
+   * command, which must survive into the bundle. Gated-off or absent axes are
+   * null for position/collapsed and undefined for width/height (= "don't touch
+   * this axis"). */
   placement: PanelPlacement;
   /** The (counter, runId) stamps of the axes included above, to record as
    * applied after the layout op commits. */
@@ -88,8 +91,11 @@ export function gatePlacement(
   return {
     placement: {
       position: position?.value ?? null,
-      width: width?.value ?? null,
-      height: height?.value ?? null,
+      // Width/height are tri-state in the bundle: undefined = gated off, null
+      // = a FRESH clear (`?? null` here would silently conflate the two and
+      // drop clear-to-default commands).
+      width: width === undefined ? undefined : width.value,
+      height: height === undefined ? undefined : height.value,
       collapsed: collapsed?.value ?? null,
     },
     applied: appliedOut,
