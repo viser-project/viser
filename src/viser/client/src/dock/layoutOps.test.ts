@@ -2124,6 +2124,10 @@ describe("(9) resizeRegionColumns", () => {
       [[302.17, 102.38], [23.55, 91.5], [68.92, 365.4], 28.17],
       // Target above sumMax with a finite max mix.
       [[207.46, 15.21], [65.28, 115.61], [118.42, 352.14], 1480.67],
+      // Mixed Infinity/finite maxes with a positive stranded leftover:
+      // proportional-to-room redistribution divided Infinity/Infinity into
+      // NaN and poisoned every width.
+      [[300, 300, 10], [50, 50, 400], [80, 80, Infinity], 600],
     ];
     for (const [init, mins, maxs, target] of cases) {
       const w = resizeRegionColumns(init, mins, maxs, target);

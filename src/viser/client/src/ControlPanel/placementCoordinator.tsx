@@ -109,6 +109,10 @@ export function usePlacementCoordinator(
       lastResetNonce.current = layoutResetNonce;
       for (const state of bookkeeping.current.values())
         state.appliedPlacement = REAPPLY;
+      // Undrained collapses die with the reset: REAPPLY re-queues every
+      // panel's full bundle from scratch, and a pre-reset entry surviving
+      // into that fresh drain would apply against the wrong baseline.
+      pendingCollapse.current.clear();
     }
     // Drop bookkeeping for panels that no longer exist (uuid-keyed, so a
     // removed panel's entry is dead; the layout-tracking store prunes its own
@@ -240,7 +244,15 @@ export function usePlacementCoordinator(
       // re-runs when dock.panes changes.
       const ready = tabIds.every((cid) => dock.panes[cid] !== undefined);
       if (!ready) {
-        positionDeferred = true;
+        // Hold the collapse drain only when this panel actually has a
+        // placement bundle that could still queue a conflicting collapse.
+        // Readiness is render-driven and resolves within a frame; but a
+        // panel with NO placement entry can never contribute a collapse
+        // axis, so letting it hold the drain would only add starvation
+        // risk (e.g. a malformed panel whose tab ids never register) with
+        // zero correctness benefit. If an entry arrives later, the store
+        // change re-runs the pass and re-evaluates.
+        if (entry !== undefined) positionDeferred = true;
         return;
       }
 

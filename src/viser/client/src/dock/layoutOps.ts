@@ -341,6 +341,17 @@ export function resizeRegionColumns(
     const room = widths.map((w, i) =>
       leftover > 0 ? maxWidths[i] - w : w - minWidths[i],
     );
+    // Infinite headroom (an Infinity max while growing) absorbs the whole
+    // leftover, split by the columns' shares -- proportional-to-room math
+    // would divide Infinity/Infinity into NaN and poison every width.
+    const inf = room.map((r) => r === Infinity);
+    if (inf.some(Boolean)) {
+      const infShare = share.reduce((s, w, i) => s + (inf[i] ? w : 0), 0);
+      for (let i = 0; i < n; i++) {
+        if (inf[i]) widths[i] += (leftover * share[i]) / infShare;
+      }
+      break;
+    }
     const roomTotal = room.reduce((s, r) => s + Math.max(r, 0), 0);
     if (roomTotal <= 0) break;
     const take = Math.min(Math.abs(leftover), roomTotal);
