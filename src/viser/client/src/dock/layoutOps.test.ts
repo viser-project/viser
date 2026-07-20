@@ -28,6 +28,7 @@ import {
   MIN_PANEL_WIDTH_PX,
   MIN_REGION_GRAB_PX,
   PaneId,
+  clamp,
   emptyLayout,
   isRegionPackedOn,
 } from "./types";
@@ -2133,7 +2134,7 @@ describe("(9) resizeRegionColumns", () => {
       const w = resizeRegionColumns(init, mins, maxs, target);
       const sumMin = mins.reduce((a, b) => a + b, 0);
       const sumMax = maxs.reduce((a, b) => a + b, 0);
-      const clamped = Math.min(Math.max(target, sumMin), sumMax);
+      const clamped = clamp(target, sumMin, sumMax);
       expect(w.reduce((a, b) => a + b, 0)).toBeCloseTo(clamped, 3);
       w.forEach((x, i) => {
         expect(x).toBeGreaterThanOrEqual(mins[i] - 1e-6);

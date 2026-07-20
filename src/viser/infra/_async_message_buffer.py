@@ -173,11 +173,14 @@ class AsyncMessageBuffer:
         coalescing semantics."""
         # The replay boundary: everything at or below this id is backlog the
         # client must consume before the marker; everything above is live.
+        # (Captured HERE eagerly; the cursor registration is inside the
+        # generator body instead -- a generator that is never iterated, e.g.
+        # a producer that observes buffer.done before its first __anext__,
+        # never runs its body OR its finally, so an eager registration here
+        # would leak. An unstarted generator has consumed nothing and needs
+        # no cursor: purging under a not-yet-registered new client is this
+        # GC's intended behavior.)
         backlog_last_id = self.message_counter - 1
-        # Register this connection's consumption cursor (see generator_cursors)
-        # for the garbage collector's deletion floor; dropped when the
-        # generator exits.
-        self.generator_cursors[client_id] = -1
         return self._window_loop(client_id, backlog_last_id, backlog_done_message)
 
     async def _window_loop(
@@ -188,109 +191,98 @@ class AsyncMessageBuffer:
     ) -> AsyncGenerator[Sequence[Message], None]:
         last_sent_id = -1
         backlog_done_pending = backlog_done_message is not None
-        flush_wait_cell: list[asyncio.Task] = [
-            self.event_loop.create_task(self.flush_event.wait())
-        ]
+        flush_wait = self.event_loop.create_task(self.flush_event.wait())
+        # Register this connection's consumption cursor (see
+        # generator_cursors) for the garbage collector's deletion floor;
+        # inside the try so the finally that drops it is guaranteed to pair.
+        self.generator_cursors[client_id] = last_sent_id
         try:
-            async for window in self._windows(
-                client_id,
-                last_sent_id,
-                backlog_last_id,
-                backlog_done_pending,
-                backlog_done_message,
-                flush_wait_cell,
-            ):
-                yield window
+            while not self.done:
+                window: List[Message] = []
+                most_recent_message_id = self.message_counter - 1
+                # D51: the end-of-replay marker goes IMMEDIATELY after the
+                # connection's captured backlog. Cap the pre-marker windows at
+                # the boundary so a live message pushed since connect cannot
+                # slip in front of the marker; the live tail drains in the
+                # next window.
+                if backlog_done_pending:
+                    most_recent_message_id = min(
+                        most_recent_message_id, backlog_last_id
+                    )
+                while (
+                    last_sent_id < most_recent_message_id
+                    and len(window) < self.max_window_size
+                    # We should only be polling for new messages if we aren't
+                    # in an atomic block.
+                    and self.atomic_counter == 0
+                ):
+                    last_sent_id += 1
+                    if self.persistent_messages:
+                        message = self.message_from_id.get(last_sent_id, None)
+                    else:
+                        # If we're not persisting messages, remove them from
+                        # the buffer.
+                        with self.buffer_lock:
+                            message = self.message_from_id.pop(last_sent_id, None)
+                            if message is not None:
+                                redundancy_key = message.redundancy_key()
+                                self.id_from_redundancy_key.pop(redundancy_key, None)
+
+                    if (
+                        message is not None
+                        and message.excluded_self_client != client_id
+                    ):
+                        window.append(message)
+
+                # Advance this connection's consumption cursor: everything at
+                # or below last_sent_id is either in `window` (about to be
+                # sent) or skipped, so the GC may delete it without this
+                # client losing it.
+                self.generator_cursors[client_id] = last_sent_id
+
+                if (
+                    backlog_done_pending
+                    and last_sent_id >= backlog_last_id
+                    and self.atomic_counter == 0
+                ):
+                    # Backlog fully drained (or empty at connect): mark the
+                    # end of the replay in-stream, ordered before any live
+                    # message that lands after this window.
+                    backlog_done_pending = False
+                    assert backlog_done_message is not None
+                    window.append(backlog_done_message)
+
+                if len(window) > 0:
+                    # Yield a window!
+                    yield window
+                else:
+                    # Wait for a new message to come in.
+                    await self.message_event.wait()
+                    self.message_event.clear()
+
+                # Add a delay if either (a) we failed to yield or (b) there's
+                # currently no messages to send.
+                most_recent_message_id = self.message_counter - 1
+                if len(window) == 0 or most_recent_message_id == last_sent_id:
+                    done, pending = await asyncio.wait(
+                        [flush_wait], timeout=self.window_duration_sec
+                    )
+                    del pending
+                    if flush_wait in done and not self.done:
+                        self.flush_event.clear()
+                        flush_wait = self.event_loop.create_task(
+                            self.flush_event.wait()
+                        )
         finally:
             # Drop this connection's GC cursor: a departed client must not
             # hold the deletion floor down forever.
             self.generator_cursors.pop(client_id, None)
-            # And reap the flush waiter: _windows re-binds its LOCAL
-            # flush_wait variable when it re-arms, so cancel whichever task
-            # is current via the shared cell -- an un-awaited Event.wait()
+            # And reap the CURRENT flush waiter (a plain local, so the latest
+            # re-armed task is the one cancelled): an un-awaited Event.wait()
             # task otherwise lingers until a future flush, accumulating one
             # per quiet disconnect.
-            cell_task = flush_wait_cell[0]
-            cell_task.cancel()
+            flush_wait.cancel()
             try:
-                await cell_task
+                await flush_wait
             except asyncio.CancelledError:
                 pass
-
-    async def _windows(
-        self,
-        client_id: int,
-        last_sent_id: int,
-        backlog_last_id: int,
-        backlog_done_pending: bool,
-        backlog_done_message: Message | None,
-        flush_wait_cell: list[asyncio.Task],
-    ) -> AsyncGenerator[Sequence[Message], None]:
-        # The current flush waiter lives in a shared one-element cell so the
-        # caller's finally can reap whichever task is live at teardown.
-        flush_wait = flush_wait_cell[0]
-        while not self.done:
-            window: List[Message] = []
-            most_recent_message_id = self.message_counter - 1
-            # D51: the end-of-replay marker goes IMMEDIATELY after the
-            # connection's captured backlog. Cap the pre-marker windows at the
-            # boundary so a live message pushed since connect cannot slip in
-            # front of the marker; the live tail drains in the next window.
-            if backlog_done_pending:
-                most_recent_message_id = min(most_recent_message_id, backlog_last_id)
-            while (
-                last_sent_id < most_recent_message_id
-                and len(window) < self.max_window_size
-                # We should only be polling for new messages if we aren't in an atomic block.
-                and self.atomic_counter == 0
-            ):
-                last_sent_id += 1
-                if self.persistent_messages:
-                    message = self.message_from_id.get(last_sent_id, None)
-                else:
-                    # If we're not persisting messages, remove them from the buffer.
-                    with self.buffer_lock:
-                        message = self.message_from_id.pop(last_sent_id, None)
-                        if message is not None:
-                            redundancy_key = message.redundancy_key()
-                            self.id_from_redundancy_key.pop(redundancy_key, None)
-
-                if message is not None and message.excluded_self_client != client_id:
-                    window.append(message)
-
-            # Advance this connection's consumption cursor: everything at or
-            # below last_sent_id is either in `window` (about to be sent) or
-            # skipped, so the GC may delete it without this client losing it.
-            self.generator_cursors[client_id] = last_sent_id
-
-            if (
-                backlog_done_pending
-                and last_sent_id >= backlog_last_id
-                and self.atomic_counter == 0
-            ):
-                # Backlog fully drained (or empty at connect): mark the end of
-                # the replay in-stream, ordered before any live message that
-                # lands after this window.
-                backlog_done_pending = False
-                assert backlog_done_message is not None
-                window.append(backlog_done_message)
-
-            if len(window) > 0:
-                # Yield a window!
-                yield window
-            else:
-                # Wait for a new message to come in.
-                await self.message_event.wait()
-                self.message_event.clear()
-
-            # Add a delay if either (a) we failed to yield or (b) there's currently no messages to send.
-            most_recent_message_id = self.message_counter - 1
-            if len(window) == 0 or most_recent_message_id == last_sent_id:
-                done, pending = await asyncio.wait(
-                    [flush_wait], timeout=self.window_duration_sec
-                )
-                del pending
-                if flush_wait in done and not self.done:
-                    self.flush_event.clear()
-                    flush_wait = self.event_loop.create_task(self.flush_event.wait())
-                    flush_wait_cell[0] = flush_wait

@@ -32,8 +32,8 @@
 // and this reconciliation -- run on every applyOp commit -- is the only
 // writer. Layouts that bypassed the ops (test literals, injected layouts)
 // simply lack the field and get defaults here; a wholesale injection
-// (api.replace, server-built layouts) establishes the semantic from the
-// newColumnPx defaults.
+// (api.replace, server-built layouts) establishes the semantic from the source-window/
+// default widths in `intended`.
 
 import { collectLeafGroups, minRegionWidth } from "./layoutOps";
 import {
@@ -54,25 +54,16 @@ import {
 // weights' sum -- can never be driven below the columns' summed minimum; the
 // render-time MIN_CANVAS_PX guard keeps a canvas sliver visible.
 
-/** Default pixel width for a column newly joining a docked region. D3: the
- * region grows by the newcomer's width -- which is the dragged floating
- * window's width whenever the column's groups came from one (every drag-dock
- * path floats first, so `prev.floating` still holds the window across the
- * op). Width contract (D40): a railed column's weight is always its P8
- * restore width, so a column born railed from a window stores the window's
- * width too -- expanding it later must render the window's width, not a 36px
- * sliver (the strip's fixed 36px is accounted at render time by every
- * aggregator, never stored as a weight). Columns with no source window
- * (injected/server-built layouts) take the region default as their restore
- * width, railed or not. */
-function newColumnPx(col: DockColumn, prev: DockLayout): number {
-  return (
-    sourceWindowPx(col, prev) ?? Math.max(DEFAULT_REGION_PX, minRegionWidth())
-  );
-}
-
 /** The dragged source window's width for a column whose groups came from one
- * (min-floored), or null when the column has no source window. */
+ * (min-floored), or null when the column has no source window. This is D3's
+ * newcomer width: the region grows by the dragged floating window's width
+ * (every drag-dock path floats first, so `prev.floating` still holds the
+ * window across the op). Width contract (D40): a railed column's weight is
+ * always its P8 restore width, so a column born railed from a window stores
+ * the window's width too -- expanding it later must render the window's
+ * width, not a 36px sliver. Columns with NO source window (injected/
+ * server-built layouts) take the region default as their restore width,
+ * railed or not -- the caller's fallback. */
 function sourceWindowPx(col: DockColumn, prev: DockLayout): number | null {
   const groups = new Set(collectLeafGroups(col));
   for (const win of prev.floating) {
@@ -230,10 +221,11 @@ export function reconcileRegionWidths(
       ) {
         return nextRW[edge];
       }
-      // New column joining existing content, no source window: the region
-      // default -- stored as the restore width even when it lands railed
-      // (D40).
-      return newColumnPx(c, prev);
+      // New column joining existing content, no source window (checked
+      // above): the region default -- stored as the restore width even when
+      // it lands railed (D40). The source-window scan already ran
+      // above and returned null.
+      return Math.max(DEFAULT_REGION_PX, minRegionWidth());
     });
     // Set the columns' weights to their pixel widths so each renders at
     // `intended` px within the summed region width -- EVERY column, lone

@@ -258,20 +258,16 @@ export function DockManager({
       }
     }
     lastPaneSigs.current = sigs;
-    // Growth valve: stamps for panes long gone from every container are
-    // dead weight (bounded by panes-ever-seen per mount). Prune only
-    // entries BOTH absent from every container AND older than a stamp
-    // horizon: a just-removed pane's stamp must survive long enough for any
-    // held command targeting it to observe the overtake (held drains
-    // resolve within a few coordinator passes; 64 stamp-increments is far
-    // past that). Without the horizon, a removal stamped on THIS commit was
-    // pruned in the same breath once the map crossed the size threshold.
-    if (paneStamps.current.size > 256) {
-      const horizon = paneStampCounter.current - 64;
-      for (const [paneId, stamp] of paneStamps.current)
-        if (!sigs.has(paneId) && stamp < horizon)
-          paneStamps.current.delete(paneId);
-    }
+    // Deliberately NO pruning of paneStamps: a held collapse command's
+    // overtake check requires its target panes' stamps to PERSIST until the
+    // drain observes them, and any fixed-size or fixed-horizon prune can
+    // delete a just-stamped removal before that happens (a pruned pane reads
+    // stamp 0, silently REVIVING the overtaken command -- P6 violation; two
+    // pruning designs fell to review on exactly this). The map is bounded by
+    // panes-ever-seen per mount -- server-authored tab uuids, dozens in
+    // practice at ~tens of bytes each -- so unbounded-in-theory is fine in
+    // reality; correct pruning would need drain-awareness that does not
+    // belong in this layer.
     onCommitRef.current?.(prev, next, programmatic);
   }, []);
 

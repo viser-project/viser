@@ -67,6 +67,25 @@ def _set_pose_vector(
     websock.queue_message(make_message(value_cast))
 
 
+def _queue_empty_interaction_bindings(
+    api: SceneApi, name: str, *, had_click: bool, had_drag: bool
+) -> None:
+    """Broadcast empty click/drag binding tuples for a node whose name-keyed
+    interaction state is being retired, so a re-created node with the same
+    name doesn't inherit the prior node's filters from the persistent buffer.
+    Shared by ``remove()`` and the same-name-replacement supersede in
+    ``_make`` so the two can't drift; emits only -- callers own any
+    ``drag_cb`` bookkeeping."""
+    if had_click:
+        api._websock_interface.queue_message(
+            _messages.SetSceneNodeClickBindingsMessage(name, ())
+        )
+    if had_drag:
+        api._websock_interface.queue_message(
+            _messages.SetSceneNodeDragBindingsMessage(name, ())
+        )
+
+
 @dataclasses.dataclass(frozen=True)
 class SceneClickEvent:
     """Event passed to scene-level click callbacks (``SceneApi.on_click``)."""
@@ -286,28 +305,21 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             #    NEW node. Purge them (mirrors the remove()/GC sweep); the
             #    new node's own state is queued below.
             api._websock_interface.get_message_buffer().remove_from_buffer(
-                lambda m: (
-                    m.lifecycle_phase in ("update_dict", "update_simple")
-                    and m.entity_type == "scene"
-                    and m.entity_id_field is not None
-                    and getattr(m, m.entity_id_field, None) == name
-                )
-                or (m.lifecycle_phase is None and getattr(m, "name", None) == name),
+                lambda m: m.targets_entity_state("scene", name),
             )
             # 3. LIVE clients keep interaction bindings across a same-name
             #    create (deliberate, for reconnect replays), so the buffer
             #    purge alone leaves the replacement clickable/draggable on
             #    already-connected clients -- firing events with no matching
             #    callbacks. Broadcast explicit empty bindings, exactly as
-            #    remove() does.
-            if len(old_handle._impl.click_cb) > 0:
-                api._websock_interface.queue_message(
-                    _messages.SetSceneNodeClickBindingsMessage(name, ())
-                )
-            if old_handle._impl.drag_cb:
-                api._websock_interface.queue_message(
-                    _messages.SetSceneNodeDragBindingsMessage(name, ())
-                )
+            #    remove() does. The inert old handle's callbacks stay: an
+            #    in-flight drag on the old node must still dispatch its end.
+            _queue_empty_interaction_bindings(
+                api,
+                name,
+                had_click=len(old_handle._impl.click_cb) > 0,
+                had_drag=bool(old_handle._impl.drag_cb),
+            )
 
         # Send message.
         assert isinstance(message, _messages.Message)
@@ -436,19 +448,15 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             if handle is None:
                 continue
             impl = handle._impl
-            if len(impl.click_cb) > 0:
-                # Empty the per-node click-binding set so a re-created
-                # node with the same name doesn't inherit the prior
-                # node's modifier filters from the persistent buffer.
-                api._websock_interface.queue_message(
-                    _messages.SetSceneNodeClickBindingsMessage(node_name, ())
-                )
-            if impl.drag_cb:
-                if not api._is_drag_active_for(node_name):
-                    impl.drag_cb.clear()
-                api._websock_interface.queue_message(
-                    _messages.SetSceneNodeDragBindingsMessage(node_name, ())
-                )
+            had_drag = bool(impl.drag_cb)
+            if had_drag and not api._is_drag_active_for(node_name):
+                impl.drag_cb.clear()
+            _queue_empty_interaction_bindings(
+                api,
+                node_name,
+                had_click=len(impl.click_cb) > 0,
+                had_drag=had_drag,
+            )
 
         # Tear down each descendant from both dicts and let it release any
         # subclass-specific registries via the polymorphic ``_on_remove`` hook.

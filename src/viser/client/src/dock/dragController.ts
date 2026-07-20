@@ -606,16 +606,15 @@ export function useDragController(deps: DragControllerDeps) {
           // not stay a drop target (P1) -- the floating analog of the docked
           // column's scroll clip.
           const stackScrollEl = groupEl.closest("[data-dock-scroll]");
+          const containerClipped = clipToContainer(g.rect);
           const cellRect =
-            stackScrollEl === null
-              ? clipToContainer(g.rect)
-              : clipToContainer(g.rect) === null
-                ? null
-                : clipRect(
-                    clipToContainer(g.rect)!,
-                    stackScrollEl.getBoundingClientRect(),
-                    8,
-                  );
+            containerClipped === null || stackScrollEl === null
+              ? containerClipped
+              : clipRect(
+                  containerClipped,
+                  stackScrollEl.getBoundingClientRect(),
+                  8,
+                );
           if (cellRect === null) return;
           g.rect = cellRect;
           clipChromeTo(g, cellRect);

@@ -1070,8 +1070,12 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
 
             # Second pass: purge updates whose target entity has a tombstone,
             # including scene-adjacent Set*Message variants that target a
-            # removed scene node by `name` but aren't entity-declared. Skip
-            # the walk entirely when nothing was tombstoned this round.
+            # removed scene node by `name` but aren't entity-declared. The
+            # per-message taxonomy is Message.targets_entity_state -- the ONE
+            # definition, shared with the same-name-replacement purge -- with
+            # set-based id matching inlined here so the sweep stays a single
+            # pass over the buffer rather than per-name predicate calls.
+            # Skip the walk entirely when nothing was tombstoned this round.
             if removed_ids_by_type:
                 for msg_id, message in buffer.message_from_id.items():
                     phase = message.lifecycle_phase

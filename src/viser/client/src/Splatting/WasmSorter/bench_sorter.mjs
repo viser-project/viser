@@ -88,7 +88,9 @@ if (argB) {
     const a = rowsA[i],
       b = rowsB[i];
     if (a.bad || b.bad) {
-      console.log(`  n=${(a.n / 1e6).toFixed(2)}M g=${a.groups}  (verify failed)`);
+      console.log(
+        `  n=${(a.n / 1e6).toFixed(2)}M g=${a.groups}  (verify failed)`,
+      );
       continue;
     }
     const speedup = a.median / b.median;

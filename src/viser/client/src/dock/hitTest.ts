@@ -1135,10 +1135,13 @@ export function hitTest(
 
   // 3c. Content area: split bands (docked) / snap-below band (floating);
   // otherwise merge (append a tab).
-  const contentTop = strip !== null ? strip.bottom : r.top;
-  const ch = r.bottom - contentTop;
+  // (Named distinctly from GroupTarget.contentTop, which is the true cell
+  // top under a parent-handle rect extension -- this is the content AREA's
+  // top, below the strip.)
+  const contentAreaTop = strip !== null ? strip.bottom : r.top;
+  const ch = r.bottom - contentAreaTop;
   const rx = (clientX - r.left) / r.width;
-  const ry = ch > 0 ? (clientY - contentTop) / ch : 0;
+  const ry = ch > 0 ? (clientY - contentAreaTop) / ch : 0;
 
   // Above/below get a narrower band (smaller fraction, pixel-capped) so the
   // merge zone dominates the content area; left/right use the wider fraction,

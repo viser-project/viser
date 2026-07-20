@@ -177,6 +177,26 @@ class Message(abc.ABC):
     # the attribute without static errors.
     include_in_scene_serialization: ClassVar[bool]
 
+    def targets_entity_state(self, entity_type: str, entity_id: str) -> bool:
+        """True for messages that carry PER-ENTITY state for the given entity:
+        update messages declared against it (``update_dict``/``update_simple``
+        with a matching entity id), plus phase-less name-keyed messages whose
+        ``name`` matches (e.g. scene interaction-binding messages). The ONE
+        definition of this taxonomy -- the same-name-replacement purge and the
+        connect-time garbage collector's sweep must never disagree on it."""
+        if self.lifecycle_phase in ("update_dict", "update_simple"):
+            return (
+                self.entity_type == entity_type
+                and self.entity_id_field is not None
+                and getattr(self, self.entity_id_field, None) == entity_id
+            )
+        if self.lifecycle_phase is None:
+            # Name-keyed adjacency exists only for SCENE nodes (interaction
+            # bindings etc.); other entity families key by uuid fields that
+            # never collide with a scene name.
+            return entity_type == "scene" and getattr(self, "name", None) == entity_id
+        return False
+
     def as_serializable_dict(
         self, binary_buffers: Optional[List[memoryview]] = None
     ) -> Dict[str, Any]:
