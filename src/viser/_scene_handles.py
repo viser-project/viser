@@ -268,6 +268,36 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             if isinstance(_field_value, np.ndarray):
                 setattr(message.props, _field_name, _field_value.copy())
 
+        # Same-name REPLACEMENT (explicitly supported: re-adding a node under
+        # an existing name swaps it out). The previous handle is SUPERSEDED:
+        old_handle = api._handle_from_node_name.get(name)
+        if old_handle is not None and not old_handle._impl.removed:
+            # 1. The old Python handle goes inert. Removal resolves by NAME,
+            #    so a later old_handle.remove() would otherwise find the
+            #    REPLACEMENT in the registry and delete it (marking the new
+            #    handle removed) out from under the caller.
+            old_handle._impl.removed = True
+            old_handle._on_remove()
+            # 2. The old node's per-axis updates must not replay onto the new
+            #    node: the new create replaces the old one in the persistent
+            #    buffer via its redundancy key, but pose/visibility/props
+            #    updates and name-keyed binding messages live in separate
+            #    namespaces -- a late joiner would apply the OLD pose to the
+            #    NEW node. Purge them (mirrors the remove()/GC sweep); the
+            #    new node's own state is queued below.
+            api._websock_interface.get_message_buffer().remove_from_buffer(
+                lambda m: (
+                    m.lifecycle_phase in ("update_dict", "update_simple")
+                    and m.entity_type == "scene"
+                    and m.entity_id_field is not None
+                    and getattr(m, m.entity_id_field, None) == name
+                )
+                or (
+                    m.lifecycle_phase is None
+                    and getattr(m, "name", None) == name
+                ),
+            )
+
         # Send message.
         assert isinstance(message, _messages.Message)
         api._websock_interface.queue_message(message)
@@ -285,6 +315,22 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
 
         out.wxyz = wxyz
         out.position = position
+        if old_handle is not None:
+            # Replacement: force-broadcast the new node's pose even when it
+            # equals the fresh-handle default (the setters above no-op on
+            # equality). A live client that applied the OLD node's pose keeps
+            # it across the re-add (the client preserves node state on
+            # same-name creates for reconnect replays), so the reset must
+            # arrive as an explicit message -- and it replaces any stale pose
+            # entry in the buffer via its redundancy key.
+            from ._scene_api import cast_vector
+
+            api._websock_interface.queue_message(
+                _messages.SetOrientationMessage(name, cast_vector(out._impl.wxyz, 4))
+            )
+            api._websock_interface.queue_message(
+                _messages.SetPositionMessage(name, cast_vector(out._impl.position, 3))
+            )
 
         # Toggle visibility to make sure we send a
         # SetSceneNodeVisibilityMessage to the client.

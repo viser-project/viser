@@ -852,3 +852,47 @@ def test_add_panel_visible_kwarg() -> None:
         assert _props(panel).visible is False
     finally:
         server.stop()
+
+
+def test_add_tab_racing_remove_never_leaks_container() -> None:
+    """add_tab() racing remove() must never leak an orphan tab container: the
+    removed check, tab registration, and append run atomically under the
+    panel lifecycle lock, so either the remover drains the new tab or the
+    adder raises. Regression: a bare (unlocked) check let a tab register into
+    _container_handle_from_uuid for a panel that no longer existed -- a live
+    container that silently accepted children forever."""
+    import threading
+
+    server = _make_server()
+    try:
+        gui = server.gui
+        for _ in range(40):
+            panel = gui.add_panel()
+            barrier = threading.Barrier(2)
+            added: list = []
+
+            def adder() -> None:
+                barrier.wait()
+                try:
+                    added.append(panel.add_tab("T"))
+                except RuntimeError:
+                    pass  # remove() won the race: correct outcome.
+
+            def remover() -> None:
+                barrier.wait()
+                panel.remove()
+
+            t1 = threading.Thread(target=adder)
+            t2 = threading.Thread(target=remover)
+            t1.start(), t2.start()
+            t1.join(timeout=10), t2.join(timeout=10)
+            assert not t1.is_alive() and not t2.is_alive(), "deadlock"
+
+            # No orphan: any tab the adder created was drained by the
+            # remover, so nothing owned by this dead panel is registered.
+            for tab in added:
+                assert tab._id not in gui._container_handle_from_uuid, (
+                    "orphan tab container leaked for a removed panel"
+                )
+    finally:
+        server.stop()

@@ -733,22 +733,28 @@ class _TabContainerMixin:
 
     def add_tab(self, label: str, icon: IconName | None = None) -> GuiTabHandle:
         """Add a tab. Returns a handle we can use to add GUI elements to it."""
-        # Guard before mutating: otherwise we'd half-register a tab (appended to
-        # _tab_handles + the container map via GuiTabHandle.__post_init__) before
-        # the first props write below hits the removed-guard and raises, leaving
-        # inconsistent state + a leaked container entry. Applies to both mixers
-        # (tab group and standalone panel).
-        if self._impl.removed:
-            raise RuntimeError(f"Cannot add a tab to a removed {type(self).__name__}.")
+        # The removed CHECK, the tab's registration (GuiTabHandle.__post_init__
+        # writes the container map), the append, and the props rebuild run as
+        # ONE atomic step under the panel lifecycle lock. Two hazards:
+        # - Half-registration: guarding after mutating would leak a container
+        #   entry when the props write hit the removed-guard and raised.
+        # - A CONCURRENT remove() interleaving after a bare check: the remover
+        #   tombstones + snapshots an empty tab list, then this append lands
+        #   -- registering a live container entry for a panel that no longer
+        #   exists, which silently accepts children forever. remove() takes
+        #   the same lock for its tombstone, so the pair serializes.
+        # Applies to both mixers (tab group and standalone panel).
+        with self._impl.gui_api._panel_lifecycle_lock:
+            if self._impl.removed:
+                raise RuntimeError(
+                    f"Cannot add a tab to a removed {type(self).__name__}."
+                )
 
-        uuid = _make_uuid()
-
-        # We may want to make this thread-safe in the future.
-        out = GuiTabHandle(_parent=self, _id=uuid, _label=label, _icon=icon)
-
-        self._tab_handles.append(out)
-        self._rebuild_tab_props()
-        return out
+            uuid = _make_uuid()
+            out = GuiTabHandle(_parent=self, _id=uuid, _label=label, _icon=icon)
+            self._tab_handles.append(out)
+            self._rebuild_tab_props()
+            return out
 
     def _rebuild_tab_props(self) -> None:
         """Recompute the three wire tuples from ``_tab_handles`` -- the single

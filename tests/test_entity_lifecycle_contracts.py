@@ -396,9 +396,9 @@ def test_gc_never_deletes_messages_a_slow_client_has_not_consumed() -> None:
         # not delete past the slow client's cursor.
         broadcast.message_event.clear()
         server._run_garbage_collector()
-        assert any(
-            m.lifecycle_phase == "remove" for m in buffer.values()
-        ), "GC deleted a tombstone a slow client had not consumed"
+        assert any(m.lifecycle_phase == "remove" for m in buffer.values()), (
+            "GC deleted a tombstone a slow client had not consumed"
+        )
 
         # Once the slow client catches up, the tombstone becomes purgeable.
         broadcast.generator_cursors[999] = max(buffer.keys())
@@ -406,3 +406,42 @@ def test_gc_never_deletes_messages_a_slow_client_has_not_consumed() -> None:
         assert not any(m.lifecycle_phase == "remove" for m in buffer.values())
     finally:
         broadcast.generator_cursors.pop(999, None)
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_same_name_replacement_supersedes_old_handle() -> None:
+    """Re-adding a node under an existing name (explicitly supported) must
+    SUPERSEDE the old handle: (1) the old node's pose updates must not replay
+    onto the new node (a late joiner would put the replacement at the old
+    pose), and (2) the old handle's remove() must not delete the replacement
+    (removal resolves by name)."""
+    import warnings as _warnings
+
+    server = viser.ViserServer()
+    buffer = server._websock_server._broadcast_buffer.message_from_id
+
+    old = server.scene.add_frame("/replace_me", position=(1.0, 2.0, 3.0))
+    new = server.scene.add_box("/replace_me", dimensions=(1, 1, 1), color=(255, 0, 0))
+
+    # (1) No stale pose in the replay buffer: the surviving SetPosition for
+    # the name is the REPLACEMENT's (origin), not the old node's.
+    poses = [
+        m
+        for m in buffer.values()
+        if type(m).__name__ == "SetPositionMessage" and m.name == "/replace_me"
+    ]
+    assert [tuple(m.position) for m in poses] == [(0.0, 0.0, 0.0)], poses
+
+    # (2) The old handle is inert: removing it warns and leaves the
+    # replacement alive and usable.
+    with _warnings.catch_warnings(record=True) as caught:
+        _warnings.simplefilter("always")
+        old.remove()
+    assert any("already removed" in str(w.message) for w in caught)
+    assert not new._impl.removed
+    assert server.scene._handle_from_node_name["/replace_me"] is new
+    new.position = (5.0, 0.0, 0.0)  # still writable
+
+    # And the replacement's own remove still works.
+    new.remove()
+    assert "/replace_me" not in server.scene._handle_from_node_name
