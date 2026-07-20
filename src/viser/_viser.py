@@ -1089,8 +1089,7 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                         name = getattr(message, "name", None)
                         if (
                             name is not None
-                            and name
-                            in removed_ids_by_type.get("scene", ())
+                            and name in removed_ids_by_type.get("scene", ())
                             and deletable(msg_id)
                         ):
                             remove_message_ids.append(msg_id)

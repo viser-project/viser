@@ -193,8 +193,12 @@ class AsyncMessageBuffer:
         ]
         try:
             async for window in self._windows(
-                client_id, last_sent_id, backlog_last_id, backlog_done_pending,
-                backlog_done_message, flush_wait_cell,
+                client_id,
+                last_sent_id,
+                backlog_last_id,
+                backlog_done_pending,
+                backlog_done_message,
+                flush_wait_cell,
             ):
                 yield window
         finally:
@@ -233,9 +237,7 @@ class AsyncMessageBuffer:
             # boundary so a live message pushed since connect cannot slip in
             # front of the marker; the live tail drains in the next window.
             if backlog_done_pending:
-                most_recent_message_id = min(
-                    most_recent_message_id, backlog_last_id
-                )
+                most_recent_message_id = min(most_recent_message_id, backlog_last_id)
             while (
                 last_sent_id < most_recent_message_id
                 and len(window) < self.max_window_size

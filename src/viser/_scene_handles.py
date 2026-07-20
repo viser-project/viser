@@ -292,10 +292,7 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
                     and m.entity_id_field is not None
                     and getattr(m, m.entity_id_field, None) == name
                 )
-                or (
-                    m.lifecycle_phase is None
-                    and getattr(m, "name", None) == name
-                ),
+                or (m.lifecycle_phase is None and getattr(m, "name", None) == name),
             )
             # 3. LIVE clients keep interaction bindings across a same-name
             #    create (deliberate, for reconnect replays), so the buffer

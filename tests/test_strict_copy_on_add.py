@@ -64,9 +64,7 @@ def test_point_cloud_strict_copy_on_add() -> None:
         handle = server.scene.add_point_cloud(
             "/pc", points, colors, precision="float32"
         )
-        _assert_independent(
-            server, "/pc", handle, {"points": points, "colors": colors}
-        )
+        _assert_independent(server, "/pc", handle, {"points": points, "colors": colors})
     finally:
         server.stop()
 
@@ -79,9 +77,7 @@ def test_gaussian_splats_strict_copy_on_add() -> None:
         covariances = np.tile(np.eye(3, dtype=np.float32) * 0.01, (n, 1, 1))
         rgbs = np.random.rand(n, 3).astype(np.float32)
         opacities = np.random.rand(n, 1).astype(np.float32)
-        server.scene.add_gaussian_splats(
-            "/gs", centers, covariances, rgbs, opacities
-        )
+        server.scene.add_gaussian_splats("/gs", centers, covariances, rgbs, opacities)
         wire = _queued_props(server, "/gs")
         assert wire is not None
         buffer_before = wire.buffer.copy()

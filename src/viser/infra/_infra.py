@@ -596,9 +596,7 @@ class WebsockServer(WebsockMessageHandler):
                 # its connection.
                 for task in producer_consumer_tasks:
                     task.cancel()
-                await asyncio.gather(
-                    *producer_consumer_tasks, return_exceptions=True
-                )
+                await asyncio.gather(*producer_consumer_tasks, return_exceptions=True)
                 # We use a sentinel value to signal that the client producer thread
                 # should exit.
                 #
