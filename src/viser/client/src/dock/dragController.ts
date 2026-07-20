@@ -238,8 +238,7 @@ export function useDragController(deps: DragControllerDeps) {
           paneId,
           rect: t.getBoundingClientRect(),
           // A tab whose pane isn't in the model (mid-commit DOM) keeps its
-          // DOM position -- the old behavior, and harmless: the op guards
-          // its own bounds.
+          // DOM position -- harmless: the op guards its own bounds.
           index: index === -1 ? tabs.length : index,
         });
       });
@@ -516,9 +515,9 @@ export function useDragController(deps: DragControllerDeps) {
         }
         if (bottom - top < 8) return; // no usable band (P11)
         g.rect = new DOMRect(g.rect.left, top, g.rect.width, bottom - top);
-        // One hit surface: keep hitRect in lockstep with the final rect
-        // (the clip used to write both; the extension must be part of the
-        // hittable box or the handle band still misses).
+        // One hit surface: keep hitRect in lockstep with the final rect --
+        // the extension must be part of the hittable box or the handle band
+        // misses.
         g.hitRect = g.rect;
         // Strip/tabs live in the CONTENT box, never the handle band: a
         // scrolled-out strip must not offer tab insertions, and a partly
@@ -528,8 +527,8 @@ export function useDragController(deps: DragControllerDeps) {
       // Outer-gutter reach: the region's D54 edge gutter (and any sub-pixel
       // slack) sits between the outermost column and the screen edge, so a
       // pointer flush against the screen hit NO target -- a dead sliver
-      // exactly where "dock a new outermost column" slams naturally (user
-      // report; P5: chrome must not be a hole). Extend the outermost
+      // exactly where "dock a new outermost column" slams naturally (P5:
+      // chrome must not be a hole). Extend the outermost
       // column's HIT rect to the container edge; `rect` stays put, so rx>1
       // resolves to the outer side band's columnInsert with its normal
       // on-screen hint. Only leaves within the gutter's width of the edge

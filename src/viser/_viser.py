@@ -1034,12 +1034,11 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         buffer = self._websock_server._broadcast_buffer
         with buffer.buffer_lock:
             # Deletion floor: only messages EVERY active window generator has
-            # already consumed may be purged. The old guard skipped GC while
-            # the shared message_event was set, but that event is not a
-            # consumption watermark -- any one generator clears it, while a
-            # BACKPRESSURED client's cursor can sit arbitrarily far behind.
-            # Deleting a remove-tombstone such a client hadn't consumed made
-            # it retain the entity forever (its cursor then skipped the hole),
+            # already consumed may be purged. Do NOT gate on message_event --
+            # it is not a consumption watermark (any one generator clears
+            # it), so a BACKPRESSURED client's cursor can sit arbitrarily far
+            # behind, and purging a remove-tombstone it hadn't consumed makes
+            # it retain the entity forever (its cursor skips the hole),
             # permanently diverging it from other clients. With no active
             # generators everything is purgeable: a connecting client's
             # generator registers only when its producer starts, and a fresh

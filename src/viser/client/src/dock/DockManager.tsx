@@ -262,12 +262,11 @@ export function DockManager({
     // overtake check requires its target panes' stamps to PERSIST until the
     // drain observes them, and any fixed-size or fixed-horizon prune can
     // delete a just-stamped removal before that happens (a pruned pane reads
-    // stamp 0, silently REVIVING the overtaken command -- P6 violation; two
-    // pruning designs fell to review on exactly this). The map is bounded by
-    // panes-ever-seen per mount -- server-authored tab uuids, dozens in
-    // practice at ~tens of bytes each -- so unbounded-in-theory is fine in
-    // reality; correct pruning would need drain-awareness that does not
-    // belong in this layer.
+    // stamp 0, silently REVIVING the overtaken command -- P6 violation). The
+    // map is bounded by panes-ever-seen per mount -- server-authored tab
+    // uuids, dozens in practice at ~tens of bytes each -- so
+    // unbounded-in-theory is fine in reality; correct pruning would need
+    // drain-awareness that does not belong in this layer.
     onCommitRef.current?.(prev, next, programmatic);
   }, []);
 
@@ -427,9 +426,9 @@ export function DockManager({
   const setStackCollapsed = React.useCallback(
     (stack: GroupId[], collapsed: boolean) => {
       // A USER op (like railColumn / collapseRegion): the window header's
-      // collapse toggle. Previously this ran through the context's
-      // api.apply, which raises the programmatic flag -- so the gesture was
-      // invisible to ownership arbitration (P6).
+      // collapse toggle. Commits through applyOp, NOT api.apply -- api.apply
+      // raises the programmatic flag, hiding the gesture from ownership
+      // arbitration (P6).
       applyOp(
         collapsed
           ? ops.minimizeStack(layoutRef.current, stack)

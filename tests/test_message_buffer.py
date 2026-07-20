@@ -95,6 +95,7 @@ def test_disconnect_releases_gc_cursor_promptly() -> None:
                 timeout=5.0
             )
 
+        baseline_tasks = _tasks_now()
         with sync_playwright() as p:
             browser = p.chromium.launch()
             for _ in range(3):
@@ -107,8 +108,12 @@ def test_disconnect_releases_gc_cursor_promptly() -> None:
         while time.monotonic() < deadline and broadcast.generator_cursors:
             time.sleep(0.05)
         counts = [_tasks_now() for _ in (time.sleep(0.2), time.sleep(0.2), None)]
-        assert min(counts) <= 5, (
-            f"event-loop task set grew across quiet disconnects: {counts}"
+        # Relative bound: compare against the steady-state before the cycles
+        # (absolute thresholds flake across environments). One leaked flush
+        # waiter per cycle would show as growth >= 3.
+        assert min(counts) <= baseline_tasks + 1, (
+            f"event-loop task set grew across quiet disconnects: "
+            f"{counts} vs baseline {baseline_tasks}"
         )
     finally:
         server.stop()

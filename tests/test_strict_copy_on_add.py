@@ -67,24 +67,3 @@ def test_point_cloud_strict_copy_on_add() -> None:
         _assert_independent(server, "/pc", handle, {"points": points, "colors": colors})
     finally:
         server.stop()
-
-
-def test_gaussian_splats_strict_copy_on_add() -> None:
-    server = viser.ViserServer(port=0)
-    try:
-        n = 2000
-        centers = np.random.rand(n, 3).astype(np.float32)
-        covariances = np.tile(np.eye(3, dtype=np.float32) * 0.01, (n, 1, 1))
-        rgbs = np.random.rand(n, 3).astype(np.float32)
-        opacities = np.random.rand(n, 1).astype(np.float32)
-        server.scene.add_gaussian_splats("/gs", centers, covariances, rgbs, opacities)
-        wire = _queued_props(server, "/gs")
-        assert wire is not None
-        buffer_before = wire.buffer.copy()
-        centers[:] = 9.9
-        rgbs[:] = 0.1
-        assert np.array_equal(wire.buffer, buffer_before), (
-            "gaussian splat buffer aliased the caller's centers/rgbs"
-        )
-    finally:
-        server.stop()

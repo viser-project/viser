@@ -1177,8 +1177,8 @@ export function hitTest(
     // the top/bottom splits. Checked before the vertical bands, or the
     // corners resolve vertically and the side band's usable run shrinks;
     // worst on merge-suppressed targets, whose extra top band ate the whole
-    // upper corner (user report: docking beside the control panel only
-    // worked near the vertical middle, unlike every other panel).
+    // upper corner (docking beside one then only worked near the vertical
+    // middle).
     if (rx < hBand) return sideColumnInsert(g.ctx.edge, g.ctx.nodeId, "left");
     if (rx > 1 - hBand)
       return sideColumnInsert(g.ctx.edge, g.ctx.nodeId, "right");

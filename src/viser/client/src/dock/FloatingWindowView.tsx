@@ -98,10 +98,8 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
   // (multi-group windows; a single-group window's grip bar toggle sets the
   // same flag). Plain collapse/expand of the window -- the old "minimize
   // all / expand all" pair is simply this toggle.
-  // A USER gesture, so it commits through the dock's user path (NOT
-  // api.apply, which raises the programmatic flag and hid this collapse from
-  // ownership arbitration -- a stale server command could then re-flip it,
-  // violating P6).
+  // A USER gesture: routed through setStackCollapsed (the dock's user
+  // path), not api.apply, so ownership arbitration sees it (P6).
   const toggleWindowCollapsed = () =>
     dock.setStackCollapsed(win.stack, !collapsed);
   // The pinned px height, or undefined when the window auto-sizes to content.

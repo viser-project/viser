@@ -612,12 +612,9 @@ class WebsockServer(WebsockMessageHandler):
                 self._client_state_from_id.pop(client_id, None)
                 self._live_connections.pop(client_id, None)
                 # Drop this connection's broadcast GC cursor HERE, not only in
-                # the generator's own finally: gather() propagates the closed
-                # consumer's exception without cancelling the idle broadcast
-                # producer, which can stay parked awaiting a message -- its
-                # finally then runs only when the next broadcast wakes it. On
-                # a quiet server the stale cursor would pin the GC deletion
-                # floor and accumulate across reconnects. pop() is idempotent
+                # the generator's own finally: the idle broadcast producer can
+                # stay parked (same zombie hazard as the explicit-tasks note
+                # above), so its finally may not have run. pop() is idempotent
                 # with the generator's own cleanup, whichever runs first.
                 self._broadcast_buffer.generator_cursors.pop(client_id, None)
                 total_connections -= 1
