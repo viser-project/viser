@@ -449,18 +449,26 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
                 continue
             impl = handle._impl
             had_drag = bool(impl.drag_cb)
+            # Snapshot the active-drag state BEFORE the emits: a concurrent
+            # drag-end can retire the active marker while the emits run, and
+            # a post-emit-only check would then clear the callbacks the end
+            # dispatch is about to snapshot -- losing the user's required
+            # on_drag_end.
+            drag_active = api._is_drag_active_for(node_name)
             _queue_empty_interaction_bindings(
                 api,
                 node_name,
                 had_click=len(impl.click_cb) > 0,
                 had_drag=had_drag,
             )
-            # Clear AFTER both emits (the callbacks snapshot above keys the
-            # emits): if an emit raises mid-remove, the handle keeps its
-            # callback state, so a RETRY re-emits everything -- clearing
-            # first left a retry reading had_drag=False and the stale
-            # non-empty drag binding persistent forever.
-            if had_drag and not api._is_drag_active_for(node_name):
+            # Clear AFTER both emits (the snapshots above key them): if an
+            # emit raises mid-remove, the handle keeps its callback state, so
+            # a RETRY re-emits everything -- clearing first left a retry
+            # reading had_drag=False and the stale non-empty drag binding
+            # persistent forever. Cleared only when no drag was in flight
+            # either before OR after the emits (belt and braces for a drag
+            # retiring mid-emit).
+            if had_drag and not drag_active and not api._is_drag_active_for(node_name):
                 impl.drag_cb.clear()
 
         # Tear down each descendant from both dicts and let it release any
