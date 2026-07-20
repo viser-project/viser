@@ -259,12 +259,18 @@ export function DockManager({
     }
     lastPaneSigs.current = sigs;
     // Growth valve: stamps for panes long gone from every container are
-    // dead weight (bounded by panes-ever-seen per mount). Prune only past a
-    // generous size so a just-removed pane's stamp survives long enough for
-    // any held command targeting it to observe the overtake.
+    // dead weight (bounded by panes-ever-seen per mount). Prune only
+    // entries BOTH absent from every container AND older than a stamp
+    // horizon: a just-removed pane's stamp must survive long enough for any
+    // held command targeting it to observe the overtake (held drains
+    // resolve within a few coordinator passes; 64 stamp-increments is far
+    // past that). Without the horizon, a removal stamped on THIS commit was
+    // pruned in the same breath once the map crossed the size threshold.
     if (paneStamps.current.size > 256) {
-      for (const paneId of paneStamps.current.keys())
-        if (!sigs.has(paneId)) paneStamps.current.delete(paneId);
+      const horizon = paneStampCounter.current - 64;
+      for (const [paneId, stamp] of paneStamps.current)
+        if (!sigs.has(paneId) && stamp < horizon)
+          paneStamps.current.delete(paneId);
     }
     onCommitRef.current?.(prev, next, programmatic);
   }, []);

@@ -44,6 +44,10 @@ def test_replay_marker_precedes_live_messages() -> None:
     assert seen.index("backlog-2") < seen.index("MARKER")
 
 
+async def _noop_count() -> int:
+    return len(asyncio.all_tasks())
+
+
 def test_disconnect_releases_gc_cursor_promptly() -> None:
     """A disconnected client's broadcast GC cursor must be released at
     teardown, not when the next broadcast happens to wake a zombie producer:
@@ -77,6 +81,34 @@ def test_disconnect_releases_gc_cursor_promptly() -> None:
             time.sleep(0.05)
         assert not broadcast.generator_cursors, (
             f"stale GC cursors after disconnect: {broadcast.generator_cursors}"
+        )
+
+        # And the connection's tasks are fully reaped: repeated quiet
+        # connect/disconnect cycles must not grow the event loop's task set
+        # (one flush-event waiter leaked per cycle before teardown awaited
+        # the generator's close).
+        loop = server._websock_server._background_event_loop
+        assert loop is not None
+
+        def _tasks_now() -> int:
+            return asyncio.run_coroutine_threadsafe(_noop_count(), loop).result(
+                timeout=5.0
+            )
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            for _ in range(3):
+                page = browser.new_page()
+                page.goto(f"http://localhost:{server.get_port()}")
+                page.wait_for_timeout(300)
+                page.close()
+            browser.close()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and broadcast.generator_cursors:
+            time.sleep(0.05)
+        counts = [_tasks_now() for _ in (time.sleep(0.2), time.sleep(0.2), None)]
+        assert min(counts) <= 5, (
+            f"event-loop task set grew across quiet disconnects: {counts}"
         )
     finally:
         server.stop()

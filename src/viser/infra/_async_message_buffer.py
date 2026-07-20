@@ -188,17 +188,30 @@ class AsyncMessageBuffer:
     ) -> AsyncGenerator[Sequence[Message], None]:
         last_sent_id = -1
         backlog_done_pending = backlog_done_message is not None
-        flush_wait = self.event_loop.create_task(self.flush_event.wait())
+        flush_wait_cell: list[asyncio.Task] = [
+            self.event_loop.create_task(self.flush_event.wait())
+        ]
         try:
             async for window in self._windows(
                 client_id, last_sent_id, backlog_last_id, backlog_done_pending,
-                backlog_done_message, flush_wait,
+                backlog_done_message, flush_wait_cell,
             ):
                 yield window
         finally:
             # Drop this connection's GC cursor: a departed client must not
             # hold the deletion floor down forever.
             self.generator_cursors.pop(client_id, None)
+            # And reap the flush waiter: _windows re-binds its LOCAL
+            # flush_wait variable when it re-arms, so cancel whichever task
+            # is current via the shared cell -- an un-awaited Event.wait()
+            # task otherwise lingers until a future flush, accumulating one
+            # per quiet disconnect.
+            cell_task = flush_wait_cell[0]
+            cell_task.cancel()
+            try:
+                await cell_task
+            except asyncio.CancelledError:
+                pass
 
     async def _windows(
         self,
@@ -207,8 +220,11 @@ class AsyncMessageBuffer:
         backlog_last_id: int,
         backlog_done_pending: bool,
         backlog_done_message: Message | None,
-        flush_wait: asyncio.Task,
+        flush_wait_cell: list[asyncio.Task],
     ) -> AsyncGenerator[Sequence[Message], None]:
+        # The current flush waiter lives in a shared one-element cell so the
+        # caller's finally can reap whichever task is live at teardown.
+        flush_wait = flush_wait_cell[0]
         while not self.done:
             window: List[Message] = []
             most_recent_message_id = self.message_counter - 1
@@ -275,3 +291,4 @@ class AsyncMessageBuffer:
                 if flush_wait in done and not self.done:
                     self.flush_event.clear()
                     flush_wait = self.event_loop.create_task(self.flush_event.wait())
+                    flush_wait_cell[0] = flush_wait

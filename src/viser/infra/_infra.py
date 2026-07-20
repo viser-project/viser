@@ -854,32 +854,41 @@ async def _message_producer(
         client_id, backlog_done_message=backlog_done_message
     )
     zstd = zstandard.ZstdCompressor(level=1)
-    while not buffer.done:
-        try:
-            outgoing = await window_generator.__anext__()
-        except StopAsyncIteration:
-            break
+    try:
+        while not buffer.done:
+            try:
+                outgoing = await window_generator.__anext__()
+            except StopAsyncIteration:
+                break
 
-        binary_buffers: list[memoryview] = []
-        serialized_messages = tuple(
-            message.as_serializable_dict(binary_buffers) for message in outgoing
-        )
-        inner = msgspec.msgpack.encode(
-            {
-                "messages": serialized_messages,
-                "timestampSec": time.perf_counter(),
-                "binaryBufferLengths": tuple(b.nbytes for b in binary_buffers),
-            }
-        )
-        compressed = zstd.compress(inner)
+            binary_buffers: list[memoryview] = []
+            serialized_messages = tuple(
+                message.as_serializable_dict(binary_buffers) for message in outgoing
+            )
+            inner = msgspec.msgpack.encode(
+                {
+                    "messages": serialized_messages,
+                    "timestampSec": time.perf_counter(),
+                    "binaryBufferLengths": tuple(b.nbytes for b in binary_buffers),
+                }
+            )
+            compressed = zstd.compress(inner)
 
-        parts: list[bytes | memoryview] = [
-            len(inner).to_bytes(8, "little"),
-            len(compressed).to_bytes(8, "little"),
-            compressed,
-        ]
-        _append_aligned_buffers(parts, binary_buffers, 16 + len(compressed))
-        await websocket.send(b"".join(parts))
+            parts: list[bytes | memoryview] = [
+                len(inner).to_bytes(8, "little"),
+                len(compressed).to_bytes(8, "little"),
+                compressed,
+            ]
+            _append_aligned_buffers(parts, binary_buffers, 16 + len(compressed))
+            await websocket.send(b"".join(parts))
+    finally:
+        # Close the generator DETERMINISTICALLY. A cancellation delivered at
+        # `websocket.send` leaves the generator suspended at its yield --
+        # exiting the async-for does NOT close it, so its finallys (the GC
+        # cursor pop, the flush-waiter cancel) would otherwise run only at a
+        # later garbage-collection pass. aclose() raises GeneratorExit at the
+        # yield and runs them now, before this producer task completes.
+        await window_generator.aclose()
 
 
 async def _message_consumer(
