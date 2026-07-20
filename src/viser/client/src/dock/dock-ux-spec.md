@@ -1132,6 +1132,15 @@ Unadjudicated; do not resolve in code without recording the decision in
 - **Expanded panel inserted into a collapsed window**: collapse the
   newcomer (container rule — what code does consistently today) or
   expand the window? Adjudicate before wiring the snap zones.
+- **Escape-cancel vs mid-gesture server placement.** A gesture cancel
+  restores the pre-gesture snapshot wholesale, so a fresh placement
+  command that arrived (and recorded its marks) DURING the gesture is
+  rolled back and will not replay — the command is silently lost. The
+  drag path documents this as an accepted tradeoff; a real fix needs
+  gesture-scoped transactions (revert only the gesture-owned delta,
+  rebased onto concurrent programmatic commits). Rare in practice: it
+  requires a server command landing inside an active drag that the
+  user then Escapes.
 - **T3 — The bar breaks the handle anatomy.** A bar has no centered
   pill; its labels sit left; face bars replace the anatomy wholesale.
   The rail cap — the same scope, collapsed differently — keeps the pill
@@ -1327,7 +1336,17 @@ consuming paragraphs.
   the divergence for split-anchored panels, whose collapse queues a
   pass later than their neighbors') — sorted by counter within each
   run (cross-run conflicts keep arrival order — counters aren't
-  comparable across runs).
+  comparable across runs). Held entries add ONE arbitration rule on
+  top of the D52 marks (which gate at RECORD time, before the hold): a
+  queued command dies if, between queue and drain, a USER gesture
+  changed its own target panel's container signature — the container's
+  collapse flag or which container holds the panel's panes (P6: the
+  immediate path would have let that later gesture win; deferral must
+  not resurrect the older intent). Scoped strictly per panel — an
+  unrelated panel's gesture, a geometry-only resize/move, or a tab
+  activation never invalidates a held command — and it is a property
+  of the QUEUE alone, not a revival of the deleted gesture-inference
+  layer: unheld commands still apply on marks only.
 - **D51** — reconnects are an explicit phase, never inferred. The
   server injects a per-connection end-of-replay marker
   (`ReplayDoneMessage`) after its buffer backlog; until it arrives the
