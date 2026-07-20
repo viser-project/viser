@@ -258,6 +258,14 @@ export function DockManager({
       }
     }
     lastPaneSigs.current = sigs;
+    // Growth valve: stamps for panes long gone from every container are
+    // dead weight (bounded by panes-ever-seen per mount). Prune only past a
+    // generous size so a just-removed pane's stamp survives long enough for
+    // any held command targeting it to observe the overtake.
+    if (paneStamps.current.size > 256) {
+      for (const paneId of paneStamps.current.keys())
+        if (!sigs.has(paneId)) paneStamps.current.delete(paneId);
+    }
     onCommitRef.current?.(prev, next, programmatic);
   }, []);
 

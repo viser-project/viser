@@ -297,6 +297,20 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
                     and getattr(m, "name", None) == name
                 ),
             )
+            # 3. LIVE clients keep interaction bindings across a same-name
+            #    create (deliberate, for reconnect replays), so the buffer
+            #    purge alone leaves the replacement clickable/draggable on
+            #    already-connected clients -- firing events with no matching
+            #    callbacks. Broadcast explicit empty bindings, exactly as
+            #    remove() does.
+            if len(old_handle._impl.click_cb) > 0:
+                api._websock_interface.queue_message(
+                    _messages.SetSceneNodeClickBindingsMessage(name, ())
+                )
+            if old_handle._impl.drag_cb:
+                api._websock_interface.queue_message(
+                    _messages.SetSceneNodeDragBindingsMessage(name, ())
+                )
 
         # Send message.
         assert isinstance(message, _messages.Message)

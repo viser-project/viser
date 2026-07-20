@@ -551,10 +551,17 @@ class WebsockServer(WebsockMessageHandler):
                     " messages"
                 )
 
-            try:
-                # For each client: infinite loop over producers (which send messages)
-                # and consumers (which receive messages).
-                await asyncio.gather(
+            # For each client: infinite loop over producers (which send
+            # messages) and consumers (which receive messages). Explicit
+            # tasks, because gather() does NOT cancel siblings when one
+            # raises: the consumer's ConnectionClosed left the broadcast
+            # producer parked on message_event.wait() as a zombie -- its
+            # window generator's finally (which releases the GC cursor) then
+            # ran only when the NEXT broadcast woke it, and on a quiet server
+            # the stale cursor pinned the GC deletion floor indefinitely.
+            producer_consumer_tasks = [
+                asyncio.create_task(coro)
+                for coro in (
                     _message_producer(
                         connection,
                         client_state.message_buffer,
@@ -570,6 +577,9 @@ class WebsockServer(WebsockMessageHandler):
                     ),
                     _message_consumer(connection, handle_incoming, message_class),
                 )
+            ]
+            try:
+                await asyncio.gather(*producer_consumer_tasks)
             except (
                 websockets.exceptions.ConnectionClosedOK,
                 websockets.exceptions.ConnectionClosedError,
@@ -580,6 +590,15 @@ class WebsockServer(WebsockMessageHandler):
                 # and disconnect callbacks always fire.
                 pass
             finally:
+                # Tear down the surviving siblings NOW (cancellation runs the
+                # broadcast window generator's finally, releasing its GC
+                # cursor deterministically); await them so no task outlives
+                # its connection.
+                for task in producer_consumer_tasks:
+                    task.cancel()
+                await asyncio.gather(
+                    *producer_consumer_tasks, return_exceptions=True
+                )
                 # We use a sentinel value to signal that the client producer thread
                 # should exit.
                 #
@@ -594,6 +613,15 @@ class WebsockServer(WebsockMessageHandler):
                 # leak the client. `pop(..., None)` keeps this idempotent.
                 self._client_state_from_id.pop(client_id, None)
                 self._live_connections.pop(client_id, None)
+                # Drop this connection's broadcast GC cursor HERE, not only in
+                # the generator's own finally: gather() propagates the closed
+                # consumer's exception without cancelling the idle broadcast
+                # producer, which can stay parked awaiting a message -- its
+                # finally then runs only when the next broadcast wakes it. On
+                # a quiet server the stale cursor would pin the GC deletion
+                # floor and accumulate across reconnects. pop() is idempotent
+                # with the generator's own cleanup, whichever runs first.
+                self._broadcast_buffer.generator_cursors.pop(client_id, None)
                 total_connections -= 1
 
                 # Disconnection callbacks.

@@ -28,7 +28,15 @@ def test_keydown_with_input_target_is_ignored(
     def _(event: viser.SceneClickEvent) -> None:
         del event
 
-    viser_page.wait_for_function("() => window.__viserPointer != null", timeout=10_000)
+    # Wait for the click-filter BINDING to reach the client, not just for the
+    # pointer API to exist (it exists from page load): the assertions below
+    # depend on the registered filter, and evaluating before the server->
+    # client binding message lands made this flake by machine timing.
+    viser_page.wait_for_function(
+        "() => window.__viserPointer != null"
+        " && window.__viserPointer.hasSceneClickFilter()",
+        timeout=10_000,
+    )
     out = viser_page.evaluate(
         """
         () => {
@@ -66,7 +74,15 @@ def test_keydown_outside_form_control_updates_modifier(
     def _(event: viser.SceneClickEvent) -> None:
         del event
 
-    viser_page.wait_for_function("() => window.__viserPointer != null", timeout=10_000)
+    # Wait for the click-filter BINDING to reach the client, not just for the
+    # pointer API to exist (it exists from page load): the assertions below
+    # depend on the registered filter, and evaluating before the server->
+    # client binding message lands made this flake by machine timing.
+    viser_page.wait_for_function(
+        "() => window.__viserPointer != null"
+        " && window.__viserPointer.hasSceneClickFilter()",
+        timeout=10_000,
+    )
     out = viser_page.evaluate(
         """
         () => {
@@ -98,7 +114,15 @@ def test_focused_textarea_blocks_modifier_update(
     def _(event: viser.SceneClickEvent) -> None:
         del event
 
-    viser_page.wait_for_function("() => window.__viserPointer != null", timeout=10_000)
+    # Wait for the click-filter BINDING to reach the client, not just for the
+    # pointer API to exist (it exists from page load): the assertions below
+    # depend on the registered filter, and evaluating before the server->
+    # client binding message lands made this flake by machine timing.
+    viser_page.wait_for_function(
+        "() => window.__viserPointer != null"
+        " && window.__viserPointer.hasSceneClickFilter()",
+        timeout=10_000,
+    )
     out = viser_page.evaluate(
         """
         () => {

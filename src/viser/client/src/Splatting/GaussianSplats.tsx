@@ -162,6 +162,11 @@ function SplatRendererImpl() {
     groupIndices: Uint32Array;
   } | null>(null);
   const isFirstRenderRef = React.useRef(true);
+  // Set when mesh props are recreated (size-changing buffer update): the
+  // fresh transform texture starts UNMASKED, so the per-frame loop must
+  // invalidate its raw change-detection baseline and re-write + re-mask +
+  // re-upload. (A flag, because the baseline ref is declared further down.)
+  const transformBaselineStaleRef = React.useRef(false);
   const initializedBufferTextureRef = React.useRef(false);
 
   // Force component to re-render when mesh props change.
@@ -255,6 +260,14 @@ function SplatRendererImpl() {
       oldProps.geometry.dispose();
       oldProps.material.dispose();
       oldProps.textureT_camera_groups.dispose();
+
+      // The fresh transform texture starts UNMASKED: flag the per-frame
+      // loop to invalidate its raw change-detection baseline so it
+      // re-writes, re-masks (hidden groups to 1e10), and re-uploads. With
+      // an unchanged group count and a stationary camera, a stale baseline
+      // matched the raw transforms exactly -- nothing fired, and hidden
+      // splat groups became visible after the buffer update.
+      transformBaselineStaleRef.current = true;
 
       // Update worker with new buffer.
       postToWorker({
@@ -430,9 +443,11 @@ function SplatRendererImpl() {
 
       // Ensure prevRowMajorT_camera_groups has correct size.
       if (
+        transformBaselineStaleRef.current ||
         prevRowMajorT_camera_groupsRef.current.length !==
-        meshProps.rowMajorT_camera_groups.length
+          meshProps.rowMajorT_camera_groups.length
       ) {
+        transformBaselineStaleRef.current = false;
         prevRowMajorT_camera_groupsRef.current =
           meshProps.rowMajorT_camera_groups.slice().fill(0);
       }
