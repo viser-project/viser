@@ -948,7 +948,14 @@ sizing subset. Both exist on `server.gui` (broadcast) and `client.gui`
   container state, so when stacked panels' collapse axes conflict, a
   late joiner replaying them in command order converges with live
   clients — per-panel replay order cannot decide a shared container's
-  final state.
+  final state. "Last" means after every panel's position has
+  CONVERGED, not merely after the current coordinator pass: a
+  split-anchored panel's position defers to a later pass (its anchor's
+  dock is invisible to the same pass's layout snapshot), so its
+  collapse axis joins the queue late — the queued axes are held,
+  persistently, until a pass with no deferred position, then drain as
+  one counter-sorted batch. Draining per pass let a lower-counter axis
+  apply in a later batch and win.
 - Reconnects have an explicit phase (D51): the server marks the end of
   its buffer replay per connection (`ReplayDoneMessage`), and until it
   arrives the client treats emptied stores as "not delivered yet" —
@@ -1296,8 +1303,12 @@ consuming paragraphs.
   diverge from live clients ("B.expand() then A.minimize()" ended
   expanded on replay). Per-panel counters cannot order commands across
   panels; the global counter can, and the coordinator applies all
-  fresh collapse axes after all positions, sorted by counter within
-  each run (cross-run conflicts keep arrival order — counters aren't
+  fresh collapse axes after all positions have converged — the queue
+  persists across passes and drains only on a pass with no deferred
+  position, as one counter-sorted batch (a per-pass drain re-created
+  the divergence for split-anchored panels, whose collapse queues a
+  pass later than their neighbors') — sorted by counter within each
+  run (cross-run conflicts keep arrival order — counters aren't
   comparable across runs).
 - **D51** — reconnects are an explicit phase, never inferred. The
   server injects a per-connection end-of-replay marker

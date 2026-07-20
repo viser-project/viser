@@ -607,6 +607,59 @@ def test_late_joining_client_sees_placed_panel(browser: Browser) -> None:
         server.stop()
 
 
+def test_late_joiner_collapse_converges_in_command_order(
+    browser: Browser,
+) -> None:
+    """Conflicting collapse axes on a SHARED docked column converge to the
+    same state for a live client and a late joiner (D50). The command order
+
+        A.dock_left(); B.dock_below(A); B.expand(); A.minimize()
+
+    must end RAILED everywhere: minimize has the highest counter. Regression:
+    the coordinator drained its collapse queue per PASS, and B's collapse
+    (deferred with its split position until A's dock committed) drained in a
+    later batch than A's -- so the late joiner ended expanded."""
+    server = _make_server()
+    try:
+        pa = server.gui.add_panel()
+        with pa.add_tab("AnchorA"):
+            server.gui.add_markdown("a")
+        pb = server.gui.add_panel()
+        with pb.add_tab("BelowB"):
+            server.gui.add_markdown("b")
+
+        context = browser.new_context(viewport=_VIEWPORT)
+        try:
+            live = context.new_page()
+            wait_for_connection(live, server.get_port())
+            expect(_tab(live, "AnchorA")).to_be_visible(timeout=5_000)
+
+            # Commands broadcast live, one at a time.
+            pa.dock_left()
+            live.wait_for_timeout(300)
+            pb.dock_below(pa)
+            live.wait_for_timeout(300)
+            pb.expand()
+            live.wait_for_timeout(300)
+            pa.minimize()
+            live.wait_for_timeout(500)
+            expect(live.locator("[data-dock-rail-root]")).to_have_count(
+                1, timeout=5_000
+            )
+
+            # A late joiner replays the whole buffer in one batch and must
+            # converge to the same railed column.
+            late = context.new_page()
+            wait_for_connection(late, server.get_port())
+            expect(late.locator("[data-dock-rail-root]")).to_have_count(
+                1, timeout=5_000
+            )
+        finally:
+            context.close()
+    finally:
+        server.stop()
+
+
 def test_float_negative_coords_anchor_to_right_edge(
     viser_page: Page, viser_server: viser.ViserServer
 ) -> None:
