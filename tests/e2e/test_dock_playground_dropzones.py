@@ -756,11 +756,6 @@ def test_flush_screen_edge_docks_outermost_column(
                 floating=[_window("history", x=80, y=300, width=220)],
             ),
         )
-        start = page.eval_on_selector(
-            '[data-floating-window="t-w-history"] [data-dock-griphandle]',
-            "e => { const r = e.getBoundingClientRect();"
-            " return [r.x + r.width / 2, r.y + r.height / 2]; }",
-        )
         # Drag flush against the right screen edge at mid-height and DROP.
         _drag_group(page, "t-history", (1399, 350))
         lay = _layout(page)

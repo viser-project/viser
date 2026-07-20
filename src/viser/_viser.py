@@ -1033,16 +1033,27 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         """
         buffer = self._websock_server._broadcast_buffer
         with buffer.buffer_lock:
-            # Skip GC while there are messages queued but not yet processed by
-            # the window generators. Without this, we could cull messages
-            # before they reach existing clients.
-            if (
-                not force
-                and self._websock_server._broadcast_buffer.message_event.is_set()
-            ):
-                return
+            # Deletion floor: only messages EVERY active window generator has
+            # already consumed may be purged. The old guard skipped GC while
+            # the shared message_event was set, but that event is not a
+            # consumption watermark -- any one generator clears it, while a
+            # BACKPRESSURED client's cursor can sit arbitrarily far behind.
+            # Deleting a remove-tombstone such a client hadn't consumed made
+            # it retain the entity forever (its cursor then skipped the hole),
+            # permanently diverging it from other clients. With no active
+            # generators everything is purgeable: a connecting client's
+            # generator registers only when its producer starts, and a fresh
+            # client must not replay removals of entities it never saw --
+            # which is this GC's entire purpose.
+            purge_floor = min(buffer.generator_cursors.values(), default=None)
 
-            # First pass: collect every tombstone's entity id.
+            def deletable(msg_id: int) -> bool:
+                return force or purge_floor is None or msg_id <= purge_floor
+
+            # First pass: collect every tombstone's entity id. The entity id
+            # set gates the second pass regardless of the floor; the tombstone
+            # MESSAGE itself is only deleted once every active client has
+            # consumed it.
             remove_message_ids: list[int] = []
             removed_ids_by_type: dict[str, set[str]] = {}
             for msg_id, message in buffer.message_from_id.items():
@@ -1051,7 +1062,8 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                         message.entity_type is not None
                         and message.entity_id_field is not None
                     )
-                    remove_message_ids.append(msg_id)
+                    if deletable(msg_id):
+                        remove_message_ids.append(msg_id)
                     removed_ids_by_type.setdefault(message.entity_type, set()).add(
                         getattr(message, message.entity_id_field)
                     )
@@ -1071,12 +1083,15 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                         entity_id = getattr(message, message.entity_id_field)
                         if entity_id in removed_ids_by_type.get(
                             message.entity_type, ()
-                        ):
+                        ) and deletable(msg_id):
                             remove_message_ids.append(msg_id)
                     elif phase is None:
                         name = getattr(message, "name", None)
-                        if name is not None and name in removed_ids_by_type.get(
-                            "scene", ()
+                        if (
+                            name is not None
+                            and name
+                            in removed_ids_by_type.get("scene", ())
+                            and deletable(msg_id)
                         ):
                             remove_message_ids.append(msg_id)
 

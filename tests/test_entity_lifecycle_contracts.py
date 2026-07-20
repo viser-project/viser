@@ -369,3 +369,40 @@ def test_update_simple_messages_have_distinct_redundancy_slots() -> None:
     b0 = SetBoneOrientationMessage(name="/n", bone_index=0, wxyz=(1.0, 0.0, 0.0, 0.0))
     b1 = SetBoneOrientationMessage(name="/n", bone_index=1, wxyz=(1.0, 0.0, 0.0, 0.0))
     assert b0.redundancy_key() != b1.redundancy_key()
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_gc_never_deletes_messages_a_slow_client_has_not_consumed() -> None:
+    """The GC's deletion floor is the minimum consumption cursor over ACTIVE
+    window generators -- never the shared message_event. Regression: a
+    backpressured client whose cursor sat behind a remove tombstone lost the
+    removal forever when a new client's connect-GC deleted it (the client's
+    cursor then skipped the hole and it retained the entity indefinitely,
+    permanently diverging from other clients)."""
+    server = viser.ViserServer()
+    broadcast = server._websock_server._broadcast_buffer
+    buffer = broadcast.message_from_id
+    baseline = len(buffer)
+
+    frame = server.scene.add_frame("/gc_slow_client")
+    add_id = max(buffer.keys())
+    frame.remove()
+    assert len(buffer) > baseline  # the tombstone is queued
+
+    # A slow client: its generator's cursor is still BEFORE the add/remove.
+    broadcast.generator_cursors[999] = add_id - 1
+    try:
+        # The event may be clear (another generator drained); GC must still
+        # not delete past the slow client's cursor.
+        broadcast.message_event.clear()
+        server._run_garbage_collector()
+        assert any(
+            m.lifecycle_phase == "remove" for m in buffer.values()
+        ), "GC deleted a tombstone a slow client had not consumed"
+
+        # Once the slow client catches up, the tombstone becomes purgeable.
+        broadcast.generator_cursors[999] = max(buffer.keys())
+        server._run_garbage_collector()
+        assert not any(m.lifecycle_phase == "remove" for m in buffer.values())
+    finally:
+        broadcast.generator_cursors.pop(999, None)

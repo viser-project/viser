@@ -32,6 +32,15 @@ class AsyncMessageBuffer:
     done: bool = False
     atomic_counter: int = 0
 
+    generator_cursors: Dict[int, int] = dataclasses.field(default_factory=dict)
+    """Per-active-connection consumption cursors (client id -> last message id
+    that connection's window generator has drained). Written by each generator
+    as it advances (int dict writes are atomic under the GIL); read under
+    ``buffer_lock`` by the garbage collector, which may only delete messages
+    that EVERY active generator has consumed -- a shared "any messages
+    pending?" event is not a consumption watermark, since a backpressured
+    client's cursor can sit arbitrarily far behind it."""
+
     def remove_from_buffer(self, match_fn: Callable[[Message], bool]) -> None:
         """Remove messages that match some condition."""
 
@@ -147,7 +156,7 @@ class AsyncMessageBuffer:
             # Event loop may already be closed during teardown.
             pass
 
-    async def window_generator(
+    def window_generator(
         self, client_id: int, backlog_done_message: Message | None = None
     ) -> AsyncGenerator[Sequence[Message], None]:
         """Async iterator over messages. Loops infinitely, and waits when no messages
@@ -155,20 +164,62 @@ class AsyncMessageBuffer:
 
         When `backlog_done_message` is given, it is injected into the stream
         exactly once, immediately after the last message that was already
-        buffered when this generator started -- an explicit end-of-replay
-        marker for a (re)connecting client. It is never stored in the buffer
-        (each connection gets its own), so it has no redundancy/coalescing
-        semantics."""
-
-        last_sent_id = -1
+        buffered when this generator was CREATED -- an explicit end-of-replay
+        marker for a (re)connecting client. The boundary is captured eagerly
+        here (an async generator's body does not run until first iteration,
+        which would fold live messages pushed in between into the backlog and
+        let them precede the marker). The marker is never stored in the
+        buffer (each connection gets its own), so it has no redundancy/
+        coalescing semantics."""
         # The replay boundary: everything at or below this id is backlog the
         # client must consume before the marker; everything above is live.
         backlog_last_id = self.message_counter - 1
+        # Register this connection's consumption cursor (see generator_cursors)
+        # for the garbage collector's deletion floor; dropped when the
+        # generator exits.
+        self.generator_cursors[client_id] = -1
+        return self._window_loop(client_id, backlog_last_id, backlog_done_message)
+
+    async def _window_loop(
+        self,
+        client_id: int,
+        backlog_last_id: int,
+        backlog_done_message: Message | None,
+    ) -> AsyncGenerator[Sequence[Message], None]:
+        last_sent_id = -1
         backlog_done_pending = backlog_done_message is not None
         flush_wait = self.event_loop.create_task(self.flush_event.wait())
+        try:
+            async for window in self._windows(
+                client_id, last_sent_id, backlog_last_id, backlog_done_pending,
+                backlog_done_message, flush_wait,
+            ):
+                yield window
+        finally:
+            # Drop this connection's GC cursor: a departed client must not
+            # hold the deletion floor down forever.
+            self.generator_cursors.pop(client_id, None)
+
+    async def _windows(
+        self,
+        client_id: int,
+        last_sent_id: int,
+        backlog_last_id: int,
+        backlog_done_pending: bool,
+        backlog_done_message: Message | None,
+        flush_wait: asyncio.Task,
+    ) -> AsyncGenerator[Sequence[Message], None]:
         while not self.done:
             window: List[Message] = []
             most_recent_message_id = self.message_counter - 1
+            # D51: the end-of-replay marker goes IMMEDIATELY after the
+            # connection's captured backlog. Cap the pre-marker windows at the
+            # boundary so a live message pushed since connect cannot slip in
+            # front of the marker; the live tail drains in the next window.
+            if backlog_done_pending:
+                most_recent_message_id = min(
+                    most_recent_message_id, backlog_last_id
+                )
             while (
                 last_sent_id < most_recent_message_id
                 and len(window) < self.max_window_size
@@ -188,6 +239,11 @@ class AsyncMessageBuffer:
 
                 if message is not None and message.excluded_self_client != client_id:
                     window.append(message)
+
+            # Advance this connection's consumption cursor: everything at or
+            # below last_sent_id is either in `window` (about to be sent) or
+            # skipped, so the GC may delete it without this client losing it.
+            self.generator_cursors[client_id] = last_sent_id
 
             if (
                 backlog_done_pending
