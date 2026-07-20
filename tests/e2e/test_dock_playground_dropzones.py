@@ -405,3 +405,88 @@ def test_seam_leaf_insert_has_real_height(dock_context, vite_server: int) -> Non
         )
     finally:
         page.close()
+
+
+# ===========================================================================
+# Drop zones over a floating window whose content is taller than the container
+# use the VISUAL (clipped) height, not the content height. An auto-height
+# window may legally overflow the container bottom (the corner clamp keeps
+# only its top-left reachable); the overflow is invisible (dock root clips
+# paint), so the merge zone must end at the container edge and the snap-below
+# band/hint must sit on-screen -- not at the off-screen content bottom.
+# ===========================================================================
+def test_tall_window_drop_zones_use_visual_height(
+    dock_context, vite_server: int
+) -> None:
+    page = _open(dock_context, vite_server, 1280, 420)
+    try:
+        _set_layout(
+            page,
+            _dock_layout(
+                floating=[
+                    # console renders 20 text lines: taller than the 420px
+                    # viewport as an auto-height window.
+                    _window("console", x=990, y=10, width=280),
+                    _window("controls", x=60, y=40, width=240),
+                ],
+            ),
+        )
+        geo = page.evaluate(
+            """() => {
+            const win = document.querySelector(
+                '[data-floating-window="t-w-console"]');
+            const r = win.getBoundingClientRect();
+            return { bottom: r.bottom, top: r.top, x: r.x, w: r.width,
+                     vh: window.innerHeight };
+        }"""
+        )
+        if geo["bottom"] <= geo["vh"] + 4:
+            pytest.skip("window did not overflow the container this run")
+
+        # Drag `controls` by its grip and probe two pointer positions over the
+        # tall window, reading the live drop hint each time.
+        start = page.eval_on_selector(
+            '[data-floating-window="t-w-controls"] [data-dock-griphandle]',
+            "e => { const r = e.getBoundingClientRect();"
+            " return [r.x + r.width / 2, r.y + r.height / 2]; }",
+        )
+        page.mouse.move(*start)
+        page.mouse.down()
+        page.mouse.move(start[0] + 8, start[1] + 8, steps=2)
+        cx = geo["x"] + geo["w"] / 2
+
+        def hint_at(y: float) -> dict | None:
+            page.mouse.move(cx, y)
+            page.wait_for_timeout(50)
+            return page.evaluate(
+                """() => {
+                const el = document.querySelector('[data-dock-hint]');
+                if (el === null) return null;
+                return { variant: el.getAttribute('data-dock-hint'),
+                         top: parseFloat(el.style.top),
+                         height: parseFloat(el.style.height) };
+            }"""
+            )
+
+        try:
+            # Mid-panel: merge highlight covers the VISIBLE part only.
+            mid = hint_at((geo["top"] + geo["vh"]) / 2)
+            assert mid is not None and mid["variant"] == "merge", (
+                f"expected a merge hint mid-panel, got {mid}"
+            )
+            assert mid["top"] + mid["height"] <= geo["vh"] + 4, (
+                f"merge hint extends past the container bottom: {mid} "
+                f"(container height {geo['vh']})"
+            )
+            # Near the container bottom: the snap-below band must be
+            # reachable, with its line painted on-screen.
+            low = hint_at(geo["vh"] - 6)
+            assert low is not None and low["variant"] == "line", (
+                f"expected the snap-below line near the container bottom, got {low}"
+            )
+            assert low["top"] <= geo["vh"], f"snap-below hint off-screen: {low}"
+        finally:
+            page.keyboard.press("Escape")
+            page.mouse.up()
+    finally:
+        page.close()

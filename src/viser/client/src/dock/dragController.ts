@@ -255,6 +255,25 @@ export function useDragController(deps: DragControllerDeps) {
       return buildTarget(rectEl, el, groupId, ctx);
     };
 
+    // Visual clip for floating-derived rects: the dock root is
+    // overflow:hidden, so any part of a floating window past a container
+    // edge is invisible (clampCorner keeps only the top-left corner
+    // reachable -- the body may legally overflow right/bottom, e.g. an
+    // auto-height window taller than the container). An invisible sliver
+    // must not be a drop surface, and zones/hints must compute from what is
+    // on screen (P1) -- the floating analog of the docked scroll clip
+    // below. Targets whose visible remnant is sub-8px are dropped entirely
+    // (P11: a zone that can't hold 8px is removed, not shrunk).
+    const cbox = container.getBoundingClientRect();
+    const clipToContainer = (r: DOMRect): DOMRect | null => {
+      const left = Math.max(r.left, cbox.left);
+      const top = Math.max(r.top, cbox.top);
+      const right = Math.min(r.right, cbox.right);
+      const bottom = Math.min(r.bottom, cbox.bottom);
+      if (right - left < 8 || bottom - top < 8) return null;
+      return new DOMRect(left, top, right - left, bottom - top);
+    };
+
     // Nested dockable areas, collected up front and keyed by host window
     // (null = hosted in a docked panel). Each area is pushed right after its
     // host's group targets, so it beats its host (the area is visually inside
@@ -281,8 +300,11 @@ export function useDragController(deps: DragControllerDeps) {
       // Skip an area whose host panel is minimized: its wrapper collapses to
       // (near) zero height, and flooring that into a hit band would put a
       // phantom "drop into area" target on top of the host's own handle/zones.
-      const areaRect = areaEl.getBoundingClientRect();
+      // Clipped to the container first: an area inside a window that
+      // overflows the container bottom must only claim its visible part.
+      const areaRect = clipToContainer(areaEl.getBoundingClientRect());
       if (
+        areaRect === null ||
         areaRect.height < AREA_MIN_TARGET_PX ||
         areaRect.width < AREA_MIN_TARGET_PX
       )
@@ -294,6 +316,7 @@ export function useDragController(deps: DragControllerDeps) {
         kind: "area",
         areaId,
       });
+      t.rect = areaRect;
       // Inset the area's hit rect on the left/right/bottom (not the top, which
       // holds its tab strip) so a frame around it falls through to the host
       // panel's own edge zones -- otherwise a full-bleed area (one that fills its
@@ -425,9 +448,12 @@ export function useDragController(deps: DragControllerDeps) {
       if (winEl === null) return;
       // The window's full paper rect: the owning-window mask in hitTest
       // covers chrome slivers (header, dividers) that no cell rect claims.
+      // Clipped to the container -- ownership is by VISIBLE paper (3.5/P1).
+      const winRect = clipToContainer(winEl.getBoundingClientRect());
+      if (winRect === null) return;
       (targets.windows ??= []).push({
         windowId: win.id,
-        rect: winEl.getBoundingClientRect(),
+        rect: winRect,
       });
       winEl.querySelectorAll("[data-dock-group]").forEach((groupEl) => {
         const gid = groupEl.getAttribute("data-dock-group");
@@ -447,6 +473,17 @@ export function useDragController(deps: DragControllerDeps) {
           index,
         });
         if (g !== null) {
+          // Clip the cell to the container's visible box (same rule as the
+          // window mask above): an auto-height window taller than the
+          // container renders its tail past the bottom edge, and an
+          // unclipped rect would put the merge/snap zones on CONTENT
+          // height instead of visual height -- with the snap-below band
+          // and its hint line painted off-screen. A cell whose visible
+          // remnant is sub-8px is not a target at all.
+          const cellRect = clipToContainer(g.rect);
+          if (cellRect === null) return;
+          g.rect = cellRect;
+          if (g.stripRect !== null) g.stripRect = clipToContainer(g.stripRect);
           g.winId = win.id;
           targets.groups.push(g);
         }

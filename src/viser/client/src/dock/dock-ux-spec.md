@@ -717,6 +717,15 @@ bottom). Interior cells keep their own boxes.
   change, container scroll, or window resize; a floating window growing
   MID-DRAG also marks the cached rects stale. Hints never lag the
   visible geometry.
+- Targets are clipped to the container's visible box. The dock root
+  clips paint at its edges, and a floating window's body may legally
+  overflow the right/bottom edge (the corner clamp keeps only its
+  top-left reachable; an auto-height window can be taller than the
+  container) — the invisible overflow is not a drop surface. Window
+  ownership (§3.5), cell zones, and hints all compute from the clipped
+  rect, so zone geometry depends on VISUAL height, never content height.
+  A target whose visible remnant is sub-8px is removed entirely (P11) —
+  the same rule as cells scrolled out of a squeezed docked column.
 - Divider gaps are never dead spots, in EITHER axis: the horizontal gap
   between stacked docked cells maps to the seam split it sits in the
   middle of; the vertical gap between side-by-side columns to the ONE
