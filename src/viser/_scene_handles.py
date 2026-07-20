@@ -449,14 +449,19 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
                 continue
             impl = handle._impl
             had_drag = bool(impl.drag_cb)
-            if had_drag and not api._is_drag_active_for(node_name):
-                impl.drag_cb.clear()
             _queue_empty_interaction_bindings(
                 api,
                 node_name,
                 had_click=len(impl.click_cb) > 0,
                 had_drag=had_drag,
             )
+            # Clear AFTER both emits (the callbacks snapshot above keys the
+            # emits): if an emit raises mid-remove, the handle keeps its
+            # callback state, so a RETRY re-emits everything -- clearing
+            # first left a retry reading had_drag=False and the stale
+            # non-empty drag binding persistent forever.
+            if had_drag and not api._is_drag_active_for(node_name):
+                impl.drag_cb.clear()
 
         # Tear down each descendant from both dicts and let it release any
         # subclass-specific registries via the polymorphic ``_on_remove`` hook.

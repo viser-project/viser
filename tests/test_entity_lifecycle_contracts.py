@@ -445,3 +445,52 @@ def test_same_name_replacement_supersedes_old_handle() -> None:
     # And the replacement's own remove still works.
     new.remove()
     assert "/replace_me" not in server.scene._handle_from_node_name
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_remove_retry_after_emit_failure_still_clears_drag_bindings() -> None:
+    """If a binding-clear emit raises mid-remove(), the handle must keep its
+    callback state so a RETRY re-emits everything. Regression: the shared
+    emit helper's call site cleared drag_cb BEFORE the emits, so a retry saw
+    had_drag=False and left the old non-empty drag binding persistent."""
+    server = viser.ViserServer()
+    box = server.scene.add_box("/retry_test", dimensions=(1, 1, 1), color=(255, 0, 0))
+
+    @box.on_click
+    def _(_event) -> None:
+        pass
+
+    @box.on_drag
+    def _(_event) -> None:
+        pass
+
+    iface = server.scene._websock_interface
+    real_queue = iface.queue_message
+    calls = {"n": 0}
+
+    def failing_queue(message):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("transient emit failure")
+        return real_queue(message)
+
+    with patch.object(iface, "queue_message", side_effect=failing_queue):
+        try:
+            box.remove()
+        except RuntimeError:
+            pass
+        else:  # pragma: no cover
+            raise AssertionError("expected the first emit to raise")
+        # Retry: must re-emit BOTH empty bindings (callbacks still intact).
+        box.remove()
+
+    buffer = server._websock_server._broadcast_buffer.message_from_id
+    drag_bindings = [
+        m
+        for m in buffer.values()
+        if type(m).__name__ == "SetSceneNodeDragBindingsMessage"
+        and m.name == "/retry_test"
+    ]
+    assert drag_bindings and all(len(m.bindings) == 0 for m in drag_bindings), (
+        f"retry left stale drag bindings: {drag_bindings}"
+    )
