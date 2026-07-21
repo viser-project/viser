@@ -24,8 +24,8 @@ export function shallowObjectKeysEqual<T extends Record<string, any>>(
 }
 
 /**
- * Shallow object equality (keys AND values, compared with ===) for store
- * selectors that derive a fresh object each call.
+ * Shallow object equality (keys AND values, compared with Object.is) for
+ * store selectors that derive a fresh object each call.
  */
 export function shallowObjectEqual<T extends Record<string, any>>(
   a: T | undefined,

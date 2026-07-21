@@ -23,9 +23,9 @@
 //
 // (Historical note: lone columns used to be the one carve-out -- their weight
 // stayed an unreconciled flex share while regionWidth carried the px. That
-// died with the always-px weights migration; migrateLegacyLayout adopts the
-// carried regionWidth into the weight for persisted layouts, and the sameSet
-// path below heals layouts that bypassed the chokepoint.)
+// died with the always-px weights change; the new-column carry below adopts a
+// carried regionWidth into the weight on the first commit, and the sameSet
+// path heals layouts that bypassed the chokepoint.)
 //
 // The width lives in the layout (DockLayout.regionWidth), so it has one
 // source of truth: clones carry it through every op, snapshots restore it,

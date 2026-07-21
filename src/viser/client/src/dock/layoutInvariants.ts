@@ -213,7 +213,8 @@ export function invariantViolations(layout: DockLayout): string[] {
   // column weights are always reconciled pixels, lone columns included (the
   // old single-column carve-out -- weight as an unreconciled flex share,
   // regionWidth as the width memory -- was retired by the always-px weights
-  // migration; migrateLegacyLayout adopts persisted carve-out layouts).
+  // change; reconciliation's new-column carry adopts persisted carve-out
+  // layouts on their first commit).
   // Gated on the field's presence: a layout without `regionWidth` has never
   // been reconciled (test literals mid-construction), so its weights may
   // still be flex shares with no px basis to check against.

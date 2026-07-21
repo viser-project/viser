@@ -349,15 +349,27 @@ export function useDragController(deps: DragControllerDeps) {
       // phantom "drop into area" target on top of the host's own handle/zones.
       // Clipped to the container first: an area inside a window that
       // overflows the container bottom must only claim its visible part.
-      // ALSO clipped to the host body's scroll viewport: an area scrolled
-      // out of its panel body keeps a full-size bounding rect over pixels
-      // where other content paints, which would leave a phantom target
-      // there -- and D58's center fallback would route drops to (and draw
-      // its hint over) an area that isn't visible at all.
-      let areaRect = clipToContainer(areaEl.getBoundingClientRect());
-      const bodyViewport = areaEl.closest(".mantine-ScrollArea-viewport");
-      if (areaRect !== null && bodyViewport !== null)
-        areaRect = clipRect(areaRect, bodyViewport.getBoundingClientRect(), 1);
+      // ALSO clipped to every scrolling ancestor (panel-body ScrollArea
+      // viewports and [data-dock-scroll] column/stack boxes, which can
+      // nest): an area scrolled out of any of them keeps a full-size
+      // bounding rect over pixels where other content paints, which would
+      // leave a phantom target there -- and D58's center fallback would
+      // route drops to (and draw its hint over) an area that isn't visible
+      // at all.
+      let areaRect: DOMRect | null = clipToContainer(
+        areaEl.getBoundingClientRect(),
+      );
+      for (
+        let el = areaEl.parentElement;
+        areaRect !== null && el !== null && el !== container;
+        el = el.parentElement
+      ) {
+        if (
+          el.matches(".mantine-ScrollArea-viewport") ||
+          el.matches("[data-dock-scroll]")
+        )
+          areaRect = clipRect(areaRect, el.getBoundingClientRect(), 1);
+      }
       if (
         areaRect === null ||
         areaRect.height < AREA_MIN_TARGET_PX ||

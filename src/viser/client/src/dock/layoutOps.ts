@@ -1558,14 +1558,14 @@ export function railRegion(layout: DockLayout, edge: DockEdge): DockLayout {
 }
 
 /** The one entry point for legacy persisted layouts (both injection/restore
- * chokepoints call this): detects pre-D46 band shapes, the pre-D44
- * regionCollapsed flag, and the pre-always-px lone-column weight form, and
- * -- only when something is legacy -- clones and runs the migrations in
- * their required order (rows first: the flag applies to the migrated
- * columns; the lone-width adoption last: the earlier migrations can
- * produce the single-column shape it reads). Returns the input untouched
- * when the layout is current-format, so modern layouts pay cheap property
- * checks. */
+ * chokepoints call this): detects pre-D46 band shapes and the pre-D44
+ * regionCollapsed flag, and -- only when something is legacy -- clones and
+ * runs the migrations in their required order (rows first: the flag
+ * applies to the migrated columns). The pre-always-px lone-column weight
+ * form needs no migration leg: reconciliation's new-column carry adopts a
+ * carried regionWidth into the weight on the first commit. Returns the
+ * input untouched when the layout is current-format, so modern layouts pay
+ * cheap property checks. */
 export function migrateLegacyLayout(layout: DockLayout): DockLayout {
   const legacy =
     layout.regionCollapsed !== undefined ||

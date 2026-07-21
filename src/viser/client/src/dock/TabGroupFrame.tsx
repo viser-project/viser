@@ -283,8 +283,14 @@ export function TabGroupFrame({
   // case (an area's bare backing group, activeId === null) keeps the
   // single placeholder body so the area's drop surface renders its chrome
   // as before.
+  // Recorded in an effect, not during render: an interrupted (concurrent)
+  // render must not mark its pane visited, or an abandoned tab switch would
+  // mount a never-shown pane's body. The ACTIVE pane renders unconditionally
+  // below, so the effect's one-commit lag is invisible.
   const visitedPanes = React.useRef<Set<string>>(new Set());
-  if (group.activeId !== null) visitedPanes.current.add(group.activeId);
+  React.useEffect(() => {
+    if (group.activeId !== null) visitedPanes.current.add(group.activeId);
+  }, [group.activeId]);
   const body =
     group.paneIds.length === 0 ? (
       <PanelBody
@@ -296,8 +302,8 @@ export function TabGroupFrame({
     ) : (
       <>
         {group.paneIds.map((paneId) => {
-          if (!visitedPanes.current.has(paneId)) return null;
           const active = paneId === group.activeId;
+          if (!active && !visitedPanes.current.has(paneId)) return null;
           return (
             <Box
               key={paneId}
