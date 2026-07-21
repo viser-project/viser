@@ -333,8 +333,13 @@ class SceneApi:
         """Whether the named scene node currently has any in-flight drag
         gesture (from any connected client). Used by ``remove()`` to
         decide whether to clear ``drag_cb`` immediately or preserve it
-        until the in-flight drag's ``end`` message arrives."""
-        return any(key[1] == name for key in self._active_drag_handles)
+        until the in-flight drag's ``end`` message arrives.
+
+        Iterates a snapshot: this runs on the caller's thread while the
+        event loop's message handlers mutate the dict, and a live dict view
+        raises "dictionary changed size during iteration". (list(dict) is a
+        single C-level copy, atomic under the GIL.)"""
+        return any(key[1] == name for key in list(self._active_drag_handles))
 
     async def _drop_active_drags_for_client(self, client_id: ClientId) -> None:
         """Drop any in-flight drag entries for a disconnecting client,
@@ -2682,11 +2687,17 @@ class SceneApi:
             sync_cb=sync_cb,
         )
         handle = TransformControlsHandle(node_handle._impl, state_aux)
-        self._handle_from_transform_controls_name[name] = handle
         # Store the typed handle (not the plain SceneNodeHandle from `_make`) in
         # the node map so removal via `reset()` / re-add dedup goes through the
-        # same path that cleans up the transform-controls registry.
-        self._handle_from_node_name[name] = handle
+        # same path that cleans up the transform-controls registry. Under the
+        # lifecycle lock, and only while the registry still points at the
+        # handle _make just registered: a concurrent remove()/reset() or
+        # same-name re-add in the gap must not have its result overwritten
+        # with a dead handle.
+        with self._node_lifecycle_lock:
+            if self._handle_from_node_name.get(name) is node_handle:
+                self._handle_from_transform_controls_name[name] = handle
+                self._handle_from_node_name[name] = handle
         return handle
 
     def reset(self) -> None:
@@ -3211,12 +3222,24 @@ class SceneApi:
 
     def _fire_scene_pointer_done_callbacks(self) -> None:
         # Snapshot -- each cleanup may unregister itself via the same
-        # handle without breaking iteration.
+        # handle without breaking iteration. Exceptions are reported and
+        # isolated like every other callback path: one throwing cleanup
+        # must not starve its siblings or leave the list uncleared.
         for cleanup in list(self._scene_pointer_done_cb):
             if asyncio.iscoroutinefunction(cleanup):
-                self._event_loop.create_task(cleanup())
+                task = self._event_loop.create_task(cleanup())
+                task.add_done_callback(
+                    lambda t: (
+                        print_awaited_callback_error(t.exception())  # type: ignore[arg-type]
+                        if not t.cancelled() and t.exception() is not None
+                        else None
+                    )
+                )
             else:
-                cleanup()
+                try:
+                    cleanup()
+                except Exception as exc:
+                    print_awaited_callback_error(exc)
         self._scene_pointer_done_cb = []
 
     @deprecated_positional_shim
@@ -3274,7 +3297,13 @@ class SceneApi:
         # Store the typed handle (not the plain SceneNodeHandle from `_make`) in
         # the node map so removal via `reset()` / re-add dedup / cascading parent
         # removal cleans up the container's GUI children and registry entry.
-        self._handle_from_node_name[name] = handle
+        # Under the lifecycle lock, and only while the registry still points
+        # at the handle _make just registered: a concurrent remove()/reset()
+        # or same-name re-add in the gap must not have its result overwritten
+        # with a dead handle.
+        with self._node_lifecycle_lock:
+            if self._handle_from_node_name.get(name) is node_handle:
+                self._handle_from_node_name[name] = handle
         return handle
 
     def get_handle_by_name(self, name: str) -> SceneNodeHandle | None:

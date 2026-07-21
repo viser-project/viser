@@ -116,7 +116,21 @@ function decodeHybridMessage(
     // Use a single protocol that includes both client identification and version.
     const protocol = `viser-v${VISER_VERSION}`;
     console.log(`Connecting to: ${server!} with protocol: ${protocol}`);
-    const socket = new WebSocket(server!, [protocol]);
+    let socket: WebSocket;
+    try {
+      socket = new WebSocket(server!, [protocol]);
+    } catch (e) {
+      // An invalid URL throws synchronously, before any handlers exist --
+      // and the superseded socket's close is suppressed by the generation
+      // gate, so without this the interface never learns the attempt died
+      // and never arms its retry loop.
+      console.error(`Failed to open WebSocket to ${server}:`, e);
+      postOutgoing({
+        type: "closed",
+        closeReason: "WebSocket construction failed",
+      });
+      return;
+    }
     ws = socket;
     socket.binaryType = "arraybuffer";
 
