@@ -24,6 +24,8 @@ import viser
 from viser import _messages
 from viser.infra import ClientId
 
+from .thread_isolation import run_isolated
+
 
 @contextmanager
 def _server() -> Generator[viser.ViserServer, None, None]:
@@ -170,7 +172,7 @@ def test_transform_controls_drag_end_after_mid_drag_removal() -> None:
                 cid, _messages.TransformControlsDragEndMessage(name="/parent/gizmo")
             )
 
-        asyncio.run(drive())
+        run_isolated(lambda: asyncio.run(drive()))
 
         assert phases == ["start", "end"], phases
         # The active-drag entry is released on end (no leak).
@@ -216,7 +218,7 @@ def test_transform_controls_late_update_leaves_no_stale_pose() -> None:
                 cid, _messages.TransformControlsDragEndMessage(name="/parent/gizmo")
             )
 
-        asyncio.run(drive())
+        run_isolated(lambda: asyncio.run(drive()))
 
         # The update + end callbacks still fire for the user.
         assert phases == ["start", "update", "end"], phases

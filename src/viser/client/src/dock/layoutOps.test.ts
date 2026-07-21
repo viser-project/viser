@@ -2090,9 +2090,9 @@ describe("(9) resizeRegionColumns", () => {
   });
 
   it("sums to the floored target for arbitrary inputs", () => {
-    // The documented postcondition, on shapes fuzzing once surfaced:
-    // proportional shares that put a column below its min, and a target
-    // below sumMin (result must land exactly on sumMin).
+    // The documented postcondition, checked on shapes that fuzzing once
+    // surfaced: proportional shares that put a column below its min, and a
+    // target below sumMin (the result must land exactly on sumMin).
     const cases: [number[], number[], number][] = [
       [[7.11, 230.84], [87.43, 8.31], 357.72],
       [[302.17, 102.38], [23.55, 91.5], 28.17],

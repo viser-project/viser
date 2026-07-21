@@ -7,6 +7,8 @@ import asyncio
 from viser import _messages as vm
 from viser.infra._async_message_buffer import AsyncMessageBuffer
 
+from .thread_isolation import run_isolated
+
 
 def test_replay_marker_precedes_live_messages() -> None:
     """The end-of-replay marker (D51) goes IMMEDIATELY after the connection's
@@ -37,7 +39,7 @@ def test_replay_marker_precedes_live_messages() -> None:
             if "live-1" in seen:
                 return seen
 
-    seen = asyncio.run(scenario())
+    seen = run_isolated(lambda: asyncio.run(scenario()))
     assert seen.index("MARKER") < seen.index("live-1"), (
         f"live message drained ahead of the replay marker: {seen}"
     )
@@ -54,6 +56,12 @@ def test_disconnect_releases_gc_cursor_promptly() -> None:
     gather() does not cancel siblings, so on a QUIET server the parked
     producer's finally never ran and the stale cursor pinned the GC deletion
     floor forever."""
+    # On a worker thread: this test opens sync_playwright() itself, which the
+    # main thread can't once the e2e fixtures have run (see thread_isolation).
+    run_isolated(_disconnect_scenario)
+
+
+def _disconnect_scenario() -> None:
     import time
     from unittest.mock import patch
 

@@ -131,8 +131,8 @@ function GuiContainer({
   // nothing to filter here.)
   const guiIdArray = [...Object.keys(guiIdSet)];
   // Only THIS container's orders: guiOrderFromUuid is rebuilt on every GUI
-  // add/remove anywhere, and subscribing to the whole map re-rendered every
-  // mounted container per element during streaming loads.
+  // add/remove anywhere, so a whole-map subscription re-renders every
+  // mounted container once per element during streaming loads.
   const guiOrderFromId = viewer!.useGui((state) => {
     const out: Record<string, number> = {};
     const set = state.guiUuidSetFromContainerUuid[containerUuid];

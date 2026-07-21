@@ -280,9 +280,8 @@ export function TabGroupFrame({
   // panel doesn't initialize every plot at connect. A hidden pane costs
   // its subscriptions but contributes no layout (display:none), so
   // auto-height windows still size to the active pane alone. The empty
-  // case (an area's bare backing group, activeId === null) keeps the
-  // single placeholder body so the area's drop surface renders its chrome
-  // as before.
+  // case (an area's bare backing group, activeId === null) renders the
+  // single placeholder body that gives the area's drop surface its chrome.
   // Recorded in an effect, not during render: an interrupted (concurrent)
   // render must not mark its pane visited, or an abandoned tab switch would
   // mount a never-shown pane's body. The ACTIVE pane renders unconditionally
@@ -310,9 +309,9 @@ export function TabGroupFrame({
               style={
                 fill
                   ? {
-                      // Active fill pane: reproduce the fill flex chain the
-                      // body previously got from the contents wrapper, so
-                      // the ScrollArea keeps its definite height.
+                      // The active fill pane passes the fill flex chain
+                      // through this wrapper, so the ScrollArea inside keeps
+                      // the definite height it needs to scroll.
                       display: active ? "flex" : "none",
                       flexDirection: "column",
                       flexGrow: 1,
