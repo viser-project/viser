@@ -1101,9 +1101,9 @@ at every consumer.
   time-throttled in production. Hard invariants include: no duplicate or
   orphaned panes/groups; no un-migrated legacy field (`regionCollapsed`
   or band-era `rows` — the injection/restore chokepoints run
-  `migrateRowsToColumnsInPlace` + `migrateRegionCollapsedInPlace` +
-  `migrateLoneColumnWidthInPlace`, the last adopting a pre-always-px
-  lone column's regionWidth into its weight);
+  `migrateRowsToColumnsInPlace` + `migrateRegionCollapsedInPlace`; a
+  pre-always-px lone column's regionWidth is adopted into its weight by
+  reconciliation's new-column carry, not a migration leg);
   `regionWidth` ≈ Σ over columns of (railed ? 36 : weight) — invariant
   #12, covering ANY column count.
 - **Single construction sites / choke points**: `movePaneInPlace`
@@ -1167,8 +1167,9 @@ Unadjudicated; do not resolve in code without recording the decision in
 - **T7 — The region scope loses its handle in multi-column regions.**
   One-handle-per-scope fails there: the multi-column region has no
   region handle, so no one-gesture region-wide collapse or expand (each
-  column rails/expands individually; `railRegion`/`expandRegionRail`
-  exist as ops but have no multi-column affordance). The derivation (a
+  column rails/expands individually; `railRegion` exists as an op that
+  rails every column but has no multi-column affordance, and there is
+  no region-wide expand op at all). The derivation (a
   handle may not span what its drag would flatten — D27) makes this a
   geometric limit. Options: accept (current); or give the region scope
   a compound affordance railing every column.

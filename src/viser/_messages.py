@@ -1816,7 +1816,8 @@ class GuiSetPanelWidthMessage(
     uuid: str
     width: Optional[float]
     counter: int
-    """Per-panel layout-update counter; see GuiSetPanelPositionMessage."""
+    """Global-per-run layout-update counter (shared across panels, D50); see
+    GuiSetPanelPositionMessage."""
     run_id: str
     """Sending GuiApi instance id; see GuiSetPanelPositionMessage."""
 
@@ -1833,7 +1834,8 @@ class GuiSetPanelHeightMessage(
     uuid: str
     height: Optional[float]
     counter: int
-    """Per-panel layout-update counter; see GuiSetPanelPositionMessage."""
+    """Global-per-run layout-update counter (shared across panels, D50); see
+    GuiSetPanelPositionMessage."""
     run_id: str
     """Sending GuiApi instance id; see GuiSetPanelPositionMessage."""
 
@@ -1895,7 +1897,8 @@ class GuiSetPanelCollapsedMessage(
     uuid: str
     collapsed: bool
     counter: int
-    """Per-panel layout-update counter; see GuiSetPanelPositionMessage."""
+    """Global-per-run layout-update counter (shared across panels, D50); see
+    GuiSetPanelPositionMessage."""
     run_id: str
     """Sending GuiApi instance id; see GuiSetPanelPositionMessage."""
 
