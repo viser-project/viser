@@ -1808,9 +1808,9 @@ class SceneApi:
                 receive_shadow=receive_shadow,
             ),
         )
-        handle = MeshHandle._make(self, message, name, wxyz, position, visible)
-        return MeshSkinnedHandle(
-            handle._impl,
+        node_handle = MeshHandle._make(self, message, name, wxyz, position, visible)
+        handle = MeshSkinnedHandle(
+            node_handle._impl,
             bones=tuple(
                 MeshSkinnedBoneHandle(
                     _impl=BoneState(
@@ -1819,11 +1819,21 @@ class SceneApi:
                         bone_index=i,
                         wxyz=bone_wxyzs[i].copy(),
                         position=bone_positions[i].copy(),
+                        mesh_impl=node_handle._impl,
                     )
                 )
                 for i in range(num_bones)
             ),
         )
+        # Register the typed handle (not the plain MeshHandle from `_make`)
+        # so click/drag dispatch resolves a target that carries `.bones`.
+        # Under the lifecycle lock, and only while the registry still points
+        # at the handle _make just registered (same rule as
+        # add_transform_controls).
+        with self._node_lifecycle_lock:
+            if self._handle_from_node_name.get(name) is node_handle:
+                self._handle_from_node_name[name] = handle
+        return handle
 
     @deprecated_positional_shim
     def add_mesh_simple(
@@ -3304,6 +3314,14 @@ class SceneApi:
         with self._node_lifecycle_lock:
             if self._handle_from_node_name.get(name) is node_handle:
                 self._handle_from_node_name[name] = handle
+                registered = True
+            else:
+                registered = False
+        if not registered:
+            # Superseded in the gap: the constructor registered the container
+            # UUID, and the superseder only saw the plain base handle -- so
+            # release the orphan registration here (no children exist yet).
+            handle._on_remove()
         return handle
 
     def get_handle_by_name(self, name: str) -> SceneNodeHandle | None:

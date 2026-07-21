@@ -1332,6 +1332,9 @@ class BoneState:
     bone_index: int
     wxyz: np.ndarray
     position: np.ndarray
+    mesh_impl: _SceneNodeHandleState
+    """The owning skinned mesh's node state: bone writes are refused once the
+    mesh is removed, like every other write on a removed handle."""
 
 
 @dataclasses.dataclass
@@ -1339,6 +1342,14 @@ class MeshSkinnedBoneHandle:
     """Handle for reading and writing the poses of bones in a skinned mesh."""
 
     _impl: BoneState
+
+    def _ensure_mesh_not_removed(self) -> None:
+        if self._impl.mesh_impl.removed:
+            raise RuntimeError(
+                "Cannot assign a bone pose on a removed skinned mesh: the "
+                "SetBone message would linger for the dead name and corrupt "
+                "a re-added same-name mesh."
+            )
 
     @property
     def wxyz(self) -> npt.NDArray[np.float64]:
@@ -1350,6 +1361,7 @@ class MeshSkinnedBoneHandle:
     @wxyz.setter
     def wxyz(self, wxyz: tuple[float, float, float, float] | np.ndarray) -> None:
         # wxyz is assumed to be a unit quaternion (see SceneNodeHandle.wxyz).
+        self._ensure_mesh_not_removed()
         _set_pose_vector(
             self._impl.wxyz,
             wxyz,
@@ -1369,6 +1381,7 @@ class MeshSkinnedBoneHandle:
 
     @position.setter
     def position(self, position: tuple[float, float, float] | np.ndarray) -> None:
+        self._ensure_mesh_not_removed()
         _set_pose_vector(
             self._impl.position,
             position,

@@ -615,3 +615,41 @@ def test_disconnect_drag_drain_survives_throwing_callback() -> None:
 
         assert fired == ["a", "b"], fired  # b fired despite a's exception.
         assert scene._active_transform_drag_handles == {}  # no strands.
+
+
+def test_skinned_mesh_typed_handle_registered_and_bone_guard() -> None:
+    """The registry must hold the typed MeshSkinnedHandle (click/drag events
+    resolve their target through it, and it carries ``.bones``), and bone
+    writes on a removed mesh must raise instead of queuing SetBone ghosts
+    for the dead name."""
+    with _server() as server:
+        v = 5
+        mesh = server.scene.add_mesh_skinned(
+            "/skinned",
+            np.random.rand(v, 3).astype(np.float32),
+            np.array([[0, 1, 2]], np.uint32),
+            bone_wxyzs=np.tile([1.0, 0.0, 0.0, 0.0], (2, 1)),
+            bone_positions=np.zeros((2, 3)),
+            skin_weights=np.random.rand(v, 2).astype(np.float32),
+        )
+        registered = server.scene._handle_from_node_name["/skinned"]
+        assert registered is mesh, (
+            "registry must hold the typed skinned handle, not the plain "
+            "MeshHandle -- event dispatch resolves targets through it"
+        )
+        mesh.bones[0].position = (0.0, 0.0, 1.0)  # Fine while live.
+        mesh.remove()
+        with pytest.raises(RuntimeError, match="removed"):
+            mesh.bones[0].position = (0.0, 0.0, 2.0)
+        with pytest.raises(RuntimeError, match="removed"):
+            mesh.bones[1].wxyz = (1.0, 0.0, 0.0, 0.0)
+        # No SetBone message for the dead name lingers in the buffer.
+        stale = [
+            m
+            for m in server._websock_server._broadcast_buffer.message_from_id.values()
+            if isinstance(
+                m,
+                (_messages.SetBonePositionMessage, _messages.SetBoneOrientationMessage),
+            )
+        ]
+        assert stale == [], stale
