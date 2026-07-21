@@ -1463,13 +1463,18 @@ def test_unmergeable_center_routes_drop_into_hosted_tab_group(
                            y: parseFloat(d.style.top) || 0,
                            h: parseFloat(d.style.height) || 0 }))"""
     )
-    # Honest hint (P1): the merge highlight sits on the AREA's rect, showing
-    # where the drop lands -- not on the pointer's own dead-zone pixels.
+    # The merge highlight fills the HOST panel like any other merge hint
+    # (the highlight marks the accepting surface; the tab lands in the
+    # hosted area) -- a hint pinned to the short area's own rect read as
+    # disconnected from the full-height drop zone.
     assert [h for h in hints if h["v"] == "merge"], (
         f"expected a merge hint at the docked panel's center, got {hints}"
     )
     merge_hint = next(h for h in hints if h["v"] == "merge")
-    assert abs(merge_hint["h"] - area["height"]) <= 4
+    assert abs(merge_hint["h"] - leaf["height"]) <= 4, (
+        f"merge hint height {merge_hint['h']} should match the panel "
+        f"({leaf['height']}), not the area ({area['height']})"
+    )
     viser_page.mouse.up()
 
     # The drop appended DragMe into the hosted tab group's area.

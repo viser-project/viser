@@ -2122,10 +2122,12 @@ describe("unmergeable header acts as the dock-above / snap-above zone", () => {
     };
     const hit = hitTest(l, REGION_W, CONTAINER, targets, 840, 400)!;
     expect(hit.result).toEqual({ kind: "merge", targetGroupId: "ta" });
-    // The hint sits on the AREA's rect (honest landing spot), not the panel.
+    // The hint fills the HOST cell like any other merge hint (the highlight
+    // marks the accepting surface; the tab lands in the hosted area).
     expect(hit.hint.variant).toBe("merge");
-    expect(hit.hint.top).toBeCloseTo(areaRect.top - CONTAINER.top);
-    expect(hit.hint.height).toBeCloseTo(areaRect.height);
+    const hostRect = rect(680, 0, 320, 800);
+    expect(hit.hint.top).toBeCloseTo(hostRect.top - CONTAINER.top);
+    expect(hit.hint.height).toBeCloseTo(hostRect.height);
   });
 
   it("D58: an unmergeable DRAG still nulls over the hosted-area center", () => {

@@ -516,10 +516,13 @@ never shared with the dock's).
   (P5).
 - The reverse also holds (D58): when the HOST is unmergeable, its
   content center — a dead zone on its own — routes a mergeable drop
-  into the nearest hosted area, hint over the area's rect. The host's
-  body backs the area up, so "merge into this panel" works from
-  anywhere in the content center (the host's side/top/bottom zones
-  still win), not just over the area's own pixels.
+  into the nearest hosted area. The hint fills the HOST panel, exactly
+  like any other merge hint (user-adjudicated: the highlight marks the
+  surface that accepts the drop; a hint pinned to a short area's own
+  rect read as disconnected from the zone). The host's body backs the
+  area up, so "merge into this panel" works from anywhere in the
+  content center (the host's side/top/bottom zones still win), not
+  just over the area's own pixels.
 
 ---
 
@@ -679,11 +682,11 @@ constants in `hitTest.ts`; changing one is a spec change.
   the unmergeable one, the drag is mergeable, and the target's panel
   hosts a nested area (§3.7), the otherwise-dead content center routes
   to that area — the drop appends into the area's group, and the merge
-  hint draws over the area's own rect (P1: the hint shows where the
-  drop lands, not where the pointer is). Several hosted areas: the
-  nearest to the pointer wins. No visible hosted area, or an
-  unmergeable drag (it can't become tabs anywhere): the center stays a
-  quiet null.
+  hint fills the host cell like any other merge hint (the highlight
+  marks the accepting surface; the tab lands in the hosted area).
+  Several hosted areas: the nearest to the pointer wins. No visible
+  hosted area, or an unmergeable drag (it can't become tabs anywhere):
+  the center stays a quiet null.
 
 ### 5.3 Rail cell zones (§5.2 rotated; D48 deliberately does NOT
 rotate here — a rail cell has no content body to re-claim above, its
@@ -1464,8 +1467,8 @@ consuming paragraphs.
   whole body below was a no-drop hole (P5) — a drop meant to "merge
   into this panel" only worked over the area's own pixels. Now:
   unmergeable target + mergeable drag + a visible hosted area → the
-  content center merges into the nearest hosted area, hint drawn over
-  the area's rect. An unmergeable drag still nulls (it can't become
+  content center merges into the nearest hosted area, hint filling the
+  host cell like any other merge hint. An unmergeable drag still nulls (it can't become
   tabs), and a host with no visible area keeps the quiet null. Full
   statement in §5.2/§3.7.
 

@@ -864,8 +864,9 @@ export function hitTest(
   // a tab, and a dragged stack holding an unmergeable panel can't become tabs
   // anywhere. Edge splits and floating snaps still apply. D58 escape: an
   // unmergeable TARGET hosting a nested area routes a mergeable drop into the
-  // nearest hosted area instead of dying -- the hint draws over the area's own
-  // rect (P1: it shows where the drop lands, not where the pointer is).
+  // nearest hosted area instead of dying -- the hint fills the host cell like
+  // any other merge hint (the highlight marks the accepting surface; the tab
+  // lands in the hosted area).
   const hostedAreaFallback = (): {
     result: DropResult;
     hint: DropHint;
@@ -891,7 +892,7 @@ export function hitTest(
       ? null
       : {
           result: { kind: "merge", targetGroupId: best.groupId },
-          hint: rel(best.rect, "merge"),
+          hint: rel(r, "merge"),
         };
   };
   const mergeResult = (): { result: DropResult; hint: DropHint } | null =>
