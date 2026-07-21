@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import io
+import threading
 import time
 import warnings
 from collections.abc import Coroutine
@@ -250,6 +251,17 @@ class SceneApi:
             str, TransformControlsHandle
         ] = {}
         self._handle_from_node_name: dict[str, SceneNodeHandle] = {}
+        self._node_lifecycle_lock = threading.RLock()
+        """Serializes scene-node lifecycle transitions (remove, same-name
+        supersede) against interaction-callback (de)registration. All
+        critical sections are short and synchronous (no awaits inside).
+        Reentrant because teardown cascades re-enter on the same thread
+        (a 3D GUI container's _on_remove removes its children, which can
+        include nested scene-node handles). Without this lock, a
+        registration racing a remove/supersede from another thread could
+        publish a name-keyed binding into the persistent buffer AFTER the
+        teardown's empty-bindings emit -- a ghost a same-name successor
+        would inherit on late-joining clients."""
         self._children_from_node_name: dict[str, set[str]] = {}
         # Tracks handles with an in-flight drag gesture, plus the last
         # message we processed for that drag. Populated on
@@ -2774,12 +2786,7 @@ class SceneApi:
             phase=phase,
         )
         for cb in handle._impl_aux.update_cb:
-            if asyncio.iscoroutinefunction(cb):
-                await cb(event)
-            else:
-                self._thread_executor.submit(cb, event).add_done_callback(
-                    print_threadpool_errors
-                )
+            await self._dispatch_callback(cb, event)
 
     async def _dispatch_callback(
         self,
@@ -2787,10 +2794,15 @@ class SceneApi:
         event: Any,
     ) -> None:
         """Run a user callback either via ``await`` (async) or via the
-        thread pool (sync). The thread-pool branch routes exceptions
-        through ``print_threadpool_errors``."""
+        thread pool (sync). Exceptions are reported and isolated in BOTH
+        branches (print_awaited_callback_error / print_threadpool_errors):
+        one throwing callback must not starve its sibling callbacks or
+        abort the caller (message dispatch, disconnect teardown)."""
         if asyncio.iscoroutinefunction(cb):
-            await cb(event)
+            try:
+                await cb(event)
+            except Exception as exc:
+                print_awaited_callback_error(exc)
         else:
             self._thread_executor.submit(cb, event).add_done_callback(
                 print_threadpool_errors

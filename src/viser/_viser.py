@@ -1273,7 +1273,17 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         # connect between the two lines.
         for client in clients:
             if asyncio.iscoroutinefunction(cb):
-                self._event_loop.create_task(cb(client))
+                task = self._event_loop.create_task(cb(client))
+                # Same reporting as every other callback path: an exception
+                # in a fire-and-forget task is otherwise only surfaced by
+                # the event loop's default handler at GC time, if ever.
+                task.add_done_callback(
+                    lambda t: (
+                        print_awaited_callback_error(t.exception())  # type: ignore[arg-type]
+                        if not t.cancelled() and t.exception() is not None
+                        else None
+                    )
+                )
             else:
                 self._thread_executor.submit(cb, client).add_done_callback(
                     print_threadpool_errors

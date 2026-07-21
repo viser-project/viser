@@ -288,53 +288,61 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
                 setattr(message.props, _field_name, _field_value.copy())
 
         # Same-name REPLACEMENT (explicitly supported: re-adding a node under
-        # an existing name swaps it out). The previous handle is SUPERSEDED:
-        old_handle = api._handle_from_node_name.get(name)
-        if old_handle is not None and not old_handle._impl.removed:
-            # 1. The old Python handle goes inert. Removal resolves by NAME,
-            #    so a later old_handle.remove() would otherwise find the
-            #    REPLACEMENT in the registry and delete it (marking the new
-            #    handle removed) out from under the caller.
-            old_handle._impl.removed = True
-            old_handle._on_remove()
-            # 2. The old node's per-axis updates must not replay onto the new
-            #    node: the new create replaces the old one in the persistent
-            #    buffer via its redundancy key, but pose/visibility/props
-            #    updates and name-keyed binding messages live in separate
-            #    namespaces -- a late joiner would apply the OLD pose to the
-            #    NEW node. Purge them (mirrors the remove()/GC sweep); the
-            #    new node's own state is queued below.
-            api._websock_interface.get_message_buffer().remove_from_buffer(
-                lambda m: m.targets_entity_state("scene", name),
-            )
-            # 3. LIVE clients keep interaction bindings across a same-name
-            #    create (deliberate, for reconnect replays), so the buffer
-            #    purge alone leaves the replacement clickable/draggable on
-            #    already-connected clients -- firing events with no matching
-            #    callbacks. Broadcast explicit empty bindings, exactly as
-            #    remove() does. The inert old handle's callbacks stay: an
-            #    in-flight drag on the old node must still dispatch its end.
-            _queue_empty_interaction_bindings(
-                api,
-                name,
-                had_click=len(old_handle._impl.click_cb) > 0,
-                had_drag=bool(old_handle._impl.drag_cb),
-            )
+        # an existing name swaps it out) plus the new node's registration,
+        # atomic under the lifecycle lock: a concurrent old_handle.remove()
+        # from another thread must either run fully before this block or
+        # observe the FINISHED supersession (registry pointing at the new
+        # handle) and warn-return -- never interleave while the old handle
+        # is marked removed but still registered, where its remove() would
+        # tear down the replacement's fresh state.
+        with api._node_lifecycle_lock:
+            old_handle = api._handle_from_node_name.get(name)
+            if old_handle is not None and not old_handle._impl.removed:
+                # 1. The old Python handle goes inert. Removal resolves by NAME,
+                #    so a later old_handle.remove() would otherwise find the
+                #    REPLACEMENT in the registry and delete it (marking the new
+                #    handle removed) out from under the caller.
+                old_handle._impl.removed = True
+                old_handle._on_remove()
+                # 2. The old node's per-axis updates must not replay onto the new
+                #    node: the new create replaces the old one in the persistent
+                #    buffer via its redundancy key, but pose/visibility/props
+                #    updates and name-keyed binding messages live in separate
+                #    namespaces -- a late joiner would apply the OLD pose to the
+                #    NEW node. Purge them (mirrors the remove()/GC sweep); the
+                #    new node's own state is queued below.
+                api._websock_interface.get_message_buffer().remove_from_buffer(
+                    lambda m: m.targets_entity_state("scene", name),
+                )
+                # 3. LIVE clients keep interaction bindings across a same-name
+                #    create (deliberate, for reconnect replays), so the buffer
+                #    purge alone leaves the replacement clickable/draggable on
+                #    already-connected clients -- firing events with no matching
+                #    callbacks. Broadcast explicit empty bindings, exactly as
+                #    remove() does. The inert old handle's callbacks stay: an
+                #    in-flight drag on the old node must still dispatch its end.
+                _queue_empty_interaction_bindings(
+                    api,
+                    name,
+                    had_click=len(old_handle._impl.click_cb) > 0,
+                    had_drag=bool(old_handle._impl.drag_cb),
+                )
 
-        # Send message.
-        assert isinstance(message, _messages.Message)
-        api._websock_interface.queue_message(message)
+            # Send message.
+            assert isinstance(message, _messages.Message)
+            api._websock_interface.queue_message(message)
 
-        # Shallow copy is enough to decouple the handle from the queued message:
-        # AssignablePropsBase.__init__ copies each top-level array, and
-        # scene-node props are flat (arrays + immutable scalars/tuples).
-        out = cls(_SceneNodeHandleState(name, copy.copy(message.props), api))
-        api._handle_from_node_name[name] = out
+            # Shallow copy is enough to decouple the handle from the queued
+            # message: AssignablePropsBase.__init__ copies each top-level
+            # array, and scene-node props are flat (arrays + immutable
+            # scalars/tuples).
+            out = cls(_SceneNodeHandleState(name, copy.copy(message.props), api))
+            api._handle_from_node_name[name] = out
 
-        # Track parent -> child relationship.
-        parent = name.rsplit("/", 1)[0]
-        api._children_from_node_name.setdefault(parent, set()).add(name)
-        api._children_from_node_name.setdefault(name, set())
+            # Track parent -> child relationship.
+            parent = name.rsplit("/", 1)[0]
+            api._children_from_node_name.setdefault(parent, set()).add(name)
+            api._children_from_node_name.setdefault(name, set())
 
         out.wxyz = wxyz
         out.position = position
@@ -413,6 +421,14 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
 
     def remove(self) -> None:
         """Remove the node from the scene."""
+        # The whole teardown runs under the scene's lifecycle lock: it must
+        # be atomic against interaction-callback registration and same-name
+        # supersession from other threads (see _node_lifecycle_lock). The
+        # body is synchronous and never re-enters the lock.
+        with self._impl.api._node_lifecycle_lock:
+            self._remove_locked()
+
+    def _remove_locked(self) -> None:
         # Warn if already removed. A node is only FULLY removed once it has
         # been popped from the registry below; `removed` alone can be set
         # mid-teardown (it closes the interaction surface right after each
@@ -701,9 +717,6 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         def decorator(
             func: Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
         ) -> Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine]:
-            # Re-checked here: the decorator can be applied after the eager
-            # factory-time check (e.g. held across a remove()).
-            self._ensure_not_removed()
             entry = _DragCallbackEntry(
                 callback=cast(
                     Callable[
@@ -715,12 +728,17 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
                 button=button,
                 modifier=normalized,
             )
-            # Skip duplicate registration -- without this, the same
-            # callback fires twice per matching event. Equality is by
-            # tuple/dataclass value.
-            if entry not in self._impl.drag_cb:
-                self._impl.drag_cb.append(entry)
-                self._sync_drag_bindings()
+            # Atomic vs remove()/supersede from other threads, and
+            # re-checked: the decorator can be applied long after the eager
+            # factory-time check (e.g. held across a remove()).
+            with self._impl.api._node_lifecycle_lock:
+                self._ensure_not_removed()
+                # Skip duplicate registration -- without this, the same
+                # callback fires twice per matching event. Equality is by
+                # tuple/dataclass value.
+                if entry not in self._impl.drag_cb:
+                    self._impl.drag_cb.append(entry)
+                    self._sync_drag_bindings()
             return func
 
         return decorator
@@ -818,14 +836,15 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         ``callback="all"`` removes every drag callback; a specific
         function removes only entries whose callback identity matches.
         """
-        self._ensure_not_removed()
-        if callback == "all":
-            self._impl.drag_cb.clear()
-        else:
-            self._impl.drag_cb = [
-                entry for entry in self._impl.drag_cb if entry.callback != callback
-            ]
-        self._sync_drag_bindings()
+        with self._impl.api._node_lifecycle_lock:
+            self._ensure_not_removed()
+            if callback == "all":
+                self._impl.drag_cb.clear()
+            else:
+                self._impl.drag_cb = [
+                    entry for entry in self._impl.drag_cb if entry.callback != callback
+                ]
+            self._sync_drag_bindings()
 
     @overload
     def on_click(
@@ -872,22 +891,28 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         normalized_modifier = _messages._normalize_key_modifier(modifier)
 
         def register(callback: Callable) -> Callable:
-            # Re-checked here: the decorator can be applied after the eager
+            # Atomic vs remove()/supersede from other threads, and
+            # re-checked: the decorator can be applied long after the eager
             # factory-time check (e.g. held across a remove()).
-            self._ensure_not_removed()
-            self._impl.click_cb.append(
-                _ClickCallbackEntry(
-                    callback=cast(
-                        Callable[
-                            [SceneNodePointerEvent[_RaycastSupportedSceneNodeHandle]],
-                            Union[None, Coroutine],
-                        ],
-                        callback,
-                    ),
-                    modifier=normalized_modifier,
+            with self._impl.api._node_lifecycle_lock:
+                self._ensure_not_removed()
+                self._impl.click_cb.append(
+                    _ClickCallbackEntry(
+                        callback=cast(
+                            Callable[
+                                [
+                                    SceneNodePointerEvent[
+                                        _RaycastSupportedSceneNodeHandle
+                                    ]
+                                ],
+                                Union[None, Coroutine],
+                            ],
+                            callback,
+                        ),
+                        modifier=normalized_modifier,
+                    )
                 )
-            )
-            self._publish_click_state()
+                self._publish_click_state()
             return callback
 
         if func is None:
@@ -902,14 +927,15 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         Args:
             callback: Either "all" to remove all callbacks, or a specific callback function to remove.
         """
-        self._ensure_not_removed()
-        if callback == "all":
-            self._impl.click_cb.clear()
-        else:
-            self._impl.click_cb = [
-                entry for entry in self._impl.click_cb if entry.callback != callback
-            ]
-        self._publish_click_state()
+        with self._impl.api._node_lifecycle_lock:
+            self._ensure_not_removed()
+            if callback == "all":
+                self._impl.click_cb.clear()
+            else:
+                self._impl.click_cb = [
+                    entry for entry in self._impl.click_cb if entry.callback != callback
+                ]
+            self._publish_click_state()
 
     def _publish_click_state(self) -> None:
         """Publish ``SetSceneNodeClickBindingsMessage`` to the client
