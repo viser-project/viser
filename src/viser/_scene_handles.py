@@ -681,6 +681,9 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         def decorator(
             func: Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
         ) -> Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine]:
+            # Re-checked here: the decorator can be applied after the eager
+            # factory-time check (e.g. held across a remove()).
+            self._ensure_not_removed()
             entry = _DragCallbackEntry(
                 callback=cast(
                     Callable[
@@ -849,6 +852,9 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         normalized_modifier = _messages._normalize_key_modifier(modifier)
 
         def register(callback: Callable) -> Callable:
+            # Re-checked here: the decorator can be applied after the eager
+            # factory-time check (e.g. held across a remove()).
+            self._ensure_not_removed()
             self._impl.click_cb.append(
                 _ClickCallbackEntry(
                     callback=cast(

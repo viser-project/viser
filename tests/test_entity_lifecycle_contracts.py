@@ -513,3 +513,19 @@ def test_post_remove_interaction_callback_registration_raises() -> None:
         handle.remove_click_callback()
     with pytest.raises(RuntimeError, match="removed"):
         handle.remove_drag_callback()
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_post_remove_deferred_decorator_raises() -> None:
+    """A decorator factory created BEFORE remove() must still refuse to
+    register after it: the factory-time check alone left the returned
+    decorator as a bypass that queued ghost binding messages."""
+    server = viser.ViserServer()
+    handle = server.scene.add_icosphere("/clickable2", radius=0.1)
+    register_click = handle.on_click(modifier="shift")
+    register_drag = handle.on_drag("left")
+    handle.remove()
+    with pytest.raises(RuntimeError, match="removed"):
+        register_click(lambda _: None)
+    with pytest.raises(RuntimeError, match="removed"):
+        register_drag(lambda _: None)

@@ -133,11 +133,25 @@ def test_skinned_mesh_animates_across_playback_loops(
     )
     wait_for_scene_node(viser_page, "/skinned")
 
-    # Record ~0.6s of bone animation.
+    # Record ~0.8s of bone animation, including a same-batch remove +
+    # re-add (no sleep between them): the replayed remove deletes the mesh's
+    # state entry and the re-add recreates it within one message batch, so
+    # the mounted component must ADOPT the fresh entry -- it never remounts.
     serializer = viser_server.get_scene_serializer()
     for step in range(3):
         serializer.insert_sleep(0.2)
         mesh.bones[1].position = (0.0, 0.0, 1.0 + step)
+    mesh.remove()
+    mesh = viser_server.scene.add_mesh_skinned(
+        "/skinned",
+        np.array([[np.cos(i), np.sin(i), i * 0.1] for i in range(v)], dtype=np.float32),
+        np.array([[0, 1, 2], [3, 4, 5], [5, 6, 7]], dtype=np.uint32),
+        bone_wxyzs=np.array([[1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]]),
+        bone_positions=np.zeros((2, 3)),
+        skin_weights=np.abs(np.random.rand(v, 2)).astype(np.float32),
+    )
+    serializer.insert_sleep(0.2)
+    mesh.bones[1].position = (0.0, 0.0, 9.0)
     html = serializer.as_html()
 
     with tempfile.NamedTemporaryFile(

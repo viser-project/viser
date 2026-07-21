@@ -825,6 +825,11 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         self._initial_camera = InitialCameraConfig(broadcast=server.queue_message)
         self._connection = server
         self._connected_clients: dict[int, ClientHandle] = {}
+        # Clients mid-teardown: popped from _connected_clients (so
+        # get_clients() and connect-callback replay never see a dead client)
+        # but still resolvable by _get_client_handle for the synthesized
+        # drag-end events dispatched during disconnect. Event-loop-only.
+        self._disconnecting_clients: dict[int, ClientHandle] = {}
         self._client_lock = threading.Lock()
         self._client_connect_cb: list[Callable[[ClientHandle], None | Coroutine]] = []
         self._client_disconnect_cb: list[
@@ -917,24 +922,28 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             # callbacks (and the synthesized drag-end callbacks below) run
             # inline on the event loop, and any server API they call that
             # takes the lock (e.g. get_clients()) would deadlock against
-            # the lock this thread already holds.
+            # the lock this thread already holds. Pop FIRST so no observer
+            # (get_clients(), connect-callback replay) can see a physically
+            # dead client while its teardown awaits user code.
             with self._client_lock:
-                handle = self._connected_clients.get(conn.client_id)
+                handle = self._connected_clients.pop(conn.client_id, None)
+                disconnect_cbs = tuple(self._client_disconnect_cb)
             if handle is None:
                 return
 
             # Drop any in-flight drag entries for this client; the
             # corresponding ``phase="end"`` will never arrive, so without
             # this the active-drag map leaks an entry per dropped drag and
-            # ``on_drag_end`` is silently skipped. Run this *before*
-            # popping from ``_connected_clients`` so the synthesized end
-            # event can resolve a ``ClientHandle`` for ``event.client``.
-            await self.scene._drop_active_drags_for_client(
-                cast(infra.ClientId, conn.client_id)
-            )
-            with self._client_lock:
-                self._connected_clients.pop(conn.client_id, None)
-                disconnect_cbs = tuple(self._client_disconnect_cb)
+            # ``on_drag_end`` is silently skipped. The handle stays
+            # resolvable for the synthesized end events' ``event.client``
+            # via _disconnecting_clients, without being publicly listed.
+            self._disconnecting_clients[conn.client_id] = handle
+            try:
+                await self.scene._drop_active_drags_for_client(
+                    cast(infra.ClientId, conn.client_id)
+                )
+            finally:
+                self._disconnecting_clients.pop(conn.client_id, None)
             for cb in disconnect_cbs:
                 if asyncio.iscoroutinefunction(cb):
                     await cb(handle)

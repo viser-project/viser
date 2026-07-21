@@ -204,8 +204,9 @@ function useMessageHandler() {
         // object and the same-name re-add race stays protected.
         const state = (viewerMutable.skinnedMeshState[message.name] ??= {
           initialized: false,
-          dirty: false,
+          claimed: false,
           poses: [],
+          dirty: false,
         });
         state.initialized = false;
         // Bind pose is the honest state until bone updates arrive; on a

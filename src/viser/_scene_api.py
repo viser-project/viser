@@ -2688,10 +2688,15 @@ class SceneApi:
         # maintains a registry of connected clients, or ClientHandle, which should
         # only ever be dealing with its own client_id.
         if isinstance(self._owner, ViserServer):
-            # TODO: there's a potential race condition here when the client disconnects.
-            # This probably applies to multiple other parts of the code, we should
-            # revisit all of the cases where we index into connected_clients.
-            return self._owner._connected_clients[client_id]
+            handle = self._owner._connected_clients.get(client_id)
+            if handle is None:
+                # A client mid-teardown is no longer publicly listed, but the
+                # synthesized drag-end events dispatched during its disconnect
+                # still need to resolve ``event.client``.
+                handle = self._owner._disconnecting_clients.get(client_id)
+            if handle is None:
+                raise KeyError(f"No connected client with id {client_id}.")
+            return handle
         else:
             assert client_id == self._owner.client_id
             return self._owner
