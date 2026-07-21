@@ -76,6 +76,7 @@ from ._scene_handles import (
 )
 from ._threadpool_exceptions import (
     print_awaited_callback_error,
+    print_task_error,
     print_threadpool_errors,
 )
 
@@ -255,13 +256,14 @@ class SceneApi:
         """Serializes scene-node lifecycle transitions (remove, same-name
         supersede) against interaction-callback (de)registration. All
         critical sections are short and synchronous (no awaits inside).
-        Reentrant because teardown cascades re-enter on the same thread
-        (a 3D GUI container's _on_remove removes its children, which can
-        include nested scene-node handles). Without this lock, a
-        registration racing a remove/supersede from another thread could
-        publish a name-keyed binding into the persistent buffer AFTER the
-        teardown's empty-bindings emit -- a ghost a same-name successor
-        would inherit on late-joining clients."""
+        Reentrant defensively: no current teardown path re-enters (a 3D GUI
+        container's _on_remove removes GUI children only), but subclass
+        _on_remove hooks run under the lock and must stay safe to extend.
+        Without this lock, a registration racing a remove/supersede from
+        another thread could publish a name-keyed binding into the
+        persistent buffer AFTER the teardown's empty-bindings emit -- a
+        ghost a same-name successor would inherit on late-joining
+        clients."""
         self._children_from_node_name: dict[str, set[str]] = {}
         # Tracks handles with an in-flight drag gesture, plus the last
         # message we processed for that drag. Populated on
@@ -341,7 +343,9 @@ class SceneApi:
         single C-level copy, atomic under the GIL.)"""
         return any(key[1] == name for key in list(self._active_drag_handles))
 
-    async def _drop_active_drags_for_client(self, client_id: ClientId) -> None:
+    async def _drop_active_drags_for_client(
+        self, client_id: ClientId, event_client: ClientHandle | None = None
+    ) -> None:
         """Drop any in-flight drag entries for a disconnecting client,
         synthesizing a ``phase="end"`` event so user state allocated in
         ``on_drag_start`` can be released. Without this, a mid-drag
@@ -350,8 +354,10 @@ class SceneApi:
         ``_is_drag_active_for`` will return spurious-true for the
         leaked node name -- preventing a future ``remove()`` from
         clearing its callbacks) and silently skips ``on_drag_end``."""
-        # Per-entry exception isolation: a throwing async end callback must
-        # not strand the REMAINING entries (each pins a handle and blocks a
+        # Per-entry exception isolation for the setup that runs OUTSIDE
+        # _dispatch_callback's per-callback isolation (client resolution,
+        # event construction, callback filtering): a throwing entry must not
+        # strand the REMAINING entries (each pins a handle and blocks a
         # future remove() from clearing its callbacks) or abort the caller's
         # disconnect teardown.
         stale_keys = [k for k in self._active_drag_handles if k[0] == client_id]
@@ -364,7 +370,9 @@ class SceneApi:
             # client-reported positions.
             synthetic = dataclasses.replace(last_msg, phase="end")
             try:
-                await self._dispatch_drag_callbacks(client_id, handle, synthetic)
+                await self._dispatch_drag_callbacks(
+                    client_id, handle, synthetic, event_client
+                )
             except Exception as exc:
                 print_awaited_callback_error(exc)
 
@@ -378,7 +386,7 @@ class SceneApi:
                 continue
             try:
                 await self._fire_transform_controls_callbacks(
-                    client_id, tc_handle, "end"
+                    client_id, tc_handle, "end", event_client
                 )
             except Exception as exc:
                 print_awaited_callback_error(exc)
@@ -2744,11 +2752,6 @@ class SceneApi:
         if isinstance(self._owner, ViserServer):
             handle = self._owner._connected_clients.get(client_id)
             if handle is None:
-                # A client mid-teardown is no longer publicly listed, but the
-                # synthesized drag-end events dispatched during its disconnect
-                # still need to resolve ``event.client``.
-                handle = self._owner._disconnecting_clients.get(client_id)
-            if handle is None:
                 raise KeyError(f"No connected client with id {client_id}.")
             return handle
         else:
@@ -2805,9 +2808,12 @@ class SceneApi:
         client_id: ClientId,
         handle: TransformControlsHandle,
         phase: DragPhase,
+        event_client: ClientHandle | None = None,
     ) -> None:
         event = TransformControlsEvent(
-            client=self._get_client_handle(client_id),
+            client=event_client
+            if event_client is not None
+            else self._get_client_handle(client_id),
             client_id=client_id,
             target=handle,
             phase=phase,
@@ -2911,6 +2917,7 @@ class SceneApi:
         client_id: ClientId,
         handle: _RaycastSupportedSceneNodeHandle,
         message: _messages.SceneNodeDragMessage,
+        event_client: ClientHandle | None = None,
     ) -> None:
         """Run all matching ``handle`` drag callbacks for ``message``.
 
@@ -2922,7 +2929,9 @@ class SceneApi:
             return
 
         event = SceneNodeDragEvent(
-            client=self._get_client_handle(client_id),
+            client=event_client
+            if event_client is not None
+            else self._get_client_handle(client_id),
             client_id=client_id,
             target=cast(_RaycastSupportedSceneNodeHandle, handle),
             phase=message.phase,
@@ -3244,13 +3253,7 @@ class SceneApi:
         for cleanup in list(self._scene_pointer_done_cb):
             if asyncio.iscoroutinefunction(cleanup):
                 task = self._event_loop.create_task(cleanup())
-                task.add_done_callback(
-                    lambda t: (
-                        print_awaited_callback_error(t.exception())  # type: ignore[arg-type]
-                        if not t.cancelled() and t.exception() is not None
-                        else None
-                    )
-                )
+                task.add_done_callback(print_task_error)
             else:
                 try:
                     cleanup()

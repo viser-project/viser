@@ -26,3 +26,11 @@ def print_awaited_callback_error(exc: BaseException) -> None:
     so callers catch, report through here, and continue."""
     print("Callback failed with exception:", file=sys.stderr)
     traceback.print_exception(type(exc), exc, exc.__traceback__)
+
+
+def print_task_error(task: Any) -> None:
+    """Done-callback for fire-and-forget asyncio tasks running user
+    callbacks: report failures like every other callback path, stay silent
+    on cancellation."""
+    if not task.cancelled() and task.exception() is not None:
+        print_awaited_callback_error(task.exception())

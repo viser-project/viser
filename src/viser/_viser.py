@@ -26,6 +26,7 @@ from ._notification_handle import NotificationHandle, _NotificationHandleState
 from ._scene_api import SceneApi, cast_vector
 from ._threadpool_exceptions import (
     print_awaited_callback_error,
+    print_task_error,
     print_threadpool_errors,
 )
 from ._tunnel import ViserTunnel
@@ -828,11 +829,6 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         self._initial_camera = InitialCameraConfig(broadcast=server.queue_message)
         self._connection = server
         self._connected_clients: dict[int, ClientHandle] = {}
-        # Clients mid-teardown: popped from _connected_clients (so
-        # get_clients() and connect-callback replay never see a dead client)
-        # but still resolvable by _get_client_handle for the synthesized
-        # drag-end events dispatched during disconnect. Event-loop-only.
-        self._disconnecting_clients: dict[int, ClientHandle] = {}
         self._client_lock = threading.Lock()
         self._client_connect_cb: list[Callable[[ClientHandle], None | Coroutine]] = []
         self._client_disconnect_cb: list[
@@ -900,18 +896,7 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                     with self._client_lock:
                         self._connected_clients[conn.client_id] = client
                         connect_cbs = tuple(self._client_connect_cb)
-                    for cb in connect_cbs:
-                        if asyncio.iscoroutinefunction(cb):
-                            # Isolated like the threadpool path: one throwing
-                            # callback must not starve its siblings.
-                            try:
-                                await cb(client)
-                            except Exception as exc:
-                                print_awaited_callback_error(exc)
-                        else:
-                            self._thread_executor.submit(cb, client).add_done_callback(
-                                print_threadpool_errors
-                            )
+                    await self._dispatch_client_callbacks(connect_cbs, client)
 
                 for camera_cb in client.camera._state.camera_cb:
                     if asyncio.iscoroutinefunction(camera_cb):
@@ -942,28 +927,14 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             # Drop any in-flight drag entries for this client; the
             # corresponding ``phase="end"`` will never arrive, so without
             # this the active-drag map leaks an entry per dropped drag and
-            # ``on_drag_end`` is silently skipped. The handle stays
-            # resolvable for the synthesized end events' ``event.client``
-            # via _disconnecting_clients, without being publicly listed.
-            self._disconnecting_clients[conn.client_id] = handle
-            try:
-                await self.scene._drop_active_drags_for_client(
-                    cast(infra.ClientId, conn.client_id)
-                )
-            finally:
-                self._disconnecting_clients.pop(conn.client_id, None)
-            for cb in disconnect_cbs:
-                if asyncio.iscoroutinefunction(cb):
-                    # Isolated like the threadpool path: one throwing
-                    # callback must not starve its siblings.
-                    try:
-                        await cb(handle)
-                    except Exception as exc:
-                        print_awaited_callback_error(exc)
-                else:
-                    self._thread_executor.submit(cb, handle).add_done_callback(
-                        print_threadpool_errors
-                    )
+            # ``on_drag_end`` is silently skipped. The popped handle is
+            # passed in explicitly so the synthesized end events can still
+            # resolve ``event.client`` without the client being publicly
+            # listed.
+            await self.scene._drop_active_drags_for_client(
+                cast(infra.ClientId, conn.client_id), event_client=handle
+            )
+            await self._dispatch_client_callbacks(disconnect_cbs, handle)
 
         # Start the server.
         server.start()
@@ -1238,6 +1209,25 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         if self._share_tunnel is not None:
             self._share_tunnel.close()
 
+    async def _dispatch_client_callbacks(
+        self,
+        callbacks: tuple[Callable[[ClientHandle], None | Coroutine], ...],
+        client: ClientHandle,
+    ) -> None:
+        """Run connect/disconnect callbacks for one client: async callbacks
+        awaited in order, sync callbacks on the thread pool, every callback
+        exception-isolated so one failure cannot starve its siblings."""
+        for cb in callbacks:
+            if asyncio.iscoroutinefunction(cb):
+                try:
+                    await cb(client)
+                except Exception as exc:
+                    print_awaited_callback_error(exc)
+            else:
+                self._thread_executor.submit(cb, client).add_done_callback(
+                    print_threadpool_errors
+                )
+
     def get_clients(self) -> dict[int, ClientHandle]:
         """Creates and returns a copy of the mapping from connected client IDs to
         handles.
@@ -1274,16 +1264,7 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         for client in clients:
             if asyncio.iscoroutinefunction(cb):
                 task = self._event_loop.create_task(cb(client))
-                # Same reporting as every other callback path: an exception
-                # in a fire-and-forget task is otherwise only surfaced by
-                # the event loop's default handler at GC time, if ever.
-                task.add_done_callback(
-                    lambda t: (
-                        print_awaited_callback_error(t.exception())  # type: ignore[arg-type]
-                        if not t.cancelled() and t.exception() is not None
-                        else None
-                    )
-                )
+                task.add_done_callback(print_task_error)
             else:
                 self._thread_executor.submit(cb, client).add_done_callback(
                     print_threadpool_errors

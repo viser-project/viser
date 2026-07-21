@@ -1,10 +1,7 @@
 import { ViewerContext } from "../ViewerContext";
 import { useThrottledMessageSender } from "../WebsocketUtils";
 import { GuiComponentContext } from "./GuiComponentContext";
-import {
-  shallowObjectEqual,
-  shallowObjectKeysEqual,
-} from "../utils/shallowObjectKeysEqual";
+import { shallowObjectEqual } from "../utils/shallowObjectKeysEqual";
 
 import { Box } from "@mantine/core";
 import React from "react";
@@ -119,21 +116,15 @@ function GuiContainer({
 }) {
   const viewer = React.useContext(ViewerContext)!;
 
-  // Use a fallback empty object for containers that don't exist yet. Containers
-  // are created on-demand by the addGui action when GUI elements are added.
-  const guiIdSet = viewer.useGui(
-    (state) => state.guiUuidSetFromContainerUuid[containerUuid] ?? {},
-    shallowObjectKeysEqual,
-  );
-
-  // Render each GUI element in this container. (Standalone panels are a separate
-  // top-level entity -- they never appear in any container set, so there is
-  // nothing to filter here.)
-  const guiIdArray = [...Object.keys(guiIdSet)];
-  // Only THIS container's orders: guiOrderFromUuid is rebuilt on every GUI
-  // add/remove anywhere, so a whole-map subscription re-renders every
-  // mounted container once per element during streaming loads.
-  const guiOrderFromId = viewer!.useGui((state) => {
+  // One subscription covering both THIS container's membership (the keys;
+  // containers are created on demand by addGui, hence the missing-container
+  // fallback to an empty object) and its children's orders (the values).
+  // Deliberately narrowed: guiOrderFromUuid is rebuilt on every GUI
+  // add/remove anywhere, so a whole-map subscription would re-render every
+  // mounted container once per element during streaming loads. (Standalone
+  // panels are a separate top-level entity -- they never appear in any
+  // container set, so there is nothing to filter here.)
+  const guiOrderFromId = viewer.useGui((state) => {
     const out: Record<string, number> = {};
     const set = state.guiUuidSetFromContainerUuid[containerUuid];
     if (set !== undefined)
@@ -142,7 +133,7 @@ function GuiContainer({
     return out;
   }, shallowObjectEqual);
 
-  let guiUuidOrderPairArray = guiIdArray.map((uuid) => ({
+  let guiUuidOrderPairArray = Object.keys(guiOrderFromId).map((uuid) => ({
     uuid: uuid,
     order: guiOrderFromId[uuid],
   }));
