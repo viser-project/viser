@@ -158,22 +158,13 @@ export function makeRegionResizeHandlers(
   // writes them on each commit).
   const init = cols.map((c) => c.weight);
   const mins = cols.map(() => ops.minRegionWidth());
-  // No per-column max: a region drag is bounded only by its columns' grab-mins
-  // (and the render-time canvas guard), not a fixed per-panel width --
-  // matching the width reconciler and SplitView divider drags.
-  const maxs = cols.map(() => Infinity);
   const ids = cols.map((c) => c.id);
   const onFrame = (reservedPx: number) => {
     // The grip reports the desired reserved width, which includes the fixed
     // chrome (dividers + railed strips); subtract it to get the expanded
     // columns' share.
     let next = layoutRef.current;
-    const widths = ops.resizeRegionColumns(
-      init,
-      mins,
-      maxs,
-      reservedPx - fixedPx,
-    );
+    const widths = ops.resizeRegionColumns(init, mins, reservedPx - fixedPx);
     const expandedTotal = widths.reduce((a, b) => a + b, 0);
     // Model regionWidth = the region's rendered need (D40): the expanded
     // columns' px plus the fixed 36px strips. The railed columns' preserved

@@ -318,23 +318,23 @@ export function isMultiLeafColumn(column: DockColumn): boolean {
 
 /** Distribute a region's total width across its side-by-side columns for a
  * region-edge resize. Every column scales proportionally from its drag-start
- * width; columns that would cross a min/max limit are clamped there, and the
- * difference is redistributed among the still-unclamped columns (iterated,
- * since redistribution can push more columns to a limit). The region can
- * therefore keep resizing while any column has room, instead of locking up as
- * soon as one column hits a limit. `targetTotal` is clamped to
- * [sum(mins), sum(maxs)]; the result sums to the clamped target. */
+ * width; columns that would fall below their min are clamped there, and the
+ * difference is taken from the still-unclamped columns (iterated, since
+ * redistribution can push more columns to their min). The region can
+ * therefore keep shrinking while any column has room, instead of locking up
+ * as soon as one column hits its min. `targetTotal` is floored at sum(mins);
+ * the result sums to the floored target. There is deliberately no per-column
+ * MAX: nothing in the system bounds a column from above -- region drags are
+ * limited by grab-mins and the render-time canvas guard only. */
 export function resizeRegionColumns(
   initialWidths: number[],
   minWidths: number[],
-  maxWidths: number[],
   targetTotal: number,
 ): number[] {
   const n = initialWidths.length;
   if (n === 0) return [];
   const sumMin = minWidths.reduce((a, b) => a + b, 0);
-  const sumMax = maxWidths.reduce((a, b) => a + b, 0);
-  const target = clamp(targetTotal, sumMin, sumMax);
+  const target = Math.max(targetTotal, sumMin);
   // Share weights for proportional scaling/redistribution; a zero-width
   // column still gets an equal-ish share so it can't divide by zero.
   const share = initialWidths.map((w) => (w > 0 ? w : 1));
@@ -342,56 +342,20 @@ export function resizeRegionColumns(
   const widths = share.map((s) => (s / shareTotal) * target);
   const frozen: boolean[] = new Array(n).fill(false);
   for (let pass = 0; pass < n; pass++) {
-    let correction = 0; // width still to hand out (+) or take back (-).
+    let correction = 0; // width still to take back from unfrozen columns.
     for (let i = 0; i < n; i++) {
       if (frozen[i]) continue;
-      const clamped = clamp(widths[i], minWidths[i], maxWidths[i]);
-      if (clamped !== widths[i]) {
-        correction += widths[i] - clamped;
-        widths[i] = clamped;
+      if (widths[i] < minWidths[i]) {
+        correction += widths[i] - minWidths[i];
+        widths[i] = minWidths[i];
         frozen[i] = true;
       }
     }
     if (correction === 0) break;
     const freeShare = share.reduce((s, w, i) => s + (frozen[i] ? 0 : w), 0);
-    if (freeShare === 0) break; // all clamped; leftover handled below.
+    if (freeShare === 0) break; // target == sumMin: every column at its min.
     for (let i = 0; i < n; i++) {
       if (!frozen[i]) widths[i] += (correction * share[i]) / freeShare;
-    }
-  }
-  // Mixed finite bounds can strand a leftover: freezing above is permanent,
-  // so a pass that clamps columns in OPPOSITE directions (some up to a min,
-  // some down to a max) can end with every column frozen while the sum is
-  // off target -- even though a column frozen at its min still has room to
-  // grow. Hand the leftover to the columns with room in the needed
-  // direction, proportional to that room; the target is inside
-  // [sumMin, sumMax], so enough room always exists. Capping each column's
-  // take at its room means no re-clamping is needed. (Unreachable in the
-  // production regime -- all callers pass Infinity maxes, where the loop
-  // above already lands on target -- but the contract holds for any caller.)
-  for (let pass = 0; pass < n; pass++) {
-    const leftover = target - widths.reduce((a, b) => a + b, 0);
-    if (Math.abs(leftover) < 1e-6) break;
-    const room = widths.map((w, i) =>
-      leftover > 0 ? maxWidths[i] - w : w - minWidths[i],
-    );
-    // Infinite headroom (an Infinity max while growing) absorbs the whole
-    // leftover, split by the columns' shares -- proportional-to-room math
-    // would divide Infinity/Infinity into NaN and poison every width.
-    const inf = room.map((r) => r === Infinity);
-    if (inf.some(Boolean)) {
-      const infShare = share.reduce((s, w, i) => s + (inf[i] ? w : 0), 0);
-      for (let i = 0; i < n; i++) {
-        if (inf[i]) widths[i] += (leftover * share[i]) / infShare;
-      }
-      break;
-    }
-    const roomTotal = room.reduce((s, r) => s + Math.max(r, 0), 0);
-    if (roomTotal <= 0) break;
-    const take = Math.min(Math.abs(leftover), roomTotal);
-    for (let i = 0; i < n; i++) {
-      if (room[i] > 0)
-        widths[i] += Math.sign(leftover) * ((take * room[i]) / roomTotal);
     }
   }
   return widths;
@@ -1945,7 +1909,6 @@ export function setRegionWidth(
         const widths = resizeRegionColumns(
           expanded.map((c) => c.weight),
           expanded.map(() => minRegionWidth()),
-          expanded.map(() => Infinity),
           px - railedPx,
         );
         expanded.forEach((c, i) => {
@@ -1963,7 +1926,6 @@ export function setRegionWidth(
       const widths = resizeRegionColumns(
         cols.map((c) => c.weight),
         cols.map(() => minRegionWidth()),
-        cols.map(() => Infinity),
         px,
       );
       cols.forEach((c, i) => {

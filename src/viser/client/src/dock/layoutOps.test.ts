@@ -28,7 +28,6 @@ import {
   MIN_PANEL_WIDTH_PX,
   MIN_REGION_GRAB_PX,
   PaneId,
-  clamp,
   emptyLayout,
   isRegionPackedOn,
 } from "./types";
@@ -2069,7 +2068,7 @@ describe("(9) resizeRegionColumns", () => {
   const M = MIN_PANEL_WIDTH_PX; // 220
 
   it("scales proportionally when nothing clamps", () => {
-    const w = resizeRegionColumns([300, 300], [M, M], [600, 600], 900);
+    const w = resizeRegionColumns([300, 300], [M, M], 900);
     expect(w[0]).toBeCloseTo(450);
     expect(w[1]).toBeCloseTo(450);
   });
@@ -2077,81 +2076,45 @@ describe("(9) resizeRegionColumns", () => {
   it("keeps shrinking past one column's minimum (wide-narrow-wide)", () => {
     // 400 + 220 + 400 = 1020; shrink to 900. The narrow middle column is
     // already at its minimum; the wide columns absorb the whole reduction.
-    const w = resizeRegionColumns(
-      [400, M, 400],
-      [M, M, M],
-      [600, 600, 600],
-      900,
-    );
+    const w = resizeRegionColumns([400, M, 400], [M, M, M], 900);
     expect(w[1]).toBeCloseTo(M); // clamped, not below
     expect(w[0]).toBeCloseTo((900 - M) / 2);
     expect(w[2]).toBeCloseTo((900 - M) / 2);
     expect(w[0] + w[1] + w[2]).toBeCloseTo(900);
   });
 
-  it("keeps growing past one column's maximum", () => {
-    // Growing: the column at max stays there; others take the surplus.
-    const w = resizeRegionColumns(
-      [580, 300, 300],
-      [M, M, M],
-      [600, 600, 600],
-      1400,
-    );
-    expect(w[0]).toBeCloseTo(600); // clamped at max
-    expect(w[1] + w[2]).toBeCloseTo(800);
-    expect(w[1]).toBeCloseTo(400);
-    expect(w[2]).toBeCloseTo(400);
+  it("floors the target at the columns' aggregate minimum", () => {
+    const w = resizeRegionColumns([300, 300], [M, M], 100);
+    expect(w[0]).toBeCloseTo(M);
+    expect(w[1]).toBeCloseTo(M);
   });
 
-  it("clamps the target to the columns' aggregate bounds", () => {
-    const w = resizeRegionColumns([300, 300], [M, M], [600, 600], 100);
-    expect(w[0] + w[1]).toBeCloseTo(2 * M);
-    const w2 = resizeRegionColumns([300, 300], [M, M], [600, 600], 5000);
-    expect(w2[0] + w2[1]).toBeCloseTo(1200);
-  });
-
-  it("sums to the clamped target under mixed finite bounds", () => {
-    // regression: opposite-direction clamps (one column pulled UP to its
-    // min, another pushed DOWN to its max) froze every column with the sum
-    // stranded off target, violating the documented postcondition. The
-    // leftover phase hands the difference to columns with room. (Not
-    // reachable from production callers -- they pass Infinity maxes -- but
-    // the exported contract must hold for any caller.)
-    const cases: [number[], number[], number[], number][] = [
-      // From fuzz: proportional shares put col0 below its min and col1
-      // above its max simultaneously.
-      [[7.11, 230.84], [87.43, 8.31], [376.41, 282.51], 357.72],
-      // Target below sumMin: result must sum to sumMin exactly.
-      [[302.17, 102.38], [23.55, 91.5], [68.92, 365.4], 28.17],
-      // Target above sumMax with a finite max mix.
-      [[207.46, 15.21], [65.28, 115.61], [118.42, 352.14], 1480.67],
-      // Mixed Infinity/finite maxes with a positive stranded leftover:
-      // proportional-to-room redistribution divided Infinity/Infinity into
-      // NaN and poisoned every width.
-      [[300, 300, 10], [50, 50, 400], [80, 80, Infinity], 600],
+  it("sums to the floored target for arbitrary inputs", () => {
+    // The documented postcondition, on shapes fuzzing once surfaced:
+    // proportional shares that put a column below its min, and a target
+    // below sumMin (result must land exactly on sumMin).
+    const cases: [number[], number[], number][] = [
+      [[7.11, 230.84], [87.43, 8.31], 357.72],
+      [[302.17, 102.38], [23.55, 91.5], 28.17],
+      [[300, 300, 10], [50, 50, 400], 600],
     ];
-    for (const [init, mins, maxs, target] of cases) {
-      const w = resizeRegionColumns(init, mins, maxs, target);
+    for (const [init, mins, target] of cases) {
+      const w = resizeRegionColumns(init, mins, target);
       const sumMin = mins.reduce((a, b) => a + b, 0);
-      const sumMax = maxs.reduce((a, b) => a + b, 0);
-      const clamped = clamp(target, sumMin, sumMax);
-      expect(w.reduce((a, b) => a + b, 0)).toBeCloseTo(clamped, 3);
+      expect(w.reduce((a, b) => a + b, 0)).toBeCloseTo(
+        Math.max(target, sumMin),
+        3,
+      );
       w.forEach((x, i) => {
         expect(x).toBeGreaterThanOrEqual(mins[i] - 1e-6);
-        expect(x).toBeLessThanOrEqual(maxs[i] + 1e-6);
       });
     }
   });
 
-  it("cascades: redistribution can push a second column to its limit", () => {
+  it("cascades: redistribution can push a second column to its min", () => {
     // Shrink hard: middle hits min first, then the small-ish first column
     // also bottoms out; the wide last column absorbs the rest.
-    const w = resizeRegionColumns(
-      [260, M, 500],
-      [M, M, M],
-      [600, 600, 600],
-      700,
-    );
+    const w = resizeRegionColumns([260, M, 500], [M, M, M], 700);
     expect(w[0]).toBeCloseTo(M);
     expect(w[1]).toBeCloseTo(M);
     expect(w[2]).toBeCloseTo(700 - 2 * M);
