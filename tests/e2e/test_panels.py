@@ -1432,11 +1432,15 @@ def test_unmergeable_center_routes_drop_into_hosted_tab_group(
           const leaf = document.querySelector(
             '[data-dock-leaf][data-dock-edge="right"]');
           const area = document.querySelector('[data-dock-area]');
+          const areaStrip = area
+            ? area.querySelector('[data-dock-strip]')
+            : null;
           const grip = [...document.querySelectorAll('[data-dock-group]')]
             .find((g) => g.textContent.includes('DragMe'))
             ?.querySelector('[data-dock-griphandle]');
           const box = (el) => (el ? el.getBoundingClientRect().toJSON() : null);
-          return { leaf: box(leaf), area: box(area), grip: box(grip) };
+          return { leaf: box(leaf), area: box(area), grip: box(grip),
+                   areaStrip: box(areaStrip) };
         }"""
     )
     assert rects["leaf"] is not None and rects["grip"] is not None
@@ -1454,6 +1458,23 @@ def test_unmergeable_center_routes_drop_into_hosted_tab_group(
     viser_page.mouse.move(sx, sy)
     viser_page.mouse.down()
     viser_page.mouse.move(sx + 6, sy + 6, steps=2)
+    # Hovering the AREA's own body must show the same host-filling hint as
+    # the center fallback below: one drop surface, never two differently
+    # sized zones for the same destination.
+    area_strip = rects["areaStrip"]
+    assert area_strip is not None
+    viser_page.mouse.move(cx, area_strip["bottom"] + 5, steps=6)
+    viser_page.wait_for_timeout(150)
+    body_hints = viser_page.evaluate(
+        """() => [...document.querySelectorAll('[data-dock-hint]')]
+            .filter((d) => d.style.display !== 'none')
+            .map((d) => ({ v: d.getAttribute('data-dock-hint'),
+                           h: parseFloat(d.style.height) || 0 }))"""
+    )
+    body_merge = [h for h in body_hints if h["v"] == "merge"]
+    assert body_merge and abs(body_merge[0]["h"] - leaf["height"]) <= 4, (
+        f"area-body hover should fill the host panel, got {body_hints}"
+    )
     viser_page.mouse.move(cx, cy, steps=8)
     viser_page.wait_for_timeout(150)
     hints = viser_page.evaluate(

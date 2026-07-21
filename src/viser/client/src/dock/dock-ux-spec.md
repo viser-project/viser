@@ -519,10 +519,16 @@ never shared with the dock's).
   into the nearest hosted area. The hint fills the HOST panel, exactly
   like any other merge hint (user-adjudicated: the highlight marks the
   surface that accepts the drop; a hint pinned to a short area's own
-  rect read as disconnected from the zone). The host's body backs the
-  area up, so "merge into this panel" works from anywhere in the
-  content center (the host's side/top/bottom zones still win), not
-  just over the area's own pixels.
+  rect read as disconnected from the zone). Hovering the area's own
+  BODY inside an unmergeable host shows that same host-filling hint —
+  the panel is ONE drop surface, never two differently-sized zones for
+  the same destination (user-adjudicated); only the area's tab strip
+  keeps its precise insertion lines. (Inside a MERGEABLE host the
+  area's body keeps its area-sized hint: there the two zones are
+  genuinely different destinations — host tabs vs area tabs.) The
+  host's body backs the area up, so "merge into this panel" works from
+  anywhere in the content center (the host's side/top/bottom zones
+  still win), not just over the area's own pixels.
 
 ---
 

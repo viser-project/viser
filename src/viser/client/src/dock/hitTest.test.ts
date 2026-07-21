@@ -2160,6 +2160,38 @@ describe("unmergeable header acts as the dock-above / snap-above zone", () => {
     expect(nearBottom.result).toEqual({ kind: "merge", targetGroupId: "tb" });
   });
 
+  it("D58: hovering the area's body inside an unmergeable host fills the host", () => {
+    // One drop surface, one look: the area-body hover must not show a
+    // second, smaller zone for the same destination.
+    const l = layoutWithArea(["ta"]);
+    const hostRect = rect(680, 0, 320, 800);
+    const areaRect = rect(690, 60, 300, 90);
+    const targets: DropTargets = {
+      groups: [unmergeableDockTarget(hostRect), hostedArea("ta", areaRect)],
+    };
+    // Pointer inside the area's body (below its strip-less top).
+    const hit = hitTest(l, REGION_W, CONTAINER, targets, 840, 120)!;
+    expect(hit.result).toEqual({ kind: "merge", targetGroupId: "ta" });
+    expect(hit.hint.top).toBeCloseTo(hostRect.top - CONTAINER.top);
+    expect(hit.hint.height).toBeCloseTo(hostRect.height);
+  });
+
+  it("D58: inside a MERGEABLE host the area keeps its area-sized hint", () => {
+    // There the host's own merge is a different destination, so the two
+    // zones legitimately look different.
+    const l = layoutWithArea(["ta"]);
+    const areaRect = rect(690, 60, 300, 90);
+    const host = unmergeableDockTarget(rect(680, 0, 320, 800));
+    host.unmergeable = false;
+    const targets: DropTargets = {
+      groups: [host, hostedArea("ta", areaRect)],
+    };
+    const hit = hitTest(l, REGION_W, CONTAINER, targets, 840, 120)!;
+    expect(hit.result).toEqual({ kind: "merge", targetGroupId: "ta" });
+    expect(hit.hint.top).toBeCloseTo(areaRect.top - CONTAINER.top);
+    expect(hit.hint.height).toBeCloseTo(areaRect.height);
+  });
+
   it("D58: an area hosted by a DIFFERENT panel never claims the center", () => {
     const l = layoutWithArea(["ta"]);
     const targets: DropTargets = {

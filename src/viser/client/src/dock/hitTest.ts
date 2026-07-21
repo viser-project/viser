@@ -931,9 +931,26 @@ export function hitTest(
         };
       }
     }
+    // D58: inside an UNMERGEABLE host, the area's body shows the same
+    // host-filling merge hint as the dead-center fallback -- the panel is
+    // one drop surface, never two differently-sized zones for the same
+    // destination. (Inside a mergeable host the area-sized hint stays:
+    // there the host's own merge is a different destination.)
+    const unmergeableHostRect = (() => {
+      if (g.hostGroupId === undefined) return null;
+      for (const t of targets.groups) {
+        if (
+          t.ctx.kind !== "area" &&
+          t.groupId === g.hostGroupId &&
+          t.unmergeable === true
+        )
+          return t.rect;
+      }
+      return null;
+    })();
     return {
       result: { kind: "merge", targetGroupId: g.groupId },
-      hint: rel(r, "merge"),
+      hint: rel(unmergeableHostRect ?? r, "merge"),
     };
   }
 
