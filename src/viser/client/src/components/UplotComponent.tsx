@@ -324,11 +324,16 @@ function PlotComponent({
           resetScales={false}
           onCreate={(chart) => {
             setPlotObj(chart);
-            registerUplotTestpoint(uuid, chart);
+            // Only the INLINE instance registers: the expand-modal renders a
+            // second PlotComponent with the same uuid, and letting it share
+            // the key would overwrite the entry on open and delete the
+            // still-alive inline chart's entry on close. The inline instance
+            // is the one given an expand affordance.
+            if (onExpand !== undefined) registerUplotTestpoint(uuid, chart);
           }}
           onDelete={() => {
             setPlotObj(undefined);
-            unregisterUplotTestpoint(uuid);
+            if (onExpand !== undefined) unregisterUplotTestpoint(uuid);
           }}
           options={plotOptions}
           data={data}

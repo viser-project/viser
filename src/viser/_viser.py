@@ -877,15 +877,28 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 # received.
                 if first:
                     first = False
+                    # Register the client and snapshot the callback list in
+                    # one critical section, then invoke OUTSIDE the lock: an
+                    # async callback runs inline on the event loop, and any
+                    # server API it calls that takes _client_lock (e.g.
+                    # get_clients(), or on_scene_pointer registration) would
+                    # deadlock against the lock this thread already holds.
+                    # Exactly-once dispatch per (client, callback) pair only
+                    # needs the mutate+snapshot to be atomic: a concurrent
+                    # on_client_connect registration either lands in this
+                    # snapshot, or its own already-connected replay sees the
+                    # client in _connected_clients -- never both, never
+                    # neither.
                     with self._client_lock:
                         self._connected_clients[conn.client_id] = client
-                        for cb in self._client_connect_cb:
-                            if asyncio.iscoroutinefunction(cb):
-                                await cb(client)
-                            else:
-                                self._thread_executor.submit(
-                                    cb, client
-                                ).add_done_callback(print_threadpool_errors)
+                        connect_cbs = tuple(self._client_connect_cb)
+                    for cb in connect_cbs:
+                        if asyncio.iscoroutinefunction(cb):
+                            await cb(client)
+                        else:
+                            self._thread_executor.submit(cb, client).add_done_callback(
+                                print_threadpool_errors
+                            )
 
                 for camera_cb in client.camera._state.camera_cb:
                     if asyncio.iscoroutinefunction(camera_cb):
@@ -900,28 +913,35 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         # Remove clients when they disconnect.
         @server.on_client_disconnect
         async def _(conn: infra.WebsockClientConnection) -> None:
+            # Never hold _client_lock across an await: the awaited user
+            # callbacks (and the synthesized drag-end callbacks below) run
+            # inline on the event loop, and any server API they call that
+            # takes the lock (e.g. get_clients()) would deadlock against
+            # the lock this thread already holds.
             with self._client_lock:
-                if conn.client_id not in self._connected_clients:
-                    return
+                handle = self._connected_clients.get(conn.client_id)
+            if handle is None:
+                return
 
-                # Drop any in-flight drag entries for this client; the
-                # corresponding ``phase="end"`` will never arrive, so
-                # without this the active-drag map leaks an entry per
-                # dropped drag and ``on_drag_end`` is silently skipped.
-                # Run this *before* popping from ``_connected_clients``
-                # so the synthesized end event can resolve a
-                # ``ClientHandle`` for ``event.client``.
-                await self.scene._drop_active_drags_for_client(
-                    cast(infra.ClientId, conn.client_id)
-                )
-                handle = self._connected_clients.pop(conn.client_id)
-                for cb in self._client_disconnect_cb:
-                    if asyncio.iscoroutinefunction(cb):
-                        await cb(handle)
-                    else:
-                        self._thread_executor.submit(cb, handle).add_done_callback(
-                            print_threadpool_errors
-                        )
+            # Drop any in-flight drag entries for this client; the
+            # corresponding ``phase="end"`` will never arrive, so without
+            # this the active-drag map leaks an entry per dropped drag and
+            # ``on_drag_end`` is silently skipped. Run this *before*
+            # popping from ``_connected_clients`` so the synthesized end
+            # event can resolve a ``ClientHandle`` for ``event.client``.
+            await self.scene._drop_active_drags_for_client(
+                cast(infra.ClientId, conn.client_id)
+            )
+            with self._client_lock:
+                self._connected_clients.pop(conn.client_id, None)
+                disconnect_cbs = tuple(self._client_disconnect_cb)
+            for cb in disconnect_cbs:
+                if asyncio.iscoroutinefunction(cb):
+                    await cb(handle)
+                else:
+                    self._thread_executor.submit(cb, handle).add_done_callback(
+                        print_threadpool_errors
+                    )
 
         # Start the server.
         server.start()

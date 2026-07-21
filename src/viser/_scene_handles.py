@@ -610,6 +610,18 @@ _VALID_DRAG_BUTTONS: Tuple[_messages.DragButton, ...] = get_args(_messages.DragB
 
 
 class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
+    def _ensure_not_removed(self) -> None:
+        """Interaction-callback (de)registration publishes name-keyed binding
+        messages into the persistent broadcast buffer; on a removed handle
+        those are ghosts that replay to late joiners once the node's remove
+        tombstone is garbage-collected. Same contract as property writes,
+        which raise via AssignablePropsBase.__setattr__."""
+        if self._impl.removed:
+            raise RuntimeError(
+                f"Cannot register or remove callbacks on a removed "
+                f"{type(self).__name__}."
+            )
+
     def _sync_drag_bindings(self) -> None:
         """Recompute the union of registered (button, modifiers) and
         push it to the client as a full binding set."""
@@ -663,6 +675,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
     ]:
         self._validate_button(button)
+        self._ensure_not_removed()
         normalized = _messages._normalize_key_modifier(modifier)
 
         def decorator(
@@ -782,6 +795,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         ``callback="all"`` removes every drag callback; a specific
         function removes only entries whose callback identity matches.
         """
+        self._ensure_not_removed()
         if callback == "all":
             self._impl.drag_cb.clear()
         else:
@@ -831,6 +845,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         """
         # Validate eagerly so a bad string raises at the call site,
         # not when the user later applies the returned decorator.
+        self._ensure_not_removed()
         normalized_modifier = _messages._normalize_key_modifier(modifier)
 
         def register(callback: Callable) -> Callable:
@@ -861,6 +876,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         Args:
             callback: Either "all" to remove all callbacks, or a specific callback function to remove.
         """
+        self._ensure_not_removed()
         if callback == "all":
             self._impl.click_cb.clear()
         else:

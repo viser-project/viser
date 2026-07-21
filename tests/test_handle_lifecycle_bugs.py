@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import warnings
 from contextlib import contextmanager
-from typing import Generator
+from typing import Generator, cast
 
 import numpy as np
 import pytest
@@ -524,4 +524,54 @@ def test_zero_byte_upload_completes() -> None:
             type(m).__name__ == "FileTransferPartAck"
             and getattr(m, "transfer_uuid", None) == "t0"
             for m in buf.values()
+        )
+
+
+def test_gui_update_callback_writeback_wins_in_broadcast_buffer() -> None:
+    """An ``on_update`` callback that writes back (e.g. clamps the value) must
+    win in the broadcast buffer. The client-update echo (``sync_cb``) used to
+    be queued AFTER the awaited callbacks, so the callback's own broadcast was
+    clobbered by the stale pre-clamp echo: every other client and every late
+    joiner kept the un-clamped value while the server held the clamped one."""
+    with _server() as server:
+        slider = server.gui.add_slider(
+            "s", min=0.0, max=10.0, step=0.1, initial_value=1.0
+        )
+
+        @slider.on_update
+        async def _(event: viser.GuiEvent) -> None:
+            # Clamp: anything above 5 snaps back to 5.
+            slider.value = min(slider.value, 5.0)
+
+        # Simulate a connected client editing the slider to 7.0.
+        cid = ClientId(0)
+        server._connected_clients[0] = cast(viser.ClientHandle, object())
+        try:
+            run_isolated(
+                lambda: asyncio.run(
+                    server.gui._handle_gui_updates(
+                        cid,
+                        _messages.GuiUpdateMessage(
+                            uuid=slider._impl.uuid, updates={"value": 7.0}
+                        ),
+                    )
+                )
+            )
+        finally:
+            server._connected_clients.pop(0, None)
+
+        assert slider.value == 5.0  # The clamp applied on the server.
+        # The buffer's surviving update for this element carries the CLAMPED
+        # value: it is what a late joiner replays.
+        buffered = [
+            m
+            for m in server._websock_server._broadcast_buffer.message_from_id.values()
+            if isinstance(m, _messages.GuiUpdateMessage)
+            and m.uuid == slider._impl.uuid
+            and "value" in m.updates
+        ]
+        assert buffered, "expected a buffered value update for the slider"
+        assert buffered[-1].updates["value"] == 5.0, (
+            f"late joiners would replay {buffered[-1].updates['value']}, but the "
+            "server value is 5.0"
         )

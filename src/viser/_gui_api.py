@@ -378,6 +378,19 @@ class GuiApi:
 
         # GUI element has been updated!
         handle_state.update_timestamp = time.time()
+
+        # Broadcast to the other clients BEFORE awaiting update callbacks, so
+        # the mutation above and its broadcast are adjacent on the event loop:
+        # with the broadcast after the awaits, (a) two near-simultaneous
+        # updates could interleave at a callback's await point and leave the
+        # buffer coalesced to a different value than the server state, and
+        # (b) a callback that writes back (e.g. clamps handle.value) had its
+        # own broadcast clobbered by the stale echo of the pre-clamp value --
+        # every OTHER client (and every late joiner) kept the un-clamped
+        # value while the server and the acting client held the clamped one.
+        if handle_state.sync_cb is not None:
+            handle_state.sync_cb(client_id, updates_cast)
+
         client = self._resolve_client(client_id)
         if client is None:
             return
@@ -388,9 +401,6 @@ class GuiApi:
                 self._thread_executor.submit(
                     cb, GuiEvent(client, client_id, handle)
                 ).add_done_callback(print_threadpool_errors)
-
-        if handle_state.sync_cb is not None:
-            handle_state.sync_cb(client_id, updates_cast)
 
     async def _handle_gui_button_hold(
         self, client_id: ClientId, message: _messages.GuiButtonHoldMessage

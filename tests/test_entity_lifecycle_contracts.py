@@ -494,3 +494,22 @@ def test_remove_retry_after_emit_failure_still_clears_drag_bindings() -> None:
     assert drag_bindings and all(len(m.bindings) == 0 for m in drag_bindings), (
         f"retry left stale drag bindings: {drag_bindings}"
     )
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_post_remove_interaction_callback_registration_raises() -> None:
+    """Interaction-callback (de)registration on a removed node raises, like
+    property writes: it publishes name-keyed binding messages that would
+    otherwise linger as ghosts and replay to late joiners once the node's
+    remove tombstone is garbage-collected."""
+    server = viser.ViserServer()
+    handle = server.scene.add_icosphere("/clickable", radius=0.1)
+    handle.remove()
+    with pytest.raises(RuntimeError, match="removed"):
+        handle.on_click(lambda _: None)
+    with pytest.raises(RuntimeError, match="removed"):
+        handle.on_drag(lambda _: None)
+    with pytest.raises(RuntimeError, match="removed"):
+        handle.remove_click_callback()
+    with pytest.raises(RuntimeError, match="removed"):
+        handle.remove_drag_callback()
