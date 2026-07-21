@@ -413,13 +413,20 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
 
     def remove(self) -> None:
         """Remove the node from the scene."""
-        # Warn if already removed.
-        if self._impl.removed:
+        # Warn if already removed. A node is only FULLY removed once it has
+        # been popped from the registry below; `removed` alone can be set
+        # mid-teardown (it closes the interaction surface right after each
+        # node's empty-bindings emit), and a retry after a raising emit must
+        # still be able to finish the job.
+        api = self._impl.api
+        if (
+            self._impl.removed
+            and api._handle_from_node_name.get(self._impl.name) is not self
+        ):
             warnings.warn(f"Attempted to remove already removed node: {self.name}")
             return
 
         # Collect all descendants via BFS.
-        api = self._impl.api
         to_remove = [self._impl.name]
         i = 0
         while i < len(to_remove):
@@ -470,6 +477,14 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             # retiring mid-emit).
             if had_drag and not drag_active and not api._is_drag_active_for(node_name):
                 impl.drag_cb.clear()
+            # Close the node's interaction surface as soon as its empty
+            # bindings are out (not in the teardown loop below): a
+            # registration racing this remove from another thread either
+            # publishes BEFORE the empty emit (superseded by it -- bindings
+            # messages share a per-name redundancy key) or observes
+            # `removed` and raises. Set only after the emits succeed, so a
+            # raising emit leaves the handle retryable.
+            impl.removed = True
 
         # Tear down each descendant from both dicts and let it release any
         # subclass-specific registries via the polymorphic ``_on_remove`` hook.
@@ -625,6 +640,11 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
     def _sync_drag_bindings(self) -> None:
         """Recompute the union of registered (button, modifiers) and
         push it to the client as a full binding set."""
+        # Final cross-thread backstop: a registration that passed its
+        # removed-check just before another thread's remove() completed
+        # must not queue a ghost binding for the dead name.
+        if self._impl.removed:
+            return
         seen: set[Tuple[_messages.DragButton, _messages.KeyModifier | None]] = set()
         bindings: list[_messages.DragBinding] = []
         for entry in self._impl.drag_cb:
@@ -901,6 +921,11 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         The client derives `clickable` from `bindings.length > 0`; no
         separate flag is sent.
         """
+        # Final cross-thread backstop: a registration that passed its
+        # removed-check just before another thread's remove() completed
+        # must not queue a ghost binding for the dead name.
+        if self._impl.removed:
+            return
         bindings = tuple(
             _messages.DragBinding(button="left", modifier=entry.modifier)
             for entry in self._impl.click_cb

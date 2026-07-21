@@ -575,3 +575,43 @@ def test_gui_update_callback_writeback_wins_in_broadcast_buffer() -> None:
             f"late joiners would replay {buffered[-1].updates['value']}, but the "
             "server value is 5.0"
         )
+
+
+def test_disconnect_drag_drain_survives_throwing_callback() -> None:
+    """A throwing async drag-end callback must not strand the client's OTHER
+    in-flight drag entries (each pins a handle and blocks a future remove()
+    from clearing its callbacks) or abort the disconnect teardown."""
+    cid = ClientId(0)
+    with _server() as server:
+        scene = server.scene
+        scene.add_frame("/parent")
+        tc_a = scene.add_transform_controls("/parent/giz_a")
+        tc_b = scene.add_transform_controls("/parent/giz_b")
+        fired: list[str] = []
+
+        @tc_a.on_update
+        async def _(event: viser.TransformControlsEvent) -> None:
+            if event.phase == "end":
+                fired.append("a")
+                raise RuntimeError("boom")
+
+        @tc_b.on_update
+        async def _(event: viser.TransformControlsEvent) -> None:
+            if event.phase == "end":
+                fired.append("b")
+
+        scene._get_client_handle = lambda *_a: None  # type: ignore[assignment, return-value]
+
+        async def drive() -> None:
+            await scene._handle_transform_controls_drag_start(
+                cid, _messages.TransformControlsDragStartMessage(name="/parent/giz_a")
+            )
+            await scene._handle_transform_controls_drag_start(
+                cid, _messages.TransformControlsDragStartMessage(name="/parent/giz_b")
+            )
+            await scene._drop_active_drags_for_client(cid)
+
+        run_isolated(lambda: asyncio.run(drive()))
+
+        assert fired == ["a", "b"], fired  # b fired despite a's exception.
+        assert scene._active_transform_drag_handles == {}  # no strands.

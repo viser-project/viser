@@ -24,7 +24,10 @@ from ._gui_api import GuiApi, LiteralColor
 from ._gui_handles import _make_uuid
 from ._notification_handle import NotificationHandle, _NotificationHandleState
 from ._scene_api import SceneApi, cast_vector
-from ._threadpool_exceptions import print_threadpool_errors
+from ._threadpool_exceptions import (
+    print_awaited_callback_error,
+    print_threadpool_errors,
+)
 from ._tunnel import ViserTunnel
 from .infra._infra import StateSerializer
 
@@ -899,7 +902,12 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                         connect_cbs = tuple(self._client_connect_cb)
                     for cb in connect_cbs:
                         if asyncio.iscoroutinefunction(cb):
-                            await cb(client)
+                            # Isolated like the threadpool path: one throwing
+                            # callback must not starve its siblings.
+                            try:
+                                await cb(client)
+                            except Exception as exc:
+                                print_awaited_callback_error(exc)
                         else:
                             self._thread_executor.submit(cb, client).add_done_callback(
                                 print_threadpool_errors
@@ -946,7 +954,12 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 self._disconnecting_clients.pop(conn.client_id, None)
             for cb in disconnect_cbs:
                 if asyncio.iscoroutinefunction(cb):
-                    await cb(handle)
+                    # Isolated like the threadpool path: one throwing
+                    # callback must not starve its siblings.
+                    try:
+                        await cb(handle)
+                    except Exception as exc:
+                        print_awaited_callback_error(exc)
                 else:
                     self._thread_executor.submit(cb, handle).add_done_callback(
                         print_threadpool_errors

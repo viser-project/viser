@@ -142,9 +142,16 @@ def test_skinned_mesh_animates_across_playback_loops(
         serializer.insert_sleep(0.2)
         mesh.bones[1].position = (0.0, 0.0, 1.0 + step)
     mesh.remove()
+    # Re-add with DIFFERENT geometry (x shifted by +5): the replayed re-add
+    # must also rebuild the rendered geometry -- in a recording every array
+    # views ONE shared buffer, so memoization keyed on .buffer identity kept
+    # the old vertices forever.
     mesh = viser_server.scene.add_mesh_skinned(
         "/skinned",
-        np.array([[np.cos(i), np.sin(i), i * 0.1] for i in range(v)], dtype=np.float32),
+        np.array(
+            [[np.cos(i) + 5.0, np.sin(i), i * 0.1] for i in range(v)],
+            dtype=np.float32,
+        ),
         np.array([[0, 1, 2], [3, 4, 5], [5, 6, 7]], dtype=np.uint32),
         bone_wxyzs=np.array([[1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]]),
         bone_positions=np.zeros((2, 3)),
@@ -169,22 +176,35 @@ def test_skinned_mesh_animates_across_playback_loops(
         const bones = [];
         node.traverse((o) => { if (o.type === 'Bone') bones.push(o); });
         if (bones.length < 2) return null;
-        return bones[1].position.z;
+        let vx = null;
+        node.traverse((o) => {
+            if (vx === null && o.isSkinnedMesh)
+                vx = o.geometry.attributes.position.array[0];
+        });
+        return { z: bones[1].position.z, vx };
     }"""
     page.wait_for_function(js_bone_z, timeout=15_000)
 
-    # Sample bone z well past the first loop (recording is ~0.6s; sample for
-    # ~2.4s => at least 3 loops). The LATE window (>= 2 full loops in) must
-    # still show motion; frozen bones make it constant.
+    # Sample bone z well past the first loop (recording is ~0.8s; sample for
+    # ~2.4s => at least 2 full loops). The LATE window must still show
+    # motion; frozen bones make it constant.
     samples: list[float] = []
+    vx_samples: list[float] = []
     for _ in range(30):
-        z = page.evaluate(js_bone_z)
-        if z is not None:
-            samples.append(float(z))
+        out = page.evaluate(js_bone_z)
+        if out is not None:
+            samples.append(float(out["z"]))
+            if out["vx"] is not None:
+                vx_samples.append(float(out["vx"]))
         page.wait_for_timeout(80)
     late = samples[len(samples) // 2 :]
     assert len(set(f"{z:.3f}" for z in late)) > 1, (
         f"bone froze after the first playback loop: late samples={late[:10]}..."
+    )
+    # The re-added (shifted) geometry must actually render: vertex 0's x is
+    # cos(0) + 5 = 6 after the in-recording re-add.
+    assert any(vx > 3.0 for vx in vx_samples), (
+        f"re-added geometry never rendered (stale memo): vx={vx_samples[:10]}..."
     )
 
     Path(tmp_path).unlink(missing_ok=True)

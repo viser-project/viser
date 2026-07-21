@@ -73,7 +73,10 @@ from ._scene_handles import (
     _RaycastSupportedSceneNodeHandle,
     _TransformControlsState,
 )
-from ._threadpool_exceptions import print_threadpool_errors
+from ._threadpool_exceptions import (
+    print_awaited_callback_error,
+    print_threadpool_errors,
+)
 
 if TYPE_CHECKING:
     import trimesh
@@ -330,6 +333,10 @@ class SceneApi:
         ``_is_drag_active_for`` will return spurious-true for the
         leaked node name -- preventing a future ``remove()`` from
         clearing its callbacks) and silently skips ``on_drag_end``."""
+        # Per-entry exception isolation: a throwing async end callback must
+        # not strand the REMAINING entries (each pins a handle and blocks a
+        # future remove() from clearing its callbacks) or abort the caller's
+        # disconnect teardown.
         stale_keys = [k for k in self._active_drag_handles if k[0] == client_id]
         for k in stale_keys:
             entry = self._active_drag_handles.pop(k, None)
@@ -339,7 +346,10 @@ class SceneApi:
             # Synthesize an end event using the most recently observed
             # client-reported positions.
             synthetic = dataclasses.replace(last_msg, phase="end")
-            await self._dispatch_drag_callbacks(client_id, handle, synthetic)
+            try:
+                await self._dispatch_drag_callbacks(client_id, handle, synthetic)
+            except Exception as exc:
+                print_awaited_callback_error(exc)
 
         # Same for in-flight transform-control gizmo drags.
         stale_tc_keys = [
@@ -349,7 +359,12 @@ class SceneApi:
             tc_handle = self._active_transform_drag_handles.pop(k, None)
             if tc_handle is None:
                 continue
-            await self._fire_transform_controls_callbacks(client_id, tc_handle, "end")
+            try:
+                await self._fire_transform_controls_callbacks(
+                    client_id, tc_handle, "end"
+                )
+            except Exception as exc:
+                print_awaited_callback_error(exc)
 
     def _ensure_ancestors_exist(self, name: str) -> None:
         """Create intermediate frame nodes for any missing ancestors of `name`."""

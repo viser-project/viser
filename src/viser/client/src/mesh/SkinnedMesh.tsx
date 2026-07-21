@@ -95,13 +95,17 @@ export const SkinnedMesh = React.forwardRef<
 
     skeleton.init();
     return { geometry, skeleton };
+    // Keyed on the VIEWS, not their .buffer (BasicMesh's pattern): in a
+    // playback recording every array is a view on ONE shared ArrayBuffer,
+    // so .buffer identity never changes and a re-add with different
+    // geometry would silently keep rendering the old mesh.
   }, [
-    message.props.vertices.buffer,
-    message.props.faces.buffer,
-    message.props.skin_indices.buffer,
-    message.props.skin_weights?.buffer,
-    message.props.bone_wxyzs.buffer,
-    message.props.bone_positions.buffer,
+    message.props.vertices,
+    message.props.faces,
+    message.props.skin_indices,
+    message.props.skin_weights,
+    message.props.bone_wxyzs,
+    message.props.bone_positions,
   ]);
 
   // Handle initialization and cleanup.
