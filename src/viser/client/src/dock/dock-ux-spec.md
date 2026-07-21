@@ -514,6 +514,12 @@ never shared with the dock's).
 - A frame of the host panel around the area stays hot for the HOST's
   zones, so a full-bleed area doesn't make the host undockable-beside
   (P5).
+- The reverse also holds (D58): when the HOST is unmergeable, its
+  content center — a dead zone on its own — routes a mergeable drop
+  into the nearest hosted area, hint over the area's rect. The host's
+  body backs the area up, so "merge into this panel" works from
+  anywhere in the content center (the host's side/top/bottom zones
+  still win), not just over the area's own pixels.
 
 ---
 
@@ -669,7 +675,15 @@ constants in `hitTest.ts`; changing one is a spec change.
   unmergeable panel) keep the pre-D48 top band as split-above: their
   merge is null, so overshoot-lands-in-merge cannot hold (the zone
   would be a P5 no-drop hole), and no strip island exists there — the
-  strip insert is suppressed too.
+  strip insert is suppressed too. One escape (D58): when the TARGET is
+  the unmergeable one, the drag is mergeable, and the target's panel
+  hosts a nested area (§3.7), the otherwise-dead content center routes
+  to that area — the drop appends into the area's group, and the merge
+  hint draws over the area's own rect (P1: the hint shows where the
+  drop lands, not where the pointer is). Several hosted areas: the
+  nearest to the pointer wins. No visible hosted area, or an
+  unmergeable drag (it can't become tabs anywhere): the center stays a
+  quiet null.
 
 ### 5.3 Rail cell zones (§5.2 rotated; D48 deliberately does NOT
 rotate here — a rail cell has no content body to re-claim above, its
@@ -1442,6 +1456,17 @@ consuming paragraphs.
   that column's hit rect to the container edge, so a drop slammed
   flush against the screen resolves to the outermost column insert
   instead of dying in the 2px gutter (P5).
+- **D58** — a merge-suppressed target's dead center falls through to a
+  hosted nested area (user-adjudicated): the main control panel is
+  unmergeable, so when its GUI content (often holding an inline tab
+  group's area) fills only the top of a full-height docked cell, the
+  whole body below was a no-drop hole (P5) — a drop meant to "merge
+  into this panel" only worked over the area's own pixels. Now:
+  unmergeable target + mergeable drag + a visible hosted area → the
+  content center merges into the nearest hosted area, hint drawn over
+  the area's rect. An unmergeable drag still nulls (it can't become
+  tabs), and a host with no visible area keeps the quiet null. Full
+  statement in §5.2/§3.7.
 
 Retired — one line per ID; the pointer is where any surviving content
 lives:

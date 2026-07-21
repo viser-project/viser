@@ -1399,3 +1399,81 @@ def test_mobile_panels_render_as_accordion_sections(
     viser_page.get_by_role("button", name="Collapse panel Alpha").click()
     expect(viser_page.get_by_text("beta body")).not_to_be_visible()
     expect(viser_page.get_by_text("Alpha · Beta")).to_be_visible()
+
+
+def test_unmergeable_center_routes_drop_into_hosted_tab_group(
+    viser_page: Page, viser_server: viser.ViserServer
+) -> None:
+    """D58: the main control panel is unmergeable, so its content center used
+    to be a dead no-drop zone -- with short GUI content, "merge into the
+    docked panel" only worked over the inline tab group's own few pixels.
+    Dropping a panel at the docked main panel's vertical CENTER (far below the
+    tab-group area) must append it into that hosted area, and the merge hint
+    must draw over the area's rect while hovering there."""
+    viser_page.set_viewport_size({"width": 1400, "height": 900})
+    viser_page.wait_for_timeout(300)
+
+    viser_server.gui.add_markdown("main content line")
+    tg = viser_server.gui.add_tab_group()
+    with tg.add_tab("Tab1"):
+        viser_server.gui.add_markdown("tab one content")
+    viser_server.gui.main_panel.dock_right()
+
+    dragged = viser_server.gui.add_panel()
+    with dragged.add_tab("DragMe"):
+        viser_server.gui.add_markdown("drag me")
+    dragged.float(x=300, y=400, width=260)
+
+    expect(_tab(viser_page, "DragMe")).to_be_visible(timeout=5_000)
+    viser_page.wait_for_timeout(400)
+
+    rects = viser_page.evaluate(
+        """() => {
+          const leaf = document.querySelector(
+            '[data-dock-leaf][data-dock-edge="right"]');
+          const area = document.querySelector('[data-dock-area]');
+          const grip = [...document.querySelectorAll('[data-dock-group]')]
+            .find((g) => g.textContent.includes('DragMe'))
+            ?.querySelector('[data-dock-griphandle]');
+          const box = (el) => (el ? el.getBoundingClientRect().toJSON() : null);
+          return { leaf: box(leaf), area: box(area), grip: box(grip) };
+        }"""
+    )
+    assert rects["leaf"] is not None and rects["grip"] is not None
+    assert rects["area"] is not None, "the inline tab group must render an area"
+    leaf, area, grip = rects["leaf"], rects["area"], rects["grip"]
+    # The scenario under test: the area only covers the top of a much taller
+    # docked cell, so the cell's center is far outside it.
+    assert area["bottom"] < leaf["top"] + leaf["height"] * 0.4
+
+    # Drag DragMe by its grip to the docked panel's vertical center.
+    sx = grip["x"] + grip["width"] / 2
+    sy = grip["y"] + grip["height"] / 2
+    cx = leaf["left"] + leaf["width"] / 2
+    cy = leaf["top"] + leaf["height"] / 2
+    viser_page.mouse.move(sx, sy)
+    viser_page.mouse.down()
+    viser_page.mouse.move(sx + 6, sy + 6, steps=2)
+    viser_page.mouse.move(cx, cy, steps=8)
+    viser_page.wait_for_timeout(150)
+    hints = viser_page.evaluate(
+        """() => [...document.querySelectorAll('[data-dock-hint]')]
+            .filter((d) => d.style.display !== 'none')
+            .map((d) => ({ v: d.getAttribute('data-dock-hint'),
+                           y: parseFloat(d.style.top) || 0,
+                           h: parseFloat(d.style.height) || 0 }))"""
+    )
+    # Honest hint (P1): the merge highlight sits on the AREA's rect, showing
+    # where the drop lands -- not on the pointer's own dead-zone pixels.
+    assert [h for h in hints if h["v"] == "merge"], (
+        f"expected a merge hint at the docked panel's center, got {hints}"
+    )
+    merge_hint = next(h for h in hints if h["v"] == "merge")
+    assert abs(merge_hint["h"] - area["height"]) <= 4
+    viser_page.mouse.up()
+
+    # The drop appended DragMe into the hosted tab group's area.
+    area_tab = viser_page.locator("[data-dock-area] [data-dock-tab]", has_text="DragMe")
+    expect(area_tab).to_be_visible(timeout=5_000)
+    # And its floating window is gone (the control panel's window remains).
+    expect(viser_page.locator("[data-floating-window]")).to_have_count(0)

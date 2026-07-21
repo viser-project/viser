@@ -1,7 +1,10 @@
 import { ViewerContext } from "../ViewerContext";
 import { useThrottledMessageSender } from "../WebsocketUtils";
 import { GuiComponentContext } from "./GuiComponentContext";
-import { shallowObjectKeysEqual } from "../utils/shallowObjectKeysEqual";
+import {
+  shallowObjectEqual,
+  shallowObjectKeysEqual,
+} from "../utils/shallowObjectKeysEqual";
 
 import { Box } from "@mantine/core";
 import React from "react";
@@ -127,7 +130,17 @@ function GuiContainer({
   // top-level entity -- they never appear in any container set, so there is
   // nothing to filter here.)
   const guiIdArray = [...Object.keys(guiIdSet)];
-  const guiOrderFromId = viewer!.useGui((state) => state.guiOrderFromUuid);
+  // Only THIS container's orders: guiOrderFromUuid is rebuilt on every GUI
+  // add/remove anywhere, and subscribing to the whole map re-rendered every
+  // mounted container per element during streaming loads.
+  const guiOrderFromId = viewer!.useGui((state) => {
+    const out: Record<string, number> = {};
+    const set = state.guiUuidSetFromContainerUuid[containerUuid];
+    if (set !== undefined)
+      for (const uuid of Object.keys(set))
+        out[uuid] = state.guiOrderFromUuid[uuid];
+    return out;
+  }, shallowObjectEqual);
 
   let guiUuidOrderPairArray = guiIdArray.map((uuid) => ({
     uuid: uuid,

@@ -2089,6 +2089,87 @@ describe("unmergeable header acts as the dock-above / snap-above zone", () => {
     expect(hitTest(l, REGION_W, CONTAINER, targets, 840, 400)).toBeNull();
   });
 
+  // D58: the dead center comes alive when the unmergeable panel HOSTS a
+  // nested area -- the drop routes into the area (its group appends a tab),
+  // and the hint draws over the area's own rect, not the pointer's zone.
+  function hostedArea(id: string, r: DOMRect, host = "ctrl"): GroupTarget {
+    return {
+      groupId: id,
+      rect: r,
+      stripRect: null,
+      tabs: [],
+      ctx: { kind: "area", areaId: `${id}-area` },
+      hostGroupId: host,
+    };
+  }
+  function layoutWithArea(areaIds: string[]) {
+    const l = layoutDockedRight();
+    for (const id of areaIds) {
+      l.groups[id] = { id, paneIds: [`${id}.0`], activeId: `${id}.0` };
+      l.areas = { ...l.areas, [`${id}-area`]: { group: id } };
+    }
+    return l;
+  }
+
+  it("D58: unmergeable center routes a mergeable drop into its hosted area", () => {
+    const l = layoutWithArea(["ta"]);
+    const areaRect = rect(690, 60, 300, 90);
+    const targets: DropTargets = {
+      groups: [
+        unmergeableDockTarget(rect(680, 0, 320, 800)),
+        hostedArea("ta", areaRect),
+      ],
+    };
+    const hit = hitTest(l, REGION_W, CONTAINER, targets, 840, 400)!;
+    expect(hit.result).toEqual({ kind: "merge", targetGroupId: "ta" });
+    // The hint sits on the AREA's rect (honest landing spot), not the panel.
+    expect(hit.hint.variant).toBe("merge");
+    expect(hit.hint.top).toBeCloseTo(areaRect.top - CONTAINER.top);
+    expect(hit.hint.height).toBeCloseTo(areaRect.height);
+  });
+
+  it("D58: an unmergeable DRAG still nulls over the hosted-area center", () => {
+    const l = layoutWithArea(["ta"]);
+    const targets: DropTargets = {
+      groups: [
+        unmergeableDockTarget(rect(680, 0, 320, 800)),
+        hostedArea("ta", rect(690, 60, 300, 90)),
+      ],
+    };
+    expect(
+      hitTest(l, REGION_W, CONTAINER, targets, 840, 400, {
+        draggingUnmergeable: true,
+      }),
+    ).toBeNull();
+  });
+
+  it("D58: with two hosted areas the nearest to the pointer wins", () => {
+    const l = layoutWithArea(["ta", "tb"]);
+    const targets: DropTargets = {
+      groups: [
+        unmergeableDockTarget(rect(680, 0, 320, 800)),
+        hostedArea("ta", rect(690, 60, 300, 90)),
+        hostedArea("tb", rect(690, 600, 300, 90)),
+      ],
+    };
+    const nearTop = hitTest(l, REGION_W, CONTAINER, targets, 840, 300)!;
+    expect(nearTop.result).toEqual({ kind: "merge", targetGroupId: "ta" });
+    const nearBottom = hitTest(l, REGION_W, CONTAINER, targets, 840, 520)!;
+    expect(nearBottom.result).toEqual({ kind: "merge", targetGroupId: "tb" });
+  });
+
+  it("D58: an area hosted by a DIFFERENT panel never claims the center", () => {
+    const l = layoutWithArea(["ta"]);
+    const targets: DropTargets = {
+      groups: [
+        unmergeableDockTarget(rect(680, 0, 320, 800)),
+        // Same geometry, but hosted elsewhere: no cross-panel routing.
+        hostedArea("ta", rect(690, 60, 300, 90), "other"),
+      ],
+    };
+    expect(hitTest(l, REGION_W, CONTAINER, targets, 840, 400)).toBeNull();
+  });
+
   it("left/right split bands are pixel-capped on wide panes", () => {
     const l = layoutDockedRight();
     // 500px-wide panel: 30% would be 150px; the cap holds the band at 120px

@@ -144,6 +144,10 @@ export interface GroupTarget {
    * inserted into it, so its content area is merge-suppressed (drops there fall
    * back to a split / no-op) and its label is a header rather than a tab. */
   unmergeable?: boolean;
+  /** Area targets only: the group of the PANEL the area renders inside. Lets a
+   * merge-suppressed host's dead content center route a mergeable drop into
+   * its own hosted area (D58) without ever crossing into another panel's. */
+  hostGroupId?: GroupId;
 }
 
 export interface DropTargets {
@@ -856,12 +860,43 @@ export function hitTest(
   };
 
   // An unmergeable group never participates in a merge, from either side: a
-  // drop over an unmergeable target's center is a no-op (return null) rather
-  // than appending a tab, and a dragged stack holding an unmergeable panel
-  // can't become tabs anywhere. Edge splits and floating snaps still apply.
+  // drop over an unmergeable target's center is a no-op rather than appending
+  // a tab, and a dragged stack holding an unmergeable panel can't become tabs
+  // anywhere. Edge splits and floating snaps still apply. D58 escape: an
+  // unmergeable TARGET hosting a nested area routes a mergeable drop into the
+  // nearest hosted area instead of dying -- the hint draws over the area's own
+  // rect (P1: it shows where the drop lands, not where the pointer is).
+  const hostedAreaFallback = (): {
+    result: DropResult;
+    hint: DropHint;
+  } | null => {
+    if (draggingUnmergeable) return null;
+    let best: GroupTarget | null = null;
+    let bestDist = Infinity;
+    for (const t of targets.groups) {
+      if (t.ctx.kind !== "area" || t.hostGroupId !== gt.groupId) continue;
+      // Same categorical rule as target selection (3.5): when a floating
+      // window owns the pointer, only its own hosted areas are candidates.
+      if (!eligible(t)) continue;
+      const ar = t.rect;
+      const dx = Math.max(ar.left - clientX, 0, clientX - ar.right);
+      const dy = Math.max(ar.top - clientY, 0, clientY - ar.bottom);
+      const dist = dx * dx + dy * dy;
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = t;
+      }
+    }
+    return best === null
+      ? null
+      : {
+          result: { kind: "merge", targetGroupId: best.groupId },
+          hint: rel(best.rect, "merge"),
+        };
+  };
   const mergeResult = (): { result: DropResult; hint: DropHint } | null =>
     gt.unmergeable || draggingUnmergeable
-      ? null
+      ? hostedAreaFallback()
       : {
           result: { kind: "merge", targetGroupId: gt.groupId },
           hint: rel(r, "merge"),

@@ -349,7 +349,15 @@ export function useDragController(deps: DragControllerDeps) {
       // phantom "drop into area" target on top of the host's own handle/zones.
       // Clipped to the container first: an area inside a window that
       // overflows the container bottom must only claim its visible part.
-      const areaRect = clipToContainer(areaEl.getBoundingClientRect());
+      // ALSO clipped to the host body's scroll viewport: an area scrolled
+      // out of its panel body keeps a full-size bounding rect over pixels
+      // where other content paints, which would leave a phantom target
+      // there -- and D58's center fallback would route drops to (and draw
+      // its hint over) an area that isn't visible at all.
+      let areaRect = clipToContainer(areaEl.getBoundingClientRect());
+      const bodyViewport = areaEl.closest(".mantine-ScrollArea-viewport");
+      if (areaRect !== null && bodyViewport !== null)
+        areaRect = clipRect(areaRect, bodyViewport.getBoundingClientRect(), 1);
       if (
         areaRect === null ||
         areaRect.height < AREA_MIN_TARGET_PX ||
@@ -363,6 +371,12 @@ export function useDragController(deps: DragControllerDeps) {
         kind: "area",
         areaId,
       });
+      // The panel this area renders inside (closest() from the area wrapper
+      // never matches the area's own inner group, a descendant): D58 routes
+      // the host's dead merge-suppressed center into this area.
+      t.hostGroupId =
+        areaEl.closest("[data-dock-group]")?.getAttribute("data-dock-group") ??
+        undefined;
       t.rect = areaRect;
       clipChromeTo(t, areaRect);
       // Inset the area's hit rect on the left/right/bottom (not the top, which

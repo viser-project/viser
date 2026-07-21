@@ -257,7 +257,8 @@ export interface PaneSpec {
    * row -- same identity minimized as expanded. */
   minimizedFace?: React.ReactNode;
   /** Renders the pane body. A function (not a node) so content is only built
-   * for the active tab and re-evaluated on demand. */
+   * once a tab is first activated; visited panes then stay mounted (hidden,
+   * not unmounted) so their state survives tab switches. */
   render: () => React.ReactNode;
   /** When true, this pane may be minimized but never merged into another
    * group's tab strip (and nothing can be merged into it). Its label is shown

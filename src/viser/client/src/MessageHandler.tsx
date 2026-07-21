@@ -1192,6 +1192,10 @@ export function FrameSynchronizedMessageHandler() {
         if (guiUpdates.length > 0) {
           const configUpdates: Record<string, GuiComponentMessage | undefined> =
             {};
+          // Containers sort by guiOrderFromUuid (written at add time), so an
+          // `order` update must also land there or the new order renders only
+          // after a reconnect.
+          const orderUpdates: Record<string, number> = {};
           const panelSnapshot = viewer.useGui.get().panels;
           for (const { uuid, updates } of guiUpdates) {
             // Standalone panels live in their own store (not configStore), and
@@ -1214,10 +1218,26 @@ export function FrameSynchronizedMessageHandler() {
             if (updated !== current) {
               configUpdates[uuid] = updated;
             }
+            if ("order" in updates && typeof updates.order === "number") {
+              orderUpdates[uuid] = updates.order;
+            }
           }
           if (Object.keys(configUpdates).length > 0) {
             viewer.useGuiConfig.set(configUpdates);
           }
+          viewer.useGui.set((state) => {
+            const changed = Object.entries(orderUpdates).filter(
+              ([uuid, order]) =>
+                !Object.is(state.guiOrderFromUuid[uuid], order),
+            );
+            if (changed.length === 0) return {};
+            return {
+              guiOrderFromUuid: {
+                ...state.guiOrderFromUuid,
+                ...Object.fromEntries(changed),
+              },
+            };
+          });
         }
 
         // Recompute effective visibility for nodes whose visibility changed.
