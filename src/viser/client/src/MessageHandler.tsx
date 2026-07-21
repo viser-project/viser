@@ -193,18 +193,32 @@ function useMessageHandler() {
     if (isSceneNodeMessage(message)) {
       // Initialize skinned mesh state.
       if (message.type === "SkinnedMeshMessage") {
-        viewerMutable.skinnedMeshState[message.name] = {
+        // Reset an existing entry IN PLACE rather than replacing it:
+        // FilePlayback's loop/seek re-pushes the same add message into a
+        // scene whose nodes were deliberately kept mounted (its resetScene
+        // hides instead of removing), so the mounted SkinnedMesh instance's
+        // claimed entry must remain THE entry. A fresh object stranded the
+        // component's ownership guard on a dead reference, freezing every
+        // bone update from the second loop onward. A real remove + re-add
+        // deletes the entry first, so a NEW component still claims a fresh
+        // object and the same-name re-add race stays protected.
+        const state = (viewerMutable.skinnedMeshState[message.name] ??= {
           initialized: false,
           dirty: false,
           poses: [],
-        };
+        });
+        state.initialized = false;
+        // Bind pose is the honest state until bone updates arrive; on a
+        // playback loop this also snaps loop-end poses back to bind.
+        state.dirty = true;
+        state.poses.length = 0;
 
         // Bone data arrives as Float32Array views. Use directly.
         const bone_wxyzs = message.props.bone_wxyzs;
         const bone_positions = message.props.bone_positions;
         const numBones = bone_positions.length / 3;
         for (let i = 0; i < numBones; i++) {
-          viewerMutable.skinnedMeshState[message.name].poses.push({
+          state.poses.push({
             wxyz: [
               bone_wxyzs[4 * i],
               bone_wxyzs[4 * i + 1],

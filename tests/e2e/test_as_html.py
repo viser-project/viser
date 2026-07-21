@@ -105,3 +105,72 @@ def test_serializer_as_html(
     assert isinstance(html, str)
     assert "__VISER_EMBED_DATA__" in html
     assert "darkMode:true" in html
+
+
+def test_skinned_mesh_animates_across_playback_loops(
+    viser_server: viser.ViserServer,
+    page: Page,
+    viser_page: Page,
+) -> None:
+    """Bone animation must survive playback loops.
+
+    FilePlayback's loop deliberately keeps scene nodes mounted (resetScene
+    hides instead of removing) and re-pushes the same add messages. The
+    SkinnedMeshMessage handler used to REPLACE the mesh's mutable state entry
+    on every add, stranding the mounted component's ownership guard on a dead
+    reference: bones froze at the first loop's final pose and every later
+    update was silently dropped."""
+    import numpy as np
+
+    v = 8
+    mesh = viser_server.scene.add_mesh_skinned(
+        "/skinned",
+        np.array([[np.cos(i), np.sin(i), i * 0.1] for i in range(v)], dtype=np.float32),
+        np.array([[0, 1, 2], [3, 4, 5], [5, 6, 7]], dtype=np.uint32),
+        bone_wxyzs=np.array([[1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]]),
+        bone_positions=np.zeros((2, 3)),
+        skin_weights=np.abs(np.random.rand(v, 2)).astype(np.float32),
+    )
+    wait_for_scene_node(viser_page, "/skinned")
+
+    # Record ~0.6s of bone animation.
+    serializer = viser_server.get_scene_serializer()
+    for step in range(3):
+        serializer.insert_sleep(0.2)
+        mesh.bones[1].position = (0.0, 0.0, 1.0 + step)
+    html = serializer.as_html()
+
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".html", delete=False, encoding="utf-8"
+    ) as f:
+        f.write(html)
+        tmp_path = f.name
+    page.goto(f"file://{tmp_path}")
+    page.locator("canvas").first.wait_for(state="visible", timeout=15_000)
+
+    js_bone_z = """() => {
+        const m = window.__viserMutable;
+        const node = m && m.nodeRefFromName && m.nodeRefFromName['/skinned'];
+        if (!node) return null;
+        const bones = [];
+        node.traverse((o) => { if (o.type === 'Bone') bones.push(o); });
+        if (bones.length < 2) return null;
+        return bones[1].position.z;
+    }"""
+    page.wait_for_function(js_bone_z, timeout=15_000)
+
+    # Sample bone z well past the first loop (recording is ~0.6s; sample for
+    # ~2.4s => at least 3 loops). The LATE window (>= 2 full loops in) must
+    # still show motion; frozen bones make it constant.
+    samples: list[float] = []
+    for _ in range(30):
+        z = page.evaluate(js_bone_z)
+        if z is not None:
+            samples.append(float(z))
+        page.wait_for_timeout(80)
+    late = samples[len(samples) // 2 :]
+    assert len(set(f"{z:.3f}" for z in late)) > 1, (
+        f"bone froze after the first playback loop: late samples={late[:10]}..."
+    )
+
+    Path(tmp_path).unlink(missing_ok=True)
