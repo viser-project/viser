@@ -637,6 +637,30 @@ def test_skinned_mesh_typed_handle_registered_and_bone_guard() -> None:
             "registry must hold the typed skinned handle, not the plain "
             "MeshHandle -- event dispatch resolves targets through it"
         )
+        # A BARE name (no leading slash) must behave identically: _make
+        # normalizes internally, so without upfront normalization the typed
+        # swap keyed on the raw name silently missed and bone messages went
+        # out addressed to a name no client node has.
+        bare = server.scene.add_mesh_skinned(
+            "bare_skinned",
+            np.random.rand(v, 3).astype(np.float32),
+            np.array([[0, 1, 2]], np.uint32),
+            bone_wxyzs=np.tile([1.0, 0.0, 0.0, 0.0], (2, 1)),
+            bone_positions=np.zeros((2, 3)),
+            skin_weights=np.random.rand(v, 2).astype(np.float32),
+        )
+        assert server.scene._handle_from_node_name["/bare_skinned"] is bare
+        bare.bones[1].position = (0.0, 0.0, 3.0)
+        bone_msgs = [
+            m
+            for m in server._websock_server._broadcast_buffer.message_from_id.values()
+            if isinstance(m, _messages.SetBonePositionMessage)
+        ]
+        assert bone_msgs and all(m.name == "/bare_skinned" for m in bone_msgs), (
+            f"bone messages must use the normalized node name: "
+            f"{[m.name for m in bone_msgs]}"
+        )
+        bare.remove()
         mesh.bones[0].position = (0.0, 0.0, 1.0)  # Fine while live.
         mesh.remove()
         with pytest.raises(RuntimeError, match="removed"):

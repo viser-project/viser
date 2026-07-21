@@ -1762,6 +1762,12 @@ class SceneApi:
         """
         _warn_wireframe_conflicts(wireframe, material, flat_shading)
 
+        # Normalized UP FRONT (as add_transform_controls does): _make()
+        # normalizes internally, so a bare name would leave the typed-handle
+        # registry swap keyed differently from the registration -- and the
+        # bones' SetBone messages addressed to a name no client node has.
+        name = _normalize_node_name(name)
+
         assert len(bone_wxyzs) == len(bone_positions)
         num_bones = len(bone_wxyzs)
         if num_bones == 0:
