@@ -254,6 +254,12 @@ class CameraHandle:
     @position.setter
     def position(self, position: tuple[float, float, float] | np.ndarray) -> None:
         position_array = np.asarray(position).astype(np.float64)
+        # Validate BEFORE mutating or queuing: this setter queues its message
+        # and then shifts look_at (which validates), so a non-finite position
+        # caught late would leave the client sent a bad position and the
+        # server state half-updated.
+        if not np.all(np.isfinite(position_array)):
+            raise ValueError(f"Camera position must be finite, got {position_array}.")
         if np.allclose(position_array, self._state.position):
             return
         offset = position_array - np.array(self.position)  # type: ignore
@@ -294,11 +300,12 @@ class CameraHandle:
         y = y - np.dot(z, y) * z
         y_norm = np.linalg.norm(y)
         if y_norm == 0.0:
-            # up_direction parallel to the view direction: no valid up. Reject
-            # rather than store/broadcast a NaN basis.
+            # No component of up_direction is perpendicular to the view: it is
+            # zero, or parallel to (look_at - position). Reject rather than
+            # store/broadcast a NaN basis.
             raise ValueError(
-                "Camera up_direction cannot be parallel to the view direction "
-                "(look_at - position)."
+                "Camera up_direction must be nonzero and not parallel to the "
+                "view direction (look_at - position)."
             )
         y /= y_norm
         x = np.cross(y, z)
@@ -433,9 +440,18 @@ class CameraHandle:
         look_at_array = np.asarray(look_at).astype(np.float64)
         if np.allclose(self._state.look_at, look_at_array):
             return
+        old_look_at = self._state.look_at
+        old_timestamp = self._state.update_timestamp
         self._state.look_at = look_at_array
         self._state.update_timestamp = time.time()
-        self._update_wxyz()
+        try:
+            self._update_wxyz()
+        except Exception:
+            # Roll back so a caught error doesn't leave a desynced half-built
+            # camera (state mutated, orientation stale, nothing sent).
+            self._state.look_at = old_look_at
+            self._state.update_timestamp = old_timestamp
+            raise
         self._state.client._websock_connection.queue_message(
             _messages.SetCameraLookAtMessage(cast_vector(look_at, 3))
         )
@@ -453,8 +469,14 @@ class CameraHandle:
         up_direction_array = np.asarray(up_direction)
         if np.allclose(self._state.up_direction, up_direction_array):
             return
+        old_up = self._state.up_direction
         self._state.up_direction = np.asarray(up_direction_array)
-        self._update_wxyz()
+        try:
+            self._update_wxyz()
+        except Exception:
+            # Roll back so a caught error doesn't leave a desynced camera.
+            self._state.up_direction = old_up
+            raise
         self._state.update_timestamp = time.time()
         self._state.client._websock_connection.queue_message(
             _messages.SetCameraUpDirectionMessage(cast_vector(up_direction, 3))

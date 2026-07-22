@@ -1876,11 +1876,18 @@ class GuiApi:
         assert isinstance(value, (int, float))
         if min is not None and max is not None and max < min:
             raise ValueError(f"add_number: max ({max}) must be >= min ({min}).")
-        if (min is not None and value < min) or (max is not None and value > max):
+        # `not (value >= min)` (rather than `value < min`) so a NaN initial
+        # value is rejected too -- matching add_slider, whose `not (max >=
+        # value >= min)` already does. A bare `<`/`>` is False for NaN.
+        if (min is not None and not (value >= min)) or (
+            max is not None and not (value <= max)
+        ):
             raise ValueError(
                 f"add_number: initial_value ({value}) is outside of "
                 f"[min, max] = [{min}, {max}]."
             )
+        if step is not None and step <= 0:
+            raise ValueError(f"add_number: step ({step}) must be > 0.")
 
         if step is None:
             # It's ok that `step` is always a float, even if the value is an integer,
@@ -1964,6 +1971,13 @@ class GuiApi:
             raise ValueError(
                 f"add_vector2: min {min} must be component-wise <= max {max}."
             )
+        if (min is not None and any(not (v >= mn) for v, mn in zip(value, min))) or (
+            max is not None and any(not (v <= mx) for v, mx in zip(value, max))
+        ):
+            raise ValueError(
+                f"add_vector2: initial_value {value} has components outside "
+                f"[min, max] = [{min}, {max}]."
+            )
         uuid = _make_uuid()
         order = _apply_default_order(order)
 
@@ -2032,6 +2046,13 @@ class GuiApi:
         ):
             raise ValueError(
                 f"add_vector3: min {min} must be component-wise <= max {max}."
+            )
+        if (min is not None and any(not (v >= mn) for v, mn in zip(value, min))) or (
+            max is not None and any(not (v <= mx) for v, mx in zip(value, max))
+        ):
+            raise ValueError(
+                f"add_vector3: initial_value {value} has components outside "
+                f"[min, max] = [{min}, {max}]."
             )
         uuid = _make_uuid()
         order = _apply_default_order(order)
@@ -2230,6 +2251,8 @@ class GuiApi:
         value: IntOrFloat = initial_value
         if max < min:
             raise ValueError(f"add_slider: max ({max}) must be >= min ({min}).")
+        if step <= 0:
+            raise ValueError(f"add_slider: step ({step}) must be > 0.")
         if max > min:
             # Clamped only for a non-degenerate range: min == max is allowed
             # (an inert slider), but a clamped step of 0 must never reach the
@@ -2321,6 +2344,13 @@ class GuiApi:
         """
         if max < min:
             raise ValueError(f"add_multi_slider: max ({max}) must be >= min ({min}).")
+        if step <= 0:
+            raise ValueError(f"add_multi_slider: step ({step}) must be > 0.")
+        if min_range is not None and min_range > max - min:
+            raise ValueError(
+                f"add_multi_slider: min_range ({min_range}) exceeds the value "
+                f"range ({max - min}); the handle spacing would be unsatisfiable."
+            )
         if max > min:
             step = builtins.min(step, max - min)
         if not all(max >= x >= min for x in initial_value):

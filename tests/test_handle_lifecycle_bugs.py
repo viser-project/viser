@@ -707,10 +707,68 @@ def test_gui_input_validation_rejects_degenerate_inputs() -> None:
         inert = g.add_slider("s3", min=5, max=5, step=1, initial_value=5)
         assert inert.value == 5
         assert inert.step > 0
+        # NaN initial value (add_number) -- was accepted (bare < is False for
+        # NaN); now rejected like add_slider.
+        with pytest.raises(ValueError):
+            g.add_number("nan", float("nan"), min=0, max=10)
+        # step <= 0 on all three.
+        with pytest.raises(ValueError):
+            g.add_number("z1", 5, step=0)
+        with pytest.raises(ValueError):
+            g.add_slider("z2", min=0, max=10, step=0, initial_value=5)
+        with pytest.raises(ValueError):
+            g.add_multi_slider("z3", min=0, max=10, step=-1, initial_value=(2, 5))
+        # multi_slider min_range exceeding the range.
+        with pytest.raises(ValueError):
+            g.add_multi_slider(
+                "mr", min=0, max=10, step=1, min_range=999, initial_value=(2, 5)
+            )
+        # Vector component VALUES checked against bounds (not just min<=max).
+        with pytest.raises(ValueError):
+            g.add_vector3("vv", (100, 100, 100), min=(0, 0, 0), max=(1, 1, 1))
         # Valid forms still work.
         g.add_vector3("okv", (1.0, 2.0, 3.0), min=(0, 0, 0), max=(5, 5, 5))
         g.add_number("okn", 5, min=0, max=10)
-        g.add_multi_slider("okm", min=0, max=10, step=1, initial_value=(2, 5, 8))
+        g.add_multi_slider(
+            "okm", min=0, max=10, step=1, min_range=2, initial_value=(2, 5, 8)
+        )
+
+
+def test_camera_setter_rolls_back_on_invalid() -> None:
+    """A degenerate/non-finite camera assignment must raise WITHOUT leaving the
+    handle half-updated (state mutated, orientation stale, client desynced):
+    the setter validates and rolls back before queuing its message."""
+
+    class _Conn:
+        def queue_message(self, m: object) -> None:
+            raise AssertionError("no message must be queued on a failed set")
+
+    class _Client:
+        _websock_connection = _Conn()
+
+    from viser._viser import CameraHandle, _CameraHandleState
+
+    ch = CameraHandle.__new__(CameraHandle)
+    ch._state = _CameraHandleState(
+        client=_Client(),  # type: ignore[arg-type]
+        wxyz=np.array([1.0, 0.0, 0.0, 0.0]),
+        position=np.array([0.0, 0.0, 0.0]),
+        fov=1.0,
+        image_height=1,
+        image_width=1,
+        near=0.01,
+        far=1000.0,
+        min_orbit_distance=0.01,
+        max_orbit_distance=1e4,
+        look_at=np.array([0.0, 0.0, 5.0]),
+        up_direction=np.array([0.0, 1.0, 0.0]),
+        update_timestamp=1.0,
+        camera_cb=[],
+    )
+    before = ch._state.look_at.copy()
+    with pytest.raises(ValueError):
+        ch.look_at = np.array([np.nan, 0.0, 0.0])
+    assert np.array_equal(ch._state.look_at, before)  # rolled back, nothing queued
 
 
 def test_color_tuple_is_clamped() -> None:
@@ -830,7 +888,7 @@ def test_camera_update_rejects_degenerate_basis() -> None:
         ch._update_wxyz()
     ch._state.look_at = np.array([2.0, 0.0, 0.0])
     ch._state.up_direction = np.array([1.0, 0.0, 0.0])  # parallel to view
-    with pytest.raises(ValueError, match="up_direction cannot be parallel"):
+    with pytest.raises(ValueError, match="up_direction must be nonzero"):
         ch._update_wxyz()
     ch._state.up_direction = np.array([0.0, 0.0, 1.0])
     ch._update_wxyz()
