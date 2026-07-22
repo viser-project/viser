@@ -102,6 +102,15 @@ def _prepare_for_serialization(
     # connection (and, being a persistent update, re-crashing on reconnect).
     if annotation is bool or isinstance(value, np.bool_):
         return bool(value)
+    # Any OTHER numpy scalar msgpack can't encode -- most importantly np.str_
+    # and np.bytes_ from a numpy string array (names[i], labels), which are
+    # far more common than bool. .item() returns the python-native
+    # equivalent. Closes the same crash class as the branches above; without
+    # it a numpy-array-sourced name/label bricked the producer for all
+    # clients. (Placed after float/int/bool so the common numeric paths keep
+    # their explicit fast conversions.)
+    if isinstance(value, np.generic):
+        return value.item()
 
     if dataclasses.is_dataclass(annotation):
         return _prepare_for_serialization(vars(value), dict, binary_buffers)

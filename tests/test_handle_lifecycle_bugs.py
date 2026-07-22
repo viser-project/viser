@@ -788,10 +788,18 @@ def test_numpy_bool_serializes() -> None:
         []
     )
     msgspec.msgpack.encode(d)
+    # Same crash class: np.str_ / np.bytes_ (from a numpy string array -- names,
+    # labels) also can't be msgpack-encoded and bricked the producer.
+    for val in (np.array(["frame_a"])[0], np.array([b"x"])[0]):
+        d = _messages.SetSceneNodeVisibilityMessage(val, True).as_serializable_dict([])
+        msgspec.msgpack.encode(d)  # must not raise
+        assert type(d["name"]) in (str, bytes)
     with _server() as server:
-        # End-to-end: setting visibility from a numpy bool does not crash flush.
+        # End-to-end: setting visibility from a numpy bool does not crash flush,
+        # and a numpy-string node name round-trips.
         f = server.scene.add_frame("/f")
         f.visible = np.array([True, False]).any()
+        server.scene.add_frame(str(np.array(["/np_name"])[0]))
         server.flush()
 
 
