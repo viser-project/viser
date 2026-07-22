@@ -171,9 +171,17 @@ TVector = TypeVar("TVector", bound=tuple)
 
 
 def cast_vector(vector: TVector | np.ndarray, length: int) -> TVector:
-    if not isinstance(vector, tuple):
-        assert cast(np.ndarray, vector).shape == (length,), (
-            f"Expected vector of shape {(length,)}, but got {vector.shape} instead"
+    # Arity is checked for EVERY input form: tuples/lists used to pass
+    # through unchecked, so a 2-tuple handed to a 3-vector API silently
+    # desynced from the client's fixed component count.
+    if isinstance(vector, np.ndarray):
+        if vector.shape != (length,):
+            raise ValueError(
+                f"Expected vector of shape {(length,)}, but got {vector.shape} instead"
+            )
+    elif len(vector) != length:
+        raise ValueError(
+            f"Expected vector of length {length}, but got {len(vector)} instead"
         )
     return cast(TVector, tuple(map(float, vector)))
 

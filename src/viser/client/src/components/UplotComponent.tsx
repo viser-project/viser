@@ -355,6 +355,9 @@ function PlotComponent({
                   ? "rgba(255, 255, 255, 0.1)"
                   : "rgba(255, 255, 255, 0.9)",
               backdropFilter: "blur(4px)",
+              // Safari < 18 only supports the prefixed form, and inline
+              // styles bypass autoprefixing.
+              WebkitBackdropFilter: "blur(4px)",
             }}
           >
             <IconMaximize size={14} />

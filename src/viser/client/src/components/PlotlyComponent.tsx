@@ -96,6 +96,9 @@ const PlotWithAspectInner = React.memo(function PlotWithAspectInner({
               right: 8,
               backgroundColor: "rgba(255, 255, 255, 0.9)",
               backdropFilter: "blur(4px)",
+              // Safari < 18 only supports the prefixed form, and inline
+              // styles bypass autoprefixing.
+              WebkitBackdropFilter: "blur(4px)",
               zIndex: 1001,
             }}
           >

@@ -262,10 +262,20 @@ def test_order_update_reorders_live(
     b2 = viser_page.get_by_role("button", name="OrderSecond")
     expect(b1).to_be_visible(timeout=5_000)
     expect(b2).to_be_visible(timeout=5_000)
-    box1 = b1.bounding_box()
-    box2 = b2.bounding_box()
-    assert box1 is not None and box2 is not None
-    assert box1["y"] < box2["y"], "creation order should render first above second"
+
+    # Poll for the EXPECTED order: measuring right after the visibility waits
+    # can catch the panel mid-hydration (fractional, still-settling y's), so
+    # breaking on the first "distinct rows" measurement is itself racy.
+    def _ordered() -> bool:
+        r1 = b1.bounding_box()
+        r2 = b2.bounding_box()
+        return r1 is not None and r2 is not None and r1["y"] < r2["y"] - 1
+
+    for _ in range(30):
+        if _ordered():
+            break
+        viser_page.wait_for_timeout(100)
+    assert _ordered(), "creation order should render first above second"
 
     # Move the first button below the second.
     first.order = first.order + 10.0

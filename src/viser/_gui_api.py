@@ -1874,6 +1874,13 @@ class GuiApi:
         value = initial_value
 
         assert isinstance(value, (int, float))
+        if min is not None and max is not None and max < min:
+            raise ValueError(f"add_number: max ({max}) must be >= min ({min}).")
+        if (min is not None and value < min) or (max is not None and value > max):
+            raise ValueError(
+                f"add_number: initial_value ({value}) is outside of "
+                f"[min, max] = [{min}, {max}]."
+            )
 
         if step is None:
             # It's ok that `step` is always a float, even if the value is an integer,
@@ -1949,6 +1956,14 @@ class GuiApi:
         value = cast_vector(value, 2)
         min = cast_vector(min, 2) if min is not None else None
         max = cast_vector(max, 2) if max is not None else None
+        if (
+            min is not None
+            and max is not None
+            and any(mn > mx for mn, mx in zip(min, max))
+        ):
+            raise ValueError(
+                f"add_vector2: min {min} must be component-wise <= max {max}."
+            )
         uuid = _make_uuid()
         order = _apply_default_order(order)
 
@@ -2010,6 +2025,14 @@ class GuiApi:
         value = cast_vector(value, 3)
         min = cast_vector(min, 3) if min is not None else None
         max = cast_vector(max, 3) if max is not None else None
+        if (
+            min is not None
+            and max is not None
+            and any(mn > mx for mn, mx in zip(min, max))
+        ):
+            raise ValueError(
+                f"add_vector3: min {min} must be component-wise <= max {max}."
+            )
         uuid = _make_uuid()
         order = _apply_default_order(order)
 
@@ -2205,9 +2228,18 @@ class GuiApi:
             A handle that can be used to interact with the GUI element.
         """
         value: IntOrFloat = initial_value
-        assert max >= min
-        step = builtins.min(step, max - min)
-        assert max >= value >= min
+        if max < min:
+            raise ValueError(f"add_slider: max ({max}) must be >= min ({min}).")
+        if max > min:
+            # Clamped only for a non-degenerate range: min == max is allowed
+            # (an inert slider), but a clamped step of 0 must never reach the
+            # client.
+            step = builtins.min(step, max - min)
+        if not (max >= value >= min):
+            raise ValueError(
+                f"add_slider: initial_value ({value}) is outside of "
+                f"[min, max] = [{min}, {max}]."
+            )
 
         # GUI callbacks cast incoming values to match the type of the initial value. If
         # the min, max, or step is a float, we should cast to a float.
@@ -2287,9 +2319,23 @@ class GuiApi:
         Returns:
             A handle that can be used to interact with the GUI element.
         """
-        assert max >= min
-        step = builtins.min(step, max - min)
-        assert all(max >= x >= min for x in initial_value)
+        if max < min:
+            raise ValueError(f"add_multi_slider: max ({max}) must be >= min ({min}).")
+        if max > min:
+            step = builtins.min(step, max - min)
+        if not all(max >= x >= min for x in initial_value):
+            raise ValueError(
+                f"add_multi_slider: initial_value {initial_value} has entries "
+                f"outside of [min, max] = [{min}, {max}]."
+            )
+        if any(b < a for a, b in zip(initial_value, initial_value[1:])):
+            # The client constrains each handle against its neighbors assuming
+            # sorted order; unsorted values made the first drag snap handles to
+            # surprising positions.
+            raise ValueError(
+                f"add_multi_slider: initial_value {initial_value} must be "
+                "sorted in non-decreasing order."
+            )
 
         # GUI callbacks cast incoming values to match the type of the initial value. If
         # any of the arguments are floats, we should always use a float value.

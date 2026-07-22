@@ -677,3 +677,37 @@ def test_skinned_mesh_typed_handle_registered_and_bone_guard() -> None:
             )
         ]
         assert stale == [], stale
+
+
+def test_gui_input_validation_rejects_degenerate_inputs() -> None:
+    """Wrong-arity vectors, out-of-range initial values, inverted bounds, and
+    unsorted multi-slider values raise ValueError instead of silently
+    desyncing from the client's fixed-arity inputs / clamped controls."""
+    with _server() as server:
+        g = server.gui
+        with pytest.raises(ValueError):
+            g.add_vector3("v", (1.0, 2.0))  # type: ignore[arg-type]
+        with pytest.raises(ValueError):
+            g.add_vector2("v2", (1.0, 2.0, 3.0))  # type: ignore[arg-type]
+        with pytest.raises(ValueError):
+            g.add_vector3("v3", (1, 2, 3), min=(0, 0, 0, 0))  # type: ignore[arg-type]
+        with pytest.raises(ValueError):
+            g.add_vector2("v4", (1, 1), min=(2, 2), max=(0, 0))
+        with pytest.raises(ValueError):
+            g.add_number("n", 100, min=0, max=10)
+        with pytest.raises(ValueError):
+            g.add_number("n2", 5, min=10, max=0)
+        with pytest.raises(ValueError):
+            g.add_slider("s", min=0, max=10, step=1, initial_value=20)
+        with pytest.raises(ValueError):
+            g.add_slider("s2", min=10, max=0, step=1, initial_value=5)
+        with pytest.raises(ValueError):
+            g.add_multi_slider("m", min=0, max=10, step=1, initial_value=(8, 2, 5))
+        # A degenerate min == max slider stays legal, with a nonzero step.
+        inert = g.add_slider("s3", min=5, max=5, step=1, initial_value=5)
+        assert inert.value == 5
+        assert inert.step > 0
+        # Valid forms still work.
+        g.add_vector3("okv", (1.0, 2.0, 3.0), min=(0, 0, 0), max=(5, 5, 5))
+        g.add_number("okn", 5, min=0, max=10)
+        g.add_multi_slider("okm", min=0, max=10, step=1, initial_value=(2, 5, 8))
