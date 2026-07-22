@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import io
+import math
 import threading
 import time
 import warnings
@@ -138,25 +139,25 @@ def _drag_input_matches_filter(
 def _encode_rgb(rgb: RgbTupleOrArray) -> tuple[int, int, int]:
     if isinstance(rgb, np.ndarray):
         assert rgb.shape == (3,)
-    # Clamp to [0, 255], matching the array-color path (colors_to_uint8):
-    # unclamped out-of-range channels bled into adjacent bytes on the client
-    # (rgbToInt shifts), and an extreme float overflowed msgpack's int range
-    # at flush time -- a crash far from the offending call.
-    # int() truncation (not round()) mirrors colors_to_uint8's astype(uint8)
-    # exactly, so VALID colors encode identically to before -- only
-    # out-of-range channels change (now clamped instead of wrapping).
-    rgb_fixed = tuple(
-        min(
-            255,
-            max(
-                0,
-                int(value)
-                if np.issubdtype(type(value), np.integer)
-                else int(value * 255),
-            ),
-        )
-        for value in rgb
-    )
+
+    def channel(value: Any) -> int:
+        # Match the array-color path (colors_to_uint8) exactly: integers are
+        # [0,255], floats are [0,1] scaled by 255, everything clamped to
+        # [0,255] with int() truncation (mirrors astype(uint8)). Clamp the
+        # SCALED float BEFORE int() so a non-finite channel can't reach int()
+        # (int(nan)/int(inf) raise): NaN -> 0, +Inf -> 255, -Inf -> 0, the
+        # same values np.clip(...).astype(uint8) produces. Without the clamp,
+        # out-of-range channels bled into adjacent bytes on the client
+        # (rgbToInt shifts) and an extreme float overflowed msgpack's int
+        # range at flush -- a crash far from the offending call.
+        if np.issubdtype(type(value), np.integer):
+            return min(255, max(0, int(value)))
+        scaled = float(value) * 255.0
+        if math.isnan(scaled):
+            return 0
+        return int(min(255.0, max(0.0, scaled)))
+
+    rgb_fixed = tuple(channel(value) for value in rgb)
     assert len(rgb_fixed) == 3
     return rgb_fixed  # type: ignore
 

@@ -726,6 +726,11 @@ def test_color_tuple_is_clamped() -> None:
     assert _encode_rgb((1e30, 0, 0)) == (255, 0, 0)  # no OverflowError at flush
     assert _encode_rgb((0.5, 0.5, 0.5)) == (127, 127, 127)  # int() truncation
     assert _encode_rgb((255, 128, 0)) == (255, 128, 0)
+    # Non-finite channels match the array path (colors_to_uint8) instead of
+    # crashing at int(): NaN -> 0, +Inf -> 255, -Inf -> 0.
+    assert _encode_rgb((float("nan"), 0, 0)) == (0, 0, 0)
+    assert _encode_rgb((float("inf"), 0, 0)) == (255, 0, 0)
+    assert _encode_rgb((float("-inf"), 0, 0)) == (0, 0, 0)
     # A mesh with an out-of-range color no longer crashes at flush.
     with _server() as server:
         import numpy as np
