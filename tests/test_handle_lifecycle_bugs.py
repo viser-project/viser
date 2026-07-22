@@ -724,7 +724,7 @@ def test_color_tuple_is_clamped() -> None:
     assert _encode_rgb((-5, 0, 0)) == (0, 0, 0)
     assert _encode_rgb((2.0, 0, 0)) == (255, 0, 0)  # float > 1.0
     assert _encode_rgb((1e30, 0, 0)) == (255, 0, 0)  # no OverflowError at flush
-    assert _encode_rgb((0.5, 0.5, 0.5)) == (128, 128, 128)
+    assert _encode_rgb((0.5, 0.5, 0.5)) == (127, 127, 127)  # int() truncation
     assert _encode_rgb((255, 128, 0)) == (255, 128, 0)
     # A mesh with an out-of-range color no longer crashes at flush.
     with _server() as server:

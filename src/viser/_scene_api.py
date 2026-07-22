@@ -142,6 +142,9 @@ def _encode_rgb(rgb: RgbTupleOrArray) -> tuple[int, int, int]:
     # unclamped out-of-range channels bled into adjacent bytes on the client
     # (rgbToInt shifts), and an extreme float overflowed msgpack's int range
     # at flush time -- a crash far from the offending call.
+    # int() truncation (not round()) mirrors colors_to_uint8's astype(uint8)
+    # exactly, so VALID colors encode identically to before -- only
+    # out-of-range channels change (now clamped instead of wrapping).
     rgb_fixed = tuple(
         min(
             255,
@@ -149,7 +152,7 @@ def _encode_rgb(rgb: RgbTupleOrArray) -> tuple[int, int, int]:
                 0,
                 int(value)
                 if np.issubdtype(type(value), np.integer)
-                else round(value * 255),
+                else int(value * 255),
             ),
         )
         for value in rgb
