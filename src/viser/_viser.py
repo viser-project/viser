@@ -501,6 +501,7 @@ class CameraHandle:
         height: int,
         width: int,
         transport_format: Literal["png", "jpeg"] = "jpeg",
+        timeout: float | None = None,
     ) -> np.ndarray:
         """Request a render from a client, block until it's done and received, then
         return it as a numpy array. This is an alias for :meth:`ClientHandle.get_render()`.
@@ -511,9 +512,13 @@ class CameraHandle:
             transport_format: Image transport format. JPEG will return a lossy (H, W, 3) RGB array. PNG will
                 return a lossless (H, W, 4) RGBA array, but can cause memory issues on the frontend if called
                 too quickly for higher-resolution images.
+            timeout: Optional maximum seconds to wait for the frame. ``None``
+                (default) waits indefinitely; a disconnect still raises promptly
+                either way. Set this to bound a client that stays connected but
+                never returns a frame.
         """
         return self._state.client.get_render(
-            height, width, transport_format=transport_format
+            height, width, transport_format=transport_format, timeout=timeout
         )
 
 
@@ -716,6 +721,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         position: tuple[float, float, float] | np.ndarray,
         fov: float,
         transport_format: Literal["png", "jpeg"] = "jpeg",
+        timeout: float | None = None,
     ) -> np.ndarray: ...
 
     @overload
@@ -725,6 +731,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         width: int,
         *,
         transport_format: Literal["png", "jpeg"] = "jpeg",
+        timeout: float | None = None,
     ) -> np.ndarray: ...
 
     def get_render(
@@ -736,6 +743,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         position: tuple[float, float, float] | np.ndarray | None = None,
         fov: float | None = None,
         transport_format: Literal["png", "jpeg"] = "jpeg",
+        timeout: float | None = None,
     ) -> np.ndarray:
         """Request a render from a client, block until it's done and received, then
         return it as a numpy array. If wxyz, position, and fov are not provided, the
@@ -753,6 +761,10 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             transport_format: Image transport format. JPEG will return a lossy (H, W, 3) RGB array. PNG will
                 return a lossless (H, W, 4) RGBA array, but can cause memory issues on the frontend if called
                 too quickly for higher-resolution images.
+            timeout: Optional maximum seconds to wait for the frame. ``None``
+                (default) waits indefinitely; a disconnect still raises promptly
+                either way. Set this to bound a client that stays connected but
+                never returns a frame (raises ``TimeoutError``).
         """
 
         # Listen for a render reseponse message, which should contain the rendered
@@ -810,10 +822,13 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 render_uuid=render_uuid,
             )
         )
-        # Poll rather than wait unbounded: a client that disconnects (tab
-        # closed, network drop) never sends a response, so an unbounded wait
-        # would hang this call -- and, when get_render runs from a sync
-        # callback, the pool worker it occupies -- forever.
+        # Poll rather than wait unbounded: a client that DISCONNECTS (tab
+        # closed, network drop) never sends a response, so this raises as soon
+        # as it leaves _connected_clients instead of hanging the caller (and,
+        # from a sync callback, its pool worker). A client that stays
+        # connected but never returns a frame (frozen/backgrounded tab, wedged
+        # capture) is only bounded if the caller passes `timeout`.
+        deadline = None if timeout is None else time.time() + timeout
         while not render_ready_event.wait(timeout=0.1):
             if self.client_id not in self._viser_server._connected_clients:
                 connection.unregister_handler(
@@ -822,6 +837,14 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 raise RuntimeError(
                     "Render request failed: the client disconnected before "
                     "returning a frame."
+                )
+            if deadline is not None and time.time() > deadline:
+                connection.unregister_handler(
+                    _messages.GetRenderResponseMessage, got_render_cb
+                )
+                raise TimeoutError(
+                    f"Render request timed out after {timeout}s: the client "
+                    "did not return a frame."
                 )
         if out is None:
             raise RuntimeError(
@@ -1067,6 +1090,11 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         )
 
         self._share_tunnel: ViserTunnel | None = None
+        # Guards the share-tunnel slot's check-then-act. The handlers now run
+        # on pool threads (not serialized on the event loop), so two
+        # concurrent requests could both see None and each create a tunnel,
+        # orphaning (leaking) the first.
+        self._share_tunnel_lock = threading.Lock()
 
         # Create share tunnel if requested.
         # This is deprecated: we should use get_share_url() instead.
@@ -1214,57 +1242,68 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         Returns:
             Share URL as string, or None if connection fails or is closed.
         """
-        if self._share_tunnel is not None:
-            # Tunnel already exists.
-            while self._share_tunnel.get_status() in ("ready", "connecting"):
-                time.sleep(0.05)
-            return self._share_tunnel.get_url()
-        else:
-            # Create a new tunnel!.
-            if verbose:
-                import rich
-
-                rich.print("[bold](viser)[/bold] Share URL requested!")
-
-            connect_event = threading.Event()
-
-            self._share_tunnel = ViserTunnel(
-                "share.viser.studio", self._websock_server._port
-            )
-
-            @self._share_tunnel.on_disconnect
-            def _() -> None:
-                import rich
-
-                rich.print("[bold](viser)[/bold] Disconnected from share URL")
-                self._share_tunnel = None
-                self._websock_server.queue_message(_messages.ShareUrlUpdated(None))
-
-            @self._share_tunnel.on_connect
-            def _(max_clients: int) -> None:
-                assert self._share_tunnel is not None
-                share_url = self._share_tunnel.get_url()
+        # Claim the tunnel slot atomically: only ONE concurrent request
+        # creates a tunnel; the rest wait on it. The blocking waits below are
+        # OUTSIDE the lock so requests don't serialize on the connection.
+        with self._share_tunnel_lock:
+            tunnel = self._share_tunnel
+            we_created = tunnel is None
+            if we_created:
                 if verbose:
                     import rich
 
-                    if share_url is None:
-                        rich.print("[bold](viser)[/bold] Could not generate share URL")
-                    else:
-                        rich.print(
-                            f"[bold](viser)[/bold] Generated share URL (expires in 24 hours, max {max_clients} clients): {share_url}"
-                        )
-                self._websock_server.queue_message(_messages.ShareUrlUpdated(share_url))
-                connect_event.set()
+                    rich.print("[bold](viser)[/bold] Share URL requested!")
+                tunnel = self._share_tunnel = ViserTunnel(
+                    "share.viser.studio", self._websock_server._port
+                )
 
-            connect_event.wait()
+        if not we_created:
+            # Another request created (or is creating) the tunnel.
+            assert tunnel is not None
+            while tunnel.get_status() in ("ready", "connecting"):
+                time.sleep(0.05)
+            return tunnel.get_url()
 
-            url = self._share_tunnel.get_url()
-            return url
+        # We own the new tunnel: wire callbacks and wait for it to connect.
+        assert tunnel is not None
+        connect_event = threading.Event()
+
+        @tunnel.on_disconnect
+        def _() -> None:
+            import rich
+
+            rich.print("[bold](viser)[/bold] Disconnected from share URL")
+            with self._share_tunnel_lock:
+                # Only clear the slot if it still points at OUR tunnel (a
+                # newer request may have replaced it).
+                if self._share_tunnel is tunnel:
+                    self._share_tunnel = None
+            self._websock_server.queue_message(_messages.ShareUrlUpdated(None))
+
+        @tunnel.on_connect
+        def _(max_clients: int) -> None:
+            share_url = tunnel.get_url()
+            if verbose:
+                import rich
+
+                if share_url is None:
+                    rich.print("[bold](viser)[/bold] Could not generate share URL")
+                else:
+                    rich.print(
+                        f"[bold](viser)[/bold] Generated share URL (expires in 24 hours, max {max_clients} clients): {share_url}"
+                    )
+            self._websock_server.queue_message(_messages.ShareUrlUpdated(share_url))
+            connect_event.set()
+
+        connect_event.wait()
+        return tunnel.get_url()
 
     def disconnect_share_url(self) -> None:
         """Disconnect from the share URL server."""
-        if self._share_tunnel is not None:
-            self._share_tunnel.close()
+        with self._share_tunnel_lock:
+            tunnel = self._share_tunnel
+        if tunnel is not None:
+            tunnel.close()
         else:
             import rich
 
@@ -1277,6 +1316,17 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         self._websock_server.stop()
         if self._share_tunnel is not None:
             self._share_tunnel.close()
+        # Let the background event loop finish its connection teardown before
+        # shutting the pool: that teardown submits disconnect/camera callbacks
+        # to the pool, and websock_server.stop() only join()s the loop thread
+        # for 0.1s -- so shutting the pool right after would make those late
+        # submits raise "cannot schedule new futures after shutdown" and drop
+        # the user's callbacks silently. Bounded so a hung callback can't
+        # block stop() forever (in that pathological case the pool still
+        # shuts and the straggler is dropped, as before this join).
+        loop_thread = self._websock_server._server_thread
+        if loop_thread is not None:
+            loop_thread.join(timeout=5.0)
         # Release the callback/get_render worker pool: stop() otherwise left
         # its (up to 32) threads alive until the server object was GC'd out of
         # its callback ref-cycles, contradicting "stops associated threads".

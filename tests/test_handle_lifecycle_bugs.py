@@ -13,9 +13,12 @@ Covers:
 from __future__ import annotations
 
 import asyncio
+import threading
+import time
 import warnings
 from contextlib import contextmanager
 from typing import Generator, cast
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -901,3 +904,98 @@ def test_camera_update_rejects_degenerate_basis() -> None:
     ch._state.position = np.array([np.inf, 0.0, 0.0])
     with pytest.raises(ValueError, match="must be finite"):
         ch._update_wxyz()
+
+
+def test_request_share_url_creates_single_tunnel_under_concurrency() -> None:
+    """Concurrent request_share_url() calls must build exactly ONE tunnel. The
+    share handlers run on pool threads (not serialized on the event loop), so
+    two requests could both observe `_share_tunnel is None` and each construct
+    a tunnel, orphaning (leaking) the first. The slot is now claimed under a
+    lock; every caller returns the same URL."""
+    from viser import _viser
+
+    created: list[object] = []
+    created_lock = threading.Lock()
+
+    class FakeTunnel:
+        def __init__(self, host: str, port: int) -> None:
+            with created_lock:
+                created.append(self)
+            # Widen the check-then-act window so an unlocked slot claim
+            # reliably double-creates here rather than only under a rare
+            # interleaving.
+            time.sleep(0.05)
+
+        def on_connect(self, fn):
+            # ViserTunnel invokes this once the control connection is up; call
+            # it inline so the creator's connect_event is set and it returns.
+            fn(1)
+            return fn
+
+        def on_disconnect(self, fn):
+            return fn
+
+        def get_url(self) -> str:
+            return "https://fake.share/url"
+
+        def get_status(self) -> str:
+            # Non-creator waiters loop while "ready"/"connecting"; "connected"
+            # is the established terminal state that lets them return.
+            return "connected"
+
+        def close(self) -> None:
+            pass
+
+    with _server() as server:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(_viser, "ViserTunnel", FakeTunnel)
+            barrier = threading.Barrier(4)
+            results: list[object] = []
+            results_lock = threading.Lock()
+
+            def worker() -> None:
+                barrier.wait()
+                url = server.request_share_url(verbose=False)
+                with results_lock:
+                    results.append(url)
+
+            threads = [threading.Thread(target=worker) for _ in range(4)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=10.0)
+            assert all(not t.is_alive() for t in threads), "request_share_url hung"
+
+    assert len(created) == 1, f"expected exactly one tunnel, got {len(created)}"
+    assert results == ["https://fake.share/url"] * 4
+
+
+def test_get_render_times_out_on_silent_client() -> None:
+    """get_render(timeout=...) must raise TimeoutError when a still-connected
+    client never returns a frame (frozen/backgrounded tab, wedged capture),
+    instead of blocking the caller -- and, from a sync callback, its pool
+    worker -- forever. The disconnect path is covered in
+    tests/e2e/test_get_render.py; this pins the timeout bound without a
+    browser. Camera args are passed explicitly so the fabricated client's
+    zero-timestamp camera getters are never read."""
+    from viser._viser import ClientHandle
+
+    with _server() as server:
+        client = ClientHandle.__new__(ClientHandle)
+        client.client_id = 918273
+        client._websock_connection = MagicMock()
+        client._viser_server = server
+        server._connected_clients[client.client_id] = cast(viser.ClientHandle, client)
+
+        start = time.time()
+        with pytest.raises(TimeoutError, match="did not return a frame"):
+            client.get_render(
+                height=32,
+                width=32,
+                wxyz=(1.0, 0.0, 0.0, 0.0),
+                position=(0.0, 0.0, 0.0),
+                fov=1.0,
+                timeout=0.3,
+            )
+        elapsed = time.time() - start
+        assert 0.3 <= elapsed < 3.0, f"timeout not honored, took {elapsed}s"
