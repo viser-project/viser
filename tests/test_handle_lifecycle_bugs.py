@@ -737,3 +737,30 @@ def test_color_tuple_is_clamped() -> None:
             color=(300, 0, 0),
         )
         server.flush()
+
+
+def test_folder_and_tab_not_reentrant_into_self() -> None:
+    """Nesting a folder/tab context inside ITSELF raises clearly instead of
+    corrupting the container pointer (a single restore slot can't nest), which
+    used to silently misplace every subsequently-added element into the
+    folder. Sequential re-entry stays valid."""
+    with _server() as server:
+        g = server.gui
+        f = g.add_folder("F")
+        with pytest.raises(RuntimeError, match="already active"):
+            with f:
+                with f:
+                    pass
+        # Sequential re-entry works, and the container pointer is restored to
+        # root afterwards (no leaked nesting).
+        with f:
+            g.add_button("in1")
+        with f:
+            g.add_button("in2")
+        assert g.add_button("stray")._impl.parent_container_id == "root"
+
+        t = g.add_tab_group().add_tab("T")
+        with pytest.raises(RuntimeError, match="already active"):
+            with t:
+                with t:
+                    pass

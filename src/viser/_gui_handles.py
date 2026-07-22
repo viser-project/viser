@@ -844,6 +844,13 @@ class GuiTabHandle:
         self._parent._rebuild_tab_props()
 
     def __enter__(self) -> GuiTabHandle:
+        if self._container_id_restore is not None:
+            # See GuiFolderHandle.__enter__: a single restore slot can't nest
+            # the same tab inside itself.
+            raise RuntimeError(
+                "This GuiTabHandle is already active as a context; it cannot "
+                "be re-entered inside itself."
+            )
         self._container_id_restore = self._parent._impl.gui_api._get_container_uuid()
         self._parent._impl.gui_api._set_container_uuid(self._id)
         return self
@@ -1336,7 +1343,18 @@ class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):
         ]
         parent._children[self._impl.uuid] = self
 
+    _container_id_restore: str | None = None
+
     def __enter__(self) -> Self:
+        if self._container_id_restore is not None:
+            # A single restore slot can't nest the SAME handle inside itself;
+            # doing so would strand the container pointer inside this folder,
+            # silently misplacing every later element. (Sequential re-entry --
+            # `with f: ...` twice -- is fine; __exit__ clears the slot.)
+            raise RuntimeError(
+                "This GuiFolderHandle is already active as a context; it "
+                "cannot be re-entered inside itself."
+            )
         self._container_id_restore = self._impl.gui_api._get_container_uuid()
         self._impl.gui_api._set_container_uuid(self._impl.uuid)
         return self
