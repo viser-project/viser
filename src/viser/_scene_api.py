@@ -138,8 +138,20 @@ def _drag_input_matches_filter(
 def _encode_rgb(rgb: RgbTupleOrArray) -> tuple[int, int, int]:
     if isinstance(rgb, np.ndarray):
         assert rgb.shape == (3,)
+    # Clamp to [0, 255], matching the array-color path (colors_to_uint8):
+    # unclamped out-of-range channels bled into adjacent bytes on the client
+    # (rgbToInt shifts), and an extreme float overflowed msgpack's int range
+    # at flush time -- a crash far from the offending call.
     rgb_fixed = tuple(
-        int(value) if np.issubdtype(type(value), np.integer) else int(value * 255)
+        min(
+            255,
+            max(
+                0,
+                int(value)
+                if np.issubdtype(type(value), np.integer)
+                else round(value * 255),
+            ),
+        )
         for value in rgb
     )
     assert len(rgb_fixed) == 3

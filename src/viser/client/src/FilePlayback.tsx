@@ -20,6 +20,7 @@ import {
   useState,
 } from "react";
 import { ViewerContext } from "./ViewerContext";
+import { defaultEnvironmentState } from "./EnvironmentState";
 import { isFormElement } from "./utils/isFormElement";
 
 /** Toggle `paused` on spacebar, unless a form control is focused -- so typing a
@@ -200,6 +201,13 @@ function PlaybackInterface({
   // Instead of removing all of the existing scene nodes, we're just going to hide them.
   // This will prevent unnecessary remounting when messages are looped.
   function resetScene() {
+    // Restore the global environment (env map / fog / lights) to defaults:
+    // these are set imperatively partway through a recording and, unlike
+    // scene nodes, have no other per-loop/per-scrub reset -- so without this
+    // a mid-timeline env change "stuck" from the previous pass during the
+    // window before it was (re-)applied.
+    viewer.useEnvironment.set(defaultEnvironmentState());
+
     const sceneTreeState = viewer.useSceneTree.getAll();
     Object.keys(sceneTreeState).forEach((key) => {
       if (key === "") return;

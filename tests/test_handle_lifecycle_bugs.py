@@ -711,3 +711,29 @@ def test_gui_input_validation_rejects_degenerate_inputs() -> None:
         g.add_vector3("okv", (1.0, 2.0, 3.0), min=(0, 0, 0), max=(5, 5, 5))
         g.add_number("okn", 5, min=0, max=10)
         g.add_multi_slider("okm", min=0, max=10, step=1, initial_value=(2, 5, 8))
+
+
+def test_color_tuple_is_clamped() -> None:
+    """Tuple/scalar colors are clamped to [0, 255] like array colors. Out-of-
+    range channels used to pass through verbatim (bleeding into adjacent bytes
+    on the client via rgbToInt shifts), and an extreme float overflowed
+    msgpack's int range at buffer-flush time -- a crash far from the call."""
+    from viser._scene_api import _encode_rgb
+
+    assert _encode_rgb((300, 0, 0)) == (255, 0, 0)
+    assert _encode_rgb((-5, 0, 0)) == (0, 0, 0)
+    assert _encode_rgb((2.0, 0, 0)) == (255, 0, 0)  # float > 1.0
+    assert _encode_rgb((1e30, 0, 0)) == (255, 0, 0)  # no OverflowError at flush
+    assert _encode_rgb((0.5, 0.5, 0.5)) == (128, 128, 128)
+    assert _encode_rgb((255, 128, 0)) == (255, 128, 0)
+    # A mesh with an out-of-range color no longer crashes at flush.
+    with _server() as server:
+        import numpy as np
+
+        server.scene.add_mesh_simple(
+            "/m",
+            np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], np.float32),
+            np.array([[0, 1, 2]], np.uint32),
+            color=(300, 0, 0),
+        )
+        server.flush()

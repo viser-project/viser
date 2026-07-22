@@ -208,3 +208,49 @@ def test_skinned_mesh_animates_across_playback_loops(
     )
 
     Path(tmp_path).unlink(missing_ok=True)
+
+
+def test_playback_resets_environment_across_loops(
+    viser_server: viser.ViserServer,
+    page: Page,
+    viser_page: Page,
+) -> None:
+    """A global environment change (fog) set MID-recording must reset on each
+    loop, not stick from the previous pass. resetScene only touched scene
+    nodes; the environment store had no per-loop reset, so fog enabled at t=1
+    stayed on during the [0, 1) window of every later loop."""
+    viser_server.scene.add_icosphere("/s", radius=0.3)
+    wait_for_scene_node(viser_page, "/s")
+
+    serializer = viser_server.get_scene_serializer()
+    serializer.insert_sleep(0.4)
+    viser_server.scene.configure_fog(near=5.0, far=20.0, enabled=True)
+    serializer.insert_sleep(0.4)
+    html = serializer.as_html()
+
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".html", delete=False, encoding="utf-8"
+    ) as f:
+        f.write(html)
+        tmp_path = f.name
+    page.goto(f"file://{tmp_path}")
+    page.locator("canvas").first.wait_for(state="visible", timeout=15_000)
+
+    js_fog = "() => { const m = window.__viserMutable; return !!(m && m.scene && m.scene.fog); }"
+    # Sample fog presence across ~2.4s (recording is ~0.8s -> at least 2 loops).
+    # With the reset, fog TOGGLES (off during each loop's [0, 0.4) window, on
+    # after); without it, fog is on continuously once first reached.
+    fog_states: list[bool] = []
+    for _ in range(40):
+        fog_states.append(bool(page.evaluate(js_fog)))
+        page.wait_for_timeout(80)
+    # LATE window only (loop 2+): loop 1's initial [0, 0.4) fog-off ramp is
+    # expected regardless of the fix, so assert on samples past the first
+    # loop. With the reset, fog goes OFF again during each later loop's
+    # [0, 0.4) window; WITHOUT it, fog is stuck ON continuously after loop 1.
+    late = fog_states[len(fog_states) // 2 :]
+    assert any(late), f"fog never turned on -- test setup wrong, got {fog_states}"
+    assert not all(late), (
+        f"fog stuck on after the first loop (env not reset), got {fog_states}"
+    )
+    Path(tmp_path).unlink(missing_ok=True)
