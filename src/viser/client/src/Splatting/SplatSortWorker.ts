@@ -13,6 +13,7 @@ export type SorterWorkerIncoming =
   | {
       updateBuffer: Uint32Array;
       updateGroupIndices: Uint32Array;
+      updateNumGroups: number;
     }
   | {
       setTz_camera_groups: Float32Array;
@@ -73,7 +74,18 @@ export type SorterWorkerIncoming =
       // Update existing sorter with new buffer data.
       if (sorter !== null) {
         sorter.setBuffer(data.updateBuffer, data.updateGroupIndices);
-        // Trigger immediate sort if we have camera data.
+        // If the group COUNT changed, the current Tz_camera_groups is the
+        // wrong size: sort() derives num_groups from Tz's length, so it
+        // would gather transforms past Tz's end (OOB heap read) for the new
+        // group's splats. Drop the stale Tz and wait for a correctly-sized
+        // one -- the next per-frame setTz_camera_groups. (Same group count:
+        // the existing Tz is still valid, so sort immediately as before.)
+        if (
+          Tz_camera_groups !== null &&
+          Tz_camera_groups.length / 4 !== data.updateNumGroups
+        ) {
+          Tz_camera_groups = null;
+        }
         if (Tz_camera_groups !== null) {
           throttledSort();
         }

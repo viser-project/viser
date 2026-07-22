@@ -272,10 +272,13 @@ function SplatRendererImpl() {
       // visible after the buffer update.
       prevRowMajorT_camera_groupsRef.current = new Float32Array(0);
 
-      // Update worker with new buffer.
+      // Update worker with new buffer. numGroups lets the worker detect a
+      // group-count change and drop a now-wrong-sized transform array
+      // before it sorts against it (OOB).
       postToWorker({
         updateBuffer: merged.gaussianBuffer,
         updateGroupIndices: merged.groupIndices,
+        updateNumGroups: merged.numGroups,
       });
 
       // Skip fade-in animation on updates, set numGaussians immediately.
@@ -294,10 +297,13 @@ function SplatRendererImpl() {
       textureData.set(merged.gaussianBuffer);
       meshPropsRef.current.textureBuffer.needsUpdate = true;
 
-      // Update worker with new buffer.
+      // Update worker with new buffer. numGroups lets the worker detect a
+      // group-count change and drop a now-wrong-sized transform array
+      // before it sorts against it (OOB).
       postToWorker({
         updateBuffer: merged.gaussianBuffer,
         updateGroupIndices: merged.groupIndices,
+        updateNumGroups: merged.numGroups,
       });
 
       // Skip fade-in animation on updates.
