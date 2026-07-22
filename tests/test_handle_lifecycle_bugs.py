@@ -835,3 +835,11 @@ def test_camera_update_rejects_degenerate_basis() -> None:
     ch._state.up_direction = np.array([0.0, 0.0, 1.0])
     ch._update_wxyz()
     assert np.all(np.isfinite(ch._state.wxyz))
+    # Non-finite inputs must ALSO raise (a NaN/Inf norm is nonzero, so it
+    # slipped past the degeneracy checks and stored a NaN quaternion).
+    ch._state.position = np.array([np.nan, 0.0, 0.0])
+    with pytest.raises(ValueError, match="must be finite"):
+        ch._update_wxyz()
+    ch._state.position = np.array([np.inf, 0.0, 0.0])
+    with pytest.raises(ValueError, match="must be finite"):
+        ch._update_wxyz()

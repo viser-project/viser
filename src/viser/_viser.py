@@ -268,6 +268,18 @@ class CameraHandle:
 
     def _update_wxyz(self) -> None:
         """Compute and update the camera orientation from the internal look_at, position, and up vectors."""
+        # Reject non-finite inputs up front: a NaN/Inf position, look_at, or
+        # up_direction would otherwise produce a non-zero (NaN) norm that
+        # slips past the degeneracy checks below and stores a NaN quaternion
+        # -- the exact silent corruption these guards exist to prevent (every
+        # later camera read and on_update callback would then see it).
+        for _name, _vec in (
+            ("position", self._state.position),
+            ("look_at", self._state.look_at),
+            ("up_direction", self._state.up_direction),
+        ):
+            if not np.all(np.isfinite(_vec)):
+                raise ValueError(f"Camera {_name} must be finite, got {_vec}.")
         z = self._state.look_at - self._state.position
         z_norm = np.linalg.norm(z)
         if z_norm == 0.0:
