@@ -77,6 +77,12 @@ class StateSerializer:
         """Insert a sleep into the recorded file. This can be useful for
         dynamic 3D data."""
         assert self in self._handler._record_handles, "serialize() was already called!"
+        # A negative sleep would rewind the recording clock, making later
+        # messages carry smaller timestamps -- the player assumes ascending
+        # order and would apply them late or never (and durationSeconds could
+        # fall below a recorded message's time).
+        if duration < 0.0:
+            raise ValueError(f"insert_sleep duration must be >= 0, got {duration}.")
         self._time += duration
 
     def serialize(self) -> bytes:
