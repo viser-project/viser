@@ -950,17 +950,24 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         )
         """Handle for interacting with the GUI."""
 
+        # Dispatch the share-tunnel handlers to the thread pool, NOT inline on
+        # the event loop: request_share_url() blocks (HTTP round-trip to the
+        # share backend, and connect_event.wait() with no timeout). Run inline,
+        # a single ShareUrlRequest from any client would freeze the whole
+        # event loop -- every client stalls -- for the round-trip, or forever
+        # if the share backend is unreachable. On a pool thread the blocking is
+        # confined to that worker.
         server.register_handler(
             _messages.ShareUrlDisconnect,
-            lambda client_id, msg: self.disconnect_share_url(),
+            lambda client_id, msg: self._thread_executor.submit(
+                self.disconnect_share_url
+            ).add_done_callback(print_threadpool_errors),
         )
-
-        def request_share_url_no_return() -> None:  # To suppress type error.
-            self.request_share_url()
-
         server.register_handler(
             _messages.ShareUrlRequest,
-            lambda client_id, msg: cast(None, request_share_url_no_return()),
+            lambda client_id, msg: self._thread_executor.submit(
+                self.request_share_url
+            ).add_done_callback(print_threadpool_errors),
         )
 
         # Form status print.
