@@ -764,3 +764,61 @@ def test_folder_and_tab_not_reentrant_into_self() -> None:
             with t:
                 with t:
                     pass
+
+
+def test_numpy_bool_serializes() -> None:
+    """np.bool_ (from mask.any(), arr > 0, etc.) must serialize: it is neither
+    np.floating nor np.integer, so it passed through unconverted and crashed
+    the broadcast producer at encode -- tearing down every client, and
+    re-crashing on reconnect (the message is persistent)."""
+    import msgspec.msgpack
+
+    from viser import _messages
+
+    for val in (np.bool_(True), np.array([1, 0]).any(), np.False_):
+        d = _messages.SetSceneNodeVisibilityMessage("/x", val).as_serializable_dict([])
+        msgspec.msgpack.encode(d)  # must not raise
+        assert isinstance(d["visible"], bool)
+    d = _messages.GuiUpdateMessage("u", {"value": np.bool_(True)}).as_serializable_dict(
+        []
+    )
+    msgspec.msgpack.encode(d)
+    with _server() as server:
+        # End-to-end: setting visibility from a numpy bool does not crash flush.
+        f = server.scene.add_frame("/f")
+        f.visible = np.array([True, False]).any()
+        server.flush()
+
+
+def test_camera_update_rejects_degenerate_basis() -> None:
+    """A degenerate camera basis (zero look distance, or up parallel to the
+    view direction) raises instead of storing a NaN quaternion that every
+    later camera read and on_update callback would silently see."""
+    from viser._viser import CameraHandle, _CameraHandleState
+
+    ch = CameraHandle.__new__(CameraHandle)
+    ch._state = _CameraHandleState(
+        client=None,  # type: ignore[arg-type]
+        wxyz=np.zeros(4),
+        position=np.array([1.0, 0.0, 0.0]),
+        fov=1.0,
+        image_height=1,
+        image_width=1,
+        near=0.01,
+        far=1000.0,
+        min_orbit_distance=0.01,
+        max_orbit_distance=1e4,
+        look_at=np.array([1.0, 0.0, 0.0]),  # == position
+        up_direction=np.array([0.0, 0.0, 1.0]),
+        update_timestamp=1.0,
+        camera_cb=[],
+    )
+    with pytest.raises(ValueError, match="look_at cannot equal position"):
+        ch._update_wxyz()
+    ch._state.look_at = np.array([2.0, 0.0, 0.0])
+    ch._state.up_direction = np.array([1.0, 0.0, 0.0])  # parallel to view
+    with pytest.raises(ValueError, match="up_direction cannot be parallel"):
+        ch._update_wxyz()
+    ch._state.up_direction = np.array([0.0, 0.0, 1.0])
+    ch._update_wxyz()
+    assert np.all(np.isfinite(ch._state.wxyz))

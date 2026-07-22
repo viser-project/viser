@@ -96,6 +96,12 @@ def _prepare_for_serialization(
         return float(value)
     if annotation is int or isinstance(value, np.integer):
         return int(value)
+    # np.bool_ (from mask.any(), arr > 0, np.all(...), etc.) is neither
+    # np.floating nor np.integer, and msgpack cannot encode it -- unconverted
+    # it raised inside the broadcast producer, tearing down every client's
+    # connection (and, being a persistent update, re-crashing on reconnect).
+    if annotation is bool or isinstance(value, np.bool_):
+        return bool(value)
 
     if dataclasses.is_dataclass(annotation):
         return _prepare_for_serialization(vars(value), dict, binary_buffers)

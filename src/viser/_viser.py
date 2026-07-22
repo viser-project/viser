@@ -269,10 +269,26 @@ class CameraHandle:
     def _update_wxyz(self) -> None:
         """Compute and update the camera orientation from the internal look_at, position, and up vectors."""
         z = self._state.look_at - self._state.position
-        z /= np.linalg.norm(z)
+        z_norm = np.linalg.norm(z)
+        if z_norm == 0.0:
+            # look_at == position: the view direction is undefined. Reject
+            # rather than store a NaN quaternion (which every later camera
+            # read and on_update callback would then see, silently).
+            raise ValueError(
+                "Camera look_at cannot equal position (zero look distance)."
+            )
+        z /= z_norm
         y = tf.SO3.exp(z * np.pi) @ self._state.up_direction
         y = y - np.dot(z, y) * z
-        y /= np.linalg.norm(y)
+        y_norm = np.linalg.norm(y)
+        if y_norm == 0.0:
+            # up_direction parallel to the view direction: no valid up. Reject
+            # rather than store/broadcast a NaN basis.
+            raise ValueError(
+                "Camera up_direction cannot be parallel to the view direction "
+                "(look_at - position)."
+            )
+        y /= y_norm
         x = np.cross(y, z)
         # Cast to float64 explicitly: newer numpy stubs type np.cross() as
         # possibly complex, which from_matrix() rejects.
@@ -760,7 +776,19 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 render_uuid=render_uuid,
             )
         )
-        render_ready_event.wait()
+        # Poll rather than wait unbounded: a client that disconnects (tab
+        # closed, network drop) never sends a response, so an unbounded wait
+        # would hang this call -- and, when get_render runs from a sync
+        # callback, the pool worker it occupies -- forever.
+        while not render_ready_event.wait(timeout=0.1):
+            if self.client_id not in self._viser_server._connected_clients:
+                connection.unregister_handler(
+                    _messages.GetRenderResponseMessage, got_render_cb
+                )
+                raise RuntimeError(
+                    "Render request failed: the client disconnected before "
+                    "returning a frame."
+                )
         if out is None:
             raise RuntimeError(
                 "Render request failed: the client could not capture a frame."
@@ -1215,6 +1243,10 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         self._websock_server.stop()
         if self._share_tunnel is not None:
             self._share_tunnel.close()
+        # Release the callback/get_render worker pool: stop() otherwise left
+        # its (up to 32) threads alive until the server object was GC'd out of
+        # its callback ref-cycles, contradicting "stops associated threads".
+        self._thread_executor.shutdown(wait=False)
 
     async def _dispatch_client_callbacks(
         self,
