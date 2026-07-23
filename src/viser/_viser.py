@@ -776,6 +776,25 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
 
         render_uuid = _make_uuid()
 
+        # THREE exits race to unregister the handler: a frame arriving
+        # (got_render_cb, on the event loop), and the caller's disconnect /
+        # timeout branches below. infra's unregister_handler raises ValueError
+        # on a second remove, so exactly one exit may perform it; the losers
+        # defer to the winner instead of double-unregistering.
+        unregister_lock = threading.Lock()
+        unregistered = False
+
+        def unregister_once() -> bool:
+            nonlocal unregistered
+            with unregister_lock:
+                if unregistered:
+                    return False
+                unregistered = True
+            connection.unregister_handler(
+                _messages.GetRenderResponseMessage, got_render_cb
+            )
+            return True
+
         def got_render_cb(
             client_id: int, message: _messages.GetRenderResponseMessage
         ) -> None:
@@ -784,9 +803,12 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             # client; only ours matches our request's uuid.
             if message.render_uuid != render_uuid:
                 return
-            connection.unregister_handler(
-                _messages.GetRenderResponseMessage, got_render_cb
-            )
+            if not unregister_once():
+                # The caller already gave up (timeout/disconnect) and
+                # unregistered us; we can still be invoked once more if the
+                # dispatch loop snapshotted the handler list before the
+                # removal. The caller is gone -- drop the frame.
+                return
             nonlocal out
             # An empty payload is the client's failure sentinel (capture threw,
             # or toBlob() returned null). Leave `out` as None and let the
@@ -831,17 +853,23 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         deadline = None if timeout is None else time.time() + timeout
         while not render_ready_event.wait(timeout=0.1):
             if self.client_id not in self._viser_server._connected_clients:
-                connection.unregister_handler(
-                    _messages.GetRenderResponseMessage, got_render_cb
-                )
+                if not unregister_once():
+                    # got_render_cb won the race: a frame was delivered in the
+                    # window between its unregister and its event.set(). Take
+                    # the frame rather than raising on a request that in fact
+                    # completed.
+                    render_ready_event.wait()
+                    break
                 raise RuntimeError(
                     "Render request failed: the client disconnected before "
                     "returning a frame."
                 )
             if deadline is not None and time.time() > deadline:
-                connection.unregister_handler(
-                    _messages.GetRenderResponseMessage, got_render_cb
-                )
+                if not unregister_once():
+                    # Same race as above: the frame beat the deadline's
+                    # unregister. Return it instead of raising TimeoutError.
+                    render_ready_event.wait()
+                    break
                 raise TimeoutError(
                     f"Render request timed out after {timeout}s: the client "
                     "did not return a frame."
@@ -1295,7 +1323,13 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             self._websock_server.queue_message(_messages.ShareUrlUpdated(share_url))
             connect_event.set()
 
-        connect_event.wait()
+        # Wait for connect, but ALSO watch for failure: on_connect only fires
+        # on success, and a failed tunnel (share backend unreachable) sets
+        # status="failed" without touching connect_event -- a bare wait()
+        # blocked the creator forever instead of returning None as documented.
+        while not connect_event.wait(timeout=0.1):
+            if tunnel.get_status() in ("failed", "closed"):
+                return None
         return tunnel.get_url()
 
     def disconnect_share_url(self) -> None:

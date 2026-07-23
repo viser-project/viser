@@ -970,6 +970,46 @@ def test_request_share_url_creates_single_tunnel_under_concurrency() -> None:
     assert results == ["https://fake.share/url"] * 4
 
 
+def test_request_share_url_returns_none_on_failed_tunnel() -> None:
+    """A tunnel that FAILS to connect must make request_share_url() return
+    None (as documented), not block the creator forever: on_connect only
+    fires on success, and status="failed" never set connect_event."""
+    from viser import _viser
+
+    class FailingTunnel:
+        def __init__(self, host: str, port: int) -> None:
+            pass
+
+        def on_connect(self, fn):
+            return fn  # Never invoked: connection failed.
+
+        def on_disconnect(self, fn):
+            return fn
+
+        def get_url(self) -> None:
+            return None
+
+        def get_status(self) -> str:
+            return "failed"
+
+        def close(self) -> None:
+            pass
+
+    with _server() as server:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(_viser, "ViserTunnel", FailingTunnel)
+            box: dict[str, object] = {}
+
+            def worker() -> None:
+                box["url"] = server.request_share_url(verbose=False)
+
+            t = threading.Thread(target=worker, daemon=True)
+            t.start()
+            t.join(timeout=5.0)
+            assert not t.is_alive(), "request_share_url hung on a failed tunnel"
+            assert box["url"] is None
+
+
 def test_get_render_times_out_on_silent_client() -> None:
     """get_render(timeout=...) must raise TimeoutError when a still-connected
     client never returns a frame (frozen/backgrounded tab, wedged capture),
@@ -999,3 +1039,137 @@ def test_get_render_times_out_on_silent_client() -> None:
             )
         elapsed = time.time() - start
         assert 0.3 <= elapsed < 3.0, f"timeout not honored, took {elapsed}s"
+
+
+def _make_real_conn(stall_after_unregister: float = 0.0):
+    """A ClientHandle connection with a REAL handler registry (register/
+    unregister actually mutate state -- a MagicMock's no-ops can't surface
+    double-unregister bugs). Optionally stalls after each unregister to widen
+    the got_render_cb unregister -> event.set() window deterministically."""
+    from viser.infra._infra import WebsockMessageHandler
+
+    class _Conn(WebsockMessageHandler):
+        def __init__(self) -> None:
+            super().__init__()
+            self.sent: list[object] = []
+            self._stalled = False
+
+        def get_message_buffer(self):  # pragma: no cover - unused
+            raise NotImplementedError()
+
+        def queue_message(self, message) -> None:
+            self.sent.append(message)
+
+        def unregister_handler(self, message_cls, callback=None):
+            super().unregister_handler(message_cls, callback)
+            if stall_after_unregister and not self._stalled:
+                self._stalled = True
+                time.sleep(stall_after_unregister)
+
+    return _Conn()
+
+
+def test_get_render_timeout_exits_do_not_double_unregister() -> None:
+    """The three get_render() exits (frame arrival, disconnect, timeout) race
+    to unregister the response handler, and infra's unregister_handler raises
+    ValueError on a second remove. Regression from the timeout feature: unlike
+    disconnect (a dead client never delivers late), a timed-out client is
+    still connected and CAN deliver -- so the exits must share a once-guard.
+
+    Case A: a frame delivered after TimeoutError already unregistered (the
+    dispatch loop can snapshot the handler list before removal) must be
+    dropped silently, not raise ValueError inside the dispatch.
+    Case B: a frame that beats the deadline into got_render_cb's
+    unregister -> set() window must be RETURNED, not clobbered by the caller
+    double-unregistering (ValueError) or raising TimeoutError."""
+    from viser import _messages
+    from viser._viser import ClientHandle
+
+    def render_kwargs(timeout: float) -> dict:
+        return dict(
+            height=8,
+            width=8,
+            wxyz=(1.0, 0.0, 0.0, 0.0),
+            position=(0.0, 0.0, 0.0),
+            fov=1.0,
+            timeout=timeout,
+        )
+
+    def wait_for_request(conn):
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            handlers = conn._incoming_handlers.get(
+                _messages.GetRenderResponseMessage, []
+            )
+            reqs = [
+                m for m in conn.sent if isinstance(m, _messages.GetRenderRequestMessage)
+            ]
+            if handlers and reqs:
+                return handlers[0], reqs[0].render_uuid
+            time.sleep(0.002)
+        raise AssertionError("get_render never registered/queued its request")
+
+    with _server() as server:
+
+        def make_client(conn) -> ClientHandle:
+            client = ClientHandle.__new__(ClientHandle)
+            client.client_id = len(server._connected_clients) + 700_000
+            client._websock_connection = conn
+            client._viser_server = server
+            server._connected_clients[client.client_id] = cast(
+                viser.ClientHandle, client
+            )
+            return client
+
+        # Case A: late frame after timeout.
+        conn_a = _make_real_conn()
+        client_a = make_client(conn_a)
+        box_a: dict[str, BaseException] = {}
+
+        def run_a() -> None:
+            try:
+                client_a.get_render(**render_kwargs(timeout=0.2))
+            except BaseException as e:  # noqa: BLE001
+                box_a["err"] = e
+
+        t = threading.Thread(target=run_a)
+        t.start()
+        cb, uuid = wait_for_request(conn_a)
+        t.join(timeout=5.0)
+        assert not t.is_alive()
+        assert isinstance(box_a.get("err"), TimeoutError)
+        # Deliver the frame late, as the dispatch loop would from its
+        # pre-removal snapshot. Pre-fix: ValueError (list.remove).
+        cb(client_a.client_id, _messages.GetRenderResponseMessage(b"", uuid))
+
+        # Case B: frame beats the deadline into the unregister/set window.
+        conn_b = _make_real_conn(stall_after_unregister=0.5)
+        client_b = make_client(conn_b)
+        result_b: dict[str, object] = {}
+
+        def run_b() -> None:
+            try:
+                result_b["out"] = client_b.get_render(**render_kwargs(timeout=0.2))
+            except BaseException as e:  # noqa: BLE001
+                result_b["err"] = e
+
+        t = threading.Thread(target=run_b)
+        t.start()
+        cb, uuid = wait_for_request(conn_b)
+        time.sleep(0.15)  # Just before the 0.2s deadline.
+        import io as _io
+
+        import imageio.v3 as iio
+
+        buf = _io.BytesIO()
+        iio.imwrite(buf, np.zeros((8, 8, 3), dtype=np.uint8), extension=".jpeg")
+        threading.Thread(
+            target=lambda: cb(
+                client_b.client_id,
+                _messages.GetRenderResponseMessage(buf.getvalue(), uuid),
+            )
+        ).start()
+        t.join(timeout=5.0)
+        assert not t.is_alive()
+        assert "err" not in result_b, f"caller raised: {result_b.get('err')!r}"
+        assert cast(np.ndarray, result_b["out"]).shape == (8, 8, 3)
