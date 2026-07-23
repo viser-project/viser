@@ -1220,6 +1220,17 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             # set-based id matching inlined here so the sweep stays a single
             # pass over the buffer rather than per-name predicate calls.
             # Skip the walk entirely when nothing was tombstoned this round.
+            #
+            # These deletes are NOT floor-gated, unlike the tombstones above:
+            # an update targeting a removed entity is dead weight for EVERY
+            # client. A laggard that hasn't consumed it still receives the
+            # (floor-retained) tombstone, so its final state is identical --
+            # while floor-gating it let a single backpressured client pin an
+            # update that sorts AFTER its entity's remove in the buffer, and
+            # every late-joiner then replayed "remove /x" (no-op) followed by
+            # "update /x": a ghost node other clients don't have. push()
+            # already purges pending updates on Remove with no floor gate;
+            # this sweep follows the same reasoning.
             if removed_ids_by_type:
                 for msg_id, message in buffer.message_from_id.items():
                     phase = message.lifecycle_phase
@@ -1231,14 +1242,12 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                         entity_id = getattr(message, message.entity_id_field)
                         if entity_id in removed_ids_by_type.get(
                             message.entity_type, ()
-                        ) and deletable(msg_id):
+                        ):
                             remove_message_ids.append(msg_id)
                     elif phase is None:
                         name = getattr(message, "name", None)
-                        if (
-                            name is not None
-                            and name in removed_ids_by_type.get("scene", ())
-                            and deletable(msg_id)
+                        if name is not None and name in removed_ids_by_type.get(
+                            "scene", ()
                         ):
                             remove_message_ids.append(msg_id)
 

@@ -1334,3 +1334,38 @@ def test_get_port_reports_bound_port_for_port_zero() -> None:
     printed URLs and any get_port()-based client connection useless)."""
     with _server() as server:
         assert server.get_port() != 0
+
+
+def test_gc_purges_post_remove_update_despite_backpressured_floor() -> None:
+    """An update that sorts AFTER its entity's remove in the persistent
+    buffer must be purged by the GC even when a backpressured client pins
+    the purge floor below it. Floor-gating that delete let every late-joiner
+    replay "remove /x" (a no-op for them) followed by "update /x" -- applying
+    state to a node they never created, permanently diverging them from other
+    clients. The tombstone itself stays floor-retained (laggards still need
+    it), so the laggard's final state is unchanged: it skips a dead update
+    and still removes the node. (Reachable without any race via the public
+    infra layer, which has no removed-guard; the handle layer's guard is a
+    narrow TOCTOU.)"""
+    with _server() as server:
+        buffer = server._websock_server._broadcast_buffer
+        server.scene.add_frame("/x")
+        server.scene.remove_by_name("/x")
+        # Update ordered after the remove (infra layer: no guard).
+        server._websock_server.queue_message(
+            _messages.SetPositionMessage(name="/x", position=(9.0, 0.0, 0.0))
+        )
+        # A backpressured client whose cursor predates everything pins the
+        # purge floor.
+        buffer.generator_cursors[0] = 0
+        server._run_garbage_collector()
+
+        kinds = {
+            type(msg).__name__
+            for msg in buffer.message_from_id.values()
+            if getattr(msg, "name", None) == "/x"
+        }
+        # The dead update is gone; the tombstone is floor-retained for the
+        # lagging client.
+        assert "SetPositionMessage" not in kinds, kinds
+        assert "RemoveSceneNodeMessage" in kinds, kinds
