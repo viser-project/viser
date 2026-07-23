@@ -120,7 +120,13 @@ class AsyncMessageBuffer:
                 #
                 # If we're in an atomic block, this will happen when
                 # atomic_end() is called.
-                self.event_loop.call_soon_threadsafe(self.message_event.set)
+                try:
+                    self.event_loop.call_soon_threadsafe(self.message_event.set)
+                except RuntimeError:
+                    # Event loop already closed (write after stop()); the
+                    # message is buffered above, and a closed loop has no
+                    # consumer to wake -- same tolerance as set_done().
+                    pass
 
     def atomic_start(self) -> None:
         """Start an atomic block. No new messages/windows should be sent."""
@@ -136,11 +142,19 @@ class AsyncMessageBuffer:
             self.atomic_counter -= 1
             should_flush = self.atomic_counter == 0
         if should_flush:
-            self.event_loop.call_soon_threadsafe(self.message_event.set)
+            try:
+                self.event_loop.call_soon_threadsafe(self.message_event.set)
+            except RuntimeError:
+                # Event loop already closed (teardown); nothing to wake.
+                pass
 
     def flush(self) -> None:
         """Flush the message buffer; signals to yield a message window immediately."""
-        self.event_loop.call_soon_threadsafe(self.flush_event.set)
+        try:
+            self.event_loop.call_soon_threadsafe(self.flush_event.set)
+        except RuntimeError:
+            # Event loop already closed (teardown); nothing to wake.
+            pass
 
     def set_done(self) -> None:
         """Set the done flag. Kills the generator."""

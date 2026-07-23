@@ -1369,3 +1369,24 @@ def test_gc_purges_post_remove_update_despite_backpressured_floor() -> None:
         # lagging client.
         assert "SetPositionMessage" not in kinds, kinds
         assert "RemoveSceneNodeMessage" in kinds, kinds
+
+
+def test_writes_after_stop_do_not_raise() -> None:
+    """Scene writes landing after stop() must not raise "Event loop is
+    closed": background threads commonly outlive stop() during teardown, and
+    the buffered message has no consumer to wake anyway. set_done() already
+    tolerated the closed loop; push()/atomic_end()/flush() did not."""
+    server = viser.ViserServer(port=0, verbose=False)
+    f = server.scene.add_frame("/f")
+    server.stop()
+    # Give the background loop a beat to actually close.
+    deadline = time.time() + 5.0
+    loop = server._websock_server._broadcast_buffer.event_loop
+    while not loop.is_closed() and time.time() < deadline:
+        time.sleep(0.05)
+    assert loop.is_closed(), "background loop never closed after stop()"
+
+    f.position = (1.0, 2.0, 3.0)  # push() wake-up path
+    with server.atomic():  # atomic_end() wake-up path
+        f.position = (4.0, 5.0, 6.0)
+    server.flush()  # flush() wake-up path
