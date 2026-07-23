@@ -1143,6 +1143,20 @@ def test_get_render_timeout_exits_do_not_double_unregister() -> None:
         cb(client_a.client_id, _messages.GetRenderResponseMessage(b"", uuid))
 
         # Case B: frame beats the deadline into the unregister/set window.
+        # Precompute the payload (first-use imageio import is slow, and a
+        # late delivery would make TimeoutError the CORRECT outcome, turning
+        # the test flaky), then deliver immediately: got_render_cb claims the
+        # unregister right away, and the connection's 0.5s post-unregister
+        # stall holds the unregister->set window open across the caller's
+        # 0.2s deadline deterministically.
+        import io as _io
+
+        import imageio.v3 as iio
+
+        buf = _io.BytesIO()
+        iio.imwrite(buf, np.zeros((8, 8, 3), dtype=np.uint8), extension=".jpeg")
+        payload = buf.getvalue()
+
         conn_b = _make_real_conn(stall_after_unregister=0.5)
         client_b = make_client(conn_b)
         result_b: dict[str, object] = {}
@@ -1156,20 +1170,167 @@ def test_get_render_timeout_exits_do_not_double_unregister() -> None:
         t = threading.Thread(target=run_b)
         t.start()
         cb, uuid = wait_for_request(conn_b)
-        time.sleep(0.15)  # Just before the 0.2s deadline.
-        import io as _io
-
-        import imageio.v3 as iio
-
-        buf = _io.BytesIO()
-        iio.imwrite(buf, np.zeros((8, 8, 3), dtype=np.uint8), extension=".jpeg")
-        threading.Thread(
-            target=lambda: cb(
-                client_b.client_id,
-                _messages.GetRenderResponseMessage(buf.getvalue(), uuid),
-            )
-        ).start()
+        # Deliver on this thread: cb claims the unregister, stalls 0.5s, then
+        # sets the event -- meanwhile the caller's deadline fires mid-stall,
+        # loses the unregister race, and must take the frame.
+        cb(
+            client_b.client_id,
+            _messages.GetRenderResponseMessage(payload, uuid),
+        )
         t.join(timeout=5.0)
         assert not t.is_alive()
         assert "err" not in result_b, f"caller raised: {result_b.get('err')!r}"
         assert cast(np.ndarray, result_b["out"]).shape == (8, 8, 3)
+
+
+def _start_upload(
+    server,
+    uuid: str,
+    transfer_uuid: str,
+    part_count: int,
+    size_bytes: int,
+    client_id: int = 0,
+) -> None:
+    server.gui._handle_file_transfer_start(
+        ClientId(client_id),
+        _messages.FileTransferStartUpload(
+            source_component_uuid=uuid,
+            transfer_uuid=transfer_uuid,
+            filename="f.bin",
+            mime_type="application/octet-stream",
+            part_count=part_count,
+            size_bytes=size_bytes,
+        ),
+    )
+
+
+def _send_part(
+    server,
+    uuid: str,
+    transfer_uuid: str,
+    index: int,
+    content: bytes,
+    client_id: int = 0,
+) -> None:
+    server.gui._handle_file_transfer_part(
+        ClientId(client_id),
+        _messages.FileTransferPart(
+            source_component_uuid=uuid,
+            transfer_uuid=transfer_uuid,
+            part_index=index,
+            content=content,
+        ),
+    )
+
+
+def test_upload_malformed_parts_do_not_crash_or_corrupt() -> None:
+    """Duplicate or out-of-range part indices must be ignored, not corrupt the
+    transfer: a repeated part_index used to inflate the byte-count completion
+    gate, so assembly ran with missing part slots (KeyError in
+    _finish_file_upload) or overshot the declared size (AssertionError) --
+    crashing the handler task and leaking the transfer state."""
+    with _server() as server:
+        btn = server.gui.add_upload_button("up")
+        uuid = btn._impl.uuid
+        received: list[bytes] = []
+
+        @btn.on_upload
+        def _(event: viser.GuiEvent) -> None:
+            received.append(btn.value.content)
+
+        # Duplicate part 0 (previously: KeyError once bytes hit the total),
+        # then an out-of-range index (previously counted toward completion).
+        _start_upload(server, uuid, "dup", part_count=2, size_bytes=8)
+        _send_part(server, uuid, "dup", 0, b"1234")
+        _send_part(server, uuid, "dup", 0, b"1234")  # dup: ignored
+        _send_part(server, uuid, "dup", 5, b"zzzz")  # out of range: ignored
+        assert "dup" in server.gui._current_file_upload_states  # still pending
+        _send_part(server, uuid, "dup", 1, b"5678")  # completes
+        assert "dup" not in server.gui._current_file_upload_states
+        assert btn.value.content == b"12345678"
+
+        # All part slots filled but bytes don't match the declared size:
+        # previously an AssertionError that leaked the state; now warned and
+        # dropped with no callback.
+        _start_upload(server, uuid, "mismatch", part_count=2, size_bytes=4)
+        _send_part(server, uuid, "mismatch", 0, b"123")
+        with pytest.warns(UserWarning, match="Dropping upload"):
+            _send_part(server, uuid, "mismatch", 1, b"456")
+        assert "mismatch" not in server.gui._current_file_upload_states
+        assert btn.value.content == b"12345678"  # unchanged
+
+
+def test_upload_state_purged_on_client_disconnect() -> None:
+    """In-flight upload buffers must be purged when their client disconnects:
+    entries were only ever removed on completion, so a tab closed mid-upload
+    leaked its accumulated parts forever (and a hostile client could grow the
+    leak without bound)."""
+    with _server() as server:
+        btn = server.gui.add_upload_button("up")
+        uuid = btn._impl.uuid
+
+        _start_upload(server, uuid, "c7", part_count=2, size_bytes=8, client_id=7)
+        _send_part(server, uuid, "c7", 0, b"1234", client_id=7)
+        _start_upload(server, uuid, "c9", part_count=2, size_bytes=8, client_id=9)
+        assert set(server.gui._current_file_upload_states) == {"c7", "c9"}
+
+        # Client 7 disconnects: only ITS transfer is dropped.
+        server.gui._drop_uploads_from_client(ClientId(7))
+        assert set(server.gui._current_file_upload_states) == {"c9"}
+        # A straggler part for the purged transfer is ignored cleanly.
+        _send_part(server, uuid, "c7", 1, b"5678", client_id=7)
+        assert set(server.gui._current_file_upload_states) == {"c9"}
+
+
+def test_scene_serializer_concurrent_write_recorded_exactly_once() -> None:
+    """A scene message queued concurrently with get_scene_serializer() must
+    be recorded exactly once. The serializer used to be REGISTERED before the
+    buffer snapshot was taken, without excluding writers -- so a message
+    queued in that window was recorded twice (live + snapshot), bloating
+    .viser files and duplicating binary buffers."""
+    with _server() as server:
+        server.scene.add_frame("/pre")
+
+        handler = server._websock_server
+        orig_get_serializer = handler.get_message_serializer
+        registered = threading.Event()
+        racy_done = threading.Event()
+
+        def patched(filter):
+            serializer = orig_get_serializer(filter=filter)
+            registered.set()
+            # Hold the registration->snapshot window open. Post-fix the
+            # writer blocks on _record_lock and this times out; pre-fix the
+            # writer lands inside the window (and is recorded twice).
+            racy_done.wait(timeout=0.5)
+            return serializer
+
+        def writer() -> None:
+            assert registered.wait(timeout=5.0)
+            server.scene.add_frame("/racy")
+            racy_done.set()
+
+        t = threading.Thread(target=writer)
+        t.start()
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(handler, "get_message_serializer", patched)
+            serializer = server.get_scene_serializer()
+        t.join(timeout=5.0)
+        assert not t.is_alive()
+
+        counts: dict[str, int] = {}
+        for _t, mdict in serializer._messages:
+            if mdict.get("type") == "FrameMessage":
+                name = cast(str, mdict.get("name"))
+                counts[name] = counts.get(name, 0) + 1
+        assert counts.get("/pre") == 1
+        # Exactly once: pre-fix this was 2 (live + snapshot).
+        assert counts.get("/racy") == 1, counts
+
+
+def test_get_port_reports_bound_port_for_port_zero() -> None:
+    """With port=0 the OS assigns an ephemeral port; get_port() must report
+    the port actually bound, not echo the requested 0 back (which made the
+    printed URLs and any get_port()-based client connection useless)."""
+    with _server() as server:
+        assert server.get_port() != 0

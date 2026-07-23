@@ -107,7 +107,8 @@ class StateSerializer:
             }
         )
         assert isinstance(msgpack_payload, bytes)
-        self._handler._record_handles.remove(self)
+        with self._handler._record_lock:
+            self._handler._record_handles.remove(self)
 
         # Build uncompressed inner payload:
         #   [8 bytes] msgpack length (little-endian uint64)
@@ -215,8 +216,15 @@ class WebsockMessageHandler:
         self._queued_messages: queue.Queue = queue.Queue()
         self._locked_thread_id = -1
 
-        # List of active serializers recording messages.
+        # List of active serializers recording messages. _record_lock makes
+        # "register a serializer + snapshot existing state" atomic against
+        # queue_message's "feed serializers + push to buffer": without it, a
+        # message queued between registration and the snapshot is recorded
+        # TWICE (once live, once from the snapshot). Reentrant so callers can
+        # hold it across get_message_serializer(). Ordering: _record_lock is
+        # always taken BEFORE the buffer's buffer_lock, never after.
         self._record_handles: list[StateSerializer] = []
+        self._record_lock = threading.RLock()
 
     def get_message_serializer(
         self, filter: Callable[[Message], bool]
@@ -224,7 +232,8 @@ class WebsockMessageHandler:
         """Start recording messages that are sent. Sent messages will be
         serialized and can be used for playback."""
         serializer = StateSerializer(self, filter)
-        self._record_handles.append(serializer)
+        with self._record_lock:
+            self._record_handles.append(serializer)
         return serializer
 
     def register_handler(
@@ -270,10 +279,14 @@ class WebsockMessageHandler:
 
     def queue_message(self, message: Message) -> None:
         """Wrapped method for sending messages."""
-        for handle in self._record_handles:
-            handle._insert_message(message)
+        # Feed + push under _record_lock so a concurrently-registering
+        # serializer either sees this message in its buffer snapshot OR
+        # records it live -- never both (duplicate) and never neither (loss).
+        with self._record_lock:
+            for handle in self._record_handles:
+                handle._insert_message(message)
 
-        self.get_message_buffer().push(message)
+            self.get_message_buffer().push(message)
 
     @contextlib.contextmanager
     def atomic(self) -> Generator[None, None, None]:
@@ -788,7 +801,16 @@ class WebsockServer(WebsockMessageHandler):
                         ),
                     ) as serve_future:
                         assert serve_future.server is not None
-                        self._port = port_attempt
+                        # Report the port actually BOUND, not the one
+                        # requested: with port=0 the OS assigns an ephemeral
+                        # port, and echoing the 0 back made get_port() (and
+                        # the printed URLs) useless.
+                        bound_sockets = serve_future.server.sockets
+                        self._port = (
+                            bound_sockets[0].getsockname()[1]
+                            if bound_sockets
+                            else port_attempt
+                        )
                         ready_sem.release()
                         assert self._stop_event is not None
                         await self._stop_event.wait()

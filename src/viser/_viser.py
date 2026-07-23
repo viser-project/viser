@@ -1037,6 +1037,13 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             if handle is None:
                 return
 
+            # Drop this client's in-flight upload buffers (shared GUI and the
+            # client's own): nothing else removes them -- completion is the
+            # only other pop -- so a tab closed mid-upload leaked its
+            # accumulated parts forever.
+            self.gui._drop_uploads_from_client(cast(infra.ClientId, conn.client_id))
+            handle.gui._drop_uploads_from_client(cast(infra.ClientId, conn.client_id))
+
             # Drop any in-flight drag entries for this client; the
             # corresponding ``phase="end"`` will never arrive, so without
             # this the active-drag map leaks an entry per dropped drag and
@@ -1534,13 +1541,18 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         This can be used for saving .viser files, which are used for offline
         visualization.
         """
-        serializer = self._websock_server.get_message_serializer(
-            filter=lambda message: message.include_in_scene_serialization
-        )
-        # Insert current scene state.
+        # Register + snapshot atomically (under _record_lock, which
+        # queue_message also holds for its feed+push): otherwise a message
+        # queued from another thread between the two lands in BOTH the live
+        # recording and the snapshot, duplicating it in the .viser file.
         buffer = self._websock_server._broadcast_buffer
-        with buffer.buffer_lock:
-            messages = list(buffer.message_from_id.values())
-        for message in messages:
-            serializer._insert_message(message)
+        with self._websock_server._record_lock:
+            serializer = self._websock_server.get_message_serializer(
+                filter=lambda message: message.include_in_scene_serialization
+            )
+            # Insert current scene state.
+            with buffer.buffer_lock:
+                messages = list(buffer.message_from_id.values())
+            for message in messages:
+                serializer._insert_message(message)
         return serializer
